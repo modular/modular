@@ -29,10 +29,10 @@
 <section class="panel">
   <h2>Parameters: types and values <span class="sum">[ ] compile-time parameters, ( ) runtime arguments</span></h2>
   <div class="body">
-<pre class="code">def repeat[T: Copyable, n: Int](x: T) -> InlineArray[T, n]:
+<pre class="code">def repeat[T: Copyable, n: Int](x: T) -> Array[T, n]:
     ... # T is a type, n is a value
 struct Matrix[dtype: DType, rows: Int, cols: Int]: ...</pre>
-    <p class="note">Use parameters to write generic algorithms and structs. The compiler
+    <p class="note">Use parameterized declarations for functions and structs. The compiler
       creates a concrete implementation for each unique set of parameter values.</p>
   </div>
 </section>
@@ -77,7 +77,7 @@ def chunk[w: Int]() where w.is_power_of_two(): ...</pre>
 <pre class="code">comptime name = reflect[T].name() # also .field_count(), .field_names(), ...
 comptime t = type_of(x) # the type of an expression</pre>
     <p class="note"><b>reflect[T]</b> reads a type's structure and <b>type_of</b> an expression's
-      type, so generic code adapts to any shape.</p>
+      type, so parameterized code adapts to any shape.</p>
   </div>
 </section>
 
@@ -96,7 +96,7 @@ comptime track = meters(100.0) # runs while compiling, baked in</pre>
   <div class="body">
 <pre class="code">comptime MAX = 2 ** 200 # arbitrary-precision integer
 comptime c = 0.1 + 0.2 # 0.3 exactly: a literal, kept exact
-var r = 0.1 + 0.2 # 0.30000000000000004: now a Float64</pre>
+var r = 0.1 + 0.2 # a Float64, subject to rounding</pre>
     <p class="note">Literals stay exact. <b>Float64</b> rounds values like <b>0.1</b>, and
       repeated computations accumulate rounding error. Compute accuracy-sensitive constants at
       compile time.</p>
@@ -154,7 +154,7 @@ ref g = global_constant[POWERS]() # POWERS: a fixed scalar table, read g[i], no 
   <h2>comptime members <span class="sum">comptime lives on types too</span></h2>
   <div class="body">
 <pre class="code">struct Stack[T: Copyable]:
-    comptime Element = T # associated type
+    comptime Element = Self.T # associated type
     comptime capacity = 1024 # comptime value member
 comptime Scalar[dt: DType] = SIMD[dt, 1] # parametric alias</pre>
     <p class="note">A type carries its own compile-time members (values, associated types, and

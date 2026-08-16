@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.builtin.simd import SIMD
 
 from extensibility import InputTensor, OutputTensor, foreach
@@ -22,7 +22,7 @@ from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
@@ -33,7 +33,7 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
@@ -57,7 +57,7 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 
 
-@compiler.register("brightness")
+@extensibility.register("brightness")
 struct Brightness:
     @staticmethod
     def execute[
@@ -68,7 +68,7 @@ struct Brightness:
         brightness: Float32,
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
@@ -82,7 +82,7 @@ struct Brightness:
         foreach[brighten, target=target](img_out, ctx)
 
 
-@compiler.register("blur")
+@extensibility.register("blur")
 struct Blur:
     @staticmethod
     def execute[
@@ -93,7 +93,7 @@ struct Blur:
         blur_size: Int64,
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def blur_kernel[
             simd_width: Int

@@ -16,7 +16,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.python._cpython import GILAcquired, GILReleased
 from std.os import abort
 import std.math
-from std.algorithm.functional import parallelize
+from max.algorithm.functional import parallelize
 from std.sys.info import num_physical_cores
 
 
@@ -43,7 +43,7 @@ def parallel_wrapper(array: PythonObject) raises -> PythonObject:
     var num_cores = num_physical_cores()
     var chunk_size, remainder = divmod(array_len, num_cores)
 
-    @parameter
+    @__parameter
     def calc_max(i: Int) -> None:
         ref cpython = Python().cpython()
         # Each worker needs to hold the GIL to access python objects.

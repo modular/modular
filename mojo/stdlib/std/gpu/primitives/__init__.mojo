@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU primitives package - warp, block, cluster, and grid-level operations.
+"""GPU primitives package - warp, block, and cluster operations.
 
 This package provides low-level GPU execution primitives at various levels
 of the GPU hierarchy:
@@ -23,25 +23,6 @@ of the GPU hierarchy:
 
 These primitives form the foundation for GPU kernel development.
 """
-
-# Cluster operations (SM90+)
-from .cluster import (
-    block_rank_in_cluster,
-    cluster_arrive,
-    cluster_arrive_relaxed,
-    cluster_sync,
-    cluster_sync_relaxed,
-    cluster_wait,
-    elect_one_sync,
-)
-
-# Grid control operations (Hopper PDL)
-from .grid_controls import (
-    PDL,
-    PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-)
 
 # Thread/block/grid indexing
 from .id import (

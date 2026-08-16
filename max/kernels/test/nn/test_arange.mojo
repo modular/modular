@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     Coord,
@@ -62,9 +62,7 @@ def test_arange[
         print("Memory is larger than static limit, test failed")
         return
 
-    var memory4 = InlineArray[Scalar[dtype], max_output_size](
-        uninitialized=True
-    )
+    var memory4 = Array[Scalar[dtype], max_output_size](uninitialized=True)
     var out_tensor = TileTensor(memory4, row_major(Coord(outshape)))
 
     @always_inline

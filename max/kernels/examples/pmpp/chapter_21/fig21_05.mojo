@@ -24,7 +24,7 @@ atomic operations which can be a performance bottleneck.
 from std.math import sqrt
 from std.atomic import Atomic
 from std.gpu import block_idx, thread_idx, block_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
@@ -32,11 +32,11 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 def cenergy_scatter_kernel(
     energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    grid_x: Int,
-    grid_y: Int,
+    grid_x_dev: Int32,
+    grid_y_dev: Int32,
     gridspacing: Float32,
     z: Float32,
-    numatoms: Int,
+    numatoms_dev: Int32,
 ):
     """Scatter kernel: each thread processes one atom.
 
@@ -46,12 +46,16 @@ def cenergy_scatter_kernel(
     Args:
         energygrid: Output energy grid.
         atoms: Atom array (4 floats per atom: x, y, z, charge).
-        grid_x: Grid X dimension.
-        grid_y: Grid Y dimension.
+        grid_x_dev: Grid X dimension.
+        grid_y_dev: Grid Y dimension.
         gridspacing: Grid spacing.
         z: Z-coordinate of the grid slice.
-        numatoms: Number of atoms.
+        numatoms_dev: Number of atoms.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var grid_x = Int(grid_x_dev)
+    var grid_y = Int(grid_y_dev)
+    var numatoms = Int(numatoms_dev)
     # Each thread handles one atom
     var n = (block_idx.x * block_dim.x + thread_idx.x) * 4
 
@@ -161,11 +165,11 @@ def main() raises:
     ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,
         d_atoms,
-        vol_dim.x,
-        vol_dim.y,
+        Int32(vol_dim.x),
+        Int32(vol_dim.y),
         gridspacing,
         z_coord,
-        numatoms,
+        Int32(numatoms),
         grid_dim=(num_blocks, 1, 1),
         block_dim=(block_size, 1, 1),
     )

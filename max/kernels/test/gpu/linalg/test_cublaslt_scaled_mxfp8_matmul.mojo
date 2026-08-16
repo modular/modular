@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, align_up
 from std.random import random_ui64
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul
@@ -27,8 +27,8 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     set_scale_factor,
 )
-from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def test_scaled_mxfp8_cublaslt[

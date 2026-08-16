@@ -16,7 +16,7 @@ Launches multiple threads and blocks to verify the message is printed
 exactly once (gated to thread 0, block 0) rather than once per thread.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.os import abort
 
 

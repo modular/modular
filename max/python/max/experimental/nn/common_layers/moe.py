@@ -26,9 +26,9 @@ from max.experimental.nn import Linear
 from max.experimental.nn.common_layers.functional_kernels import (
     fused_silu,
     grouped_matmul_ragged,
-    local_map,
     moe_create_indices,
     shard_and_stack,
+    stack_device_shards,
 )
 from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.module import Module
@@ -194,17 +194,7 @@ class MoE(Module[[Tensor], Tensor]):
         expert_ids: Tensor,
         usage_stats: Tensor,
     ) -> Tensor:
-        """Gate/up matmul -> SiLU -> down matmul on one device's weight shard.
-
-        Operates entirely on single-device
-        :class:`~max.experimental.tensor.Tensor`s, so it is shared by the
-        replicated/TP :meth:`_grouped_expert_compute` (unrolled by
-        :func:`~max.experimental.nn.common_layers.functional_kernels.local_map`
-        over the weight
-        bundles) and the expert-parallel forward (over dispatched per-device
-        tokens). The ``fused_silu`` kernel reads the runtime row offsets to
-        bound the SiLU to the actually-received tokens.
-        """
+        """Gate/up matmul -> SiLU -> down matmul."""
         gate_up_out = grouped_matmul_ragged(
             tokens, gate_up, expert_start, expert_ids, usage_stats
         )
@@ -220,29 +210,21 @@ class MoE(Module[[Tensor], Tensor]):
         expert_ids: Tensor,
         expert_usage_stats: Tensor,
     ) -> Tensor:
-        """Unroll :meth:`_expert_matmuls_local` over each device's shard.
-
-        :func:`~max.experimental.nn.common_layers.functional_kernels.local_map`
-        runs the single-device
-        matmuls on each device's activation shard and its entry of the
-        ``gate_up_proj`` / ``down_proj`` weight bundles, then reassembles under
-        the activations' placement (replicated for TP). The per-device outputs
-        are partial; :class:`TensorParallelMoE` resolves them downstream.
-        """
-        out = local_map(
-            self._expert_matmuls_local,
-            {
-                "tokens": permuted_states,
-                "gate_up": self.gate_up_proj,
-                "down": self.down_proj,
-                "expert_start": expert_start_indices,
-                "expert_ids": expert_ids,
-                "usage_stats": expert_usage_stats,
-            },
-            {},
+        """Runs :meth:`_expert_matmuls_local` on the (possibly TP) mesh directly."""
+        mesh = permuted_states.mesh
+        gate_up = stack_device_shards(self.gate_up_proj, axis=1, mesh=mesh)
+        down = stack_device_shards(self.down_proj, axis=2, mesh=mesh)
+        out = self._expert_matmuls_local(
+            permuted_states,
+            gate_up,
+            down,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
         )
         return Tensor.from_shard_values(
-            [TensorValue(s) for s in out], mapping=permuted_states.mapping
+            [TensorValue(s) for s in out.local_shards],
+            mapping=permuted_states.mapping,
         )
 
     def forward(self, x: Tensor) -> Tensor:

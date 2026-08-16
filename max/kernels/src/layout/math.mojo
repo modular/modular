@@ -15,7 +15,7 @@
 import std.math
 from std.sys.info import simd_width_of
 
-import std.algorithm.reduction as reduction
+import max.algorithm.reduction as reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
 from layout import (
@@ -85,7 +85,7 @@ def outer_product_acc(
 def _reduce[
     axis: Int,
     init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
-    func: def[dtype: DType, width: SIMDSize](
+    func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -165,7 +165,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout import LayoutTensor, Layout
     from layout.math import sum
 
-    data: InlineArray[Int32, 6] = [0, 1, 2, 3, 4, 5]
+    data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
     tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")
@@ -186,7 +186,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return 0
 
     def sum_func[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
 
@@ -218,7 +218,7 @@ def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return SIMD[dtype, width].MIN
 
     def max_func[
-        dtype: DType, width: SIMDSize
+        dtype: DType, width: SIMDLength
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
 
@@ -369,7 +369,7 @@ def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
 
     assert src.size() != 0, "input must not be empty"
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_1d[
         dtype_: DType, width: Int
@@ -464,7 +464,7 @@ def variance(
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
@@ -495,7 +495,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
@@ -523,7 +523,7 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
 
     assert src.num_elements() != 0, "input must not be empty"
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_1d[
         dtype_: DType, width: Int

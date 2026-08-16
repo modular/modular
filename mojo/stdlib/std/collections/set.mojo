@@ -23,6 +23,7 @@ from std.hashlib import Hasher, default_hasher
 
 from .dict import (
     Dict,
+    DictEntry,
     KeyElement,
     _DictEntryIter,
     _DictEntryIterOwned,
@@ -31,17 +32,22 @@ from .dict import (
 )
 
 
+@explicit_destroy(
+    "Use `deinit_with()` to explicitly destroy a `Set` with a"
+    " non-`Deinitable` element type"
+)
 struct Set[
-    T: KeyElement & ImplicitlyDeletable,
+    T: KeyElement,
     H: Hasher = default_hasher,
 ](
     Boolable,
     Comparable where conforms_to(T, Copyable) and conforms_to(T, Equatable),
     Copyable where conforms_to(T, Copyable),
+    Deinitable where conforms_to(T, Deinitable),
     Equatable where conforms_to(T, Copyable) and conforms_to(T, Equatable),
     Hashable where conforms_to(T, Copyable) and conforms_to(T, Hashable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(T, Deinitable),
     Movable,
     Sized,
     Writable where conforms_to(T, Copyable) and conforms_to(T, Writable),
@@ -72,14 +78,16 @@ struct Set[
             `Movable & Hashable & Equatable`). Methods that fundamentally need
             to copy elements (`union`, `intersection`, `__or__`, iteration,
             ...) are conditionally available via
-            `where conforms_to(T, Copyable)` clauses.
+            `where conforms_to(T, Copyable)` clauses. When `T` is not
+            `Deinitable`, the set has no implicit destructor and must
+            be torn down with `deinit_with()`.
         H: The type of the hasher used to hash keys.
     """
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.T, KeyElement & Copyable],
         NoneType,
         Self.H,
         iterable_origin,
@@ -92,7 +100,7 @@ struct Set[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        Self.T, NoneType, Self.H
+        downcast[Self.T, KeyElement & Deinitable], NoneType, Self.H
     ]
     """The owned iterator type for this set."""
 
@@ -109,7 +117,7 @@ struct Set[
 
     def __init__(
         out self, *ts: Self.T, __set_literal__: NoneType = None
-    ) where conforms_to(Self.T, Copyable):
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """Construct a set from initial elements.
 
         Args:
@@ -124,8 +132,8 @@ struct Set[
 
     # TODO: Should take the list owned so we can transfer the elements out.
     def __init__(
-        out self, elements: List[Self.T, ...]
-    ) where conforms_to(Self.T, Copyable):
+        out self, elements: List[Self.T]
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """Construct a set from a List of elements.
 
         Args:
@@ -134,6 +142,23 @@ struct Set[
         self = Self()
         for e in elements:
             self.add(e.copy())
+
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        """Consume the set, deinitializing each element with a closure.
+
+        Use this to tear down a `Set` whose element type is not
+        `Deinitable`.
+
+        Args:
+            deinit_func: A closure called once per element to destroy it.
+        """
+
+        # The backing `Dict` maps each element to a `NoneType` value, so wrap
+        # the element-only closure to also drop the value slot.
+        def forward(var key: Self.T, var value: NoneType) {imm deinit_func}:
+            deinit_func(key^)
+
+        self._data^.deinit_with(forward)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -168,11 +193,15 @@ struct Set[
         # Iterate over dict entries directly to reuse cached hash values,
         # avoiding redundant hash recomputation for each lookup in `other`.
         for entry in self._data.items():
-            if not other._data._find_slot(entry.hash, entry.key)[0]:
+            if not other._data._find_slot(entry._hash, entry.key)[0]:
                 return False
         return True
 
-    def __and__(self, other: Self) -> Self where conforms_to(Self.T, Copyable):
+    def __and__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """The set intersection operator.
 
         Args:
@@ -184,7 +213,9 @@ struct Set[
         """
         return self.intersection(other)
 
-    def __iand__(mut self, other: Self) where conforms_to(Self.T, Copyable):
+    def __iand__(
+        mut self, other: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set intersection.
 
         Updates the set to contain only the elements which are already in
@@ -195,7 +226,11 @@ struct Set[
         """
         self.intersection_update(other)
 
-    def __or__(self, other: Self) -> Self where conforms_to(Self.T, Copyable):
+    def __or__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """The set union operator.
 
         Args:
@@ -207,7 +242,9 @@ struct Set[
         """
         return self.union(other)
 
-    def __ior__(mut self, other: Self) where conforms_to(Self.T, Copyable):
+    def __ior__(
+        mut self, other: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set union.
 
         Updates the set to contain all elements in the `other` set
@@ -218,7 +255,11 @@ struct Set[
         """
         self.update(other)
 
-    def __sub__(self, other: Self) -> Self where conforms_to(Self.T, Copyable):
+    def __sub__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Set subtraction.
 
         Args:
@@ -230,7 +271,9 @@ struct Set[
         """
         return self.difference(other)
 
-    def __isub__(mut self, other: Self) where conforms_to(Self.T, Copyable):
+    def __isub__(
+        mut self, other: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set subtraction.
 
         Updates the set to remove any elements from the `other` set.
@@ -300,7 +343,11 @@ struct Set[
         """
         return len(self) < len(other) and self.issubset(other)
 
-    def __xor__(self, other: Self) -> Self where conforms_to(Self.T, Copyable):
+    def __xor__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
 
         Args:
@@ -311,7 +358,9 @@ struct Set[
         """
         return self.symmetric_difference(other)
 
-    def __ixor__(mut self, other: Self) where conforms_to(Self.T, Copyable):
+    def __ixor__(
+        mut self, other: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """Overloads the ^= operator. Works like as `symmetric_difference_update` method.
 
         Updates the set with the symmetric difference of itself and another set.
@@ -367,8 +416,7 @@ struct Set[
     ) and conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration {mut iterator}:
             ref element = iterator.__next__()
 
             comptime if is_repr:
@@ -376,7 +424,7 @@ struct Set[
             else:
                 element.write_to(w)
 
-        write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
+        write_sequence_to(writer, iterate, start="{", end="}")
         _ = iterator^
 
     @no_inline
@@ -400,26 +448,44 @@ struct Set[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[is_repr=True](w)
 
         FormatStruct(writer, "Set").params(
             TypeNames[Self.T](),
             Named("Hasher", TypeNames[Self.H]()),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def __iter__(deinit self) -> Self.IteratorOwnedType:
+    def __iter__(
+        deinit self,
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Deinitable):
         """Consume the set and iterate over its elements.
+
+        Constraints:
+            `T` must be `Deinitable`; consuming iteration drops the
+            backing dictionary's value slots in place.
 
         Returns:
             An iterator that owns the set's elements.
         """
-        return {_DictEntryIterOwned(self._data^, 0)}
+        return {
+            _DictEntryIterOwned(
+                rebind_var[
+                    Dict[
+                        downcast[Self.T, KeyElement & Deinitable],
+                        NoneType,
+                        Self.H,
+                    ]
+                ](self._data^),
+                0,
+            )
+        }
 
     def __iter__(
         ref self,
@@ -434,7 +500,7 @@ struct Set[
             Self.T, Copyable
         ), "Set iteration requires the element type to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.T, KeyElement & Copyable],
             NoneType,
             Self.H,
         ]
@@ -449,16 +515,46 @@ struct Set[
             )
         )
 
-    def add(mut self, var t: Self.T):
+    def add(mut self, var t: Self.T) where conforms_to(Self.T, Deinitable):
         """Add an element to the set.
+
+        Constraints:
+            `T` must be `Deinitable`; adding a duplicate discards the
+            incoming element in place.
 
         Args:
             t: The element to add to the set.
         """
         self._data[t^] = None
 
-    def remove(mut self, t: Self.T) raises:
+    def insert(mut self, var t: Self.T) -> Optional[Self.T]:
+        """Insert an element, returning any displaced equal element.
+
+        Unlike `add`, a displaced equal element is moved out and returned
+        rather than destroyed in place, so this works when `T` is not
+        `Deinitable`. The caller owns the returned element.
+
+        Args:
+            t: The element to insert into the set.
+
+        Returns:
+            The previously-present equal element if one was displaced,
+            otherwise an empty `Optional`.
+        """
+
+        def reap(var entry: DictEntry[Self.T, NoneType, Self.H]) -> Self.T:
+            return entry^.reap_key()
+
+        return self._data.insert(t^, None).map(reap)
+
+    def remove(
+        mut self, t: Self.T
+    ) raises where conforms_to(Self.T, Deinitable):
         """Remove an element from the set.
+
+        Constraints:
+            `T` must be `Deinitable`; the removed element is destroyed
+            in place.
 
         Args:
             t: The element to remove from the set.
@@ -466,7 +562,20 @@ struct Set[
         Raises:
             If the element isn't in the set to remove.
         """
-        self._data.pop(t)
+        # TODO(MOCO-4295): the `where` clause narrows `Self.T` to a deletable
+        # subtype that no longer unifies with the backing dict's
+        # `ref key: Self.K`; rebind the dict to the narrowed key type so the
+        # argument matches. Drop this once the narrowing is transparent.
+        _ = rebind[
+            Pointer[
+                Dict[
+                    downcast[Self.T, KeyElement & Deinitable],
+                    NoneType,
+                    Self.H,
+                ],
+                origin_of(self._data),
+            ]
+        ](Pointer(to=self._data))[].pop(t)
 
     def pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
@@ -485,7 +594,11 @@ struct Set[
         except:
             raise "Pop on empty set"
 
-    def union(self, other: Self) -> Self where conforms_to(Self.T, Copyable):
+    def union(
+        self, other: Self
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Set union.
 
         Args:
@@ -503,7 +616,9 @@ struct Set[
 
     def intersection(
         self, other: Self
-    ) -> Self where conforms_to(Self.T, Copyable):
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Set intersection.
 
         Args:
@@ -522,7 +637,9 @@ struct Set[
 
     def difference(
         self, other: Self
-    ) -> Self where conforms_to(Self.T, Copyable):
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Set difference.
 
         Args:
@@ -538,7 +655,9 @@ struct Set[
                 result.add(e.copy())
         return result^
 
-    def update(mut self, other: Self) where conforms_to(Self.T, Copyable):
+    def update(
+        mut self, other: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set update.
 
         Updates the set to contain all elements in the `other` set
@@ -552,7 +671,7 @@ struct Set[
 
     def intersection_update(
         mut self, other: Self
-    ) where conforms_to(Self.T, Copyable):
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set intersection update.
 
         Updates the set by retaining only elements found in both this set and the `other` set,
@@ -580,7 +699,7 @@ struct Set[
 
     def difference_update(
         mut self, other: Self
-    ) where conforms_to(Self.T, Copyable):
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """In-place set subtraction.
 
         Updates the set by removing all elements found in the `other` set,
@@ -652,7 +771,9 @@ struct Set[
 
     def symmetric_difference(
         self, other: Self
-    ) -> Self where conforms_to(Self.T, Copyable):
+    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
+        Self.T, Deinitable
+    ):
         """Returns the symmetric difference of two sets.
 
         Args:
@@ -675,7 +796,7 @@ struct Set[
 
     def symmetric_difference_update(
         mut self, other: Self
-    ) where conforms_to(Self.T, Copyable):
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Deinitable):
         """Updates the set with the symmetric difference of itself and another set.
 
         Args:
@@ -683,8 +804,12 @@ struct Set[
         """
         self = self.symmetric_difference(other)
 
-    def discard(mut self, value: Self.T):
+    def discard(mut self, value: Self.T) where conforms_to(Self.T, Deinitable):
         """Remove a value from the set if it exists. Pass otherwise.
+
+        Constraints:
+            `T` must be `Deinitable`; a removed element is destroyed
+            in place.
 
         Args:
             value: The element to remove from the set.
@@ -694,10 +819,33 @@ struct Set[
         except:
             pass
 
-    def clear(mut self):
+    def clear(mut self) where conforms_to(Self.T, Deinitable):
         """Removes all elements from the set.
 
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
+
+        Constraints:
+            `T` must be `Deinitable`, since every element is destroyed
+            in place.
         """
         self._data.clear()
+
+    def clear_with(mut self, destroy_func: Some[def(var Self.T)], /):
+        """Remove all elements, disposing each with a closure.
+
+        The closure counterpart of `clear`: instead of destroying each element
+        in place, it hands each element to `destroy_func`. Use this to clear a
+        `Set` whose element type is not `Deinitable`. The set's
+        capacity is retained.
+
+        Args:
+            destroy_func: A closure called once per element to destroy it.
+        """
+
+        # The backing `Dict` maps each element to a `NoneType` value, so wrap
+        # the element-only closure to also drop the value slot.
+        def forward(var key: Self.T, var value: NoneType) {imm destroy_func}:
+            destroy_func(key^)
+
+        self._data.clear_with(forward)

@@ -48,16 +48,16 @@ from layout.tensor_core_async import (
 
 from linalg.arch.sm100.mma import smem_descriptor
 
-from std.gpu.host.info import B200
-from std.gpu.globals import WARP_SIZE
-from std.gpu.memory import fence_async_view_proxy
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.host.info import B200
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from max.gpu.memory import fence_async_view_proxy
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 
 from std.utils.index import Index
 
@@ -68,12 +68,16 @@ struct MLAConfig[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](TrivialRegisterPassable):
+    # Concrete scale dtype for `Scalar[...]`/`TMATensorTile[...]` reads. Falls
+    # back to `qkv_dtype` when unset; presence flows to `FA4Config` via the
+    # optional `scale_dtype_`.
+    comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
     var fa4_config: FA4Config[
         Self.qkv_dtype,
-        rope_dtype=Self.rope_mma_dtype,
-        scale_dtype=Self.scale_dtype,
+        rope_dtype_=Self.rope_mma_dtype,
+        scale_dtype_=Self.scale_dtype_,
     ]
     var MMA_M: Int
     var BM: Int
@@ -178,7 +182,9 @@ struct MLAConfig[
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
-            num_q = num_q,
+            # FA4Config's primary knob is now BM; MLA is single-CTA so
+            # num_q=2 -> BM=256, num_q=1 -> BM=128.
+            BM = 256 if num_q == 2 else 128,
             nope_depth = nope_depth,
             single_o = single_o,
             bn_cap = bn_cap,
@@ -287,6 +293,23 @@ struct MLAConfig[
         return self.smem_used
 
     @always_inline
+    def launch_num_threads(self) -> Int:
+        """Threads to launch for this config's kernel.
+
+        The generic single-O (wide-V) path drops the redundant 2nd softmax
+        warpgroup -- WG1 is a full no-op there (see the single-O serial-KV
+        accumulation) -- so it launches 3 warpgroups (Softmax0 + Correction +
+        MMA/Load/Empty) instead of 4. Every other config keeps the standard
+        4-warpgroup (`num_threads` = 512) layout. Only the generic kernel calls
+        this; the per-token-scale / blockscale siblings read the `num_threads`
+        field directly and stay at 512 even for their own single-O configs
+        (they keep the 2nd softmax WG).
+        """
+        if self.fa4_config.single_o:
+            return 3 * WARPGROUP_SIZE
+        return self.num_threads
+
+    @always_inline
     def prefer_1q(
         self,
         max_prompt_len: UInt32,
@@ -324,12 +347,6 @@ struct MLAConfig[
     def correction_smem_elements(self) -> Int:
         return self.BM * Self.num_correction_cols
 
-    def num_active_warps_per_group(self) -> Int:
-        return 4
-
-    def num_active_threads_per_group(self) -> Int:
-        return WARP_SIZE * self.num_active_warps_per_group()
-
 
 @always_inline
 def select_mla_prefill_config[
@@ -337,7 +354,7 @@ def select_mla_prefill_config[
     *,
     rope_gmem_dtype: DType,
     rope_mma_dtype: DType,
-    scale_dtype: DType = DType.invalid,
+    scale_dtype_: Optional[DType] = None,
 ](
     *,
     num_q_heads: Int,
@@ -349,7 +366,7 @@ def select_mla_prefill_config[
     qkv_dtype,
     rope_gmem_dtype=rope_gmem_dtype,
     rope_mma_dtype=rope_mma_dtype,
-    scale_dtype=scale_dtype,
+    scale_dtype_=scale_dtype_,
 ]:
     """Selects the supported SM100 MLA-prefill config for these dims.
 
@@ -370,7 +387,7 @@ def select_mla_prefill_config[
         qkv_dtype,
         rope_gmem_dtype=rope_gmem_dtype,
         rope_mma_dtype=rope_mma_dtype,
-        scale_dtype=scale_dtype,
+        scale_dtype_=scale_dtype_,
     ]
     # `bn_floor` == the `MLAConfig.supported()` BN floor (`self.BN >= 64`): the
     # largest MMA_K-aligned BN cap that still admits >= 2 KV stages for a wide V.
@@ -472,6 +489,8 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> Tuple[UInt32, UInt32]:
+        var num_keys: UInt32
+        var start_pos: UInt32
         comptime if _ndbuffer_mha_operand:
             num_keys = UInt32(
                 warp.broadcast(
@@ -500,17 +519,17 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo,) -> MLAPositionSummary:
-        num_keys, start_pos = Self.get_num_keys_and_start_pos[
+        var num_keys, start_pos = Self.get_num_keys_and_start_pos[
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](k_rope_lut, seq_info)
-        score_row = Self.get_score_row(seq_info, start_pos)
+        var score_row = Self.get_score_row(seq_info, start_pos)
         return {num_keys, score_row}
 
 
 struct MLAKVLayouts[
     k_nope_dtype: DType,
     k_rope_dtype: DType,
-    kv_scale_dtype: DType,
+    kv_scale_dtype: Optional[DType],
     config: MLAConfig,
 ]:
     """Comptime layout and size metadata for MLA K/V tiles."""
@@ -715,6 +734,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     # make sure all the fp8_regs are loaded
     named_barrier[64](6)
 
+    var scale: Scalar[KRopeType.scale_dtype]
     comptime for i in range(num_regs // 4):
         var row = UInt32(i * 2) + t_row
         var col = t_col * 4
@@ -798,11 +818,11 @@ struct SM100MLA[
     comptime rope_mma_kind = (
         UMMAKind.KIND_F16 if Self.rope_mma_dtype.is_half_float() else UMMAKind.KIND_F8F6F4
     )
-    # use_fused_kv means we use a fused kv pipeline in shared memory
+    # use_shared_kv means we use a shared kv pipeline in shared memory
     # that forces us to put the k nope and rope in separate regions of smem
     # preventing us from fusing the nope and rope parts of UMMA0
     comptime fused_umma0 = (Self.qkv_dtype == Self.rope_mma_dtype) and (
-        not Self.config.fa4_config.use_fused_kv
+        not Self.config.fa4_config.use_shared_kv
     )
     comptime BK0 = Self.qk_depth if Self.fused_umma0 else Self.nope_depth
 
@@ -879,11 +899,22 @@ struct SM100MLA[
         num_pv_stages=Self.config.fa4_config.num_pv_stages,
         num_kv_stages=Self.config.fa4_config.num_kv_stages,
         use_order_barriers=EnableForcedOrdering,
-        use_fused_kv=Self.config.fa4_config.use_fused_kv,
+        use_shared_kv=Self.config.fa4_config.use_shared_kv,
         pair_cta=Self.config.fa4_config.pair_cta,
         num_q=Self.config.fa4_config.num_q,
         splitk_partitions=Self.config.fa4_config.splitk_partitions,
         BM=Self.config.fa4_config.BM,
+        # MLA is never warp-specialized (use_ws is always False here), but the
+        # param must be threaded so this MiscMBarsType matches the one built by
+        # `SM100AttentionSMem.MiscMBarsType` (same `...use_ws` expression) — an
+        # omitted param defaults to literal `False`, a DIFFERENT type from the
+        # `config.fa4_config.use_ws` expression, and the two would not convert.
+        use_ws=Self.config.fa4_config.use_ws,
+        # Same expression as SM100AttentionSMem.MiscMBarsType, for the same
+        # type-identity reason as use_ws above. MLA always resolves this to
+        # False (rope_depth() > 0), which is what keeps MLA's mbar accounting
+        # byte-identical to cross-P-off.
+        crossp=Self.config.fa4_config.crossp_on(),
     ]
 
     @staticmethod

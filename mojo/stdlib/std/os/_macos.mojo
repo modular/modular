@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.ffi import external_call
 from std.time.time import _CTimeSpec
 
 from .fstat import stat_result
 
 comptime dev_t = Int32
-comptime mode_t = Int16
-comptime nlink_t = Int16
+comptime mode_t = UInt16
+comptime nlink_t = UInt16
 
-comptime __darwin_ino64_t = Int64
-comptime uid_t = Int32
-comptime gid_t = Int32
+comptime __darwin_ino64_t = UInt64
+comptime uid_t = UInt32
+comptime gid_t = UInt32
 comptime off_t = Int64
 comptime blkcnt_t = Int64
 comptime blksize_t = Int32
@@ -65,7 +65,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
     """File generation number."""
     var st_lspare: Int32
     """RESERVED: DO NOT USE!."""
-    var st_qspare: InlineArray[Int64, 2]
+    var st_qspare: Array[Int64, 2]
     """RESERVED: DO NOT USE!."""
 
     def __init__(out self):
@@ -86,7 +86,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
         self.st_flags = 0
         self.st_gen = 0
         self.st_lspare = 0
-        self.st_qspare: InlineArray[Int64, 2] = [0, 0]
+        self.st_qspare: Array[Int64, 2] = [0, 0]
 
     def write_to(self, mut writer: Some[Writer]):
         # fmt: off
