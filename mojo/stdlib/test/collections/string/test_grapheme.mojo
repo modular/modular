@@ -298,20 +298,21 @@ def test_grapheme_slice_empty_ranges() raises:
     assert_equal(s[grapheme=5:5], "")
 
 
-def test_grapheme_slice_out_of_range_clamps() raises:
+def test_grapheme_slice_at_end_boundary() raises:
     var s = StringSlice("Hi")
-    # End past the string clamps to the end.
-    assert_equal(s[grapheme=0:99], "Hi")
-    # Start at/after the end yields empty.
-    assert_equal(s[grapheme=2:99], "")
-    assert_equal(s[grapheme=5:], "")
+    # `start`/`end` exactly at the grapheme count is a valid (empty)
+    # boundary, matching `byte=` slicing. An end past the count, or a start
+    # past the count, aborts instead of clamping (see
+    # test_string_slice_codepoint_grapheme_bounds_abort.mojo).
+    assert_equal(s[grapheme=2:2], "")
+    assert_equal(s[grapheme=2:], "")
+    assert_equal(s[grapheme=0:2], "Hi")
 
 
 def test_grapheme_slice_empty_string() raises:
     var s = StringSlice("")
     assert_equal(s[grapheme=:], "")
     assert_equal(s[grapheme=0:0], "")
-    assert_equal(s[grapheme=0:5], "")
 
 
 def test_grapheme_slice_combining_mark() raises:
@@ -762,6 +763,74 @@ def test_ascii_fast_path_with_control_chars() raises:
     assert_equal(parts[0], "a")
     assert_equal(parts[1], "\t")
     assert_equal(parts[2], "b")
+
+
+# ===----------------------------------------------------------------------=== #
+# Default iteration: __iter__ / __reversed__ yield grapheme clusters
+# ===----------------------------------------------------------------------=== #
+
+
+def check_default_iteration(result: List[String], *, forward: Bool) raises:
+    assert_equal(len(result), 4)
+    if forward:
+        assert_equal(result, ["a", "👨‍👩‍👧‍👦", "🇺🇸", "b"])
+    else:
+        assert_equal(result, ["b", "🇺🇸", "👨‍👩‍👧‍👦", "a"])
+
+
+def test_string_iter_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_slice_iter_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s:
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_literal_iter_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b":
+        result.append(String(g))
+    check_default_iteration(result, forward=True)
+
+
+def test_string_reversed_default_yields_graphemes() raises:
+    var s = String("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_slice_reversed_default_yields_graphemes() raises:
+    var s = StringSlice("a👨‍👩‍👧‍👦🇺🇸b")
+    var result = List[String]()
+    for g in s.__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_literal_reversed_default_yields_graphemes() raises:
+    var result = List[String]()
+    for g in "a👨‍👩‍👧‍👦🇺🇸b".__reversed__():
+        result.append(String(g))
+    check_default_iteration(result, forward=False)
+
+
+def test_string_and_string_slice_default_iteration_empty() raises:
+    var count = 0
+    for _g in String(""):
+        count += 1
+    for _g in StringSlice(""):
+        count += 1
+    assert_equal(count, 0)
 
 
 # ===----------------------------------------------------------------------=== #

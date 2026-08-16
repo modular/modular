@@ -44,10 +44,10 @@ from max.pipelines.modeling.types import (
 from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
+    Usage,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
-from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
@@ -110,7 +110,6 @@ class PixelGenerationPipeline(
         pipeline_model: type[DiffusionPipeline]
         | type[PipelineExecutor[Any, Any, Any]]
         | type[Module[Any, Any]],
-        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -174,10 +173,6 @@ class PixelGenerationPipeline(
             )
             self._module = module_io
         elif issubclass(pipeline_model, PipelineExecutor):
-            # Merge CLI-supplied cache_config into runtime so the executor
-            # receives TaylorSeer / FBCache settings.
-            if cache_config is not None:
-                pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
             self._executor = pipeline_model(
                 manifest=pipeline_config.models,
@@ -192,14 +187,18 @@ class PixelGenerationPipeline(
                 session=session,
                 devices=self._devices,
                 weight_paths=[],
-                cache_config=cache_config
-                or pipeline_config.runtime.denoising_cache,
+                cache_config=pipeline_config.runtime.denoising_cache,
             )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
         """Return the pipeline configuration."""
         return self._pipeline_config
+
+    @property
+    def max_batch_size(self) -> int:
+        """Returns 1: pixel generation pipelines process one request at a time."""
+        return 1
 
     def execute(
         self,
@@ -313,6 +312,12 @@ class PixelGenerationPipeline(
             pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
+            # Usage reports generated pixels as output tokens, counted from
+            # the actual output arrays rather than the requested dimensions.
+            # Prompt text is not counted, so input_tokens stays 0.
+            output_pixels = int(
+                sum(img.shape[0] * img.shape[1] for img in pixel_data)
+            )
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -320,6 +325,11 @@ class PixelGenerationPipeline(
                     OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
+                usage=Usage(
+                    input_tokens=0,
+                    output_tokens=output_pixels,
+                    total_tokens=output_pixels,
+                ),
             )
 
         return responses

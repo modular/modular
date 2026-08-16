@@ -13,8 +13,8 @@
 """Implements the fold operation."""
 
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -104,14 +104,7 @@ def fold[
     comptime stride_h = stride[0]
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        kernel_w,
-        kernel_h,
-        height_col,
-        width_col,
-    )
-    def fold_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def fold_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 4, "fold_fn: rank must be 4"
 
         var batch = Int(idx[0].value())
@@ -158,11 +151,10 @@ def fold[
 
     var dispatch_shape = (N, C, H, W)
     elementwise[
-        func=fold_fn,
         simd_width=1,
         target=target,
         _trace_description="fold_fn",
-    ](dispatch_shape, ctx)
+    ](fold_fn, dispatch_shape, ctx)
 
 
 def fold_shape[

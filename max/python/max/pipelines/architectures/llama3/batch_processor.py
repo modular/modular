@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm.ep import EPCommInitializer
@@ -34,7 +34,6 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.lora import LoRAInputs
 from max.support.algorithm import flatten2d
 
 if TYPE_CHECKING:
@@ -44,15 +43,65 @@ if TYPE_CHECKING:
 class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
     """Ragged batching with pinned host buffers and optional DP / LoRA."""
 
-    def __init__(
+    def _stage_ragged_token_inputs(
         self,
-        config: ArchConfig,
-        runtime: BatchProcessorRuntime,
-    ) -> None:
-        super().__init__(config, runtime)
-        self._execution_input_buffers: dict[
-            tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
-        ] = {}
+        context_batch: Sequence[TextContext],
+        device0: Device,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Stages ragged tokens/offsets into cached device buffers.
+
+        Fresh pinned host staging is allocated every step (never reused) so the
+        next overlap step's host writes can't clobber the in-flight H2D copy.
+        Destination device buffers are cached and reused so captured graphs
+        replay in place.
+
+        Returns:
+            ``(device_tokens, device_row_offsets, host_row_offsets)``; the host
+            offsets are also used by DP/LoRA callers.
+        """
+        batch_size = len(context_batch)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+        pinned = not device0.is_host
+
+        host_buffer_cls = DevicePinnedBuffer if pinned else Buffer
+        host_tokens: Buffer = host_buffer_cls(
+            dtype=DType.int64, shape=(total_seq_len,), device=device0
+        )
+        host_row_offsets: Buffer = host_buffer_cls(
+            dtype=DType.uint32, shape=(batch_size + 1,), device=device0
+        )
+
+        np.cumsum(
+            [0] + [ctx.tokens.active_length for ctx in context_batch],
+            dtype=np.uint32,
+            out=host_row_offsets.to_numpy(),
+        )
+        if context_batch:
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=host_tokens.to_numpy(),
+            )
+
+        if not pinned:
+            # On host there is no separate device memory; the graph reads the
+            # host buffers directly.
+            return host_tokens, host_row_offsets, host_row_offsets
+
+        device_tokens = self._device_input_allocator.alloc(
+            name="ragged_input_tokens",
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+        )
+        device_row_offsets = self._device_input_allocator.alloc(
+            name="ragged_input_row_offsets",
+            dtype=DType.uint32,
+            shape=(batch_size + 1,),
+            device=device0,
+        )
+        device_tokens.inplace_copy_from(host_tokens)
+        device_row_offsets.inplace_copy_from(host_row_offsets)
+        return device_tokens, device_row_offsets, host_row_offsets
 
     def get_symbolic_inputs(
         self,
@@ -82,70 +131,14 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
 
         context_batch = flatten2d(replica_batches)
         device0 = self.runtime.devices[0]
-        pinned = not device0.is_host
 
-        batch_size = len(context_batch)
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            if pinned:
-                host_tokens: Buffer = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-                host_row_offsets: Buffer = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
-
-        input_row_offsets_np = host_row_offsets.to_numpy()
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=input_row_offsets_np,
+        device_tokens, device_row_offsets, _ = self._stage_ragged_token_inputs(
+            context_batch, device0
         )
 
         return_n_logits_tensor = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-        device_tokens.inplace_copy_from(host_tokens)
-        device_row_offsets.inplace_copy_from(host_row_offsets)
 
         if dp > 1:
             data_parallel_splits = Buffer.from_numpy(
@@ -154,7 +147,7 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         else:
             data_parallel_splits = None
 
-        inputs = Llama3Inputs(
+        return Llama3Inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
             return_n_logits=return_n_logits_tensor,
@@ -162,16 +155,6 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
             kv_cache_inputs=kv_cache_inputs,
             data_parallel_splits=data_parallel_splits,
         )
-
-        lora_manager = self.runtime.lora_manager
-        if lora_manager is not None:
-            inputs.lora = LoRAInputs(
-                *lora_manager.get_lora_graph_inputs(
-                    context_batch, input_row_offsets_np, device0
-                )
-            )
-
-        return inputs
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
@@ -230,69 +213,14 @@ class Llama3EpBatchProcessor(Llama3BatchProcessor):
 
         context_batch = flatten2d(replica_batches)
         device0 = self.runtime.devices[0]
-        pinned = not device0.is_host
 
-        batch_size = len(context_batch)
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            if pinned:
-                host_tokens: Buffer = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-                host_row_offsets: Buffer = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
-
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=host_row_offsets.to_numpy(),
+        device_tokens, device_row_offsets, host_row_offsets = (
+            self._stage_ragged_token_inputs(context_batch, device0)
         )
 
         return_n_logits_tensor = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-        device_tokens.inplace_copy_from(host_tokens)
-        device_row_offsets.inplace_copy_from(host_row_offsets)
 
         if dp > 1:
             data_parallel_splits = Buffer.from_numpy(

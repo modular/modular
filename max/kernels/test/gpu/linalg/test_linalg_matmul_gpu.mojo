@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul import matmul
 from layout import TileTensor, CoordLike, Coord, Idx, row_major
 from linalg.matmul.gpu import _matmul_gpu
@@ -88,14 +88,14 @@ def matmul_test_case[
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
 
-    ctx.enqueue_copy(mat_a_dev, mat_a_host.ptr)
-    ctx.enqueue_copy(mat_b_dev, mat_b_host.ptr)
+    ctx.enqueue_copy(mat_a_dev, mat_a_host._storage)
+    ctx.enqueue_copy(mat_b_dev, mat_b_host._storage)
 
     _matmul_gpu[use_tensor_core=True](
         mat_c_tensor, mat_a_tensor, mat_b_tensor, ctx
     )
 
-    ctx.enqueue_copy(mat_c_host.ptr, mat_c_dev)
+    ctx.enqueue_copy(mat_c_host._storage, mat_c_dev)
     ctx.synchronize()
 
     # FIXME: We should run a reference gpu matmul, the reference should also

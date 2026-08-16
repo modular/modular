@@ -16,6 +16,7 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -33,7 +34,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -167,7 +168,7 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = UInt32(cache_len)
 
-        curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
+        var curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
 
         max_context_length = max(max_context_length, curr_context_length)
         max_seq_length = max(max_seq_length, curr_seq_length)
@@ -241,9 +242,9 @@ def execute_kv_cache_ragged_flash_attention[
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
     )
-    paged_lut_set = Set[Int]()
+    var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
-        curr_seq_len = Int(cache_lengths_host_ptr[bs]) + valid_lengths[bs]
+        var curr_seq_len = Int(cache_lengths_host_ptr[bs]) + valid_lengths[bs]
         for block_idx in range(0, ceildiv(curr_seq_len, page_size)):
             var randval = Int(random_ui64(0, UInt64(num_pages - 1)))
             while randval in paged_lut_set:
@@ -308,16 +309,23 @@ def execute_kv_cache_ragged_flash_attention[
         ),
     )
 
-    kv_collection_device = CollectionType(
-        kv_block_layout_tensor,
+    var kv_collection_device = CollectionType(
+        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache
+        # views, which are disjoint kv_idx halves of one `blocks` buffer
+        # sharing its (mutable) origin. The nested-origin exclusivity check
+        # therefore sees that mutable origin alias both the `k`/`v` operands
+        # and the mutable `output`, and rejects the call. Declare the blocks
+        # origin as UnsafeAnyOrigin to opt the collection out of exclusivity
+        # checking. Mirrors test_mha_sm100_1q_sink.mojo.
+        kv_block_layout_tensor.as_unsafe_any_origin(),
         cache_lengths_layout_tensor,
         paged_lut_layout_tensor,
         max_seq_length,
         UInt32(max_context_length),
     )
 
-    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
-    v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
@@ -366,9 +374,7 @@ def execute_kv_cache_ragged_flash_attention[
         dtype,
         Layout.row_major(UNKNOWN_VALUE),
     ](
-        sink_weights_dev_buffer.unsafe_ptr()
-        .as_immutable()
-        .as_unsafe_any_origin(),
+        sink_weights_dev_buffer.unsafe_ptr().as_imm().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_q_heads)
         ),
@@ -376,7 +382,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     if run_benchmark:
 
-        @parameter
+        @__parameter
         @__copy_capture(
             q_device_tensor,
             k_cache_device,
@@ -388,9 +394,8 @@ def execute_kv_cache_ragged_flash_attention[
         )
         @always_inline
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 comptime if local_window_size > 0:
                     comptime assert (
                         not sink
@@ -399,7 +404,7 @@ def execute_kv_cache_ragged_flash_attention[
                         not cross_attention
                     ), "sliding window mask does not support cross_attention"
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                        output_device_tensor.to_layout_tensor(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -417,7 +422,7 @@ def execute_kv_cache_ragged_flash_attention[
                     # `if kv_input_row_offsets:` branch.
                     comptime if sink and cross_attention:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -430,7 +435,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     elif sink:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -442,7 +447,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     elif cross_attention:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -454,7 +459,7 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     else:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            output_device_tensor.to_layout_tensor(),
                             q_device_tensor.to_layout_tensor(),
                             k_cache_device,
                             v_cache_device,
@@ -464,9 +469,9 @@ def execute_kv_cache_ragged_flash_attention[
                             ctx,
                         )
 
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
-        flop_count = flops(
+        var flop_count = flops(
             batch_size,
             num_q_heads,
             seq_len,
@@ -499,7 +504,7 @@ def execute_kv_cache_ragged_flash_attention[
         # we don't look at.
         comptime if local_window_size > 0:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                output_device_tensor.to_layout_tensor(),
                 q_device_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
@@ -510,7 +515,7 @@ def execute_kv_cache_ragged_flash_attention[
             )
         else:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                output_device_tensor.to_layout_tensor(),
                 q_device_tensor.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,

@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+"""KV-cache operand descriptors and TMA tile builders for MHA GPU kernels.
+
+Provides the types and helper functions that describe how Q, K, and V
+tensors (including paged KV caches) are laid out in GPU memory and how
+TMA (tensor memory accelerator) descriptors are constructed for them.
+"""
+
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from kv_cache.types import (
     KVCacheT,
     PagedRowIndices,
@@ -22,7 +29,13 @@ from kv_cache.types import (
     padded_depth,
     swizzle_granularity,
 )
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    PointerStorage,
+    TensorStorage,
+    UNKNOWN_VALUE,
+)
 from layout.tile_layout import (
     Layout as MixedLayout,
     RowMajorLayout,
@@ -33,7 +46,6 @@ from layout.tma_async import (
     SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
-    RaggedTMA3DTile,
     TMATensorTile,
     create_tensor_tile,
     create_tma_tile_gather4,
@@ -83,7 +95,22 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         layout_val: layout_t,
         head_dim_idx: UInt32 = 0,
     ) -> TileTensor[Self.dtype, layout_t, ImmutAnyOrigin]:
-        """Wraps block_paged_ptr in a TileTensor with the caller's layout."""
+        """Wraps block_paged_ptr in a TileTensor with the caller's layout.
+
+        Parameters:
+            layout_t: The `TensorLayout` of the returned `TileTensor`
+                (inferred).
+            tile_size: Tile size in rows used to compute the paged block
+                pointer.
+
+        Args:
+            batch_idx: Batch index of the request.
+            start_tok_idx: Starting token index within the batch.
+            head_idx: KV head index.
+            layout_val: Concrete `layout_t` instance describing the tile
+                layout.
+            head_dim_idx: Index along the head dimension (defaults to 0).
+        """
         return TileTensor[Self.dtype, layout_t, ImmutAnyOrigin](
             ptr=self.block_paged_ptr[tile_size](
                 batch_idx, start_tok_idx, head_idx, head_dim_idx
@@ -155,7 +182,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         range) can then consume the result without any lazy LUT lookup.
 
         `base_alignment` is a comptime promise that
-        `base_kv_row % base_alignment == 0` at runtime — typically
+        `base_kv_row % base_alignment == 0` at runtime: typically
         `mask.start_column_alignment[...]()`. The `PagedKVCache`
         override uses it to pick the largest legal SIMD chunk for its
         LUT vector load and to skip the intra-page divmod when
@@ -166,7 +193,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         single SIMD load from the underlying lookup table.
         """
 
-        @parameter
+        @__parameter
         def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
             return self.row_idx(batch_idx, start_tok_idx)
 
@@ -180,7 +207,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
 
         For paged caches the encoded index is
         ``physical_block * page_size + offset`` and this method returns
-        ``physical_block * stride + offset``.  Non-paged operands return
+        ``physical_block * stride + offset``. Non-paged operands return
         the encoded index unchanged.
         """
         ...
@@ -227,25 +254,6 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `m-major` MMA operations where we don't
         need to mask any extra rows."""
-        ...
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
-        Self.dtype,
-        swizzle_mode,
-        BM=BN,
-        BN=BK,
-    ]:
-        """Creates a TMA tile for efficient GPU memory transfers.
-        This is useful for `mn-major` MMA operations where we need
-        to mask extra rows to avoid adding `NaN` to the output
-        through the MMA reduction."""
         ...
 
     @always_inline
@@ -379,6 +387,10 @@ struct KVCacheMHAOperand[
 
     We can eventually remove this trait and just add it as a sub-trait in the
     KVCacheT type, but we need to solve some cyclic dependencies first.
+
+    Parameters:
+        cache_t: The concrete `KVCacheT` type backing this operand and
+            providing the paged KV cache storage and lookup tables.
     """
 
     comptime dtype = Self.cache_t.dtype
@@ -457,7 +469,12 @@ struct KVCacheMHAOperand[
 
     @always_inline
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
-        """Returns the row idx when viewing the memory as a matrix."""
+        """Returns the row idx when viewing the memory as a matrix.
+
+        Args:
+            batch_idx: Batch index of the request.
+            start_tok_idx: Starting token index within the batch.
+        """
         return self.cache.row_idx(batch_idx, start_tok_idx)
 
     @always_inline
@@ -475,6 +492,19 @@ struct KVCacheMHAOperand[
         other cache types fall through to the scalar default on
         `KVCacheT.populate`. `base_alignment` is the comptime alignment
         of `base_kv_row` (typically `mask.start_column_alignment[...]()`).
+
+        Parameters:
+            BN: Number of rows in the tile to populate.
+            base_alignment: Comptime promise that `base_kv_row %
+                base_alignment == 0` at runtime.
+            pair_cta: Whether K and V run as a paired CTA pair where K
+                covers only a subset of the range (defaults to `False`).
+            is_leader: Whether this CTA is the leader that computes the
+                row indices (defaults to `True`).
+
+        Args:
+            batch_idx: Batch index of the request.
+            base_kv_row: Starting KV row index of the `BN`-row tile.
         """
         return self.cache.populate[BN, base_alignment, pair_cta, is_leader](
             batch_idx, base_kv_row
@@ -482,7 +512,12 @@ struct KVCacheMHAOperand[
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
-        """Convert an encoded sparse index to a physical TMA row."""
+        """Convert an encoded sparse index to a physical TMA row.
+
+        Args:
+            encoded_index: Encoded sparse row index. For paged caches this
+                is `physical_block * page_size + offset`.
+        """
         return self.cache.get_tma_row(encoded_index)
 
     @always_inline
@@ -503,7 +538,24 @@ struct KVCacheMHAOperand[
             swizzle_mode,
         ],
     ) raises:
-        """Creates a TMA tile for efficient GPU memory transfers."""
+        """Creates a TMA tile for efficient GPU memory transfers.
+
+        Parameters:
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            BN: Number of rows loaded per TMA instruction.
+            depth: Full depth of the K/V dimension in global memory, in
+                elements.
+            BK: Block size along the depth dimension in elements (defaults
+                to `padded_depth[Self.dtype, swizzle_mode, depth]()`).
+            fold_chunks: Number of contiguous depth chunks folded into one
+                TMA descriptor (defaults to 1).
+            row_major: When `True` with `fold_chunks >= 2`, use the rank-5
+                chunk-inner box so a tile can span multiple pages (defaults
+                to `False`).
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         # Forward to the underlying cache's implementation
         # TODO: remove `comptime assert` when the `where` clause is enough
         comptime assert (
@@ -534,36 +586,15 @@ struct KVCacheMHAOperand[
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `m-major` MMA operations where we don't
-        need to mask any extra rows."""
-        comptime assert False, "create_scale_tma_tile is not implemented"
+        need to mask any extra rows.
 
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        # Forward to the underlying cache's implementation
-        comptime assert (
-            depth == Self.cache_t.kv_params.head_size
-        ), "depth must match kv_params.head_size"
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0, "BK must be a multiple of swizzle granularity"
-        tma = rebind[type_of(tma)](
-            self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
-        )
+        Parameters:
+            BMN: Number of scale elements loaded per TMA tile row.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
+        comptime assert False, "create_scale_tma_tile is not implemented"
 
     @always_inline
     def create_rope_tma_tile[
@@ -582,6 +613,16 @@ struct KVCacheMHAOperand[
         ],
     ) raises:
         """Delegates to the underlying KVCache to create a BF16 rope TMA tile.
+
+        Parameters:
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            BN: Number of rows loaded per TMA instruction.
+            BK: Block size along the depth dimension in BF16 elements.
+            padded_depth: Byte offset from row start to the BF16 rope data,
+                skipping the FP8 content prefix.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
         """
         tma = self.cache.create_rope_tma_tile[
             swizzle_mode, BN=BN, BK=BK, padded_depth=padded_depth
@@ -611,7 +652,26 @@ struct KVCacheMHAOperand[
             ),
         ],
     ) raises:
-        """Creates a 2D TMA gather4 descriptor for this KV cache operand."""
+        """Creates a 2D TMA gather4 descriptor for this KV cache operand.
+
+        Parameters:
+            tile_width: Number of elements per row to load (box width) in
+                `tma_dtype` elements.
+            tile_stride: Row stride in elements in global memory. Defaults to
+                `tile_width`. Use a larger value when the global row is wider
+                than the portion to load.
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+                Defaults to `SWIZZLE_NONE`.
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4 for backward compatibility.
+            tma_dtype: Data type used for the TMA descriptor. Defaults to
+                `Self.dtype`. When different, the pointer is bitcast.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                `NONE`.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         tma = rebind[type_of(tma)](
             self.cache.create_gather4_tma_tile[
                 tile_height=tile_height,
@@ -647,7 +707,25 @@ struct KVCacheMHAOperand[
         ],
     ) raises:
         """Delegates to the underlying KVCache to create a BF16 rope gather4
-        TMA tile."""
+        TMA tile.
+
+        For the per-tensor rope-aware layout each token row is `padded_depth`
+        FP8 bytes (content) followed by BF16 rope elements.
+
+        Parameters:
+            tile_width: Number of BF16 elements per row in global memory.
+            padded_depth: Byte offset from row start to the BF16 rope data,
+                skipping the FP8 content prefix.
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+                Defaults to `SWIZZLE_NONE`.
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                `NONE`.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         tma = rebind[type_of(tma)](
             self.cache.create_rope_gather4_tma_tile[
                 tile_height=tile_height,
@@ -676,10 +754,14 @@ struct KVCacheScalesMHAOperand[
     This is useful for MLA attention where k_s (per-token scales) are stored
     in the scales field of the k cache with quantization_granularity = head_size.
     The scales have shape [num_blocks, page_size, num_heads, head_dim_granularity].
+
+    Parameters:
+        cache_t: The concrete `KVCacheT` type whose scales field this operand
+            accesses.
     """
 
     comptime dtype = Self.cache_t.scale_dtype
-    comptime scale_dtype = DType.invalid
+    comptime scale_dtype = Self.dtype
     comptime page_size = Self.cache_t.page_size_
     comptime quantization_enabled = Self.cache_t.quantization_enabled
     comptime quantization_granularity = Self.cache_t.quantization_granularity
@@ -800,26 +882,6 @@ struct KVCacheScalesMHAOperand[
         comptime assert False, "create_scale_tma_tile is not implemented"
 
     @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        """TMA not supported for KVCacheScalesMHAOperand."""
-        comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
-
-    @always_inline
     def create_rope_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -864,7 +926,25 @@ struct KVCacheScalesMHAOperand[
             ),
         ],
     ) raises:
-        """Not supported for KVCacheScalesMHAOperand."""
+        """Not supported for KVCacheScalesMHAOperand.
+
+        Parameters:
+            tile_width: Number of elements per row to load (box width) in
+                `tma_dtype` elements.
+            tile_stride: Row stride in elements in global memory. Defaults
+                to `tile_width`.
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+                Defaults to `SWIZZLE_NONE`.
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+                Defaults to 4.
+            tma_dtype: Data type used for the TMA descriptor. Defaults to
+                `Self.dtype`.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                `NONE`.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+        """
         comptime assert False, (
             "create_gather4_tma_tile is not supported for"
             " KVCacheScalesMHAOperand"
@@ -939,8 +1019,8 @@ def _null_scale_tile_tensor[
 
 
 struct LayoutTensorMHAOperand[
-    origin: Origin[mut=False],
-    scale_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    scale_origin: ImmOrigin,
     //,
     dtype_: DType,
     buffer_layout: TensorLayout,
@@ -949,8 +1029,27 @@ struct LayoutTensorMHAOperand[
         shape_types=Coord[].element_types,
         stride_types=Coord[].element_types,
     ],
+    buffer_storage: TensorStorage = PointerStorage[element_width=1],
+    scale_buffer_storage: TensorStorage = PointerStorage[element_width=1],
 ](MHAOperand, TrivialRegisterPassable):
-    """An implementation for contiguous tensor arguments to MHA kernels."""
+    """An implementation for contiguous tensor arguments to MHA kernels.
+
+    Parameters:
+        origin: Origin of the K/V `buffer` `TileTensor` (inferred).
+        scale_origin: Origin of the `scale_buffer` `TileTensor`
+            (inferred).
+        dtype_: Element type of the K/V `buffer`.
+        buffer_layout: `TensorLayout` of the K/V `buffer`.
+        scale_dtype_: Element type of the `scale_buffer` (defaults to
+            `DType.float32`).
+        scale_buffer_layout: `TensorLayout` of the `scale_buffer`. A
+            rank-0 layout disables quantization (defaults to a rank-0
+            `MixedLayout`).
+        buffer_storage: `TensorStorage` of the K/V `buffer` (defaults to
+            `PointerStorage`).
+        scale_buffer_storage: `TensorStorage` of the `scale_buffer`
+            (defaults to `PointerStorage`).
+    """
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = Self.scale_dtype_
@@ -971,9 +1070,14 @@ struct LayoutTensorMHAOperand[
     )
     comptime quantization_enabled: Bool = Self.scale_buffer_layout.rank != 0
 
-    var buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin]
+    var buffer: TileTensor[
+        Self.dtype, Self.buffer_layout, Self.origin, Storage=Self.buffer_storage
+    ]
     var scale_buffer: TileTensor[
-        Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+        Self.scale_dtype,
+        Self.scale_buffer_layout,
+        Self.scale_origin,
+        Storage=Self.scale_buffer_storage,
     ]
     comptime device_type: AnyType = Self
 
@@ -988,9 +1092,17 @@ struct LayoutTensorMHAOperand[
 
     def __init__(
         out self,
-        buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin],
+        buffer: TileTensor[
+            Self.dtype,
+            Self.buffer_layout,
+            Self.origin,
+            Storage=Self.buffer_storage,
+        ],
         scale_buffer: TileTensor[
-            Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+            Self.scale_dtype,
+            Self.scale_buffer_layout,
+            Self.scale_origin,
+            Storage=Self.scale_buffer_storage,
         ] = _null_scale_tile_tensor[
             Self.scale_dtype, Self.scale_buffer_layout
         ](),
@@ -1018,7 +1130,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1038,7 +1150,7 @@ struct LayoutTensorMHAOperand[
                 Int(head_dim_idx // Self.quantization_granularity),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def load_scale[
@@ -1122,7 +1234,7 @@ struct LayoutTensorMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[2]()),
         )
@@ -1159,32 +1271,6 @@ struct LayoutTensorMHAOperand[
         ](ctx, scale_tensor)
 
     @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
-        var num_heads = Int(self.buffer.dim[2]())
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
-
-    @always_inline
     def create_rope_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -1200,7 +1286,20 @@ struct LayoutTensorMHAOperand[
             swizzle_mode,
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand."""
+        """Not supported for LayoutTensorMHAOperand.
+
+        Parameters:
+            swizzle_mode: TMA swizzle mode for shared memory access
+                pattern.
+            BN: Number of rows loaded per TMA instruction.
+            BK: Block size along the depth dimension in BF16 elements.
+            padded_depth: Byte offset from row start to the BF16 rope
+                data, skipping the FP8 content prefix.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA
+                descriptor.
+        """
         comptime assert (
             False
         ), "create_rope_tma_tile is not supported for LayoutTensorMHAOperand"
@@ -1229,7 +1328,27 @@ struct LayoutTensorMHAOperand[
             ),
         ],
     ) raises:
-        """Creates a 2D TMA gather4 descriptor for this contiguous operand."""
+        """Creates a 2D TMA gather4 descriptor for this contiguous operand.
+
+        Parameters:
+            tile_width: Number of elements per row to load (box width)
+                in `tma_dtype` elements.
+            tile_stride: Row stride in elements in global memory.
+                Defaults to `tile_width`. Use a larger value when the
+                global row is wider than the portion to load.
+            swizzle_mode: TMA swizzle mode for shared memory access
+                pattern. Defaults to `SWIZZLE_NONE`.
+            tile_height: Number of rows in the tile. Must be a multiple
+                of 4. Defaults to 4 for backward compatibility.
+            tma_dtype: Data type used for the TMA descriptor. Defaults
+                to `Self.dtype`. When different, the pointer is bitcast.
+            l2_promotion: L2 cache promotion hint for TMA loads.
+                Defaults to `NONE`.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA
+                descriptor.
+        """
         # View the 4D buffer as a 2D matrix [batch*seq, tile_width]
         var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
         tma = create_tma_tile_gather4[
@@ -1264,7 +1383,24 @@ struct LayoutTensorMHAOperand[
             ),
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand."""
+        """Not supported for LayoutTensorMHAOperand.
+
+        Parameters:
+            tile_width: Number of BF16 elements per row in global
+                memory.
+            padded_depth: Byte offset from row start to the BF16 rope
+                data, skipping the FP8 content prefix.
+            swizzle_mode: TMA swizzle mode for shared memory access
+                pattern. Defaults to `SWIZZLE_NONE`.
+            tile_height: Number of rows in the tile. Must be a multiple
+                of 4. Defaults to 4.
+            l2_promotion: L2 cache promotion hint for TMA loads.
+                Defaults to `NONE`.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA
+                descriptor.
+        """
         comptime assert False, (
             "create_rope_gather4_tma_tile is not supported for"
             " LayoutTensorMHAOperand"
@@ -1284,13 +1420,13 @@ struct LayoutTensorMHAOperand[
 
 
 struct RaggedMHAOperand[
-    origin: Origin[mut=False],
-    cache_origin: Origin[mut=False],
+    origin: ImmOrigin,
+    cache_origin: ImmOrigin,
     //,
     dtype_: DType,
     layout: TensorLayout,
     cache_layout: TensorLayout,
-    scale_dtype_: DType = DType.invalid,
+    scale_dtype_: DType = dtype_,
     scale_layout: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
@@ -1380,7 +1516,7 @@ struct RaggedMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        global_token_idx = Int(
+        var global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer.ptr + self.buffer.layout[
@@ -1392,7 +1528,7 @@ struct RaggedMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr.as_immutable().as_unsafe_any_origin()
+        return ret_ptr.as_imm().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
@@ -1486,7 +1622,7 @@ struct RaggedMHAOperand[
             row_major=row_major,
         ](
             ctx,
-            self.buffer.ptr.as_immutable().as_unsafe_any_origin(),
+            self.buffer.ptr.as_imm().as_unsafe_any_origin(),
             rows,
             Int(self.buffer.dim[1]()),
         )
@@ -1545,32 +1681,6 @@ struct RaggedMHAOperand[
                 "scale_layout must be 2D(per token) or 3D(per token per head)"
                 " tensor."
             )
-
-    @always_inline
-    def create_ragged_tma_tile[
-        swizzle_mode: TensorMapSwizzle,
-        *,
-        BN: Int,
-        depth: Int,
-        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
-    ](
-        self,
-        ctx: DeviceContext,
-        out tma: RaggedTMA3DTile[
-            Self.dtype,
-            swizzle_mode,
-            BM=BN,
-            BN=BK,
-        ],
-    ) raises:
-        comptime assert (
-            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
-        ) == 0
-        var rows = Int(self.buffer.dim[0]())  # total tokens
-        var num_heads = Int(self.buffer.dim[1]())
-        tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
-        )
 
     @always_inline
     def create_rope_tma_tile[

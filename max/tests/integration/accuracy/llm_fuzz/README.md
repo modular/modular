@@ -252,9 +252,9 @@ model_config.py      HuggingFace config fetch, model profiles
 __main__.py          Module entry point (python -m fuzz)
 scenarios/
   __init__.py        Base class, auto-discovery registry (recursive), CircuitBreaker
-  s01-s24_*.py       Fuzz scenarios (adversarial, crash-focused)
+  *.py               Fuzz scenarios (adversarial, crash-focused)
   validation/        Correctness validation (any OpenAI-compatible endpoint)
-    v01-v07_*.py     Tool calling, structured output, concurrency, production
+    *.py             Tool calling, structured output, concurrency, production
   models/            Model-specific test suites
     kimi_*.py        Kimi K2.5 battle, 3am edge cases, production readiness
     glm_*.py         GLM-5.1 battle, 3am edge cases
@@ -306,8 +306,9 @@ Fails if error rate degrades or p99 latency grows 3x from baseline.
 ### Fuzz scenario (raw HTTP)
 
 ```python
-# scenarios/s99_my_custom.py
+# scenarios/my_custom.py
 from scenarios import BaseScenario, register_scenario, Verdict
+
 
 @register_scenario
 class MyCustomScenario(BaseScenario):
@@ -317,7 +318,9 @@ class MyCustomScenario(BaseScenario):
 
     async def run(self, client, config):
         results = []
-        resp = await client.post_json({"model": config.model, "messages": [...]})
+        resp = await client.post_json(
+            {"model": config.model, "messages": [...]}
+        )
         results.append(self.make_result("my_custom", "test_name", Verdict.PASS))
         return results
 ```
@@ -325,10 +328,11 @@ class MyCustomScenario(BaseScenario):
 ### Validation scenario (OpenAI SDK)
 
 ```python
-# scenarios/validation/v99_my_validation.py
+# scenarios/validation/my_validation.py
 import asyncio
 from scenarios import BaseScenario, register_scenario, Verdict
 from helpers import make_tool, collect_stream
+
 
 @register_scenario
 class MyValidation(BaseScenario):
@@ -344,18 +348,33 @@ class MyValidation(BaseScenario):
         loop = asyncio.get_event_loop()
 
         def _test():
-            tools = [make_tool("get_weather", {"type": "object", "properties": {"city": {"type": "string"}}})]
+            tools = [
+                make_tool(
+                    "get_weather",
+                    {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                    },
+                )
+            ]
             return validator.tc_chat_stream(
                 [{"role": "user", "content": "Weather in Paris"}],
-                tools, tool_choice="required",
+                tools,
+                tool_choice="required",
             )
 
         try:
             result = await loop.run_in_executor(None, _test)
             # Validate result...
-            results.append(self.make_result(self.name, "test_name", Verdict.PASS))
+            results.append(
+                self.make_result(self.name, "test_name", Verdict.PASS)
+            )
         except Exception as e:
-            results.append(self.make_result(self.name, "test_name", Verdict.ERROR, error=str(e)))
+            results.append(
+                self.make_result(
+                    self.name, "test_name", Verdict.ERROR, error=str(e)
+                )
+            )
         return results
 ```
 

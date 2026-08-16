@@ -13,7 +13,7 @@ path or a registered variant that maps to a recipe in `MODEL_RECIPES`
 ./bazelw run //:smoke-test -- meta-llama/Llama-3.2-1B-Instruct
 
 # A registered, recipe-backed variant, with fewer questions for a faster loop:
-./bazelw run //:smoke-test -- google/gemma-4-31B-it__tieredkv \
+./bazelw run //:smoke-test -- google/gemma-4-31B-it__tuned \
   --num-questions 100 --max-concurrent 8
 ```
 
@@ -23,6 +23,30 @@ with a chat template (typically `-instruct`, `-it`, `-chat`) are supported.
 
 The first local run compiles the model graph, which can take several minutes for
 a large model (subsequent runs reuse the compile cache).
+
+## Task overrides
+
+By default the harness runs `gsm8k_cot_llama` (plus `chartqa` for vision
+models), which is what automated CI uses. To run an eval that isn't in that
+automated CI set — say a long-context sweep — pass `--override-tasks <task>`,
+which selects the tasks you name instead of the model-derived ones. Some tasks
+are parameterized at runtime via `--lm-eval-metadata '<json>'`, which is
+forwarded verbatim to lm-eval's `--metadata`; for example, babilong's context
+length is set with `--lm-eval-metadata '{"max_seq_lengths": "16k"}'`.
+
+`--override-tasks` accepts only a curated allowlist (enforced by
+`click.Choice`); arbitrary lm-eval task names are rejected. We restrict it
+because not every lm-eval task runs cleanly here — some need optional
+dependencies absent from the bazel build, and some use output types the
+chat-completions endpoint can't serve. The allowlisted tasks are the ones we've
+confirmed work end-to-end and give a meaningful accuracy signal.
+
+```bash
+# babilong two-fact reasoning (qa2) at 16k context:
+./bazelw run //:smoke-test -- <model> \
+  --override-tasks babilong_qa2 \
+  --lm-eval-metadata '{"max_seq_lengths": "16k"}'
+```
 
 ## Gotchas when running locally
 
@@ -67,8 +91,8 @@ optimization and does not affect accuracy. Try one of:
 
 ### KV-connector recipes force connector-only prefix hits
 
-For any recipe with a `kv_connector` (`local` or `tiered`), the harness sets
-`MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
+For any recipe with a `kv_connector` (`tiered` or `rust_tiered`), the harness
+sets `MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
 disables the device prefix cache so every prefix-cache hit is served through the
 connector — intentional, so the test exercises the CPU/disk offload path it is
 meant to cover. Per-step connector metrics (`D2H`/`H2D` blocks, disk

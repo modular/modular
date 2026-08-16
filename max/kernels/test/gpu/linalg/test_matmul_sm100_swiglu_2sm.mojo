@@ -58,8 +58,8 @@ from std.math import exp, recip
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -166,8 +166,8 @@ def test_swiglu[
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_buf)
     ctx.enqueue_copy(b_device, b_host_buf)
@@ -184,7 +184,9 @@ def test_swiglu[
     ctx.enqueue_copy(full_host_buf, full_device)
     ctx.synchronize()
 
-    swiglu_reference(full_host.ptr, c_ref.ptr.as_unsafe_any_origin(), M, N)
+    swiglu_reference(
+        full_host._storage, c_ref._storage.as_unsafe_any_origin(), M, N
+    )
 
     var c_tensor = TileTensor(c_device, c_shape)
     matmul_swiglu_dispatch_sm100[config](c_tensor, a_tensor, b_tensor, ctx)
@@ -193,8 +195,8 @@ def test_swiglu[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_ref.ptr,
+        c_host._storage,
+        c_ref._storage,
         c_size,
         atol=1e-2,
         rtol=1e-2,

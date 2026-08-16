@@ -45,17 +45,30 @@ Use the following command to install the {tooltipNightly}:
 
 1. If needed, install `uv`:
 
-    ```sh
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-2. Create a project and install Mojo:
+2. Install Mojo:
 
-    ```bash
-    uv init temperature-analyzer && cd temperature-analyzer
-    uv venv && source .venv/bin/activate
-    uv add mojo  --index https://whl.modular.com/nightly/simple/ \
-      --prerelease allow    ```
+   ```sh
+   uv pip install mojo \
+        --index https://whl.modular.com/nightly/simple/ \
+        --prerelease allow
+   ```
+
+   Or create a project and install Mojo:
+
+   ```sh
+   uv init temperature-analyzer
+   cd temperature-analyzer
+   uv add mojo \
+       --index https://whl.modular.com/nightly/simple/ \
+       --prerelease allow
+   ```
+
+These commands install the nightly build, which isn't complete and might
+have new bugs.
 
 </TabItem>
 
@@ -63,19 +76,20 @@ Use the following command to install the {tooltipNightly}:
 
 1. If needed, install `pixi`:
 
-    ```sh
-    curl -fsSL https://pixi.sh/install.sh | sh
-    ```
+   ```sh
+   curl -fsSL https://pixi.sh/install.sh | sh
+   ```
 
 2. Create a project and install Mojo:
 
-    ```bash
-    pixi init temperature-analyzer \
-    -c https://conda.modular.com/max-nightly/ -c conda-forge
-    cd temperature-analyzer
-    pixi add mojo
-    pixi shell
-    ```
+   ```sh
+   pixi init temperature-analyzer \
+       -c https://conda.modular.com/max-nightly/ \
+       -c conda-forge
+   cd temperature-analyzer
+   pixi add mojo
+   pixi shell
+   ```
 
 </TabItem>
 </Tabs>
@@ -95,31 +109,35 @@ Use the following command to install the {tooltipStable}:
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. Create a project and install Mojo:
+2. Install Mojo:
 
    ```sh
-   uv init temperature-analyzer && cd temperature-analyzer
-   uv venv && source .venv/bin/activate
-   uv add mojo --prerelease allow
+   uv pip install mojo
    ```
 
-   Note that the `--prerelease allow` flag is required only when installing beta
-   (or dev) builds.
+   Or create a project and install Mojo:
+
+   ```sh
+   uv init temperature-analyzer
+   cd temperature-analyzer
+   uv add mojo
+   ```
 
 </TabItem>
 <TabItem value="pixi" label="pixi">
 
 1. If needed, install `pixi`:
 
-    ```sh
-    curl -fsSL https://pixi.sh/install.sh | sh
-    ```
+   ```sh
+   curl -fsSL https://pixi.sh/install.sh | sh
+   ```
 
 2. Create a project and install Mojo:
 
    ```sh
    pixi init temperature-analyzer \
-       -c https://conda.modular.com/max/  -c conda-forge
+       -c https://conda.modular.com/max/ \
+       -c conda-forge
    cd temperature-analyzer
    pixi add mojo
    pixi shell
@@ -143,7 +161,7 @@ def main():
 
 Run it:
 
-```bash
+```sh
 mojo analyzer.mojo
 ```
 
@@ -160,7 +178,7 @@ Update your file to add temperature data:
 def main():
     print("Temperature Analyzer")
 
-    # Square brackets tell Mojo the `List` type at compile time
+    # [Float64] tells Mojo the `List` type at compile time
     var temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
 
     print("Recorded", len(temps), "temperatures")
@@ -191,9 +209,10 @@ Add this function above `main()` to calculate the average temperature:
 
 ```mojo
 def calculate_average(temps: List[Float64]) -> Float64:
-    var total: Float64 = 0.0
-    for index in range(len(temps)):
-        total += temps[index]
+    # The 0.0 floating point literal defaults to Float64
+    var total = 0.0
+    for temp in temps:
+        total += temp
     return total / Float64(len(temps))
 
 def main():
@@ -204,8 +223,10 @@ Add to the end of `main()` to call the function:
 
 ```mojo
     var avg = calculate_average(temps)
-    print(t"Average: {avg}°C")
+    print(t"Average: {round(avg, 2)}°C")
 ```
+
+This code uses `round()` to limit the average to two decimal places.
 
 ## Conditionals
 
@@ -230,9 +251,9 @@ def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:  # Empty list of temperatures
         raise Error("No temperature data")
 
-    var total: Float64 = 0.0
-    for index in range(len(temps)):
-        total += temps[index]
+    var total = 0.0
+    for temp in temps:
+        total += temp
     return total / Float64(len(temps))
 ```
 
@@ -257,7 +278,7 @@ In `main()`, wrap your code in `try-except` for error handling:
 ```mojo
     try:
         var avg = calculate_average(temps)
-        print(t"Average: {avg}°C")
+        print(t"Average: {round(avg, 2)}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -269,7 +290,7 @@ In `main()`, wrap your code in `try-except` for error handling:
         print("Error:", e)
 ```
 
-To test the error, replace `temps` with `List[Float64]()`.
+To test the error, replace `temps` with `[]`.
 Confirm that your app errors with "No temperature data".
 
 ## Python integration
@@ -279,26 +300,14 @@ Add statistics with Python's numpy. First, install it:
 <Tabs groupId="install">
 
 <TabItem value="uv" label="uv" default>
-```bash
+```sh
 uv pip install numpy
 ```
 </TabItem>
 
 <TabItem value="pixi" label="pixi">
-```bash
+```sh
 pixi add numpy
-```
-</TabItem>
-
-<TabItem value="pip" label="pip">
-```bash
-pip install numpy
-```
-</TabItem>
-
-<TabItem value="conda" label="conda">
-```bash
-conda install numpy
 ```
 </TabItem>
 
@@ -308,14 +317,16 @@ Then, add the following imports at the top of your file:
 
 ```mojo
 from std.python import Python, PythonObject
+from std.python.numpy import copy_to_numpy_array
 ```
 
 Now, calculate Python stats at the end of the `try` block in `main()`:
 
 ```mojo
-        var np = Python.import_module("numpy")
-        var pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
-        print("Temperature standard deviation:", np.std(pytemps))
+var np = Python.import_module("numpy")
+var pytemps = copy_to_numpy_array(temps)
+var std_dev = np.std(pytemps)
+print("Temperature standard deviation:", std_dev)
 ```
 
 ## Final code
@@ -324,15 +335,18 @@ Your complete `analyzer.mojo`:
 
 ```mojo
 from std.python import Python, PythonObject
+from std.python.numpy import copy_to_numpy_array
+
 
 def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:
         raise Error("No temperature data")
 
-    var total: Float64 = 0.0
-    for index in range(len(temps)):
-        total += temps[index]
+    var total = 0.0
+    for temp in temps:
+        total += temp
     return total / Float64(len(temps))
+
 
 def main():
     print("Temperature Analyzer")
@@ -344,7 +358,7 @@ def main():
 
     try:
         var avg = calculate_average(temps)
-        print(t"Average: {avg}°C")
+        print(t"Average: {round(avg, 2)}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -354,9 +368,9 @@ def main():
             print("Status: Cool week")
 
         var np = Python.import_module("numpy")
-        var pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
-        print("Temperature standard deviation:", np.std(pytemps))
-        _ = pytemps^ # Allow the Python object to deallocate
+        var pytemps = copy_to_numpy_array(temps)
+        var std_dev = np.std(pytemps)
+        print("Temperature standard deviation:", std_dev)
     except e:
         print("Error:", e)
 ```
@@ -372,7 +386,7 @@ If you use AI coding assistants, the `mojo-syntax` skill keeps you aligned
 with the latest nightly language releases. Stay up to date with Mojo's
 rapid development:
 
-```bash
+```sh
 npx skills add modular/skills
 ```
 

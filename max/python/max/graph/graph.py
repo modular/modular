@@ -278,6 +278,26 @@ class KernelLibrary:
         else:
             self._analysis.verify_custom_op(custom_op)
 
+    def has_shape_function(self, kernel: str) -> bool:
+        """Returns whether *kernel* registers a shape function.
+
+        A kernel that registers no shape function has no way to compute its
+        output shape at run time, so the graph compiler rejects a
+        data-dependent output dimension declared for it.
+
+        Args:
+            kernel: The registered name of the kernel to check.
+
+        Returns:
+            ``True`` if a shape function is registered for *kernel*.
+
+        Raises:
+            KeyError: If no kernel named *kernel* is in the library.
+        """
+        if kernel not in self:
+            raise KeyError(f"no kernel named {kernel!r} in the kernel library")
+        return self._analysis.has_shape_function(kernel)
+
 
 _default_custom_extensions: tuple[Path, ...] = ()
 
@@ -405,8 +425,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
     )
     names = [parameter.name for parameter in result_parameters]
-    # Track any newly declared parameters.
-    if new_params := dict.fromkeys(names - params.keys()):
+    # Track newly declared parameters. Not `names - params.keys()`: set order
+    # is per-process hash order and lands in the MEF cache key (MXF-584).
+    if new_params := dict.fromkeys(n for n in names if n not in params):
         params.update(new_params)
         si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         # We can't overload the setter yet, so the interface annotation is wrong
@@ -430,14 +451,41 @@ class Module:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, Module, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         module = Module()
-        with Graph("encoder", input_types=encoder_inputs, module=module) as encoder:
-            ...
-        with Graph("decoder", input_types=decoder_inputs, module=module) as decoder:
-            ...
-        models = session.load_all(module, weights_registry=weights)
-        encoder = models[encoder.name]
-        decoder = models[decoder.name]
+        with Graph("encoder", input_types=[], module=module) as encoder:
+            encoder.output(
+                ops.constant(
+                    np.array([1.0, 2.0, 3.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+        with Graph("decoder", input_types=[], module=module) as decoder:
+            decoder.output(
+                ops.constant(
+                    np.array([4.0, 5.0, 6.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+
+        models = InferenceSession(devices=[device]).load_all(module)
+        (enc_out,) = models[encoder.name].execute()
+        (dec_out,) = models[decoder.name].execute()
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(enc_out.to_numpy(), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(dec_out.to_numpy(), [4.0, 5.0, 6.0])
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,
@@ -600,7 +648,7 @@ class Graph:
             include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
-            to ``.mojoc``/``.mojopkg`` or ``.mojo`` sources with custom ops.
+            to ``.mojoc`` or ``.mojo`` sources with custom ops.
         kernel_library: Optional pre-built kernel library to use. Defaults to
             ``None`` (a new library is created from ``custom_extensions`` if
             needed).
@@ -648,6 +696,7 @@ class Graph:
         kernel_library: KernelLibrary | None = None,
         module: Module | None = None,
         strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
+        is_device_graph: bool = False,
         **kwargs,
     ) -> None:
         self.name = name
@@ -733,6 +782,10 @@ class Graph:
 
         self._subgraphs = {}
 
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
+
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
             # constructor.
@@ -776,6 +829,7 @@ class Graph:
         path: Path | None = None,
         custom_extensions: Iterable[Path] = [],
         devices: Iterable[DeviceRef] = [],
+        is_device_graph: bool = False,
     ) -> Graph:
         """Creates a reusable subgraph for the current graph.
 
@@ -830,9 +884,11 @@ class Graph:
                 type is added automatically for operation sequencing.
             path: An optional path to a saved subgraph definition to load
                 from disk.
-            custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
+            custom_extensions: Paths to custom op libraries (``.mojoc``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
+            is_device_graph: Should the subgraph be synthesized to a device graph
+                for device graph based execution.
 
         Returns:
             A :class:`Graph` instance registered as a subgraph of this graph.
@@ -845,6 +901,7 @@ class Graph:
             # *args,
             custom_extensions=custom_extensions,
             module=self.module,
+            is_device_graph=is_device_graph,
             # **kwargs,
         )
 
@@ -852,6 +909,10 @@ class Graph:
         op = Operation._from_cmlir(subgraph._mlir_op)
         assert isinstance(op, _mo.GraphOp)
         op.is_subgraph = builtin.UnitAttr()
+
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
 
         # Union callee's existing params  with the caller's params.
         # This may over-declare but is deterministic and comprehensive.
@@ -1139,7 +1200,11 @@ class Graph:
             except Exception:
                 model = "unknown"
             info = _DeviceInfoAttr(
-                label=dev.label, api=dev.api, arch=arch, model=model
+                label=dev.label,
+                api=dev.api,
+                arch=arch,
+                model=model,
+                tile_based_fusion=False,
             )
             entries[dev.label] = mlir.Attribute._CAPICreate(info._CAPIPtr)  # type: ignore[attr-defined]
         module.attributes[_DEVICE_INFO_MAPPING_ATTR_NAME] = mlir.DictAttr.get(

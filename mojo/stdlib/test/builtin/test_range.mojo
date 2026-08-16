@@ -44,13 +44,16 @@ def test_range_with_int_params_declaration_order() raises:
     assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
 
 
-def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int) raises:
+def _test_range_iter_bounds[
+    I: Iterator
+](var range_iter: I, len: Int) raises where conforms_to(I.Element, Deinitable):
     var iter = range_iter^
+
     for i in range(len):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
         assert_equal(len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -139,9 +142,11 @@ def test_range_len() raises:
 
 
 def test_range_len_uint_maxuint() raises:
-    assert_equal(
-        range(UInt(0), UInt.MAX).__len__(), UInt.MAX, "len(range(0, UInt.MAX))"
-    )
+    # `__len__()` returns `Int`. A count that exceeds `Int.MAX` asserts rather
+    # than clamping, so it can't be exercised here under `-D ASSERT=all`; the
+    # clamped size hint for that case is covered by
+    # `test_larger_than_int_max_bounds`. An empty range still reports 0 without
+    # overflowing.
     assert_equal(
         range(UInt.MAX, UInt(0), UInt(1)).__len__(),
         0,
@@ -263,7 +268,6 @@ def test_range_reversed() raises:
     )
 
     # Test a reversed range's sum and length compared to the original
-    @parameter
     def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
         var iforward = forward.__iter__()
@@ -285,6 +289,152 @@ def test_range_reversed() raises:
 
     for end in range(10, 13).__reversed__():
         test_sum_reversed(20, end, -3)
+
+
+def test_range_reversed_float() raises:
+    # `reversed()` must equal forward in reverse order, element-for-element,
+    # exact even for steps not representable in binary.
+    def assert_reversed_matches(
+        start: Float64, end: Float64, step: Float64
+    ) raises:
+        var forward = List[Float64]()
+        for x in range(start, end, step):
+            forward.append(x)
+        var backward = List[Float64]()
+        for x in reversed(range(start, end, step)):
+            backward.append(x)
+        assert_equal(len(backward), len(forward))
+        for i in range(len(forward)):
+            assert_equal(backward[i], forward[len(forward) - 1 - i])
+
+    # Exact-binary steps.
+    assert_reversed_matches(5.0, 0.0, -0.5)  # fractional negative step
+    assert_reversed_matches(0.0, 5.0, 0.5)  # ascending fractional step
+    assert_reversed_matches(5.0, 0.6, -0.5)  # end not aligned to the grid
+    assert_reversed_matches(0.0, 10.0, 3.0)  # step magnitude greater than one
+    assert_reversed_matches(0.0, 5.0, -0.5)  # empty: step points the wrong way
+    # Steps not exactly representable in binary.
+    assert_reversed_matches(0.0, 1.0, 0.1)
+    assert_reversed_matches(1.0, 0.0, -0.1)
+    assert_reversed_matches(2.0, -1.0, -0.3)
+
+    # Accumulation hazards: hundreds to thousands of steps.
+    assert_reversed_matches(0.0, 100.0, 0.1)  # ~1000 steps
+    assert_reversed_matches(-5.0, 5.0, 0.1)  # crosses zero, ~100 steps
+    assert_reversed_matches(0.0, 10.0, 0.3)  # repr-nasty step
+    assert_reversed_matches(10.0, 0.0, -0.7)  # descending repr-nasty step
+
+    # Spot-check the exact reversed values for the originally reported case.
+    var expected: List[Float64] = [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0,
+        4.5,
+        5.0,
+    ]
+    var actual = List[Float64]()
+    for x in reversed(range(5.0, 0.0, -0.5)):
+        actual.append(x)
+    assert_equal(actual, expected)
+
+
+def test_range_float_forward_count() raises:
+    # Non-representable step used to drift to 11 elements for [0, 1) by 0.1.
+    var values = List[Float64]()
+    for x in range(0.0, 1.0, 0.1):
+        values.append(x)
+    assert_equal(len(values), 10)
+    assert_equal(values[0], 0.0)
+    assert_equal(values[1], 0.1)
+
+
+def test_range_float_zero_step() raises:
+    # Zero step is empty both directions, not an infinite loop.
+    var count = 0
+    for _ in range(5.0, 0.0, 0.0):
+        count += 1
+    assert_equal(count, 0)
+    var reverse_count = 0
+    for _ in reversed(range(5.0, 0.0, 0.0)):
+        reverse_count += 1
+    assert_equal(reverse_count, 0)
+
+
+def _test_range_int_zero_step[dtype: DType]() raises:
+    comptime scalar = Scalar[dtype]
+
+    # A zero step has no direction, so the range is empty whichever way the
+    # bounds point. `start > end` used to step in place forever for signed
+    # dtypes, and `start < end` for unsigned ones.
+    var forward = 0
+    for _ in range(scalar(0), scalar(3), scalar(0)):
+        forward += 1
+    assert_equal(forward, 0)
+
+    var backward = 0
+    for _ in range(scalar(3), scalar(0), scalar(0)):
+        backward += 1
+    assert_equal(backward, 0)
+
+    # `len()` and `bounds()` used to divide by the zero step.
+    assert_equal(range(scalar(3), scalar(0), scalar(0)).__len__(), 0)
+    assert_equal(range(scalar(0), scalar(3), scalar(0)).__len__(), 0)
+    var lower, upper = range(scalar(3), scalar(0), scalar(0)).bounds()
+    assert_equal(lower, 0)
+    assert_equal(upper.value(), 0)
+
+
+def test_range_int_zero_step() raises:
+    comptime for dtype in DTYPES:
+        _test_range_int_zero_step[dtype]()
+
+    var count = 0
+    for _ in range(3, 0, 0):
+        count += 1
+    assert_equal(count, 0)
+
+    # `__reversed__` used to take the modulus of the zero step.
+    var reverse_count = 0
+    for _ in reversed(range(3, 0, 0)):
+        reverse_count += 1
+    assert_equal(reverse_count, 0)
+
+
+def test_range_int_zero_step_comptime() raises:
+    # Unrolling a zero-step range used to hang the compiler forever.
+    var count = 0
+    comptime for _ in range(3, 0, 0):
+        count += 1
+    assert_equal(count, 0)
+
+    comptime for _ in range(0, 3, 0):
+        count += 1
+    assert_equal(count, 0)
+
+
+def test_range_float_grid() raises:
+    # On-grid `end` is excluded, no `// + 1` overcount (1.0 = 4 * 0.25).
+    var v = List[Float64]()
+    for x in range(0.0, 1.0, 0.25):
+        v.append(x)
+    assert_equal(v, [0.0, 0.25, 0.5, 0.75])
+
+
+def test_range_float_empty() raises:
+    # Wrong-direction ranges are empty for either step sign.
+    var forward = 0
+    for _ in range(5.0, 0.0, 0.5):  # positive step, end < start
+        forward += 1
+    assert_equal(forward, 0)
+    var backward = 0
+    for _ in range(0.0, 5.0, -0.5):  # negative step, end > start
+        backward += 1
+    assert_equal(backward, 0)
 
 
 def test_indexing() raises:
@@ -310,7 +460,7 @@ def test_range_bounds() raises:
 
 
 def test_scalar_range() raises:
-    r = range(UInt8(2), 16, 4)
+    var r = range(UInt8(2), 16, 4)
     assert_equal(r.start, 2)
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
@@ -319,9 +469,9 @@ def test_scalar_range() raises:
         for value in values:
             list.append(value.copy())
 
-    expected_elements = List[UInt8]()
+    var expected_elements = List[UInt8]()
     append_many(expected_elements, 2, 6, 10, 14)
-    actual_elements = List[UInt8]()
+    var actual_elements = List[UInt8]()
     for e in r:
         actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)
@@ -350,9 +500,8 @@ def test_range_compile_time() raises:
     comptime for i in range(Int16(1), 10, 2):
         assert_true(i >= 0)
 
-    # TODO(MSTDL-2321): `_StridedScalarRange` does not conform to `ReversibleRange`
-    # comptime for i in reversed(range(Int16(1), 10, 2)):
-    #     assert_true(i >= 0)
+    comptime for i in reversed(range(Int16(1), 10, 2)):
+        assert_true(i >= 0)
 
     comptime for i in range(Int64(10), 1, -2):
         assert_true(i > 0)

@@ -13,8 +13,6 @@
 
 """Figure 15.6 - Matrix multiplication compute function."""
 
-from std.gpu.memory import AddressSpace
-
 comptime tM = 8
 comptime tN = 4
 

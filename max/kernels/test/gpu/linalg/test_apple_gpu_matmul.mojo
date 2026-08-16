@@ -25,7 +25,7 @@ Covers two paths:
 from std.collections import Optional
 from std.random import random_si64
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
@@ -49,7 +49,7 @@ def _launch[
     a_type: DType, transpose_b: Bool, c_type: DType = DType.float32
 ](
     ctx: DeviceContext,
-    d_dev: DeviceBuffer[c_type],
+    mut d_dev: DeviceBuffer[c_type],
     a_dev: DeviceBuffer[a_type],
     b_dev: DeviceBuffer[a_type],
     M: Int,
@@ -157,6 +157,9 @@ def _run_8x8_case[
         type_of(d_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
+        type_of(d_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
         transpose_b,
         BLOCK_M=BM,
         BLOCK_N=BN,
@@ -166,9 +169,9 @@ def _run_8x8_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -247,11 +250,11 @@ def _run_8x8_bias_case[
     var bias_ptr = bias_dev.unsafe_ptr()
     var row_stride = N  # output is row_major(M, N)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var bias = (bias_ptr + coords[1]).load[width=w]()
@@ -267,6 +270,9 @@ def _run_8x8_bias_case[
         type_of(d_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
+        type_of(d_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
         transpose_b,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             bias_epilogue
@@ -279,9 +285,9 @@ def _run_8x8_bias_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -336,7 +342,7 @@ def test_morton_decode_2d() raises:
     var pass_ = True
 
     # Expected (tile_m, tile_n) pairs for flat indices 0..15.
-    var exp_m: InlineArray[UInt32, 16] = [
+    var exp_m: Array[UInt32, 16] = [
         UInt32(0),
         0,
         1,
@@ -354,7 +360,7 @@ def test_morton_decode_2d() raises:
         3,
         3,
     ]
-    var exp_n: InlineArray[UInt32, 16] = [
+    var exp_n: Array[UInt32, 16] = [
         UInt32(0),
         1,
         0,
@@ -408,7 +414,7 @@ def test_morton_decode_2d_rect() raises:
     # 2x16 grid (log2_m=1, log2_n=4): square core 2x2, sweep 4 hi-bit
     # chunks along N. Every flat in [0, 32) must hit a unique (m, n) in
     # [0, 2) x [0, 16).
-    var seen_2x16 = InlineArray[Bool, 32](fill=False)
+    var seen_2x16 = Array[Bool, 32](fill=False)
     for i in range(32):
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(1), UInt32(4))
         var m = Int(got[0])
@@ -441,7 +447,7 @@ def test_morton_decode_2d_rect() raises:
 
     # 16x2 grid (log2_m=4, log2_n=1): tall analogue. Should cover all
     # (m, n) in [0, 16) x [0, 2).
-    var seen_16x2 = InlineArray[Bool, 32](fill=False)
+    var seen_16x2 = Array[Bool, 32](fill=False)
     for i in range(32):
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(1))
         var m = Int(got[0])
@@ -1213,12 +1219,182 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
     print("PASS")
 
 
+def _run_partial_m_nt_case[
+    in_type: DType
+](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
+    """Concurrent-decode partial-M co-batched GEMM (NT) vs an fp32 CPU reference.
+
+    For `1 < M < 64` (the batch widths the `m > 1` dispatch guard now routes to
+    `enqueue_apple_matmul`), `grid_m = ceildiv(M, 64) = 1`: one 64-row M tile of
+    which only `M` rows are valid. Verifies both halves of the partial-M
+    contract:
+
+    - (a) valid rows `[0, M)` match `A @ B.T` (fp32 accum). Inputs are small
+      ints `{-2..2}`, so the bf16->fp32 result is exact -- the `> 0.5` gap check
+      catches any deviation.
+    - (b) rows `[M, 64)` are NEVER written. C is backed by a GUARD-row-padded
+      device buffer sentinel-filled with `-1e30`; the kernel is handed only an
+      `(M, N)` view, so any store to a row `>= M` corrupts the sentinel guard
+      region and is caught. This is the OOB-write risk the guard relaxation
+      hinges on (`_bounded_store` row-gating + the `row_base >= M` early return).
+    """
+    print("==", name, M, "x", N, "x", K, "NT")
+    comptime GUARD = 64  # >= the full [M, 64) partial-tile extent for any M<64.
+    var rows = M + GUARD
+
+    var a_host = ctx.enqueue_create_host_buffer[in_type](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[in_type](N * K)  # NT: (N, K)
+    for i in range(M * K):
+        a_host[i] = Scalar[in_type](
+            random_si64(Int64(-2), Int64(2)).cast[in_type]()
+        )
+    for i in range(N * K):
+        b_host[i] = Scalar[in_type](
+            random_si64(Int64(-2), Int64(2)).cast[in_type]()
+        )
+
+    var a_dev = ctx.enqueue_create_buffer[in_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[in_type](N * K)
+    var d_dev = ctx.enqueue_create_buffer[DType.float32](rows * N)
+    # Sentinel-fill the WHOLE (valid + guard) buffer so a spurious write into
+    # rows [M, rows) is visible on readback.
+    var d_init = ctx.enqueue_create_host_buffer[DType.float32](rows * N)
+    for i in range(rows * N):
+        d_init[i] = Float32(-1.0e30)
+    ctx.enqueue_copy(d_dev, d_init)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    # C view is (M, N): the kernel only knows M rows, so a write to row >= M
+    # lands in the sentinel guard region rather than a legal C slot.
+    _launch[in_type, True](ctx, d_dev, a_dev, b_dev, M, N, K)
+
+    var d_host = ctx.enqueue_create_host_buffer[DType.float32](rows * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    # (a) valid rows [0, M) match the reference (exact for small-int inputs).
+    for i in range(M):
+        for j in range(N):
+            var exp = _host_matmul_nt[in_type, in_type](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            )
+            var got = d_host[i * N + j]
+            if abs(got - exp) > Float32(0.5):
+                print("FAIL valid:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    # (b) guard rows [M, rows) untouched (still the -1e30 sentinel).
+    for i in range(M, rows):
+        for j in range(N):
+            var got = d_host[i * N + j]
+            if got != Float32(-1.0e30):
+                print("FAIL guard-write: row", i, "col", j, "got", got)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
+def test_partial_m_decode_nt_bf16(ctx: DeviceContext) raises:
+    """Partial-M sweep at real Llama-3.1-8B decode weight shapes (NT bf16).
+
+    Covers the concurrent-decode batch widths that the relaxed `m > 1` guard now
+    routes to the co-batched GEMM instead of the naive per-row fallback. Each
+    case asserts the valid rows are numerically correct AND that no row in
+    [M, 64) is written (see `_run_partial_m_nt_case`).
+    """
+    print("== test_partial_m_decode_nt_bf16")
+    # k/v_proj (GQA KV projection): the smallest real decode weight; all widths.
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 2, 1024, 4096, "kproj m2")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 4, 1024, 4096, "kproj m4")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 16, 1024, 4096, "kproj m16")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 31, 1024, 4096, "kproj m31")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 32, 1024, 4096, "kproj m32")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 63, 1024, 4096, "kproj m63")
+    # o_proj / q_proj (larger real weight): boundary widths, second shape.
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 16, 4096, 4096, "oproj m16")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 63, 4096, 4096, "oproj m63")
+
+
 def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     """D[128,128] = A[128,32] @ B[32,128], NN, bf16->fp32."""
     print("== test_kernel_128x128x32_nn_bf16")
     comptime M = 128
     comptime N = 128
     comptime K = 32
+
+    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K * N)
+    for i in range(M * K):
+        a_host[i] = Scalar[DType.bfloat16](
+            random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        )
+    for i in range(K * N):
+        b_host[i] = Scalar[DType.bfloat16](
+            random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        )
+
+    var a_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    _launch[DType.bfloat16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
+        M,
+        N,
+        K,
+    )
+
+    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
+    # ASAP destruction frees them mid-kernel and the suite flakes.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    for i in range(M):
+        for j in range(N):
+            var exp = _host_matmul_nn[DType.bfloat16, DType.bfloat16](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            )
+            var got = d_host[i * N + j]
+            if abs(got - exp) > Float32(0.5):
+                print("FAIL:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
+def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
+    ctx: DeviceContext,
+) raises:
+    """D[100,200] = A[100,64] @ B[64,200], NN, bf16->fp32, via `enqueue_apple_matmul`.
+
+    Shape hits the `clamp_v2` + chained-K route: M and N are both ragged, so
+    both axes clamp, and grid_m=2/grid_n=4 cover every clamp/neighbor/interior
+    tile combination in one shape. K=64 gives a real 2-strip-per-pass split
+    without tripping the split-K heuristic.
+    """
+    print("== test_kernel_ragged_100x200x64_nn_bf16_clamp_chain")
+    comptime M = 100
+    comptime N = 200
+    comptime K = 64
 
     var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K * N)
@@ -1548,11 +1724,11 @@ def _run_bias_epilogue_test[
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1775,11 +1951,11 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
 
     var d_ptr = d_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
@@ -1860,11 +2036,11 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1951,11 +2127,11 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -2102,11 +2278,11 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: SIMDSize, *, alignment: Int = 1
+        dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
         var v_c = rebind[SIMD[DType.float16, w]](val)
@@ -2234,8 +2410,10 @@ def main() raises:
     test_kernel_ragged_100x200x32_nn_fp16(ctx)
     test_kernel_ragged_100x200x32_nt_fp16(ctx)
     test_kernel_M20_N80_K16_nn_fp16(ctx)
+    test_partial_m_decode_nt_bf16(ctx)
     test_kernel_128x128x32_nt_fp16(ctx)
     test_kernel_128x128x32_nn_bf16(ctx)
+    test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(ctx)
     test_kernel_128x128x32_nn_fp32(ctx)
     test_enqueue_helper_fp16(ctx)
     test_kernel_128_nn_fp16_fp16_no_lambda(ctx)

@@ -17,10 +17,11 @@ caller is responsible for choosing the config (MMA shape, pipeline stages,
 etc.).
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, TileTensor, row_major
+from std.math import align_up
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.primitives.grid_controls import PDLLevel
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from std.collections import OptionalReg
 
 from std.utils.index import Index
@@ -41,7 +42,9 @@ def matmul_swiglu_dispatch_sm100[
     config: FusedSwiGLUMatmulConfig[_, _, _, True],
     pdl_level: PDLLevel = PDLLevel(0),
 ](
-    c_out: TileTensor[mut=True, DType.bfloat16, ...],
+    c_out: TileTensor[
+        mut=True, DType.bfloat16, Storage=PointerStorage[element_width=1], ...
+    ],
     a: TileTensor[mut=False, DType.bfloat16, ...],
     b: TileTensor[mut=False, DType.bfloat16, ...],
     ctx: DeviceContext,
@@ -50,6 +53,14 @@ def matmul_swiglu_dispatch_sm100[
     ] = None,
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
+
+    Parameters:
+        config: Fully specialized ``FusedSwiGLUMatmulConfig`` carrying the
+              MMA shape, cluster shape, swizzle modes, pipeline stage counts,
+              ``AB_swapped`` orientation, and ``use_bias`` flag used to
+              specialize the kernel.
+        pdl_level: Programmatic Dependency Launch level controlling
+              inter-grid overlap on the launch (defaults to ``PDLLevel.OFF``).
 
     Args:
         c_out: [M, H] BF16 output tensor (H = N/2).
@@ -64,10 +75,11 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr: Optional [N=2H] BF16 bias (interleaved gate/up pairs).
               Ignored when ``config.use_bias`` is False.
     """
-    # When config.use_bias=False, c_out.ptr is a valid dummy (bias never accessed).
+    # When config.use_bias=False, c_out._storage is a valid dummy (bias never
+    # accessed).
     var bias_ptr_c = rebind[
         UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
-    ](c_out.ptr)
+    ](c_out._storage)
     comptime if config.use_bias:
         bias_ptr_c = rebind[
             UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
@@ -94,7 +106,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     pdl_level: PDLLevel = PDLLevel(0),
     has_bias: Bool = False,
 ](
-    c_out: TileTensor[mut=True, ...],
+    c_out: TileTensor[mut=True, Storage=PointerStorage[element_width=1], ...],
     a: TileTensor[...],
     b: TileTensor[...],
     ctx: DeviceContext,
@@ -106,10 +118,17 @@ def matmul_swiglu_dispatch_sm100_bf16[
 
     Selects a ``FusedSwiGLUMatmulConfig`` from ``_get_tuning_list_swiglu_bf16``
     by matching the static (N, K) from the weight matrix ``b``, then checking
-    the runtime M.  Falls back to a safety-net config for untuned shapes.
+    the runtime M. Falls back to a safety-net config for untuned shapes.
 
     N is read from ``b.static_shape[0]`` (the full pre-SwiGLU width), not
     from ``c_out.static_shape[1]`` (which holds H = N/2).
+
+    Parameters:
+        pdl_level: Programmatic Dependency Launch level controlling
+              inter-grid overlap on the launch (defaults to ``PDLLevel.OFF``).
+        has_bias: Whether the kernel consumes ``bias_ptr`` as a bias vector
+              (defaults to False). When False, ``bias_ptr`` is ignored and
+              the selected config is built with ``use_bias=False``.
 
     Args:
         c_out: [M, H] BF16 output tensor (H = N/2).
@@ -123,10 +142,10 @@ def matmul_swiglu_dispatch_sm100_bf16[
     comptime dtype = DType.bfloat16
     comptime static_N = b.static_shape[0]
     comptime static_K = b.static_shape[1]
-    # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
+    # When has_bias=False, c_out._storage is a valid dummy (bias never accessed).
     var bias_base = rebind[
         UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ](c_out.ptr)
+    ](c_out._storage)
     comptime if has_bias:
         bias_base = bias_ptr.value()
     var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))
@@ -136,12 +155,10 @@ def matmul_swiglu_dispatch_sm100_bf16[
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @parameter
-    @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) -> Bool:
-        return x.N == static_N and x.K == static_K
-
-    comptime nk_configs = tuning_table.find[rule_nk]()
+    comptime nk_configs = tuning_table.find(
+        rule=lambda (x: TuningConfigSwiGLU) -> Bool: x.N == static_N
+        and x.K == static_K
+    )
 
     comptime for tc in nk_configs:
         if m >= tc.M and m < tc.M_end:

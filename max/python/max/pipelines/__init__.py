@@ -21,6 +21,7 @@ from .lib.config import (
     KVCacheConfig,
     LoRAConfig,
     MAXModelConfig,
+    PipelineArgs,
     PipelineConfig,
     PipelineRole,
     ProfilingConfig,
@@ -44,6 +45,7 @@ from .lib.interfaces import (
     PipelineModel,
 )
 from .lib.memory_estimation import MemoryEstimator
+from .lib.pipeline_runtime_config import PipelineRuntimeConfig
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
     TextGenerationPipelineInterface,
@@ -74,9 +76,11 @@ __all__ = [
     "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PipelineRuntimeConfig",
     "PixelGenerationPipeline",
     "ProfilingConfig",
     "PrometheusMetricsMode",

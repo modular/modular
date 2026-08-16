@@ -18,6 +18,7 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     check_write_to,
@@ -356,15 +357,15 @@ def test_list_insert() raises:
     assert_equal(v1.get_nth(2), 3)
 
     #
-    # Test the list [1, 2, 3, 4, 5] created with negative and positive index
+    # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
     var v2 = LinkedList[Int]()
-    v2.insert(-1729, 2)
+    v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
-    v2.insert(-1, 4)
-    v2.insert(-len(v2), 1)
+    v2.insert(2, 4)
+    v2.insert(0, 1)
 
     assert_equal(len(v2), 5)
     assert_equal(v2.get_nth(0), 1)
@@ -374,14 +375,14 @@ def test_list_insert() raises:
     assert_equal(v2.get_nth(4), 5)
 
     #
-    # Test the list [1, 2, 3, 4] created with negative index
+    # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
     var v3 = LinkedList[Int]()
-    v3.insert(-11, 4)
-    v3.insert(-13, 3)
-    v3.insert(-17, 2)
-    v3.insert(-19, 1)
+    v3.insert(0, 4)
+    v3.insert(0, 3)
+    v3.insert(0, 2)
+    v3.insert(0, 1)
 
     assert_equal(len(v3), 4)
     assert_equal(v3.get_nth(0), 1)
@@ -587,14 +588,14 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
     l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
-    l^.__del__()
+    l^.__deinit__()
     assert_equal(dtor_count, 1)
 
 
@@ -690,22 +691,21 @@ def test_linked_list_conditional_conformances() raises:
 
 
 def test_linked_list_iter_owned() raises:
-    var ll = LinkedList[Int](1, 2, 3, 4, 5)
-    var result = List[Int]()
-    for elem in ll^:
-        result.append(elem)
+    # Test that owned iteration works, for non-Copyable types
+    var ll = LinkedList[MoveOnly[Int]](MoveOnly(1), MoveOnly(2), MoveOnly(3))
+    var result = List[MoveOnly[Int]]()
+    for var elem in ll^:
+        result.append(elem^)
 
-    assert_equal(len(result), 5)
-    assert_equal(result[0], 1)
-    assert_equal(result[1], 2)
-    assert_equal(result[2], 3)
-    assert_equal(result[3], 4)
-    assert_equal(result[4], 5)
+    assert_equal(len(result), 3)
+    assert_equal(result[0], MoveOnly(1))
+    assert_equal(result[1], MoveOnly(2))
+    assert_equal(result[2], MoveOnly(3))
 
 
 def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -720,7 +720,7 @@ def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -749,7 +749,7 @@ def test_linked_list_iter_owned_bounds() raises:
 
 def test_linked_list_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `LinkedList[T: Movable & ImplicitlyDeletable]`.
+    # conformance path of `LinkedList[T: Movable & Deinitable]`.
     assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
 
     var l = LinkedList[MoveOnly[Int]]()
@@ -771,6 +771,173 @@ def test_linked_list_move_only() raises:
 
     l.clear()
     assert_equal(len(l), 0)
+
+
+# ===-------------------------------------------------------------------===#
+# Conditional `Deinitable` (MSTDL-2775)
+# ===-------------------------------------------------------------------===#
+
+
+def test_linked_list_conditional_implicitly_deletable() raises:
+    assert_true(conforms_to(LinkedList[Int], Deinitable))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], Deinitable))
+    assert_true(conforms_to(LinkedList[Int], IterableOwned))
+    assert_true(conforms_to(LinkedList[MoveOnly[Int]], IterableOwned))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], IterableOwned))
+
+
+def test_linked_list_deinit_with() raises:
+    var ll = LinkedList[ExplicitDestroy]()
+    ll.append(ExplicitDestroy(1))
+    ll.append(ExplicitDestroy(2))
+    ll.append(ExplicitDestroy(3))
+    ll.append(ExplicitDestroy(4))
+    ll.append(ExplicitDestroy(5))
+    var destroy_order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        destroy_order.append(data.value)
+        data^.destroy()
+
+    ll^.deinit_with(dispose)
+    assert_equal(len(destroy_order), 5)
+    for i in range(len(destroy_order)):
+        assert_true(destroy_order[i] == i + 1)
+
+
+def test_empty_linked_list_deinit_with() raises:
+    # `deinit_with` on an empty (linear-valued) linked list must run and free the
+    # backing without invoking the closure — there are no entries.
+    var ll = LinkedList[ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        calls += 1
+        data^.destroy()
+
+    ll^.deinit_with(dispose)
+    assert_equal(calls, 0)
+
+
+def test_linked_list_extend_explicit_destroy() raises:
+    var a = LinkedList[ExplicitDestroy]()
+    a.append(ExplicitDestroy(1))
+    a.append(ExplicitDestroy(2))
+    a.append(ExplicitDestroy(3))
+
+    var b = LinkedList[ExplicitDestroy]()
+    b.append(ExplicitDestroy(4))
+    b.append(ExplicitDestroy(5))
+
+    a.extend(
+        b^
+    )  # consumes `b`; its emptied husk must not leak (checked by LSAN)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    a^.deinit_with(dispose)
+    assert_equal(len(order), 5)
+    for i in range(len(order)):
+        assert_true(order[i] == i + 1)
+
+
+def test_linked_list_extend_into_empty_explicit_destroy() raises:
+    # Covers the empty-`self` branch of `extend` for a linear element type.
+    var a = LinkedList[ExplicitDestroy]()
+    var b = LinkedList[ExplicitDestroy]()
+    b.append(ExplicitDestroy(1))
+    b.append(ExplicitDestroy(2))
+
+    a.extend(b^)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    a^.deinit_with(dispose)
+    assert_equal(len(order), 2)
+    assert_true(order[0] == 1)
+    assert_true(order[1] == 2)
+
+
+def test_linked_list_insert_explicit_destroy() raises:
+    # This only compiles because `insert` dropped its
+    # `Deinitable` requirement; re-adding it breaks this. Covers the
+    # head, tail, and middle branches.
+    var l = LinkedList[ExplicitDestroy]()
+    l.insert(0, ExplicitDestroy(2))  # [2]        (head into empty)
+    l.insert(0, ExplicitDestroy(1))  # [1, 2]     (head)
+    l.insert(len(l), ExplicitDestroy(4))  # [1, 2, 4]  (tail)
+    l.insert(2, ExplicitDestroy(3))  # [1, 2, 3, 4]  (middle)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    l^.deinit_with(dispose)
+    assert_equal(len(order), 4)
+    for i in range(len(order)):
+        assert_true(order[i] == i + 1)
+
+
+def test_linked_list_maybe_pop_explicit_destroy() raises:
+    # `maybe_pop` returns `Optional[ExplicitDestroy]`, which is itself a linear
+    # type: it can't be implicitly dropped and must be drained through
+    # `Optional.deinit_with`.
+    var ll = LinkedList[ExplicitDestroy]()
+    ll.append(ExplicitDestroy(1))
+    ll.append(ExplicitDestroy(2))
+
+    var popped = ll.maybe_pop()
+    var popped_val = popped.value().value  # tail == 2
+    var len_after_pop = len(ll)  # 2 -> 1
+    var survivor = ll.get_nth(0).value  # head == 1 remains
+    popped^.deinit_with(ExplicitDestroy.destroy)
+
+    # `maybe_pop` on an empty list yields an empty Optional.
+    var empty = LinkedList[ExplicitDestroy]()
+    var none = empty.maybe_pop()
+    var was_empty = not Bool(none)
+    none^.deinit_with(ExplicitDestroy.destroy)
+
+    empty^.deinit_with(ExplicitDestroy.destroy)
+    ll^.deinit_with(ExplicitDestroy.destroy)
+
+    assert_equal(popped_val, 2)
+    assert_equal(len_after_pop, 1)
+    assert_equal(survivor, 1)
+    assert_true(was_empty)
+
+
+def test_linked_list_prepend_explicit_destroy() raises:
+    var ll = LinkedList[ExplicitDestroy]()
+    var empty_before = Bool(ll)
+
+    ll.prepend(ExplicitDestroy(2))  # prepend into an empty list
+    var nonempty_after = Bool(ll)
+    ll.prepend(ExplicitDestroy(1))  # prepend onto a non-empty head
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    ll^.deinit_with(dispose)
+
+    assert_false(empty_before)
+    assert_true(nonempty_after)
+    assert_equal(len(order), 2)
+    assert_equal(order[0], 1)
+    assert_equal(order[1], 2)
 
 
 def main() raises:

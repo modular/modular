@@ -72,9 +72,11 @@ def gather_accepted_hidden_states(
 
     draft_hs: list[TensorValue] = []
     if data_parallel_degree > 1:
+        tp_degree = n_devs // data_parallel_degree
         for i in range(n_devs):
-            start = data_parallel_splits[i]
-            end = data_parallel_splits[i + 1]
+            replica = i // tp_degree
+            start = data_parallel_splits[replica]
+            end = data_parallel_splits[replica + 1]
             global_idx_dev_i = ops.slice_tensor(
                 last_accepted_idx_per_dev[i],
                 [(slice(start, end), f"{split_prefix}_batch_split_{i}")],
@@ -167,6 +169,7 @@ def accept_and_pick_next_tokens(
     min_top_p: TensorValue,
     in_thinking_phase: TensorValue | None = None,
     token_bitmasks: TensorValue | None = None,
+    draft_probs_full: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
     """Run acceptance sampling and pick the next token at the first reject."""
     # AcceptanceSampler defaults in_thinking_phase to None, so passing it
@@ -182,6 +185,7 @@ def accept_and_pick_next_tokens(
         min_top_p=min_top_p,
         in_thinking_phase=in_thinking_phase,
         token_bitmasks=token_bitmasks,
+        draft_probs_full=draft_probs_full,
     )
     # concat([recovered, bonus]) -> [batch, K+1]; gather_nd picks the token at
     # index num_accepted[b] per batch element (target argmax at first reject).

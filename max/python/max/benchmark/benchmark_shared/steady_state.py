@@ -34,6 +34,40 @@ import numpy as np
 
 from .request import RequestFuncOutput
 
+
+def reject_metric_outliers(
+    values: Sequence[float], k: float = 3.5
+) -> list[bool]:
+    """Return a keep-mask using the Iglewicz-Hoaglin modified z-score.
+
+    The modified z-score is defined as ``0.6745 * (x - median) / MAD``
+    where ``MAD = median(|x - median(x)|)``. A value is kept when its
+    absolute modified z-score is at most ``k`` (default 3.5, the
+    Iglewicz-Hoaglin recommendation).
+
+    Edge cases: if there are fewer than 2 values, or ``MAD == 0`` (all
+    values are identical), every value is kept (no rejection).
+
+    Args:
+        values: Per-request metric series (e.g. TTFTs in seconds).
+        k: Modified-z-score rejection threshold (default 3.5).
+
+    Returns:
+        A list of booleans of the same length as ``values``.
+        ``True`` means the value should be included; ``False`` means it
+        is an outlier and should be dropped.
+    """
+    if len(values) < 2:
+        return [True] * len(values)
+    arr = np.asarray(values, dtype=np.float64)
+    med = float(np.median(arr))
+    mad = float(np.median(np.abs(arr - med)))
+    if mad == 0.0:
+        return [True] * len(values)
+    modified_z = 0.6745 * (arr - med) / mad
+    return [bool(abs(mz) <= k) for mz in modified_z.tolist()]
+
+
 DEFAULT_WINDOW_SIZE = 50
 DEFAULT_TTFT_THRESHOLD = 0.5
 DEFAULT_TPOT_THRESHOLD = 0.3

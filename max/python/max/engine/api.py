@@ -18,12 +18,12 @@ import faulthandler
 import os
 import signal
 import sys
+import threading
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from types import TracebackType
-from typing import Any, Literal, cast
+from typing import Any, BinaryIO, Literal, cast
 from unittest import mock
 
 import numpy as np
@@ -34,22 +34,8 @@ from max._core.engine import Model as Model
 from max._core.engine import ModelMetadata as ModelMetadata
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
+from max._core.engine import read as _read
 from max._core.mlrt import AsyncValue as _AsyncValue
-from max._core.profiler import (
-    kineto_disable as _kineto_disable,
-)
-from max._core.profiler import (
-    kineto_enable as _kineto_enable,
-)
-from max._core.profiler import (
-    kineto_is_enabled as _kineto_is_enabled,
-)
-from max._core.profiler import (
-    kineto_state as _kineto_state,
-)
-from max._core.profiler import (
-    kineto_wait_for_trace as _kineto_wait_for_trace,
-)
 from max._core.profiler import (
     set_gpu_profiling_state,
 )
@@ -58,6 +44,8 @@ from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
+
+from ._precompiled_mefs import MefStore
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
@@ -70,7 +58,7 @@ CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 :class:`InferenceSession`.
 
 It may be a single path or a sequence of paths, where each path is a ``str``
-or :class:`~pathlib.Path` pointing to a compiled ``.mojoc``/``.mojopkg`` custom ops
+or :class:`~pathlib.Path` pointing to a compiled ``.mojoc`` custom ops
 library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
 it's automatically compiled into a package before loading.
 """
@@ -100,6 +88,10 @@ levels provide more detail but may introduce additional overhead.
 See Also:
     :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
 """
+
+
+# TODO(GEX-2071): Remove global lock when parallel compilation is safe.
+_COMPILATION_LOCK = threading.Lock()
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -405,7 +397,8 @@ class CompiledModel:
     initialization, so a single artifact can be initialized more than once.
     """
 
-    _compiled: _AsyncValue[_CompiledModels]
+    # A pending compile() handle, or the plain resolved artifact from read().
+    _compiled: _AsyncValue[_CompiledModels] | _CompiledModels
     _expected_weights: dict[str, Any] | None
     # Top-level graph names captured from the source MLIR module when known.
     # Empty for path-compiled artifacts (no module to inspect). Used by the
@@ -415,11 +408,11 @@ class CompiledModel:
 
     def __init__(
         self,
-        compiled: _AsyncValue[_CompiledModels],
+        compiled: _AsyncValue[_CompiledModels] | _CompiledModels,
         expected_weights: dict[str, Any] | None,
     ) -> None:
         # Internal constructor; users obtain instances from
-        # :meth:`InferenceSession.compile`.
+        # :meth:`InferenceSession.compile` or :func:`read`.
         self._compiled = compiled
         self._expected_weights = expected_weights
         self._graph_names = ()
@@ -438,131 +431,36 @@ class CompiledModel:
         Args:
             path: Filesystem path to write the MEF to.
         """
+        if isinstance(self._compiled, _CompiledModels):
+            self._compiled.export_mef(str(path))
+            return
         self._compiled.wait()
         if (exc := self._compiled.exception()) is not None:
             raise exc
         self._compiled.result().export_mef(str(path))
 
 
-class _ProfilingNamespace:
-    """Runtime control surface for the libkineto-backed MAX profiler.
+def read(source: str | os.PathLike[str] | BinaryIO) -> CompiledModel:
+    """Reads a previously exported compiled-model artifact (a ``.mef``).
 
-    Exposes the on-demand profiling lifecycle (start, stop, wait, state)
-    that produces HTA-compatible Chrome trace JSON. Configuration lives on
-    the ``ProfilingConfig`` model in
-    ``max.pipelines.lib.config.profiling_config`` (e.g.
-    ``profiling_output_path``).
+    Args:
+        source: The path to a ``.mef`` file, or a binary file-like
+            object (anything with ``read()``, such as :class:`io.BytesIO`)
+            positioned at the start of the artifact.
 
-    .. note::
+    Returns:
+        A :class:`CompiledModel` holding the deserialized artifact, ready
+        to be initialized on any session via :meth:`InferenceSession.init`.
 
-       libkineto's profiler state is **process-global**. Calling
-       :meth:`start` on one ``InferenceSession`` enables the profiler for the
-       whole process, including any other live sessions. Only one MAX
-       process per host should drive ``start()`` / ``stop()`` at a time —
-       for multi-rank captures, an orchestrator must broadcast the enable
-       command to every rank process.
-
-       For the same reason, ``with session.profiling:`` blocks **must not be
-       nested**: an inner ``__exit__`` will call :meth:`stop` and disable the
-       profiler for any enclosing scope.
-
-    This namespace is created automatically as ``session.profiling`` and
-    should not be instantiated by user code.
-
-    Example:
-
-    .. code-block:: python
-
-        session = InferenceSession(devices=[Accelerator()])
-        model = session.load(my_graph)
-        session.profiling.start()
-        model.execute(input_data)
-        session.profiling.stop()
-        session.profiling.wait_for_trace()
+    Raises:
+        RuntimeError: If the artifact is missing or cannot be
+            deserialized.
     """
-
-    def start(self) -> None:
-        """Enable libkineto and begin recording.
-
-        Subscribes to CUPTI activity callbacks. Tracy and libkineto are
-        mutually exclusive at build time, so in ``--config=tracy`` builds
-        (which do not link libkineto) this is a no-op. Idempotent — calling
-        :meth:`start` while already enabled is a no-op.
-
-        On builds without libkineto (today: macOS and Linux aarch64) or
-        hosts without a live CUDA primary context, this is a safe no-op:
-        ``state`` will still report ``"warmup"`` but no trace file is
-        written by the matching :meth:`stop`.
-        """
-        _kineto_enable()
-
-    def stop(self) -> None:
-        """Disable libkineto and flush the trace.
-
-        Unregisters CUPTI callbacks and finalizes the trace file; use
-        :meth:`wait_for_trace` if you need to ensure serialization is
-        complete before reading it.
-        """
-        _kineto_disable()
-
-    def wait_for_trace(self) -> None:
-        """Block until the most recent :meth:`stop` finishes serializing."""
-        _kineto_wait_for_trace()
-
-    @property
-    def state(self) -> Literal["idle", "warmup", "active", "flushing"]:
-        """Current profiler state.
-
-        Returns:
-            One of ``"idle"``, ``"warmup"``, ``"active"``, or ``"flushing"``.
-        """
-        return cast(
-            Literal["idle", "warmup", "active", "flushing"], _kineto_state()
-        )
-
-    @property
-    def is_enabled(self) -> bool:
-        """``True`` between :meth:`start` and :meth:`stop`.
-
-        Equivalent to ``state in {"warmup", "active"}``; ``False`` in
-        ``"idle"`` and ``"flushing"``.
-
-        Cheap relative to constructing a trace name you would otherwise skip,
-        but still crosses the Python/C++ FFI boundary on every call — cache
-        the result if you need it inside a tight loop.
-        """
-        return _kineto_is_enabled()
-
-    def __enter__(self) -> _ProfilingNamespace:
-        """Enter a profiling context: equivalent to calling :meth:`start`.
-
-        Lets callers write::
-
-            with session.profiling:
-                model.execute(input_data)
-
-        and have :meth:`stop` invoked automatically on scope exit, even if
-        the body raises.  The returned object is the namespace itself, so
-        ``state`` / ``is_enabled`` remain accessible from inside the block.
-        """
-        self.start()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        """Exit the profiling context: calls :meth:`stop`.
-
-        Does NOT wait for the trace to serialize — callers that need the
-        file on disk before reading it should call :meth:`wait_for_trace`
-        after the ``with`` block.  This matches the rule that ``stop()``
-        and ``wait_for_trace()`` are split so callers can interleave other
-        cleanup between them.
-        """
-        self.stop()
+    if isinstance(source, (str, os.PathLike)):
+        artifact = _read(source)
+    else:
+        artifact = _read(source.read())
+    return CompiledModel(compiled=artifact, expected_weights=None)
 
 
 class InferenceSession:
@@ -573,8 +471,29 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        model = session.load(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        model = session.load(graph)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     For workflows that need to separate compilation from weight binding,
     use :meth:`compile` followed by :meth:`init` or :meth:`init_all`.
@@ -582,9 +501,30 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        compiled = session.compile(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        compiled = session.compile(graph)
         model = session.init(compiled)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     Args:
         devices: A list of devices on which to run inference. The host CPU
@@ -592,8 +532,16 @@ class InferenceSession:
         num_threads: The number of execution threads. Defaults to ``None``,
             which lets the runtime choose automatically.
         custom_extensions: The extensions to load for the model. Supports
-            paths to a ``.mojoc``/``.mojopkg`` custom ops library or a
-            ``.mojo`` source file.
+            paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
+        precompiled_mefs: A directory of compiled-graph artifacts written by an
+            earlier session's ``export_mefs``. Every graph this session loads is
+            initialized from its artifact instead of being compiled, which lets
+            the compiling and the executing run happen on different machines.
+            Raises if a graph does not match the artifact recorded for it.
+        export_mefs: A directory to write a compiled-graph artifact into for
+            every graph this session loads, alongside a manifest describing
+            them. Pass the same directory as another session's
+            ``precompiled_mefs`` to reuse them. Mutually exclusive with it.
     """
 
     _impl: _InferenceSession
@@ -602,11 +550,6 @@ class InferenceSession:
     # ``session.debug`` return the same underlying object, and any
     # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
     debug: DebugConfig = _InferenceSession.debug
-    # libkineto's profiler state is process-global (see _ProfilingNamespace
-    # docstring), so a single shared instance — matching ``debug`` above —
-    # accurately reflects that scope. The namespace carries no per-session
-    # state.
-    profiling: _ProfilingNamespace = _ProfilingNamespace()
 
     def __init__(
         self,
@@ -614,7 +557,22 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        precompiled_mefs: str | Path | None = None,
+        export_mefs: str | Path | None = None,
     ) -> None:
+        if precompiled_mefs is not None and export_mefs is not None:
+            raise ValueError(
+                "pass at most one of precompiled_mefs and export_mefs: a "
+                "session either reuses artifacts or produces them"
+            )
+        # Taken at construction rather than settable later because the store
+        # tracks its position through the graphs this session loads.
+        self._mef_store: MefStore | None = None
+        if precompiled_mefs is not None:
+            self._mef_store = MefStore.for_import(precompiled_mefs)
+        elif export_mefs is not None:
+            self._mef_store = MefStore.for_export(export_mefs)
+
         self.num_threads = num_threads
 
         # Process the provided iterable `devices`.
@@ -668,10 +626,6 @@ class InferenceSession:
                 ) from e
             self.set_mojo_assert_level(assert_level)
 
-        # TODO: Remove this once the new topk kernel is stable.
-        if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
-            self.use_old_top_k_kernel(use_old_top_k_kernel)
-
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
@@ -707,6 +661,7 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
+        tile_based_fusion: bool = False,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -723,7 +678,7 @@ class InferenceSession:
                 file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -731,6 +686,11 @@ class InferenceSession:
                 extends beyond the lifetime of the model. Although
                 ``weights_registry`` is technically optional, you'll always
                 need to load weights in practice.
+
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model. Only applies when ``model`` is a
+                :class:`Graph`; ignored for precompiled ``.mef`` paths.
+                Defaults to ``False``.
 
         Returns:
             The loaded model, compiled and ready to execute.
@@ -742,6 +702,7 @@ class InferenceSession:
             model,
             custom_extensions=custom_extensions,
             weights_registry=weights_registry,
+            tile_based_fusion=tile_based_fusion,
         )
         if len(models) != 1:
             raise ValueError(
@@ -756,6 +717,7 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
+        tile_based_fusion: bool = False,
     ) -> dict[str, Model]:
         """Loads multiple models and compiles them for inference.
 
@@ -780,7 +742,7 @@ class InferenceSession:
                 example, a ``.mef`` file), or a single :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -789,6 +751,11 @@ class InferenceSession:
                 ``weights_registry`` is technically optional, you'll always
                 need to load weights in practice.
 
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model. Only applies when ``model`` is a
+                :class:`Graph` or :class:`max.graph.Module`; ignored for
+                precompiled ``.mef`` paths. Defaults to ``False``.
+
         Returns:
             A mapping from each model's ``sym_name`` to its loaded
             :class:`Model`, ready to execute.
@@ -796,7 +763,28 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        compiled = self.compile(model, custom_extensions=custom_extensions)
+        # Reuse or produce artifacts when the session was constructed to, so a
+        # caller need not hold an accelerator to compile. See
+        # `_precompiled_mefs`.
+        store = self._mef_store
+        if store is not None and isinstance(model, Graph):
+            if store.exporting:
+                compiled = self.compile(
+                    model,
+                    custom_extensions=custom_extensions,
+                    tile_based_fusion=tile_based_fusion,
+                )
+                compiled.export_mef(store.claim_export(model))
+                store.write_manifest()
+            else:
+                compiled = self.compile(store.claim_import(model))
+            return self.init_all(compiled, weights_registry=weights_registry)
+
+        compiled = self.compile(
+            model,
+            custom_extensions=custom_extensions,
+            tile_based_fusion=tile_based_fusion,
+        )
         return self.init_all(compiled, weights_registry=weights_registry)
 
     def compile_async(
@@ -804,6 +792,7 @@ class InferenceSession:
         model: str | Path | Module | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
     ) -> CompiledModel:
         """Compiles a model without blocking on the compilation finishing.
 
@@ -814,13 +803,24 @@ class InferenceSession:
         :meth:`init_all`, or :meth:`CompiledModel.export_mef`. Use
         :meth:`compile` for the synchronous variant that blocks and raises.
 
+        Compiles are serialized process-wide: if another compile is in
+        flight (from any session), this call blocks until it resolves
+        before scheduling this one. See ``_COMPILATION_LOCK``.
+
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`
                 containing one or more ``mo.graph`` ops, or the path to a
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
+
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model, in which the graph compiler selects
+                tile-based kernels (operating on ``TileTensor`` values instead
+                of SIMD). Only applies when ``model`` is a :class:`Graph` or
+                :class:`max.graph.Module`; ignored for precompiled ``.mef``
+                paths. Defaults to ``False``.
 
         Returns:
             A :class:`CompiledModel` artifact wrapping the pending compilation.
@@ -862,10 +862,14 @@ class InferenceSession:
             if kernel_library is not None:
                 kernel_library._analysis.seed_kernel_decls(module.mlir_module)
 
-            handle = self._compile_module(module, custom_extensions_final)
+            handle = self._compile_module(
+                module, custom_extensions_final, tile_based_fusion
+            )
         elif isinstance(model, Module):
             module = model
-            handle = self._compile_module(module, custom_extensions_final)
+            handle = self._compile_module(
+                module, custom_extensions_final, tile_based_fusion
+            )
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
@@ -881,6 +885,7 @@ class InferenceSession:
         model: str | Path | Module | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
     ) -> CompiledModel:
         """Compiles a model without binding weights or device memory.
 
@@ -900,7 +905,14 @@ class InferenceSession:
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
+
+            tile_based_fusion: When ``True``, compile the graph under the tile-based
+                programming model, in which the graph compiler selects
+                tile-based kernels (operating on ``TileTensor`` values instead
+                of SIMD). Only applies when ``model`` is a :class:`Graph` or
+                :class:`max.graph.Module`; ignored for precompiled ``.mef``
+                paths. Defaults to ``False``.
 
         Returns:
             A :class:`CompiledModel` artifact ready to be initialized.
@@ -911,11 +923,15 @@ class InferenceSession:
         """
         with _record_phase("compile_seconds"):
             compiled = self.compile_async(
-                model, custom_extensions=custom_extensions
+                model,
+                custom_extensions=custom_extensions,
+                tile_based_fusion=tile_based_fusion,
             )
+            handle = compiled._compiled
+            assert isinstance(handle, _AsyncValue)
             # Synchronously complete the compilation and raise errors.
-            compiled._compiled.wait()
-        exception = compiled._compiled.exception()
+            handle.wait()
+        exception = handle.exception()
         if exception is None:
             return compiled
         # compile_async surfaces the compile failure here rather than from the
@@ -1034,6 +1050,10 @@ class InferenceSession:
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"
                 ) from e
 
+        if isinstance(compiled._compiled, _CompiledModels):
+            # Wrapping consumes the resolved artifact; cache the async
+            # handle so a later init can reuse it.
+            compiled._compiled = self._impl._wrap_compiled(compiled._compiled)
         with _record_phase("init_seconds"):
             models = self._impl._load_all(
                 compiled._compiled, weights_registry_real
@@ -1071,22 +1091,32 @@ class InferenceSession:
         self,
         module: Module,
         custom_extensions_final: list[CustomExtensionType],
+        tile_based_fusion: bool = False,
     ) -> _AsyncValue[_CompiledModels]:
-        """Compiles an MLIR module under the session's compilation lock.
+        """Compiles an MLIR module under the process-global compilation lock.
 
-        Wraps any synchronous setup failure in a ``RuntimeError`` pointing at
-        the ``max-debug.source-tracebacks`` config key for richer diagnostics.
-        Compilation itself is asynchronous; that failure surfaces when the
-        returned value is awaited (see :meth:`compile`).
+        Compilation itself is asynchronous; a compile failure surfaces when
+        the returned value is awaited (see :meth:`compile`).
+
+        Raises:
+            RuntimeError: If synchronous compile setup fails; the message
+                points at the ``max-debug.source-tracebacks`` config key
+                for richer diagnostics.
         """
+        _COMPILATION_LOCK.acquire()
         try:
-            return self._impl.compile(
+            handle = self._impl.compile(
                 module.mlir_module._CAPIPtr,
                 custom_extensions_final,
                 _derive_pipeline_name(module),
+                tile_based_fusion,
             )
         except Exception as e:
+            _COMPILATION_LOCK.release()
             raise RuntimeError(self._compile_failure_message()) from e
+        # Released from a runtime worker thread when the compile resolves.
+        handle.add_done_callback(lambda _: _COMPILATION_LOCK.release())
+        return handle
 
     def set_debug_print_options(
         self,
@@ -1227,10 +1257,13 @@ class InferenceSession:
         For example, to enable detailed profiling for Nsight Systems
         analysis, call :meth:`gpu_profiling` before :meth:`load`:
 
+        .. Skipped: requires a GPU accelerator; enabling GPU profiling injects GPU tracing that can't compile on a CPU-only CI host.
+        .. skip: next
+
         .. code-block:: python
 
-            from max.engine import InferenceSession
             from max.driver import Accelerator
+            from max.engine import InferenceSession
 
             session = InferenceSession(devices=[Accelerator()])
             session.gpu_profiling("detailed")
@@ -1278,23 +1311,6 @@ class InferenceSession:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
         set_gpu_profiling_state(mode)
-
-    def use_old_top_k_kernel(self, mode: str) -> None:
-        """Falls back to the previous top-k kernel implementation.
-
-        By default, the session uses a newer top-k kernel. Use this
-        fallback only if you encounter correctness or performance issues
-        with the default kernel.
-
-        Args:
-            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
-                ``"no"``, or ``"0"`` to disable. Any other value enables the
-                old top-k kernel.
-        """
-        if mode.lower() in ("false", "off", "no", "0"):
-            return
-
-        self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
 
     def use_fi_topk_kernel(self, mode: str) -> None:
         """Enables the fused-inference top-k kernel.

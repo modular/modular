@@ -84,7 +84,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
             ref a_val = reflect[T].field_ref[idx](a)
             ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
-                diffs.append(String(names[idx]))
+                diffs.append(String(comptime (names[idx])))
 
     return diffs^
 
@@ -126,7 +126,7 @@ trait MakeCopyable:
         comptime field_count = reflect[Self].field_count()
         comptime field_types = reflect[Self].field_types()
 
-        comptime Usable = Copyable & ImplicitlyDeletable
+        comptime Usable = Copyable & Deinitable
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if conforms_to(field_type, Usable):
@@ -189,7 +189,7 @@ def test_field_offset_alignment() raises:
 # --- type_of ---
 
 
-def make_default[T: AnyType & Defaultable]() -> T:
+def make_default[T: Defaultable]() -> T:
     return T()
 
 
@@ -204,7 +204,7 @@ def test_type_of() raises:
 # --- origin_of ---
 
 
-def first_ref[T: Copyable](ref list: List[T]) -> ref[origin_of(list)] T:
+def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
     if not list:
         abort("empty list")
     return list[0]
@@ -212,7 +212,7 @@ def first_ref[T: Copyable](ref list: List[T]) -> ref[origin_of(list)] T:
 
 def test_origin_of_first_ref() raises:
     """Check `first_ref` returns a reference tied to the list's origin."""
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     ref x = first_ref(l)
     assert_equal(x, 1)
     x += 10
@@ -275,8 +275,7 @@ def eq[T: AnyType](a: T, b: T) -> Bool where conforms_to(T, Equatable):
 
 
 def test_eq_where_clause() raises:
-    """Check `where conforms_to(T, Equatable)` enables == without trait_downcast.
-    """
+    """Check `where conforms_to(T, Equatable)` enables `==` operator."""
     assert_true(eq(1, 1))
     assert_true(not eq(1, 2))
     assert_true(eq("hello", "hello"))

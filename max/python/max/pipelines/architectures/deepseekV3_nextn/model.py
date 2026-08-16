@@ -15,19 +15,16 @@
 from __future__ import annotations
 
 import logging
-import time
-from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, cast
 
-import numpy as np
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -38,12 +35,11 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.support.algorithm import flatten2d
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from .batch_processor import DeepseekV3NextNBatchProcessor
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
 
@@ -63,6 +59,9 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
+    batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
+        DeepseekV3NextNBatchProcessor
+    )
 
     def __init__(
         self,
@@ -76,6 +75,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         shared_weights: dict[str, DLPackArray] | None = None,
         shared_ep_comm_initializer: EPCommInitializer | None = None,
+        max_batch_size: int = 1,
     ) -> None:
         self._shared_weights = shared_weights
         self._shared_ep_comm_initializer = shared_ep_comm_initializer
@@ -88,6 +88,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
     def _apply_shared_weights(self, state_dict: dict[str, WeightData]) -> None:
@@ -161,69 +162,54 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return model_config
 
     @override
-    def load_model(self, session: InferenceSession) -> Model:
-        """Load the NextN model with the given weights."""
-
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
-        logger.info("Building DeepseekV3 NextN model...")
-        before = time.perf_counter()
-
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
+    def _load_state_dict(self) -> dict[str, WeightData]:
+        state_dict = super()._load_state_dict()
         self._apply_shared_weights(state_dict)
-        config = self._create_model_config(state_dict)
+        return state_dict
 
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        if config.ep_config is not None:
-            if self._shared_ep_comm_initializer is not None:
-                # Reuse target model's EP buffers (NVSHMEM symmetric memory).
-                # Target and draft execute sequentially in the EAGLE pipeline,
-                # so sharing is safe and avoids duplicating ~85 GiB of buffers.
-                self.ep_comm_initializer = self._shared_ep_comm_initializer
-                # Propagate node_id from the shared initializer since NextN
-                # constructs its own EPConfig with node_id=-1.
-                config.ep_config.node_id = (
-                    self._shared_ep_comm_initializer.config.node_id
-                )
-                logger.info("Reusing target model's EP communication buffers.")
-            else:
-                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-                self.ep_comm_initializer.ep_init(session)
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
-                )
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: DeepseekV3NextNConfig,
+    ) -> None:
+        self.ep_comm_initializer = None
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if model_config.ep_config is None or is_virtual_device_mode():
+            return
+        if self._shared_ep_comm_initializer is not None:
+            # Reuse target model's EP buffers (NVSHMEM symmetric memory).
+            # Target and draft execute sequentially in the EAGLE pipeline,
+            # so sharing is safe and avoids duplicating ~85 GiB of buffers.
+            self.ep_comm_initializer = self._shared_ep_comm_initializer
+            # Propagate node_id from the shared initializer since NextN
+            # constructs its own EPConfig with node_id=-1.
+            model_config.ep_config.node_id = (
+                self._shared_ep_comm_initializer.config.node_id
+            )
+            logger.info("Reusing target model's EP communication buffers.")
+        else:
+            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+        if model_config.ep_config.node_id == -1:
+            raise ValueError(
+                "EP node ID is not set. Please check if the EP initialization is successful."
+            )
 
-        nn_model = DeepseekV3NextN(config)
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, WeightData],
+        model_config: DeepseekV3NextNConfig,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        logger.info("Building DeepseekV3 NextN model...")
+        nn_model = DeepseekV3NextN(model_config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        weights_registry = nn_model.state_dict()
 
         num_devices = len(self.devices)
 
@@ -234,9 +220,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             graph_inputs_iter = iter(graph.inputs)
 
             tokens = next(graph_inputs_iter)
-
             hidden_states = next(graph_inputs_iter)
-
             device_input_row_offsets = next(graph_inputs_iter)
             host_input_row_offsets = next(graph_inputs_iter)
             return_n_logits = next(graph_inputs_iter)
@@ -278,25 +262,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
             graph.output(*outputs)
-
-        after_build = time.perf_counter()
-        logger.info(
-            f"Building graph took {after_build - before:.6f} seconds. Compiling..."
-        )
-
-        before_compile = time.perf_counter()
-        model = session.load(graph, weights_registry=nn_model.state_dict())
-        after = time.perf_counter()
-
-        logger.info(
-            f"Compiling model took {after - before_compile:.6f} seconds"
-        )
-
-        load_time = after - before
-        logging.info(
-            f"DeepseekV3 NextN model loaded in {load_time:.6f} seconds"
-        )
-        return model
+            return graph, weights_registry
 
     def execute(
         self,
@@ -344,81 +310,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-        hidden_states: Buffer | None = None,
-    ) -> DeepseekV3NextNInputs:
-        """Prepare initial inputs for the NextN model.
-
-        Args:
-            replica_batches: Batches of text contexts per replica
-            kv_cache_inputs: KV cache inputs (optional)
-            return_n_logits: Number of logits to return
-            hidden_states: Hidden states from the base or draft model
-
-        Returns:
-            NextN model inputs
-        """
-
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        # If we are not in decode only mode, we need to create a list of
-        # tensors containing the context length of each batch. Needed by MLA prefill.
-        if self.pipeline_config.runtime.pipeline_role != "decode_only":
-            for i, batch in enumerate(replica_batches):
-                curr_length = sum([ctx.tokens.active_length for ctx in batch])
-                self._batch_context_lengths_prealloc_cpu[i][0] = curr_length
-
-            if dp != len(self.devices):
-                assert dp == 1
-                # Duplicate the batch context lengths for each device.
-                for dev_idx in range(1, len(self.devices)):
-                    self._batch_context_lengths_prealloc_cpu[dev_idx][0] = (
-                        self._batch_context_lengths_prealloc_cpu[0][0].item()
-                    )
-
-        context_batch = flatten2d(replica_batches)
-        if len(context_batch) == 0:
-            tokens = Buffer(shape=[0], dtype=DType.int64).to(self.devices[0])
-            host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
-        else:
-            # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            tokens = Buffer.from_numpy(
-                np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(self.devices[0])
-
-            host_input_row_offsets = Buffer.from_numpy(
-                np.cumsum(
-                    [0] + [ctx.tokens.active_length for ctx in context_batch],
-                    dtype=np.uint32,
-                )
-            )
-
-        device_input_row_offsets = host_input_row_offsets.to(self.devices[0])
-
-        data_parallel_splits = compute_data_parallel_splits(replica_batches)
-
-        return DeepseekV3NextNInputs(
-            tokens=tokens,
-            hidden_states=hidden_states,
-            input_row_offsets=device_input_row_offsets,
-            host_input_row_offsets=host_input_row_offsets,
-            signal_buffers=self.signal_buffers,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            data_parallel_splits=Buffer.from_numpy(data_parallel_splits),
-        )
 
 
 def maybe_build_deepseekv3_nextn_kwargs(

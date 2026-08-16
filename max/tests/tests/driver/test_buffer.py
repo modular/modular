@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
@@ -41,6 +41,71 @@ def test_tensor() -> None:
     tensor2 = Buffer(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
+
+
+def test_repr() -> None:
+    # repr shows metadata only, not the element values.
+    tensor = Buffer(DType.float32, (3, 4))
+    text = repr(tensor)
+    assert text.startswith("max.driver.Buffer(")
+    assert "DType.float32" in text
+    assert "(3, 4)" in text
+
+
+def test_str_scalar() -> None:
+    tensor = Buffer.scalar(5, DType.int32)
+    text = str(tensor)
+    assert text.startswith("Buffer(")
+    assert "5" in text
+    assert "dtype=DType.int32" in text
+    assert "shape=()" in text
+    assert "device=" in text
+
+
+def test_str_shows_data() -> None:
+    # str should include the actual data values.
+    arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    tensor = Buffer.from_numpy(arr)
+    text = str(tensor)
+    assert text.startswith("Buffer(")
+    for value in range(1, 7):
+        assert str(value) in text
+    assert "dtype=DType.int32" in text
+    assert "shape=(2, 3)" in text
+    # The formatted data should match numpy's own rendering.
+    assert np.array2string(arr, prefix="Buffer(") in text
+
+
+def test_str_1d_float() -> None:
+    tensor = Buffer.from_numpy(np.array([1.5, 2.5, 3.5], dtype=np.float32))
+    text = str(tensor)
+    assert "1.5" in text
+    assert "2.5" in text
+    assert "3.5" in text
+    assert "dtype=DType.float32" in text
+
+
+def test_str_summarizes_large_buffer() -> None:
+    # Large buffers should be summarized with an ellipsis rather than dumping
+    # every element.
+    tensor = Buffer.from_numpy(np.arange(100_000, dtype=np.int32))
+    text = str(tensor)
+    assert "..." in text
+    assert "shape=(100000,)" in text
+
+
+def test_str_bfloat16() -> None:
+    # bfloat16 is not natively representable in numpy, so values must be read
+    # element-wise and shown as decoded numbers (not raw bytes).
+    torch_value = torch.tensor([1.0, 2.0, 3.0]).type(torch.bfloat16)
+    tensor = Buffer.from_dlpack(torch_value)
+    assert tensor.dtype == DType.bfloat16
+    text = str(tensor)
+    assert "1" in text
+    assert "2" in text
+    assert "3" in text
+    assert "dtype=DType.bfloat16" in text
+    assert "shape=(3,)" in text
 
 
 @pytest.mark.parametrize("dtype", list(DType))
@@ -443,6 +508,10 @@ def test_torch_tensor_conversion() -> None:
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
 
 
+# Whichever of these runs first pays torch's one-time lazy init inside its
+# first example -- ~1.5s against hypothesis' 200ms per-example deadline on a
+# contended CI worker. Neither asserts anything about speed.
+@settings(deadline=None)
 @given(st.floats())
 def test_setitem_bfloat16(value: float) -> None:
     tensor = Buffer(DType.bfloat16, (1,))
@@ -462,6 +531,7 @@ def test_setitem_bfloat16(value: float) -> None:
         torch.testing.assert_close(expected, result, equal_nan=True)
 
 
+@settings(deadline=None)
 @given(st.floats())
 def test_getitem_bfloat16(value: float) -> None:
     torch_value = torch.tensor([value]).type(torch.bfloat16)

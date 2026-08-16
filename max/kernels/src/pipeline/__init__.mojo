@@ -22,8 +22,8 @@ current tile in registers. The schedule splits into a prologue (prime
 buffers before overlap is possible), a kernel phase (steady overlap on
 every iteration), and an epilogue (drain without issuing new loads).
 
-You describe the operations in one iteration — loads, fragment reads,
-MMA — and a per-target cost model for your GPU. At `comptime`, this
+You describe the operations in one iteration (loads, fragment reads,
+MMA) and a per-target cost model for your GPU. At `comptime`, this
 package builds a dependency graph from those declarations, schedules the
 operations, derives hardware wait counts and barriers, and verifies
 structural safety. You consume the result as a flat `ScheduleEntry` list

@@ -17,6 +17,7 @@ from .context import (
     BaseContextType,
     GrammarEnforcementSnapshot,
     GrammarEnforcementState,
+    GrammarMatcher,
     PixelContext,
     PixelGenerationContextType,
     SpecDecodingState,
@@ -56,7 +57,14 @@ from .sampling_params import (
     SamplingParamsInput,
 )
 from .status import GenerationStatus
-from .tokens import ImageMetadata, Range, TokenBuffer, TokenSlice
+from .tokens import (
+    ImageMetadata,
+    Range,
+    TokenBuffer,
+    TokenHashOverride,
+    TokenSlice,
+)
+from .video import open_video_container
 
 __all__ = [
     "FUTURE_TOKEN",
@@ -69,6 +77,7 @@ __all__ = [
     "GenerationStatus",
     "GrammarEnforcementSnapshot",
     "GrammarEnforcementState",
+    "GrammarMatcher",
     "ImageMetadata",
     "InputError",
     "LogProbabilities",
@@ -89,8 +98,10 @@ __all__ = [
     "TextGenerationOutput",
     "TextGenerationResponseFormat",
     "TokenBuffer",
+    "TokenHashOverride",
     "TokenSlice",
     "VLMContextType",
+    "open_video_container",
     "validate_aspect_ratio_args",
     "validate_flux2_max_pixel_area",
     "validate_image_grid_thw_args",

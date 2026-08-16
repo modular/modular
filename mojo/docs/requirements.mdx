@@ -71,7 +71,7 @@ below; disable it for this section. */}
 - **RAM:** 8 GiB minimum for Mojo development. MAX inference and model serving
   require significantly more memory, with the exact amount varying by model.
   For the catalog of supported models, see the
-  [supported models](https://docs.modular.com/max/models/) page; for a
+  [supported models](https://docs.modular.com/models/) page; for a
   specific model, check its Hugging Face page for memory details.
 - **GPU:** Optional. Mojo supports GPU programming across NVIDIA, AMD, and Apple
   silicon. See [GPU compatibility](#gpu-compatibility) below for supported
@@ -332,6 +332,11 @@ system `ptxas` binary compatible with your hardware and driver version.
       <td>RDNA2</td>
       <td><code>gfx1030</code></td>
     </tr>
+    <tr>
+      <td>Van Gogh (Steam Deck)</td>
+      <td>RDNA2</td>
+      <td><code>gfx1033</code></td>
+    </tr>
   </tbody>
 </table>
 
@@ -405,7 +410,7 @@ To check that your system's GPU is accessible at runtime, try a minimal GPU
 program:
 
 ```mojo title="check_gpu.mojo"
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 def main():
     var ctx = DeviceContext()

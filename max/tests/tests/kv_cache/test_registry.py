@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.pipelines.kv_cache import load_kv_manager
 
 
@@ -32,7 +32,7 @@ def create_kv_params(
     dtype: DType = DType.bfloat16,
 ) -> KVCacheParams:
     """Helper to create KVCacheParams with common defaults."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -120,13 +120,31 @@ class TestLoadKvManager:
                 available_cache_memory=1024 * 1024 * 1024,
             )
 
+    def test_load_kv_manager_rejects_oversized_max_seq_len(self) -> None:
+        """load_kv_manager should fail startup when a single request at
+        max_seq_len cannot fit in the device block pool."""
+        params = create_kv_params()
+        mock_session = MagicMock()
+
+        # 1 GiB fits 64 blocks of 128 tokens each = 8192 tokens.
+        with pytest.raises(
+            RuntimeError, match="one request at the max sequence length"
+        ):
+            load_kv_manager(
+                params=params,
+                max_batch_size=16,
+                max_seq_len=8192 + 1,
+                session=mock_session,
+                available_cache_memory=1024 * 1024 * 1024,
+            )
+
     @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_manager_rejects_invalid_page_size(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
         """load_kv_manager should reject page sizes that aren't multiples of 128."""
         # Create params with invalid page size (not multiple of 128)
-        params = KVCacheParams(
+        params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,

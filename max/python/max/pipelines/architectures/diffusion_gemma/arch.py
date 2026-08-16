@@ -41,11 +41,8 @@ diffusion_gemma_arch = SupportedArchitecture(
         "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
         "google/diffusiongemma-26B-A4B-it",
     ],
-    default_encoding="float4_e2m1fnx2",
-    supported_encodings={
-        "float4_e2m1fnx2",
-        "bfloat16",
-    },
+    default_encoding=DiffusionGemmaForBlockDiffusionConfig.DEFAULT_ENCODING,
+    supported_encodings=DiffusionGemmaForBlockDiffusionConfig.SUPPORTED_ENCODINGS,
     pipeline_model=DiffusionGemmaForBlockDiffusionModel,
     pipeline_cls=BlockDiffusionTextGenerationPipeline,
     task=PipelineTask.TEXT_GENERATION,
@@ -53,11 +50,13 @@ diffusion_gemma_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     input_modalities={InputModality.TEXT},
-    rope_type="normal",
     context_type=Gemma4Context,
     config=DiffusionGemmaForBlockDiffusionConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    # The "gemma4" tool parser only emits Lark tool-call grammars, which the
+    # xgrammar backend cannot compile. Pin to llguidance (matches gemma4).
+    default_structured_output_backend="llguidance",
     memory_planner=Gemma4MemoryPlanner,
     # The decoder writes canvas K/V into uncommitted cache slots and reads
     # them back within a step; prefix-cache block reuse across requests is
