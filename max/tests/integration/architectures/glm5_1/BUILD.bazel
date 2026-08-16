@@ -48,11 +48,22 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+    ],
+)
+
+modular_py_test(
     name = "glm5_1",
     size = "large",
     srcs = glob(
         ["**/test_*.py"],
-        exclude = ["test_tool_parser.py"],
+        exclude = [
+            "test_tokenizer.py",
+            "test_tool_parser.py",
+        ],
     ) + [
         "conftest.py",
     ],

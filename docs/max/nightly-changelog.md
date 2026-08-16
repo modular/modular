@@ -276,6 +276,16 @@ This version is still a work in progress.
 
 ### Inference server
 
+- GLM models now map `reasoning_effort` onto the two thinking levels their
+  chat template can express, instead of forwarding it verbatim. The template
+  reads only `high` as a distinct level and treats every other value as
+  maximum effort, so passing the value through inverted the scale: `low` and
+  `medium` requested maximum reasoning while `high` requested less than they
+  did. Every effort other than `none` (which disables thinking), `max` (the
+  template's own top level, still addressable directly) and `xhigh`
+  (OpenRouter's name for that same top level) now selects the lower level, so
+  an unrecognized value degrades to less reasoning instead of silently maxing
+  out. Requests that set no effort are unaffected.
 - Structured-output grammar compilation now runs off both serving hot
   paths. A new request's grammar matcher (from `response_format` JSON
   schemas or tool-call grammars) is built on a worker thread while the
