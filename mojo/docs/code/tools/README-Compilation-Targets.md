@@ -19,7 +19,7 @@ and target resolution but not the end-to-end user experience on
 different host hardware.
 
 **Where:** Placed in _/oss/modular/mojo/docs/code/tools_
-under _README-Compilation-Targets.md_ and _test\_cross\_compile.sh_.
+under _README-Compilation-Targets.md_ and _test\_compilation\_targets.sh_.
 
 **Important note:** On non-Apple hosts, test 18 will fail. `metal:4` is
 hardcoded to the test.
@@ -56,17 +56,17 @@ Test 18 (GPU sidecar) requires a source file with a GPU kernel:
 ```mojo
 """Minimal GPU kernel for target testing."""
 
-from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from std.memory import Pointer
+from max.gpu.host import DeviceContext
 
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
 
 def kernel(
-    value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    value: Pointer[Scalar[DType.int32], MutAnyOrigin],
 ):
-    value[0] = `✅`
+    value[unsafe_offset=0] = `✅`
 
 
 def main() raises:

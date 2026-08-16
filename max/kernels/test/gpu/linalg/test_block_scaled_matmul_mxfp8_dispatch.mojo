@@ -29,13 +29,13 @@ reference:
 
 from std.math import ceildiv, align_up
 from std.random import rand, random_ui64
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from internal_utils import assert_almost_equal
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     block_scaled_matmul,
     naive_block_scaled_matmul,
 )

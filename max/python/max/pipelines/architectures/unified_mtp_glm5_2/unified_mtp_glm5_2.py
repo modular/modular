@@ -46,6 +46,7 @@ from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
@@ -84,7 +85,8 @@ class UnifiedMTPGlm5_2(Module):
         self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
-            if speculative_config
+            if speculative_config is not None
+            and speculative_config.num_speculative_tokens is not None
             else 1
         )
         relaxed_topk: int | None = None
@@ -107,6 +109,7 @@ class UnifiedMTPGlm5_2(Module):
             relaxed_delta=relaxed_delta,
         )
         self.target = DeepseekV3_2(config)
+        self.target.emit_last_token_logits = False
         self.merger = RaggedTokenMerger(config.devices[0])
 
         assert draft_config is not None
@@ -167,10 +170,11 @@ class UnifiedMTPGlm5_2(Module):
             ep_inputs,
         )
 
-        # VARIABLE logits + ALL_NORMALIZED hidden states ->
-        # (last_logits, logits, offsets, hs_0..hs_{n-1}).
-        logits = target_outputs[1]
-        hidden_states = list(target_outputs[3 : 3 + n_devs])
+        # VARIABLE logits + ALL_NORMALIZED hidden states with last_logits
+        # suppressed (emit_last_token_logits=False) ->
+        # (logits, offsets, hs_0..hs_{n-1}).
+        logits = target_outputs[0]
+        hidden_states = list(target_outputs[2 : 2 + n_devs])
 
         effective_bitmasks = apply_overlap_bitmask(
             pinned_bitmask,
@@ -209,8 +213,11 @@ class UnifiedMTPGlm5_2(Module):
         # Step 0: ALL hidden states (per-batch gather at accepted positions) +
         # VARIABLE logits (draft argmax). The draft computes its own lightning
         # indexer top-k here and returns it for reuse in later steps.
+        # last_logits (index 0) is unused here, so suppress its vocab-sized
+        # lm_head projection.
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
         self.draft.return_logits = ReturnLogits.VARIABLE
+        self.draft.emit_last_token_logits = False
         draft_outputs = self.draft(
             shifted_corrected,
             hidden_states,
@@ -227,14 +234,17 @@ class UnifiedMTPGlm5_2(Module):
             reuse_prev_topk=False,
         )
         # Steps 1..K reuse the LAST_PER_DEVICE path (its internal allgather
-        # fences successive draft invocations).
+        # fences successive draft invocations) and read last_logits at index 0,
+        # so re-enable it.
         self.draft.return_hidden_states = ReturnHiddenStates.LAST_PER_DEVICE
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
+        self.draft.emit_last_token_logits = True
 
-        # Step-0 layout: (last_logits, logits, offsets, hs[n], topk[n]).
-        draft_variable_logits = draft_outputs[1]
-        all_hs = list(draft_outputs[3 : 3 + n_devs])
-        step0_topk = list(draft_outputs[3 + n_devs : 3 + 2 * n_devs])
+        # Step-0 layout with last_logits suppressed:
+        # (logits, offsets, hs[n], topk[n]).
+        draft_variable_logits = draft_outputs[0]
+        all_hs = list(draft_outputs[2 : 2 + n_devs])
+        step0_topk = list(draft_outputs[2 + n_devs : 2 + 2 * n_devs])
 
         draft_logits_3d = _reshape_target_logits(draft_variable_logits)
         draft_argmax = ops.squeeze(
@@ -260,6 +270,13 @@ class UnifiedMTPGlm5_2(Module):
             signal_buffers=signal_buffers,
             device=device0,
             split_prefix="mtp",
+        )
+        # The draft's ``hnorm`` expects the post-final-norm hidden state -- the
+        # same convention the target hands over at step 0 (ALL_NORMALIZED).
+        # ``shared_head_norm`` is row-wise, so normalizing after the gather is
+        # equivalent to normalizing the whole sequence and far cheaper.
+        draft_hs = forward_sharded_layers(
+            self.draft.shared_head_norm_shards, draft_hs
         )
 
         # Gather the step-0 lightning-indexer top-k at the same accepted
@@ -396,6 +413,9 @@ class UnifiedMTPGlm5_2(Module):
                 ]
             else:
                 draft_hs = list(draft_hs_full)
+            draft_hs = forward_sharded_layers(
+                self.draft.shared_head_norm_shards, draft_hs
+            )
 
             next_draft_tokens = ops.argmax(logits, axis=-1).reshape([-1])
             all_draft_tokens.append(

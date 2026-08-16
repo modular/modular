@@ -92,18 +92,6 @@ modular_py_binary(
     ],
 )
 
-modular_py_library(
-    name = "check_golden_eligibility",
-    srcs = ["check_golden_eligibility.py"],
-    data = ["golden_required_list.yaml"],
-    imports = [".."],
-    deps = [
-        requirement("click"),
-        requirement("pyyaml"),
-        requirement("requests"),
-    ],
-)
-
 modular_py_binary(
     name = "prefetch_hf_repos",
     testonly = True,
@@ -144,6 +132,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_prefetch_hf_repos",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_prefetch_hf_repos.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],  # Depends on :prefetch_hf_repos binary for imports
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":prefetch_hf_repos",
+    ],
+)
+
+modular_py_test(
     name = "test_bisect_smoke_test",
     size = "small",
     srcs = [
@@ -180,25 +187,6 @@ modular_py_test(
     deps = [
         ":smoke_test",
         ":smoke_test_github_matrix",
-        requirement("click"),
-    ],
-)
-
-modular_py_test(
-    name = "test_check_golden_eligibility",
-    size = "small",
-    srcs = [
-        "conftest.py",
-        "test_check_golden_eligibility.py",
-    ],
-    imports = [".."],
-    # TODO(MODELS-994): Investigate and enable on macOS
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":check_golden_eligibility",
         requirement("click"),
     ],
 )

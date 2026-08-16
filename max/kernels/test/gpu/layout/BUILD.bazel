@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -102,6 +103,17 @@ _FILECHECK_TESTS = [
     "test_wgmma_layouts.mojo",
 ]
 
+_FILECHECK_EXTRA_DEPS = {
+    "test_apple_mma_8x8.mojo": ["//max:max_mojo"],
+    "test_tensor_core_apple.mojo": ["//max:max_mojo"],
+    "test_tensor_core_sm90.mojo": ["//max:max_mojo"],
+    "test_tiled_matmul_gpu.mojo": ["//max:max_mojo"],
+    "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["//max:max_mojo"],
+    "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["//max:max_mojo"],
+    "test_wgmma_int8_uint8_layouts.mojo": ["//max:max_mojo"],
+    "test_wgmma_layouts.mojo": ["//max:max_mojo"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -110,6 +122,7 @@ _FILECHECK_TESTS = [
             src,
             "matmul_kernels.mojo",
         ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
             "test.resources:gpu-memory": "2",
         },
@@ -121,6 +134,7 @@ _FILECHECK_TESTS = [
             "//max:kv_cache",
             "//max:layout",
             "//max:linalg",
+            "//max:max_mojo",
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
@@ -146,6 +160,7 @@ mojo_test(
     name = "test_device_pointer_tile_storage_kernel.mojo.test",
     size = "large",
     srcs = ["test_device_pointer_tile_storage_kernel.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
@@ -163,7 +178,7 @@ mojo_test(
             "tensor_core_kernels.mojo",
             "test_tensor_core_amd_utils.mojo",
         ],
-        copts = _EXTRA_COPTS.get(src, []),
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + _EXTRA_COPTS.get(src, []),
         # KERN-2339: naive_matmul kernel has out-of-bounds indexing bugs that need proper fixing
         enable_assertions = src not in ["test_tiled_matmul_gpu.mojo"],
         main = src,
@@ -176,7 +191,7 @@ mojo_test(
             "//max:nn",
             "//max:quantization",
             "@mojo//:std",
-        ],
+        ] + _FILECHECK_EXTRA_DEPS.get(src, []),
     )
     for src in _FILECHECK_TESTS
 ]

@@ -53,6 +53,9 @@ from max.pipelines.diffusion.cache import (
 )
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -243,7 +246,10 @@ class Flux2KleinExecutor(
         )
 
         transformer_config = manifest["transformer"]
-        encoding = transformer_config.quantization_encoding or "bfloat16"
+        resolved_transformer_encoding, _ = (
+            _resolve_component_encoding_and_weights(transformer_config)
+        )
+        encoding = resolved_transformer_encoding or "bfloat16"
         self._model_dtype: DType = (
             DType.bfloat16
             if encoding == "float4_e2m1fnx2"
@@ -263,11 +269,18 @@ class Flux2KleinExecutor(
         text_encoder_entry = manifest["text_encoder"]
         text_encoder_devices = load_devices(text_encoder_entry.device_specs)
         self._text_encoder_device: Device = text_encoder_devices[0]
+        resolved_te_encoding, resolved_te_weight_path = (
+            _resolve_component_encoding_and_weights(text_encoder_entry)
+        )
         self.text_encoder = Qwen3TextEncoderKleinModel(
             config=text_encoder_entry.huggingface_config.to_dict(),
-            encoding=text_encoder_entry.quantization_encoding or "bfloat16",
+            encoding=resolved_te_encoding or "bfloat16",
             devices=text_encoder_devices,
-            weights=load_weights(text_encoder_entry.resolved_weight_paths()),
+            weights=load_weights(
+                text_encoder_entry.resolved_weight_paths(
+                    resolved_te_weight_path
+                )
+            ),
             session=session,
         )
 

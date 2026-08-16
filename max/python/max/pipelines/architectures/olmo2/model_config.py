@@ -16,17 +16,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -40,6 +42,12 @@ class Olmo2Config(Llama3Config):
     Llama3 calculates head_dim as hidden_size // num_attention_heads,
     Olmo2 models have an explicit head_dim field in their configuration.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
 
     @classmethod
     def construct_kv_params(
@@ -128,10 +136,10 @@ class Olmo2Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -176,9 +184,9 @@ class Olmo2Config(Llama3Config):
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
-            lora_config=base_config.lora_config,
             logits_scaling=base_config.logits_scaling,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
         )
 
     def finalize(

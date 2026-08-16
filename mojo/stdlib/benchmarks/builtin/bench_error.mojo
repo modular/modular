@@ -85,7 +85,7 @@ def create_error_depth_10() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-@parameter
+@__parameter
 def bench_error_catch_no_print_depth3(mut b: Bencher) raises:
     """Benchmark catching errors without printing the stack trace.
 
@@ -94,7 +94,7 @@ def bench_error_catch_no_print_depth3(mut b: Bencher) raises:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(100):
             try:
@@ -105,12 +105,12 @@ def bench_error_catch_no_print_depth3(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_error_catch_depth1(mut b: Bencher) raises:
     """Benchmark with shallow call stack (depth 1)."""
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(100):
             try:
@@ -121,12 +121,12 @@ def bench_error_catch_depth1(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_error_catch_depth5(mut b: Bencher) raises:
     """Benchmark with medium call stack (depth 5)."""
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(100):
             try:
@@ -137,12 +137,12 @@ def bench_error_catch_depth5(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_error_catch_depth10(mut b: Bencher) raises:
     """Benchmark with deeper call stack (depth 10)."""
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(100):
             try:
@@ -153,12 +153,12 @@ def bench_error_catch_depth10(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_error_create_only(mut b: Bencher) raises:
     """Benchmark just creating Error objects (no raise/catch overhead)."""
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(100):
             var e = Error("test error")

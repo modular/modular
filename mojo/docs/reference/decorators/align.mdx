@@ -104,8 +104,8 @@ def main():
 Both stack and heap allocations respect `@align`:
 
 ```mojo
-from std.memory import UnsafePointer
 from std.sys import align_of
+from std.memory import alloc, dealloc
 
 @fieldwise_init
 @align(64)
@@ -117,8 +117,8 @@ def use_aligned():
     var stack_value = CacheAligned(42)
 
     # Heap allocation
-    var heap_ptr = alloc[CacheAligned](1)
-    heap_ptr.free()
+    var heap_alloc = alloc[CacheAligned]({count = 1})
+    dealloc(heap_alloc^)
 ```
 
 You don't need to manually request alignment when allocating values of an
@@ -127,51 +127,47 @@ aligned type.
 ## Alignment and arrays
 
 The `@align` decorator guarantees alignment of the base address of a value,
-including the base pointer of an array. It doesn't pad the size of the struct.
-Mojo lays out array elements using `size_of[T]()` as your stride, not
-`align_of[T]()`:
+including the base pointer of an array. It pads the size of the struct to be a
+multiple of the alignment. Mojo lays out array elements using `size_of[T]()`
+which rounds up to a multiple of `align_of[T]()`:
 
 ```mojo
-from std.memory import UnsafePointer
-from std.sys import size_of, align_of
+from std.sys import align_of, size_of
+from std.memory import alloc, dealloc
 
 @align(64)
 struct CacheAligned:
     var data: Int  # 8 bytes
 
 def demonstrate_array_stride():
-    var arr = UnsafePointer[CacheAligned].alloc(4)
+    var allocation = alloc[CacheAligned]({count = 4})
+    var arr = allocation.unsafe_ptr()
 
     print(align_of[CacheAligned]())  # 64
-    print(size_of[CacheAligned]())   # 8
+    print(size_of[CacheAligned]())   # 64
 
-    # Only arr[0] is guaranteed to be 64-byte aligned
-    # Subsequent elements follow at 8-byte intervals
+    # All elements of arr are guaranteed to be 64-byte aligned
 
-    arr.free()
+    dealloc(allocation^)
 ```
 
-If every element in an array must be aligned, pad the struct until its size
-is a multiple of its alignment. (This matches the behavior of C and C++
-`alignas`.)
+## Parameterized structs
 
-## Generic structs
-
-Alignment also works with generic structs. All instances of a generic type
-share the same alignment requirement. Because of this, under certain
-circumstances, you may find that the alignment isn't tuned by its types:
+Alignment also works with parameterized structs. All instances of a
+parameterized type share the same alignment requirement. Because of this, under
+certain circumstances, you may find that the alignment isn't tuned by its types:
 
 ```mojo
 from std.sys import align_of
 
 @fieldwise_init
 @align(128)
-struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & Deinitable]:
     var value: Self.T
 
 def main():
-    print(align_of[AlignedGeneric[Int8]]())   # 128
-    print(align_of[AlignedGeneric[Int64]]())  # 128
+    print(align_of[AlignedType[Int8]]())   # 128
+    print(align_of[AlignedType[Int64]]())  # 128
 ```
 
 Compare this with an alignment of 4, where the maximum
@@ -183,12 +179,12 @@ from std.sys import align_of
 
 @fieldwise_init
 @align(4)
-struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
+struct AlignedType[T: Copyable & Deinitable]:
     var value: Self.T
 
 def main():
-    print(align_of[AlignedGeneric[Int8]]())   # 4
-    print(align_of[AlignedGeneric[Int64]]())  # 8
+    print(align_of[AlignedType[Int8]]())   # 4
+    print(align_of[AlignedType[Int64]]())  # 8
 ```
 
 ## Interaction with RegisterPassable
@@ -288,7 +284,7 @@ struct TensorMap:
     pass
 
 var tensormap = TensorMap()
-var heap_tensormap = alloc[TensorMap](1)
+var heap_tensormap = alloc[TensorMap]({count = 1})
 ```
 
 Alignment is enforced automatically everywhere the type is used.
@@ -297,8 +293,8 @@ Both stack and heap allocations respect `@align`.
 
 ## Parametric alignment
 
-The alignment value can also be a struct parameter, enabling generic aligned
-types:
+The alignment value can also be a struct parameter, enabling parameterized
+aligned types:
 
 ```mojo
 from std.sys import align_of

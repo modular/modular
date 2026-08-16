@@ -91,8 +91,8 @@ optimization and does not affect accuracy. Try one of:
 
 ### KV-connector recipes force connector-only prefix hits
 
-For any recipe with a `kv_connector` (`local` or `tiered`), the harness sets
-`MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
+For any recipe with a `kv_connector` (`tiered` or `rust_tiered`), the harness
+sets `MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
 disables the device prefix cache so every prefix-cache hit is served through the
 connector — intentional, so the test exercises the CPU/disk offload path it is
 meant to cover. Per-step connector metrics (`D2H`/`H2D` blocks, disk
