@@ -22,6 +22,7 @@ import numpy as np
 import pytest
 from max.pipelines.lib.pipeline_variants import structured_output_backend
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN,
     _log_if_slow,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
@@ -181,6 +182,39 @@ def test_any_whitespace_grammar_admits_whitespace(backend_name: str) -> None:
         f"[{backend_name}] whitespace-tolerant grammar rejected {payload!r}"
     )
     assert matcher.is_accepting()
+
+
+def test_any_whitespace_grammar_bounds_whitespace_runs() -> None:
+    """The whitespace-tolerant xgrammar grammar caps each whitespace run.
+
+    Guards the runaway-generation vector that motivated the compact default:
+    a model looping on whitespace must be forced to converge instead of
+    emitting whitespace forever (GLM 5.2 produced exactly that runaway
+    inside tool calls). xgrammar-only: llguidance has no whitespace-run cap.
+    """
+    backend_name = "xgrammar"
+    helper = _make_helper(backend_name, any_whitespace=True)
+    assert helper.backend is not None
+    grammar = helper.backend.compile_json_schema(_WS_SCHEMA)
+
+    max_run = " " * STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN
+    within = helper.backend.create_matcher(grammar)
+    payload = "{" + max_run + '"a":"x"}'
+    tokens = [ord(c) for c in payload]
+    assert within.try_consume_tokens(tokens) == len(tokens), (
+        f"[{backend_name}] bounded grammar rejected a "
+        f"{STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN}-char whitespace run"
+    )
+    assert within.is_accepting()
+
+    beyond = helper.backend.create_matcher(grammar)
+    payload = "{" + max_run + ' "a":"x"}'
+    consumed = beyond.try_consume_tokens([ord(c) for c in payload])
+    assert consumed == 1 + STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN, (
+        f"[{backend_name}] grammar consumed {consumed} tokens of "
+        f"{payload!r}; expected rejection at whitespace char "
+        f"{STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN + 1}"
+    )
 
 
 @pytest.mark.parametrize("backend_name", ["xgrammar", "llguidance"])

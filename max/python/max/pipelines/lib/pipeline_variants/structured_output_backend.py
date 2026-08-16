@@ -65,6 +65,10 @@ _GRAMMAR_COMPILE_LOG_MS = float(
     os.environ.get("MAX_GRAMMAR_COMPILE_LOG_MS", "10.0")
 )
 
+# Cap on each run of consecutive whitespace a whitespace-tolerant
+# response_format grammar accepts between JSON tokens.
+STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN = 16
+
 _CompileFn = TypeVar("_CompileFn", bound=Callable[..., Any])
 
 
@@ -311,7 +315,10 @@ class LlguidanceBackend(GrammarBackend[Any]):
         """Compile a JSON schema to a grammar handle for this backend."""
         # The empty whitespace pattern pins compact JSON (no whitespace
         # between tokens); omitting it uses llguidance's whitespace-tolerant
-        # default.
+        # default. Unlike xgrammar, llguidance has no whitespace-run cap: a
+        # bounded whitespace_pattern regex does not bound consecutive
+        # whitespace (the pattern repeats), so whitespace-tolerant mode on
+        # this backend is unbounded.
         return LLMatcher.grammar_from_json_schema(
             json_schema,
             overrides=(
@@ -544,11 +551,18 @@ class XgrammarBackend(GrammarBackend[Any]):
             else json.dumps(json_schema)
         )
         # Compact mode pins the separators; whitespace-tolerant mode must
-        # leave them unset (xgrammar's flexible-whitespace grammar).
+        # leave them unset (xgrammar's flexible-whitespace grammar) and caps
+        # each whitespace run so a looping model cannot emit whitespace
+        # forever.
         return self._compiler.compile_json_schema(
             schema,
             any_whitespace=self._any_whitespace,
             separators=None if self._any_whitespace else (",", ":"),
+            max_whitespace_cnt=(
+                STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN
+                if self._any_whitespace
+                else None
+            ),
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=self._reject_unsupported,
         )
