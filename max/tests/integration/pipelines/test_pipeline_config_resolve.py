@@ -669,6 +669,68 @@ class TestStructuredOutputBackendResolution:
             assert config.sampling.structured_output_backend == "llguidance"
 
 
+class TestStructuredOutputAnyWhitespaceResolution:
+    """Architecture default for ``sampling.structured_output_any_whitespace``."""
+
+    @prepare_registry
+    def test_any_whitespace_resolved_from_architecture(self) -> None:
+        """Arch's default_structured_output_any_whitespace applies when unset."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is True
+
+    @prepare_registry
+    def test_explicit_any_whitespace_value_wins(self) -> None:
+        """An explicit user value is never overridden by the arch default."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            config.sampling = SamplingConfig(
+                structured_output_any_whitespace=False
+            )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is False
+
+    @prepare_registry
+    def test_any_whitespace_defaults_to_compact(self) -> None:
+        """With no user value and no arch default, resolution pins False.
+
+        False (compact JSON) is today's behavior and the Gemma-4 runaway
+        mitigation (0c57a6bd331); the global default must not drift.
+        """
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is False
+
+
 # ---------------------------------------------------------------------------
 # Category G: Cache Dtype Resolution
 # ---------------------------------------------------------------------------

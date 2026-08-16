@@ -286,6 +286,11 @@ This version is still a work in progress.
   (OpenRouter's name for that same top level) now selects the lower level, so
   an unrecognized value degrades to less reasoning instead of silently maxing
   out. Requests that set no effort are unaffected.
+
+- Structured-output JSON grammars can be made whitespace-tolerant, per
+  architecture via `default_structured_output_any_whitespace`.
+  - GLM 5 models default to whitespace-tolerant `response_format` grammars.
+
 - Structured-output grammar compilation now runs off both serving hot
   paths. A new request's grammar matcher (from `response_format` JSON
   schemas or tool-call grammars) is built on a worker thread while the

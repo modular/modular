@@ -56,4 +56,6 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     tool_parser="glm45",
     reasoning_parser="glm45",
     default_structured_output_backend="xgrammar",
+    # Matches the base GlmMoeDsaForCausalLM arch; see the rationale there.
+    default_structured_output_any_whitespace=True,
 )
