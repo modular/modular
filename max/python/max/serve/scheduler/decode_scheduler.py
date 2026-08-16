@@ -17,35 +17,45 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
+from dataclasses import dataclass, field
 
-from max.interfaces import (
-    MAXPullQueue,
-    MAXPushQueue,
-    Pipeline,
-    RequestID,
-    Scheduler,
-    SchedulerResult,
-    TextGenerationInputs,
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
     TextGenerationOutput,
 )
-from max.interfaces.queue import drain_queue
-from max.kv_cache import (
+from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+)
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
+from max.serve.queue import (
+    MAXPullQueue,
+    MAXPushQueue,
+    drain_queue,
+)
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
     PrefillResponse,
 )
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
+from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -55,10 +65,26 @@ from .dp_padding import DPBatchPadder
 from .utils import (
     SchedulerLogger,
     get_cancelled_reqs,
-    reshape_flat_kv_blocks_to_grid,
 )
 
 logger = logging.getLogger("max.serve")
+
+
+@dataclass
+class PendingPrefill:
+    """Decode-side state for a request awaiting a ``PrefillResponse``."""
+
+    context: TextContext
+    replica_idx: int
+    sent_at: float = field(default_factory=time.monotonic)
+
+
+@dataclass
+class PendingTransfer:
+    """Decode-side state for an in-flight prefill->decode KV transfer."""
+
+    transfer: TransferReqData
+    sent_at: float = field(default_factory=time.monotonic)
 
 
 class DecodeScheduler(Scheduler):
@@ -68,7 +94,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
@@ -92,8 +118,8 @@ class DecodeScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
-        self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
-        self.inflight_transfers: dict[RequestID, TransferReqData] = {}
+        self.prefill_reqs: dict[RequestID, PendingPrefill] = {}
+        self.inflight_transfers: dict[RequestID, PendingTransfer] = {}
         self.prefill_reqs_per_replica: list[int] = [
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
@@ -102,27 +128,21 @@ class DecodeScheduler(Scheduler):
             name=f"decode_agent_{uuid.uuid4()}",
             kv_cache=self.kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                tensors=reshape_flat_kv_blocks_to_grid(
-                    draft_kv_blocks,
-                    dp=scheduler_config.data_parallel_degree,
-                    group_name="draft",
-                ),
-                total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
-            )
-
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
             dp_padder=dp_padder,
+            # A prefill_reqs entry doesn't free its own blocks on
+            # resolution -- it converts into a tg_reqs reservation on the
+            # same blocks -- but that reservation is then preemptible like
+            # any other TG request, so its presence still means a stuck
+            # allocation isn't necessarily a dead end. inflight_transfers
+            # is a strict subset of prefill_reqs (an entry only exists
+            # there once its matching prefill_reqs entry does), so
+            # counting prefill_reqs alone covers both.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self._last_batch_activity: float = time.monotonic()
@@ -147,14 +167,20 @@ class DecodeScheduler(Scheduler):
             return
 
         # Update the context with the generated token
-        context, _ = self.prefill_reqs[request_id]
+        context = self.prefill_reqs[request_id].context
         context.update(message.generated_token_id)
 
         # Restore draft tokens from Eagle/MTP prefill so the first
         # decode iteration can verify them without re-running draft prefill.
         # When speculative decoding is active, the prefill worker always
         # sends draft tokens.
-        if self.scheduler_config.num_speculative_tokens > 0:
+        if (
+            self.scheduler_config.num_speculative_tokens > 0
+            and not context.is_done
+        ):
+            # Done contexts (max_gen_tokens=1) need no further TG steps, so
+            # the prefill pod sends draft_tokens=None. For all other contexts,
+            # draft tokens must arrive with the PrefillResponse.
             if message.draft_tokens is None:
                 raise ValueError(
                     f"Expected draft tokens in PrefillResponse for request "
@@ -171,7 +197,9 @@ class DecodeScheduler(Scheduler):
             {request_id: SchedulerResult.create(output)}
         )
 
-        self.inflight_transfers[request_id] = message.transfer_metadata
+        self.inflight_transfers[request_id] = PendingTransfer(
+            transfer=message.transfer_metadata,
+        )
 
     @traced
     def send_prefill_request(
@@ -249,9 +277,7 @@ class DecodeScheduler(Scheduler):
             and (
                 self.kv_cache is None
                 or any(
-                    self.kv_cache.get_num_used_pages(replica_idx)
-                    / self.kv_cache.get_num_pages(replica_idx)
-                    < 0.9
+                    self.kv_cache.block_count(replica_idx).used_pct < 90
                     for replica_idx in range(
                         self.scheduler_config.data_parallel_degree
                     )
@@ -267,7 +293,7 @@ class DecodeScheduler(Scheduler):
             replica_idx = self.batch_constructor.get_next_replica_idx(
                 external_requests_per_replica=self.prefill_reqs_per_replica
             )
-            self.kv_cache.claim(req_id, replica_idx=replica_idx)
+            self.kv_cache.claim(context, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
@@ -275,23 +301,23 @@ class DecodeScheduler(Scheduler):
             # the prefill node generates extra KV entries for draft tokens,
             # so we must allocate matching blocks on the decode side.
             try:
-                self.kv_cache.alloc(
-                    context,
-                    replica_idx=replica_idx,
-                    num_steps=1,
-                )
+                load_event = self.kv_cache.alloc(context)
+                # TODO: cordon the request (like the CE batch constructor) so the
+                # onload overlaps GPU execution instead of blocking here.
+                load_event.synchronize()
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.kv_cache.release(req_id, replica_idx=replica_idx)
+                self.kv_cache.release(context)
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.kv_cache.get_req_blocks(
-                req_id, replica_idx=replica_idx
+            dst_idxs = self.kv_cache.get_req_blocks(context)
+            self.prefill_reqs[req_id] = PendingPrefill(
+                context=context,
+                replica_idx=replica_idx,
             )
-            self.prefill_reqs[req_id] = (context, replica_idx)
             self.prefill_reqs_per_replica[replica_idx] += 1
             self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
@@ -307,15 +333,14 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
-                data, dst_replica_idx = self.prefill_reqs[req_id]
-
-                # Remove from pending requests.
-                del self.prefill_reqs[req_id]
+                pending = self.prefill_reqs.pop(req_id)
+                data = pending.context
+                dst_replica_idx = pending.replica_idx
                 self.prefill_reqs_per_replica[dst_replica_idx] -= 1
 
                 # Release the KV cache blocks that were allocated on the
                 # decode GPU before sending this request to prefill
-                self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
+                self.kv_cache.release(data)
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -338,6 +363,103 @@ class DecodeScheduler(Scheduler):
                     f"cancel request received on decode node for {req_id} not in pending or active batch."
                 )
 
+    def _evict_expired_requests(self) -> None:
+        """Evict per-request entries stuck past ``decode_request_ttl_s``.
+
+        Two failure modes are recovered individually so the stall watchdog
+        does not have to kill the engine:
+
+        - ``prefill_reqs`` without a matching ``inflight_transfers`` entry
+          means ``PrefillResponse`` never arrived.
+        - ``inflight_transfers`` past TTL means the NIXL transfer never
+          completed.
+
+        Each evicted request releases its KV cache blocks, decrements
+        ``prefill_reqs_per_replica``, and surfaces a cancelled
+        ``SchedulerResult``.
+        """
+        ttl_s = self.scheduler_config.decode_request_ttl_s
+        if ttl_s is None:
+            return
+
+        now = time.monotonic()
+        cutoff = now - ttl_s
+
+        # Evict prefill_reqs without a matching inflight_transfers (no
+        # PrefillResponse received). The dual-membership case is handled
+        # by the inflight_transfers sweep below, to avoid evicting on a
+        # stale prefill_reqs.sent_at while the transfer still makes
+        # progress.
+        expired_prefill = [
+            req_id
+            for req_id, pending in self.prefill_reqs.items()
+            if pending.sent_at < cutoff
+            and req_id not in self.inflight_transfers
+        ]
+        for req_id in expired_prefill:
+            pending = self.prefill_reqs.pop(req_id)
+            self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+            self.kv_cache.release(pending.context)
+            self._send_cancel_to_prefill(req_id, pending.context)
+            self.response_queue.put_nowait(
+                {req_id: SchedulerResult.cancelled()}
+            )
+            logger.warning(
+                "Evicting stuck prefill request %s (no PrefillResponse)"
+                " after %.1fs (TTL=%.1fs)",
+                req_id,
+                now - pending.sent_at,
+                ttl_s,
+            )
+
+        # Evict inflight_transfers past TTL (transfer never completed);
+        # the matching prefill_reqs entry, if any, is also evicted.
+        expired_transfers = [
+            req_id
+            for req_id, pending in self.inflight_transfers.items()
+            if pending.sent_at < cutoff
+        ]
+        for req_id in expired_transfers:
+            pending_transfer = self.inflight_transfers.pop(req_id)
+            try:
+                self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
+            except ValueError:
+                logger.warning(
+                    "cleanup_transfer failed for evicted request %s",
+                    req_id,
+                    exc_info=True,
+                )
+            if req_id in self.prefill_reqs:
+                pending = self.prefill_reqs.pop(req_id)
+                self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+                self.kv_cache.release(pending.context)
+                self._send_cancel_to_prefill(req_id, pending.context)
+            self.response_queue.put_nowait(
+                {req_id: SchedulerResult.cancelled()}
+            )
+            logger.warning(
+                "Evicting stuck inflight transfer %s after %.1fs (TTL=%.1fs)",
+                req_id,
+                now - pending_transfer.sent_at,
+                ttl_s,
+            )
+
+    def _send_cancel_to_prefill(
+        self, req_id: RequestID, context: TextContext
+    ) -> None:
+        """Best-effort cancel to prefill so a late ``PrefillResponse`` does
+        not arrive against released decode-side memory."""
+        if context.target_endpoint is None:
+            logger.warning(
+                "Evicted request %s has no target_endpoint; skipping"
+                " cancel to prefill",
+                req_id,
+            )
+            return
+        self.dispatcher.send_request_nowait(
+            CancelRequest(id=req_id), context.target_endpoint
+        )
+
     def check_for_completed_transfers(self) -> None:
         """Checks for the completion of KVCache transfers.
 
@@ -349,15 +471,15 @@ class DecodeScheduler(Scheduler):
 
         request_ids = list(self.inflight_transfers.keys())
         for request_id in request_ids:
-            transfer_metadata = self.inflight_transfers[request_id]
+            pending_transfer = self.inflight_transfers[request_id]
 
             # Transfer is not complete, skip.
-            if not self.transfer_engine.is_complete(transfer_metadata):
+            if not self.transfer_engine.is_complete(pending_transfer.transfer):
                 continue
 
             # Cleanup the transfer.
             del self.inflight_transfers[request_id]
-            self.transfer_engine.cleanup_transfer(transfer_metadata)
+            self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
 
             # When cancelled, the request is removed from prefill_reqs
             # therefore the request should only be added to the active_batch
@@ -366,12 +488,26 @@ class DecodeScheduler(Scheduler):
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
-            context, dst_replica_idx = self.prefill_reqs.pop(request_id)
-            self.prefill_reqs_per_replica[dst_replica_idx] -= 1
-            self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
+            pending = self.prefill_reqs.pop(request_id)
+            self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+            self.batch_constructor.enqueue_new_request(
+                pending.context, pending.replica_idx
+            )
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
+
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of prefill_reqs entries on this replica -- inflight_transfers
+        is a strict subset (an entry only exists there once its matching
+        prefill_reqs entry does), so counting the superset covers both.
+        Scoped to replica_idx: a reservation on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for pending in self.prefill_reqs.values()
+            if pending.replica_idx == replica_idx
+        )
 
     @traced
     def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
@@ -434,6 +570,8 @@ class DecodeScheduler(Scheduler):
             else:
                 raise ValueError(f"Invalid reply type: {reply}")
 
+        self._evict_expired_requests()
+
         # Eagerly reserve memory and send to prefill worker
         self.reserve_memory_and_send_to_prefill()
 
@@ -486,7 +624,13 @@ class DecodeScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. When the overlap pipeline is active, the
+        # wall-clock time measured above describes the previously enqueued
+        # batch; the pipeline reports that batch's composition and timing so
+        # telemetry is attributed to the correct batch type.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -496,8 +640,12 @@ class DecodeScheduler(Scheduler):
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
-            if hasattr(self.pipeline, "spec_decode_metrics")
+            batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
+            if hasattr(self.pipeline, "batch_spec_decode_metrics")
+            else None,
+            overlap_active=is_overlap_active,
+            completed_batch_stats=self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
             else None,
         )
 
@@ -516,7 +664,7 @@ def load_decode_scheduler(
 ) -> DecodeScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.
@@ -525,12 +673,19 @@ def load_decode_scheduler(
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture
     ):
+        # Padding dummies must match the architecture's concrete context
+        # type — for VLMs the overlap pipeline narrows every batched context
+        # to TextAndVisionContext, so plain-TextContext dummies would crash
+        # the first padded batch.
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
+        assert issubclass(context_type, TextContext)
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=pipeline.kv_manager,
             max_length=pipeline._pipeline_model.max_seq_len,
             model_name=pipeline_config.model.model_name,
             pipeline=pipeline,
+            context_type=context_type,
         )
 
     return DecodeScheduler(

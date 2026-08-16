@@ -1,7 +1,6 @@
 <!-- rumdl-disable -->
 {# Print YAML front matter #}
 {% import 'macros.jinja' as macros %}
-{% set api_path = "/mojo" %}
 {% macro print_front_matter(decl) %}
 ---
 title: {{ decl.name }}
@@ -29,7 +28,12 @@ description: {% if decl.summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl, overload=False) %}
+{% macro process_decl_body(decl, marker_above=False) %}
+{# The page's own declaration wears its marker above the signature, clear of #}
+{# the code font; its members carry theirs inside the signature row. #}
+{% if marker_above %}
+{{ macros.stability_marker(decl, standalone=True) }}
+{% endif %}
 
 {% if decl.signature %}
 <div class="mojo-function-sig">
@@ -44,8 +48,7 @@ description: {% if decl.summary
 {% if decl.signature %}
 `` {% if decl.isStatic %}static {% endif %}{{ decl.signature }} ``
 {% endif %}
-{# for function overloads, show stability marker. #}
-{% if overload %}
+{% if not marker_above %}
 {{ macros.stability_marker(decl) }}
 {% endif %}
 
@@ -55,6 +58,11 @@ description: {% if decl.summary
 {{ decl.summary }}
 
 {{ decl.description }}
+
+{% if decl.deprecated %}
+
+**Deprecated:** {{ decl.deprecated }}
+{% endif %}
 
 {% if decl.constraints %}
 
@@ -71,7 +79,7 @@ description: {% if decl.summary
         {%- for trait in param.traits -%}
             {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
-                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+                [`{{ trait.type }}`]({{ api_href(trait.path) }})
             {%- else -%}
                 `{{ trait.type }}`
             {%- endif -%}
@@ -79,7 +87,7 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_href(param.path) }})
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}
@@ -92,7 +100,7 @@ description: {% if decl.summary
 
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
-        %}[``{{ arg.type | pad_backticks }}``]({{ api_path }}{{ arg.path }}){% else
+        %}[``{{ arg.type | pad_backticks }}``]({{ api_href(arg.path) }}){% else
         %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
@@ -102,7 +110,7 @@ description: {% if decl.summary
 **Returns:**
 
 {% if decl.returns.path
-  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_path }}{{ decl.returns.path }}){% else
+  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_href(decl.returns.path) }}){% else
   %}``{{ decl.returns.type | pad_backticks }}``{% endif %}{% if decl.returns.doc
     %}: {{ decl.returns.doc }}{% endif %}
 {% endif %}
@@ -128,20 +136,15 @@ description: {% if decl.summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload, overload=True) }}
+{{ process_decl_body(overload) }}
 
 </div>
 
 {% endfor %}
 {% else %}
 
-{{ process_decl_body(decl) }}
+{{ process_decl_body(decl, marker_above=True) }}
 
-{% endif %}
-
-{% if decl.deprecated %}
-
-**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.parameters and not decl.kind == 'function' %}
@@ -152,7 +155,7 @@ description: {% if decl.summary
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
             {%- if trait.path -%}
-                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+                [`{{ trait.type }}`]({{ api_href(trait.path) }})
             {%- else -%}
                 `{{ trait.type }}`
             {%- endif -%}
@@ -160,7 +163,7 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_href(param.path) }})
         {%- else -%}
             ``{{param.type | pad_backticks }}``
         {%- endif -%}
@@ -184,7 +187,7 @@ description: {% if decl.summary
 ## Implemented traits
 
 {% for trait in decl.parentTraits %}
-{% if trait.path %}[`{{ trait.name }}`]({{ api_path }}{{ trait.path }}){% else %}`{{ trait.name }}`{% endif %}{{ ", " if not loop.last else "" }}
+{% if trait.path %}[`{{ trait.name }}`]({{ api_href(trait.path) }}){% else %}`{{ trait.name }}`{% endif %}{% if trait.condition %} (`where {{ trait.condition }}`){% endif %}{{ ", " if not loop.last else "" }}
 {% endfor %}
 
 {% endif %}
@@ -235,7 +238,7 @@ description: {% if decl.summary
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
             {%- if trait.path -%}
-                [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
+                [`{{ trait.type }}`]({{ api_href(trait.path) }})
             {%- else -%}
                 `{{ trait.type }}`
             {%- endif -%}
@@ -243,7 +246,7 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_href(param.path) }})
         {%- else -%}
             ``{{ param.type | pad_backticks }}``
         {%- endif -%}

@@ -13,7 +13,7 @@
 
 from std.math import nan
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import bitcast
 
 
@@ -323,7 +323,7 @@ def test_simd_e4m3fnuz_to_float[target: DType]():
     for i in range(256):
         float8_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
 
-    target_casted = float8_simd.cast[target]()
+    var target_casted = float8_simd.cast[target]()
 
     comptime M = 32
     comptime N = 8
@@ -521,7 +521,7 @@ def test_simd_f32_to_e4m3fnuz():
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 
-    f32_casted_e5m2 = f32_simd.cast[DType.float8_e4m3fnuz]()
+    var f32_casted_e5m2 = f32_simd.cast[DType.float8_e4m3fnuz]()
 
     for i in range(64):
         for j in range(8):
@@ -571,9 +571,7 @@ def test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
         e4m3_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
 
     comptime kernel = test_simd_float8[DType.float8_e4m3fnuz, M, DType.float32]
-    ctx.enqueue_function_experimental[kernel](
-        e4m3_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -665,7 +663,7 @@ def test_simd_f32_to_e4m3fnuz_ptx_path(ctx: DeviceContext) raises:
         f32_simd[i] = Float32(i - 256)
 
     comptime kernel = test_simd_float32[M, DType.float8_e4m3fnuz]
-    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 

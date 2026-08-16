@@ -34,6 +34,8 @@ class Conv2d(Module[[Tensor], Tensor]):
     Example:
         .. code-block:: python
 
+            from max.driver import Accelerator
+            from max.dtype import DType
             from max.experimental.nn import Conv2d
             from max.experimental.tensor import Tensor
 
@@ -41,12 +43,19 @@ class Conv2d(Module[[Tensor], Tensor]):
                 kernel_size=3,
                 in_channels=3,
                 out_channels=64,
+                dtype=DType.float32,
                 has_bias=True,
                 permute=True,
             )
+            x = Tensor.ones([1, 3, 32, 32], dtype=DType.float32)
+            result = conv(x.to(Accelerator()))
 
-            x = Tensor.ones([1, 3, 32, 32])
-            result = conv(x)
+        .. invisible-code-block: python
+
+            # permute=True: NCHW in -> NCHW out. 3x3 kernel, no padding,
+            # so 32x32 -> 30x30 and channels go 3 -> 64.
+            assert tuple(int(d) for d in result.shape) == (1, 64, 30, 30)
+
     """
 
     weight: Tensor
@@ -164,20 +173,25 @@ class Conv2d(Module[[Tensor], Tensor]):
             raise ValueError("Conv2d not implemented with weight quantization.")
 
     def forward(self, x: Tensor) -> Tensor:
-        """Apply 2D convolution to input.
+        """Applies the 2D convolution to ``x``.
 
         Args:
-            x: Input tensor. Shape depends on `permute`:
-                - If permute=True: [batch_size, in_channels, height, width]
-                - If permute=False: [batch_size, height, width, in_channels]
+            x: The input tensor, shaped
+                ``[batch_size, in_channels, height, width]`` when
+                ``permute`` is ``True`` and
+                ``[batch_size, height, width, in_channels]`` when
+                ``permute`` is ``False``.
 
         Returns:
-            Output tensor. Shape depends on `permute`:
-                - If permute=True: [batch_size, out_channels, new_height, new_width]
-                - If permute=False: [batch_size, new_height, new_width, out_channels]
+            The output tensor, shaped
+            ``[batch_size, out_channels, new_height, new_width]`` when
+            ``permute`` is ``True`` and
+            ``[batch_size, new_height, new_width, out_channels]`` when
+            ``permute`` is ``False``.
         """
-        # Move weight to same device as input
+        # Move weight and bias to same device as input
         weight = self.weight.to(x.device)
+        bias = self.bias.to(x.device) if isinstance(self.bias, Tensor) else None
 
         if self.permute:
             # Input: NCHW -> NHWC
@@ -190,7 +204,7 @@ class Conv2d(Module[[Tensor], Tensor]):
             self.dilation,
             self.padding,
             self.num_groups,
-            self.bias if isinstance(self.bias, Tensor) else None,
+            bias,
             filter_layout=FilterLayout.FCRS
             if self.permute
             else FilterLayout.RSCF,

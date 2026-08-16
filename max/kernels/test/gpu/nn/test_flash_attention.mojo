@@ -16,13 +16,12 @@ from std.random import rand, seed
 from std.sys import argv
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
-    Vendor,
     _is_sm10x_gpu,
 )
 from layout import (
@@ -52,11 +51,7 @@ def is_benchmark() -> Bool:
 
 
 def is_sm8(info: GPUInfo) -> Bool:
-    return (
-        info.vendor == Vendor.NVIDIA_GPU
-        and info.compute >= 8
-        and info.compute < 9
-    )
+    return info.api == "cuda" and info.compute >= 8 and info.compute < 9
 
 
 def test[
@@ -152,30 +147,22 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -212,9 +199,7 @@ def test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -238,7 +223,7 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     def get_rtol() -> Float64:
         return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
 
@@ -268,7 +253,7 @@ def test[
 
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
-    var depths = [64, 128, 512]
+    var depths: List = [64, 128, 512]
 
     if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
@@ -392,6 +377,22 @@ def test_context_encoding(ctx: DeviceContext) raises:
             depth=128,
             num_heads=3,
         ](119, 200, ctx)
+
+        # Zero seq_len / num_keys: the FLUX.2 VAE mid-block attention
+        # runs on a flattened spatial dim, which is zero when the
+        # encoder is invoked on a ``(0, 0, 3)`` placeholder image for
+        # the text-to-image path.  The kernel must early-return rather
+        # than launching with zero grid dims.
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](0, 0, ctx)
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=3,
+        ](0, 0, ctx)
 
 
 def test_decoding[
@@ -523,9 +524,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var out_host = TileTensor(
         out_ptr,
-        row_major(
-            (Idx[batch_size](), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((Idx[batch_size], seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var q_dev = ctx.enqueue_create_buffer[qkv_type](
@@ -549,27 +548,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var q_device = TileTensor(
         q_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var out_device = TileTensor(
         out_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
     var sinks_device = LayoutTensor[qkv_type, sinks_layout](
@@ -578,7 +569,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    def launch(ctx: DeviceContext) raises {read}:
+    def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,
@@ -588,7 +579,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable(),
+            sink_weights=sinks_device.as_imm().as_unsafe_any_origin(),
         )
 
     launch(ctx)
@@ -610,6 +601,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             var got1 = out_host[0, s, 1, d].cast[DType.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    # Keep every device buffer alive until the kernel and the readback have both
+    # completed. `sinks_device` wraps `sinks_dev.unsafe_ptr()` (a raw pointer,
+    # no ownership), so without this keepalive `sinks_dev` can be freed before
+    # the async attention kernel reads it; the allocator then reuses that memory
+    # and the kernel reads a garbage sink weight (intermittently 0 -> output
+    # num_keys/(num_keys+1), or a large value -> output ~0). Mirrors the
+    # `_ = sink_d^` keepalive in `test_apple_fa_prefill.mojo`.
+    _ = q_dev^
+    _ = k_dev^
+    _ = v_dev^
+    _ = out_dev^
+    _ = sinks_dev^
 
 
 def main() raises:

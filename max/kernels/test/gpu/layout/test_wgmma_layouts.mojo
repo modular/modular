@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, warp_id, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import (
+from std.gpu import thread_idx, warp_id, lane_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -40,7 +41,7 @@ def _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
     var size = layout.size()
 
     for i in range(size):
-        idx = layout(i)
+        var idx = layout(i)
         t.ptr[idx] = Scalar[t.dtype](i)
 
 
@@ -212,7 +213,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -328,7 +329,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
         a_smem_layout,
         b_smem_layout,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -510,7 +511,7 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -620,7 +621,7 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -802,7 +803,7 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -912,7 +913,7 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -988,7 +989,7 @@ def wgmma_f16_f16_f16_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    c0 = bitcast[DType.float16, 4](c_reg)
+    var c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
@@ -1097,7 +1098,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
         b_smem_layout,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1208,7 +1209,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         a_smem_layout,
         b_smem_layout,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -1411,7 +1412,7 @@ def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

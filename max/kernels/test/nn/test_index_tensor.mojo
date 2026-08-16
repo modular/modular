@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.gpu.host import DeviceContext
 from std.random import random_ui64
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, Idx, row_major
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -24,7 +25,7 @@ from nn.index_tensor import (
     index_tensor_shape,
 )
 from std.math import align_up
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.sys import simd_width_of
 from std.testing import assert_equal
 
@@ -50,7 +51,7 @@ def test_index_tensor_DLRM() raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -62,7 +63,7 @@ def test_index_tensor_DLRM() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
-    var a_stack = InlineArray[
+    var a_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
@@ -72,7 +73,7 @@ def test_index_tensor_DLRM() raises:
         a_stack[i] = random_ui64(0, dim_1 - 1)
 
     # index_len-element input tensor.
-    var b_stack = InlineArray[
+    var b_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
@@ -88,7 +89,7 @@ def test_index_tensor_DLRM() raises:
 
     # Reference output of shape dim_0 x index_len.
     comptime ref_layout = row_major[dim_0, index_len]()
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -100,7 +101,7 @@ def test_index_tensor_DLRM() raises:
     # Convert index_a, index_b (each of 1D size index_len) to a
     # 2D index_len x 2 indices TileTensor.
     # TODO: This needs to be part of the OP itself.
-    var indices_stack = InlineArray[
+    var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
@@ -117,7 +118,7 @@ def test_index_tensor_DLRM() raises:
         batch_dims,
     ](input_dyn, indices_dyn)
 
-    var output_data_stack = InlineArray[
+    var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * index_len, simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -153,7 +154,7 @@ def test_index_tensor_DLRM_batch() raises:
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_3, dim_4]()
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -165,7 +166,7 @@ def test_index_tensor_DLRM_batch() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
-    var a_stack = InlineArray[
+    var a_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
@@ -174,7 +175,7 @@ def test_index_tensor_DLRM_batch() raises:
         a_stack[i] = random_ui64(0, dim_3 - 1)
 
     # index_len-element input tensor.
-    var b_stack = InlineArray[
+    var b_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
@@ -190,7 +191,7 @@ def test_index_tensor_DLRM_batch() raises:
 
     # Reference output of shape dim_0 x index_len
     comptime ref_layout = row_major[dim_0, dim_1, index_len]()
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -202,7 +203,7 @@ def test_index_tensor_DLRM_batch() raises:
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
     # indices TileTensor.
-    var indices_stack = InlineArray[
+    var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
@@ -219,7 +220,7 @@ def test_index_tensor_DLRM_batch() raises:
         batch_dims,
     ](input_dyn, indices_dyn)
 
-    var output_data_stack = InlineArray[
+    var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * dim_1 * index_len, simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -254,7 +255,7 @@ def test_index_tensor_CLIPVIT() raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -266,7 +267,7 @@ def test_index_tensor_CLIPVIT() raises:
     # We have two 2D tensors with 1 element each.
 
     # 1-element input tensor.
-    var a_stack = InlineArray[
+    var a_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
@@ -275,7 +276,7 @@ def test_index_tensor_CLIPVIT() raises:
     a_stack[1] = 1
 
     # 1-element input tensor.
-    var b_stack = InlineArray[
+    var b_stack = Array[
         UInt64, align_up(index_len, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
@@ -286,7 +287,7 @@ def test_index_tensor_CLIPVIT() raises:
     # Reference output of shape dim_0 x dim_2
 
     comptime ref_layout = row_major[dim_0, dim_2]()
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -306,7 +307,7 @@ def test_index_tensor_CLIPVIT() raises:
 
     # Convert index_a, index_b (each of 1D size 2) to a
     # 2D indices_len x 2 indices TileTensor
-    var indices_stack = InlineArray[
+    var indices_stack = Array[
         UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
@@ -328,7 +329,7 @@ def test_index_tensor_CLIPVIT() raises:
         indices_dyn,
     )
 
-    var output_data_stack = InlineArray[
+    var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * dim_2, simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -337,11 +338,11 @@ def test_index_tensor_CLIPVIT() raises:
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[input_type, DType.uint64, batch_dims, target="cpu"](
+    gather_nd[batch_dims, target="cpu"](
         input_dyn,
         indices_dyn,
         output_dyn,
-        DeviceContextPtr(),
+        DeviceContext(api="cpu"),
     )
 
     for i in range(dim_0):
@@ -368,7 +369,7 @@ def test_index_tensor_llama2_mistral() raises:
 
     # dim_0 x dim_1 input tensor.
     comptime input_layout = row_major[dim_0, dim_1]()
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -381,7 +382,7 @@ def test_index_tensor_llama2_mistral() raises:
 
     # index_len-element input tensor.
     comptime index_layout = row_major[index_dim_0, index_dim_1]()
-    var a_stack = InlineArray[
+    var a_stack = Array[
         UInt64, align_up(index_layout.product(), simd_width_of[DType.uint64]())
     ](uninitialized=True)
     var index_a = TileTensor(a_stack, index_layout)
@@ -394,7 +395,7 @@ def test_index_tensor_llama2_mistral() raises:
 
     # Reference output of shape index_dim_0 x index_dim_1 x dim_1.
     comptime ref_layout = row_major[index_dim_0, index_dim_1, dim_1]()
-    var ref_stack = InlineArray[
+    var ref_stack = Array[
         Scalar[input_type],
         align_up(ref_layout.product(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -412,7 +413,7 @@ def test_index_tensor_llama2_mistral() raises:
         0,
     )
 
-    var output_data_stack = InlineArray[
+    var output_data_stack = Array[
         Scalar[input_type],
         align_up(
             index_dim_0 * index_dim_1 * dim_1, simd_width_of[input_type]()
@@ -426,6 +427,7 @@ def test_index_tensor_llama2_mistral() raises:
         output_dyn,
         input_dyn,
         index_a_dyn,
+        context=DeviceContext(api="cpu"),
     )
 
     for i in range(index_dim_0):
@@ -436,14 +438,14 @@ def test_index_tensor_llama2_mistral() raises:
 
 # CHECK-LABEL: test_advanced_indexing_getitem
 # Matches equivalent numpy: input[:, :, index_a, index_b]
-def test_advanced_indexing_getitem() raises:
+def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     print("== test_advanced_indexing_getitem")
 
     # Initialize input with sequential data for test purposes.
     comptime input_type = DType.int32
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 3, 5, 6)
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -457,11 +459,11 @@ def test_advanced_indexing_getitem() raises:
     comptime index_rank = 2
     comptime index_shape = IndexList[index_rank](2, 3)
     comptime index_type = DType.uint64
-    var a_stack = InlineArray[
+    var a_stack = Array[
         Scalar[index_type],
         align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
-    var b_stack = InlineArray[
+    var b_stack = Array[
         Scalar[index_type],
         align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
@@ -481,7 +483,7 @@ def test_advanced_indexing_getitem() raises:
     comptime output_shape = advanced_indexing_getitem_shape[
         start_axis=start_axis, num_index_tensors=num_index_tensors
     ](input_shape, index_shape)
-    var output_data_stack = InlineArray[
+    var output_data_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -489,22 +491,24 @@ def test_advanced_indexing_getitem() raises:
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
-    @parameter
     @always_inline
     def input_tensor_fn[
-        width: Int
-    ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
-        return input_dyn.load[width=width, alignment=1](Coord(idx))
+        dtype: DType, width: Int
+    ](idx: IndexList[input_rank]) {var input_dyn} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            input_dyn.load[width=width, alignment=1](Coord(idx))
+        )
 
     @always_inline
-    @parameter
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+    ](coordinates: IndexList[index_rank]) {
+        var _index_a_dyn, var _index_b_dyn
+    } -> Int:
         comptime if indices_index == 0:
-            return _index_a_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
         else:
-            return _index_b_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
 
     # Build input strides IndexList manually from layout
     var in_strides = IndexList[input_rank](
@@ -519,17 +523,16 @@ def test_advanced_indexing_getitem() raises:
         start_axis=start_axis,
         num_index_tensors=num_index_tensors,
         target="cpu",
-        single_thread_blocking_override=False,
         trace_description="test_advanced_indexing_getitem",
-        input_tensor_fn=input_tensor_fn,
-        indices_fn=indices_fn,
     ](
         output_dyn,
         in_strides,
-        DeviceContextPtr(),
+        ctx,
+        input_tensor_fn,
+        indices_fn,
     )
 
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[input_type],
         align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -585,14 +588,14 @@ def test_advanced_indexing_getitem() raises:
 
 # CHECK-LABEL: test_advanced_indexing_setitem_inplace
 # Matches equivalent numpy: input[:, :, index_a, index_b] = updates
-def test_advanced_indexing_setitem_inplace() raises:
+def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     print("== test_advanced_indexing_setitem_inplace")
 
     # Create input vector
     comptime input_type = DType.int32
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 2, 4, 4)
-    var input_stack = InlineArray[
+    var input_stack = Array[
         Scalar[input_type],
         align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -610,11 +613,11 @@ def test_advanced_indexing_setitem_inplace() raises:
     comptime index_shape = IndexList[index_rank](2, 2)
     comptime index_type = DType.uint64
 
-    var a_stack = InlineArray[
+    var a_stack = Array[
         Scalar[index_type],
         align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
-    var b_stack = InlineArray[
+    var b_stack = Array[
         Scalar[index_type],
         align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
@@ -630,7 +633,7 @@ def test_advanced_indexing_setitem_inplace() raises:
     # Create the updates list and set it sequential data to make it easy to read
     comptime updates_rank = 4
     comptime updates_shape = IndexList[updates_rank](2, 2, 2, 2)
-    var updates_stack = InlineArray[
+    var updates_stack = Array[
         Scalar[input_type],
         align_up(updates_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -640,22 +643,24 @@ def test_advanced_indexing_setitem_inplace() raises:
     for i in range(updates_shape.flattened_length()):
         updates_stack[i] = Int32(1 + i)
 
-    @parameter
     @always_inline
     def updates_tensor_fn[
-        width: Int
-    ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
-        return updates_dyn.load[width=width, alignment=1](Coord(idx))
+        dtype: DType, width: Int
+    ](idx: IndexList[updates_rank]) {var updates_dyn} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            updates_dyn.load[width=width, alignment=1](Coord(idx))
+        )
 
     @always_inline
-    @parameter
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+    ](coordinates: IndexList[index_rank]) {
+        var _index_a_dyn, var _index_b_dyn
+    } -> Int:
         comptime if indices_index == 0:
-            return _index_a_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
         else:
-            return _index_b_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
 
     # Build index shape and updates strides manually
     var idx_shape = IndexList[index_rank](
@@ -674,18 +679,17 @@ def test_advanced_indexing_setitem_inplace() raises:
         start_axis=start_axis,
         num_index_tensors=num_index_tensors,
         target="cpu",
-        single_thread_blocking_override=False,
         trace_description="test_advanced_indexing_setitem_inplace",
-        updates_tensor_fn=updates_tensor_fn,
-        indices_fn=indices_fn,
     ](
         input_dyn,
         idx_shape,
         upd_strides,
-        DeviceContextPtr(),
+        ctx,
+        updates_tensor_fn,
+        indices_fn,
     )
 
-    var output_stack = InlineArray[
+    var output_stack = Array[
         Scalar[input_type],
         align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
@@ -731,5 +735,6 @@ def main() raises:
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()
     test_index_tensor_llama2_mistral()
-    test_advanced_indexing_getitem()
-    test_advanced_indexing_setitem_inplace()
+    with DeviceContext(api="cpu") as ctx:
+        test_advanced_indexing_getitem(ctx)
+        test_advanced_indexing_setitem_inplace(ctx)

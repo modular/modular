@@ -29,6 +29,16 @@ from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from transformers.utils.generic import maybe_autocast
 
+import json
+import math
+import os
+from pathlib import Path
+
+from max.driver import Accelerator, Device
+from max.dtype import DType
+from max.engine import InferenceSession
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
 if TYPE_CHECKING:
     from max.pipelines.architectures.gemma4.model_config import (
         Gemma4TextConfig,
@@ -387,7 +397,7 @@ class TorchGemma4RMSNorm(nn.Module):
 
     def _norm(self, hidden_states: torch.Tensor):
         mean_squared = hidden_states.pow(2).mean(-1, keepdim=True) + self.eps
-        # Use torch.pow() (over torch.sqrt() or torch.rsqrt()) to addess compiler differences between Torch and JAX
+        # Use torch.pow() (over torch.sqrt() or torch.rsqrt()) to address compiler differences between Torch and JAX
         return hidden_states * torch.pow(mean_squared, -0.5)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:

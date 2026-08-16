@@ -142,5 +142,29 @@ def test_pow() raises:
     assert_equal(IntLiteral.__pow__(-1, -2), 1)
 
 
+def test_add_float_literal() raises:
+    assert_equal(2 + 0.5, 2.5)
+    assert_equal(IntLiteral.__add__(3, 2.0), 5.0)
+    assert_equal(IntLiteral.__add__(-2, 0.5), -1.5)
+
+
+def test_sub_float_literal() raises:
+    assert_equal(2 - 0.5, 1.5)
+    assert_equal(IntLiteral.__sub__(3, 2.0), 1.0)
+    assert_equal(IntLiteral.__sub__(-2, 0.5), -2.5)
+
+
+def test_mul_float_literal() raises:
+    assert_equal(2 * 0.5, 1.0)
+    assert_equal(IntLiteral.__mul__(3, 2.0), 6.0)
+    assert_equal(IntLiteral.__mul__(-2, 0.5), -1.0)
+
+
+def test_truediv_float_literal() raises:
+    assert_equal(2 / 0.5, 4.0)
+    assert_equal(IntLiteral.__truediv__(3, 2.0), 1.5)
+    assert_equal(IntLiteral.__truediv__(-2, 0.5), -4.0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

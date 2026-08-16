@@ -20,7 +20,7 @@ GPU kernel output to it.
 """
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
@@ -132,7 +132,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     cpu_reference_one_video[dtype](
         x_host.as_span().unsafe_ptr(),
         len0,
-        ref_host.as_span().unsafe_ptr() + out0_rows * D,
+        ref_host.as_span().unsafe_ptr().unsafe_offset(out0_rows * D),
         t1,
         h1,
         w1,
@@ -142,17 +142,17 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     )
 
     # GPU kernel: contiguous output
-    var x_tile = TileTensor[mut=False](
+    var x_tile = TileTensor[mut=False, Storage=_](
         x_dev,
-        row_major(Coord(Idx(total_in), Idx(D))),
+        row_major(Coord(total_in, D)),
     )
     var out_tile = TileTensor(
         out_dev,
-        row_major(Coord(Idx(total_out), Idx(D))),
+        row_major(Coord(total_out, D)),
     )
-    var bounds_tensor = TileTensor[mut=False](
+    var bounds_tensor = TileTensor[mut=False, Storage=_](
         bounds,
-        row_major(Coord(Idx(n_videos), Idx(3))),
+        row_major(Coord(n_videos, Idx[3])),
     )
 
     tpool_patch_merger(

@@ -14,11 +14,11 @@
 """Figure 15.3: Tiled matrix multiplication kernel combining all optimizations."""
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 comptime bM = 64
 comptime bN = 64
@@ -35,8 +35,9 @@ def loadTile(
     maxRow: Int,
     maxCol: Int,
     T_s: UnsafePointer[
+        mut=True,
         Scalar[DType.float32],
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
     ],
     ldas: Int,
@@ -71,8 +72,8 @@ def loadTile(
 
 
 def mm_tiled_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    B: UnsafePointer[Float32, MutAnyOrigin],
+    A: UnsafePointer[Float32, ImmutAnyOrigin],
+    B: UnsafePointer[Float32, ImmutAnyOrigin],
     C: UnsafePointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
@@ -104,12 +105,12 @@ def mm_tiled_kernel(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = stack_allocation[
+    var A_s = unsafe_stack_allocation[
         bM * bK,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var B_s = stack_allocation[
+    var B_s = unsafe_stack_allocation[
         bK * bN,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -156,7 +157,7 @@ def mm_tiled_kernel(
 def cpu_mm(
     A: UnsafePointer[Float32, _],
     B: UnsafePointer[Float32, _],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     K: Int,
@@ -239,7 +240,7 @@ def main() raises:
             ")...",
         )
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel](
+        ctx.enqueue_function[mm_tiled_kernel](
             d_A,
             d_B,
             d_C,

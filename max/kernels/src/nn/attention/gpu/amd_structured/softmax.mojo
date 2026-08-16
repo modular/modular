@@ -20,9 +20,11 @@ through `Layout` methods rather than hand-rolled integer arithmetic.
 """
 
 import std.gpu.primitives.warp as warp
+from std.math import fma
 from std.math.uutils import umod
 from std.bit import log2_floor
-from std.gpu import barrier, lane_id, warp_id as get_warp_id
+from std.gpu import lane_id, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from layout import TileTensor, row_major, stack_allocation
 from layout.tile_layout import TensorLayout, col_major
 from nn.softmax import _exp2_concrete, _exp_concrete
@@ -40,6 +42,29 @@ struct Softmax[
     mma_m: Int,
     use_exp2: Bool = False,
 ]:
+    """Maintains online-softmax state and operations for gfx950 attention kernels.
+
+    Keeps per-thread running row-max and row-sum statistics across MMA tiles so
+    that attention can accumulate softmax numerators and rescale previously
+    accumulated outputs as new score tiles arrive. Lane and fragment geometry is
+    derived from `WarpLayoutT` and `FragmentLayoutT`.
+
+    Parameters:
+        dtype: Element type of the score and output tiles.
+        num_m_mmas: Number of MMA unit tiles along the M (colwise)
+            dimension of the score matrix.
+        num_n_mmas: Number of MMA unit tiles along the N (rowwise)
+            dimension of the score matrix.
+        num_warps_m: Number of warps along the colwise (M) dimension of
+            the block's warp grid.
+        num_warps_n: Number of warps along the rowwise (N) dimension of
+            the block's warp grid.
+        mma_m: MMA M extent, 32 or 16 on gfx950, selecting lane and
+            fragment geometry.
+        use_exp2: Use `exp2` instead of `exp` for the exponential
+            (defaults to False).
+    """
+
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
     # TileLayout. `static_shape` / `static_stride` expose geometry; `idx2crd`
     # decomposes a lane index into (lane_row, lane_col).
@@ -85,7 +110,7 @@ struct Softmax[
     comptime RowMaxTensorType = TileTensor[
         Self.dtype,
         type_of(Self.row_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -101,7 +126,7 @@ struct Softmax[
     comptime ScoreFragTensorType = TileTensor[
         Self.dtype,
         type_of(Self.score_frag_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -331,6 +356,10 @@ struct Softmax[
 
         Must be called after exp_scaled so that score_frag_rowmax is in the
         same units as rowmax_tensor for calculate_correction.
+
+        Args:
+            scale: Scalar multiplier applied to every per-thread row-max
+                value.
         """
         comptime for col_tile in range(Self.num_colwise_tiles):
             comptime for row in range(Self.frag_num_rows):
@@ -351,6 +380,17 @@ struct Softmax[
         the precision gap in exp_fma where fma(score, scale, -scaled_max) can
         produce nonzero results when score == max due to independent rounding
         of scaled_max.
+
+        Parameters:
+            start: Starting row-tile index of the iteration range
+                (defaults to 0).
+            stride: Step between consecutive row-tile indices
+                (defaults to 1).
+
+        Args:
+            score: Score tile in registers to exponentiate in place.
+            scale: Scale factor applied to `(score - max)` before the
+                exponential; use `scale * log2e` for `exp2`-based softmax.
         """
         # gfx950 MFMA fragments are always row-vectors (shape[0]=1).
         comptime assert score.flat_rank == 2
@@ -370,6 +410,59 @@ struct Softmax[
                 var scale_vec = SIMD[Self.dtype, Self.frag_size](scale)
                 score_reg_tile[tile_id, 0] = Self.exp_function(
                     (score_reg_tile[tile_id, 0] + neg_max) * scale_vec
+                )
+
+    @always_inline
+    def exp_pkfma[
+        start: Int = 0, stride: Int = 1
+    ](
+        self,
+        score: TileTensor[mut=True, Self.dtype, ...],
+        scale: Scalar[Self.dtype],
+    ):
+        """Scaled exp using fused `score * scale + (-max * scale)` form
+        so the compiler emits `v_pk_fma_f32` instead of separate add+mul.
+
+        Mirrors `exp_scaled` but pre-multiplies `-max` by `scale` once per row
+        (1 packed mul per row) and uses `fma(score, scale, neg_scaled_max)`
+        for every score pair (matches aiter's softmax inner loop).
+
+        Precision: `score == max` produces `fma(max, scale, -scaled_max)`
+        where `scaled_max` is pre-rounded; the FMA's internal `max*scale` may
+        round to a slightly different value, yielding a tiny epsilon instead
+        of exactly 0. `exp2(epsilon) ≈ 1 + epsilon·ln(2)`, well within the
+        FP8 softmax tolerance budget (the row-sum normalization absorbs it).
+
+        Parameters:
+            start: Starting row-tile index of the iteration range
+                (defaults to 0).
+            stride: Step between consecutive row-tile indices
+                (defaults to 1).
+
+        Args:
+            score: Score tile in registers to exponentiate in place.
+            scale: Scale factor applied to `score` and `-max` inside the
+                fused multiply-add; use `scale * log2e` for `exp2`-based
+                softmax.
+        """
+        comptime assert score.flat_rank == 2
+        comptime assert Self.frag_is_row_vector
+        var score_reg_tile = score.vectorize[1, Self.frag_size]()
+        comptime assert score_reg_tile.flat_rank == 2
+
+        var scale_vec = SIMD[Self.dtype, Self.frag_size](scale)
+
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            var neg_scaled_max = SIMD[Self.dtype, Self.frag_size](
+                -self.score_frag_rowmax[col_tile, 0][0] * scale
+            )
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
+                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
+
+                score_reg_tile[tile_id, 0] = Self.exp_function(
+                    fma(score_reg_tile[tile_id, 0], scale_vec, neg_scaled_max)
                 )
 
     @always_inline

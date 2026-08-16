@@ -28,9 +28,19 @@ class StopWatch:
 
     .. code-block:: python
 
+        from max.serve.telemetry.stopwatch import StopWatch
+
+        def do_work():
+            return sum(range(1000))
+
         with StopWatch() as sw:
             do_work()
         print(sw.elapsed_ms)
+
+    .. invisible-code-block: python
+
+        assert isinstance(sw.elapsed_ms, float)
+        assert sw.elapsed_ms >= 0.0
     """
 
     @classmethod

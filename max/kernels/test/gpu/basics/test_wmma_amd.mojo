@@ -15,11 +15,11 @@ from std.math import ceildiv
 from std.random import random_si64
 
 from std.gpu import WARP_SIZE, block_idx
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import mma
-from std.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
-from std.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
-from std.gpu.compute.mma_util import store_matrix_d
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import mma
+from max.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from max.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from max.gpu.compute.mma_util import store_matrix_d
 from std.testing import assert_equal
 
 
@@ -46,10 +46,13 @@ def mma_kernel_fp32_fp32(
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 16
     comptime mma_k = 4
@@ -84,10 +87,13 @@ def mma_kernel_fp32_fp16[
     a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 4 if mma_n_blocks == 16 else 16
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
@@ -122,10 +128,13 @@ def mma_kernel_fp32_bf16[
     a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 4 if mma_n_blocks == 16 else 16
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
@@ -197,13 +206,13 @@ def run_mma_fp32_fp32(
 
     comptime kernel = mma_kernel_fp32_fp32
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         c_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
@@ -294,13 +303,13 @@ def run_mma_fp32_fp16[
 
     comptime kernel = mma_kernel_fp32_fp16[mma_n_blocks]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         c_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
@@ -397,13 +406,13 @@ def run_mma_fp32_bf16[
 
     comptime kernel = mma_kernel_fp32_bf16[mma_n_blocks]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_device,
         b_device,
         c_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
         block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )

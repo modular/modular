@@ -1,0 +1,71 @@
+# Qwen3.5 integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_config_init",
+    srcs = ["test_config_init.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

@@ -15,9 +15,9 @@
 from std.sys import has_nvidia_gpu_accelerator, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, row_major
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import _batched_matmul_gpu
 
@@ -26,15 +26,15 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline
-@parameter
+@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: Int,
+    width: SIMDLength,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -48,10 +48,34 @@ def run_bmm_and_check_result[
     lambda_fn: Optional[epilogue_func_type] = None,
     check_against_naive_kernel: Bool = False,
 ](
-    a_host: TileTensor[mut=True, dtype, ...],
-    b_host: TileTensor[mut=True, dtype, ...],
-    c_host: TileTensor[mut=True, dtype, ...],
-    c_host_ref: TileTensor[mut=True, dtype, ...],
+    a_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    b_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    c_host: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    c_host_ref: TileTensor[
+        mut=True,
+        dtype,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     ctx: DeviceContext,
     rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
 ) raises:
@@ -72,22 +96,22 @@ def run_bmm_and_check_result[
     var c_device = TileTensor[dtype](c_device_buffer, c_host.layout)
     var c_device_ref = TileTensor[dtype](c_device_ref_buffer, c_host_ref.layout)
 
-    rand(a_host.ptr, a_size)
-    rand(b_host.ptr, b_size)
+    rand(a_host._storage, a_size)
+    rand(b_host._storage, b_size)
     c_device_buffer.enqueue_fill(0)
     c_device_ref_buffer.enqueue_fill(0)
 
     # Copy operands to the Device
-    ctx.enqueue_copy(a_device_buffer, a_host.ptr)
-    ctx.enqueue_copy(b_device_buffer, b_host.ptr)
+    ctx.enqueue_copy(a_device_buffer, a_host._storage)
+    ctx.enqueue_copy(b_device_buffer, b_host._storage)
 
     # Run BMM
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -95,7 +119,7 @@ def run_bmm_and_check_result[
         var idx = rebind[IndexList[3]](idx0)
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
+        var coord = Coord((idx[0], idx[1], idx[2]))
         comptime assert c_device.flat_rank >= 3
         c_device.store(coord, update_val.cast[c_device.dtype]())
 
@@ -133,23 +157,21 @@ def run_bmm_and_check_result[
         )
     else:
         for i in range(a_host.dim(0)):
-            var c_ptr = c_device_ref.ptr + i * Scalar[a_host.linear_idx_type](
-                c_device_ref.layout.stride[0]().value()
-            )
-            var a_ptr = a_device.ptr + i * Scalar[a_host.linear_idx_type](
+            var c_ptr = c_device_ref._storage + i * Scalar[
+                a_host.linear_idx_type
+            ](c_device_ref.layout.stride[0]().value())
+            var a_ptr = a_device._storage + i * Scalar[a_host.linear_idx_type](
                 a_device.layout.stride[0]().value()
             )
-            var b_ptr = b_device.ptr + i * Scalar[a_host.linear_idx_type](
+            var b_ptr = b_device._storage + i * Scalar[a_host.linear_idx_type](
                 b_device.layout.stride[0]().value()
             )
 
-            var c_buffer = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
-            var a_buffer = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+            var c_buffer = TileTensor(c_ptr, row_major(m, n))
+            var a_buffer = TileTensor(a_ptr, row_major(m, k))
             var b_buffer = TileTensor(
                 b_ptr,
-                row_major(
-                    (Idx(n if transpose_b else k), Idx(k if transpose_b else n))
-                ),
+                row_major((n if transpose_b else k, k if transpose_b else n)),
             )
 
             vendor_blas.matmul(
@@ -164,13 +186,7 @@ def run_bmm_and_check_result[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
-        var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
+    def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -182,13 +198,14 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, n),
+        elementwise[pack_size, target="gpu"](
+            func,
+            (b, m, n),
             ctx,
         )
 
-    ctx.enqueue_copy(c_host.ptr, c_device_buffer)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref_buffer)
+    ctx.enqueue_copy(c_host._storage, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref_buffer)
     ctx.synchronize()
 
     for batch_idx in range(b):
@@ -230,17 +247,13 @@ def test_dynamic_shapes[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx(k)))
-    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx(n)))
-    var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx(n))
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(b, m, k))
+    var c_host = TileTensor(c_host_ptr, row_major(b, m, n))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, n))
 
     var b_host = TileTensor(
-        b_host_ptr, row_major(Idx(b), Idx(n), Idx(k))
-    ) if transpose_b else TileTensor(
-        b_host_ptr, row_major(Idx(b), Idx(k), Idx(n))
-    )
+        b_host_ptr, row_major(b, n, k)
+    ) if transpose_b else TileTensor(b_host_ptr, row_major(b, k, n))
     run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
         a_host, b_host, c_host, c_host_ref, ctx, rtol
     )
@@ -274,24 +287,18 @@ def test_static_NK[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx[K]()))
-    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx[N]()))
-    var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx[N]())
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(b, m, Idx[K]))
+    var c_host = TileTensor(c_host_ptr, row_major(b, m, Idx[N]))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, Idx[N]))
 
     comptime if transpose_b:
-        var b_host = TileTensor(
-            b_host_ptr, row_major(Idx(b), Idx[N](), Idx[K]())
-        )
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[N], Idx[K]))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
 
     else:
-        var b_host = TileTensor(
-            b_host_ptr, row_major(Idx(b), Idx[K](), Idx[N]())
-        )
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K], Idx[N]))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
@@ -326,18 +333,14 @@ def test_non_row_major_layout[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_layout = Layout(
-        (Idx[B](), Idx(m), Idx[K]()), (Idx[K](), Idx[B * K](), Idx(1))
-    )
-    var c_layout = Layout(
-        (Idx[B](), Idx(m), Idx[N]()), (Idx[N](), Idx[B * N](), Idx(1))
-    )
+    var a_layout = Layout((Idx[B], m, Idx[K]), (Idx[K], Idx[B * K], Idx[1]))
+    var c_layout = Layout((Idx[B], m, Idx[N]), (Idx[N], Idx[B * N], Idx[1]))
 
     var a_host = TileTensor(a_host_ptr, a_layout)
     var c_host = TileTensor(c_host_ptr, c_layout)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_layout)
 
-    var b_host = TileTensor(b_host_ptr, row_major(Idx[B](), Idx[N](), Idx[K]()))
+    var b_host = TileTensor(b_host_ptr, row_major(Idx[B], Idx[N], Idx[K]))
     run_bmm_and_check_result[
         transpose_b=True, lambda_fn=lambda_fn, check_against_naive_kernel=True
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)

@@ -15,19 +15,19 @@
 # Demonstrates how to use shared memory to optimize matrix multiplication
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 # ========================== KERNEL CODE ==========================
 
 
 def matrix_mul_tiled_kernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
-    Width: Int,
+    M: UnsafePointer[Float32, MutUntrackedOrigin],
+    N: UnsafePointer[Float32, MutUntrackedOrigin],
+    P: UnsafePointer[Float32, MutUntrackedOrigin],
+    width_dev: Int32,
 ):
     """Tiled matrix multiplication kernel using shared memory.
 
@@ -35,17 +35,19 @@ def matrix_mul_tiled_kernel(
         M: Input matrix M (device).
         N: Input matrix N (device).
         P: Output matrix P = M * N (device).
-        Width: Matrix dimension (Width x Width matrices).
+        width_dev: Matrix dimension (Width x Width matrices).
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var Width = Int(width_dev)
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var sA = stack_allocation[
+    var sA = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var sB = stack_allocation[
+    var sB = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -82,9 +84,9 @@ def matrix_mul_tiled_kernel(
 
 
 def matmul_tiled(
-    h_a: UnsafePointer[Float32, MutExternalOrigin],
-    h_b: UnsafePointer[Float32, MutExternalOrigin],
-    h_c: UnsafePointer[Float32, MutExternalOrigin],
+    h_a: UnsafePointer[Float32, MutUntrackedOrigin],
+    h_b: UnsafePointer[Float32, MutUntrackedOrigin],
+    h_c: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
     ctx: DeviceContext,
 ) raises:
@@ -118,11 +120,11 @@ def matmul_tiled(
     var grid_dim_y = ceildiv(width, TILE_WIDTH)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[matrix_mul_tiled_kernel](
+    ctx.enqueue_function[matrix_mul_tiled_kernel](
         d_a,
         d_b,
         d_c,
-        width,
+        Int32(width),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
     )
@@ -136,9 +138,9 @@ def matmul_tiled(
 
 
 def matmul_cpu(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    c: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -158,8 +160,8 @@ def matmul_cpu(
 
 
 def initialize(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """Initialize input matrices with test data.

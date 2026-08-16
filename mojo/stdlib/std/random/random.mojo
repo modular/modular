@@ -138,7 +138,7 @@ def random_ui64(min: UInt64, max: UInt64) -> UInt64:
 def randint[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     low: Int,
     high: Int,
 ) where dtype.is_integral():
@@ -161,7 +161,7 @@ def randint[
 def randint[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     size: Int,
     low: Int,
     high: Int,
@@ -184,29 +184,31 @@ def randint[
 
     ```mojo
     from std.random import randint, seed
-    from std.memory import alloc
     seed()
     var size: Int = 10
-    var ptr = alloc[Int32](size)
-    randint[DType.int32](ptr, size, -50, 50)
+    var data = List(length=size, fill=Int32(0))
+    randint(data, -50, 50)
     for i in range(size):
-        print(ptr[i])  # Random Int32 between -50 and 50
-    ptr.free()
+        print(data[i])  # Random Int32 between -50 and 50
     ```
     """
 
     comptime if dtype.is_signed():
         for si in range(size):
-            ptr[si] = random_si64(Int64(low), Int64(high)).cast[dtype]()
+            ptr.unsafe_offset(si)[] = random_si64(Int64(low), Int64(high)).cast[
+                dtype
+            ]()
     else:
         for ui in range(size):
-            ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
+            ptr.unsafe_offset(ui)[] = random_ui64(
+                UInt64(low), UInt64(high)
+            ).cast[dtype]()
 
 
 def rand[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     /,
     *,
     min: Float64 = 0.0,
@@ -236,7 +238,7 @@ def rand[
 def rand[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: MutPointer[Scalar[dtype], ...],
     size: Int,
     /,
     *,
@@ -266,15 +268,13 @@ def rand[
 
     ```mojo
     from std.random import rand, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float32](size)
-    rand[DType.float32](ptr, size, min=0.0, max=1.0, int_scale=16)
+    var data = List(length=size, fill=Float32(0))
+    rand(data, min=0.0, max=1.0, int_scale=16)
     for i in range(size):
-        print(ptr[i])  # Random Float32 between 0.0 and 1.0
-    ptr.free()
+        print(data[i])  # Random Float32 between 0.0 and 1.0
     ```
     """
     var scale_val = int_scale.or_else(-1)
@@ -284,13 +284,13 @@ def rand[
             var scale_double: Float64 = Float64(1 << scale_val)
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = (floor(rnd * scale_double) / scale_double).cast[
-                    dtype
-                ]()
+                ptr.unsafe_offset(i)[] = (
+                    floor(rnd * scale_double) / scale_double
+                ).cast[dtype]()
         else:
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = rnd.cast[dtype]()
+                ptr.unsafe_offset(i)[] = rnd.cast[dtype]()
 
         return
 
@@ -302,7 +302,7 @@ def rand[
             max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
         )
         for i in range(size):
-            ptr[i] = random_si64(min_, max_).cast[dtype]()
+            ptr.unsafe_offset(i)[] = random_si64(min_, max_).cast[dtype]()
         return
 
     comptime if dtype == DType.bool or dtype.is_unsigned():
@@ -311,7 +311,7 @@ def rand[
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )
         for i in range(size):
-            ptr[i] = random_ui64(min_, max_).cast[dtype]()
+            ptr.unsafe_offset(i)[] = random_ui64(min_, max_).cast[dtype]()
         return
 
 
@@ -342,7 +342,7 @@ def randn_float64(
 def randn[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
 ):
@@ -365,7 +365,7 @@ def randn[
 def randn[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
+    ptr: MutPointer[Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
@@ -388,20 +388,20 @@ def randn[
 
     ```mojo
     from std.random import randn, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float64](size)
-    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
+    var data = List(length=size, fill=Float64(0))
+    randn(data, mean=0.0, standard_deviation=1.0)
     for i in range(size):
-        print(ptr[i])  # Random Float64 from Normal(0.0, 1.0)
-    ptr.free()
+        print(data[i])  # Random Float64 from Normal(0.0, 1.0)
     ```
     """
 
     for i in range(size):
-        ptr[i] = randn_float64(mean, standard_deviation).cast[dtype]()
+        ptr.unsafe_offset(i)[] = randn_float64(mean, standard_deviation).cast[
+            dtype
+        ]()
     return
 
 
@@ -420,7 +420,6 @@ def shuffle[T: Copyable, //](mut list: List[T]):
 
     ```mojo
     from std.random import shuffle
-    from std.collections.list import List
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

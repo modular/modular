@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier, warp_id, lane_id
-from std.gpu.host import DeviceContext
+from std.gpu import warp_id, lane_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 
-# from testing import assert_almost_equal
 from std.gpu import thread_idx
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
@@ -190,7 +190,7 @@ def wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a_tensor,
         b_tensor,
         c_tensor,
@@ -247,7 +247,7 @@ def wgmma_e4m3_e4m3_f32[
 
     ctx.synchronize()
 
-    assert_equal(c_host.ptr, c_host_ref.ptr, c_host.num_elements())
+    assert_equal(c_host._storage, c_host_ref._storage, c_host.num_elements())
 
 
 def main() raises:

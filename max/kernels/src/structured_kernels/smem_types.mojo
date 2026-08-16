@@ -30,12 +30,11 @@ Types:
 
 from std.sys import align_of, size_of
 
-from std.gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import SharedMemBarrier
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 
 comptime SMemTile[
@@ -84,8 +83,22 @@ comptime RegTile[
 ]
 """Type alias for register (local memory) tile tensors."""
 
+
+@always_inline
+def reg_tile_to_tile_tensor[
+    dtype: DType,
+    layout: Layout,
+](tile: RegTile[dtype, layout, ...]) -> type_of(lt_to_tt(tile)):
+    """Return a TileTensor view of a register tile.
+
+    Kept here so kernels that have moved to TileTensor do not need to
+    reference the legacy LayoutTensor conversion helper directly.
+    """
+    return lt_to_tt(tile)
+
+
 comptime SMemBarrier = UnsafePointer[
-    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
 ]
 """Type alias for shared memory barrier pointer."""
 
@@ -132,10 +145,12 @@ struct SMemTileArray[
 
     comptime storage_size = Self.num_elements * size_of[Self.dtype]()
 
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(
@@ -178,7 +193,11 @@ struct SMemTileArray[
         Returns:
             Tile at index.
         """
-        return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
+        return Self.Tile(
+            (
+                self.ptr + eval[Self.layout.size()] * Int(index)
+            ).as_unsafe_any_origin()
+        )
 
     def slice[
         length: Int
@@ -194,7 +213,7 @@ struct SMemTileArray[
     @always_inline
     @staticmethod
     def stack_allocation() -> Self:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -214,10 +233,10 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     """
 
     comptime ptr_type = UnsafePointer[
-        Self.type, MutAnyOrigin, address_space=AddressSpace.SHARED
+        Self.type, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
-    comptime Storage = InlineArray[Self.type, Self.size]
+    comptime Storage = Array[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 
@@ -262,7 +281,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     @always_inline
     @staticmethod
     def stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.len(),
             Self.type,
             alignment=alignment,
@@ -275,5 +294,5 @@ comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 comptime SMemPtr[type: AnyType] = UnsafePointer[
-    type, MutAnyOrigin, address_space=AddressSpace.SHARED
+    type, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]

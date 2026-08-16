@@ -73,8 +73,8 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
-from std.builtin.constrained import _constrained_field_conforms_to
-from std.memory import Span
+from std.builtin.constrained import _field_conforms_to_error
+from std.collections import Span
 from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 
@@ -85,7 +85,7 @@ from .repr import repr
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer(ImplicitlyDestructible):
+trait Writer:
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -275,17 +275,18 @@ def _reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
-    comptime r = reflect[T]()
+    comptime r = reflect[T]
     comptime names = r.field_names()
     comptime types = r.field_types()
     comptime type_name = _unqualified_type_name[T]()
     writer.write_string(type_name)
     writer.write_string("(")
 
-    comptime for i in range(names.size):
+    comptime for i in range(names.length):
         comptime FieldType = types[i]
-        _constrained_field_conforms_to[
-            conforms_to(FieldType, Writable),
+        comptime assert conforms_to(
+            FieldType, Writable
+        ), _field_conforms_to_error[
             Parent=T,
             FieldIndex=i,
             ParentConformsTo="Writable",
@@ -296,7 +297,7 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](r.field_ref[i](this))
+        ref field = r.field_ref[i](this)
         f(field, writer)
 
     writer.write_string(")")

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.utils import IndexList
@@ -25,27 +25,28 @@ trait BaseT(TrivialRegisterPassable):
 
 @fieldwise_init
 struct ImplT(BaseT):
+    @__allow_legacy_any_origin_fields
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
         out self,
         buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
     ) raises:
-        self.values = buf.as_any_origin()
+        self.values = buf.as_unsafe_any_origin()
 
     def get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @parameter
+    @__parameter
     @__copy_capture(thing)
     def kernel_fn():
         var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn
-    ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_function[kernel](grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext) raises:

@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from std.random import random_float64
 from std.math import abs
 from std.bit import log2_floor
@@ -24,7 +24,7 @@ comptime BLOCK_DIM = 256
 
 # ========================== KERNEL CODE ==========================
 def shared_memory_sum_reduction_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Shared memory sum reduction kernel.
@@ -34,7 +34,7 @@ def shared_memory_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = stack_allocation[
+    var input_s = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
         address_space=AddressSpace.SHARED,
@@ -59,8 +59,8 @@ def shared_memory_sum_reduction_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -108,7 +108,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[shared_memory_sum_reduction_kernel](
+        ctx.enqueue_function[shared_memory_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),

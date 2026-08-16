@@ -13,7 +13,7 @@
 """Structured ping-pong matmul for AMD MI355X (CDNA4).
 
 Entry point: AMDPingPongMatmul.run()
-Host launcher: structured_ping_pong_matmul()
+Host launcher: amd_ping_pong_matmul()
 """
 
 from std.math import ceildiv
@@ -28,8 +28,8 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.sync import schedule_barrier, s_waitcnt
+from max.gpu.host import DeviceContext
+from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 
@@ -298,6 +298,9 @@ struct AMDPingPongMatmul[
             Int32(Self.config.num_threads())
         )
     )
+    @__name(
+        t"amd_ping_pong_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
     @staticmethod
     def run[
         a_layout: TensorLayout,
@@ -308,7 +311,18 @@ struct AMDPingPongMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
     ):
-        """Structured ping-pong GEMM kernel entry point."""
+        """Structured ping-pong GEMM kernel entry point.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N` in `c_type`.
+        """
         Self.validate_config()
 
         comptime BM = Self.BM
@@ -403,9 +417,17 @@ struct AMDPingPongMatmul[
         comptime use_fp8_row_major = _is_fp8
         comptime byte_swizzle = Self.byte_swizzle
 
-        var a_block_gmem = a_gmem.tile[BM, K](block_idx.y, 0)
-        var b_block_gmem = b_gmem.tile[BN, K](block_idx.x, 0)
-
+        # Pre-slice the per-block view: the SRD base advances to the
+        # block's origin, so `load_tile(m_offset, k_offset)` works in
+        # block-local coords. Avoids the +2 SGPR-uniform `m_anchor +
+        # m_offset` and `k_anchor + k_offset` add ops at every
+        # `load_tile` call site — these compound across the epilogue's
+        # post-loop drain (+6 waitcnts, +0.85% FP8 8K³ regression
+        # observed otherwise). The conv `TileLoaderLDSIm2col` sibling
+        # still uses the anchor form because conv's im2col address
+        # math can't fold the block origin into the SRD base.
+        var a_block_gmem = a_gmem.tile[BM, K](Int(block_idx.y), 0)
+        var b_block_gmem = b_gmem.tile[BN, K](Int(block_idx.x), 0)
         var a_loader = TileLoaderLDS[
             Self.in_type,
             half_BM,
@@ -466,21 +488,25 @@ struct AMDPingPongMatmul[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_a[stage: Int, which: Int](k: Int):
             a_loader.load_tile(
-                a_load_tiles[stage][which],
-                src_row=which * half_BM,
-                src_col=k,
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
+                m_offset=which * half_BM,
+                k_offset=k,
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
-                src_row=which * half_BN,
-                src_col=k,
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
+                m_offset=which * half_BN,
+                k_offset=k,
             )
 
         # === MMA tile lookup: [stage][subtile] -> SMEM tile ===
@@ -518,7 +544,7 @@ struct AMDPingPongMatmul[
             Self.LGKM_PER_LOAD_B,
         ](sched_config, target)
 
-        @parameter
+        @__parameter
         @always_inline
         def _bind[entry: ScheduleEntry](k_base: Int):
             comptime k_off = entry.op.k_offset.signed_bk_multiple()
@@ -529,11 +555,19 @@ struct AMDPingPongMatmul[
                 load_b[entry.op.stage, entry.op.subtile](k)
             elif entry.op.tag == MMA_LOAD_A:
                 mma_op.load_a_quadrant[entry.op.subtile](
-                    a_mma_tiles[entry.op.stage][entry.op.subtile]
+                    rebind[type_of(a_mma_tiles[0][0])](
+                        rebind[type_of(a_mma_tiles[0])](
+                            a_mma_tiles[entry.op.stage]
+                        )[entry.op.subtile]
+                    )
                 )
             elif entry.op.tag == MMA_LOAD_B:
                 mma_op.load_b_quadrant[entry.op.subtile](
-                    b_mma_tiles[entry.op.stage][entry.op.subtile]
+                    rebind[type_of(b_mma_tiles[0][0])](
+                        rebind[type_of(b_mma_tiles[0])](
+                            b_mma_tiles[entry.op.stage]
+                        )[entry.op.subtile]
+                    )
                 )
             elif entry.op.tag == MMA:
                 mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
@@ -644,7 +678,7 @@ struct AMDPingPongMatmul[
 
 
 @always_inline
-def structured_ping_pong_matmul[
+def amd_ping_pong_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -656,7 +690,21 @@ def structured_ping_pong_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Host launcher for the structured ping-pong matmul."""
+    """Host launcher for the structured ping-pong matmul.
+
+    Parameters:
+        a_type: Element type of the `a` input matrix (inferred).
+        b_type: Element type of the `b` input matrix (inferred).
+        c_type: Element type of the `c` output matrix (inferred).
+        enable_swizzle: Enable LDS bank-conflict avoidance swizzle
+            (defaults to `True`).
+
+    Args:
+        a: LHS input matrix tile of shape `M` x `K`.
+        b: RHS input matrix tile of shape `N` x `K`.
+        c: Output matrix tile of shape `M` x `N`.
+        ctx: Device context used to enqueue the kernel launch.
+    """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type == DType.bfloat16 or a_type.is_float8()
@@ -668,7 +716,7 @@ def structured_ping_pong_matmul[
     var M = Int(c.dim[0]())
 
     @always_inline
-    @parameter
+    @__parameter
     def run_kernel[config: KernelConfig]() raises:
         comptime kernel = AMDPingPongMatmul[
             a_type,
@@ -678,7 +726,7 @@ def structured_ping_pong_matmul[
             enable_swizzle,
         ].run[a.LayoutType, b.LayoutType, c.LayoutType]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,

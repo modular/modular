@@ -16,28 +16,52 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class Olmo2Config(ArchConfigWithKVCache):
+class Olmo2Config(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for Olmo2 models.
 
     Contains parameters specific to the Olmo2 architecture, typically
     extracted from a HuggingFace configuration object.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
+    quantization_encoding: SupportedEncoding | None = None
 
     vocab_size: int
     """Vocabulary size of the Olmo2 model."""
@@ -100,42 +124,31 @@ class Olmo2Config(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     """KV cache parameters."""
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
-
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        """Olmo2 does not support data parallelism; use default grouped KV (no EAGLE)."""
+        if pipeline_config.model.data_parallel_degree > 1:
+            raise ValueError(
+                "Data parallelism is not supported for Olmo2 models"
+            )
+        return ArchConfigWithStoredKVParams.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
@@ -146,15 +159,6 @@ class Olmo2Config(ArchConfigWithKVCache):
                 1.0 / float(Olmo2Config.get_head_dim(huggingface_config))
             ),
         )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod
@@ -167,17 +171,15 @@ class Olmo2Config(ArchConfigWithKVCache):
         huggingface_config = model_config.huggingface_config
         assert huggingface_config is not None
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
-
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
+
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in model_config.device_specs
@@ -214,6 +216,7 @@ class Olmo2Config(ArchConfigWithKVCache):
             ),
             dtype=dtype,
             devices=device_refs,
+            quantization_encoding=quantization_encoding,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
             # Placeholder values; finalize() sets the real values once

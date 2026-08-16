@@ -30,15 +30,20 @@ code:
 ```python
 define = True
 
+
 class C:
-    print("hello") # prints 'hello'
+    print("hello")  # prints 'hello'
     if define:
-        def f(self): print(10)
+
+        def f(self):
+            print(10)
     else:
-        def f(self): print(20)
+
+        def f(self):
+            print(20)
 
 
-C().f() # prints '10'
+C().f()  # prints '10'
 ```
 
 In fact, the body of a Python class is just code that is executed, and the
@@ -81,11 +86,16 @@ executed at runtime:
 ```python
 @dynamic
 class C:
-    def foo(): print("warming up")
-    foo() # prints 'warming up'
+    def foo():
+        print("warming up")
+
+    foo()  # prints 'warming up'
     del foo
-    def foo(): print("huzzah")
-    foo() # prints 'huzzah'
+
+    def foo():
+        print("huzzah")
+
+    foo()  # prints 'huzzah'
 ```
 
 We could of course make dynamic be the default, and have a decorator like
@@ -146,13 +156,16 @@ local variable map.
 ```python
 def foo():
     i = 2
+
     def bar():
         print(i)
+
     def baz():
         print(i)
         i = 10
-    bar() # prints '2'
-    baz() # throws an 'UnboundLocalError'
+
+    bar()  # prints '2'
+    baz()  # throws an 'UnboundLocalError'
 ```
 
 This gets at the heart of how Mojo should treat implicitly declared variables in
@@ -172,15 +185,19 @@ themselves? For instance:
 def foo():
     bar()
 
+
 def bar():
     print("hello")
 
-foo() # prints 'hello'
+
+foo()  # prints 'hello'
+
 
 def bar():
     print("goodbye")
 
-foo() # should this print 'goodbye'?
+
+foo()  # should this print 'goodbye'?
 ```
 
 In Mojo today, the first time the name lookup of `bar` is resolved, it is baked
@@ -196,9 +213,12 @@ instance, would the following be allowed?
 
 ```python
 @dynamic
-def bar(a): pass
+def bar(a):
+    pass
 
-def bar(a: Int): pass
+
+def bar(a: Int):
+    pass
 ```
 
 This gets into the "levels of dynamism" Mojo intends to provide, and how that

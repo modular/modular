@@ -17,7 +17,7 @@ from std.random import random_float64
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from std.gpu import WARP_SIZE, global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import *
@@ -123,7 +123,7 @@ def test_layout_mma[
     comptime kernel = mma_layout_tc[
         out_type, in_type, shape, layout_c, layout_a, layout_b
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -137,7 +137,7 @@ def test_layout_mma[
     comptime naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         mat_c_n.device_tensor(),
         mat_a_n.device_tensor(),
         mat_b_n.device_tensor(),
@@ -154,7 +154,7 @@ def test_layout_mma[
             if debug:
                 if not isclose(out_val, out_ref, rtol=rtol):
                     print(i, out_val, out_ref)
-            testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
+            assert_true(isclose(out_val, out_ref, rtol=rtol))
 
 
 def main() raises:

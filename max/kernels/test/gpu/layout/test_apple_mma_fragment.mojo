@@ -23,13 +23,14 @@ Validates:
 - Bounded store with partial output region
 """
 
-from std.memory import AddressSpace, stack_allocation
+from std.memory import AddressSpace, unsafe_stack_allocation
 from std.random import random_si64
 from std.sys.info import _accelerator_arch
 
-from std.gpu import WARP_SIZE, barrier, lane_id
-from std.gpu.compute.arch.mma_apple import _apple_frag_layout
-from std.gpu.host import DeviceContext
+from std.gpu import WARP_SIZE, lane_id
+from max.gpu.sync import barrier
+from max.gpu.compute.arch.mma_apple import _apple_frag_layout
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor
 from layout.tile_layout import row_major, col_major
@@ -80,7 +81,7 @@ def _host_matmul_ref[
 
 
 def _verify_fragments(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
 ) -> Bool:
     """Verify 32 threads' fragment outputs against the canonical layout.
 
@@ -89,7 +90,7 @@ def _verify_fragments(
     sequential values [r * 16 + c].
     """
     var pass_ = True
-    for tid in range(Int(WARP_SIZE)):
+    for tid in range(WARP_SIZE):
         var layout = _apple_frag_layout(tid)
         var row_lo = layout[0]
         var col_base = layout[1]
@@ -153,8 +154,8 @@ def fragment_load_kernel(
     var offset_lo = Int(rb) * row_stride + Int(cb)
     var offset_hi = offset_lo + 8 * row_stride
 
-    var lo = (tile.ptr + offset_lo).load[width=4]()
-    var hi = (tile.ptr + offset_hi).load[width=4]()
+    var lo = (tile._storage + offset_lo).load[width=4]()
+    var hi = (tile._storage + offset_hi).load[width=4]()
     var frag = lo.join(hi)
 
     # Write 8 elements to output at offset tid * 8
@@ -337,7 +338,7 @@ def test_fragment_load_layout(ctx: DeviceContext) raises:
     )
     ctx.enqueue_copy(input_dev, input_host)
 
-    ctx.enqueue_function_experimental[fragment_load_kernel](
+    ctx.enqueue_function[fragment_load_kernel](
         input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -390,7 +391,7 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_2x2_kernel](
+    ctx.enqueue_function[mma_2x2_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -499,7 +500,7 @@ def test_mma_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_k32_kernel](
+    ctx.enqueue_function[mma_k32_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -531,18 +532,18 @@ def mma_shared_kernel(
     better perf. This confirms the MMA path works when fragments come
     from an `AddressSpace.SHARED` TileTensor.
     """
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
     ]()
 
     # 32 threads cooperatively copy 256 elements (8 per lane, strided).
     var lid = Int(lane_id())
     for i in range(8):
-        a_shared[i * Int(WARP_SIZE) + lid] = a_ptr[i * Int(WARP_SIZE) + lid]
-        b_shared[i * Int(WARP_SIZE) + lid] = b_ptr[i * Int(WARP_SIZE) + lid]
+        a_shared[i * WARP_SIZE + lid] = a_ptr[i * WARP_SIZE + lid]
+        b_shared[i * WARP_SIZE + lid] = b_ptr[i * WARP_SIZE + lid]
     barrier()
 
     var a_tile = TileTensor(a_shared, row_major[16, 16]())
@@ -602,7 +603,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_i8_k32_kernel](
+    ctx.enqueue_function[mma_i8_k32_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -675,7 +676,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_parent_stride_kernel](
+    ctx.enqueue_function[mma_parent_stride_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -739,7 +740,7 @@ def test_zero_accum(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[zero_accum_kernel](
+    ctx.enqueue_function[zero_accum_kernel](
         a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -778,10 +779,12 @@ def bounded_mma_kernel(
     a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    m_valid: Int,
-    k_valid: Int,
+    m_valid_dev: Int32,
+    k_valid_dev: Int32,
 ):
     """Bounded MMA: 16x16 @ 16x16 with partial valid region."""
+    var m_valid = Int(m_valid_dev)
+    var k_valid = Int(k_valid_dev)
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
@@ -802,10 +805,12 @@ def bounded_store_kernel(
     a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
     d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    m_valid: Int,
-    n_valid: Int,
+    m_valid_dev: Int32,
+    n_valid_dev: Int32,
 ):
     """Bounded MMA + bounded store: partial valid output region."""
+    var m_valid = Int(m_valid_dev)
+    var n_valid = Int(n_valid_dev)
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
@@ -852,12 +857,12 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[bounded_mma_kernel](
+    ctx.enqueue_function[bounded_mma_kernel](
         a_dev,
         b_dev,
         d_dev,
-        M_VALID,
-        K_VALID,
+        Int32(M_VALID),
+        Int32(K_VALID),
         grid_dim=(1),
         block_dim=(WARP_SIZE),
     )
@@ -940,12 +945,12 @@ def test_store_bounded(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(d_dev, d_host_init)
 
-    ctx.enqueue_function_experimental[bounded_store_kernel](
+    ctx.enqueue_function[bounded_store_kernel](
         a_dev,
         b_dev,
         d_dev,
-        M_VALID,
-        N_VALID,
+        Int32(M_VALID),
+        Int32(N_VALID),
         grid_dim=(1),
         block_dim=(WARP_SIZE),
     )
@@ -1155,7 +1160,7 @@ def _run_16x16_mma_test[
     ctx.enqueue_copy(a_dev, a_phys)
     ctx.enqueue_copy(b_dev, b_phys)
 
-    ctx.enqueue_function_experimental[kernel_fn](
+    ctx.enqueue_function[kernel_fn](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 

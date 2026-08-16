@@ -26,18 +26,18 @@ from std.benchmark import (
 from std.testing import TestSuite
 
 
-@parameter
+@__parameter
 def bench1(mut b: Bencher):
-    @parameter
+    @__parameter
     def to_bench():
         print("hello")
 
     b.iter[to_bench]()
 
 
-@parameter
+@__parameter
 def bench2(mut b: Bencher, mystr: String) raises:
-    @parameter
+    @__parameter
     def to_bench():
         print(mystr)
 

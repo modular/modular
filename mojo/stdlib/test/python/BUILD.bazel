@@ -4,6 +4,7 @@ load("//bazel:api.bzl", "mojo_test", "requirement")
 package(default_visibility = ["//visibility:private"])
 
 _NUMPY_TESTS = [
+    "test_numpy.mojo",
     "test_python_to_mojo.mojo",
 ]
 
@@ -17,6 +18,7 @@ _NUMPY_TESTS = [
         ],
         data = [
             "custom_indexable.py",
+            "custom_operators.py",
             "my_module.py",
         ],
         python_version = version.replace("_", "."),

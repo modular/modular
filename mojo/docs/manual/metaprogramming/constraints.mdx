@@ -4,6 +4,10 @@ sidebar_label: Constraints
 description: How to use Mojo's constraint system to express program guarantees.
 ---
 
+<!-- markdownlint-disable MD033 MD045 MD024-->
+<!-- FIXME: Add alt text to images -->
+<!-- FIXME: Summary is used twice as a heading -->
+
 Mojo's constraint system lets you express program guarantees that go beyond
 what the type system provides. This page explains how to use this system
 effectively.
@@ -54,15 +58,15 @@ You can use constraints in the following contexts:
   `struct MyContainer[T: AnyType](Copyable where conforms_to(T, Copyable)):`
 
   You'll use this form, called *conditional trait conformance*, when defining
-  generic types. For details, see the section on
-  [conditional trait conformances](/docs/manual/generics/generics/#conditional-trait-conformance).
+  parameterized types. For details, see the section on
+  [conditional trait conformances](/docs/manual/generics/#conditional-trait-conformance).
 
 ## Symbolic propositions
 
 The constraint system works with *symbolic* propositions.
 
 ```mojo
-def first[size: Int](array: InlineArray[_, size]) -> array.T where size > 0:
+def first[size: Int](array: Array[_, size]) -> array.T where size > 0:
   ...
 ```
 
@@ -91,7 +95,7 @@ There are four ways to introduce knowledge to the system:
   created when the proposition is true:
 
     ```mojo
-    struct List[size: Int where size >= 0]:
+    struct List[size: Int] where size >= 0:
       # Knowledge base:
       # - `size >= 0`
     ```
@@ -151,12 +155,12 @@ knowledge you've explicitly introduced in the calling scope.
 
 ```mojo
 # A function that wants a non-empty list.
-def print_first[size: Int](l: InlineArray[Int, size]) where size >= 1:
+def print_first[size: Int](l: Array[Int, size]) where size >= 1:
     ...
 
 
 # A wrapper that wants a size >= 2 list.
-def print_first_two[size: Int](l: InlineArray[Int, size]) where size >= 2:
+def print_first_two[size: Int](l: Array[Int, size]) where size >= 2:
      # Error: invalid call to 'print_first': lacking evidence to prove
      # correctness
     print_first[size](l)
@@ -180,7 +184,7 @@ comptime assert x > 0, "x must be greater than 0."
 ```
 
 The message is optional. If the condition evaluates to false at compile time,
-compilation fails and the compiler shows the message (or a generic message if
+compilation fails and the compiler shows the message (or a default message if
 none is specified).
 
 Mojo adds the asserted condition to the list of "known true" propositions for
@@ -220,7 +224,7 @@ def create_even_list[T: Copyable, size: Int]() -> List[T] where (
 
 def main():
     var l1 = create_even_list[Int, 4]()
-    print(len(l1) % 2) 
+    print(len(l1) % 2)
     # Prints 0, since the list has an even number of elements.
 
     # var l2 = create_even_list[Int, 5]()  # Won't compile: 5 isn't even.
@@ -548,3 +552,5 @@ def create_list_from_span[lo: Int, hi: Int]() -> Optional[List[hi - lo]]:
   1. Add a constraint to push the requirement onto their own callers.
   2. Branch on the condition (`comptime if`).
   3. Assert an invariant (`comptime assert`).
+
+<!-- markdownlint-enable MD033 MD045 MD024 -->

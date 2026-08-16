@@ -29,6 +29,7 @@ checkpoints disable CFG regardless of request inputs.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
@@ -39,23 +40,28 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import float32_array_to_buffer
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.denoising_cache import (
+from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.cache import (
+    DenoisingCacheConfig,
     TaylorSeerBufferState,
     TaylorSeerCache,
 )
-from max.pipelines.lib.interfaces import TensorStruct
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib import float32_array_to_buffer
+from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.profiler import traced
+from max.pipelines.modeling.base import TensorStruct
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.profiler import Tracer, traced
 from typing_extensions import Self
 
 from .components import (
@@ -240,12 +246,19 @@ class Flux2KleinExecutor(
         )
 
         transformer_config = manifest["transformer"]
-        encoding = transformer_config.quantization_encoding or "bfloat16"
+        resolved_transformer_encoding, _ = (
+            _resolve_component_encoding_and_weights(transformer_config)
+        )
+        encoding = resolved_transformer_encoding or "bfloat16"
         self._model_dtype: DType = (
             DType.bfloat16
             if encoding == "float4_e2m1fnx2"
             else supported_encoding_dtype(encoding)
         )
+        if len(transformer_config.device_specs) != 1:
+            raise ValueError(
+                "FLUX.2-Klein is only supported on a single device"
+            )
         model_devices = load_devices(transformer_config.device_specs)
         self._model_device: Device = model_devices[0]
         self._in_channels: int = 128
@@ -256,30 +269,92 @@ class Flux2KleinExecutor(
         text_encoder_entry = manifest["text_encoder"]
         text_encoder_devices = load_devices(text_encoder_entry.device_specs)
         self._text_encoder_device: Device = text_encoder_devices[0]
+        resolved_te_encoding, resolved_te_weight_path = (
+            _resolve_component_encoding_and_weights(text_encoder_entry)
+        )
         self.text_encoder = Qwen3TextEncoderKleinModel(
             config=text_encoder_entry.huggingface_config.to_dict(),
-            encoding=text_encoder_entry.quantization_encoding or "bfloat16",
+            encoding=resolved_te_encoding or "bfloat16",
             devices=text_encoder_devices,
-            weights=load_weights(text_encoder_entry.resolved_weight_paths()),
+            weights=load_weights(
+                text_encoder_entry.resolved_weight_paths(
+                    resolved_te_weight_path
+                )
+            ),
             session=session,
         )
 
-        self.image_encoder = ImageEncoder(manifest, session)
-        self.decoder = VaeDecoder(manifest, session)
+        # Build Klein's CompiledComponent graphs into one shared Module so
+        # we can compile them all together via session.load_all (MODELS-1440).
+        # Note: ``self.text_encoder`` (Qwen3TextEncoderKleinModel) is not a
+        # CompiledComponent and continues to manage its own compile.
+        self._graphs_module = GraphModule()
 
-        self.denoise_compute = DenoiseCompute(manifest, session)
+        self.image_encoder = ImageEncoder(
+            manifest, session, graphs_module=self._graphs_module
+        )
+        self.decoder = VaeDecoder(
+            manifest, session, graphs_module=self._graphs_module
+        )
+
+        self.denoise_compute = DenoiseCompute(
+            manifest, session, graphs_module=self._graphs_module
+        )
         self.denoise_predict = DenoisePredict(
             manifest,
             session,
             dtype=self._model_dtype,
             device=self._model_device,
+            graphs_module=self._graphs_module,
         )
         self.cfg_combiner = CfgCombineComponent(
             manifest,
             session,
             dtype=self._model_dtype,
             device=DeviceRef.from_device(self._model_device),
+            graphs_module=self._graphs_module,
         )
+
+        components: list[CompiledComponent] = [
+            self.image_encoder,
+            self.decoder,
+            self.denoise_compute,
+            self.denoise_predict,
+            self.cfg_combiner,
+        ]
+
+        combined_registry: dict[str, Any] = {}
+        for component in components:
+            for key, value in component._pending_weights.items():
+                if key in combined_registry:
+                    raise RuntimeError(
+                        f"FLUX2 Klein load_all: weight key {key!r} appears "
+                        f"in multiple components; rename one to disambiguate."
+                    )
+                combined_registry[key] = value
+
+        graph_names = [c._pending_graph_name for c in components]
+        logger.info(
+            "Compiling FLUX2 Klein graphs via session.load_all "
+            "(%d graphs: %s)...",
+            len(graph_names),
+            ", ".join(repr(n) for n in graph_names if n is not None),
+        )
+        t0 = time.perf_counter()
+        with Tracer("Flux2KleinExecutor.compile_load_all"):
+            models = session.load_all(
+                self._graphs_module, weights_registry=combined_registry
+            )
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "Compiled FLUX2 Klein graphs via session.load_all "
+            "(%d graphs) in %.2fs",
+            len(models),
+            elapsed,
+        )
+
+        for component in components:
+            component._attach_compiled_model(models)
 
         self._taylor_cache: TaylorSeerCache | None = None
         if self._cache_config.taylorseer:

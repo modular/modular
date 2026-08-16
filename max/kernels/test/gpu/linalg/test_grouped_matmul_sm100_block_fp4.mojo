@@ -14,9 +14,9 @@ from std.math import align_up
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -51,13 +51,12 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -96,7 +95,7 @@ def _test_kernel_impl_base[
     ctx: DeviceContext,
 ) raises:
     seed(1234)
-    total_num_tokens = 0
+    var total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
 
@@ -113,18 +112,16 @@ def _test_kernel_impl_base[
     )
 
     var a_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1] // 2]())
+        Coord(Int(total_num_tokens), Idx[expert_shape[1] // 2])
     )
     var b_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[expert_shape[0]](),
-            Idx[expert_shape[1] // 2](),
+            Idx[num_experts],
+            Idx[expert_shape[0]],
+            Idx[expert_shape[1] // 2],
         )
     )
-    var c_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
-    )
+    var c_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[0]]))
 
     var a_size = total_num_tokens * K // 2
     var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
@@ -146,7 +143,7 @@ def _test_kernel_impl_base[
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts + 1)))),
+        row_major(Coord(Int(num_active_experts + 1))),
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
@@ -155,21 +152,21 @@ def _test_kernel_impl_base[
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
@@ -192,35 +189,35 @@ def _test_kernel_impl_base[
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
-    a_scale_dim0 = 0
+    var a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         a_scale_offsets_ptr[i] = UInt32(
             a_scale_dim0
             - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        local_m = num_tokens_by_expert[i]
+        var local_m = num_tokens_by_expert[i]
         a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(local_m)
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(a_scale_dim0),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -249,33 +246,33 @@ def _test_kernel_impl_base[
     if simple_init():
         for m in range(M):
             for k in range(K // 2):
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K // 2):
-                    b_host[(Idx(e), Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                    b_host[e, n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    effective_n = expert_shape[0]
-    effective_k = expert_shape[1]
+    var effective_n = expert_shape[0]
+    var effective_k = expert_shape[1]
 
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        local_m = end - start
-        actual_start = (
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var local_m = end - start
+        var actual_start = (
             start // SF_MN_GROUP_SIZE + Int(a_scale_offsets_ptr[i])
         ) * SF_MN_GROUP_SIZE
-        actual_end = actual_start + local_m
+        var actual_end = actual_start + local_m
         for idx0 in range(actual_start, actual_end):
             for idx1 in range(
                 0,
@@ -300,7 +297,7 @@ def _test_kernel_impl_base[
                     )
 
     for e in range(num_experts):
-        expert_slice_size = (
+        var expert_slice_size = (
             Int(b_scales_host.dim(1))
             * Int(b_scales_host.dim(2))
             * Int(b_scales_host.dim(3))
@@ -315,11 +312,11 @@ def _test_kernel_impl_base[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups_local](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups_local],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -431,35 +428,31 @@ def _test_kernel_impl_base[
             a_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
             b_scales_device,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_device,
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-                )
-            ),
-        ).as_any_origin()
+            row_major(Coord(Int64(num_experts))),
+        ).as_unsafe_any_origin()
 
         grouped_matmul_block_scaled[
             transpose_b=transpose_b,
@@ -522,15 +515,15 @@ def _test_kernel_impl_base[
     ] * SF_ATOM_K
 
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        expert_id = expert_ids_host_ptr[i]
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var expert_id = expert_ids_host_ptr[i]
 
         if expert_id < 0 or end - start == 0:
             continue
 
-        var c_slice = LayoutTensor[c_type, new_c_layout, MutAnyOrigin](
-            c_ref_tensor.ptr + start * c_row_stride,
+        var c_slice = LayoutTensor[c_type, new_c_layout](
+            c_ref_tensor._storage + start * c_row_stride,
             RuntimeLayout[new_c_layout].row_major(
                 IndexList[2](
                     end - start,
@@ -539,8 +532,8 @@ def _test_kernel_impl_base[
             ),
         )
 
-        var new_a_tensor = LayoutTensor[a_type, new_a_layout, MutAnyOrigin](
-            a_tensor.ptr + start * a_row_stride,
+        var new_a_tensor = LayoutTensor[a_type, new_a_layout](
+            a_tensor._storage + start * a_row_stride,
             RuntimeLayout[new_a_layout].row_major(
                 IndexList[2](
                     end - start,
@@ -549,8 +542,8 @@ def _test_kernel_impl_base[
             ),
         )
 
-        var new_b_tensor = LayoutTensor[b_type, new_b_layout, MutAnyOrigin](
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+        var new_b_tensor = LayoutTensor[b_type, new_b_layout](
+            b_tensor._storage + Int(expert_id) * b_expert_stride,
             RuntimeLayout[new_b_layout].row_major(
                 IndexList[2](
                     expert_shape[0],
@@ -560,9 +553,10 @@ def _test_kernel_impl_base[
         )
 
         var new_b_scales_tensor = LayoutTensor[
-            scales_dtype, new_b_scales_layout, MutAnyOrigin
+            scales_dtype,
+            new_b_scales_layout,
         ](
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
                     ref_n_groups,
@@ -578,9 +572,12 @@ def _test_kernel_impl_base[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = LayoutTensor[
-            scales_dtype, new_a_scales_layout, MutAnyOrigin
+            scales_dtype,
+            new_a_scales_layout,
         ](
-            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            (
+                a_scales_tensor._storage + a_scales_start * a_scales_row_stride
+            ).as_unsafe_any_origin(),
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -614,8 +611,8 @@ def _test_kernel_impl_base[
                 c_slice,
                 new_a_tensor,
                 new_b_tensor,
-                a_scales=new_a_scales_tensor.get_immutable(),
-                b_scales=new_b_scales_tensor.get_immutable(),
+                a_scales=new_a_scales_tensor.as_imm().as_unsafe_any_origin(),
+                b_scales=new_b_scales_tensor.as_imm().as_unsafe_any_origin(),
                 transpose_b=transpose_b,
                 c_row_major=True,
                 alpha=expert_scale,
@@ -628,8 +625,8 @@ def _test_kernel_impl_base[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -722,7 +719,7 @@ def run_grouped_matmul_sm100_block_fp4_suite[
 
         # Wrapper which forwards suite-level scales_dtype, SF_VECTOR_SIZE,
         # and scaling_kind, so call sites don't have to pass them explicitly.
-        @parameter
+        @__parameter
         @always_inline
         def _test_kernel_impl[
             kernel_type: String,
