@@ -87,6 +87,12 @@ run the command from outside your architecture's root directory, you can pass
 an import path followed by a colon and the Python package name, such as
 `folder/path/to/import:my_arch_package`.
 
+An AI coding agent can run this for you with the `serve-model` skill, which
+sets up the environment and picks the flags your model needs, including
+`--custom-architectures`, `--devices`, `--quantization-encoding`, and
+`--trust-remote-code`. See [Modular skills](/coding-assistants#skills) to
+install it.
+
 :::caution Trust remote code
 
 Some Hugging Face repos ship custom Python files (such as `modeling_*.py` or
@@ -181,3 +187,5 @@ and performance optimizations that work with any architecture that MAX loads.
 - [LoRA adapters](/serve/lora-adapters): Serve multiple fine-tuned
   adapters on top of your base architecture without loading separate model
   copies.
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark): Measure the
+  throughput and latency of the endpoint you just started.
