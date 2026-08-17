@@ -58,6 +58,7 @@ from eval_runner import (
     write_results,
 )
 from inference_server_harness import start_server
+from max.nn.kv_cache import KVConnectorType
 from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
@@ -117,11 +118,18 @@ MODEL_RECIPES = CaseInsensitiveDict({
 class RecipeConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    class KVConnector(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        type: str = "null"
+
     class KVCache(BaseModel):
         model_config = ConfigDict(extra="ignore")
 
         device_memory_utilization: float | None = None
-        kv_connector: str | None = None
+        kv_connector_config: RecipeConfig.KVConnector = Field(
+            default_factory=lambda: RecipeConfig.KVConnector()
+        )
 
     class Model(BaseModel):
         model_config = ConfigDict(extra="ignore")
@@ -477,9 +485,10 @@ def get_server_cmd(
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
         # cpu/disk KV offload code paths.
-        if "--kv-connector" in serve_extra_args or (
+        if "--kv-connector-config" in serve_extra_args or (
             recipe is not None
-            and recipe.model.kv_cache.kv_connector is not None
+            and recipe.model.kv_cache.kv_connector_config.type
+            != KVConnectorType.null.value
         ):
             env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
 

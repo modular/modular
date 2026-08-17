@@ -346,30 +346,35 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
 
 def test_merge_serve_extra_args_appends_when_absent() -> None:
     args = ["prog", "model", "--framework", "max-ci"]
-    merged = smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
-    assert merged == args + ["--serve-extra-args", "--kv-connector=tiered"]
+    merged = smoke_test.merge_serve_extra_args(
+        args, "--kv-connector-config=tiered.json"
+    )
+    assert merged == args + [
+        "--serve-extra-args",
+        "--kv-connector-config=tiered.json",
+    ]
 
 
 def test_merge_serve_extra_args_splices_into_two_token_form() -> None:
     merged = smoke_test.merge_serve_extra_args(
         ["prog", "--serve-extra-args", "--max-batch-size=16"],
-        "--kv-connector=tiered",
+        "--kv-connector-config=tiered.json",
     )
     assert merged == [
         "prog",
         "--serve-extra-args",
-        "--kv-connector=tiered --max-batch-size=16",
+        "--kv-connector-config=tiered.json --max-batch-size=16",
     ]
 
 
 def test_merge_serve_extra_args_splices_into_equals_form() -> None:
     merged = smoke_test.merge_serve_extra_args(
         ["prog", "--serve-extra-args=--max-batch-size=16"],
-        "--kv-connector=tiered",
+        "--kv-connector-config=tiered.json",
     )
     assert merged == [
         "prog",
-        "--serve-extra-args=--kv-connector=tiered --max-batch-size=16",
+        "--serve-extra-args=--kv-connector-config=tiered.json --max-batch-size=16",
     ]
 
 
@@ -378,14 +383,17 @@ def test_merge_serve_extra_args_caller_value_goes_last_so_it_wins() -> None:
     last-wins parsing gives an explicit caller override of the same flag
     precedence."""
     merged = smoke_test.merge_serve_extra_args(
-        ["prog", "--serve-extra-args", "--kv-connector=null"],
-        "--kv-connector=tiered",
+        ["prog", "--serve-extra-args", "--kv-connector-config=null.json"],
+        "--kv-connector-config=tiered.json",
     )
-    assert merged[2] == "--kv-connector=tiered --kv-connector=null"
+    assert (
+        merged[2]
+        == "--kv-connector-config=tiered.json --kv-connector-config=null.json"
+    )
 
 
 def test_merge_serve_extra_args_does_not_mutate_input() -> None:
     args = ["prog", "--serve-extra-args", "--max-batch-size=16"]
     snapshot = list(args)
-    smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
+    smoke_test.merge_serve_extra_args(args, "--kv-connector-config=tiered.json")
     assert args == snapshot

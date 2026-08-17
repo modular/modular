@@ -279,10 +279,11 @@ This version is still a work in progress.
   a cheap device-to-device copy of the cached pages onto the assigned replica,
   and the CPU/disk offload tiers are now a single pool shared by every replica
   (a block offloaded by one replica can be loaded by another). As a result,
-  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
+  `host_offload_max_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
-- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
+- The dKV external KV-cache connector (`--kv-connector-config '{"type":
+  "dkv"}'`) now supports
   data-parallel (DP) serving and shares its prefix cache across DP replicas on
   the default single-tenant path, matching the `local` and `tiered` connectors.
   Every replica resolves to the same replica-agnostic store, and the stored
@@ -305,7 +306,8 @@ This version is still a work in progress.
   remote (NIXL) transport and enqueues a cross-stream ordering on the
   co-located same-host (CUDA) transport, so it closes the window on both. The
   common equal-count path is unchanged and pays no extra synchronization.
-- The dKV external KV-cache connector (`--kv-connector dkv`) now requires a
+- The dKV external KV-cache connector (`--kv-connector-config '{"type":
+  "dkv"}'`) now requires a
   non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
   operator); the empty-tenant "default" path is removed. Both the connector and
   the dKV server now reject an unset/empty tenant rather than keying an unfenced
@@ -614,6 +616,19 @@ This version is still a work in progress.
   builds in graph ops. GPU-only, non-Apple.
 
 ## Breaking changes
+
+- The KV cache connector is now configured as a single object: its type moved
+  onto `--kv-connector-config` as a `type` field, and the separate
+  `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
+  `--kv-connector-config '{"type": "rust_tiered"}'`, and in a recipe set
+  `model.kv_cache.kv_connector_config.type`. `host_kvcache_swap_space_gb` is
+  renamed `host_offload_max_gb` to match `disk_offload_max_gb`, and both now
+  default to sizing their tier from the device page pool (twice it on host,
+  three times on disk) rather than to a fixed 50 GiB. Dict-valued `kv_cache`
+  flags now merge field-wise over a config file's value instead of replacing
+  it, so overriding one connector field on the command line keeps the rest --
+  previously a partial override reset the connector type and silently disabled
+  offloading.
 
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction
   around a single path and a single (nested) shape:

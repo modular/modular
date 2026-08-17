@@ -357,7 +357,7 @@ def test_estimate_signal_buffer_memory__default(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector = kv_connector
+    cfg.model.kv_cache.kv_connector_config.type = kv_connector
 
     expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
     assert cfg.estimate_signal_buffer_memory() == expected
@@ -389,7 +389,7 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector = kv_connector
+    cfg.model.kv_cache.kv_connector_config.type = kv_connector
 
     arch_config = DUMMY_LLAMA_ARCH.config.initialize(cfg)
     planner_cls = PagedMemoryPlanner.with_activation_reservation(

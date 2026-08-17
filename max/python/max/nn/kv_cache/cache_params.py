@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -113,7 +113,7 @@ class KVCacheGroupId:
 class KVConnectorType(str, Enum):
     """Identifies which off-device backing store the KV cache uses.
 
-    Set on :attr:`KVCacheParams.kv_connector` to control whether evicted
+    Set on the connector config's ``type`` field to control whether evicted
     cache pages stay on device only, tier across host and disk, or route
     through a distributed block store.
     """
@@ -124,7 +124,7 @@ class KVConnectorType(str, Enum):
     tiered = "tiered"
     """Tiers evicted pages across host memory and disk.
 
-    Requires ``enable_prefix_caching``, ``host_kvcache_swap_space_gb``,
+    Requires ``enable_prefix_caching``, ``host_offload_max_gb``,
     and a ``disk_offload_dir`` on the connector config.
 
     .. deprecated::
@@ -140,7 +140,7 @@ class KVConnectorType(str, Enum):
     resolves to: it runs its copies and disk I/O on Rust threads (no GIL
     contention) and overlaps onloads with GPU compute via asynchronous
     transfer handles. Requires ``enable_prefix_caching``,
-    ``host_kvcache_swap_space_gb``, and a ``disk_offload_dir`` on the connector
+    ``host_offload_max_gb``, and a ``disk_offload_dir`` on the connector
     config. Raises on non-CUDA/HIP devices.
     """
 
@@ -149,6 +149,52 @@ class KVConnectorType(str, Enum):
 
     Requires a ``block_store_endpoint`` on the connector config.
     """
+
+
+@runtime_checkable
+class KVConnectorConfigInterface(Protocol):
+    """The KV connector configuration contract: a type plus per-tier settings.
+
+    Declared here because :class:`KVCacheParams` carries it, and implemented by
+    the Pydantic ``KVConnectorConfig`` in the pipelines layer (which owns CLI
+    and config-file parsing). Structural typing keeps ``max.nn`` free of a
+    Pydantic dependency, which the base ``max`` wheel does not ship, while
+    still giving every consumer a checked type instead of ``Any``.
+    """
+
+    type: KVConnectorType
+    """Which off-device backing store to use."""
+
+    host_offload_max_gb: float | None
+    """Host budget in GiB; ``None`` sizes it from the device pool."""
+
+    disk_offload_max_gb: float | None
+    """Disk budget in GiB; ``None`` sizes it from the device pool."""
+
+    disk_offload_dir: str | None
+    """Disk cache directory; ``None`` means auto-create one."""
+
+    num_disk_workers: int
+    """Disk I/O worker threads for the tiered connectors."""
+
+    block_store_endpoint: str | None
+    """Endpoint for the co-located dKV service."""
+
+
+@dataclass
+class NullKVConnectorConfig:
+    """Connector config for no off-device backing store.
+
+    The default for :attr:`KVCacheParams.kv_connector_config`, so the field is
+    never ``None`` and every reader can go straight to ``.type``.
+    """
+
+    type: KVConnectorType = KVConnectorType.null
+    host_offload_max_gb: float | None = None
+    disk_offload_max_gb: float | None = None
+    disk_offload_dir: str | None = None
+    num_disk_workers: int = 32
+    block_store_endpoint: str | None = None
 
 
 def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
@@ -508,9 +554,7 @@ class KVCacheParamInterface(Protocol):
     page_size: int
     data_parallel_degree: int
     devices: Sequence[DeviceRef]
-    kv_connector: KVConnectorType | None
-    kv_connector_config: Any
-    host_kvcache_swap_space_gb: float | None
+    kv_connector_config: KVConnectorConfigInterface
     speculative_method: SpeculativeMethod | None = None
     num_draft_tokens: int = 0
 
@@ -696,9 +740,6 @@ class KVCacheParams(KVCacheParamInterface):
     to ``False`` (one multi-layer buffer), keeping all other backends and
     models byte-identical."""
 
-    kv_connector: KVConnectorType | None = None
-    """Type of KV cache connector to use (null, tiered, rust_tiered, dkv)."""
-
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for KV-cache block identity."""
 
@@ -708,11 +749,11 @@ class KVCacheParams(KVCacheParamInterface):
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
     """
 
-    kv_connector_config: Any = None
-    """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""
-
-    host_kvcache_swap_space_gb: float | None = None
-    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when the tiered connector is used."""
+    kv_connector_config: KVConnectorConfigInterface = field(
+        default_factory=NullKVConnectorConfig
+    )
+    """Connector configuration: the connector type and its settings. The
+    default is a ``null`` connector (no external caching)."""
 
     page_size: int = 128
     """Number of tokens per page (block).
@@ -769,19 +810,15 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate connector configuration
-        if self.kv_connector in (
+        connector = self.kv_connector_config.type
+        if connector in (
             KVConnectorType.tiered,
             KVConnectorType.rust_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
-                    f"KV connector '{self.kv_connector.value}' requires prefix"
+                    f"KV connector '{connector.value}' requires prefix"
                     " caching to be enabled"
-                )
-            if self.host_kvcache_swap_space_gb is None:
-                raise ValueError(
-                    "host_kvcache_swap_space_gb is required when kv_connector"
-                    f" is '{self.kv_connector.value}'"
                 )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -1055,7 +1092,8 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError(
                     f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
                 )
-            if self.kv_connector in (
+            connector = self.kv_connector_config.type
+            if connector in (
                 KVConnectorType.tiered,
                 KVConnectorType.rust_tiered,
                 KVConnectorType.dkv,
@@ -1066,7 +1104,7 @@ class KVCacheParams(KVCacheParamInterface):
                 # buffers.
                 raise NotImplementedError(
                     "per_layer_buffers is not supported with an off-device KV"
-                    f" connector ('{self.kv_connector.value}')"
+                    f" connector ('{connector.value}')"
                 )
             if self.data_parallel_degree > 1:
                 # Cross-replica block copy enumerates the same layer-0 alias.
@@ -1809,8 +1847,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     page_size: int
     data_parallel_degree: int
     devices: Sequence[DeviceRef]
-    kv_connector: KVConnectorType | None
-    host_kvcache_swap_space_gb: float | None
+    kv_connector_config: KVConnectorConfigInterface
     speculative_method: SpeculativeMethod | None = None
     num_draft_tokens: int = 0
 
@@ -1824,8 +1861,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
         :class:`MultiKVCacheParams` trees, enabling arbitrarily deep KV
         cache hierarchies (e.g. ``{target: {sliding, mla}, draft: mha}``).
         All children must share the same ``page_size``,
-        ``data_parallel_degree``, ``n_devices``, ``kv_connector``, and
-        ``host_kvcache_swap_space_gb`` values.
+        ``data_parallel_degree``, ``n_devices``, and
+        ``kv_connector_config`` values.
 
         Args:
             params: Named mapping of :class:`KVCacheParamInterface` instances
@@ -1845,8 +1882,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             page_size=first.page_size,
             data_parallel_degree=first.data_parallel_degree,
             devices=first.devices,
-            kv_connector=first.kv_connector,
-            host_kvcache_swap_space_gb=first.host_kvcache_swap_space_gb,
+            kv_connector_config=first.kv_connector_config,
             speculative_method=first.speculative_method,
             num_draft_tokens=first.num_draft_tokens,
         )
@@ -1895,12 +1931,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f" {enable_dp_cross_replica_prefix_copy}"
             )
 
-        kv_connectors = {p.kv_connector for p in params}
-        if len(kv_connectors) > 1:
-            raise ValueError(
-                f"All params must use the same kv_connector, got: {kv_connectors}"
-            )
-
         # ``KVConnectorConfig`` is not hashable, so compare by equality against
         # the first rather than collapsing into a set.
         first_kv_connector_config = params[0].kv_connector_config
@@ -1910,15 +1940,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 "All params must use the same kv_connector_config, got:"
                 f" {[p.kv_connector_config for p in params]}"
-            )
-
-        host_kvcache_swap_space_gb = {
-            p.host_kvcache_swap_space_gb for p in params
-        }
-        if len(host_kvcache_swap_space_gb) > 1:
-            raise ValueError(
-                "All params must use the same host_kvcache_swap_space_gb, got:"
-                f" {host_kvcache_swap_space_gb}"
             )
 
         speculative_methods = {p.speculative_method for p in params}
@@ -1967,11 +1988,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """Whether DP cross-replica prefix copies are enabled (shared across
         all caches)."""
         return self._first.enable_dp_cross_replica_prefix_copy
-
-    @property
-    def kv_connector_config(self) -> Any:
-        """Connector config (shared across all caches)."""
-        return self._first.kv_connector_config
 
     @property
     def kv_hash_algo(self) -> KVHashAlgo:
@@ -2369,39 +2385,3 @@ def host_bytes_per_block(params: KVCacheParamInterface) -> int:
         assert bytes_per_block % params.tensor_parallel_degree == 0
         bytes_per_block = bytes_per_block // params.tensor_parallel_degree
     return bytes_per_block
-
-
-def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
-    """Computes the number of blocks that can be allocated on the host.
-
-    The host (CPU/disk) tier is a single pool shared across all data-parallel
-    replicas via one connector (SERVOPT-1501), sized at
-    ``host_kvcache_swap_space_gb`` total (independent of
-    ``data_parallel_degree``). The connector is replica-agnostic, so a block
-    offloaded by one replica can be served as a cache hit for another.
-
-    Returns:
-        The total number of blocks that can be allocated in the shared host
-        pool.
-    """
-    if params.kv_connector not in (
-        KVConnectorType.tiered,
-        KVConnectorType.rust_tiered,
-    ):
-        return 0
-    assert params.host_kvcache_swap_space_gb is not None
-    GiB = 1024 * 1024 * 1024
-    host_bytes = params.host_kvcache_swap_space_gb * GiB
-
-    num_host_blocks = int(host_bytes // host_bytes_per_block(params))
-
-    if num_host_blocks == 0:
-        raise RuntimeError(
-            "Insufficient cache memory to allocate even a single page.\nOne"
-            " page requires"
-            f" {to_human_readable_bytes(host_bytes_per_block(params))} but only"
-            f" {to_human_readable_bytes(host_bytes)} are"
-            " available on host."
-        )
-
-    return num_host_blocks

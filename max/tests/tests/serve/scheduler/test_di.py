@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.nn.kv_cache import KVConnectorType, MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -31,6 +31,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
@@ -198,7 +199,7 @@ def create_di_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
     device: Device = CPU(),
     overlap_prefill: bool = False,
@@ -254,7 +255,7 @@ def create_di_scheduler(
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             dp=effective_prefill_dp,
             device=device,
             num_speculative_tokens=effective_num_spec_tokens,
@@ -270,7 +271,7 @@ def create_di_scheduler(
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             dp=effective_decode_dp,
             device=device,
             num_speculative_tokens=effective_num_spec_tokens,

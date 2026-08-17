@@ -219,10 +219,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             raise ValueError(
                 "JengaKVCacheManager only supports data parallelism of 1."
             )
-        if (
-            params.kv_connector is not None
-            and params.kv_connector != KVConnectorType.null
-        ):
+        if params.kv_connector_config.type != KVConnectorType.null:
             raise ValueError(
                 "JengaKVCacheManager does not support KVConnectors."
             )
