@@ -52,7 +52,7 @@ import zmq
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -371,7 +371,7 @@ def main() -> None:
         f"engine_{args.role}",
         [
             [
-                KVCacheMemoryGroup(
+                KVCacheMemory(
                     replicated=False,
                     buffers=[_view(b, cfg.num_pages) for b in all_blocks],
                 )
