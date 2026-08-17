@@ -76,7 +76,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
         self.handle = fdopen(
             dup(Int32(stream_id.value)),
-            Self.mode.as_c_string_slice().unsafe_ptr(),
+            Self.mode.as_c_string_slice(),
         )
 
     def __enter__(self) -> Self:
@@ -436,7 +436,7 @@ def print[
         var cstr = buffer.nul_terminate()
 
         comptime if is_nvidia_gpu():
-            _printf["%s"](cstr.unsafe_ptr())
+            _printf["%s"](cstr.ptr())
         elif is_amd_gpu():
             var msg = printf_begin()
             _ = printf_append_string_n(

@@ -22,9 +22,7 @@ from std.testing import assert_equal
 
 def test_keep_alive() raises:
     var s = String("x")
-    var length = external_call["strlen", c_size_t](
-        s.as_c_string_slice().unsafe_ptr()
-    )
+    var length = external_call["strlen", c_size_t](s.as_c_string_slice())
     assert_equal(Int(length), 1)
     _ = s  # manual last use keeps `s` alive until here
 
@@ -40,12 +38,12 @@ def test_origin_pinned_refill() raises:
 
     # The pointer carries `line`'s origin, so `line` stays alive across
     # the call without a manual keep-alive.
-    var length = c_strlen(line.as_c_string_slice().unsafe_ptr())
+    var length = c_strlen(line.as_c_string_slice())
     assert_equal(Int(length), 5)
 
     # Refill the same buffer; the origin stays valid.
     line = "Hello, Mojo!"
-    length = c_strlen(line.as_c_string_slice().unsafe_ptr())
+    length = c_strlen(line.as_c_string_slice())
     assert_equal(Int(length), 12)
 
 

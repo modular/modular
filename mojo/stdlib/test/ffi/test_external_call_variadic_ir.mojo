@@ -31,7 +31,7 @@ from std.memory import alloc
 def format_into(buf: Pointer[c_char, _], size: Int) -> c_int:
     var fmt = "%d/%d".as_c_string_slice()
     return external_call["snprintf", c_int, num_fixed_args=3](
-        buf, size, fmt.unsafe_ptr(), c_int(6), c_int(7)
+        buf, size, fmt.ptr(), c_int(6), c_int(7)
     )
 
 

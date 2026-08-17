@@ -155,8 +155,8 @@ struct CStringSlice[origin: ImmOrigin](
         Returns:
             True if the `CStringSlice`s are equal, False otherwise.
         """
-        var a = self.unsafe_ptr()
-        var b = rhs.unsafe_ptr()
+        var a = self.ptr()
+        var b = rhs.ptr()
         if a == b:
             return True
 
@@ -208,13 +208,24 @@ struct CStringSlice[origin: ImmOrigin](
         t"CStringSlice({self.as_bytes_with_nul()})".write_to(writer)
 
     @always_inline
-    def unsafe_ptr(self) -> Pointer[Int8, Self.origin]:
+    def ptr(self) -> Pointer[Int8, Self.origin]:
         """Get a pointer to the underlying `CStringSlice`.
 
         Returns:
             A pointer to the underlying `CStringSlice`.
         """
         return self._data
+
+    @doc_hidden
+    @always_inline
+    @deprecated(use=ptr)
+    def unsafe_ptr(self) -> Pointer[Int8, Self.origin]:
+        """Get a pointer to the underlying `CStringSlice`.
+
+        Returns:
+            A pointer to the underlying `CStringSlice`.
+        """
+        return self.ptr()
 
     @always_inline
     def as_bytes(self) -> Span[Byte, Self.origin]:

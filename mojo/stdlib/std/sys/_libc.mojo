@@ -75,7 +75,7 @@ comptime FILE_ptr = OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
-def fdopen(fd: c_int, mode: ImmPointer[c_char, _]) -> FILE_ptr:
+def fdopen(fd: c_int, mode: CStringSlice[_]) -> FILE_ptr:
     return external_call["fdopen", FILE_ptr](fd, mode)
 
 
@@ -91,8 +91,8 @@ def fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 def popen(
-    command: ImmPointer[c_char, _],
-    type: ImmPointer[c_char, _],
+    command: CStringSlice[_],
+    type: CStringSlice[_],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -188,7 +188,7 @@ def _get_environ() -> (
         # RTLD_DEFAULT is ((void *)0) on Linux.
         return dlsym[_EnvpType](
             OptionalPointer[NoneType, MutUntrackedOrigin](),
-            "environ".as_c_string_slice().unsafe_ptr(),
+            "environ".as_c_string_slice().ptr(),
         ).value()[]
     else:
         CompilationTarget.unsupported_target_error[operation="_get_environ"]()

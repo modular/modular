@@ -139,8 +139,8 @@ def parse_shape[name: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime zero = "0".unsafe_ptr()[unsafe_offset=0]
-    comptime x_ptr = "x".unsafe_ptr()[unsafe_offset=0]
+    comptime zero = "0".ptr()[unsafe_offset=0]
+    comptime x_ptr = "x".ptr()[unsafe_offset=0]
     comptime name_unsafe_ptr = name.as_bytes().unsafe_ptr()
 
     var vals: List[Int] = List[Int]()

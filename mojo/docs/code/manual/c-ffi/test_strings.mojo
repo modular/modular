@@ -22,9 +22,7 @@ from std.testing import assert_equal, assert_true
 
 def test_mojo_string_to_c() raises:
     var name: String = "hello"
-    var length = external_call["strlen", c_size_t](
-        name.as_c_string_slice().unsafe_ptr()
-    )
+    var length = external_call["strlen", c_size_t](name.as_c_string_slice())
     assert_equal(Int(length), 5)
     _ = name
 
@@ -34,7 +32,7 @@ def test_mojo_string_to_c() raises:
 
 def test_atoi() raises:
     var value: String = "42"  # Well-formed ASCII number
-    var s_ptr = value.as_c_string_slice().unsafe_ptr()  # null-terminated char*
+    var s_ptr = value.as_c_string_slice().ptr()  # null-terminated char*
     var result: c_int = external_call["atoi", c_int](s_ptr)
     assert_equal(result, c_int(42))
     _ = value
@@ -47,7 +45,7 @@ def test_c_string_to_mojo() raises:
     var name: String = "Echo"
     var cptr = external_call[
         "strdup", Optional[Pointer[c_char, MutUntrackedOrigin]]
-    ](name.as_c_string_slice().unsafe_ptr())
+    ](name.as_c_string_slice().ptr())
     assert_true(Bool(cptr))
     var ptr = cptr.value()
     # Measure the C buffer with strlen, not the Mojo string's byte_length.
@@ -63,7 +61,7 @@ def test_c_string_to_mojo() raises:
 
 def test_literal_to_c() raises:
     var length = external_call["strlen", c_size_t](
-        "libm.so.6".as_c_string_slice().unsafe_ptr()
+        "libm.so.6".as_c_string_slice().ptr()
     )
     assert_equal(Int(length), 9)  # "libm.so.6" is 9 bytes
 

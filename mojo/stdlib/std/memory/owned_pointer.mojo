@@ -198,6 +198,23 @@ struct OwnedPointer[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    def ptr[origin: Origin, //](ref[origin] self) -> Pointer[Self.T, origin]:
+        """Returns a pointer to the `OwnedPointer`'s contents.
+
+        Parameters:
+            origin: The origin of the pointer.
+
+        Returns:
+            A pointer to the `OwnedPointer`'s contents.
+        """
+        return (
+            self._inner.unsafe_ptr()
+            .unsafe_mut_cast[origin.mut]()
+            .unsafe_origin_cast[origin]()
+        )
+
+    @doc_hidden
+    @deprecated(use=ptr)
     def unsafe_ptr[
         mut: Bool,
         origin: Origin[mut=mut],
@@ -212,11 +229,7 @@ struct OwnedPointer[T: AnyType](
         Returns:
             A pointer to the backing allocation for this `OwnedPointer`.
         """
-        return (
-            self._inner.unsafe_ptr()
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        return self.ptr()
 
     def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
         """Move the value within the `OwnedPointer` out of it, consuming the

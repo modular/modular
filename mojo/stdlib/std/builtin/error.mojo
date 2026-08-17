@@ -112,9 +112,7 @@ struct StackTrace(ImplicitlyCopyable, Movable, Writable):
         writer.write_string(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=self._data[]
-                    .unsafe_ptr()
-                    .unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=self._data[].ptr().unsafe_bitcast[Int8]()
                 )
             )
         )

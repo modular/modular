@@ -181,7 +181,7 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
         Base16 encoding of the input string.
     """
     comptime lookup = "0123456789ABCDEF"
-    var b16chars = lookup.unsafe_ptr()
+    var b16chars = lookup.ptr()
 
     var data = str.as_bytes()
     var length = str.byte_length()
