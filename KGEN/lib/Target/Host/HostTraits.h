@@ -23,7 +23,10 @@ namespace M::KGEN {
 struct HostTraits final : TargetTraits {
   llvm::StringRef name() const override { return "host"; }
   bool matches(const llvm::Triple &triple) const override {
-    return triple.isX86() || triple.isAArch64() || triple.isARM();
+    // Covers the CPU targets the shipped build carries an LLVM backend for
+    // (see BACKENDS in bazel/public-patches/llvm_project.bzl)
+    return triple.isX86() || triple.isAArch64() || triple.isARM() ||
+           triple.isRISCV();
   }
   llvm::StringRef getAsmExtension() const override { return ".s"; }
   llvm::StringRef getLLVMExtension() const override { return ".ll"; }

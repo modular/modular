@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 //
 // TargetBackend for host (CPU) targets: llc to an object, then link a shared
-// object. The default backend for host (x86 and AArch64) triples, and the
-// emission base reused by GPU backends whose object lowering matches
-// the host path.
+// object. The default backend for CPU triples, which `HostTraits::matches`
+// enumerates, and the emission base other backends reuse when their object
+// lowering matches the host path.
 //
 //===----------------------------------------------------------------------===//
 

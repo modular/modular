@@ -21,6 +21,7 @@
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/Compiler/Target/TargetBackend.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -71,6 +72,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
 #include "KGEN/ToolCommon/CLOptions.h"
@@ -159,15 +161,24 @@ static std::vector<std::string> getValidCPUsForTarget(StringRef triple) {
   return cpus;
 }
 
-/// Print all registered LLVM targets.
+/// Print the targets this build can generate code for.
 static int printSupportedTargets() {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
 
-  // Collect targets and sort alphabetically for consistent, scannable output.
+  // An LLVM backend being linked in is necessary but not sufficient: emission
+  // additionally requires a registered `TargetBackend`. Filter through the same
+  // registry `--emit` consults so this list cannot advertise a target that then
+  // fails to build.
   std::vector<std::pair<std::string, std::string>> targets;
-  for (const llvm::Target &tgt : llvm::TargetRegistry::targets())
+  for (const llvm::Target &tgt : llvm::TargetRegistry::targets()) {
+    llvm::Triple triple;
+    triple.setArch(llvm::Triple::getArchTypeForLLVMName(tgt.getName()));
+    if (TargetBackendRegistry::get().lookup(triple).isError())
+      continue;
     targets.emplace_back(tgt.getName(), tgt.getShortDescription());
+  }
+  // Sort alphabetically for consistent, scannable output.
   llvm::sort(targets);
 
   llvm::outs() << "Registered Targets:\n";
