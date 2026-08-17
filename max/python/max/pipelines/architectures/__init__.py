@@ -154,6 +154,16 @@ def register_all_models() -> None:
             ".unified_dspark_gemma4_12b",
             "gemma4_dspark_draft_arch",
         ),
+        _LazyArch(
+            "Gemma4ForConditionalGeneration_ModuleV3",
+            ".gemma4_modulev3",
+            "gemma4_modulev3_arch",
+        ),
+        _LazyArch(
+            "Gemma4UnifiedForConditionalGeneration_ModuleV3",
+            ".gemma4_modulev3",
+            "gemma4_unified_modulev3_arch",
+        ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch("GptOssForCausalLM", ".gpt_oss", "gpt_oss_arch"),
         _LazyArch(
