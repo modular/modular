@@ -75,6 +75,362 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String` and `StringSlice` now have `is_ascii_alpha()`, `is_ascii_alnum()`,
+  `capitalize()`, and `title()` methods:
+  String("hello world").capitalize()        # "Hello world"
+  StringSlice("hello world").title()        # "Hello World"
+  String("abc").is_ascii_alpha()            # True
+  StringSlice("abc123").is_ascii_alnum()    # True
+- Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
+  Instead of destroying each entry in place, it hands the key and value to
+  `destroy_func`, so it can clear a `Dict` whose key or value type is not
+  `ImplicitlyDeletable`. The dictionary's capacity is retained, so it stays
+  reusable.
+
+- Added `Dict.insert(key, value)`, which stores a key/value pair and returns
+  the displaced entry as an `Optional[DictEntry]` (empty when the key was not
+  already present). Unlike `dict[key] = value`, `insert` does not destroy the
+  displaced entry; it returns it, and the caller must destroy the returned
+  entry. This is what lets `insert` work when the key or value type is not
+  `ImplicitlyDeletable`:
+
+  ```mojo
+  var d = Dict[Int, Int]()
+  var displaced = d.insert(1, 10)  # None — key 1 was absent
+  displaced = d.insert(1, 20)      # the displaced (1, 10) entry
+  ```
+
+- By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
+  `items()`, and `reversed()`) no longer requires the key and value types to be
+  `ImplicitlyDeletable`. These iterators only borrow references and never
+  destroy an entry, so they now work on a `Dict` whose key or value type is not
+  `ImplicitlyDeletable`. Consuming iteration (`for entry in dict^` and
+  `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
+  entries it does not yield.
+
+- The container backing variadic `**kwargs` has been renamed from
+  `OwnedKwargsDict` to `StringDict`. `StringDict` no longer
+  requires its value type `V` to be `ImplicitlyDeletable`. A keyword dictionary
+  whose values are linear (non-`ImplicitlyDeletable`) is itself linear and must
+  be torn down explicitly with the new `deinit_with(deinit_func)`, which hands
+  each key and value to `deinit_func`. It also gained `insert(key, value)`
+  (returns the displaced entry as an `Optional[DictEntry]` without destroying
+  it) and `popitem()` (moves out and returns a whole entry), mirroring `Dict`.
+  Operations that destroy a displaced value in place — `kwargs[key] = value` and
+  the two-argument `pop(key, default)` — still require `V` to be
+  `ImplicitlyDeletable`; use `insert`, `popitem`, or the single-argument
+  `pop(key)` for linear values.
+
+- `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
+  `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
+  device through `Coord._to_device_type` instead of a raw field bit-copy, the
+  same way `IndexList` already was.
+
+- `reversed()` now works on typed ranges such as
+  `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
+  associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
+  return type, so every range flavor (including the typed scalar ranges) can
+  conform and return its own reversed iterator.
+
+- Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
+  for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
+  without hand-written `ctypes` plumbing:
+
+  ```mojo
+  from std.python.numpy import from_numpy_array, to_numpy_array
+
+  var values: List[Float64] = [1.0, 2.0, 3.0]
+  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
+  ```
+
+  Both support the fixed-width numeric dtypes. `to_numpy_array` copies its
+  input into a new, independent array; `from_numpy_array` borrows the array's
+  buffer zero-copy.
+
+- `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
+  to this `Scalar` type. Because of this some conversions have become more
+  strict.
+
+  A new `SIMDSize` type has been added for the width of `SIMD` itself and must
+  be used when inferring a parameter based on a SIMD argument like so:
+
+  ```mojo
+  def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
+  ```
+
+  Alternatively the width can be unbound if you simply want to be parametric
+  over any `SIMD` type:
+
+  ```mojo
+  def frob(v: SIMD[DType.int, _])
+  ```
+
+  The new `Int` should still be used in all other situations.
+
+- `chdir` has been added to the `std.os` module and an `fchdir` method has been
+  added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
+  functions.
+
+- `TypeList.all_conforms_to()` is now implemented in terms of `conforms_to()`,
+  which supports parameter-list operands like `Ts.values`. As a result,
+  `all_conforms_to()` constraints preserve the same proof structure as direct
+  `conforms_to(Ts.values, Trait)` constraints, so the compiler can use them in
+  conditional conformance implication checks and type refinement.
+
+  This means conditional conformances can rely on trait hierarchy relationships
+  for an entire type parameter pack. Previously, a type that conditionally
+  conformed to `JsonSerializable` would also need to repeat the inherited
+  `Serializable` condition:
+
+  ```mojo
+  trait Serializable:
+      pass
+
+  trait JsonSerializable(Serializable):
+      pass
+
+  struct Packet[*Ts: Movable](
+      Serializable where Ts.all_conforms_to[Serializable](),
+      JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+      Movable,
+  ):
+      pass
+  ```
+
+  Now the `JsonSerializable` condition is enough for the compiler to prove the
+  inherited `Serializable` conformance:
+
+  ```diff
+   struct Packet[*Ts: Movable](
+  -    Serializable where Ts.all_conforms_to[Serializable](),
+       JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+       Movable,
+   ):
+       pass
+  ```
+
+  The same constraints now refine each element of a variadic type parameter
+  pack inside `where`, `comptime assert`, and `comptime if` contexts:
+
+  ```mojo
+  def write_all[*Ts: Movable](mut writer: Some[Writer], *args: *Ts):
+      comptime if Ts.all_conforms_to[Writable]():
+          comptime for i in range(args.__len__()):
+              args[i].write_to(writer)
+  ```
+
+- `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
+  name consistency with its required `__del__()` "delete" special method.
+
+- `is_trivially_destructible()` has been renamed to `is_trivially_deletable()`,
+  for consistency with the `ImplicitlyDeletable` rename. It now also accepts any
+  type (`T: AnyType`) instead of requiring `T: ImplicitlyDeletable`, returning
+  `False` for non-`ImplicitlyDeletable` (linear) types.
+
+- `List.resize` and `List.shrink` `new_size` arguments have been renamed to
+  `new_length`.
+
+- The `value` argument of `List.resize` has been renamed to `fill` to match
+  List's constructor.
+
+- The `Reflected.field_type[name]` reflection member has been renamed to
+  `Reflected.field[name]`, because it returns a chainable `Reflected` handle
+  for the named field rather than the field's bare type, so the old name was
+  not accurate. Retrieve the field's type from the handle's `.T` member, as in
+  `reflect[T].field["x"].T`. Update call sites such as
+  `reflect[T].field_type["x"]` to `reflect[T].field["x"]`.
+
+- Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
+  conforming only when their element type does. This lets a collection hold
+  non-`ImplicitlyDeletable` elements at all (previously such a collection failed
+  to compile); a collection of non-deletable elements is itself linear and must
+  be drained explicitly with the new `destroy_with()` method, which calls a
+  closure on each element:
+
+  ```mojo
+  collection^.deinit_with(my_destroy_closure)
+  ```
+
+  Generic code that takes one of these collections by value may now need
+  `& ImplicitlyDeletable` added to its element bound so the collection can be
+  dropped:
+
+  ```mojo
+  def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
+      pass
+  ```
+
+  Affected types:
+
+  - `InlineArray[ElementType, size]`.
+  - `Deque[ElementType]`
+    - Element-destroying operations (`append`, `appendleft`, `extend`,
+      `extendleft`, `insert`, `clear`, `remove`, etc.) still require
+      `ElementType` to be `ImplicitlyDeletable`.
+    - Consuming iteration (`for x in deque^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`; generic code bounded on `IterableOwned` now rejects
+      a non-conforming element type at the bound rather than failing later
+      inside `__iter__()`. For deletable element types (the common case) this is
+      transparent.
+  - `Dict[KeyType, ValueType, HasherType]`
+    - Element-destroying and key/value-copying operations (`__setitem__`,
+      `setdefault`, `fromkeys`, `update`, `__or__`, `__ior__`, `pop`, `clear`)
+      still require the `K` key and `V` value types to be `ImplicitlyDeletable`,
+      so a `Dict` with non-`ImplicitlyDeletable` keys or values can currently be
+      constructed and torn down with `destroy_with()` but not populated or
+      mutated. For deletable key/value types (the common case) this is
+      transparent.
+    - Consuming iteration (`for entry in dict^`) is likewise conditional,
+      requiring `ValueType` to be `ImplicitlyDeletable`.
+  - `LinkedList[ElementType]`
+    - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
+      be populated (`append`, `prepend`, `insert`, `extend`) and then torn down
+      with `destroy_with()`.
+    - Only `clear` still requires `ElementType` to be `ImplicitlyDeletable`. For
+      deletable element types (the common case) this is transparent.
+    - `LinkedList.insert()` no longer raises on an out-of-range index; like
+      `List.insert()`, it now aborts (checked when asserts are enabled).
+    - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`.
+
+- Is is now possible to iterate over owned elements in
+  `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
+  when the element type is not `Copyable`:
+
+  ```mojo
+  def iterate[T: Movable](var list: List[T]):
+    # Consume elements
+    for var x in list^:
+        pass
+  ```
+
+  The `IterableOwned` conformance on several collections is now conditional
+  on the element type conforming to `Movable & ImplicitlyDeletable`, dropping
+  `Copyable`.
+
+  Additionally, generic code bounded on `IterableOwned` now rejects a collection
+  of non-conforming elements at the bound, rather than failing later inside
+  `__iter__()`.
+
+- The implicit conversion constructors that cast an `UnsafePointer` to
+  `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
+  deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
+  that silently extends unrelated lifetimes and disables exclusivity checking,
+  so it should never be applied implicitly. Prefer keeping a concrete origin;
+  if you must discard it, make the cast explicit with the
+  `as_unsafe_any_origin()` method.
+
+- Added `reflect[T].field_at[idx]` to the reflection API, the by-index dual
+  of `reflect[T].field[name]`. It returns the reflection handle for the
+  type of the field at `idx`, so a field's concrete type can be recovered while
+  iterating fields by index (where the name is not available as a literal):
+
+  ```mojo
+  comptime y_type = reflect[Point].field_at[1]
+  var v: y_type.T = 3.14  # y_type.T is the concrete field type
+  ```
+
+- Removed the implicit constructors that converted an `UnsafePointer` into an
+  `Optional[UnsafePointer[..., UnsafeAnyOrigin]]`. Constructing an
+  `Optional[UnsafePointer]` now preserves the pointer's real origin instead of
+  silently widening it to `UnsafeAnyOrigin`. Two call-site updates may be
+  needed:
+
+  - Passing a concrete pointer where the parameter's origin is a genuinely
+    fixed `MutAnyOrigin`/`ImmutAnyOrigin` (typically C-FFI signatures) now
+    requires an explicit `as_unsafe_any_origin()`.
+
+  - Because origins are now preserved, exclusivity checking applies to
+    `memcpy()` (and similar) calls whose `dest` and `src` derive from the same
+    buffer. An intra-buffer copy that previously compiled now errors with
+    "argument of 'memcpy' call allows writing a memory location previously
+    writable through another aliased argument". Opt out by making one argument
+    an unsafe any-origin (the non-overlap of `dest` and `src` is already a
+    `memcpy()` precondition):
+
+    ```mojo
+    memcpy(
+        dest=buf + dst_off,
+        src=(buf + src_off).as_unsafe_any_origin(),
+        count=n,
+    )
+    ```
+
+- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
+  to `dyn_coord[DType]()`.
+  Now one can just write:
+
+   ```mojo
+   var my_coord = coord[1, 2, 3]
+   ```
+
+   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+
+- Removed `trait_downcast_var()`. Improvements to type refinement based on
+  `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
+  value trait downcasting no longer necessary.
+
+- The `ConditionalType` type function in `std.utils.type_functions` is now
+  deprecated. Use the equivalent ternary expression `T if cond else U`
+  instead:
+
+  ```mojo
+  # Deprecated:
+  comptime Storage = ConditionalType[If=cond, Then=Int, Else=NoneType]
+
+  # Use instead:
+  comptime Storage = Int if cond else NoneType
+  ```
+
+- Added `raise_python_exception()` to `std.python.bindings`, which translates a
+  Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
+  `PyObjectPtr`.
+
+- Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
+  grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
+  return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
+  perceives as a single "character" on screen. The lower-level views remain
+  available when you want them: `codepoints()` or `codepoint_slices()` for
+  Unicode scalars, and `bytes()` for raw UTF-8 bytes.
+
+- The `Equatable` trait now allows for positional-only implementations, and
+  argument on implementers no longer need to match the trait exactly.
+
+- `UnsafePointer.init_pointee_move()` and `UnsafePointer.init_pointee_copy()`
+  are now deprecated in favor of a single `unsafe_write()` method. Moving a
+  value in works the same as before:
+
+  ```mojo
+  ptr.unsafe_write(value^)
+  ```
+
+  To copy a value in instead of moving it, pass it as the `copy` keyword
+  argument:
+
+  ```mojo
+  ptr.unsafe_write(copy=value)
+  ```
+
+- `UnsafePointer.destroy_pointee()` and `UnsafePointer.destroy_pointee_with()`
+  are now deprecated in favor of the new `unsafe_deinit_pointee()` method, which
+  covers both cases: call it with no arguments to destroy an
+  `ImplicitlyDeletable` pointee, or pass a deinitializing closure to destroy a
+  non-`ImplicitlyDeletable` pointee in place.
+
+## Tooling changes
+
+- Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
+
+- `mojo-lsp-server` no longer parses or type-checks code blocks inside
+  docstrings by default. This checking rests on unstable foundations in the
+  LSP server and was prone to failing, producing false-positive diagnostics
+  unrelated to the code being edited, for little value in return. Pass
+  `-check-docstrings` when launching `mojo-lsp-server` from the command line
+  to re-enable the previous behavior. We plan to make this checking more
+  robust and re-enable it by default over time.
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
