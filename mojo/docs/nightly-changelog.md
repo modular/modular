@@ -296,6 +296,14 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   used to be an infinite loop - iterating forever at runtime, and hanging the
   compiler at comptime.
 
+- `reversed()` on a scalar `range()` no longer yields an empty iterator when
+  the range starts within one step of the element type's limit, as in
+  `reversed(range(Int8.MIN, Int8.MIN + 8, Int8(1)))`. Unsigned ranges, and
+  ranges whose span overflows their element type, are fixed by the same change.
+
+  Reversing an already-reversed range, as in `reversed(reversed(range(10)))`,
+  is now a compile-time error.
+
 - Fixed `ceildiv()` returning `0` for unsigned operands near the type's
   maximum value. The unsigned code path computed `numerator + denominator -
   1`, which overflows and wraps for large operands; it now derives the
