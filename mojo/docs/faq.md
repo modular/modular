@@ -189,19 +189,33 @@ or the
 
 ### Does the Mojo SDK collect telemetry?
 
-Yes, the Mojo SDK collects some basic system information, crash reports, and
-some LSP events that enable us to identify, analyze, and prioritize Mojo
-issues. v25.6 and earlier versions also collected compiler/runtime events,
-but we've since removed them.
+Yes, the Mojo SDK collects some basic system information, tool invocation
+events, crash reports, and some LSP performance events that enable us to
+identify, analyze, and prioritize Mojo issues.
 
 Specifically, we collect:
 
-- **Crash reports**: When the Mojo compiler crashes with a stack trace, the
-  report includes only the OS version and MAX/Mojo version.
+- **Invocation events**: Each Mojo tool (the `mojo` CLI, the Mojo language
+  server, and the Mojo debugger) reports a single event when it starts. The
+  event includes the tool name and subcommand (such as `build` or `run`), and
+  whether crash reporting is enabled. It does not include your command-line
+  arguments, file names, or source code.
+- **Crash reports**: When a Mojo tool crashes, it uploads a crash report
+  containing the stack trace of the crashed process, along with the tool name
+  and the Mojo version, so we can attribute the crash to a specific release
+  and fix it.
 - **LSP performance metrics**: The Mojo LSP reports aggregate data on how long
   it takes to respond to user input (parsing latency). The report includes only
   the milliseconds between user keystrokes and when the Mojo LSP is able to
   show appropriate error or warning messages.
+
+Every event also includes the Mojo/MAX version, basic system information (OS
+type and version; CPU architecture, model name, core count, and supported CPU
+features), and two anonymous identifiers: a machine identifier (a one-way
+hash, which cannot be reversed to identify you or your hardware) and a
+randomly generated per-session identifier. These identifiers let us count
+active installations and connect a crash report to its invocation event - for
+example, to compute a crash rate per release.
 
 We never collect or transmit any user information, such as source code,
 keystrokes, or any other user data.
@@ -212,7 +226,10 @@ reports, and in our decades of experience building developer products, we know
 that most people don't do that. The telemetry provides us the insights we need
 to build better products for you.
 
-## Versioning and compatibility
+Telemetry can be disabled by setting the environment variable
+`MODULAR_TELEMETRY_ENABLED=false`.
+
+## Versioning & compatibility
 
 ### What's the Mojo versioning strategy?
 
