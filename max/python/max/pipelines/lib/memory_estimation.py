@@ -104,6 +104,9 @@ class _MemoryPlan:
     pickled into the model-worker process. ``None`` until attached (and for
     pixel-generation plans, which don't consume a memory plan)."""
 
+    vision_cache_plan: VisionCachePlan | None = None
+    """Block-mode vision cache reservation; ``None`` means entry-count mode."""
+
     def require_device_specs(self) -> tuple[DeviceSpec, ...]:
         """Returns the device specs, which must be attached.
 
@@ -432,13 +435,15 @@ class MemoryEstimator:
             per_alloc_layers * sum(d.max_single_alloc_size for d in devices),
         )
 
-        vision_cache_bytes = cls._reserve_vision_cache_memory(
-            pipeline_config,
-            model_config,
-            available_kv_cache_memory,
-            devices,
-            arch_config,
-            arch=arch,
+        vision_cache_bytes, vision_cache_plan = (
+            cls._reserve_vision_cache_memory(
+                pipeline_config,
+                model_config,
+                available_kv_cache_memory,
+                devices,
+                arch_config,
+                arch=arch,
+            )
         )
         available_kv_cache_memory -= vision_cache_bytes
         total_size += vision_cache_bytes
@@ -467,6 +472,7 @@ class MemoryEstimator:
                 max_batch_size=max_batch_size,
                 footprint=int(total_size),
                 available_cache_memory=kv_cache_size,
+                vision_cache_plan=vision_cache_plan,
             )
 
         if not user_provided_max_length:
@@ -550,6 +556,7 @@ class MemoryEstimator:
             max_batch_size=max_batch_size,
             footprint=int(total_size),
             available_cache_memory=available_cache_memory,
+            vision_cache_plan=vision_cache_plan,
         )
 
     @classmethod
@@ -1028,7 +1035,7 @@ class MemoryEstimator:
         devices: list[Device],
         arch_config: ArchConfig,
         arch: SupportedArchitecture | None = None,
-    ) -> int:
+    ) -> tuple[int, VisionCachePlan | None]:
         """Estimate and reserve memory for the vision encoder cache.
 
         Delegates to ``arch.memory_planner.estimate_vision_cache_entry_bytes()``.
@@ -1042,7 +1049,8 @@ class MemoryEstimator:
         Returns:
             Bytes to reserve for the vision encoder cache (0 for non-VLM
             models, or when caching is disabled: ``max_vision_cache_entries``
-            is 0 and ``experimental_vision_cache_utilization`` is unset).
+            is 0 and ``experimental_vision_cache_utilization`` is unset),
+            and the block-mode plan (``None`` in entry-count mode).
         """
         max_entries = pipeline_config.runtime.max_vision_cache_entries
         if (
@@ -1050,20 +1058,20 @@ class MemoryEstimator:
             and pipeline_config.runtime.experimental_vision_cache_utilization
             <= 0
         ):
-            return 0
+            return 0, None
 
         hf_config = model_config.huggingface_config
 
         if arch is None:
-            return 0
+            return 0, None
 
         if arch.memory_planner is None:
-            return 0
+            return 0, None
 
         planner = arch.memory_planner(arch_config)
         per_entry_bytes = planner.estimate_vision_cache_entry_bytes(hf_config)
         if per_entry_bytes <= 0:
-            return 0
+            return 0, None
 
         row_spec = planner.get_vision_cache_row_spec(hf_config)
         if (
@@ -1098,7 +1106,7 @@ class MemoryEstimator:
                     to_human_readable_bytes(per_replica_bytes),
                 )
                 pipeline_config.runtime.max_vision_cache_entries = 0
-            return 0
+            return 0, None
 
         total_bytes = effective_max_entries * per_replica_bytes
 
@@ -1120,7 +1128,7 @@ class MemoryEstimator:
             to_human_readable_bytes(total_bytes),
         )
 
-        return total_bytes
+        return total_bytes, None
 
     @classmethod
     def _reserve_vision_cache_blocks(
@@ -1129,19 +1137,19 @@ class MemoryEstimator:
         row_spec: tuple[int, DType],
         available_memory: int,
         n_devices: int,
-    ) -> int:
+    ) -> tuple[int, VisionCachePlan]:
         """Reserve a block-mode byte budget for the vision encoder cache.
 
         ``experimental_vision_cache_utilization`` requests a fraction of
         the device KV cache pool budget. The request is rounded down to
-        whole fixed-size blocks and recorded as a
+        whole fixed-size blocks and returned as a
         :class:`~max.pipelines.lib.vision_encoder_cache.VisionCachePlan`
         that pipeline construction hands to :class:`VisionEncoderCache`.
         Unlike the entry-count mode, capacity is bytes — a video simply
         spans more blocks than an image.
 
         Returns:
-            Total bytes reserved across devices.
+            Total bytes reserved across devices, and the block-mode plan.
 
         Raises:
             ValueError: If the requested fraction is too small to fit a
@@ -1169,7 +1177,7 @@ class MemoryEstimator:
                 "fraction or set 0 to disable the vision encoder cache."
             )
         total_bytes = num_blocks * block_bytes
-        pipeline_config.runtime._vision_cache_plan = VisionCachePlan(
+        plan = VisionCachePlan(
             bytes_per_device=total_bytes // n_devices,
             hidden_size=hidden_size,
             dtype=dtype,
@@ -1180,7 +1188,7 @@ class MemoryEstimator:
             DEFAULT_VISION_CACHE_BLOCK_TOKENS,
             to_human_readable_bytes(total_bytes),
         )
-        return total_bytes
+        return total_bytes, plan
 
     @classmethod
     def _infer_optimal_batch_size(
