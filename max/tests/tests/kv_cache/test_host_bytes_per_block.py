@@ -18,7 +18,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from max.nn.kv_cache import host_bytes_per_block
+from max.nn.kv_cache import NullKVConnectorConfig, host_bytes_per_block
 from max.nn.kv_cache.cache_params import MultiKVCacheParams
 
 
@@ -30,8 +30,7 @@ def _leaf(bytes_per_block: int, replicated: bool, tp: int) -> Any:
         page_size=128,
         data_parallel_degree=1,
         devices=[],
-        kv_connector=None,
-        host_kvcache_swap_space_gb=None,
+        kv_connector_config=NullKVConnectorConfig(),
         n_devices=1,
     )
 

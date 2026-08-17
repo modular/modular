@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, deep_merge_max_configs
 from max.driver import DeviceSpec
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.kv_cache.config import KVCacheConfig
@@ -479,7 +479,14 @@ class PipelineArgs(ConfigFileModel):
                 existing_kv = kwargs.get("kv_cache", {})
                 if isinstance(existing_kv, KVCacheConfig):
                     existing_kv = existing_kv.model_dump()
-                kwargs["kv_cache"] = {**recipe_kv, **existing_kv}
+                # Merge field-wise, recursing into nested sub-configs, so a
+                # partial CLI override of a dict-valued field (notably
+                # ``kv_connector_config``) keeps the recipe's other fields
+                # instead of resetting them to defaults -- silently dropping a
+                # recipe's connector ``type`` would disable KV offloading.
+                kwargs["kv_cache"] = deep_merge_max_configs(
+                    recipe_kv, existing_kv
+                )
             new_model_path = kwargs.get("model_path")
             recipe_model_path = model_kwarg.get("model_path")
             if (

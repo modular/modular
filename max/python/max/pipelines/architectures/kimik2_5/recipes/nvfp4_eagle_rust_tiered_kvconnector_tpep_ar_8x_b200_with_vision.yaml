@@ -13,7 +13,7 @@
 # Kimi K2.5 NVFP4 + Eagle3 speculative decoding (TP attention + EP MoE,
 # allreduce, tiered KV-connector). ``data_parallel_degree: 1`` selects TP
 # attention on 8 GPUs; ``ep_use_allreduce: true`` uses allreduce for MoE
-# expert dispatch; ``kv_connector: rust_tiered`` enables tiered KV cache offload.
+# expert dispatch; ``kv_connector_config.type: rust_tiered`` enables tiered KV cache offload.
 # Draft: nvidia/Kimi-K2.5-Thinking-Eagle3 (MLA, BF16).
 model:
   model_path: nvidia/Kimi-K2.5-NVFP4
@@ -23,7 +23,8 @@ model:
   kv_cache:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.75
-    kv_connector: rust_tiered
+    kv_connector_config:
+      type: rust_tiered
 
 draft_model:
   model_path: nvidia/Kimi-K2.5-Thinking-Eagle3
@@ -32,7 +33,8 @@ draft_model:
   quantization_encoding: bfloat16
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    kv_connector: rust_tiered
+    kv_connector_config:
+      type: rust_tiered
 
 speculative:
   speculative_method: eagle

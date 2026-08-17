@@ -31,7 +31,7 @@ def test_host_capacity_rejects_oversized(
         lambda: SimpleNamespace(available=1024),
     )
 
-    with pytest.raises(RuntimeError, match="host_kvcache_swap_space_gb"):
+    with pytest.raises(RuntimeError, match="host_offload_max_gb"):
         block_copy_engine._check_host_memory_capacity(2048)
 
 

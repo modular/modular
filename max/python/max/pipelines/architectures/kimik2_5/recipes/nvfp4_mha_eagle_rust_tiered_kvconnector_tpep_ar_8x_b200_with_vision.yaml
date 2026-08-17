@@ -18,7 +18,8 @@ model:
   kv_cache:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.75
-    kv_connector: rust_tiered
+    kv_connector_config:
+      type: rust_tiered
 
 draft_model:
   model_path: modularai/kimi-k2.5-eagle3
@@ -27,7 +28,8 @@ draft_model:
   quantization_encoding: bfloat16
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    kv_connector: rust_tiered
+    kv_connector_config:
+      type: rust_tiered
 
 speculative:
   speculative_method: eagle

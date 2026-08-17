@@ -82,7 +82,10 @@ class JSONType(click.ParamType):
         param: click.Parameter | None,
         ctx: click.Context | None,
     ) -> Any:
-        if isinstance(value, dict):
+        # Already-structured values need no parsing: a dict from a config file,
+        # or a Pydantic model when the option's default is a model instance
+        # rather than None.
+        if not isinstance(value, str):
             return value
         # Auto-detect file path vs inline JSON/YAML
         if not value.lstrip().startswith(("{", "[")):

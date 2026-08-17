@@ -40,5 +40,5 @@ def _check_host_memory_capacity(requested_bytes: int) -> None:
             "KV cache host offload buffer requires "
             f"{requested_bytes / _GIB:.1f} GiB of pinned host memory but only "
             f"{available_bytes / _GIB:.1f} GiB is available. Reduce "
-            "host_kvcache_swap_space_gb or provision more host memory."
+            "host_offload_max_gb or provision more host memory."
         )

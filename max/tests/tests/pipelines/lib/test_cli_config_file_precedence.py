@@ -338,23 +338,25 @@ def test_kv_cache_flag_preserves_yaml_recipe_kv_cache_fields(
         "  kv_cache:\n"
         "    device_memory_utilization: 0.8\n"
         "    enable_dp_cross_replica_prefix_copy: false\n"
-        "    kv_connector: tiered\n",
+        "    kv_connector_config:\n"
+        "      type: tiered\n",
         encoding="utf-8",
     )
 
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(
             config_file=str(config_path),
-            kv_connector="rust_tiered",
-            kv_connector_config={"host_kvcache_swap_space_gb": 1200},
+            kv_connector_config={
+                "type": "rust_tiered",
+                "host_offload_max_gb": 1200,
+            },
         )
     )
 
     kv = config.models["main"].kv_cache
-    # The CLI flags override the connector fields they name...
-    assert kv.kv_connector == KVConnectorType.rust_tiered
-    assert kv.kv_connector_config is not None
-    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1200
+    # The CLI flag overrides the connector fields it names...
+    assert kv.kv_connector_config.type == KVConnectorType.rust_tiered
+    assert kv.kv_connector_config.host_offload_max_gb == 1200
     # ...but the recipe's other kv_cache fields survive the override.
     assert kv.device_memory_utilization == 0.8
 
@@ -371,7 +373,8 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
         "  kv_cache:\n"
         "    device_memory_utilization: 0.8\n"
         "    enable_dp_cross_replica_prefix_copy: false\n"
-        "    kv_connector: tiered\n",
+        "    kv_connector_config:\n"
+        "      type: tiered\n",
         encoding="utf-8",
     )
 
@@ -383,9 +386,9 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
             .models["main"]
             .kv_cache
         )
-        assert kv.kv_connector is not None
         click.echo(
-            f"{kv.kv_connector.value}|{kv.device_memory_utilization}"
+            f"{kv.kv_connector_config.type.value}"
+            f"|{kv.device_memory_utilization}"
             f"|{kv.enable_dp_cross_replica_prefix_copy}"
         )
 
@@ -394,10 +397,8 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
         [
             "--config-file",
             str(config_path),
-            "--kv-connector",
-            "rust_tiered",
             "--kv-connector-config",
-            '{"host_kvcache_swap_space_gb": 1200}',
+            '{"type": "rust_tiered", "host_offload_max_gb": 1200}',
         ],
     )
     assert result.exit_code == 0, result.output
@@ -563,9 +564,9 @@ _KV_CACHE_RECIPE = (
     "  model_path: fake/model\n"
     "  kv_cache:\n"
     "    device_memory_utilization: 0.8\n"
-    "    kv_connector: tiered\n"
     "    kv_connector_config:\n"
-    "      host_kvcache_swap_space_gb: 1500\n"
+    "      type: tiered\n"
+    "      host_offload_max_gb: 1500\n"
     "      disk_offload_max_gb: 8192\n"
     "      disk_offload_dir: /kv-offload\n"
 )
@@ -577,32 +578,32 @@ def _write_kv_recipe(tmp_path: Path) -> Path:
     return config_path
 
 
-def test_kv_cache_dict_flag_replaces_only_named_field(tmp_path: Path) -> None:
-    """Regression: a KV-cache CLI flag must override only the field it names,
-    not rebuild the whole kv_cache section from defaults. Here the dict-valued
-    ``--kv-connector-config`` replaces the recipe's connector sizing while the
-    recipe's sibling fields (``kv_connector``, ``device_memory_utilization``)
-    survive -- previously the override silently reset ``kv_connector`` to
-    ``None``, disabling the tiered connector."""
+def test_kv_cache_dict_flag_merges_into_recipe_field(tmp_path: Path) -> None:
+    """A dict-valued KV-cache CLI flag merges field-wise into the recipe's
+    value rather than replacing it.
+
+    This matters most for the connector ``type``: it lives inside
+    ``kv_connector_config``, so a wholesale replacement would reset it to
+    ``null`` and silently disable KV offloading whenever an operator tuned one
+    sizing knob from the command line."""
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(
             config_file=str(_write_kv_recipe(tmp_path)),
             kv_connector_config={
-                "host_kvcache_swap_space_gb": 50,
+                "host_offload_max_gb": 50,
                 "disk_offload_max_gb": 50,
             },
         )
     )
 
     kv = config.models["main"].kv_cache
-    assert kv.kv_connector is KVConnectorType.tiered
     assert kv.device_memory_utilization == 0.8
-    assert kv.kv_connector_config is not None
-    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 50
+    # The CLI wins for the fields it names...
+    assert kv.kv_connector_config.host_offload_max_gb == 50
     assert kv.kv_connector_config.disk_offload_max_gb == 50
-    # The named field is replaced wholesale: the recipe's disk_offload_dir
-    # does not leak into the CLI-provided connector config.
-    assert kv.kv_connector_config.disk_offload_dir is None
+    # ...and the recipe's unnamed connector fields survive, including the type.
+    assert kv.kv_connector_config.type is KVConnectorType.tiered
+    assert kv.kv_connector_config.disk_offload_dir == "/kv-offload"
 
 
 def test_kv_cache_scalar_flag_preserves_recipe_dict_field(
@@ -619,9 +620,9 @@ def test_kv_cache_scalar_flag_preserves_recipe_dict_field(
 
     kv = config.models["main"].kv_cache
     assert kv.device_memory_utilization == 0.5
-    assert kv.kv_connector is KVConnectorType.tiered
+    assert kv.kv_connector_config.type is KVConnectorType.tiered
     assert kv.kv_connector_config is not None
-    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1500
+    assert kv.kv_connector_config.host_offload_max_gb == 1500
     assert kv.kv_connector_config.disk_offload_max_gb == 8192
     assert kv.kv_connector_config.disk_offload_dir == "/kv-offload"
 
@@ -632,14 +633,13 @@ def test_kv_cache_flags_without_recipe_apply_to_defaults() -> None:
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(
             model={"model_path": "fake/model"},
-            kv_connector_config={"host_kvcache_swap_space_gb": 50},
+            kv_connector_config={"host_offload_max_gb": 50},
         )
     )
 
     kv = config.models["main"].kv_cache
-    assert kv.kv_connector_config is not None
-    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 50
-    assert kv.kv_connector is None
+    assert kv.kv_connector_config.host_offload_max_gb == 50
+    assert kv.kv_connector_config.type is KVConnectorType.null
     assert kv.device_memory_utilization == 0.9
 
 
@@ -653,10 +653,9 @@ def test_recipe_kv_cache_intact_without_kv_flags(tmp_path: Path) -> None:
     )
 
     kv = config.models["main"].kv_cache
-    assert kv.kv_connector is KVConnectorType.tiered
+    assert kv.kv_connector_config.type is KVConnectorType.tiered
     assert kv.device_memory_utilization == 0.8
-    assert kv.kv_connector_config is not None
-    assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1500
+    assert kv.kv_connector_config.host_offload_max_gb == 1500
     assert kv.kv_connector_config.disk_offload_max_gb == 8192
     assert kv.kv_connector_config.disk_offload_dir == "/kv-offload"
 

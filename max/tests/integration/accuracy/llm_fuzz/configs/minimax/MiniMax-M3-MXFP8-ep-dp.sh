@@ -28,8 +28,7 @@ extra_pipelines_args=(
   --trust-remote-code
   --enable-structured-output
   --device-memory-utilization 0.65
-  --kv-connector tiered
-  --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered_m3","disk_offload_max_gb":1024}'
+  --kv-connector-config '{"type":"tiered","host_offload_max_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered_m3","disk_offload_max_gb":1024}'
 )
 
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.

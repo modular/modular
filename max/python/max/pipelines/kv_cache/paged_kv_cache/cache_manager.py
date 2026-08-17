@@ -288,7 +288,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         params: KVCacheParamInterface,
         session: InferenceSession,
         total_num_pages: int,
-        total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
         *,
         max_batch_size: int,
@@ -300,7 +299,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 models with more than one KV cache.
             session: The MAX Engine inference session.
             total_num_pages: The total number of pages to allocate.
-            total_num_host_pages: The total number of host pages to allocate.
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks.
@@ -334,11 +332,8 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # A single connector serves every replica; each ``load``/``offload``
         # passes ``replica_idx`` to select the device endpoint.
         self._connector = create_connector(
-            kv_connector=params.kv_connector,
-            kv_connector_config=params.kv_connector_config,
             devices=devices,
             replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_pages,
             params=params,
         )
 
