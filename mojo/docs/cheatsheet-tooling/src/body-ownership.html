@@ -1,6 +1,8 @@
 <!-- title: Mojo Ownership -->
 <!-- subtitle: Who owns a value, and how it passes between functions -->
 <!-- width: 1440 -->
+<!-- Compiler verified: 2026-08-17, Mojo 1.0.0 (ed45d567) -->
+<!-- Last updated: 2026-08-17 (1.0.0 audit) -->
 
 <style>
   .cols{column-count:1 !important;}
@@ -31,7 +33,7 @@
         <section class="panel">
           <h2>var owns, ref refers</h2>
           <div class="body">
-<pre class="code">var data = [1, 2, 3] # owns the list
+<pre class="code">var data: List[Int] = [1, 2, 3] # owns the list
 ref view = data[0] # a 2nd name, no copy
 view = 9 # writes through to data
 print(data) # [9, 2, 3]</pre>
@@ -92,7 +94,8 @@ exclaim(g^) # transfer: g uninitialized
             <p class="note">The <b>var</b> argument takes ownership of the original only with
               <b>^</b>; a plain call implicitly copies (<b>String</b> is <b>ImplicitlyCopyable</b>),
               so <b>g</b> stays usable. Either value, the copy or the transferred original, ends its
-              lifetime after the <b>print</b> (its last use).</p>
+              lifetime after the <b>print</b> (its last use). The same <b>^</b> drains a
+              collection in a loop: <b>for var x in items^</b> moves each element out.</p>
           </div>
         </section>
 
@@ -201,7 +204,7 @@ var i32: Int32 = 5 # SIMD[DType.int32, 1]</pre>
           <tr><td>__init__(out self, …)</td><td>construct</td></tr>
           <tr><td>__init__(out self, *, copy: Self)</td><td>copy</td></tr>
           <tr><td>__init__(out self, *, deinit move: Self)</td><td>move</td></tr>
-          <tr><td>__del__(deinit self)</td><td>destroy</td></tr>
+          <tr><td>__deinit__(deinit self)</td><td>destroy</td></tr>
         </table>
         <p class="note">Copy, move, and destructors can't raise. The var assignment table shows
           which one each assignment runs.</p>
@@ -211,14 +214,14 @@ var i32: Int32 = 5 # SIMD[DType.int32, 1]</pre>
     <section class="panel">
       <h2>Non-owning views</h2>
       <div class="body">
-<pre class="code">var data = ["a", "b", "c", "d", "e"]
+<pre class="code">var data: List[String] = ["a", "b", "c", "d", "e"]
 var s = data[1:3] # a Span view, no copy: [b, c]
 s[0] = "X" # writes through: data is [a, X, c, d, e]
 
 var text = "Hello, World!"
-var hi = text[codepoint=0:5] # a StringSlice view: "Hello"</pre>
+var hi = text[codepoint=0:5] # a StringSpan view: "Hello"</pre>
         <p class="note">A view is a non-owning window into a buffer someone else owns. <b>Span</b>
-          views contiguous elements; <b>StringSlice</b> views UTF-8 text. Like <b>ref</b>, a view
+          views contiguous elements; <b>StringSpan</b> views UTF-8 text. Like <b>ref</b>, a view
           carries an origin, so the compiler keeps the source alive and tracks whether the view
           stays valid.</p>
       </div>

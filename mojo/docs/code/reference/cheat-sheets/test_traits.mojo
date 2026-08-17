@@ -51,7 +51,7 @@ struct Meters(Comparable, Copyable, Movable, Writable):
 
 def test_value_compare_format_floor() raises:
     # Copyable / Movable: build and store in a List
-    var xs = [Meters(3), Meters(1), Meters(2)]
+    var xs: List[Meters] = [Meters(3), Meters(1), Meters(2)]
     assert_equal(len(xs), 3)
     # Comparable: __lt__ implemented; __gt__/__le__/__ge__ provided
     assert_true(Meters(1) < Meters(2))

@@ -88,10 +88,11 @@ def test_pointers() raises:
 
 
 def test_list() raises:
-    var lst: List = [1, 2, 3]
+    var lst: List[Int] = [1, 2, 3]
     assert_equal(len(lst), 3)
     assert_equal(lst[0], 1)  # one element, by reference
-    assert_equal(len(lst[0:2]), 2)  # a Span view, no copy
+    var view: Span[Int, _] = lst[0:2]  # a Span view, no copy
+    assert_equal(len(view), 2)
     var filled = List[Int](length=4, fill=0)
     assert_equal(len(filled), 4)
     assert_equal(filled[2], 0)

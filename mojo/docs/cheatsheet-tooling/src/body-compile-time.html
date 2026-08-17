@@ -3,6 +3,8 @@
 <!-- layout: landscape -->
 <!-- width: 1500 -->
 <!-- columns: 3 -->
+<!-- Compiler verified: 2026-08-17, Mojo 1.0.0 (ed45d567) -->
+<!-- Last updated: 2026-08-17 (1.0.0 audit) -->
 
 <style>
   .sheet .lead{font-size:11px;margin:0 0 4px;}
@@ -142,7 +144,7 @@ size_of[T]() align_of[T]() # layout, at compile time</pre>
 <section class="panel">
   <h2>Materialization <span class="sum">bring comptime values to runtime</span></h2>
   <div class="body">
-<pre class="code">comptime table = [3, 5, 7, 11, 13] # a comptime List (heap-backed)
+<pre class="code">comptime table: List[Int] = [3, 5, 7, 11, 13] # a comptime List (heap-backed)
 var t = materialize[table]() # -> a runtime List; you choose when it allocates
 ref g = global_constant[POWERS]() # POWERS: a fixed scalar table, read g[i], no copy</pre>
     <p class="note">Scalars materialize automatically; heap-backed values (<b>List</b>, <b>Dict</b>)

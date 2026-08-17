@@ -2,6 +2,8 @@
 <!-- subtitle: Numbers, SIMD, conversions, and how to write values -->
 <!-- layout: landscape -->
 <!-- width: 1300 -->
+<!-- Compiler verified: 2026-08-17, Mojo 1.0.0 (ed45d567) -->
+<!-- Last updated: 2026-08-17 (1.0.0 audit) -->
 
 <section class="panel">
       <h2>SIMD is the foundation</h2>
@@ -14,7 +16,7 @@ var v = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 var d = v * 2.0 # [2, 4, 6, 8], all lanes
 v[0] = 5.0 # write one lane
 print(v.reduce_add()) # sum of lanes (14.0)</pre>
-        <p class="note">Width must be a power of two and is part of the type.</p>
+        <p class="note">Width must be a power of two and is part of the type; its parameter type is <b>SIMDLength</b>.</p>
       </div>
     </section>
 
@@ -66,7 +68,7 @@ var big: Int64 = -9_000_000_000</pre>
       <h2>Bounds &amp; special values</h2>
       <div class="body">
         <table>
-          <tr><td>Int.BITWIDTH</td><td>64 on most platforms</td></tr>
+          <tr><td>bit_width_of[Int]()</td><td>64 on most platforms (from std.sys.info)</td></tr>
           <tr><td>UInt8.MAX</td><td>255</td></tr>
           <tr><td>Int8.MIN</td><td>-128</td></tr>
           <tr><td>Float32.MAX_FINITE</td><td>largest finite</td></tr>
@@ -99,7 +101,7 @@ var g = f.cast[DType.int32]()</pre>
           <tr><td>0xFF  0o52  0b1010</td><td>hex, octal, binary</td></tr>
           <tr><td>1_000_000</td><td>underscores group digits</td></tr>
           <tr><td>3.14  .5  2.  2.5e-3</td><td>floats</td></tr>
-          <tr><td>2 ** 200</td><td>comptime IntLiteral, arbitrary precision</td></tr>
+          <tr><td>2 ** 200</td><td>comptime IntLiteral, comptime arbitrary precision</td></tr>
         </table>
         <p class="note">Leading zeros on base-10 integers are rejected. At runtime literals
           materialize to <b>Int</b> / <b>Float64</b>.</p>
@@ -109,11 +111,11 @@ var g = f.cast[DType.int32]()</pre>
     <section class="panel">
       <h2>Collection literals</h2>
       <div class="body">
-<pre class="code">[1, 2, 3] # List
+<pre class="code">[1, 2, 3] # Array, length in the type
 {"id": 1, "qty": 9} # Dict
 (1, "a", 2.0) # Tuple, mixed types</pre>
-        <p class="note">Element types are inferred. Annotate when they can't be:
-          <b>var x: List[Int] = [1, 2, 3]</b>.</p>
+        <p class="note">Unannotated, a bracket literal defaults to <b>Array</b>. It adapts to the
+          type you ask for: <b>var x: List[Int] = [1, 2, 3]</b>.</p>
       </div>
     </section>
 
@@ -184,7 +186,7 @@ String(t"x = {who}") # cast to String</pre>
         <ul>
           <li><b>Int width is platform-dependent</b> — use Int64 for a fixed width.</li>
           <li><b>Integer overflow wraps</b> — Int8(127) + 1 is -128.</li>
-          <li><b>Float-to-int truncates toward zero</b> — Int(3.9) is 3.</li>
+          <li><b>Float-to-int truncates toward zero</b> — Int(Float64(3.9)) is 3.</li>
           <li><b>nan == nan is False.</b></li>
           <li><b>Float8 needs a GPU</b> — no runtime CPU arithmetic.</li>
           <li><b>Int128 / Int256 are software-emulated.</b></li>

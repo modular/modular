@@ -7,6 +7,8 @@ docs and is invisible to the usual doc-example testing. These tests assert each
 card's runtime-checkable claims directly, so a card can't silently drift as Mojo
 evolves.
 
+Test names must use underscores, not hyphens.
+
 Contents:
 
 - Each `test_<card>.mojo` file is a standalone Mojo application that asserts one

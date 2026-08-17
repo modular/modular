@@ -1,6 +1,8 @@
 <!-- title: Mojo Basics -->
 <!-- subtitle: Syntax essentials: the core you reach for first -->
 <!-- layout: landscape -->
+<!-- Compiler verified: 2026-08-17, Mojo 1.0.0 (ed45d567) -->
+<!-- Last updated: 2026-08-17 (1.0.0 audit) -->
 
 <style>
   .sheet table.bt td:first-child{white-space:nowrap;}
@@ -33,7 +35,7 @@ def greet():
 var name: String = "Mojo"
 count = count + 1 # var is mutable
 
-var data = [1, 2, 3]
+var data: List[Int] = [1, 2, 3]
 ref view = data[0] # ref to an element, no copy
 view = 99 # writes through to data
 
@@ -55,7 +57,7 @@ comptime PI = 3.14159 # compile-time const</pre>
           <tr><td>Float64</td><td>default floating point (also Float32, Float16, and special-purpose 8-bit FP8 and 4-bit FP4 floats)</td></tr>
           <tr><td>Bool</td><td>True / False</td></tr>
           <tr><td>String</td><td>UTF-8, supports Unicode graphemes</td></tr>
-          <tr><td>List[T]</td><td>array, fixed size or growing</td></tr>
+          <tr><td>List[T]</td><td>growable, homogeneous sequence</td></tr>
           <tr><td>SIMD[dt, n]</td><td>n-wide numeric vector</td></tr>
         </table>
         <p class="note">Numeric types are <b>SIMD</b> vectors under the hood: scaling to vector
@@ -165,7 +167,8 @@ from std.math import sqrt as root # aliased</pre>
 xs.append(4)
 print(xs[0]) # 1
 print(len(xs)) # 4</pre>
-        <p class="note"><b>List[T]</b> needs its element type; omit it and inference can surprise you.</p>
+        <p class="note">Always annotate <b>List[T]</b>: a bare bracket literal infers a fixed-size
+          <b>Array</b>, which has no <b>append</b>.</p>
       </div>
     </section>
 
@@ -227,7 +230,7 @@ def main():
         <ul>
           <li>Python-style syntax: indentation and <code>def</code>, no braces, semicolons, or headers.</li>
           <li>Value semantics with moves: <code>^</code> transfers ownership (like
-            <code>std::move</code> or a Rust move); <code>__del__</code> gives RAII cleanup.</li>
+            <code>std::move</code> or a Rust move); <code>__deinit__</code> gives RAII cleanup.</li>
           <li>Behavior comes from <b>traits</b>, not class inheritance or templates (like Rust
             traits or C++20 concepts).</li>
           <li>No <code>?:</code> ternary or Elvis operator: write <code>a if cond else b</code>.</li>

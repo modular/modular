@@ -3,6 +3,8 @@
 <!-- layout: landscape -->
 <!-- width: 1700 -->
 <!-- columns: 3 -->
+<!-- Compiler verified: 2026-08-17, Mojo 1.0.0 (ed45d567) -->
+<!-- Last updated: 2026-08-17 (1.0.0 audit) -->
 
 <style>
   .sheet .dir{font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin:9px 0 3px;}
@@ -65,8 +67,8 @@ Bool(f), String(f) # True if non-zero, to text</pre>
       <tr><td><b>Optional</b></td><td>None False, else True</td></tr>
       <tr><td><b>PythonObject</b></td><td>Python's own rules</td></tr>
     </table>
-    <p class="note"><b>Bool</b> to <b>Int</b> via <b>__as_int__</b> (the one
-      implicit numeric coercion). Any type with a <b>__bool__</b> is truthy.</p>
+    <p class="note">Any type with a <b>__bool__</b> is truthy. Converting a
+      <b>Bool</b> to a number is explicit: <b>Int(b)</b>, never implicit.</p>
   </div>
 </section>
 
@@ -90,7 +92,7 @@ SIMD[T, N](scalar) # splat a Scalar up to N lanes</pre>
   <h2>String <span class="sum">owned, growable UTF-8 text</span></h2>
   <div class="body">
     <p class="dir">make</p>
-<pre class="code">String(x) # any StringSlice, StringLiteral, Writable (Int, Float64, Bool …)
+<pre class="code">String(x) # any StringSpan, StringLiteral, Writable (Int, Float64, Bool …)
 String(t"{x}") # Not needed for print()
 String(from_utf8=bytes) # raises on bad UTF-8
 String(from_utf8_lossy=bytes) # replaces bad bytes</pre>
@@ -107,21 +109,21 @@ s.as_bytes(), s.codepoints(), s.graphemes() # iterators</pre>
 <div class="cathead">Pointers</div>
 
 <section class="panel">
-  <h2>UnsafePointer[T] <span class="sum">to backing buffer</span></h2>
+  <h2>Pointer[T] <span class="sum">to backing buffer</span></h2>
   <div class="body">
     <p class="note">Use <b>unsafe_ptr()</b> to access: <b>List</b>, <b>String</b>,
-      <b>StringSlice</b>, <b>Array</b>, and <b>Span</b>.</p>
+      <b>StringSpan</b>, <b>Array</b>, and <b>Span</b>.</p>
     <p class="dir">access through a pointer</p>
-<pre class="code">buf.unsafe_ptr() # -> UnsafePointer[T]
-p[i] # deref one element
-(p + i)[] # pointer arithmetic, then deref
-p.load[width=N]() # read N lanes -> SIMD[T, N]
-list.steal_data() # take a List's buffer (consumes it)</pre>
+<pre class="code">buf.unsafe_ptr() # -> Pointer[T]
+p[unsafe_offset=i] # deref one element
+p.unsafe_offset(i)[] # pointer arithmetic, then deref
+p.unsafe_load[width=N]() # read N lanes -> SIMD[T, N]</pre>
     <p class="dir">vectorize a buffer (the escape hatch)</p>
-<pre class="code">var v = data.unsafe_ptr().load[width=8]() # 8 elements -> one SIMD
+<pre class="code">var v = data.unsafe_ptr().unsafe_load[width=8]() # 8 elements -> one SIMD
 var total = v.reduce_add() # SIMD-wide reduce</pre>
-    <p class="edge"><b>UnsafePointer</b> is non-null by design. Use
-      <b>Optional[UnsafePointer]</b> for a nullable pointer.</p>
+    <p class="edge"><b>Pointer</b> is non-null by design. Use
+      <b>OptionalPointer</b> for a nullable pointer. Unsafe operations carry the
+      <b>unsafe_</b> prefix or an <b>unsafe_</b> keyword.</p>
   </div>
 </section>
 
@@ -131,14 +133,14 @@ var total = v.reduce_add() # SIMD-wide reduce</pre>
   <h2>List[T] <span class="sum">growable, homogeneous sequence</span></h2>
   <div class="body">
     <p class="dir">make</p>
-<pre class="code">[a, b, c] # list literal, all one type
+<pre class="code">var x: List[T] = [a, b, c] # annotate: unannotated defaults to Array
 List[T](capacity=n) # empty; initial room for n
 List[T](length=n, fill=x) # n copies of x (T: Copyable)
 List(range(n)) # materialize a range
 List(iterable) # from any iterator / iterable</pre>
     <p class="dir">access</p>
 <pre class="code">list[i], list[i:j] # element by ref, Span view (no copy)
-list.steal_data() # take the buffer as an UnsafePointer, consuming the list</pre>
+list.unsafe_take_allocation() # hand off the buffer as an Allocation[T]</pre>
   </div>
 </section>
 

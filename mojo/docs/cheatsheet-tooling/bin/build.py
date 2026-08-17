@@ -63,7 +63,7 @@ CHROME = _find_chrome()
 # with <!-- layout: portrait|landscape -->; columns/width override per card.
 LAYOUTS = {"portrait": (2, 900, False), "landscape": (3, 1100, True)}
 DEFAULT_LAYOUT = "portrait"
-VERSION = "1.0.0b2"  # bump per release (strip the .devNNN nightly suffix)
+VERSION = "1.0.0"  # bump per release (strip the .devNNN nightly suffix)
 PREFIX = "mojo-cheat-sheet"  # filename stem; matches the repo assets dir
 
 # Cards are discovered from the body-<slug>.html files present in src/, so this
