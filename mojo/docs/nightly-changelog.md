@@ -270,6 +270,13 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
+  or an object for a `riscv32` or `riscv64` triple failed with `target '...'
+  is not supported by this build`.
+
+- `mojo build --print-supported-targets` no longer lists targets that the
+  compiler cannot generate code for.
+
 - `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
   files next to the host output file. Building a kernel that an earlier build
   had already compiled could write them into the earlier build's output

@@ -132,6 +132,7 @@ modular_cc_library(
         "//KGEN:POPDialect",
         "//KGEN:Support",
         "//KGEN:SupportForceLinkMLIRC",
+        "//KGEN:TargetBackend.headers",
         "//KGEN:TargetTraits",
         "//KGEN:ToolCommon",
         "//Support:Base",

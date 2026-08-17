@@ -34,8 +34,13 @@
 # Test error for unsupported target
 # RUN: not %mojo-build --print-supported-cpus --target-triple invalid-unknown-unknown 2>&1 | FileCheck %s --check-prefix=CHECK_INVALID_TARGET
 
+# Every listed target must have a registered code-generation backend, so each
+# entry here is expected to survive `--emit` (see mojo_targets.mojo for the
+# matching emission checks).
 # CHECK_TARGETS: Registered Targets:
 # CHECK_TARGETS-DAG: aarch64
+# CHECK_TARGETS-DAG: riscv32
+# CHECK_TARGETS-DAG: riscv64
 # CHECK_TARGETS-DAG: x86-64
 
 # CHECK_EFFECTIVE: Effective target configuration:
