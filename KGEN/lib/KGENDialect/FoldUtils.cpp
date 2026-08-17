@@ -228,41 +228,82 @@ static Attribute normalizeIndexData(Attribute attr, int64_t indexBitWidth) {
   return replacer.replace(attr);
 }
 
-std::optional<bool> areSimpleConstantsEqual(TypedAttr lhs, TypedAttr rhs,
-                                            TargetInfoAttr target) {
-  NonCanonicalLeaves lhsLeaves = findNonCanonicalLeaves(lhs);
-  NonCanonicalLeaves rhsLeaves = findNonCanonicalLeaves(rhs);
+void PreparedConstant::scanLeaves() {
+  if (scanned)
+    return;
+  NonCanonicalLeaves leaves = findNonCanonicalLeaves(attr);
+  unknown = leaves.unknown;
+  targetDependent = leaves.targetDependent;
+  scanned = true;
+}
+
+bool PreparedConstant::hasUnknown() {
+  scanLeaves();
+  return unknown;
+}
+
+bool PreparedConstant::isTargetDependent() {
+  scanLeaves();
+  assert(!unknown && "the leaf scan stops at an unknown, so what it found "
+                     "about index-like data is only part of the answer");
+  return targetDependent;
+}
+
+Attribute PreparedConstant::getKeyImpl(Attribute &cache,
+                                       int64_t untargetedBitWidth) {
+  if (!cache) {
+    // With nothing index-like in the tree, the representation is already
+    // canonical for the value at every width.
+    if (!isTargetDependent()) {
+      cache = attr;
+    } else {
+      int64_t bitWidth =
+          target ? target.resolveIndexBitWidth() : untargetedBitWidth;
+      cache = normalizeIndexData(attr, bitWidth);
+    }
+  }
+  return cache;
+}
+
+Attribute PreparedConstant::getKey() { return getKeyImpl(key, 64); }
+
+Attribute PreparedConstant::get32BitKey() {
+  assert(!target && "a target pins one width, so this is `getKey()` again");
+  return getKeyImpl(key32Bit, 32);
+}
+
+std::optional<bool> areSimpleConstantsEqual(PreparedConstant &lhs,
+                                            PreparedConstant &rhs) {
+  assert(lhs.getTarget() == rhs.getTarget() &&
+         "keys prepared at different index bit widths do not compare");
 
   // An unknown stands in for a value nobody knows, so no comparison of the
   // representations says anything about the values, not even the same
   // representation twice.
-  if (lhsLeaves.unknown || rhsLeaves.unknown)
+  if (lhs.hasUnknown() || rhs.hasUnknown())
     return std::nullopt;
 
   // Uniquing already answers this, whatever the target.
-  if (lhs == rhs)
+  if (lhs.getAttr() == rhs.getAttr())
     return true;
 
   // With no index-like data anywhere in either tree, the representation is
   // canonical for the value and inequality is the answer.
-  if (!lhsLeaves.targetDependent && !rhsLeaves.targetDependent)
+  if (!lhs.isTargetDependent() && !rhs.isTargetDependent())
     return false;
 
-  if (target) {
-    int64_t indexBitWidth = target.resolveIndexBitWidth();
-    return normalizeIndexData(lhs, indexBitWidth) ==
-           normalizeIndexData(rhs, indexBitWidth);
-  }
-
-  // No target: decide only where both candidate index widths agree, mirroring
-  // how `foldSIMDOpIndex` folds target-dependent arithmetic without a target.
-  //
-  // Equal values at 64 bits truncate to equal values at 32, so agreement at 64
-  // settles every width. Only a mismatch there needs the 32-bit answer, to tell
-  // "a different value" apart from "depends on the target".
-  if (normalizeIndexData(lhs, 64) == normalizeIndexData(rhs, 64))
+  // With a target this key is the one width in force, so equality is identity.
+  // Without one it is the 64-bit candidate, and equal values there truncate to
+  // equal values at 32, so agreement settles both candidates at once.
+  if (lhs.getKey() == rhs.getKey())
     return true;
-  if (normalizeIndexData(lhs, 32) == normalizeIndexData(rhs, 32))
+
+  // A mismatch under a target is final.
+  if (lhs.getTarget())
+    return false;
+  // Without a target, it takes a mismatch at both candidate widths to mean "a
+  // different value".
+  if (lhs.get32BitKey() == rhs.get32BitKey())
     return std::nullopt;
   return false;
 }

@@ -537,3 +537,39 @@ kgen.generator @check_identical() {
   kgen.call @identical_to_unknown<:type i32, :i32 1>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// The same for a class of more than two, which names every operand it could not
+// relate rather than just the first pair.
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @nary_identical_to_unknown<T: type, value: !kgen.param<T>>() {
+  // expected-note @below {{could not prove whether 1, *? and *? are the same value}}
+  kgen.param.constant: scalar<bool> = <identical(:!kgen.param<T> value, *?, *?)>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @check_nary_identical() {
+  // expected-note @below {{call expansion failed with parameter value(s): (..., "value": 1)}}
+  kgen.call @nary_identical_to_unknown<:type i32, :i32 1>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// An unknown does not collapse into the operands around it even once a target
+// settles those against each other. 2^32 and 2^33 both truncate to 0 at this
+// width, so every operand the target can key agrees; the class would fold
+// `true` if the unknown were read as "whatever the others are".
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @nary_identical_unknown_with_target() -> !kgen.scalar<bool> {
+  // expected-note @below {{could not prove whether 4294967296, 8589934592 and *? are the same value}}
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.unknown : !kgen.scalar<index>, #kgen<simd 4294967296> : !kgen.scalar<index>, #kgen<simd 8589934592> : !kgen.scalar<index>>>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}

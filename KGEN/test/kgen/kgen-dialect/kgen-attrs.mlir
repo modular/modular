@@ -200,7 +200,10 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK-SAME: constraint7 = #kgen.constraint<identical(:type T, U), #[[LOC_C2]]>
   constraint7 = #kgen.constraint<identical(:type U, T), loc("test.mojo":15:10)>,
   // CHECK-SAME: constraint8 = #kgen.constraint<true, #[[LOC_C2]], "T must match">
-  constraint8 = #kgen.constraint<identical(:type T, T), loc("test.mojo":15:10), "T must match">
+  constraint8 = #kgen.constraint<identical(:type T, T), loc("test.mojo":15:10), "T must match">,
+  // A constraint carries an identity class of any size, canonically ordered.
+  // CHECK-SAME: constraint9 = #kgen.constraint<identical(:type T, U, V), #[[LOC_C2]]>
+  constraint9 = #kgen.constraint<identical(:type V, T, U), loc("test.mojo":15:10)>
 } : () -> ()
 
 // CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">

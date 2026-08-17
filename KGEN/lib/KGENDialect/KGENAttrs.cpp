@@ -2905,6 +2905,10 @@ static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
+// FIXME(MOCO-4577): merge identity conjuncts sharing an operand into one n-ary
+// proposition, so `and(identical(a, b), identical(b, c))` becomes
+// `identical(a, b, c)`. Until then a source-level `T == U == V`, which lowers
+// to exactly that conjunction, never reaches the n-ary form.
 static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::And, operands, true,
@@ -3076,9 +3080,84 @@ static Type getTypeValueAsType(TypedAttr a) {
   return {};
 }
 
-/// Decide whether two parameter values denote the same value, returning null if
-/// no folding is possible. This is `#kgen.param.identical`'s fold.
-static TypedAttr foldParamIdentical(TypedAttr lhs, TypedAttr rhs);
+namespace {
+/// One operand of an identity comparison, memoizing what the comparison learns
+/// about it so that comparing it against many others costs one canonicalization
+/// and one scan of each kind rather than one per pair.
+///
+/// Only the canonical form is computed up front, since the first rule always
+/// needs it. The rest waits until a rule asks: the rules short-circuit, so two
+/// symbolic operands settle without walking a tree at all.
+class IdentityOperand {
+public:
+  explicit IdentityOperand(TypedAttr attr)
+      : canonical(getCanonicalAttr(attr)),
+        value(canonical, /*target=*/nullptr) {}
+
+  TypedAttr getCanonical() const { return canonical; }
+
+  /// Whether an unknown value sits anywhere in the tree.
+  bool hasUnknown() { return value.hasUnknown(); }
+
+  /// Whether the value is fully evaluated, holding no expression node that
+  /// could still turn into something else.
+  bool isSimpleConstant() {
+    if (!simpleConstant)
+      simpleConstant = ParameterAttr::isSimpleConstant(canonical);
+    return *simpleConstant;
+  }
+
+  PreparedConstant &getValue() { return value; }
+
+  /// The type this operand denotes, null where it denotes something else.
+  Type getTypeValue() {
+    if (!typeValue)
+      typeValue = getTypeValueAsType(stripUpcast(canonical));
+    return *typeValue;
+  }
+  Type getCanonicalTypeValue() {
+    if (!canonicalTypeValue)
+      canonicalTypeValue = getCanonicalType(getTypeValue());
+    return *canonicalTypeValue;
+  }
+
+  /// The struct symbol this operand's type value names, null where it names no
+  /// struct. Only meaningful for a type parameter, which the nominality rule
+  /// reads unstripped -- a different question from `getTypeValue` above.
+  bool isTypeParam() { return static_cast<bool>(getTypeParam()); }
+  SymbolRefAttr getStructRef() {
+    if (!structRef) {
+      TypeParamAttr typeParam = getTypeParam();
+      structRef = typeParam ? getOptionalTypeSymbolRef(typeParam.getTypeValue())
+                            : SymbolRefAttr();
+    }
+    return *structRef;
+  }
+
+private:
+  TypeParamAttr getTypeParam() {
+    if (!typeParam)
+      typeParam = dyn_cast<TypeParamAttr>(canonical);
+    return *typeParam;
+  }
+
+  TypedAttr canonical;
+  PreparedConstant value;
+
+  /// Null until asked for.
+  std::optional<bool> simpleConstant;
+  std::optional<Type> typeValue;
+  std::optional<Type> canonicalTypeValue;
+  std::optional<TypeParamAttr> typeParam;
+  std::optional<SymbolRefAttr> structRef;
+};
+} // namespace
+
+/// Decide whether two parameter values denote the same value, returning nullopt
+/// if the question cannot be settled. This is the pairwise half of
+/// `#kgen.param.identical`'s fold.
+static std::optional<bool> decideParamIdentical(IdentityOperand &lhs,
+                                                IdentityOperand &rhs);
 
 /// Fold a lane-wise `eq`. The operands are numeric and the result is per-lane,
 /// so this is only ever about comparing numbers. Both operands may be null, and
@@ -3681,17 +3760,21 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   if (trailing.size() == 1)
     return ParamIdenticalAttr::get(operands);
 
+  // Every candidate is compared against the same left-hand side, so prepare it
+  // once.
+  IdentityOperand preparedLhs(lhs);
   bool allKnownFalse = true;
   for (TypedAttr operand : trailing) {
-    // Fold to true if a match was found by value.
-    if (auto knownEq = foldParamIdentical(lhs, operand)) {
-      if (auto simdEq = sugarDynCast<SIMDAttr>(knownEq);
-          simdEq && isAllIntLikeOne(simdEq))
-        return SIMDAttr::getScalarBool(b.getContext(), true);
-    } else {
+    IdentityOperand preparedOperand(operand);
+    std::optional<bool> knownEq =
+        decideParamIdentical(preparedLhs, preparedOperand);
+    if (!knownEq) {
       // If this is a symbolic comparison like "x == 5", then we cannot fold the
       // non-containment case.
       allKnownFalse = false;
+    } else if (*knownEq) {
+      // Fold to true if a match was found by value.
+      return SIMDAttr::getScalarBool(b.getContext(), true);
     }
   }
 
@@ -4451,14 +4534,10 @@ ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
 //===----------------------------------------------------------------------===//
 
 /// Decide whether two parameter values denote the same value, relying on MLIR's
-/// canonicalization of attributes to do most of the job for us. Returns null if
-/// no folding is possible.
-static TypedAttr foldParamIdentical(TypedAttr lhs, TypedAttr rhs) {
-  lhs = getCanonicalAttr(lhs);
-  rhs = getCanonicalAttr(rhs);
-
-  MLIRContext *ctx = lhs.getContext();
-
+/// canonicalization of attributes to do most of the job for us. Returns nullopt
+/// if the question cannot be settled here.
+static std::optional<bool> decideParamIdentical(IdentityOperand &lhs,
+                                                IdentityOperand &rhs) {
   // An unknown stands in for a value nobody knows, so neither fold below may
   // conclude the two are the *same* value -- not even the same representation
   // twice. Concluding they *differ* stays sound wherever the reason does not
@@ -4470,19 +4549,21 @@ static TypedAttr foldParamIdentical(TypedAttr lhs, TypedAttr rhs) {
 
   // Folding to True is easy: if the values have pointer equality, they are the
   // same value.
-  if (lhs == rhs) {
+  if (lhs.getCanonical() == rhs.getCanonical()) {
     // One side answers for both here -- it is the same attribute.
-    if (containsUnknownValue(lhs))
-      return {};
-    return SIMDAttr::getScalarBool(ctx, true);
+    if (lhs.hasUnknown())
+      return std::nullopt;
+    return true;
   }
 
-  Type lhsTypeVal = getTypeValueAsType(stripUpcast(lhs));
-  Type rhsTypeVal = getTypeValueAsType(stripUpcast(rhs));
-  if (lhsTypeVal && rhsTypeVal && isEqualCanon(lhsTypeVal, rhsTypeVal)) {
-    if (containsUnknownValue(lhs) || containsUnknownValue(rhs))
-      return {};
-    return SIMDAttr::getScalarBool(ctx, true);
+  Type lhsTypeVal = lhs.getTypeValue();
+  Type rhsTypeVal = rhs.getTypeValue();
+  if (lhsTypeVal && rhsTypeVal &&
+      (lhsTypeVal == rhsTypeVal ||
+       lhs.getCanonicalTypeValue() == rhs.getCanonicalTypeValue())) {
+    if (lhs.hasUnknown() || rhs.hasUnknown())
+      return std::nullopt;
+    return true;
   }
 
   // Folding to False is a lot harder:
@@ -4490,45 +4571,80 @@ static TypedAttr foldParamIdentical(TypedAttr lhs, TypedAttr rhs) {
   // we cannot fold to False since after evaluation they may become equal.
   // Conservatively we only fold if both sides are simple constants (fully
   // evaluated & contains no parameter references).
-  bool lhsSimpleConstant = ParameterAttr::isSimpleConstant(lhs);
-  bool rhsSimpleConstant = ParameterAttr::isSimpleConstant(rhs);
-  if (lhsSimpleConstant && rhsSimpleConstant) {
+  if (lhs.isSimpleConstant() && rhs.isSimpleConstant()) {
     // Two distinct fully-evaluated values are different values -- unless the
     // difference is confined to index-like leaves, whose numbers depend on the
     // index bit width. Those defer to `evaluateWithContext` below.
-    if (std::optional<bool> same =
-            areSimpleConstantsEqual(lhs, rhs, /*target=*/nullptr))
-      return SIMDAttr::getScalarBool(ctx, *same);
-    return {};
+    return areSimpleConstantsEqual(lhs.getValue(), rhs.getValue());
   }
 
   // Type inequality is a bit stronger due to nominality of struct types.
   // If both sides are type values and they point to different type references,
   // we can fold to False.
-  if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
-    if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs)) {
-      auto lhsStructRef = getOptionalTypeSymbolRef(lhsTypeParam.getTypeValue());
-      auto rhsStructRef = getOptionalTypeSymbolRef(rhsTypeParam.getTypeValue());
-      if (lhsStructRef && rhsStructRef) {
-        // Both sides are struct types. If the referenced symbols are different,
-        // they are never the same value.
-        if (lhsStructRef != rhsStructRef)
-          return SIMDAttr::getScalarBool(ctx, false);
-      } else if (static_cast<bool>(lhsStructRef) !=
-                 static_cast<bool>(rhsStructRef)) {
-        // One side is a struct type and the other is not, so they are never the
-        // same value -- but only decide that once the non-struct side is fully
-        // evaluated, since otherwise it might still evaluate to a struct.
-        if (lhsStructRef && rhsSimpleConstant)
-          return SIMDAttr::getScalarBool(ctx, false);
-        if (rhsStructRef && lhsSimpleConstant)
-          return SIMDAttr::getScalarBool(ctx, false);
-      }
+  if (lhs.isTypeParam() && rhs.isTypeParam()) {
+    SymbolRefAttr lhsStructRef = lhs.getStructRef();
+    SymbolRefAttr rhsStructRef = rhs.getStructRef();
+    if (lhsStructRef && rhsStructRef) {
+      // Both sides are struct types. If the referenced symbols are different,
+      // they are never the same value.
+      if (lhsStructRef != rhsStructRef)
+        return false;
+    } else if (static_cast<bool>(lhsStructRef) !=
+               static_cast<bool>(rhsStructRef)) {
+      // One side is a struct type and the other is not, so they are never the
+      // same value -- but only decide that once the non-struct side is fully
+      // evaluated, since otherwise it might still evaluate to a struct.
+      if (lhsStructRef && rhs.isSimpleConstant())
+        return false;
+      if (rhsStructRef && lhs.isSimpleConstant())
+        return false;
     }
   }
 
-  // Otherwise can't fold something like `identical(x, y)`.
-  return {};
+  // Otherwise can't decide something like `identical(x, y)`.
+  return std::nullopt;
+}
+
+/// Decide whether all of `operands` are identical (nullopt if undecided).
+///
+/// Identity is transitive, so an operand proven identical to an earlier one
+/// says nothing further and is dropped; `representatives` receives the ones
+/// that survive, in the order given. Pass `operands` already sorted for the
+/// residual to come back in canonical order. Returns nullopt when that residual
+/// is the answer.
+static std::optional<bool>
+decideIdenticalOperands(ArrayRef<TypedAttr> operands,
+                        SmallVectorImpl<TypedAttr> &representatives) {
+  representatives.clear();
+
+  // Quadratic in the operand count, which is bounded by what a source-level
+  // identity chain can spell. Scanning every representative rather than
+  // stopping at the first match is what lets a later operand surface a
+  // contradiction between two that could not be compared directly.
+  SmallVector<IdentityOperand> prepared;
+  for (TypedAttr operand : operands) {
+    IdentityOperand candidate(operand);
+    bool proven = false;
+    for (IdentityOperand &representative : prepared) {
+      std::optional<bool> same =
+          decideParamIdentical(representative, candidate);
+      if (!same)
+        continue;
+      // One pair that cannot denote the same value settles the whole set.
+      if (!*same)
+        return false;
+      proven = true;
+    }
+    if (!proven) {
+      prepared.push_back(std::move(candidate));
+      representatives.push_back(operand);
+    }
+  }
+
+  // A single value is the same value as itself, with no pair left to disagree.
+  if (representatives.size() <= 1)
+    return true;
+  return std::nullopt;
 }
 
 Type ParamIdenticalAttr::getType() const {
@@ -4536,20 +4652,22 @@ Type ParamIdenticalAttr::getType() const {
 }
 
 TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
-  // `validateForElaborator` below indexes both operands, and `Base::get` only
-  // runs the verifier under assertions, so hold the arity here too.
-  assert(operandsIn.size() == 2 && "identity is binary for now");
+  // The context comes from an operand, and `Base::get` only runs the verifier
+  // under assertions, so hold that much here too.
+  assert(!operandsIn.empty() && "identity needs an operand for its context");
   MLIRContext *ctx = operandsIn.front().getContext();
 
+  // Sorting first is what uniques `identical(t2, t1)` with `identical(t1, t2)`,
+  // and it makes the merge below independent of the order given.
   SmallVector<TypedAttr> operands(operandsIn);
   llvm::stable_sort(operands, ParameterAttr::compare);
 
-  // TODO: arity is pinned to two for now, widen in a followup.
-  if (operands.size() == 2)
-    if (TypedAttr folded = foldParamIdentical(operands[0], operands[1]))
-      return folded;
+  SmallVector<TypedAttr> representatives;
+  if (std::optional<bool> decided =
+          decideIdenticalOperands(operands, representatives))
+    return SIMDAttr::getScalarBool(ctx, *decided);
 
-  return Base::get(ctx, operands);
+  return Base::get(ctx, representatives);
 }
 
 TypedAttr ParamIdenticalAttr::get(MLIRContext *ctx,
@@ -4586,8 +4704,8 @@ ParamIdenticalAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 LogicalResult
 ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                            ArrayRef<TypedAttr> operands) {
-  if (operands.size() != 2)
-    return emitError() << "'param.identical' must have exactly two operands";
+  if (operands.size() < 2)
+    return emitError() << "'param.identical' must have at least two operands";
 
   if (!llvm::all_of(operands.drop_front(), [&](TypedAttr operand) {
         return operand.getType() == operands.front().getType();
@@ -4600,8 +4718,14 @@ ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 bool ParamIdenticalAttr::isConstant() const { return false; }
 
 ErrorOrSuccess ParamIdenticalAttr::validateForElaborator() const {
-  return Error("could not prove whether " + getParamAsString(getOperand(0)) +
-               " and " + getParamAsString(getOperand(1)) +
+  ArrayRef<TypedAttr> operands = getOperands();
+  std::string operandList;
+  llvm::raw_string_ostream os(operandList);
+  llvm::interleave(
+      operands.drop_back(), os,
+      [&](TypedAttr operand) { os << getParamAsString(operand); }, ", ");
+  os << " and " << getParamAsString(operands.back());
+  return Error("could not prove whether " + operandList +
                " are the same value");
 }
 

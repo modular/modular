@@ -24,6 +24,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/DenseSet.h"
 
 using namespace M;
 using namespace KGEN;
@@ -206,16 +207,38 @@ FailureOr<TypedAttr> ParamIdenticalAttr::evaluateWithContext(
   if (!target)
     return failure();
 
-  // The comparison is only legal when both sides are fully evaluated.
-  TypedAttr lhs = getCanonicalAttr(getOperand(0));
-  TypedAttr rhs = getCanonicalAttr(getOperand(1));
-  if (!ParameterAttr::isSimpleConstant(lhs) ||
-      !ParameterAttr::isSimpleConstant(rhs))
+  // Given the index bit width, an operand's index-like leaves re-expressed at
+  // that width are canonical for the value, so two operands denote the same
+  // value exactly when that key is the same uniqued attribute and one pass
+  // answers for the whole class.
+  //
+  // Only an operand that is fully evaluated and free of unknowns has a value
+  // for a key to stand for; the rest sit out the partition. Two others can
+  // still settle the class `false` around one, which is why this counts
+  // distinct keys rather than requiring them all to match.
+  DenseSet<Attribute> keys;
+  bool sawResidual = false;
+  for (TypedAttr operand : getOperands()) {
+    TypedAttr canonical = getCanonicalAttr(operand);
+    PreparedConstant prepared(canonical, target);
+    if (!ParameterAttr::isSimpleConstant(canonical) || prepared.hasUnknown()) {
+      sawResidual = true;
+      continue;
+    }
+    // One pair that cannot denote the same value settles the whole class, so
+    // stop before keying the rest.
+    keys.insert(prepared.getKey());
+    if (keys.size() > 1)
+      return TypedAttr(SIMDAttr::getScalarBool(getContext(), false));
+  }
+
+  // An operand with no key never collapses into another, so it leaves the class
+  // residual however the rest of them compare.
+  if (sawResidual)
     return failure();
 
-  if (std::optional<bool> same = areSimpleConstantsEqual(lhs, rhs, target))
-    return TypedAttr(SIMDAttr::getScalarBool(getContext(), *same));
-  return failure();
+  assert(!keys.empty() && "an identity class holds at least two operands");
+  return TypedAttr(SIMDAttr::getScalarBool(getContext(), true));
 }
 
 //===----------------------------------------------------------------------===//

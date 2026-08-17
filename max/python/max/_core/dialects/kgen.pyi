@@ -1451,6 +1451,8 @@ class ParamIdenticalAttr(max._core.Attribute):
     #kgen.param.identical<#kgen.param.decl.ref<"T"> : !kgen.type,
                           #kgen.param.decl.ref<"U"> : !kgen.type>
     ```
+
+    A class holds at least two operands, canonically ordered.
     """
 
     @overload
