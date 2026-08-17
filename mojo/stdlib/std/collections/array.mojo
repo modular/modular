@@ -750,6 +750,43 @@ struct Array[T: AnyType, length: Int](
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
+    @always_inline
+    def __add__(
+        deinit self,
+        deinit rhs: Array[Self.T, _],
+        out result: Array[Self.T, Self.length + rhs.length],
+    ) where conforms_to(Self.T, Movable):
+        """Concatenates this array with another array.
+
+        Both arrays are consumed and their elements are moved into the
+        result.
+
+        Args:
+            rhs: The array whose elements follow this array's elements in
+                the result.
+
+        Returns:
+            An array of length `Self.length + rhs.length` containing the
+            elements of `self` followed by the elements of `rhs`.
+
+        Examples:
+
+        ```mojo
+        var a: Array[Int, 2] = [1, 2]
+        var b: Array[Int, 3] = [3, 4, 5]
+        var c = (a^) + (b^)  # [1, 2, 3, 4, 5]
+        ```
+        """
+        result = {uninitialized = True}
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr(), src=self.unsafe_ptr(), count=Self.length
+        )
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr().unsafe_offset(Self.length),
+            src=rhs.unsafe_ptr(),
+            count=rhs.length,
+        )
+
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
