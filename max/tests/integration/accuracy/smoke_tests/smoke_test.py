@@ -58,7 +58,6 @@ from eval_runner import (
     write_results,
 )
 from inference_server_harness import start_server
-from max.nn.kv_cache import KVConnectorType
 from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
@@ -487,8 +486,7 @@ def get_server_cmd(
         # cpu/disk KV offload code paths.
         if "--kv-connector-config" in serve_extra_args or (
             recipe is not None
-            and recipe.model.kv_cache.kv_connector_config.type
-            != KVConnectorType.null.value
+            and recipe.model.kv_cache.kv_connector_config.type != "null"
         ):
             env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
 
