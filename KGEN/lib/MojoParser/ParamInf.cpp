@@ -121,7 +121,7 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag);
 void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
                        ASTType expectedType, size_t argIdx,
                        PogListAttr argListAttr, CallSyntax syntax,
-                       SharedState &shared);
+                       SharedState &shared, ASTDecl &declScope);
 } // namespace M::KGEN::LIT
 
 /// Attempt to resolve the specified operand to a CValue using the provided
@@ -143,7 +143,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared());
+                        argIdx, argPogs, syntax, getShared(), getDeclScope());
     return diag;
   };
 
@@ -272,7 +272,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared());
+                        argIdx, argPogs, syntax, getShared(), getDeclScope());
     return diag;
   };
 
@@ -1402,7 +1402,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs,
-                        callOperands.syntax, getShared());
+                        callOperands.syntax, getShared(), getDeclScope());
     return diag;
   };
 
@@ -1490,7 +1490,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       // arbitrary nested positions.
       if (!paramFinder.hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(valueRefType, expectedType,
-                                           getShared())) {
+                                           getShared(), getDeclScope())
+                 .isTrue()) {
           emitWrongTypeDiag(expectedType);
           return failure();
         }

@@ -171,6 +171,16 @@ def ldexp2kf[
     return result
 
 
+# `bench_unary` takes an unconstrained function, so the stdlib `exp` reaches it
+# through a wrapper that states no obligation of its own.
+@always_inline
+def exp_mojo[
+    dtype: DType, simd_width: SIMDLength
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
+    return exp(x)
+
+
 @always_inline
 def exp_libm[
     dtype: DType, simd_width: SIMDLength
@@ -436,7 +446,7 @@ def main() raises:
 
     var m = Bench()
     var problem_size = range(1 << 24, 1 << 26, 1 << 25)
-    bench_unary[exp, DType.float32](m, problem_size, "mojo")
+    bench_unary[exp_mojo, DType.float32](m, problem_size, "mojo")
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
     bench_unary[exp_mojo_opt2, DType.float32](m, problem_size, "mojo_opt2")
     bench_unary[exp_mojo_opt3, DType.float32](m, problem_size, "mojo_opt3")

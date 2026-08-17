@@ -477,7 +477,9 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // runtime representation.  Accept those identity-preserving conversions here
   // before trying to infer through the parameter expression itself.
   if (sugarIsa<ParamType>(actualType) && sugarIsa<ParamType>(expectedType) &&
-      IREmitter::canZeroCostConvert(actualType, expectedType, shared))
+      IREmitter::canZeroCostConvert(actualType, expectedType, shared,
+                                    state.declScope)
+          .isTrue())
     return success();
 
   // If the expected type is a parameter ref, then we're binding the specified
@@ -561,7 +563,9 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
       // If the mutable bit is resolved, check for conversions from mut=true to
       // mut=false.
       if (!state.paramFinder.hasReferences(expectedType)) {
-        if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared))
+        if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared,
+                                           state.declScope)
+                 .isTrue())
           return error(MatchFailure::Unclassified{});
         return success();
       }
@@ -1206,7 +1210,9 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
                                                    initSig.getArgConvention(0));
 
       if (actual.getType() != argRVType &&
-          IREmitter::canZeroCostConvert(actual.getType(), argRVType, shared)) {
+          IREmitter::canZeroCostConvert(actual.getType(), argRVType, shared,
+                                        state.declScope)
+              .isTrue()) {
         actual = IREmitter::emitZeroCostConvert(actual, argRVType, shared);
       }
     }

@@ -196,6 +196,13 @@ def _exp2_concrete(x: SIMD) -> type_of(x):
     return exp2(x)
 
 
+@always_inline
+def _log_concrete(x: SIMD) -> type_of(x):
+    """The concrete implementation of the log function."""
+    comptime assert x.dtype.is_floating_point(), "dtype must be floating point"
+    return log(x)
+
+
 # Packed f32x2 FMA/add (`fma.rn.ftz.f32x2` / `add.ftz.f32x2`). Mojo does not
 # fold a SIMD[f32,2] mul+add into one FFMA2, so the SM100 softmax folds the
 # scale and pairs the row-sum via these explicit PTX ops -- same idiom the dense
@@ -614,8 +621,8 @@ def softmax_3_pass[
             dtype,
             input_fn_1d,
             identity,
-            exp,
-            log,
+            _exp_concrete,
+            _log_concrete,
             sub,
         ](output)
     else:
@@ -623,7 +630,7 @@ def softmax_3_pass[
             simd_width,
             dtype,
             input_fn_1d,
-            exp,
+            _exp_concrete,
             identity,
             reciprocal,
             mul,

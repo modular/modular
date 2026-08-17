@@ -394,8 +394,8 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     if (MLValue refValue = lValue.getIfMLValue()) {
-      if (emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
-                                     emitter.shared))
+      if (emitter.canZeroCostConvert(lValue.getRValueType(), resultType)
+              .isTrue())
         return refValue;
     }
 
@@ -504,8 +504,8 @@ LValue ExprDest::getLValueForResult(SMLoc loc, ASTType resultType,
     // If asking for a buffer of the type we happen to have, or if the client
     // doesn't care if it matches, then we can directly return it.
     if (allowIncompatibleTypes ||
-        emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
-                                   emitter.shared)) {
+        emitter.canZeroCostConvert(lValue.getRValueType(), resultType)
+            .isTrue()) {
       // If the client accepts any sort of LValue, then we succeed.
       if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!

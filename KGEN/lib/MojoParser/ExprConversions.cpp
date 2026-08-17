@@ -123,62 +123,43 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
 // Generator body-constraint discharge
 //===----------------------------------------------------------------------===//
 
-/// Return true if every body constraint on `actual` can be dropped to reach
-/// `expected`: the parameters and body must match, and all of `actual`'s
-/// constraints must be provable in this scope, assuming `expected`'s own body
-/// constraints.
-///
-/// The converted value is rebound to `expected` wholesale, so it never retains
-/// one of `actual`'s constraint attributes. This is necessary to bridge the
-/// source location differences for now.
-static bool canFullyDischargeBodyConstraints(
-    GeneratorType actual, GeneratorType expected, ASTDecl &declScope, SMLoc loc,
-    ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
-  // Conservatively require the types to be equal everywhere else for now.
-  if (!ASTType(actual.getWithoutBodyConstraints())
-           .isEqualCanon(expected.getWithoutBodyConstraints()))
-    return false;
+/// Prove `from`'s generator body constraints under `declScope`, treating
+/// `to`'s body constraints and `additionalAssumptions` as extra facts. It
+/// only checks the constraints, not the body types of the generators.
+static TriState
+canProveBodyConstraints(GeneratorType from, GeneratorType to,
+                        ASTDecl &declScope,
+                        ArrayRef<ConstraintAttr> additionalAssumptions) {
+  ArrayRef<ConstraintAttr> fromConstraints = from.getBodyConstraints();
+  if (fromConstraints.empty())
+    return TriState::yes();
 
-  ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
-  if (actualConstraints.empty())
-    return true;
-
-  // Prove every body constraint so it can be dropped. `additionalAssumptions`
-  // lets callers (e.g. conditional trait-conformance checking) supply facts
-  // that hold in their context but are not in `declScope`'s known assumptions;
-  // `expected`'s constraints join them because a value of that type is only
-  // ever reached where they hold.
+  // `additionalAssumptions` lets callers supply facts that hold in their
+  // context but are not in `declScope`'s known assumptions; `to`'s constraints
+  // join them because a value of that type is only ever reached where they
+  // hold.
   SmallVector<ConstraintAttr> assumptions(additionalAssumptions);
-  llvm::append_range(assumptions, expected.getBodyConstraints());
+  llvm::append_range(assumptions, to.getBodyConstraints());
 
-  auto actualParamList = cast<PogListAttr>(actual.getParamListAttrs());
-  OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
-  return canDischargeConstraintsInScope(
-             declScope, actualParamList, actualConstraints, actualConstraints,
-             diag.getDiag(), /*unprovableConstraints=*/nullptr,
-             /*evaluator=*/nullptr, assumptions)
-      .isTrue();
-}
-
-/// Returns true if the constraints on `actual` can be fully discharged to reach
-/// `expected`. Assumes that `actual` and `expected` are not already equal.
-static bool canDischargeGeneratorConstraints(
-    GeneratorType actual, GeneratorType expected, ASTDecl &declScope, SMLoc loc,
-    ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
-  // An unconstrained value is usable wherever a constrained one is.
-  if (actual.getBodyConstraints().empty())
-    return true;
-  return canFullyDischargeBodyConstraints(actual, expected, declScope, loc,
-                                          additionalAssumptions);
+  auto fromParamList = cast<PogListAttr>(from.getParamListAttrs());
+  OptionalDiag diag(declScope.getShared(), declScope.getLoc(),
+                    /*discardError=*/true);
+  return TriState::fromBool(
+      canDischargeConstraintsInScope(declScope, fromParamList, fromConstraints,
+                                     fromConstraints, diag.getDiag(),
+                                     /*unprovableConstraints=*/nullptr,
+                                     /*evaluator=*/nullptr, assumptions)
+          .isTrue());
 }
 
 static bool
 canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr, GeneratorType actual,
                          GeneratorType expected, ASTDecl &declScope,
                          ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
-  if (!canDischargeGeneratorConstraints(actual, expected, declScope,
-                                        valueExpr.expr->getLoc(),
-                                        additionalAssumptions))
+  // Tentatively disallow converting from constrained generators when bodies
+  // are different. When bodies are the same, `canZeroCostConvert` will have
+  // already allowed it.
+  if (!actual.getBodyConstraints().empty())
     return false;
 
   // Handle function conversions.
@@ -804,7 +785,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
 /// Build the value that discharges *all* of `generatorValue`'s body constraints
 /// (which must already be proven in scope).
 static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
-                                             IREmitter &emitter) {
+                                             SharedState &shared) {
   auto generator = sugarCast<GeneratorType>(generatorValue.getType());
   ArrayRef<ConstraintAttr> bodyConstraints = generator.getBodyConstraints();
   DenseBoolArrayAttr discharged;
@@ -816,7 +797,7 @@ static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
   }
   return BindParamsAttr::get(
       generatorValue.get().getContext(), generatorValue.get(),
-      /*paramValues=*/{}, discharged, &emitter.shared.getEvaluationContext());
+      /*paramValues=*/{}, discharged, &shared.getEvaluationContext());
 }
 
 static CValue
@@ -824,18 +805,8 @@ convertGeneratorValue(CValue value, const ExprNode *expr,
                       GeneratorType expected, IREmitter &emitter,
                       ExprDest &dest,
                       ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
-  // If `value` is a generator whose body constraints can be fully dropped to
-  // reach `expected`, discharge them (the only supported constraint
-  // conversion).
-  auto actual = sugarDynCast<GeneratorType>(value.getRValueType());
-  if (actual && !actual.getBodyConstraints().empty() &&
-      canFullyDischargeBodyConstraints(actual, expected, emitter.getDeclScope(),
-                                       expr->getLoc(), additionalAssumptions)) {
-    PValue pValue = value.getIfPValue();
-    assert(pValue && "generator values are always PValues");
-    return emitter.emitCResult(emitFullConstraintDischarge(pValue, emitter),
-                               expr, dest);
-  }
+  // Constraint discharge (shedding `value`'s body constraints to reach
+  // `expected`) is handled up front by `emitZeroCostConvert`.
 
   // If this is a function generator value, defer to function conversion.
   if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
@@ -873,7 +844,7 @@ static CValue convertEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr,
                                           IREmitter &emitter, ExprDest &dest) {
   PValue value = valueExpr.ir.getIfPValue();
   assert(value && "canConvertEmptyGeneratorToBody should require a PValue");
-  return emitter.emitCResult(emitFullConstraintDischarge(value, emitter),
+  return emitter.emitCResult(emitFullConstraintDischarge(value, emitter.shared),
                              valueExpr.expr, dest);
 }
 
@@ -1086,30 +1057,74 @@ isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
   return failure();
 }
 
+/// Returns true if two function-type generators have the same representation
+/// post-elaboration: they differ only in argument names, parameter names,
+/// passing kinds, or capture origins. Body constraints are deliberately not
+/// considered here (they are handled by `canProveBodyConstraints`), and this
+/// match is intentionally looser than `getWithoutBodyConstraints()` equality.
+static bool canZeroCostConvertFnTypes(FnTypeGeneratorType from,
+                                      FnTypeGeneratorType to) {
+  // If the fn meta data mismatches (different arg conventions, effects, or
+  // origin metadata), return false. Capture origins are excluded from the
+  // comparison (it will be deleted anyway in the near future).
+  if (withoutCaptureOrigins(from.getFnMetadata()) !=
+      withoutCaptureOrigins(to.getFnMetadata()))
+    return false;
+
+  // Allow signature types to be converted for free if they differ only in
+  // argument names, parameter names, passing kinds.
+  if (from.getNumArguments() != to.getNumArguments())
+    return false;
+
+  // Result types must match exactly.
+  if (from.getResults() != to.getResults())
+    return false;
+
+  for (auto [idx, fromTy, toTy, conv] : llvm::enumerate(
+           from.getArguments(), to.getArguments(), from.getArgConventions())) {
+    Type fromCmpTy = RefType::stripRefConvention(fromTy, conv);
+    Type toCmpTy = RefType::stripRefConvention(toTy, conv);
+    if (!ASTType(fromCmpTy).isEqualCanon(toCmpTy))
+      return false;
+
+    // If the argument has a required keyword, then the two must match names.
+    if (from.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly ||
+        to.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly) {
+      if (from.getArgName(idx) != to.getArgName(idx))
+        return false;
+    }
+  }
+
+  return true;
+}
+
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a zero-cost conversion like a rebind.  This means that values of the
 /// two types have exactly the same representation post-elaboration.
-bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
-                                   SharedState &shared) {
+TriState
+IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
+                              SharedState &shared, ASTDecl &declScope,
+                              ArrayRef<ConstraintAttr> additionalAssumptions) {
   if (fromType.isEqualCanon(toType))
-    return true; // No rebind needed!
+    return TriState::yes(); // No rebind needed!
   toType = getCanonicalType(toType);
   fromType = getCanonicalType(fromType);
 
   FailureOr<bool> upCastable =
       isValidUpCastToTypeType(shared, fromType, toType);
   if (succeeded(upCastable))
-    return upCastable.value();
+    return TriState::fromBool(upCastable.value());
 
   // fn type is non-struct type (but should it?)
   if (sugarIsa<FnLiteralTypeGeneratorMetaType>(fromType) &&
       sugarIsa<NonStructTypeType>(toType))
-    return true;
+    return TriState::yes();
 
   // Check for param type conversions.
   if (auto fromParamType = sugarDynCast<ParamType>(fromType))
     if (auto toParamType = sugarDynCast<ParamType>(toType))
-      return canZeroCostConvertParamTypes(fromParamType, toParamType, shared);
+      return TriState::fromBool(
+          canZeroCostConvertParamTypes(fromParamType, toParamType, shared));
 
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
@@ -1130,7 +1145,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
             fromType.getParamBindings(), &shared.getEvaluationContext());
         toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
                                               &shared.getEvaluationContext());
-        return canZeroCostConvert(fromSig, toSig, shared);
+        return canZeroCostConvert(fromSig, toSig, shared, declScope,
+                                  additionalAssumptions);
       }
 
       // Otherwise, if both types reference the same struct declaration (e.g.
@@ -1144,9 +1160,9 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
         CastRemover remover;
         if (remover.replace(fromType.mlirType) ==
             remover.replace(toType.mlirType))
-          return true;
+          return TriState::yes();
       }
-      return false;
+      return TriState::no();
     }
   }
 
@@ -1162,7 +1178,7 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       auto result =
           ParamOperatorAttr::get(POC::And, toMut, fromOrigin.getIsMutable());
       if (result == toMut)
-        return true;
+        return TriState::yes();
     }
 
   // Check reference downcasting.  The only thing allowed to disagree is the
@@ -1173,20 +1189,22 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       if (fromRef.getAddressSpace() != toRef.getAddressSpace() ||
           !ASTType(fromRef.getElementType())
                .isEqualCanon(toRef.getElementType()))
-        return false;
+        return TriState::no();
 
       // Verify compatible OriginType(mutability).  This is checking the type
       // of the origin, which contains its mutability specifier.
       auto toOriginType = toRef.getOriginType();
       if (fromRef.getOriginType() != toOriginType &&
-          !canZeroCostConvert(fromRef.getOriginType(), toOriginType, shared))
-        return false;
+          !canZeroCostConvert(fromRef.getOriginType(), toOriginType, shared,
+                              declScope, additionalAssumptions)
+               .isTrue())
+        return TriState::no();
 
       // We allow converting an "any" origin to anything concrete.
       // NOTE: This is not memory safe; we should make this an explicit
       // operation someday.
       if (sugarIsa<AnyOriginAttr>(fromRef.getOrigin()))
-        return true;
+        return TriState::yes();
 
       // FIXME: People are using things StaticString to refer to comptime
       // strings, even though StaticString is a runtime concept :-/.
@@ -1196,7 +1214,7 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
           if (isa<StaticOriginAttr>(originField.getBase()) &&
               originField.getField().str() == "__constants__" &&
               originField.getType().isMutableKnown(false)) {
-            return true;
+            return TriState::yes();
           }
         }
       }
@@ -1206,56 +1224,43 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       auto originUnion = OriginUnionAttr::get(
           {toOrigin, OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
           toOriginType);
-      return toOrigin == originUnion;
+      return TriState::fromBool(toOrigin == originUnion);
     }
   }
 
   if (auto actual = sugarDynCast<FnLiteralTypeGeneratorType>(fromType))
     if (auto expected = sugarDynCast<FnTypeGeneratorType>(toType))
       return canZeroCostConvert(actual.getSymbolConstantAttr().getType(),
-                                expected, shared);
+                                expected, shared, declScope,
+                                additionalAssumptions);
 
-  // Otherwise handle function conversions.
-  auto from = sugarDynCast<FnTypeGeneratorType>(fromType);
-  auto to = sugarDynCast<FnTypeGeneratorType>(toType);
-  if (!from || !to)
-    return false;
+  // Otherwise handle generator conversions. Both sides must be generators.
+  auto fromGen = sugarDynCast<GeneratorType>(fromType);
+  auto toGen = sugarDynCast<GeneratorType>(toType);
+  if (!fromGen || !toGen)
+    return TriState::no();
 
-  // If the fn meta data mismatches (different arg conventions, effects, or
-  // origin metadata), return false. Capture origins are excluded from the
-  // comparison (it will be deleted anyway in the near future).
-  if (withoutCaptureOrigins(from.getFnMetadata()) !=
-      withoutCaptureOrigins(to.getFnMetadata()))
-    return false;
+  // Input parameter types must match exactly.
+  if (fromGen.getInputParamTypes() != toGen.getInputParamTypes())
+    return TriState::no();
 
-  // Allow signature types to be converted for free if they differ only in
-  // argument names, parameter names, passing kinds.
-  size_t fromNumArgs = from.getNumArguments();
-  if (fromNumArgs != to.getNumArguments())
-    return false;
-
-  // Result types, and input/result parameter types must match exactly.
-  if (from.getResults() != to.getResults() ||
-      from.getInputParamTypes() != to.getInputParamTypes())
-    return false;
-
-  for (auto [idx, fromTy, toTy, conv] : llvm::enumerate(
-           from.getArguments(), to.getArguments(), from.getArgConventions())) {
-    Type fromCmpTy = RefType::stripRefConvention(fromTy, conv);
-    Type toCmpTy = RefType::stripRefConvention(toTy, conv);
-    if (!ASTType(fromCmpTy).isEqualCanon(toCmpTy))
-      return false;
-
-    // If the argument has a required keyword, then the two must match names.
-    if (from.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly ||
-        to.getArgListAttrs().getPassingKind(idx) == PassingKind::KwOnly) {
-      if (from.getArgName(idx) != to.getArgName(idx))
-        return false;
-    }
+  // The representations must agree. Function types have their own looser match
+  // (argument/parameter names, passing kinds, and capture origins may differ);
+  // every other generator requires stricter structural equality once body
+  // constraints are stripped.
+  if (auto fromFn = sugarDynCast<FnTypeGeneratorType>(fromGen)) {
+    auto toFn = sugarDynCast<FnTypeGeneratorType>(toGen);
+    if (!toFn || !canZeroCostConvertFnTypes(fromFn, toFn))
+      return TriState::no();
+  } else if (!ASTType(fromGen.getWithoutBodyConstraints())
+                  .isEqualCanon(toGen.getWithoutBodyConstraints())) {
+    return TriState::no();
   }
 
-  // Otherwise, everything seems compatible.
-  return true;
+  // The representations agree, so all that is left is the body constraints.
+  // Gaining a constraint is free; shedding one requires this scope to prove it.
+  return canProveBodyConstraints(fromGen, toGen, declScope,
+                                 additionalAssumptions);
 }
 
 /// If there is a common type shared between the two reference types, return
@@ -1571,6 +1576,17 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
     if (auto expected = sugarDynCast<FnTypeGeneratorType>(toType))
       return ParamOperatorAttr::getRebind(actual.getSymbolConstantAttr(),
                                           expected);
+
+  // Shedding a generator body constraint requires BindParams discharge so the
+  // value's own type drops the obligation. Instead of figuring out which subset
+  // of constraints to discharge, discharge all of `from`'s constraints when it
+  // has any. Gaining `to`'s constraints back is a free rebind.
+  if (auto fromGen = sugarDynCast<GeneratorType>(value.getType())) {
+    if (sugarIsa<GeneratorType>(toType) &&
+        !fromGen.getBodyConstraints().empty()) {
+      value = PValue(emitFullConstraintDischarge(value, shared));
+    }
+  }
 
   return ParamOperatorAttr::getRebind(value.get(), toType);
 }
@@ -1897,9 +1913,11 @@ bool IREmitter::canImplicitlyConvertToType(
   if (rvType.isEqualCanon(requiredType))
     return true;
 
-  // If the types are identical after elaboration then they are implicitly
-  // convertible.
-  if (canZeroCostConvert(rvType, requiredType, shared))
+  // If the types have the same representation after elaboration then they are
+  // implicitly convertible.
+  if (canZeroCostConvert(rvType, requiredType, shared, declScope,
+                         additionalAssumptions)
+          .isTrue())
     return true;
 
   // Origin values can convert into an OriginSet by becoming a member of the
@@ -2218,8 +2236,9 @@ CValue IREmitter::emitImplicitConversionToType(
     return emitCResult(value, expr, dest);
 
   // If we are dealing with types that differ only pre-elaboration,
-  // we insert a rebind or equivalent
-  if (canZeroCostConvert(rvType, requiredType, shared)) {
+  // we insert a rebind or equivalent.
+  if (canZeroCostConvert(rvType, requiredType, additionalAssumptions)
+          .isTrue()) {
     value = emitZeroCostConvert({value, expr}, requiredType);
     return emitCResult(value, expr, dest);
   }

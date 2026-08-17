@@ -57,7 +57,7 @@ def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 def bench_math[
     math_f1p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size]
-    ) thin -> SIMD[dtype, size]
+    ) thin -> SIMD[dtype, size] where dtype.is_floating_point()
 ](mut b: Bencher) raises:
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
