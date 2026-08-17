@@ -1162,6 +1162,55 @@ kgen.generator @param_identical<t1: type, t2: type, dt: dtype, s: string>() {
   kgen.return
 }
 
+// COM: Identity is an equivalence relation, so a class of any size is one
+// COM: proposition rather than a chain of pairs.
+// CHECK-LABEL: @param_identical_nary
+kgen.generator @param_identical_nary<t1: type, t2: type, t3: type, dt: dtype, s: string>() {
+  // COM: Three symbolic operands cannot be decided, and print in canonical
+  // COM: order rather than the order given.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:type t1, t2, t3)>
+  kgen.param.constant: scalar<bool> = <identical(:type t3, t1, t2)>
+
+  // COM: An operand proven identical to an earlier one says nothing further, so
+  // COM: it is dropped -- this uniques with the plain binary proposition.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:type t1, t2)>
+  kgen.param.constant: scalar<bool> = <identical(:type t1, t2, t1)>
+
+  // COM: Every operand collapsing into one representative decides the class.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(:dtype f32, f32, f32)>
+
+  // COM: One pair that cannot denote the same value settles the class, even with
+  // COM: a symbolic operand that no pair involving it can decide. Contrast the
+  // COM: binary case below, where that symbolic operand is all there is.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(:dtype dt, f32, f64)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:dtype dt, f32)>
+  kgen.param.constant: scalar<bool> = <identical(:dtype dt, f32)>
+
+  // COM: The merge must go through the identity fold rather than plain uniquing:
+  // COM: an unknown carries no value, so not even the same representation twice
+  // COM: proves identity. Uniquing would collapse these to one operand and then
+  // COM: to a vacuous `true`, contradicting @param_identical above.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:dtype *?, *?, *?)>
+  kgen.param.constant: scalar<bool> = <identical(:dtype *?, *?, *?)>
+
+  // COM: An unknown does not block a `false` that does not run through it.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(:dtype *?, f32, f64)>
+
+  // COM: Merging equal constants leaves the symbolic operand and one of them.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:string s, "a")>
+  kgen.param.constant: scalar<bool> = <identical(:string s, "a", "a")>
+
+  // COM: An n-ary proposition is still exactly `scalar<bool>`, so it composes
+  // COM: with `and` the same way a binary one does.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(identical(:dtype dt, f32), identical(:type t1, t2, t3))>
+  kgen.param.constant: scalar<bool> = <and(identical(:type t1, t2, t3),
+                                          identical(:dtype dt, f32))>
+  kgen.return
+}
+
 // COM: Identity on numeric operands answers a *different question* than `eq`,
 // COM: rather than a lane-wise one: `identical` asks whether the two values are
 // COM: the same and always returns one scalar bool, while `eq` compares lane by
@@ -1307,12 +1356,17 @@ kgen.generator @param_identical_type_equality<p1>() {
 // COM: The generic attribute syntax round-trips as well, including through
 // COM: bytecode (see the second RUN line).
 // CHECK-LABEL: @param_identical_generic_syntax
-kgen.generator @param_identical_generic_syntax<t1: type, t2: type>() {
+kgen.generator @param_identical_generic_syntax<t1: type, t2: type, t3: type>() {
   // CHECK: "test.someop"
   "test.someop" () {
     // CHECK-SAME: use1 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type, #kgen.param.decl.ref<"t2"> : !kgen.type> : !kgen.scalar<bool>
     use1 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type,
-                                 #kgen.param.decl.ref<"t2"> : !kgen.type>
+                                 #kgen.param.decl.ref<"t2"> : !kgen.type>,
+
+    // CHECK-SAME: use2 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type, #kgen.param.decl.ref<"t2"> : !kgen.type, #kgen.param.decl.ref<"t3"> : !kgen.type> : !kgen.scalar<bool>
+    use2 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type,
+                                 #kgen.param.decl.ref<"t2"> : !kgen.type,
+                                 #kgen.param.decl.ref<"t3"> : !kgen.type>
   } : () -> ()
   kgen.return
 }

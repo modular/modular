@@ -1753,6 +1753,8 @@ bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
 std::optional<std::pair<TypedAttr, TypedAttr>>
 KGEN::getIdentityProposition(TypedAttr prop) {
+  // FIXME(MOCO-4577): a class of more than two is dropped rather than returning
+  // every derived pair. That loses provability but stays sound.
   if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
     if (identical.getNumOperands() == 2)
       return std::make_pair(identical.getOperand(0), identical.getOperand(1));

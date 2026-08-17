@@ -164,6 +164,57 @@ FailureOr<TypedAttr> foldAttrWithTarget(ParameterEvaluationContext &context,
 /// representation with itself.
 bool containsUnknownValue(Attribute attr);
 
+/// One operand of a constant comparison, memoizing what the comparison learns
+/// about it so that comparing it against many others costs one scan and one
+/// normalization rather than one per pair.
+///
+/// Nothing is computed until a rule asks: the rules short-circuit, so most
+/// comparisons settle without ever walking a tree.
+class PreparedConstant {
+public:
+  /// Prepare `attr` for comparison against others prepared with the same
+  /// `target`, which may be null.
+  PreparedConstant(TypedAttr attr, TargetInfoAttr target)
+      : attr(attr), target(target) {}
+
+  TypedAttr getAttr() const { return attr; }
+  TargetInfoAttr getTarget() const { return target; }
+
+  /// Whether an unknown value sits anywhere in the tree.
+  bool hasUnknown();
+
+  /// Whether index-like data sits anywhere in the tree, so that the target's
+  /// index bit width decides what the representation denotes. Only meaningful
+  /// once `hasUnknown()` is known false: the scan stops at the first unknown,
+  /// since nothing past it can change the verdict.
+  bool isTargetDependent();
+
+  /// The tree with its index-like leaves re-expressed at the target's index bit
+  /// width, or at 64 bits where there is no target, so that two trees denoting
+  /// the same value at that width are the same uniqued attribute.
+  Attribute getKey();
+
+  /// The same at 32 bits, the other width an untargeted comparison has to
+  /// consider.
+  Attribute get32BitKey();
+
+private:
+  void scanLeaves();
+  Attribute getKeyImpl(Attribute &cache, int64_t untargetedBitWidth);
+
+  TypedAttr attr;
+  TargetInfoAttr target;
+
+  /// Whether `unknown` and `targetDependent` below have been computed.
+  bool scanned = false;
+  bool unknown = false;
+  bool targetDependent = false;
+
+  /// Null until asked for.
+  Attribute key;
+  Attribute key32Bit;
+};
+
 /// Decide whether two fully-evaluated parameter values denote the same value.
 ///
 /// The caller must have established that both operands are simple constants
@@ -176,9 +227,10 @@ bool containsUnknownValue(Attribute attr);
 ///    for. No target settles these.
 ///
 /// Returns nullopt for both, i.e. whenever the comparison cannot be made on the
-/// information given.
-std::optional<bool> areSimpleConstantsEqual(TypedAttr lhs, TypedAttr rhs,
-                                            TargetInfoAttr target);
+/// information given. Both operands must have been prepared with the same
+/// target, or their keys would stand for values at different widths.
+std::optional<bool> areSimpleConstantsEqual(PreparedConstant &lhs,
+                                            PreparedConstant &rhs);
 
 /// Fold an op using a target-aware fold function.
 inline OpFoldResult foldOpWithTarget(FoldValues operands, TargetInfoAttr target,
