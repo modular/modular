@@ -2091,6 +2091,48 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
         # index: [0]
         TuningConfigSM100(
             M=1,
+            M_end=2,
+            N=5376,
+            K=21504,
+            mma_shape=Index(256, 16, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=2,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=True,
+            batch_size=1,
+        ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [1]
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=43008,
+            K=5376,
+            mma_shape=Index(128, 8, 32),
+            cta_group=1,
+            cluster_shape=Index(1, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=3,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            num_split_k=1,
+            num_pipeline_stages=0,
+            is_small_bn=True,
+            batch_size=1,
+        ),
+        # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
+        # index: [2]
+        TuningConfigSM100(
+            M=1,
             M_end=17,
             N=18432,
             K=7168,
@@ -2109,7 +2151,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [1]
+        # index: [3]
         TuningConfigSM100(
             M=17,
             M_end=33,
@@ -2130,7 +2172,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [2]
+        # index: [4]
         TuningConfigSM100(
             M=32,
             M_end=129,
@@ -2151,7 +2193,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [3]
+        # index: [5]
         TuningConfigSM100(
             M=65,
             M_end=129,
@@ -2172,7 +2214,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [4]
+        # index: [6]
         TuningConfigSM100(
             M=2,
             M_end=32,
@@ -2193,7 +2235,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [5]
+        # index: [7]
         TuningConfigSM100(
             M=64,
             M_end=129,
@@ -2214,7 +2256,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [6]
+        # index: [8]
         TuningConfigSM100(
             M=1,
             M_end=9,
@@ -2235,7 +2277,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [7]
+        # index: [9]
         TuningConfigSM100(
             M=9,
             M_end=17,
@@ -2256,7 +2298,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [8]
+        # index: [10]
         TuningConfigSM100(
             M=17,
             M_end=25,
@@ -2277,7 +2319,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [9]
+        # index: [11]
         TuningConfigSM100(
             M=25,
             M_end=33,
@@ -2298,7 +2340,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [10]
+        # index: [12]
         TuningConfigSM100(
             M=33,
             M_end=65,
@@ -2319,7 +2361,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             batch_size=1,
         ),
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
-        # index: [11]
+        # index: [13]
         TuningConfigSM100(
             M=65,
             M_end=69,

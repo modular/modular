@@ -186,6 +186,28 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
             is_small_bn=True,
         ](ctx, Idx[1], Idx[36864], Idx[128 * 28])
 
+        # Gemma-4-31B MLP.DownProj (M=1, N=5376, K=21504, k_group_size=2)
+        comptime gemma_block_tile = Index(128, 8, BK)
+        comptime gemma_umma = Index(256, 16, MMA_K)
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scales_dtype,
+            gemma_block_tile,
+            gemma_umma,
+            cluster_shape=StaticTuple[Int32, 3](Int32(2), 1, 1),
+            cta_group=2,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            swapAB=True,
+            k_group_size=2,
+            num_clc_pipeline_stages=0,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            is_small_bn=True,
+        ](ctx, Idx[1], Idx[5376], Idx[21504])
+
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path
         # with 2SM (cta_group=2).
         print("\n--- 2SM Epilogue fusion tests ---")

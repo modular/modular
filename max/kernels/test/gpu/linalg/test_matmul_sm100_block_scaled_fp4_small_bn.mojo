@@ -237,7 +237,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         comptime small_bn_umma = Index(128, 8, MMA_K)
 
         @__parameter
-        def test_small_bn[N: Int, K: Int]() raises:
+        def test_small_bn[N: Int, K: Int, k_group_size: Int = 2]() raises:
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
@@ -251,7 +251,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 swapAB=True,
-                k_group_size=2,
+                k_group_size=k_group_size,
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
@@ -268,6 +268,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         test_small_bn[13312, 16384]()  # Fused MLP.UpProj + MLP.GateProj
         test_small_bn[16384, 6656]()  # MLP.DownProj
         test_small_bn[7168, 16384]()  # Deepseek
+        test_small_bn[43008, 5376, 3]()  # Gemma-4-31B MLP.GateUpProj (fused)
 
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
         print("\n--- Epilogue fusion tests ---")
