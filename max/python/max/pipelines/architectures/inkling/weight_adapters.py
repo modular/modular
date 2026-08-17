@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling safetensors adapter: prefix strip, skip the towers, few reshapes."""
+"""Inkling safetensors adapter: prefix strip, skip the audio tower, few
+reshapes."""
 
 from __future__ import annotations
 
 import logging
+import re
 
 import numpy as np
 from max.driver import Buffer
@@ -30,11 +32,14 @@ logger = logging.getLogger("max.pipelines")
 _FP8_E4M3_MAX = 448.0
 _FP4_E2M1_MAX = 6.0
 _TEXT = "model.llm."
+_VISION = "model.visual."
 _SKIP = {
     "model.mtp.": "MTP draft heads, which this architecture does not implement",
     "model.audio.": "the audio tower, which this architecture does not serve",
-    "model.visual.": "the vision tower, which this architecture does not serve",
 }
+
+VISION_PREFIX = "vision."
+"""Marks the tower's weights, which compile into a graph of their own."""
 
 
 def nvfp4_input_scale(input_amax: float) -> float:
@@ -113,10 +118,20 @@ def _input_scale(data: WeightData, name: str) -> WeightData:
 
 
 def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
+    if name.startswith(_VISION):
+        # The tower holds its linears and norms in LayerLists, so the
+        # checkpoint's layers.linear_N and layers.norm_N become linears.N
+        # and norms.N.
+        target = VISION_PREFIX + re.sub(
+            r"^layers\.(linear|norm)_(\d+)\.",
+            r"\g<1>s.\g<2>.",
+            name[len(_VISION) :],
+        )
+        return {target: _rename(data, target)}
     if not name.startswith(_TEXT):
         raise ValueError(
             f"unrecognized Inkling checkpoint weight {name!r}: expected "
-            f"{_TEXT!r} or one of {sorted(_SKIP)}"
+            f"{_TEXT!r}, {_VISION!r}, or one of {sorted(_SKIP)}"
         )
 
     rest = name[len(_TEXT) :]

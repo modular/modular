@@ -15,26 +15,27 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .memory_planner import InklingMemoryPlanner
 from .model import InklingModel
 from .model_config import InklingConfig
+from .tokenizer import InklingTokenizer
 from .weight_adapters import convert_safetensor_state_dict
 
 inkling_arch = SupportedArchitecture(
     name="InklingForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
-    input_modalities={InputModality.TEXT},
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     example_repo_ids=["thinkingmachines/Inkling"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=InklingConfig.DEFAULT_ENCODING,
     supported_encodings=InklingConfig.SUPPORTED_ENCODINGS,
     pipeline_model=InklingModel,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    tokenizer=InklingTokenizer,
+    context_type=TextAndVisionContext,
     config=InklingConfig,
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,
