@@ -963,7 +963,7 @@ struct Bench(Writable):
             self._test[bench_with_abort_on_err]()
 
     def bench_function[
-        FuncType: def(mut Bencher) -> None,
+        FuncType: def(mut Bencher) raises -> None,
     ](
         mut self,
         func: FuncType,
@@ -1006,7 +1006,7 @@ struct Bench(Writable):
         self._test(func_unified)
 
     def _test[
-        FuncType: def(mut Bencher) -> None,
+        FuncType: def(mut Bencher) raises -> None,
     ](mut self, func: FuncType) raises:
         """Tests an input function by executing it only once.
 
@@ -1046,7 +1046,7 @@ struct Bench(Writable):
         self._bench(func_unified, bench_id, measures^, fixed_iterations)
 
     def _bench[
-        FuncType: def(mut Bencher) -> None,
+        FuncType: def(mut Bencher) raises -> None,
     ](
         mut self,
         func: FuncType,
@@ -1066,7 +1066,7 @@ struct Bench(Writable):
             fixed_iterations: Just run a fixed number of iterations.
         """
 
-        def bench_fn(mut b: Bencher) {ref}:
+        def bench_fn(mut b: Bencher) raises {ref}:
             """Executes benchmark for a target function.
 
             Args:

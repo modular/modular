@@ -75,6 +75,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Bencher.bench_function()` now takes a raising closure.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
