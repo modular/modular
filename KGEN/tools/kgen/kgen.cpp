@@ -395,26 +395,24 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
     MojoParserContext parserContext(mgr, config);
     MojoASTDeclRef decl = parserContext.parseFileForLSP(mgr.getMainFileID());
-    parserContext.ensureSignaturesResolved();
     if (!decl)
       return failure(clOptions.reportError("could not parse the module"));
 
-    // Run the real check pipeline on the same DCE'd per-decl clone the server
-    // checks. Pipeline failure is non-fatal (the server only debug-logs it);
-    // the emitted diagnostics are the signal.
-    OwningOpRef<ModuleOp> clone = LIT::cloneDeclModuleForCompilation(*decl);
-    (void)compiler.runCheckLITPipeline(*clone);
+    // Skip checking on a failed parse, like the actual server would do.
+    if (!sawError) {
+      // Run the real check pipeline on the same DCE'd per-decl clone the server
+      // checks. Pipeline failure is non-fatal (the server only debug-logs it).
+      OwningOpRef<ModuleOp> clone = LIT::cloneDeclModuleForCompilation(*decl);
+      (void)compiler.runCheckLITPipeline(*clone);
 
-    // Print the checked module IR (post-check, pre-elaboration) to stdout. This
-    // is the final IR the LSP path produces; `print` omits a trailing newline.
-    // Serializing it is not free (it is the whole cloned module, which for a
-    // file resolving imports from a large precompiled package can run to
-    // 10,000s of lines), so callers that only care about crashes/diagnostics
-    // and never read stdout can request -lsp=no-dump to skip it.
-    if (clOptions.cmd != Command::kLSPNoDump) {
-      clone->print(llvm::outs());
-      llvm::outs() << "\n";
+      if (clOptions.cmd != Command::kLSPNoDump) {
+        clone->print(llvm::outs());
+        llvm::outs() << "\n";
+      }
     }
+
+    parserContext.ensureSignaturesResolved();
+
     return failure(sawError);
   }
 
