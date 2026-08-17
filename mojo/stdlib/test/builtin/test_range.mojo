@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing.prop import PropTest, PropTestConfig
+from std.testing.prop.strategy import SIMD
 
 
 comptime DTYPES = [
@@ -115,6 +117,10 @@ def test_larger_than_int_max_bounds() raises:
     test(range(UInt64.MAX))
     test(range(UInt64(1), UInt64.MAX))
     test(range(UInt64(1), UInt64.MAX, UInt64(1)))
+
+    # Reversing preserves the element count, so it has to clamp the same way.
+    test(reversed(range(UInt(1), UInt.MAX, UInt(1))))
+    test(reversed(range(UInt64(1), UInt64.MAX, UInt64(1))))
 
 
 def test_range_len() raises:
@@ -230,56 +236,61 @@ def test_range_getitem_uint() raises:
 
 
 def test_range_reversed() raises:
-    # Zero starting
-    assert_equal(
-        range(10).__reversed__().start, 9, "range(10).__reversed__().start"
-    )
-    assert_equal(
-        range(10).__reversed__().end, -1, "range(10).__reversed__().end"
-    )
-    assert_equal(
-        range(10).__reversed__().step, -1, "range(10).__reversed__().step"
-    )
-    # Sequential
-    assert_equal(
-        range(5, 10).__reversed__().start, 9, "range(5,10).__reversed__().start"
-    )
-    assert_equal(
-        range(5, 10).__reversed__().end, 4, "range(5,10).__reversed__().end"
-    )
-    assert_equal(
-        range(5, 10).__reversed__().step, -1, "range(5,10).__reversed__().step"
-    )
-    # Strided
-    assert_equal(
-        range(38, -13, -23).__reversed__().start,
-        -8,
-        "range(38, -13, -23).__reversed__().start",
-    )
-    assert_equal(
-        range(38, -13, -23).__reversed__().end,
-        61,
-        "range(38, -13, -23).__reversed__().end",
-    )
-    assert_equal(
-        range(38, -13, -23).__reversed__().step,
-        23,
-        "range(38, -13, -23).__reversed__().step",
-    )
+    # `reversed()` produces exactly the forward elements in reverse order.
+    def assert_reversed_matches(start: Int, end: Int, step: Int) raises:
+        var forward = List[Int]()
+        for x in range(start, end, step):
+            forward.append(x)
+        var backward = List[Int]()
+        for x in reversed(range(start, end, step)):
+            backward.append(x)
+        assert_equal(len(backward), len(forward))
+        for i in range(len(forward)):
+            assert_equal(backward[i], forward[len(forward) - 1 - i])
 
-    # Test a reversed range's sum and length compared to the original
+    # The one- and two-argument forms reverse through their own
+    # `__reversed__`, so spell them out rather than routing through the
+    # three-argument one.
+    var zero_starting = List[Int]()
+    for x in reversed(range(10)):
+        zero_starting.append(x)
+    assert_equal(zero_starting, [9, 8, 7, 6, 5, 4, 3, 2, 1, 0])
+
+    var sequential = List[Int]()
+    for x in reversed(range(5, 10)):
+        sequential.append(x)
+    assert_equal(sequential, [9, 8, 7, 6, 5])
+
+    var empty = List[Int]()
+    for x in reversed(range(0)):
+        empty.append(x)
+    for x in reversed(range(5, 5)):
+        empty.append(x)
+    for x in reversed(range(10, 5)):
+        empty.append(x)
+    assert_equal(len(empty), 0)
+
+    # Strided, both directions
+    assert_reversed_matches(0, 10, 2)
+    assert_reversed_matches(38, -13, -23)
+    # Empty, both directions
+    assert_reversed_matches(5, 5, 1)
+    assert_reversed_matches(10, 5, 1)
+    assert_reversed_matches(5, 10, -1)
+
+    # A reversed range's sum and length match the original's.
     def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
-        var iforward = forward.__iter__()
         var ibackward = forward.__reversed__()
-        var backward = range(ibackward.start, ibackward.end, ibackward.step)
         assert_equal(
-            forward.__len__(), backward.__len__(), "len(forward), len(backward)"
+            forward.__len__(),
+            ibackward.__len__(),
+            "len(forward), len(backward)",
         )
         var forward_sum = 0
         var backward_sum = 0
-        for _ in forward:
-            forward_sum += iforward.__next__()
+        for x in forward:
+            forward_sum += x
             backward_sum += ibackward.__next__()
         assert_equal(forward_sum, backward_sum, "forward_sum, backward_sum")
 
@@ -287,8 +298,182 @@ def test_range_reversed() raises:
     for end in range(10, 13):
         test_sum_reversed(1, end, 3)
 
-    for end in range(10, 13).__reversed__():
+    for end in reversed(range(10, 13)):
         test_sum_reversed(20, end, -3)
+
+
+def _assert_scalar_reversed_matches[
+    dtype: DType, //
+](start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]) raises:
+    """Asserts `reversed()` yields the forward elements in reverse order."""
+    var forward = List[Scalar[dtype]]()
+    for x in range(start, end, step):
+        forward.append(x)
+    var backward = List[Scalar[dtype]]()
+    for x in reversed(range(start, end, step)):
+        backward.append(x)
+    assert_equal(len(backward), len(forward))
+    assert_equal(len(backward), range(start, end, step).__len__())
+    for i in range(len(forward)):
+        assert_equal(backward[i], forward[len(forward) - 1 - i])
+
+
+def test_range_reversed_scalar_at_dtype_bounds() raises:
+    # A reversed range must not depend on `start - step` being representable:
+    # these all sit within `step` of the dtype's limit (MSTDL-2973).
+    _assert_scalar_reversed_matches(Int8.MIN, Int8.MIN + 8, Int8(1))
+    _assert_scalar_reversed_matches(Int8.MIN, Int8.MIN + 12, Int8(3))
+    _assert_scalar_reversed_matches(Int8.MAX, Int8.MAX - 8, Int8(-1))
+    _assert_scalar_reversed_matches(Int16.MIN, Int16.MIN + 8, Int16(1))
+    _assert_scalar_reversed_matches(Int32.MIN, Int32.MIN + 8, Int32(1))
+    _assert_scalar_reversed_matches(Int64.MIN, Int64.MIN + 8, Int64(1))
+    _assert_scalar_reversed_matches(Int64.MAX, Int64.MAX - 8, Int64(-1))
+    _assert_scalar_reversed_matches(UInt8(0), UInt8(8), UInt8(1))
+    # Empty at the limit: the last element the reversed iterator would start
+    # from is itself outside the dtype, so it must never be materialized.
+    _assert_scalar_reversed_matches(Int8.MIN, Int8.MIN, Int8(1))
+    _assert_scalar_reversed_matches(Int8.MAX, Int8.MAX, Int8(-1))
+    _assert_scalar_reversed_matches(UInt8(0), UInt8(0), UInt8(1))
+
+
+def test_range_reversed_scalar_wide_span() raises:
+    # `end - start` overflows the dtype, so deriving the last element by
+    # snapping `end` with `%` would land the cursor off the range's grid and
+    # the reverse walk would miss `start` — wandering, or never terminating.
+    _assert_scalar_reversed_matches(Int8(-128), Int8(100), Int8(3))
+    _assert_scalar_reversed_matches(Int8(-128), Int8(120), Int8(5))
+    _assert_scalar_reversed_matches(Int8(-128), Int8(100), Int8(1))
+    _assert_scalar_reversed_matches(Int8(127), Int8(-120), Int8(-3))
+    _assert_scalar_reversed_matches(Int16.MIN, Int16(30000), Int16(3))
+
+
+def test_range_reversed_scalar_unsigned() raises:
+    # An unsigned strided range is reversible; its step keeps pointing forward.
+    _assert_scalar_reversed_matches(UInt8(0), UInt8(8), UInt8(2))
+    _assert_scalar_reversed_matches(UInt8(0), UInt8(7), UInt8(2))
+    _assert_scalar_reversed_matches(UInt8(3), UInt8(10), UInt8(1))
+    _assert_scalar_reversed_matches(UInt32(0), UInt32(10), UInt32(3))
+    # Empty, in both bound orders.
+    _assert_scalar_reversed_matches(UInt8(5), UInt8(5), UInt8(1))
+    _assert_scalar_reversed_matches(UInt8(10), UInt8(5), UInt8(1))
+    # High values, but no step that would carry the forward cursor past
+    # `UInt8.MAX` (see MSTDL-2975).
+    _assert_scalar_reversed_matches(UInt8(250), UInt8.MAX, UInt8(1))
+    _assert_scalar_reversed_matches(UInt8(248), UInt8(254), UInt8(2))
+
+
+def _prop_reversed_matches[dtype: DType](var draw: SIMD[dtype, 4]) raises:
+    comptime T = Scalar[dtype]
+    var step = (draw[1] & 7) + 1
+    # A whole number of steps, so the forward cursor lands on `end` instead of
+    # overshooting it — overshoot is a separate bug (MSTDL-2975), and drawing
+    # it here would report that one instead. Under 16 elements either way: an
+    # unbounded span would collect a `List` the size of the dtype.
+    var span = step * (draw[2] & 15)
+
+    # `start` roams the whole dtype, so `start + span` reaches past the limit.
+    _assert_scalar_reversed_matches(draw[0], draw[0] + span, step)
+
+    # A uniform draw lands within a step of the limit about 3% of the time on
+    # `Int8` and never on `Int64`, so pin the remaining triples there until a
+    # strategy can bias toward boundary values on its own (MSTDL-3095).
+    _assert_scalar_reversed_matches(T.MIN, T.MIN + span, step)
+    _assert_scalar_reversed_matches(T.MAX - span, T.MAX, step)
+    comptime if not dtype.is_unsigned():
+        _assert_scalar_reversed_matches(T.MAX, T.MAX - span, -step)
+        _assert_scalar_reversed_matches(T.MIN + span, T.MIN, -step)
+
+
+def test_range_reversed_scalar_properties() raises:
+    # The seed is pinned: a property test that picks its own seed reports a
+    # failure no one else can reproduce.
+    comptime for dtype in DTYPES:
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
+            _prop_reversed_matches[dtype]
+        ](SIMD[dtype, 4].strategy())
+
+
+def test_range_reversed_scalar_sequential() raises:
+    # The one- and two-argument scalar forms reverse to the same inclusive
+    # bound, so they hold at the dtype's limit too.
+    var descending = List[Int8]()
+    for x in reversed(range(Int8.MIN, Int8.MIN + 4)):
+        descending.append(x)
+    assert_equal(len(descending), 4)
+    assert_equal(descending[0], Int8.MIN + 3)
+    assert_equal(descending[3], Int8.MIN)
+
+    var empty = 0
+    for _ in reversed(range(Int8.MIN, Int8.MIN)):
+        empty += 1
+    assert_equal(empty, 0)
+
+    var zero_starting = List[Int8]()
+    for x in reversed(range(Int8(4))):
+        zero_starting.append(x)
+    assert_equal(len(zero_starting), 4)
+    assert_equal(zero_starting[0], Int8(3))
+    assert_equal(zero_starting[3], Int8(0))
+
+    var zero_starting_empty = 0
+    for _ in reversed(range(Int8(0))):
+        zero_starting_empty += 1
+    assert_equal(zero_starting_empty, 0)
+
+
+def test_range_reversed_bounds() raises:
+    # A reversed iterator's size hint has to shrink as it is consumed, the
+    # same as a forward one's, so collections built from it preallocate right.
+    _test_range_iter_bounds(reversed(range(10)), 10)
+    _test_range_iter_bounds(reversed(range(5, 10)), 5)
+    _test_range_iter_bounds(reversed(range(0, 10, 3)), 4)
+    _test_range_iter_bounds(reversed(range(10, 0, -3)), 4)
+    _test_range_iter_bounds(reversed(range(Int8.MIN, Int8.MIN + 8, Int8(1))), 8)
+    _test_range_iter_bounds(reversed(range(UInt8(0), UInt8(8), UInt8(2))), 4)
+    _test_range_iter_bounds(reversed(range(5, 5)), 0)
+
+
+def test_range_reversed_getitem() raises:
+    # A reversed range indexes down from its first element, so `r[i]` has to
+    # agree with the `i`th value the walk yields.
+    var ascending = reversed(range(0, 10, 3))
+    assert_equal(len(ascending), 4)
+    assert_equal(ascending[0], 9)
+    assert_equal(ascending[1], 6)
+    assert_equal(ascending[3], 0)
+
+    var descending = reversed(range(10, 0, -3))
+    assert_equal(len(descending), 4)
+    assert_equal(descending[0], 1)
+    assert_equal(descending[3], 10)
+
+    # At the dtype's limit, where the forward range's `start - step` is itself
+    # unrepresentable.
+    var at_limit = reversed(range(Int8.MIN, Int8.MIN + 8, Int8(2)))
+    assert_equal(len(at_limit), 4)
+    assert_equal(at_limit[0], Int8.MIN + 6)
+    assert_equal(at_limit[3], Int8.MIN)
+
+    var unsigned = reversed(range(UInt8(0), UInt8(8), UInt8(2)))
+    assert_equal(len(unsigned), 4)
+    assert_equal(unsigned[0], UInt8(6))
+    assert_equal(unsigned[3], UInt8(0))
+
+
+def test_range_reversed_scalar_strided() raises:
+    # Both step directions, on and off the grid.
+    _assert_scalar_reversed_matches(Int32(1), Int32(10), Int32(2))
+    _assert_scalar_reversed_matches(Int32(0), Int32(20), Int32(2))
+    _assert_scalar_reversed_matches(Int32(38), Int32(-13), Int32(-23))
+    _assert_scalar_reversed_matches(Int32(10), Int32(0), Int32(-1))
+    _assert_scalar_reversed_matches(Int32(10), Int32(0), Int32(-3))
+    # Empty in either direction.
+    _assert_scalar_reversed_matches(Int32(5), Int32(10), Int32(-1))
+    _assert_scalar_reversed_matches(Int32(10), Int32(5), Int32(1))
+    _assert_scalar_reversed_matches(Int32(5), Int32(5), Int32(1))
+    # A zero step is empty, and reversing it must not divide by it.
+    _assert_scalar_reversed_matches(Int32(5), Int32(10), Int32(0))
+    _assert_scalar_reversed_matches(UInt8(5), UInt8(10), UInt8(0))
 
 
 def test_range_reversed_float() raises:
@@ -502,6 +687,10 @@ def test_range_compile_time() raises:
 
     comptime for i in reversed(range(Int16(1), 10, 2)):
         assert_true(i >= 0)
+
+    # The reversed walk's inclusive bound has to hold at comptime too.
+    comptime for i in reversed(range(Int8.MIN, Int8.MIN + 4, Int8(1))):
+        assert_true(i <= Int8.MIN + 3)
 
     comptime for i in range(Int64(10), 1, -2):
         assert_true(i > 0)

@@ -30,19 +30,6 @@ from std.python import PythonObject
 from std.utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #
-# Utilities
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def _sign[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
-    var result = Scalar[dtype](0)
-    result = select(x > 0, Scalar[dtype](1), result)
-    result = select(x < 0, Scalar[dtype](-1), result)
-    return result
-
-
-# ===----------------------------------------------------------------------=== #
 # Range
 # ===----------------------------------------------------------------------=== #
 
@@ -59,7 +46,7 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
-    comptime ReversedType = _StridedRange[Self.dtype]
+    comptime ReversedType = _StridedRange[Self.dtype, forward=False]
     var curr: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -99,8 +86,13 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
-        return _StridedRange[Self.dtype](
-            self.end - 1, Scalar[Self.dtype](-1), Scalar[Self.dtype](-1)
+        # The reversed walk stops at an *inclusive* `0`, and `idx` starts it
+        # exhausted for an empty range, so the wrapped `end - 1` is never read.
+        return Self.ReversedType(
+            self.end - 1,
+            Scalar[Self.dtype](0),
+            Scalar[Self.dtype](1),
+            1 if self.end == 0 else 0,
         )
 
     @always_inline
@@ -120,7 +112,7 @@ struct _SequentialRange[dtype: DType = DType.int](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
-    comptime ReversedType = _StridedRange[Self.dtype]
+    comptime ReversedType = _StridedRange[Self.dtype, forward=False]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -156,8 +148,14 @@ struct _SequentialRange[dtype: DType = DType.int](
         comptime assert (
             not Self.dtype.is_unsigned()
         ), "cannot reverse an unsigned range"
-        return _StridedRange[Self.dtype](
-            self.end - 1, self.start - 1, Scalar[Self.dtype](-1)
+        # `start` is the reversed walk's *inclusive* bound, so an empty range
+        # is flagged through `idx` rather than through a `start - 1` sentinel
+        # that is unrepresentable at the dtype's lower limit.
+        return Self.ReversedType(
+            self.end - 1,
+            self.start,
+            Scalar[Self.dtype](1),
+            1 if self.start == self.end else 0,
         )
 
     @always_inline
@@ -179,10 +177,19 @@ def _fp_range_count[
     return Int(raw) if raw > 0 else 0
 
 
+# Integer ranges iterate by value: `start` is the next element, and `end` is
+# the bound it is compared against. Reverse iteration walks the same grid
+# downward, subtracting `step`, but holds `end` as the *inclusive* first
+# element of the forward range and flags exhaustion through `idx`. The
+# exclusive `start - step` sentinel it replaces is unrepresentable whenever
+# `start` sits within `step` of the dtype's limit, which silently emptied the
+# reversed iterator.
+#
 # Floating-point ranges iterate by index (`fma(k, step, start)`), avoiding
-# drift. Reverse iteration mirrors forward. One extra `Int` cursor carries
-# both position and direction; integer ranges ignore it.
-struct _StridedRange[dtype: DType = DType.int](
+# drift, with `idx` as the element cursor. Reverse iteration mirrors forward
+# bit for bit, counting `idx` down from -1 (which `__next__` maps to
+# `count - 1`).
+struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -194,11 +201,13 @@ struct _StridedRange[dtype: DType = DType.int](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
-    comptime ReversedType = Self
+    comptime ReversedType = _StridedRange[Self.dtype, forward=not Self.forward]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]
-    var idx: Int  # fp iteration cursor; sign is the direction (>= 0 fwd, < 0 rev)
+    var idx: Int
+    """Floating-point: the element cursor. Integer reverse: nonzero once
+    exhausted. Integer forward: unused, so it stays dead in the loop."""
 
     @always_inline
     def __init__(
@@ -208,7 +217,7 @@ struct _StridedRange[dtype: DType = DType.int](
         step: Scalar[Self.dtype],
         idx: Int = 0,
     ):
-        comptime if Self.dtype.is_integral():
+        comptime if Self.dtype.is_integral() and Self.forward:
             # A zero step has no direction, so the range is empty. Collapsing it
             # to a canonical empty range here keeps `__next__` from stepping in
             # place forever, and keeps `__len__`, `bounds()`, and `__reversed__`
@@ -220,7 +229,11 @@ struct _StridedRange[dtype: DType = DType.int](
             self.step = select(degenerate, Scalar[Self.dtype](1), step)
         else:
             # A zero float step is already empty by `_fp_range_count`, and the
-            # `fma` cursor needs the values as given.
+            # `fma` cursor needs the values as given. A reversed integer range
+            # needs them intact too: its `end` is an inclusive bound, so the
+            # collapse above would not describe the same empty range. It never
+            # sees a zero step regardless — the forward range it is built from
+            # has already swapped one out.
             self.start = start
             self.end = end
             self.step = step
@@ -234,7 +247,7 @@ struct _StridedRange[dtype: DType = DType.int](
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         comptime if Self.dtype.is_floating_point():
             var count = _fp_range_count(self.start, self.end, self.step)
-            if self.idx >= 0:
+            comptime if Self.forward:
                 if self.idx >= count:
                     raise StopIteration()
                 var result = fma(
@@ -249,7 +262,7 @@ struct _StridedRange[dtype: DType = DType.int](
                 var result = fma(Scalar[Self.dtype](i), self.step, self.start)
                 self.idx -= 1
                 return result
-        else:
+        elif Self.forward:
             # If the type is unsigned, then 'step' cannot be negative.
             comptime if Self.dtype.is_unsigned():
                 if self.start >= self.end:
@@ -264,43 +277,142 @@ struct _StridedRange[dtype: DType = DType.int](
             var result = self.start
             self.start += self.step
             return result
+        else:
+            if self.idx != 0:
+                raise StopIteration()
+            var result = self.start
+            # `end` is the inclusive first element of the forward range and
+            # `__reversed__` puts `start` exactly on the grid, so this fires
+            # precisely once that element has been produced. Deliberately an
+            # inequality rather than `==`: iteration terminates even if `start`
+            # were ever off-grid, and stepping is skipped at the bound so the
+            # cursor can never leave the dtype's range.
+            var at_end = select(
+                self.step > 0, self.start <= self.end, self.start >= self.end
+            )
+            if at_end:
+                self.idx = 1
+            else:
+                self.start -= self.step
+            return result
+
+    @always_inline
+    def _unsigned_count(self) -> Scalar[Self.dtype]:
+        """Returns the number of elements left, in the range's own dtype.
+
+        An unsigned range's element count can exceed `Int`, so each caller
+        decides how to report that.
+        """
+        comptime assert Self.dtype.is_unsigned(), "dtype must be unsigned"
+
+        comptime if Self.forward:
+            return select(
+                self.start < self.end,
+                ceildiv(self.end - self.start, self.step),
+                0,
+            )
+        else:
+            if self.idx != 0:
+                return 0
+            # `end` is inclusive, hence the `+ 1`. An unsigned step is never
+            # negative, so the reversed walk always has `start >= end`.
+            return (self.start - self.end) // self.step + 1
+
+    @always_inline
+    def _signed_count(self) -> Int:
+        """Returns the number of elements left."""
+        # Compute the length using `Int` so small signed dtypes whose element
+        # count exceeds the dtype's range don't overflow.
+        #
+        # TODO(MSTDL-3087): `int64` and `int` have nothing wider to widen to,
+        # so a span past `Int.MAX` wraps here and the count comes out wrong
+        # instead of asserting the way the unsigned side does.
+        comptime assert Self.dtype.is_signed(), "dtype must be signed"
+
+        var start = Int(self.start)
+        var end = Int(self.end)
+        var step = Int(self.step)
+        comptime if Self.forward:
+            # If the step is positive we want to check that the start is
+            # smaller than the end, if the step is negative we want to check
+            # the reverse. We break this into selects to avoid branches.
+            var c1 = (step > 0) & (start > end)
+            var c2 = (step < 0) & (start < end)
+            var cnd = c1 | c2
+            var numerator = abs(start - end)
+            var denominator = abs(step)
+            return ceildiv(
+                select(cnd, 0, numerator), select(cnd, 1, denominator)
+            )
+        else:
+            if self.idx != 0:
+                return 0
+            # `end` is inclusive, hence the `+ 1`.
+            return abs(start - end) // abs(step) + 1
 
     @always_inline
     def __len__(self) -> Int:
         comptime if Self.dtype.is_unsigned():
             # `bounds()` clamps an unsigned count > `Int.MAX` for the size
             # hint; `len()` must not hide that, so assert the exact count fits.
-            return _len_as_int(
-                select(
-                    self.start < self.end,
-                    ceildiv(self.end - self.start, self.step),
-                    0,
-                )
-            )
+            return _len_as_int(self._unsigned_count())
         else:
-            # Signed integer: the exact count fits in `Int`. (A float `dtype`
-            # makes `bounds()` a compile-time error, as intended.)
-            var lower, _ = self.bounds()
-            return lower
+            # Signed integer: the exact count fits in `Int` for every dtype
+            # narrower than it, and MSTDL-3087 tracks the wider ones. (A float
+            # `dtype` makes `_signed_count()` a compile-time error, as
+            # intended.)
+            return self._signed_count()
 
     @always_inline
     def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
         var i = index(idx)
         assert i < self.__len__(), "index out of range"
-        return self.start + Scalar[Self.dtype](i) * self.step
+        comptime if Self.forward:
+            return self.start + Scalar[Self.dtype](i) * self.step
+        else:
+            return self.start - Scalar[Self.dtype](i) * self.step
 
     @always_inline
     def __reversed__(self) -> Self.ReversedType:
-        comptime if Self.dtype.is_integral():
-            # Integer spacing guarantees that `end - ±step` snaps to the last
-            # produced element.
-            var shifted_end = self.end - _sign(self.step)
-            var start = shifted_end - ((shifted_end - self.start) % self.step)
-            return Self(start, self.start - self.step, -self.step)
-        else:
+        # Reversing back would have to rebuild the forward range's exclusive
+        # `end`, one step past the last element, which is exactly the value
+        # that can fall outside the dtype. So the round trip is rejected.
+        comptime assert Self.forward, "a reversed range cannot be reversed"
+
+        comptime if Self.dtype.is_floating_point():
             # Reverse starts the cursor at -1; `__next__` maps it to
             # count - 1.
-            return Self(self.start, self.end, self.step, -1)
+            return Self.ReversedType(self.start, self.end, self.step, -1)
+        # The reversed walk keeps the forward step and subtracts it, ending on
+        # `start` held as an *inclusive* bound. Its first element comes from
+        # the element count rather than from snapping `end` with `%`, because
+        # `end - start` can overflow the dtype and leave the cursor off the
+        # range's grid — which would make the walk miss `start` entirely.
+        # `count - 1` wraps when the range is empty; `idx` starts the iterator
+        # exhausted in that case, so the cursor is never read.
+        elif Self.dtype.is_unsigned():
+            var count = self._unsigned_count()
+            var last = self.start + (count - 1) * self.step
+            return Self.ReversedType(
+                select(count == 0, self.start, last),
+                self.start,
+                self.step,
+                1 if count == 0 else 0,
+            )
+        else:
+            # As above, but the count and the `start + (count - 1) * step`
+            # product are computed in `Int` so neither can overflow the dtype
+            # they are measured in.
+            var count = self._signed_count()
+            var last = Int(self.start) + (count - 1) * Int(self.step)
+            # Select before narrowing: an empty range's `last` sits one step
+            # outside the dtype, which is exactly what this all avoids.
+            return Self.ReversedType(
+                Scalar[Self.dtype](select(count == 0, Int(self.start), last)),
+                self.start,
+                self.step,
+                1 if count == 0 else 0,
+            )
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -310,31 +422,9 @@ struct _StridedRange[dtype: DType = DType.int](
             # An unsigned range's element count can exceed `Int.MAX`;
             # `_scalar_range_bounds` clamps the lower bound and reports an
             # unknown (`None`) upper bound in that case.
-            return _scalar_range_bounds(
-                select(
-                    self.start < self.end,
-                    ceildiv(self.end - self.start, self.step),
-                    0,
-                )
-            )
+            return _scalar_range_bounds(self._unsigned_count())
         else:  # is_signed
-            # Compute the length using `Int` so small signed dtypes whose
-            # element count exceeds the dtype's range don't overflow.
-            #
-            # If the step is positive we want to check that the start is
-            # smaller than the end, if the step is negative we want to check
-            # the reverse. We break this into selects to avoid branches.
-            var start = Int(self.start)
-            var end = Int(self.end)
-            var step = Int(self.step)
-            var c1 = (step > 0) & (start > end)
-            var c2 = (step < 0) & (start < end)
-            var cnd = c1 | c2
-            var numerator = abs(start - end)
-            var denominator = abs(step)
-            var length = ceildiv(
-                select(cnd, 0, numerator), select(cnd, 1, denominator)
-            )
+            var length = self._signed_count()
             return (length, {length})
 
 
