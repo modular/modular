@@ -2443,12 +2443,14 @@ struct Pointer[
         var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
         deinit_func(__get_address_as_owned_value(this._mlir_value))
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_take_pointee[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _]) -> U where type_of(self).mut:
+    def unsafe_take_pointee(
+        self,
+    ) -> Self.T where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and conforms_to(Self.T, Movable)
+    ):
         """Move the value at the pointer out, leaving it uninitialized.
 
         This performs a _consuming_ move, ending the origin of the value stored
@@ -2456,31 +2458,33 @@ struct Pointer[
         not valid. If a new valid value is stored using `unsafe_write()`, then
         reading from this pointer becomes valid again.
 
-        Parameters:
-            U: The type the pointer points to, which must be `Movable`.
-
         Returns:
             The value at the pointer.
 
         Safety:
 
-        - `self` must point to a valid, initialized instance of `U`. Calling
-          this on a pointer to uninitialized memory is undefined behavior.
+        - `self` must point to a valid, initialized instance of `Self.T`.
+          Calling this on a pointer to uninitialized memory is undefined
+          behavior.
         - This moves the pointee out without running its destructor and
           leaves the pointee memory uninitialized. Subsequent reads of this
           pointer are invalid until a new valid value is written using an
           `unsafe_write()` method.
         """
-        return __get_address_as_owned_value(self._mlir_value)
+        return __get_address_as_owned_value(
+            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        )
 
-    @__allow_legacy_custom_self_type
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_take_pointee)
-    def take_pointee[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _]) -> U where type_of(self).mut:
+    def take_pointee(
+        self,
+    ) -> Self.T where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and conforms_to(Self.T, Movable)
+    ):
         return self.unsafe_take_pointee()
 
     @always_inline
@@ -2562,11 +2566,14 @@ struct Pointer[
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_write[
-        U: Movable, //
-    ](self: Pointer[U, _], var value: U, /) where type_of(self).mut:
+    def unsafe_write(
+        self, var value: Self.T, /
+    ) where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and conforms_to(Self.T, Movable)
+    ):
         """Write `value` into the pointer location, moving from `value`.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -2586,31 +2593,32 @@ struct Pointer[
         dealloc(allocation^)
         ```
 
-        If `U` is trivially deinitializable (for example, `Int`), prefer
+        If `Self.T` is trivially deinitializable (for example, `Int`), prefer
         `write()` instead: it overwrites safely, since there's no
         destructor that a previous value could leak.
-
-        Parameters:
-            U: The type the pointer points to, which must be `Movable`.
 
         Args:
             value: The value to emplace.
 
         Safety:
 
-        - `self` must point to writable memory for `U` that does not
+        - `self` must point to writable memory for `Self.T` that does not
           currently hold a valid, live value. Writing into memory that
           already holds one overwrites it without running its destructor,
           leaking any resources it owned.
         """
-        __get_address_as_uninit_lvalue(self._mlir_value) = value^
+        __get_address_as_uninit_lvalue(
+            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        ) = (value^)
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_write[
-        U: Copyable,
-        //,
-    ](self: Pointer[U, _], *, copy: U) where type_of(self).mut:
+    def unsafe_write(
+        self, *, copy: Self.T
+    ) where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and conforms_to(Self.T, Copyable)
+    ):
         """Write a copy of `copy` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -2621,28 +2629,28 @@ struct Pointer[
         a value you copied yourself, this avoids an extra move on the callee
         side.
 
-        Parameters:
-            U: The type the pointer points to, which must be `Copyable`.
-
         Args:
             copy: The value to copy.
 
         Safety:
 
-        - `self` must point to writable memory for `U` that does not
+        - `self` must point to writable memory for `Self.T` that does not
           currently hold a valid, live value. Writing into memory that
           already holds one overwrites it without running its destructor,
           leaking any resources it owned.
         """
-        __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
+        __get_address_as_uninit_lvalue(
+            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        ) = copy.copy()
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_write_move_from[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _], src: Pointer[U, _]) where (
-        type_of(self).mut and type_of(src).mut
+    def unsafe_write_move_from(
+        self, src: Pointer[Self.T, _]
+    ) where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and type_of(src).mut
+        and conforms_to(Self.T, Movable)
     ):
         """Moves the value `src` points to into the memory location pointed to
         by `self`.
@@ -2688,18 +2696,17 @@ struct Pointer[
 
         Safety:
 
-        * `src` must point to a valid, initialized instance of `U`.
-        * `self` must point to writable memory for `U`. The pointee contents
-          of `self` should be uninitialized; if `self` was previously written
-          with a valid value, that value will be overwritten and its
+        * `src` must point to a valid, initialized instance of `Self.T`.
+        * `self` must point to writable memory for `Self.T`. The pointee
+          contents of `self` should be uninitialized; if `self` was previously
+          written with a valid value, that value will be overwritten and its
           destructor will NOT be run.
-
-        Parameters:
-            U: The type the pointer points to, which must be `Movable`.
 
         Args:
             src: Source pointer that the value will be moved from.
         """
         __get_address_as_uninit_lvalue(
-            self._mlir_value
-        ) = __get_address_as_owned_value(src._mlir_value)
+            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        ) = __get_address_as_owned_value(
+            src.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        )

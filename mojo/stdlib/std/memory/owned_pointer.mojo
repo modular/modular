@@ -218,22 +218,15 @@ struct OwnedPointer[T: AnyType](
             .unsafe_origin_cast[origin]()
         )
 
-    @__allow_legacy_custom_self_type
-    def into_inner[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
+    def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.
-
-        Parameters:
-            _T: The type of the data backing this `OwnedPointer`. `into_inner()` only exists for
-                `T: Movable` since this consuming operation only makes sense for types that you want
-                to avoid copying. For types that are `ImplicitlyCopyable` or `Copyable` you can copy
-                them through `__getitem__` as in `var v = some_ptr_var[]`.
 
         Returns:
             The data that is (was) backing the `OwnedPointer`.
         """
         var r = self._inner.unsafe_ptr().unsafe_take_pointee()
-        dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
+        dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
         return r^
 
     def unsafe_take_allocation(deinit self) -> Allocation[Self.T]:
