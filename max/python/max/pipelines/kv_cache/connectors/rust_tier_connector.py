@@ -56,11 +56,7 @@ from max.driver import (
     _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import (
-    KVCacheMemory,
-    KVHashAlgo,
-    ReplicatedKVCacheMemory,
-)
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 from ..kv_connector import BlockCount, KVConnectorTransfer
@@ -70,6 +66,26 @@ from ..paged_kv_cache.block_manager import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def host_bytes_per_page(memories: Sequence[KVCacheMemory]) -> int:
+    """Returns the width of one host block row for a replica's KV memory.
+
+    A replicated (MLA) unit contributes its stride once -- one copy is stored
+    and broadcast back on load, so counting its peers would double the pinned
+    host allocation. Must match across replicas, so a block written by one is
+    readable by another.
+
+    Args:
+        memories: One replica's offload-ready KV memory units.
+
+    Returns:
+        The per-page byte width of the shared host buffer.
+    """
+    return sum(
+        mem.bytes_per_page * (1 if mem.replicated else len(mem.buffers))
+        for mem in memories
+    )
 
 
 def _check_disk_capacity(
@@ -153,16 +169,12 @@ class RustTierConnector:
                 f"{kv_hash_algo!r}; supported: {sorted(self.supported_hash_algos)}"
             )
 
-        gpu0 = replica_kv_memory[0][0].buffer.device
+        gpu0 = replica_kv_memory[0][0].buffers[0].device
         if gpu0.is_host:
             raise ValueError("KVCacheMemory is on the CPU; cannot offload")
 
-        # bytes_per_page (host row) = sum of each unit's per-page bytes; must
-        # match across replicas so a block written by one is readable by another.
-        bytes_per_page = sum(
-            unit.buffer.shape[1] for unit in replica_kv_memory[0]
-        )
-        total_num_pages = replica_kv_memory[0][0].buffer.shape[0]
+        bytes_per_page = host_bytes_per_page(replica_kv_memory[0])
+        total_num_pages = replica_kv_memory[0][0].total_num_pages
 
         # The shared pinned host buffer the Rust lanes copy to/from. It is not
         # GC-managed (see `_unsafe_alloc_fast_pinned_buffer`), so it must be
@@ -185,29 +197,32 @@ class RustTierConnector:
         )
         host_base = self._host_buffer._data_ptr()
 
-        # Per-replica device endpoints + p2p peers (MLA) + compute streams.
+        # Walked in the producer's unit order so the endpoints line up with the
+        # host row `host_bytes_per_page` sized.
         replicas: list[_Replica] = []
-        for units in replica_kv_memory:
-            # Every buffer this replica touches (primary units + MLA peers), so
-            # we can collect each device's compute stream once.
-            peers = [
-                list(u.peers) if isinstance(u, ReplicatedKVCacheMemory) else []
-                for u in units
-            ]
-            all_buffers = [u.buffer for u in units] + [
-                p for peer_list in peers for p in peer_list
-            ]
+        for memories in replica_kv_memory:
+            units: list[_Unit] = []
+            peers: list[list[_Unit]] = []
+            for mem in memories:
+                if mem.replicated:
+                    # Stored once; the rest are H2D broadcast targets.
+                    units.append(_Unit.from_buffer(mem.buffers[0]))
+                    peers.append(
+                        [_Unit.from_buffer(b) for b in mem.buffers[1:]]
+                    )
+                else:
+                    units.extend(_Unit.from_buffer(b) for b in mem.buffers)
+                    peers.extend([] for _ in mem.buffers)
+
             compute_streams = {
                 b.device.id: b.device.default_stream.native_stream_handle
-                for b in all_buffers
+                for mem in memories
+                for b in mem.buffers
             }
             replicas.append(
                 _Replica(
-                    units=[_Unit.from_buffer(u.buffer) for u in units],
-                    peers=[
-                        [_Unit.from_buffer(p) for p in peer_list]
-                        for peer_list in peers
-                    ],
+                    units=units,
+                    peers=peers,
                     compute_streams=list(compute_streams.items()),
                 )
             )

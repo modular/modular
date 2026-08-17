@@ -29,7 +29,6 @@ Cache configuration
    KVConnectorType
    KVCacheMemory
    MultiKVCacheParams
-   ReplicatedKVCacheMemory
 
 Cache inputs
 ------------

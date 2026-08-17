@@ -168,7 +168,10 @@ def create_connector(
         # Check the KV memory's own device before the build's accelerator API,
         # so a CPU-device pipeline fails the same way on every host rather than
         # reporting "no CUDA/HIP" only on GPU-less ones.
-        if replica_kv_memory and replica_kv_memory[0][0].buffer.device.is_host:
+        if (
+            replica_kv_memory
+            and replica_kv_memory[0][0].buffers[0].device.is_host
+        ):
             raise ValueError("KVCacheMemory is on the CPU; cannot offload")
         # The Rust connector drives the GPU copy engines directly via its own
         # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not

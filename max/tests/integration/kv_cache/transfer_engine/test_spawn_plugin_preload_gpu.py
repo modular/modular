@@ -45,7 +45,7 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
     # the child mirrors the real serve worker, which is also spawn-ed.
     try:
         from max.dtype import DType
-        from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+        from max.nn.kv_cache.cache_params import KVCacheMemory
         from max.pipelines.kv_cache import KVTransferEngine
 
         device = Accelerator(0)
@@ -60,7 +60,7 @@ def _construct_engine_in_child(result_queue: mp.Queue) -> None:  # type: ignore[
         bytes_per_page = (
             blocks.num_elements * blocks.dtype.size_in_bytes // total_num_pages
         )
-        group = KVCacheMemoryGroup(
+        group = KVCacheMemory(
             replicated=False,
             buffers=[
                 blocks.view(DType.uint8, [total_num_pages, bytes_per_page])

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+    from max.nn.kv_cache.cache_params import KVCacheMemory
 
 import msgspec
 from max._core import nixl
@@ -1753,9 +1753,9 @@ class KVTransferEngine(TransferEngine):
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
     The engine accepts per-replica producer-authored NIXL groups
-    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup`).  The outer list
-    is indexed by DP replica; the inner list is that replica's group list — one
-    group per logical ``(child, kind)`` tensor, from ``to_memory_groups()``.
+    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
+    indexed by DP replica; the inner list is that replica's group list — one
+    group per logical ``(child, kind)`` tensor, from ``to_memory()``.
 
     ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
 
@@ -1775,7 +1775,7 @@ class KVTransferEngine(TransferEngine):
     def __init__(
         self,
         name: str,
-        memory: Sequence[Sequence[KVCacheMemoryGroup]],
+        memory: Sequence[Sequence[KVCacheMemory]],
     ) -> None:
         """Initialize the transfer engine from producer-authored NIXL groups.
 
@@ -1783,9 +1783,9 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup` — one
+                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one
                 logical ``(child, kind)`` tensor carrying every TP-shard view,
-                as returned by ``KVCacheBuffer.to_memory_groups()``.  All
+                as returned by ``KVCacheBuffer.to_memory()``.  All
                 replicas must have the same group count and consistent
                 replication kind.  The page count (including the null block) is
                 read from the groups themselves, so every group must agree on
@@ -1963,7 +1963,7 @@ class KVTransferEngine(TransferEngine):
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Calls ``KVCacheBuffer.to_memory_groups()`` on each replica's device
+        Calls ``KVCacheBuffer.to_memory()`` on each replica's device
         buffer to obtain the producer-authored NIXL groups, then passes them to
         the constructor, which carries each group's ``replicated`` field as
         ``replicated_per_group``.
@@ -1973,7 +1973,7 @@ class KVTransferEngine(TransferEngine):
         group(s) so that heterogeneous buffer shapes (e.g., 61-layer MLA target
         vs. 1-layer Eagle draft) are registered as independent NIXL groups.
 
-        Quantized caches (values + scales): ``to_memory_groups()`` authors a
+        Quantized caches (values + scales): ``to_memory()`` authors a
         separate group for values and for scales (one group per child x kind).
         For non-quantized caches this collapses to one group per child, which is
         byte-identical to the previous ``all_buffers`` path.
@@ -1983,5 +1983,5 @@ class KVTransferEngine(TransferEngine):
 
         return cls(
             name=name,
-            memory=[buf.to_memory_groups() for buf in device_buffers],
+            memory=[buf.to_memory() for buf in device_buffers],
         )

@@ -703,15 +703,17 @@ class BlockManager:
         dst_pages: list[Buffer] = []
         src_pages: list[Buffer] = []
         for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
+            # Every shard is fanned out with an independent point-to-point copy
+            # (no broadcast collective).
             for src_buf, dst_buf in zip(
-                src_unit.all_buffers, dst_unit.all_buffers, strict=True
+                src_unit.buffers, dst_unit.buffers, strict=True
             ):
                 for dst_id, src_id in block_id_pairs:
                     dst_pages.append(dst_buf[dst_id, :])
                     src_pages.append(src_buf[src_id, :])
             self._metrics.cross_replica_bytes_copied += (
-                src_unit.buffer.shape[1]
-                * len(src_unit.all_buffers)
+                src_unit.bytes_per_page
+                * len(src_unit.buffers)
                 * len(block_id_pairs)
             )
 
