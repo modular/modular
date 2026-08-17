@@ -81,7 +81,8 @@ static void addTypeConversionDetail(MojoInflightDiag &diag,
 static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
                                             ASTExprAnd<AnyValue> operand,
                                             RefType argType,
-                                            SharedState &shared) {
+                                            SharedState &shared,
+                                            ASTDecl &declScope) {
   diag << "ref " << ASTType(argType.getElementType());
 
   auto loc = operand.expr->getLoc();
@@ -107,11 +108,15 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
                          << " doesn't match expected address space "
                          << argType.getAddressSpace();
   } else if (!IREmitter::canZeroCostConvert(operandRefTy.getOriginType(),
-                                            argType.getOriginType(), shared)) {
+                                            argType.getOriginType(), shared,
+                                            declScope)
+                  .isTrue()) {
     diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
                          << argType.isMutable();
-  } else if (!IREmitter::canZeroCostConvert(operandRefTy, argType, shared)) {
+  } else if (!IREmitter::canZeroCostConvert(operandRefTy, argType, shared,
+                                            declScope)
+                  .isTrue()) {
     auto operandO = operandRefTy.getOrigin();
     auto argO = argType.getOrigin();
     // Strip off mutcasts etc - if the origins still differ we can complain
@@ -154,7 +159,7 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
 void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
                        ASTType expectedType, size_t argIdx,
                        PogListAttr argListAttr, CallSyntax syntax,
-                       SharedState &shared) {
+                       SharedState &shared, ASTDecl &declScope) {
   // Special case implicit conversions with a custom message.
   if (syntax == CallSyntax::kImplicitConvert) {
     if (ASTType type = operand.ir.getRValueTypeIfResolvable())
@@ -187,7 +192,7 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
   diag << " to ";
 
   if (auto refType = sugarDynCast<RefType>(expectedType)) {
-    diagnoseFailedRefTypeConversion(diag, operand, refType, shared);
+    diagnoseFailedRefTypeConversion(diag, operand, refType, shared, declScope);
     return;
   }
 

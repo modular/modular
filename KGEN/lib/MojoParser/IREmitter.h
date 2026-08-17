@@ -158,17 +158,28 @@ public:
   /// a rebind operation to convert it.
   Value emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc);
 
-  /// Returns true if a value of the specified type can be coerced to the other
-  /// type with a zero-cost conversion like a rebind.  This means that values of
-  /// the two types have exactly the same representation post-elaboration.
-  static bool canZeroCostConvert(ASTType fromType, ASTType toType,
-                                 SharedState &shared);
+  /// Returns whether a value of the specified type can be coerced to the other
+  /// type with a zero-cost conversion like a rebind, meaning values of the two
+  /// types have exactly the same representation post-elaboration:
+  ///   - `yes`     the conversion is free (including shedding generator body
+  ///               constraints that `declScope` proves).
+  ///   - `no`      the representations differ, or a generator body constraint
+  ///               is unprovable or refuted in `declScope`.
+  ///
+  /// `declScope` supplies the `where` assumptions used to discharge generator
+  /// body constraints; `additionalAssumptions` are extra facts to consider
+  /// alongside it.
+  static TriState
+  canZeroCostConvert(ASTType fromType, ASTType toType, SharedState &shared,
+                     ASTDecl &declScope,
+                     ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
-  /// Returns true if a value of the specified type can be coerced to the other
-  /// type with a zero-cost conversion like a rebind.  This means that values of
-  /// the two types have exactly the same representation post-elaboration.
-  bool canZeroCostConvert(ASTType fromType, ASTType toType) {
-    return canZeroCostConvert(fromType, toType, shared);
+  /// Same as the above, using this emitter's shared state and scope.
+  TriState
+  canZeroCostConvert(ASTType fromType, ASTType toType,
+                     ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
+    return canZeroCostConvert(fromType, toType, shared, declScope,
+                              additionalAssumptions);
   }
 
   // Returns the upcastability verdict for converting a type value to a trait:

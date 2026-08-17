@@ -40,6 +40,13 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Binding a constrained function to a function type that declares no matching
+  `where` clause is now an error, instead of silently dropping the constraint.
+  Declare the obligation on the function type (now that a `thin` function type
+  can carry a trailing `where` clause) or bind a function that does not require
+  it. Passing an unconstrained function where a constrained type is expected is
+  still allowed and still free.
+
 - Renamed the `@parameter` decorator on parametric closures to
   `@__parameter`. The deprecated `@parameter if` / `@parameter for`
   forms are unchanged; prefer `comptime if` / `comptime for` for
