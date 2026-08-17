@@ -107,20 +107,20 @@ tryConcretizeDeferredType(Type type,
 /// parameters.  This fails if an unknown parameter expression exists.
 void KGEN::collectParameterReferences(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &results,
-    bool &hasConstExpr, size_t &requiredSignatureDepth) {
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  c.collectUsesFromAttr(attr, results, hasConstExpr, requiredSignatureDepth);
+  c.collectUsesFromAttr(attr, results, hasCtxEvalExpr, requiredSignatureDepth);
 }
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
 /// references to named parameters.
 void KGEN::collectParameterReferences(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr,
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   ParameterCollector::Analysis cache;
   ParameterCollector c(cache);
-  c.collectUsesFromType(type, results, hasConstExpr, requiredSignatureDepth);
+  c.collectUsesFromType(type, results, hasCtxEvalExpr, requiredSignatureDepth);
 }
 
 /// Return true if the specified type contains parameter references, e.g.
@@ -130,11 +130,11 @@ void KGEN::collectParameterReferences(
 /// caching.
 bool KGEN::isParameterizedType(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
-  bool hasConstExpr = false;
+  bool hasCtxEvalExpr = false;
   size_t requiredSignatureDepth = 0;
-  collectParameterReferences(type, paramDecls, hasConstExpr,
+  collectParameterReferences(type, paramDecls, hasCtxEvalExpr,
                              requiredSignatureDepth);
-  return !paramDecls.empty() || hasConstExpr || requiredSignatureDepth != 0;
+  return !paramDecls.empty() || hasCtxEvalExpr || requiredSignatureDepth != 0;
 }
 
 //===----------------------------------------------------------------------===//

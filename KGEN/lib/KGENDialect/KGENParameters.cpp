@@ -112,11 +112,11 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 //===----------------------------------------------------------------------===//
 
 void ParameterCollector::collectUsesFromAttr(
-    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth) {
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth);
+    collectUsesFromAttrImpl(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
     signatures.pop_back();
     // The result is intrinsic to `attr` itself; stepping out one signature
     // scope reduces the required surrounding depth by one.
@@ -124,19 +124,19 @@ void ParameterCollector::collectUsesFromAttr(
       --requiredSignatureDepth;
     return;
   }
-  collectUsesFromAttrImpl(attr, uses, hasConstExpr, requiredSignatureDepth);
+  collectUsesFromAttrImpl(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
 }
 
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromAttrImpl(
-    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
-    size_t &requiredSignatureDepth) {
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
   if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
-    hasConstExpr |= it->second.hasConstExpr;
+    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
     requiredSignatureDepth =
         std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
     return;
@@ -144,14 +144,14 @@ void ParameterCollector::collectUsesFromAttrImpl(
 
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
-    collectUsesFromAttr(sugar.getCanonical(), uses, hasConstExpr,
+    collectUsesFromAttr(sugar.getCanonical(), uses, hasCtxEvalExpr,
                         requiredSignatureDepth);
     return;
   }
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    collectUsesFromType(paramRef.getType(), uses, hasConstExpr,
+    collectUsesFromType(paramRef.getType(), uses, hasCtxEvalExpr,
                         requiredSignatureDepth);
     uses.push_back(paramRef);
     return;
@@ -160,7 +160,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // Verify index parameter references.
   // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
-    collectUsesFromType(indexRef.getType(), uses, hasConstExpr,
+    collectUsesFromType(indexRef.getType(), uses, hasCtxEvalExpr,
                         requiredSignatureDepth);
     // Intrinsic requirement for this sub-expression: a ref with depth D needs
     // at least D+1 enclosing signature scopes around itself to be valid.
@@ -231,18 +231,18 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
   // Parameterized type constants are by definition unresolved expressions.
-  bool hasNestedConstExpr = false;
+  bool hasNestedCtxEvalExpr = false;
   size_t nestedRequiredDepth = 0;
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
+        collectUsesFromAttr(attr, uses, hasNestedCtxEvalExpr,
                             nestedRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr,
+        collectUsesFromType(type, uses, hasNestedCtxEvalExpr,
                             nestedRequiredDepth);
       });
 
@@ -250,22 +250,23 @@ void ParameterCollector::collectUsesFromAttrImpl(
   // in the future.
   if (oldSize == uses.size() && !nestedRequiredDepth) {
     // Check whether this is a parameterless expression.
-    hasNestedConstExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
+    hasNestedCtxEvalExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
     cache.parameterLess.try_emplace(
         attr.getAsOpaquePointer(),
-        Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
-    hasConstExpr |= hasNestedConstExpr;
+        Analysis::ParameterlessInfo{hasNestedCtxEvalExpr, nestedRequiredDepth});
+    hasCtxEvalExpr |= hasNestedCtxEvalExpr;
   }
   requiredSignatureDepth =
       std::max(requiredSignatureDepth, nestedRequiredDepth);
 }
 
 void ParameterCollector::collectUsesFromType(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig.getInputParamTypes());
-    collectUsesFromTypesImpl(type, uses, hasConstExpr, requiredSignatureDepth);
+    collectUsesFromTypesImpl(type, uses, hasCtxEvalExpr,
+                             requiredSignatureDepth);
     signatures.pop_back();
     // The result is intrinsic to `type` itself; stepping out one signature
     // scope reduces the required surrounding depth by one.
@@ -273,17 +274,17 @@ void ParameterCollector::collectUsesFromType(
       --requiredSignatureDepth;
     return;
   }
-  return collectUsesFromTypesImpl(type, uses, hasConstExpr,
+  return collectUsesFromTypesImpl(type, uses, hasCtxEvalExpr,
                                   requiredSignatureDepth);
 }
 
 void ParameterCollector::collectUsesFromTypesImpl(
-    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr,
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   // Ignore types we have already scanned.
   if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
-    hasConstExpr |= it->second.hasConstExpr;
+    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
     requiredSignatureDepth =
         std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
     return;
@@ -296,10 +297,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
   size_t oldSize = uses.size();
-  // Types that reference external symbols must be treated as implicitly
-  // parametric because the external type definition could contain parametric
-  // types. We don't want to assume that the type is concrete.
-  bool hasNestedConstExpr = isa<StructTypeInterface>(type);
+  bool hasNestedConstExpr = false;
   size_t nestedRequiredDepth = 0;
 
   // Recursively check for any nested types, e.g. the input/outputs of a
@@ -321,7 +319,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
     cache.parameterLess.try_emplace(
         type.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
-    hasConstExpr |= hasNestedConstExpr;
+    hasCtxEvalExpr |= hasNestedConstExpr;
   }
   requiredSignatureDepth =
       std::max(requiredSignatureDepth, nestedRequiredDepth);
@@ -602,16 +600,16 @@ void impl::scanAllAttrsAndTypes(Operation *op,
 static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
                         Operation *op, bool isDefOrDecl) {
   // Track whether parameter uses or expressions were found.
-  bool hasConstExpr = false;
+  bool hasCtxEvalExpr = false;
   // Ignored. Free index refs are verified and errors in the collector.
   size_t requiredSignatureDepth = 0;
   SmallVector<ParamDeclRefAttr> uses;
 
   auto scanAttr = [&](Attribute attr) {
-    c.collectUsesFromAttr(attr, uses, hasConstExpr, requiredSignatureDepth);
+    c.collectUsesFromAttr(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
   };
   auto scanType = [&](Type type) {
-    c.collectUsesFromType(type, uses, hasConstExpr, requiredSignatureDepth);
+    c.collectUsesFromType(type, uses, hasCtxEvalExpr, requiredSignatureDepth);
   };
 
   auto itf = dyn_cast<ParamOpInterface>(op);
@@ -642,7 +640,7 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   };
 
   // If the operation is parametric, add it to the list.
-  if (hasConstExpr || !uses.empty()) {
+  if (hasCtxEvalExpr || !uses.empty()) {
     if (!isDefOrDecl)
       g.paramOps.push_back(op);
     g.opUses[op] = std::move(uses);

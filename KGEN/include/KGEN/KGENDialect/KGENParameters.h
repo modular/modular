@@ -185,7 +185,7 @@ public:
 
     /// Cached facts for parameterless attributes and types.
     struct ParameterlessInfo {
-      bool hasConstExpr = false;
+      bool hasCtxEvalExpr = false;
       /// Intrinsic requirement of this sub-expression: minimum number of
       /// surrounding signature scopes needed for it to be valid.
       size_t requiredSignatureDepth = 0;
@@ -223,11 +223,11 @@ public:
 private:
   void collectUsesFromAttrImpl(Attribute attr,
                                SmallVectorImpl<ParamDeclRefAttr> &uses,
-                               bool &hasConstExpr,
+                               bool &hasCtxEvalExpr,
                                size_t &requiredSignatureDepth);
   void collectUsesFromTypesImpl(Type type,
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
-                                bool &hasConstExpr,
+                                bool &hasCtxEvalExpr,
                                 size_t &requiredSignatureDepth);
 
   /// The first time we encounter an attribute with a reference to an

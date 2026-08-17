@@ -999,6 +999,44 @@ struct TypeList[
         +Self.Trait,
     ]
 
+    comptime _DiscardIndexWrapper[
+        FromAndTo: AnyType,
+        ToWrap: __generator_type[Prev: FromAndTo, From: Self.Trait] FromAndTo,
+        PrevV: FromAndTo,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: Int,
+    ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
+
+    comptime _IndexToIntWrap[
+        ReduceT: AnyType,
+        ToWrap: __generator_type[
+            Prev: ReduceT, From: _MLIR.KGENParamListType[Self.Trait], Idx: Int
+        ] ReduceT,
+        PrevV: ReduceT,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+
+    comptime reduce[
+        FromAndTo: AnyType,
+        //,
+        BaseVal: FromAndTo,
+        Reducer: __generator_type[Prev: FromAndTo, From: Self.Trait] FromAndTo,
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
+        `,`,
+        Self.values,
+        `,`,
+        Self._IndexToIntWrap[
+            FromAndTo,
+            Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
+            ...,
+        ],
+        `> : `,
+        +FromAndTo,
+    ]
+
     @always_inline("builtin")
     def __init__(out self):
         pass
@@ -1024,6 +1062,32 @@ struct TypeList[
         `#kgen.is_refined_type<`, existing.Trait, `, `, Self.Trait, `>`
     ]:
         pass
+
+    comptime _ContainsTypePredicate[
+        search: AnyType,
+        element: Self.Trait,
+    ] = element == search
+
+    comptime _AnySatisfiesReducer[
+        predicate: __generator_type[Type: Self.Trait] Bool,
+        last_value: Bool,
+        this_element: Self.Trait,
+    ] = last_value or predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def any[
+        predicate: __generator_type[Type: Self.Trait] Bool,
+    ]() -> Bool:
+        return Self.reduce[
+            False,
+            Self._AnySatisfiesReducer[predicate, ...],
+        ]
+
+    @always_inline("builtin")
+    @staticmethod
+    def contains[type: AnyType]() -> Bool:
+        return Self.any[Self._ContainsTypePredicate[type, ...],]()
 
     comptime tabulate[
         Trait: type_of(AnyType),
@@ -1174,11 +1238,6 @@ struct VariadicList[
     ](ref[self_origin] self) -> _VariadicListIter[
         Self.element_type, Self.origin, self_origin, Self.is_owned
     ]:
-        """Iterate over the list.
-
-        Returns:
-            An iterator to the start of the list.
-        """
         return {0, self}
 
 
