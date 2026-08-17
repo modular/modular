@@ -45,7 +45,7 @@ namespace M::KGEN {
 /// expression exists.
 void collectParameterReferences(Attribute attr,
                                 SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasConstExpr,
+                                bool &hasCtxEvalExpr,
                                 size_t &requiredSignatureDepth);
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
@@ -54,7 +54,7 @@ void collectParameterReferences(Attribute attr,
 /// invalid parameter expression exists.
 void collectParameterReferences(Type type,
                                 SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasConstExpr,
+                                bool &hasCtxEvalExpr,
                                 size_t &requiredSignatureDepth);
 
 /// Return true if the specified type contains parameter references, e.g.
