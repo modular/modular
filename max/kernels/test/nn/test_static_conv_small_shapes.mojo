@@ -16,7 +16,7 @@
 from std.math import ceildiv
 from std.sys.info import simd_width_of
 
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Coord, IntTuple, Layout, LayoutTensor
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import ConvShape, get_micro_kernel_shape
 
@@ -75,16 +75,16 @@ def static_conv(
 ):
     var conv_shape = ConvShape[2](
         n=N,
-        input_dims=Index(H, W),
-        output_dims=Index(HO, WO),
-        filter_dims=Index(R, S),
+        input_dims=Coord(Index(H, W)),
+        output_dims=Coord(Index(HO, WO)),
+        filter_dims=Coord(Index(R, S)),
         c=C,
         f=F,
-        stride=Index(stride_h, stride_w),
-        dilation=Index(dilation_h, dilation_w),
-        pad_d=Index(0, 0),
-        pad_h=Index(pad_bottom, pad_top),
-        pad_w=Index(pad_left, pad_right),
+        stride=Coord(Index(stride_h, stride_w)),
+        dilation=Coord(Index(dilation_h, dilation_w)),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(Index(pad_bottom, pad_top)),
+        pad_w=Coord(Index(pad_left, pad_right)),
         num_groups=num_groups,
     )
 

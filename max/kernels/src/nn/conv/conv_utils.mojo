@@ -85,29 +85,29 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     def __init__(
         out self,
         n: Int,
-        input_dims: IndexList[Self.rank],
-        output_dims: IndexList[Self.rank],
-        filter_dims: IndexList[Self.rank],
+        input_dims: DynamicCoord[DType.int64, Self.rank],
+        output_dims: DynamicCoord[DType.int64, Self.rank],
+        filter_dims: DynamicCoord[DType.int64, Self.rank],
         c: Int,
         f: Int,
-        stride: IndexList[Self.rank],
-        dilation: IndexList[Self.rank],
-        pad_d: IndexList[2],
-        pad_h: IndexList[2],
-        pad_w: IndexList[2],
+        stride: DynamicCoord[DType.int64, Self.rank],
+        dilation: DynamicCoord[DType.int64, Self.rank],
+        pad_d: DynamicCoord[DType.int64, 2],
+        pad_h: DynamicCoord[DType.int64, 2],
+        pad_w: DynamicCoord[DType.int64, 2],
         num_groups: Int,
     ):
         self.n = n
-        self.input_dims = Coord(input_dims)
-        self.output_dims = Coord(output_dims)
-        self.filter_dims = Coord(filter_dims)
+        self.input_dims = input_dims
+        self.output_dims = output_dims
+        self.filter_dims = filter_dims
         self.c = c
         self.f = f
-        self.stride = Coord(stride)
-        self.dilation = Coord(dilation)
-        self.pad_d = Coord(pad_d)
-        self.pad_h = Coord(pad_h)
-        self.pad_w = Coord(pad_w)
+        self.stride = stride
+        self.dilation = dilation
+        self.pad_d = pad_d
+        self.pad_h = pad_h
+        self.pad_w = pad_w
         self.num_groups = num_groups
 
     @always_inline
@@ -378,18 +378,26 @@ def get_conv_shape[
     Returns:
         A populated `ConvShape` describing the convolution dimensions.
     """
-    var output_dims = IndexList[rank](0)
-    var input_dims = IndexList[rank](0)
-    var filter_dims = IndexList[rank](0)
+    var output_dims = DynamicCoord[DType.int64, rank]()
+    var input_dims = DynamicCoord[DType.int64, rank]()
+    var filter_dims = DynamicCoord[DType.int64, rank]()
 
     comptime for i in range(rank):
-        output_dims[i] = Int(output.dim[i + 1]())
-        input_dims[i] = Int(input.dim[i + 1]())
+        output_dims[i] = rebind[output_dims.element_types[i]](
+            Scalar[DType.int64](output.dim[i + 1]())
+        )
+        input_dims[i] = rebind[input_dims.element_types[i]](
+            Scalar[DType.int64](input.dim[i + 1]())
+        )
 
         comptime if filter_packed:
-            filter_dims[i] = Int(filter.dim[i + 1]())
+            filter_dims[i] = rebind[filter_dims.element_types[i]](
+                Scalar[DType.int64](filter.dim[i + 1]())
+            )
         else:
-            filter_dims[i] = Int(filter.dim[i]())
+            filter_dims[i] = rebind[filter_dims.element_types[i]](
+                Scalar[DType.int64](filter.dim[i]())
+            )
 
     return ConvShape[rank](
         n=Int(input.dim[0]()),
@@ -398,11 +406,11 @@ def get_conv_shape[
         filter_dims=filter_dims,
         c=Int(input.dim[rank + 1]()),
         f=Int(output.dim[rank + 1]()),
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 

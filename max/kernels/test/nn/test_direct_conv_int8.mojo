@@ -15,7 +15,7 @@ from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import num_physical_cores, simd_width_of
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, Layout, LayoutTensor, RuntimeLayout
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -66,16 +66,16 @@ def test[
 
     var conv_shape = ConvShape[2](
         n=N,
-        input_dims=Index(H, W),
-        output_dims=Index(HO, WO),
-        filter_dims=Index(R, S),
+        input_dims=Coord(Index(H, W)),
+        output_dims=Coord(Index(HO, WO)),
+        filter_dims=Coord(Index(R, S)),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=Index(0, 0),
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=1,
     )
 
