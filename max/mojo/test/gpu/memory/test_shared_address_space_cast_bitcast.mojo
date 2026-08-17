@@ -45,9 +45,9 @@ def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
         out_ptr[unsafe_offset=1] = halves[unsafe_offset=1]
 
 
-# CHECK-LABEL: == test_gpu_shared_address_space_cast_bitcast
+# CHECK-LABEL: == test_shared_address_space_cast_bitcast
 def main() raises:
-    print("== test_gpu_shared_address_space_cast_bitcast")
+    print("== test_shared_address_space_cast_bitcast")
 
     with DeviceContext() as ctx:
         var out_device = ctx.enqueue_create_buffer[DType.uint16](2)
