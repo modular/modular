@@ -19,7 +19,6 @@ import os
 
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.lib.vision_encoder_cache import VisionCachePlan
 from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
 
@@ -538,14 +537,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "keep entries until the budget evicts them. Only used by VLMs."
         ),
     )
-
-    _vision_cache_plan: VisionCachePlan | None = PrivateAttr(default=None)
-    """Resolved block-mode vision cache reservation.
-
-    Set by memory estimation when ``experimental_vision_cache_utilization``
-    reserves a block budget: the per-device byte grant plus the memory
-    planner's ``(hidden_size, dtype)`` row spec. ``None`` keeps the legacy
-    entry-count cache."""
 
     denoising_cache: DenoisingCacheConfig = Field(
         default_factory=DenoisingCacheConfig,
