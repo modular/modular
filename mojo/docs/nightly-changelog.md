@@ -75,6 +75,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `Dict.unsafe_pop()` which returns `Optional[V]` instead of raising,
+  enabling non-raising key removal patterns.
+
+## Tooling changes
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
