@@ -389,11 +389,6 @@ ErrorOrSuccess InterpreterState::copyMarkedRegions(int64_t srcAddr,
                                                    size_t len) {
   if (!len)
     return success();
-  // No need to copy non-heap allocated blobs because they
-  // will not be materialized as new allocations at LLVM lowering time.
-  if (!getTable(MemoryKind::Heap).contains(srcAddr))
-    return success();
-
   ErrorOr<std::pair<MemoryBlob &, int64_t>> srcResult = getMemory(srcAddr, len);
   if (srcResult.isError())
     return srcResult.takeError();
