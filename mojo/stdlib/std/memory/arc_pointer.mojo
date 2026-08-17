@@ -168,11 +168,10 @@ struct ArcPointer[T: Movable & Deinitable](
     the underlying data, but references returned to the underlying data are not
     thread-safe.
 
-    Subscripting an `ArcPointer` (`ptr[]`) returns a mutable reference to the
-    stored value. This is the only safe way to access the stored value. Other
-    methods, such as using the `unsafe_ptr()` method to retrieve an unsafe
-    pointer to the stored value, or accessing the private fields of an
-    `ArcPointer`, are unsafe and may result in memory errors.
+    Subscripting an `ArcPointer` (`arc[]`) returns a mutable reference to the
+    stored value. Use `ptr()` to get an immutable pointer to the stored
+    value. Accessing the private fields of an `ArcPointer` is unsafe and may
+    result in memory errors.
 
     For a comparison with other pointer types, see [Intro to
     pointers](/docs/manual/pointers/) in the Mojo Manual.
@@ -307,6 +306,30 @@ struct ArcPointer[T: Movable & Deinitable](
         """
         return self._inner[].payload_ref()
 
+    def ptr[
+        origin: Origin, //
+    ](ref[origin] self) -> ImmPointer[Self.T, ImmOrigin(origin)]:
+        """Returns an immutable pointer to the managed value.
+
+        An `ArcPointer` may be shared across threads, so this always returns
+        an immutable pointer to prevent data races, regardless of whether
+        `self` is borrowed mutably. Use `[]` for mutable access to the
+        managed value.
+
+        Parameters:
+            origin: The origin of the pointer.
+
+        Returns:
+            An immutable pointer to the managed value.
+        """
+        return (
+            Pointer(to=self._inner[].payload_ref())
+            .as_imm()
+            .unsafe_origin_cast[ImmOrigin(origin)]()
+        )
+
+    @doc_hidden
+    @deprecated(use=ptr)
     def unsafe_ptr[
         mut: Bool,
         origin: Origin[mut=mut],
@@ -321,7 +344,6 @@ struct ArcPointer[T: Movable & Deinitable](
         Returns:
             A `Pointer` to the pointee.
         """
-        # TODO: consider removing this method.
         return (
             Pointer(to=self._inner[].payload_ref())
             .unsafe_mut_cast[mut]()

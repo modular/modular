@@ -1796,7 +1796,7 @@ def mogg_async_error(
         error_message = "\n" + source_notes + "\n\n" + error_message
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        error_message.as_c_string_slice().unsafe_ptr(),
+        error_message.as_c_string_slice(),
         error_message.byte_length(),
     )
 

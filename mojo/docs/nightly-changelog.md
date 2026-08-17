@@ -154,6 +154,10 @@ This version is still a work in progress.
   mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
   is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
 
+- Added `ptr()` to `StringLiteral`, `CStringSlice`, `ArcPointer`, and
+  `OwnedPointer`, deprecating their `unsafe_ptr()` methods. These types
+  always hold a valid, live value, so a pointer to it is never unsafe.
+
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
 

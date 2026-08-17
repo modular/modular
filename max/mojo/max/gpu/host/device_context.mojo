@@ -202,7 +202,7 @@ comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 def _string_from_owned_charptr(c_str: _CString) -> String:
     var result = String()
     if c_str:
-        result = String(unsafe_from_utf8_ptr=c_str.unsafe_value().unsafe_ptr())
+        result = String(unsafe_from_utf8_ptr=c_str.unsafe_value().ptr())
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
     external_call["AsyncRT_DeviceContext_strfree", NoneType](c_str)
     return result^
@@ -3920,11 +3920,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "AsyncRT_DeviceContext_create",
                 _CString[],
                 Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
-                Pointer[c_char, ImmutAnyOrigin],
+                CStringSlice[ImmOrigin(origin_of(api))],
                 Int32,
             ](
                 Pointer(to=result),
-                api.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+                api.as_c_string_slice(),
                 Int32(device_id),
             )
         )

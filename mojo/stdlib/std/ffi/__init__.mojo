@@ -627,7 +627,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         var fspath = path.__fspath__()
         var file = (
             fspath.as_c_string_slice()
-            .unsafe_ptr()
+            .ptr()
             .as_imm()
             .unsafe_origin_cast[ImmUntrackedOrigin]()
         )
@@ -664,7 +664,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var opaque_function_ptr = dlsym(
             self.handle,
-            name.as_c_string_slice().unsafe_ptr(),
+            name.as_c_string_slice().ptr(),
         )
 
         return Bool(opaque_function_ptr)
@@ -823,7 +823,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
         var res: Optional[Pointer[result_type, MutUntrackedOrigin]] = dlsym[
             result_type
-        ](self.handle, cstr_name.unsafe_ptr())
+        ](self.handle, cstr_name.ptr())
 
         if not res:
             # Result is NULL — check if it's an error or a valid NULL symbol.
@@ -1156,7 +1156,7 @@ def external_call[
     # int open(const char *path, int oflag, ...);
     var path_str = path
     var fd = external_call["open", c_int, num_fixed_args=2](
-        path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
+        path_str.as_c_string_slice(), c_int(flags), c_int(0o666)
     )
     ```
 
