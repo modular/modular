@@ -53,6 +53,7 @@ from max.nn.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
 )
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .layers.attention import InklingAttention, log_scaling_tau
 from .layers.moe import InklingGate, InklingMoE
@@ -428,6 +429,8 @@ class Inkling(Module):
         input_row_offsets: TensorValue,
         positions: TensorValue,
         return_n_logits: TensorValue,
+        image_embeddings: TensorValue,
+        image_indices: TensorValue,
         signal_buffers: list[BufferValue],
         kv_collections: dict[str, list[PagedCacheValues]],
         slot_idx: list[TensorValue],
@@ -450,6 +453,10 @@ class Inkling(Module):
             log_scaling = [self._log_scaling(positions)]
         if self.embed_norm_shards:
             hs = forward_sharded_layers(self.embed_norm_shards, hs)
+        # Merged after the embedding norm, so the tower's rows skip it.
+        hs = self._merge_images(
+            hs, image_embeddings, image_indices, signal_buffers
+        )
 
         num_devices = self.num_devices
 
@@ -517,6 +524,31 @@ class Inkling(Module):
             n_floor=self.text_config.log_scaling_n_floor,
         )
 
+    def _merge_images(
+        self,
+        hs: list[TensorValue],
+        embeddings: TensorValue,
+        indices: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Overwrites each placeholder row with its vision-tower row."""
+        if self.num_devices > 1:
+            embeddings_per_rank = ops.distributed_broadcast(
+                embeddings, signal_buffers
+            )
+            indices_per_rank = ops.distributed_broadcast(
+                indices, signal_buffers
+            )
+        else:
+            embeddings_per_rank = [embeddings]
+            indices_per_rank = [indices]
+        return [
+            merge_multimodal_embeddings(h, rank_embeddings, rank_indices)
+            for h, rank_embeddings, rank_indices in zip(
+                hs, embeddings_per_rank, indices_per_rank, strict=True
+            )
+        ]
+
     def _lm_head(self, h: TensorValue) -> TensorValue:
         return self._mask_padded_tail(self.unembed(h))
 
@@ -570,6 +602,14 @@ class Inkling(Module):
             TensorType(
                 DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             ),
+            TensorType(
+                self.dtype,
+                shape=["total_image_tokens", self.text_config.hidden_size],
+                device=device,
+            ),
+            TensorType(
+                DType.int32, shape=["total_image_tokens"], device=device
+            ),
             *signals,
             *self.kv_params.flattened_kv_inputs(),
             *(
@@ -599,6 +639,8 @@ class Inkling(Module):
         TensorValue,
         TensorValue,
         TensorValue,
+        TensorValue,
+        TensorValue,
         list[BufferValue],
         dict[str, list[PagedCacheValues]],
         list[TensorValue],
@@ -614,6 +656,8 @@ class Inkling(Module):
             input_row_offsets,
             positions,
             return_n_logits,
+            image_embeddings,
+            image_indices,
             *rest,
         ) = inputs
         signals = rest[:num_signals]
@@ -626,6 +670,8 @@ class Inkling(Module):
             input_row_offsets.tensor,
             positions.tensor,
             return_n_logits.tensor,
+            image_embeddings.tensor,
+            image_indices.tensor,
             [value.buffer for value in signals],
             self.unflatten_kv_inputs(kv_inputs),
             [value.tensor for value in slot_idx],

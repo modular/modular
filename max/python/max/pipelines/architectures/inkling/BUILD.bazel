@@ -6,7 +6,9 @@ modular_py_library(
     name = "inkling",
     srcs = glob(["**/*.py"]),
     deps = [
+        requirement("huggingface-hub"),
         requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/driver",
