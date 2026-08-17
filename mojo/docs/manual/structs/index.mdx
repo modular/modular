@@ -210,14 +210,16 @@ To make a struct copyable, add the `Copyable` trait:
     ...
   ```
 
-In most cases, that's all you need to do. Mojo will generate a copy initializer
-(`__init__(out self, *, copy: Self)` method) for you. You don't need to write
-your own unless you need custom logic in the copy initializer; for example, if
-your struct dynamically allocates memory. For more information, see the section
-on [copy initializers](/docs/manual/lifecycle/life/#copy-constructor).
+In most cases, that's all you need to do. Mojo will generate a copy
+initializer (`__init__(out self, *, copy: Self)` method) for you. You don't
+need to write your own unless you need custom logic in the copy
+initializer; for example, if your struct dynamically allocates memory. For
+more information, see the section on [copy
+initializers](/docs/manual/lifecycle/life/#copy-constructor).
 
 The `Copyable` trait provides two ways to copy a value: the `copy()`
-instance method and the copy initializer.
+instance method and the copy initializer. Prefer the `copy()` method.
+
 In addition, `Copyable` automatically adds movability, so you won't
 need to add both `Copyable` _and_ `Movable` to your declarations.
 
@@ -470,7 +472,7 @@ point is that you never should, because Mojo automatically invokes them in
 circumstances where they're needed (which is why they're also called "magic
 methods"). For example, Mojo calls the `__init__()` method when you create
 an instance of the struct; and when Mojo destroys the instance, it calls the
-`__del__()` method (if it exists).
+`__deinit__()` method (if it exists).
 
 Even operator behaviors that appear built-in (`+`, `<`, `==`, `|`, and so on)
 are implemented as special methods that Mojo implicitly calls upon to perform
@@ -486,11 +488,11 @@ and they usually accomplish one of two types of tasks:
   appropriately with each type. For more information, see
   [Implement operators for custom types](/docs/manual/operators/#implement-operators-for-custom-types).
 
-- Lifecycle event handling: These special methods deal with the lifecycle and
-  value ownership of an instance. For example, `__init__()` and `__del__()`
-  demarcate the beginning and end of an instance lifetime, and other special
-  methods define the behavior for other lifecycle events such as how to copy or
-  move a value.
+- Lifecycle event handling: These special methods deal with the lifecycle
+  and value ownership of an instance. For example, `__init__()` and
+  `__deinit__()` demarcate the beginning and end of an instance lifetime,
+  and other special methods define the behavior for other lifecycle events
+  such as how to copy or move a value.
 
 You can learn all about the lifecycle special methods in the [Value
 lifecycle](/docs/manual/lifecycle/) section. However, most structs are simple

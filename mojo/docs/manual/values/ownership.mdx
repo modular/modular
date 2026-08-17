@@ -13,11 +13,11 @@ error, or a "leaked memory" error, any one of which can be catastrophic.
 
 Mojo helps avoid these errors by ensuring there is only one variable that owns
 each value at a time, while still allowing you to share references with other
-functions. When the life span of the owner ends, Mojo [destroys the
-value](/docs/manual/lifecycle/death). Programmers are still responsible for
-making sure any type that allocates resources (including memory) also
-deallocates those resources in its destructor. Mojo's ownership system ensures
-that destructors are called promptly.
+functions. When the life span of the owner ends, Mojo
+[destroys the value](/docs/manual/lifecycle/death). Programmers are still
+responsible for making sure any type that allocates resources (including memory)
+also deallocates those resources in its deinitializer. Mojo's ownership system
+ensures that deinitializers are called promptly.
 
 On this page, we'll explain the rules that govern this ownership model, and how
 to specify different argument conventions that define how values are passed into
@@ -95,7 +95,7 @@ keyword at the beginning of an argument declaration:
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
 
-- `deinit`: A special convention used in the destructor and consuming-move
+- `deinit`: A special convention used in the deinitializer and consuming-move
   lifecycle methods. A `deinit` argument is initialized at the beginning of the
   function, and uninitialized when the function returns.
 
@@ -144,7 +144,7 @@ copy.
 
 In general, passing an immutable reference is much more efficient
 when handling large or expensive-to-copy values, because the copy initializer
-and destructor aren't invoked for a default (immutable reference) argument.
+and deinitializer aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
