@@ -46,9 +46,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"LT", 13, "lt">,
   I32EnumAttrCase<"LE", 14, "le">,
 
-  // Complex variadic operations.
-  I32EnumAttrCase<"In", 15, "in">,
-
   // Conditional expression.
   I32EnumAttrCase<"Cond", 16, "cond">,
 

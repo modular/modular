@@ -2440,12 +2440,6 @@ LogicalResult ParamOperatorAttr::verify(
         !sugarIsa<SIMDType>(operands[0].getType()))
       return emitError() << "operator requires an index or integer type";
     break;
-  case POC::In:
-    if (operands.empty())
-      return emitError() << "operator requires at least one operand";
-    if (!KGEN::isScalarOf<KGENDType::kBool>(type))
-      return emitError() << "in return scalar<bool>";
-    break;
   case POC::EQ:
   case POC::LT:
   case POC::LE:
@@ -3742,62 +3736,6 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
-/// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
-/// operands have the same type.
-static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
-  TypedAttr lhs = operands[0];
-  MutableArrayRef<TypedAttr> trailing =
-      llvm::MutableArrayRef(operands).drop_front();
-
-  Builder b(lhs.getContext());
-
-  // If there are no trailing operands, fold to false.
-  if (trailing.empty())
-    return SIMDAttr::getScalarBool(b.getContext(), false);
-
-  // If there is only one trailing operand, canonicalize to an identity
-  // proposition.
-  if (trailing.size() == 1)
-    return ParamIdenticalAttr::get(operands);
-
-  // Every candidate is compared against the same left-hand side, so prepare it
-  // once.
-  IdentityOperand preparedLhs(lhs);
-  bool allKnownFalse = true;
-  for (TypedAttr operand : trailing) {
-    IdentityOperand preparedOperand(operand);
-    std::optional<bool> knownEq =
-        decideParamIdentical(preparedLhs, preparedOperand);
-    if (!knownEq) {
-      // If this is a symbolic comparison like "x == 5", then we cannot fold the
-      // non-containment case.
-      allKnownFalse = false;
-    } else if (*knownEq) {
-      // Fold to true if a match was found by value.
-      return SIMDAttr::getScalarBool(b.getContext(), true);
-    }
-  }
-
-  // Ok, we know that LHS isn't known to equal any member of the set, but it or
-  // they might be symbolic.  If we know for sure that LHS *isn't* equal to any
-  // of the elements in the set then we can fold to false.
-  if (allKnownFalse)
-    return SIMDAttr::getScalarBool(b.getContext(), false);
-
-  // Sort and unique the trailing operands.
-  llvm::stable_sort(trailing, ParameterAttr::compare);
-  SmallVector<TypedAttr> newOperands;
-  newOperands.reserve(operands.size());
-  newOperands.push_back(lhs);
-  SmallPtrSet<Attribute, 4> seenTrailing;
-  for (TypedAttr operand : trailing)
-    if (seenTrailing.insert(operand).second)
-      newOperands.push_back(operand);
-  if (newOperands == operands)
-    return {};
-  return ParamOperatorAttr::get(POC::In, newOperands);
-}
-
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
@@ -4168,7 +4106,7 @@ constexpr POC migratedPOCs[] = {
     POC::Xor,       POC::Max,  POC::Min,       POC::Shl,      POC::Shr,
     POC::Div,       POC::DivS, POC::DivU,      POC::CeilDivS, POC::CeilDivU,
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
-    POC::LT,        POC::LE,   POC::In};
+    POC::LT,        POC::LE};
 
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
@@ -4182,15 +4120,14 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   bool needSIMDConv =
       getEquivalentSIMDType(operandsIn.front().getType()) != nullptr;
 
-  if (llvm::is_contained({POC::LE, POC::LT, POC::EQ, POC::In}, opcode)) {
+  if (llvm::is_contained({POC::LE, POC::LT, POC::EQ}, opcode)) {
     origResultType = [&]() -> Type {
-      // LT, LE, EQ, IN are all boolean expressions
+      // LT, LE and EQ are all boolean expressions.
       auto boolDType = DTypeConstantAttr::get(ctx, KGENDType::kBool);
 
       // Inherit the simd_size for lane-wise comparisons.
       if (auto simdType = dyn_cast<SIMDType>(origResultType))
-        if (opcode != POC::In)
-          return SIMDType::get(simdType.getSize(), boolDType);
+        return SIMDType::get(simdType.getSize(), boolDType);
 
       return SIMDType::get(1, boolDType);
     }();
@@ -4282,9 +4219,6 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
     // TODO: Fold all POCs above in SIMD forms.
     case POC::EQ:
       result = simplifyEQ(operands);
-      break;
-    case POC::In:
-      result = simplifyIn(operands);
       break;
     default:
       llvm_unreachable("unhandled opcode");

@@ -182,8 +182,6 @@ class POC(enum.Enum):
 
     le = 14
 
-    in_ = 15
-
     cond = 16
 
     current_target = 17
