@@ -30,7 +30,7 @@ checkpoints are NVFP4).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
@@ -55,6 +55,7 @@ from max.nn.comm.ep import (
 )
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
+from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -65,8 +66,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.request import RequestID
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
@@ -85,23 +85,18 @@ class KimiK2_5ModelInputs(ModelInputs):
     """Flat ModuleV3 inputs for the Kimi-K2.5 model.
 
     The language ABI is ``(tokens, return_n_logits, input_row_offsets,
-    image_embeddings, image_token_indices, *kv, *ep)`` — the DeepseekV3
+    vision_embeddings, vision_scatter_indices, *kv, *ep)`` — the DeepseekV3
     ModuleV3 order with the two multimodal tensors spliced in after the row
-    offsets.
+    offsets. ``vision_embeddings``/``vision_scatter_indices`` are the base
+    :class:`ModelInputs` fields, set by the pipeline's vision seam
+    (``finalize_vision_inputs``); replicated per device (one ``Buffer`` per
+    device, identical data). Shape ``[num_patches, hidden]`` /
+    ``[num_image_tokens]`` during prefill, ``[0, hidden]`` / ``[0]`` otherwise.
     """
 
     tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
-
-    image_embeddings: list[Buffer]
-    """Vision embeddings scattered into the text stream, replicated per device
-    (one ``Buffer`` per device -- identical data).
-    Shape ``[num_patches, hidden]`` during prefill, ``[0, hidden]`` otherwise."""
-
-    image_token_indices: list[Buffer]
-    """Scatter positions for ``image_embeddings``, replicated per device.
-    Shape ``[num_image_tokens]`` during prefill, ``[0]`` otherwise."""
 
     batch_context_lengths: list[Buffer] = field(kw_only=True)
     """Host (CPU) page-aligned KV context length, one per DP replica.
@@ -124,8 +119,8 @@ class KimiK2_5ModelInputs(ModelInputs):
             self.tokens,
             self.return_n_logits,
             self.input_row_offsets,
-            *self.image_embeddings,
-            *self.image_token_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             *self.batch_context_lengths,
             *dp_inputs,
             *(
@@ -167,11 +162,6 @@ class KimiK2_5Model(
         self._ep_batch_manager: EPBatchManager | None = None
         self.ep_comm_initializer: EPCommInitializer | None = None
         self._modulev3_extra_input_types: list[Any] = []
-        self._ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] = (
-            VisionEncoderCache(
-                max_entries=pipeline_config.runtime.max_vision_cache_entries
-            )
-        )
         super().__init__(
             pipeline_config,
             session,
@@ -192,7 +182,6 @@ class KimiK2_5Model(
 
         if self._batch_processor is not None:
             assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
-            self._batch_processor.bind_vision_cache(self._ve_cache)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
             assert self.vision_model is not None
@@ -521,15 +510,60 @@ class KimiK2_5Model(
             weights=state_dict,
         )
 
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> None:
+        """Kimi packs inline in :meth:`vision_execute` (chunked encode)."""
+        return
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: None,
+    ) -> VisionEncodeResult:
+        """Run the chunked vision encoder over the cache-selected images.
+
+        The chunked encode (packing + per-chunk graph runs + device-0-then-
+        broadcast) stays encapsulated in the batch processor; the cache only
+        ever sees the per-image-ordered output.
+        """
+        assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+        embeddings, token_counts = (
+            self._batch_processor.encode_uncached_chunked(selection)
+        )
+        return VisionEncodeResult(
+            embeddings=embeddings, per_image_token_counts=token_counts
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` image embeddings for non-vision steps.
+
+        Cached: this is hit on every text-only / decode step, so it must not
+        allocate per call.
+        """
+        if not hasattr(self, "_cached_empty_vision_embeddings"):
+            assert self.model_config is not None
+            hidden_size = self.model_config.llm_config.hidden_size
+            host = Buffer.zeros(shape=[0, hidden_size], dtype=DType.bfloat16)
+            self._cached_empty_vision_embeddings = [host.to(d) for d in devices]
+        return self._cached_empty_vision_embeddings
+
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, KimiK2_5ModelInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
         )
 
-        # The vision encoder is run (and cached/chunked) inside the batch
-        # processor's prepare step, which fills ``image_embeddings``; the
-        # language graph only scatters the precomputed embeddings.
+        # The pipeline's vision seam (finalize_vision_inputs) has already set
+        # model_inputs.vision_embeddings/vision_scatter_indices; the language
+        # graph only scatters the precomputed embeddings.
         raw_outputs = self.language_model.execute_raw(*model_inputs.buffers)
 
         if len(raw_outputs) == 3:
@@ -542,7 +576,3 @@ class KimiK2_5Model(
             logits=raw_outputs[0],
             next_token_logits=raw_outputs[0],
         )
-
-    def release(self, request_id: RequestID) -> None:
-        """Release vision encoder cache entries for a completed request."""
-        self._ve_cache.release_request(request_id)

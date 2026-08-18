@@ -22,15 +22,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.nn import CompiledModel
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kv_cache import KVCacheInputsInterface
-from max.pipelines.lib.vision_encoder_cache import (
-    VisionEncoderCache,
-    concat_device_buffers,
-)
+from max.pipelines.context import ImageMetadata
+from max.pipelines.lib.vision_encoder_cache import concat_device_buffers
 
 from ..deepseekV3_modulev3.batch_processor import (
     DeepseekV3ModuleV3BatchProcessor,
@@ -46,11 +43,15 @@ logger = logging.getLogger("max.pipelines")
 
 
 class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
-    """Ragged batching with vision encoder cache for Kimi-K2.5 models."""
+    """Ragged batching for Kimi-K2.5 models.
+
+    Vision is cached by the pipeline-owned ``VisionEncoderCache`` between
+    prep and execute; this processor only builds the text inputs and runs
+    the chunked vision encode (see :meth:`encode_uncached_chunked`).
+    """
 
     _model_config: KimiK2_5Config | None = None
     _vision_model: CompiledModel[Any, Any] | None = None
-    _ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext] | None = None
     _session: InferenceSession | None = None
 
     def bind_model_config(self, model_config: KimiK2_5Config) -> None:
@@ -67,13 +68,6 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
         self._vision_model = vision_model
         self._session = session
 
-    def bind_vision_cache(
-        self,
-        ve_cache: VisionEncoderCache[KimiK2_5TextAndVisionContext],
-    ) -> None:
-        """Wire the shared vision encoder cache owned by the pipeline model."""
-        self._ve_cache = ve_cache
-
     def prepare_initial_token_inputs(  # type: ignore[override]
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
@@ -82,17 +76,15 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
     ) -> KimiK2_5ModelInputs:
         """Prepare inputs for the first execution pass of KimiK2.5.
 
-        Delegates the ragged token / DP-split / EP-buffer packing to the shared
-        DeepseekV3 ModuleV3 processor, then splices in the (device-0) vision
-        embeddings. The graph broadcasts the single device-0 image tensors onto
-        the mesh, so no per-device replication is done here.
+        Images are selected, encoded (see :meth:`encode_uncached_chunked`),
+        and cached by the pipeline-owned ``VisionEncoderCache`` between prep
+        and execute; this processor only builds the text inputs.
         """
         assert self._model_config is not None, (
             "model_config must be bound; call bind_model_config() after"
             " load_model()"
         )
         assert self._vision_model is not None
-        assert self._ve_cache is not None
         assert self._session is not None
 
         base = super().prepare_initial_token_inputs(
@@ -101,24 +93,12 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
             return_n_logits=return_n_logits,
         )
 
-        context_batch = [ctx for replica in replica_batches for ctx in replica]
-
-        if any(getattr(ctx, "images", None) for ctx in context_batch):
-            image_embeddings, image_token_indices = self._vision_embeddings(
-                context_batch
-            )
-        else:
-            image_embeddings = self._empty_image_embeddings
-            image_token_indices = self._empty_image_token_indices
-
         from .model import KimiK2_5ModelInputs
 
         return KimiK2_5ModelInputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
             return_n_logits=base.return_n_logits,
-            image_embeddings=image_embeddings,
-            image_token_indices=image_token_indices,
             kv_cache_inputs=base.kv_cache_inputs,
             batch_context_lengths=base.batch_context_lengths,
             data_parallel_splits=base.data_parallel_splits,
@@ -126,89 +106,29 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
             ep_inputs=base.ep_inputs,
         )
 
-    def _vision_embeddings(
-        self,
-        context_batch: Sequence[KimiK2_5TextAndVisionContext],
-    ) -> tuple[list[Buffer], list[Buffer]]:
-        """Run/collect vision embeddings; return per-device image tensors."""
-        assert self._ve_cache is not None
-        uncached_contexts = self._ve_cache.get_uncached_contexts(context_batch)
-        if uncached_contexts:
-            vision_embeds, token_counts = self._run_vision_encoder_chunked(
-                context_batch, uncached_contexts
-            )
-        else:
-            vision_embeds = self._empty_image_embeddings
-            token_counts = []
-
-        uncached_images = [
-            [
-                img
-                for img in ctx.images
-                if img.image_hash is not None
-                and self._ve_cache.lookup(img.image_hash) is None
-            ]
-            for ctx in uncached_contexts
-        ]
-
-        precomputed_image_embeddings, image_token_indices_np = (
-            self._ve_cache.prepare_vision_outputs(
-                context_batch,
-                uncached_contexts,
-                uncached_images,
-                vision_embeds,
-                token_counts,
-                n_devices=len(self.runtime.devices),
-                empty_embeddings=self._empty_image_embeddings,
-            )
-        )
-        # ``prepare_vision_outputs`` returns per-device embeddings (one buffer
-        # per device); replicate the scatter indices to match.
-        image_token_indices = [
-            Buffer.from_numpy(image_token_indices_np).to(d)
-            for d in self.runtime.devices
-        ]
-        return precomputed_image_embeddings, image_token_indices
-
-    @property
-    def _empty_image_embeddings(self) -> list[Buffer]:
-        """Empty ``[0, D]`` image embeddings shared across all non-vision calls."""
-        if not hasattr(self, "_cached_empty_image_embeddings"):
-            assert self._model_config is not None
-            hidden_size = self._model_config.llm_config.hidden_size
-            self._cached_empty_image_embeddings = Buffer.zeros(
-                shape=[0, hidden_size],
-                dtype=DType.bfloat16,
-            ).to(self.runtime.devices)
-        return self._cached_empty_image_embeddings
-
-    @property
-    def _empty_image_token_indices(self) -> list[Buffer]:
-        """Empty scatter-index buffers shared across all non-vision calls."""
-        if not hasattr(self, "_cached_empty_image_token_indices"):
-            self._cached_empty_image_token_indices = [
-                Buffer.from_numpy(np.zeros(0, dtype=np.int32)).to(d)
-                for d in self.runtime.devices
-            ]
-        return self._cached_empty_image_token_indices
-
     def _collect_uncached_image_inputs(
         self,
-        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
     ) -> list[dict[str, npt.NDArray[Any]]]:
-        """Collect per-image numpy inputs for images not yet in the encoder cache."""
-        assert self._ve_cache is not None
+        """Collect per-image numpy inputs for the cache-selected images.
+
+        Miss images are matched to ``ctx.images`` by ``start_idx`` (image
+        spans within a context are non-overlapping, so it uniquely names
+        an image) rather than object identity: ``miss_images`` may hold
+        reconstructed ``ImageMetadata`` instances for the same logical
+        image, and an identity match would silently collect nothing.
+        """
         per_image: list[dict[str, npt.NDArray[Any]]] = []
-        for ctx in context_batch:
+        for ctx, miss_images in selection:
+            uncached_start_indices = {img.start_idx for img in miss_images}
             pos_offset = 0
             for i, img in enumerate(ctx.images):
                 thw = ctx.grid_thws[i]
                 n_pos = int(thw[0] * thw[1] * thw[2])
 
-                if (
-                    img.image_hash is not None
-                    and self._ve_cache.lookup(img.image_hash) is None
-                ):
+                if img.start_idx in uncached_start_indices:
                     per_image.append(
                         {
                             "pixel_values": img.pixel_values,
@@ -253,13 +173,13 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
 
     def _collect_vision_encoder_request_metadata(
         self,
-        context_batch: Sequence[KimiK2_5TextAndVisionContext],
-        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
         vision_input_shapes: dict[str, list[int]],
     ) -> dict[str, Any]:
         """Collect debug metadata for a vision-encoder invocation."""
         assert self._model_config is not None
-        assert self._ve_cache is not None
         patch_size = int(self._model_config.vision_config.patch_size)
         merge_cfg = self._model_config.vision_config.merge_kernel_size
         if isinstance(merge_cfg, int):
@@ -269,9 +189,12 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
             merge_w = int(merge_cfg[1])
         merge_sq = _vision_merge_sq(self._model_config.vision_config)
 
-        request_ids = [str(ctx.request_id) for ctx in context_batch]
-        total_images = sum(len(ctx.images) for ctx in context_batch)
-        next_images_total = sum(len(ctx.next_images) for ctx in context_batch)
+        uncached_contexts = [ctx for ctx, _ in selection]
+        request_ids = [str(ctx.request_id) for ctx in uncached_contexts]
+        total_images = sum(len(ctx.images) for ctx in uncached_contexts)
+        next_images_total = sum(
+            len(ctx.next_images) for ctx in uncached_contexts
+        )
         context_sequence_lengths = [
             {
                 "request_id": str(ctx.request_id),
@@ -284,19 +207,17 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
                 "image_count": len(ctx.images),
                 "next_image_count": len(ctx.next_images),
             }
-            for ctx in context_batch
+            for ctx in uncached_contexts
         ]
 
         per_image_metadata: list[dict[str, Any]] = []
         image_counter = 0
-        for ctx in uncached_contexts:
+        for ctx, miss_images in selection:
+            uncached_ids = {id(img) for img in miss_images}
             for i, (img, thw) in enumerate(
                 zip(ctx.images, ctx.grid_thws, strict=True)
             ):
-                if (
-                    img.image_hash is None
-                    or self._ve_cache.lookup(img.image_hash) is not None
-                ):
+                if id(img) not in uncached_ids:
                     continue
 
                 t = int(thw[0])
@@ -337,9 +258,8 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
 
         return {
             "request_ids": request_ids,
-            "batch_size": len(context_batch),
+            "batch_size": len(uncached_contexts),
             "uncached_context_count": len(uncached_contexts),
-            "vision_cache_enabled": bool(self._ve_cache.enabled),
             "vision_input_dtype": str(self._model_config.vision_config.dtype),
             "vision_input_shapes": vision_input_shapes,
             "images": {
@@ -445,18 +365,25 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
             "vision_position_ids": vision_position_ids_buf,
         }
 
-    def _run_vision_encoder_chunked(
+    def encode_uncached_chunked(
         self,
-        context_batch: Sequence[KimiK2_5TextAndVisionContext],
-        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+        selection: Sequence[
+            tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
     ) -> tuple[list[Buffer], list[int]]:
-        """Run the vision encoder in token-bounded chunks."""
+        """Run the chunked vision encoder over the cache-selected images.
+
+        Runs the encoder in token-bounded chunks on device 0, replicates each
+        chunk's embedding to every device, then re-concatenates the per-device
+        outputs to per-image order (with matching per-image token counts) so
+        the cache only ever sees per-image-ordered output.
+        """
         assert self._model_config is not None
         assert self._vision_model is not None
 
-        per_image = self._collect_uncached_image_inputs(uncached_contexts)
+        per_image = self._collect_uncached_image_inputs(selection)
         assert per_image, (
-            "uncached_contexts non-empty but no per-image entries collected"
+            "selection non-empty but no per-image entries collected"
         )
 
         pipeline_config = self.runtime.pipeline_config
@@ -517,12 +444,11 @@ class KimiK2_5BatchProcessor(DeepseekV3ModuleV3BatchProcessor):
                 ]
             except Exception as err:
                 vision_metadata = self._collect_vision_encoder_request_metadata(
-                    context_batch=context_batch,
-                    uncached_contexts=uncached_contexts,
+                    selection=selection,
                     vision_input_shapes=batch_input_shapes,
                 )
                 failure_payload = {
-                    "stage": "prepare_initial_token_inputs",
+                    "stage": "vision_execute",
                     "chunk": chunk_meta,
                     "error": {
                         "type": type(err).__name__,
