@@ -256,7 +256,7 @@ def _write_int[
 
     # Prefix a '-' if the original int was negative and make positive.
     if value < 0:
-        writer.write("-")
+        writer.write_string("-")
 
     # Add the custom number prefix, e.g. "0x" commonly used for hex numbers.
     # This comes *after* the minus sign, if present.
@@ -359,5 +359,11 @@ def _write_int[
 
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
-    var bytes = Span(buf)[offset : len(buf) - 1]
-    writer.write_string(StringSlice(unsafe_from_utf8=bytes))
+    writer.write_string(
+        StringSlice(
+            unsafe_from_utf8=Span(
+                unsafe_ptr=buf.unsafe_ptr().unsafe_offset(offset),
+                length=len(buf) - offset - 1,
+            )
+        )
+    )
