@@ -37,8 +37,6 @@ from .model_config import KimiK2_5Config, VisionConfig
 
 logger = logging.getLogger(__name__)
 
-_GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
-
 # Empirical coefficient for peak activation bytes per vision-encoder patch.
 # See KimiK2_5Model._VISION_PEAK_BYTES_PER_PATCH_COEFF for derivation notes.
 _VISION_PEAK_BYTES_PER_PATCH_COEFF = 20
@@ -48,8 +46,7 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Kimi K2.5 (vision-language, MoE) models.
 
     Accounts for replicated vision encoder weights, expert-parallel routing,
-    MLA up-projection buffers, vision encoder activation memory, and optional
-    device-graph-capture headroom.
+    MLA up-projection buffers, and vision encoder activation memory.
     """
 
     _always_signal_buffers = True
@@ -325,17 +322,6 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
             logger.info(
                 "Estimated vision encoder activation memory: %s",
                 to_human_readable_bytes(vision_activation_memory),
-            )
-
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
-                * len(pipeline_config.model.device_specs)
-            )
-            activation_memory += graph_capture_headroom
-            logger.info(
-                "Added graph capture headroom to activation memory: %s",
-                to_human_readable_bytes(graph_capture_headroom),
             )
 
         if activation_memory != 0:
