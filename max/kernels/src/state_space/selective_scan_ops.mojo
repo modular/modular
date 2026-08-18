@@ -20,10 +20,11 @@ This module registers the following ops:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
-from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+import extensibility
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
+
+from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
 from state_space.selective_scan import (
@@ -36,7 +37,7 @@ from state_space.selective_scan import (
 )
 
 
-@compiler.register("selective_scan_fwd")
+@extensibility.register("selective_scan_fwd")
 struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """Selective scan forward pass operation for Mamba SSM.
 
@@ -76,7 +77,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1, ...],
         z: InputTensor[dtype=dtype, rank=3, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
@@ -156,7 +157,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             else:
                 selective_scan_fwd_cpu[
@@ -190,10 +191,10 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
@@ -215,30 +216,15 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        out_z_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    seqlen,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
                     delta_softplus_int8,
                     output_tt,
                     x_tt,
@@ -282,30 +268,15 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        out_z_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    seqlen,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
                     delta_softplus_int8,
                     output_tt,
                     x_tt,
@@ -335,23 +306,45 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target: " + target)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@extensibility.register_shape_function("selective_scan_fwd")
+def selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd` op.
+
+    The output of a selective scan forward pass has the same shape as the
+    input sequence `u`: `(batch, dim, seqlen)`.
+
+    Parameters:
+        dtype: Element type of the input tensors (inferred).
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim, seqlen)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
+    return u.shape()
 
 
-@compiler.register("selective_scan_fwd_minimal")
+@extensibility.register("selective_scan_fwd_minimal")
 struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """Minimal selective scan forward pass - no optional D, z, or delta_bias.
 
@@ -383,7 +376,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         A: InputTensor[dtype=dtype, rank=2, ...],
         B: InputTensor[dtype=dtype, rank=4, ...],
         C: InputTensor[dtype=dtype, rank=4, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
@@ -445,7 +438,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
@@ -471,10 +464,10 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
@@ -492,26 +485,15 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu_minimal[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    seqlen,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
                     delta_softplus_int8,
                     output_tt,
                     x_tt,
@@ -543,26 +525,15 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu_minimal[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    seqlen,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(group_size),
                     delta_softplus_int8,
                     output_tt,
                     x_tt,
@@ -584,20 +555,36 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=3, ...],
-        delta: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=4, ...],
-        C: InputTensor[dtype=dtype, rank=4, ...],
-    ) -> IndexList[3]:
-        return u.shape()
+
+@extensibility.register_shape_function("selective_scan_fwd_minimal")
+def selective_scan_fwd_minimal_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=3, ...],
+    delta: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=4, ...],
+    C: InputTensor[dtype=dtype, rank=4, ...],
+) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd_minimal` op.
+
+    The output of the minimal selective scan forward pass has the same shape
+    as the input sequence `u`: `(batch, dim, seqlen)`.
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(batch, n_groups, dstate, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, dstate, seqlen)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
+    return u.shape()
 
 
-@compiler.register("selective_scan_update")
+@extensibility.register("selective_scan_update")
 struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """Selective scan update operation for autoregressive inference.
 
@@ -636,7 +623,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1, ...],
         z: InputTensor[dtype=dtype, rank=2, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var batch = state_out.dim_size(0)
         var dim = state_out.dim_size(1)
@@ -709,7 +696,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             else:
                 selective_scan_update_cpu[
@@ -742,10 +729,10 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
@@ -767,29 +754,14 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
-                    ],
-                    selective_scan_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_out_tt.LayoutType,
-                        output_tt.LayoutType,
-                        state_in_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(group_size),
                     delta_softplus_int8,
                     state_out_tt,
                     output_tt,
@@ -833,29 +805,14 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
-                    ],
-                    selective_scan_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_out_tt.LayoutType,
-                        output_tt.LayoutType,
-                        state_in_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_batch_dim,
-                    batch,
-                    dim,
-                    group_size,
+                    Int32(total_batch_dim),
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(group_size),
                     delta_softplus_int8,
                     state_out_tt,
                     output_tt,
@@ -885,18 +842,39 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target: " + target)
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        state_in: InputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        z: InputTensor[dtype=dtype, rank=2, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[3], IndexList[2]]:
-        return (state_in.shape(), x.shape())
+
+@extensibility.register_shape_function("selective_scan_update")
+def selective_scan_update_shape[
+    dtype: DType,
+](
+    state_in: InputTensor[dtype=dtype, rank=3, ...],
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    dt: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    z: InputTensor[dtype=dtype, rank=2, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[3], IndexList[2]]:
+    """Returns the output shapes for the `selective_scan_update` op.
+
+    The update step produces two tensors: the updated SSM state and the
+    single-step output for the new token.
+
+    Args:
+        state_in: Input SSM state with shape `(batch, dim, dstate)`.
+        x: Input token with shape `(batch, dim)`.
+        dt: Time-delta tensor with shape `(batch, dim)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input matrix with shape `(batch, n_groups, dstate)`.
+        C: Output matrix with shape `(batch, n_groups, dstate)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim)`.
+        dt_bias: Time-delta bias with shape `(dim,)`.
+
+    Returns:
+        A tuple of `(state_out_shape, output_shape)` where `state_out_shape`
+        matches `state_in.shape()` and `output_shape` matches `x.shape()`.
+    """
+    return (state_in.shape(), x.shape())

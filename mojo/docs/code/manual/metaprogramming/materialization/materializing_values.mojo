@@ -21,15 +21,15 @@ def process(i: Int):
 
 
 def lookup_fn(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     for i in range(count):
         # Some computation, doesn't matter what it is.
-        idx = dynamic_function(i)
+        var idx = dynamic_function(i)
 
         # This is the problem
         var tmp: List[Int] = materialize[list_of_values]()
-        lookup = tmp[idx]
+        var lookup = tmp[idx]
         # tmp is destroyed here
 
         # Use the value
@@ -42,9 +42,9 @@ def lookup_fn2(count: Int):
     var list = materialize[list_of_values]()
     for i in range(count):
         # Some computation, doesn't matter what it is.
-        idx = dynamic_function(i)
+        var idx = dynamic_function(i)
 
-        lookup = list[idx]
+        var lookup = list[idx]
 
         # Use the value
         process(lookup)

@@ -37,6 +37,26 @@ def kernel_verification_ops_path() -> Path:
     return Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
 
 
+@pytest.fixture
+def kernel_override_ops_path() -> Path:
+    """Get path to kernel override ops for testing built-in shadowing."""
+    return Path(os.environ["MODULAR_KERNEL_OVERRIDE_OPS_PATH"])
+
+
+def _collect_error_chain(exc: BaseException) -> str:
+    """Walks the exception chain and concatenates all messages.
+
+    The compiler diagnostic sits on a ``__cause__``. The top-level message is
+    just the generic "Failed to compile the model" wrapper.
+    """
+    messages = []
+    current: BaseException | None = exc
+    while current is not None:
+        messages.append(str(current))
+        current = current.__cause__
+    return "\n".join(messages)
+
+
 class TestCustomKernelValidation:
     """Tests for ops.custom that require actual kernel validation."""
 
@@ -169,6 +189,40 @@ class TestCustomKernelValidation:
                 word in error_msg
                 for word in ["output", "signature", "result", "type"]
             )
+
+    def test_custom__error__data_dependent_dim_without_shape_function(
+        self, kernel_verification_ops_path: Path, session: InferenceSession
+    ) -> None:
+        """Test error when an output dim can only come from a shape function.
+
+        `op_with_int_parameter` has no shape function, so this used to kill the
+        process instead of failing compilation.
+        """
+        input_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        output_type = TensorType(DType.float32, ("nnz",), DeviceRef.CPU())
+
+        graph = Graph(
+            "test_custom_data_dependent_dim_no_shape_fn",
+            input_types=[input_type],
+            output_types=[output_type],
+            custom_extensions=[kernel_verification_ops_path],
+        )
+        with graph:
+            result = ops.custom(
+                name="op_with_int_parameter",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0]],
+                out_types=[output_type],
+                parameters={"IntParameter": 1},
+            )
+            graph.output(result[0])
+
+        with pytest.raises(Exception) as exc_info:
+            session.load(graph)
+
+        chain = _collect_error_chain(exc_info.value)
+        assert "requires a registered shape function" in chain
+        assert "op_with_int_parameter" in chain
 
     def test_custom__missing_parameter_behavior(
         self, kernel_verification_ops_path: Path
@@ -460,3 +514,90 @@ class TestCustomOperationExecution:
 
         # Verify execution completed successfully
         assert result is not None
+
+
+class TestKernelRegistrationOverride:
+    """Empirical verification that user @extensibility.register shadows built-in
+    MOGG kernels when the same op-name is registered in a custom mojoc
+    supplied via Graph(..., custom_extensions=[...]).
+    """
+
+    def _build_add_graph(self, custom_extensions: list[Path]) -> Graph:
+        input_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        graph = Graph(
+            "test_mo_add_override",
+            input_types=[input_type, input_type],
+            output_types=[input_type],
+            custom_extensions=custom_extensions,
+        )
+        with graph:
+            a, b = graph.inputs
+            graph.output(a.tensor + b.tensor)
+        return graph
+
+    def test_mo_add_override_takes_effect(
+        self,
+        kernel_override_ops_path: Path,
+        session: InferenceSession,
+    ) -> None:
+        """User `mo.add` returning `lhs+rhs+1000` must shadow built-in `mo.add`."""
+        graph = self._build_add_graph([kernel_override_ops_path])
+        model = session.load(graph)
+
+        a = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        b = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+        a_buf = Buffer.from_numpy(a).to(model.input_devices[0])
+        b_buf = Buffer.from_numpy(b).to(model.input_devices[1])
+        output = model.execute(a_buf, b_buf)
+
+        result = output[0].to_numpy()
+        expected_override = a + b + 1000.0
+        expected_builtin = a + b
+        assert np.allclose(result, expected_override), (
+            f"Override did not fire: got {result!r}, "
+            f"expected overridden {expected_override!r} "
+            f"(built-in would give {expected_builtin!r})"
+        )
+
+    def _build_layer_norm_graph(self, custom_extensions: list[Path]) -> Graph:
+        input_type = TensorType(DType.float32, (2, 4), DeviceRef.CPU())
+        gamma_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        beta_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        output_type = TensorType(DType.float32, (2, 4), DeviceRef.CPU())
+        graph = Graph(
+            "test_mo_layer_norm_override",
+            input_types=[input_type, gamma_type, beta_type],
+            output_types=[output_type],
+            custom_extensions=custom_extensions,
+        )
+        with graph:
+            x, gamma, beta = graph.inputs
+            y = ops.layer_norm(
+                x.tensor, gamma.tensor, beta.tensor, epsilon=1e-5
+            )
+            graph.output(y)
+        return graph
+
+    def test_mo_layer_norm_override_takes_effect(
+        self,
+        kernel_override_ops_path: Path,
+        session: InferenceSession,
+    ) -> None:
+        """User `mo.reduce.layer_norm` raises; built-in would normalize cleanly."""
+        graph = self._build_layer_norm_graph([kernel_override_ops_path])
+        model = session.load(graph)
+
+        x = np.array(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]], dtype=np.float32
+        )
+        gamma = np.ones(4, dtype=np.float32)
+        beta = np.zeros(4, dtype=np.float32)
+        x_buf = Buffer.from_numpy(x).to(model.input_devices[0])
+        gamma_buf = Buffer.from_numpy(gamma).to(model.input_devices[1])
+        beta_buf = Buffer.from_numpy(beta).to(model.input_devices[2])
+
+        with pytest.raises(Exception) as exc_info:
+            model.execute(x_buf, gamma_buf, beta_buf)
+        assert "LAYER_NORM_OVERRIDE_FIRED" in str(exc_info.value), (
+            f"Override did not fire; raised: {exc_info.value!r}"
+        )

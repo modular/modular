@@ -70,7 +70,7 @@ An argument convention specifies whether an argument is mutable or immutable,
 and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
-- `read`: The function receives an **immutable reference**. This means the
+- default: The function receives an **immutable reference**. This means the
   function can read the original value (it's *not* a copy), but it can't
   mutate (modify) it.
 
@@ -84,14 +84,13 @@ keyword at the beginning of an argument declaration:
   existing value.
 
 - `ref`: The function gets a reference with a parametric mutability: that is,
-  the reference is either mutable or immutable. You can think of `ref`
-  arguments as a generalization of the `read` and `mut` conventions.
+  it follows the mutability of the referenced value.
   `ref` arguments are an advanced topic, and they're described in more detail in
-  [Lifetimes, origins, and references](/docs/manual/values/lifetimes).
+  [Lifetimes, origins, and references](/docs/manual/values/lifetimes/).
 
 - `out`: A special convention used for the `self` argument in
-  [constructors](/docs/manual/lifecycle/life#constructor) and for
-  [named results](/docs/manual/functions#named-results). An `out`
+  [initializers](/docs/manual/lifecycle/life/#constructor) and for
+  [named results](/docs/manual/functions/#named-results). An `out`
   argument is uninitialized at the beginning of the function, and must be
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
@@ -104,29 +103,25 @@ For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
 ```mojo
-def add(mut x: Int, read y: Int):
+def add(mut x: Int, y: Int):
     x += y
 
 def main():
     var a = 1
     var b = 2
     add(a, b)
-    print(a)
-```
-
-```output
-3
+    print(a)  # 3
 ```
 
 You've probably already seen some function arguments that don't declare a
-convention. By default, all arguments are `read`.
-In the following sections, we'll explain each of these argument conventions in
-more detail.
+convention. By default, all arguments use the default convention of an
+immutable read-only reference. In the following sections, we'll explain
+each of these conventions in more detail.
 
-## Immutable arguments (`read`)
+## Immutable arguments (default)
 
-The `read` convention is the default for all arguments. The callee receives an
-immutable reference to the argument value.
+The default convention is an immutable read-only reference. The callee
+receives an immutable reference to the argument value.
 
 For example:
 
@@ -148,14 +143,14 @@ mutate it. `list` is a reference to `values` in the `main()` function, not a
 copy.
 
 In general, passing an immutable reference is much more efficient
-when handling large or expensive-to-copy values, because the copy constructor
-and destructor aren't invoked for a `read` argument.
+when handling large or expensive-to-copy values, because the copy initializer
+and destructor aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
-Mojo's read argument convention is similar in some ways to passing an
+Mojo's default argument convention is similar in some ways to passing an
 argument by `const&` in C++, which also avoids a copy of the value and disables
-mutability in the callee. However, the read convention differs from
+mutability in the callee. However, the default convention differs from
 `const&` in C++ in two important ways:
 
 - The Mojo compiler implements a lifetime checker that ensures that values are
@@ -165,11 +160,11 @@ mutability in the callee. However, the read convention differs from
   machine registers. This provides a significant performance enhancement
   compared to languages like C++ and Rust.
 
-The major difference between Rust and Mojo is that Mojo doesn't require a sigil
-on the caller side to pass by immutable reference. Also, Mojo is more efficient
-when passing small values, and Rust defaults to moving values instead of passing
-them around by borrow. These policy and syntax decisions allow Mojo to provide
-an easier-to-use programming model.
+The major difference between Rust and Mojo is that Mojo doesn't require a
+sigil on the caller side to pass by immutable reference. Also, Mojo is more
+efficient when passing small values, and Rust defaults to moving values
+instead of passing them around as a read-only reference. These policy and
+syntax decisions allow Mojo to provide an easier-to-use programming model.
 
 ## Mutable arguments (`mut`)
 
@@ -224,7 +219,7 @@ Although the code using `mut` isn't that much shorter, it's more memory
 efficient because it doesn't make a copy of the value.
 
 However, remember that the values passed as `mut` must already be mutable.
-For example, if you try to take a `read` value and pass it to another
+For example, if you try to take an immutable reference and pass it to another
 function as `mut`, you'll get a compiler error because Mojo can't form a
 mutable reference from an immutable reference.
 
@@ -255,7 +250,7 @@ def invalid_access():
   var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it's also passed
-  # read.
+  # as an immutable reference
   append_twice(my_string, my_string)
   print(my_string)
 ```
@@ -283,28 +278,35 @@ copies of the value.
 
 ## Transfer arguments (`var` and `^`)
 
-And finally, if you'd like your function to receive value **ownership**, add the
-`var` keyword in front of the argument name.
+If you want your function to take *ownership* of a value, add the `var`
+keyword before the argument name.
 
-This convention is often combined with use of the postfixed `^` "transfer"
-sigil on the variable that is passed into the function, which ends the
-lifetime of that variable.
+This convention is often combined with using the postfix `^` transfer sigil
+on an argument at the call site.
 
-Technically, the `var` keyword doesn't guarantee that the received value is
-*the original value*—it guarantees only that the function
-gets unique ownership of a value. This happens in one of
-three ways:
+When using a variable, transferring a value leaves the original variable
+uninitialized. You can't use the variable after the transfer until you
+assign it a new value of the original type.
 
-- The caller passes the argument with the `^` transfer sigil, which ends the
-  lifetime of that variable (the variable becomes uninitialized) and ownership
-  is transferred into the function.
+### Transferring with `var`
 
-- The caller **doesn't** use the `^` transfer sigil, in which case, Mojo copies
-  the value. If the type isn't copyable, this is a compile-time error.
+`var` behaves differently depending on whether the caller uses the `^`
+transfer sigil and whether the value conforms to `Copyable`.
 
-- The caller passes in a newly-created "owned" value, such as a value returned
-  from a function. In this case, no variable owns the value and it's
-  transferred directly to the callee. For example:
+The `var` keyword doesn't guarantee that the function receives *the original
+value*. It guarantees only that the function receives *ownership of a
+value*. That happens in one of three ways:
+
+- **Value transfer**: The caller uses the `^` transfer sigil. This
+  transfers the value, leaving the original variable uninitialized. The function
+  argument receives ownership.
+
+- **Copying**: Without the transfer sigil, Mojo copies the value. If the
+  type isn't `Copyable`, this produces a compile-time error.
+
+- **Newly created value**: The caller passes a newly created value,
+  such as the result of a function call. In this case, no variable owns the
+  value, so ownership transfers directly to the callee. For example:
 
   ```mojo
   def take(var s: String):
@@ -392,7 +394,7 @@ operation"—these aren't strictly the same thing.
 There are multiple ways that Mojo transfers ownership of a value:
 
 - If a type implements the [move
-  constructor](/docs/manual/lifecycle/life#move-constructor),
+  initializer](/docs/manual/lifecycle/life#move-constructor),
   `__init__(take=)`, Mojo may invoke this method *if* a value of that type is
   transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
@@ -401,7 +403,7 @@ There are multiple ways that Mojo transfers ownership of a value:
 - In some cases, Mojo optimizes away the move operation entirely, leaving the
   value in the same memory location but updating its ownership. In these cases,
   a value transfers without invoking either the copy or move
-  constructors.
+  initializers.
 
 In order for the `var` convention to work *without* the transfer sigil, the
 value type must be copyable (via `__init__(out self, *, copy: Self)`).

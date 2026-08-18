@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest import mock
@@ -23,7 +22,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.graph import _location
 from max.mlir.dialects import rmo
 
@@ -156,6 +155,25 @@ def test_add_op_closure() -> None:
     assert "mo.output" in str(add_graph._mlir_op)
 
 
+def test_side_stream_stages_mo_sequence() -> None:
+    """``ops.side_stream`` stages an ``mo.sequence`` region tagged with the
+    requested stream id, with the body mapped through its block arguments.
+    """
+    input_type = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(0)
+    )
+    with Graph("side_stream", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        results = ops.side_stream(
+            [x], lambda t: ops.relu(t), result_types=[x.type], stream_id=1
+        )
+        graph.output(results[0])
+
+    ir = str(graph._mlir_op)
+    assert "mo.sequence[1]" in ir
+    assert "mo.yield" in ir
+
+
 def test_invalid_operand() -> None:
     """Test that passing an invalid operand raises an error."""
     with Graph(
@@ -187,52 +205,12 @@ def test_load_from_file() -> None:
     )
 
 
-def test_parfor() -> None:
-    buffer_type = BufferType(DType.int64, [1], device=DeviceRef.CPU())
-    tensor_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
-
+def test_device_graph() -> None:
     with Graph(
-        "test_parfor",
-        input_types=[tensor_type, buffer_type, buffer_type, buffer_type],
+        "device_graph",
+        input_types=[],
+        is_device_graph=True,
     ) as graph:
-        tensor, *buffers = graph.inputs
-
-        with Graph._async_region() as parallel:
-            for buffer in parallel.each(buffers):
-                ops.buffer_store(buffer.buffer, tensor.tensor)
-
         graph.output()
 
-    # There should be a 3 operand mo.chain.create merging the 3 buffer store
-    # chains.
-    matches = re.findall(
-        r"mo\.chain\.create\([^,)]+,[^,)]+,[^,)]+\)", str(graph), re.MULTILINE
-    )
-    assert matches
-
-
-def test_fork_join() -> None:
-    buffer_type = BufferType(DType.int64, [1], device=DeviceRef.CPU())
-    tensor_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
-
-    with Graph(
-        "test_fork_join",
-        input_types=[tensor_type, buffer_type, buffer_type, buffer_type],
-    ) as graph:
-        tensor, *buffers = graph.inputs
-
-        with Graph._async_region() as parallel:
-            for buffer in buffers[:-1]:
-                with parallel:
-                    ops.buffer_store(buffer, tensor)  # type: ignore
-
-            ops.buffer_store(buffers[-1], tensor)  # type: ignore
-
-        graph.output()
-
-    # There should be a 3 operand mo.chain.create merging the 3 buffer store
-    # chains.
-    matches = re.findall(
-        r"mo\.chain\.create\([^,)]+,[^,)]+,[^,)]+\)", str(graph), re.MULTILINE
-    )
-    assert matches
+    assert "isDeviceGraph" in str(graph)

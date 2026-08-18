@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
@@ -20,9 +20,11 @@ def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
-    supplement: Int,
+    len_dev: Int32,
+    supplement_dev: Int32,
 ):
+    var len = Int(len_dev)
+    var supplement = Int(supplement_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -52,12 +54,12 @@ def test(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    ctx.enqueue_function_experimental[vec_func](
+    ctx.enqueue_function[vec_func](
         in0_device,
         in1_device,
         out_device,
-        length,
-        supplement,
+        Int32(length),
+        Int32(supplement),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

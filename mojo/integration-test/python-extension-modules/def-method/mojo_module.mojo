@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OwnedKwargsDict
 from std.os import abort
 
 from std.python import Python, PythonObject
@@ -19,7 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -70,7 +69,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
     @staticmethod
     def _get_self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
@@ -102,7 +101,10 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
         py_self: PythonObject, sep: PythonObject
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
-        return Python.list(self_ptr[].name.split(String(py=sep)))
+        var names = List[PythonObject]()
+        for name in self_ptr[].name.split(String(py=sep)):
+            names.append(PythonObject(name))
+        return Python.list(names^)
 
     @staticmethod
     def _with(
@@ -187,7 +189,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def set_name_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        self_ptr: Pointer[Self, MutAnyOrigin],
         name: PythonObject,
     ):
         try:
@@ -197,31 +199,31 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def get_name_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+        self_ptr: Pointer[Self, MutAnyOrigin]
     ) raises -> PythonObject:
         return PythonObject(self_ptr[].name)
 
     @staticmethod
     def increment_age_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        self_ptr: Pointer[Self, MutAnyOrigin],
         increment: PythonObject,
     ) raises -> PythonObject:
         self_ptr[].age += Int(py=increment)
         return PythonObject(self_ptr[].age)
 
     @staticmethod
-    def reset_auto(self_ptr: UnsafePointer[Self, MutAnyOrigin]):
+    def reset_auto(self_ptr: Pointer[Self, MutAnyOrigin]):
         self_ptr[].name = "Auto Reset Person"
         self_ptr[].age = 999
 
     @staticmethod
     def sum_kwargs_ints(
-        py_self: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+        py_self: PythonObject, var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method that takes kwargs, adds them to person's age and returns the new age.
         """
         var self_ptr = Self._get_self_ptr(py_self)
-        return Self.add_kwargs_to_age_auto(self_ptr, kwargs)
+        return Self.add_kwargs_to_age_auto(self_ptr, **kwargs^)
 
     @staticmethod
     def sum_kwargs_ints_py(
@@ -239,8 +241,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def add_kwargs_to_age_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
-        kwargs: OwnedKwargsDict[PythonObject],
+        self_ptr: Pointer[Self, MutAnyOrigin], var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method with auto-convert self + kwargs that adds kwargs to person's age.
         """

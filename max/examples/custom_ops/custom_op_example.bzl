@@ -17,9 +17,8 @@ def custom_op_example_py_binary(
         ] + extra_data,
         imports = ["."],
         mojo_deps = [
-            "//max:compiler",
             "//max:layout",
-            "//max:tensor",
+            "//max:extensibility",
             "@mojo//:std",
         ],
         deps = [

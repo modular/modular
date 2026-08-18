@@ -14,27 +14,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
+from max.pipelines.context import PixelContext
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.modeling.types import InputModality, PipelineTask
 from typing_extensions import Self
+
+# Text sequence length for FLUX.2 pipelines.
+# Note: Text embeddings sent to the denoiser must be padded to this length even
+# when the given prompt(s) are shorter. The denoiser uses unmasked non-causal
+# attention and the padding tokens function as "registers" or "scratch pad".
+FLUX2_TEXT_SEQ_LEN: int = 512
 
 from .flux2_executor import Flux2Executor
 from .flux2_klein_executor import Flux2KleinExecutor
+from .tokenizer import Flux2Tokenizer
 
 
 @dataclass(kw_only=True)
 class Flux2ArchConfig(ArchConfig):
     """Pipeline-level config for Flux2 (implements ArchConfig; no KV cache)."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float4_e2m1fnx2",
+    }
+
     pipeline_config: PipelineConfig
+    quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
-        return 512
+        return FLUX2_TEXT_SEQ_LEN
 
     @classmethod
     def initialize(
@@ -42,8 +58,6 @@ class Flux2ArchConfig(ArchConfig):
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
     ) -> Self:
-        if len(pipeline_config.models["transformer"].device_specs) != 1:
-            raise ValueError("Flux2 is only supported on a single device")
         return cls(pipeline_config=pipeline_config)
 
 
@@ -51,8 +65,8 @@ flux2_arch = SupportedArchitecture(
     name="Flux2Pipeline",
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
+    default_encoding=Flux2ArchConfig.DEFAULT_ENCODING,
+    supported_encodings=Flux2ArchConfig.SUPPORTED_ENCODINGS,
     example_repo_ids=[
         "black-forest-labs/FLUX.2-dev",
         "black-forest-labs/FLUX.2-dev-NVFP4",
@@ -60,7 +74,7 @@ flux2_arch = SupportedArchitecture(
     pipeline_model=Flux2Executor,
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=Flux2Tokenizer,
     config=Flux2ArchConfig,
 )
 
@@ -68,18 +82,19 @@ flux2_klein_arch = SupportedArchitecture(
     name="Flux2KleinPipeline",
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
+    default_encoding=Flux2ArchConfig.DEFAULT_ENCODING,
+    supported_encodings=Flux2ArchConfig.SUPPORTED_ENCODINGS,
     example_repo_ids=[
         "black-forest-labs/FLUX.2-klein-4B",
         "black-forest-labs/FLUX.2-klein-9B",
         "black-forest-labs/FLUX.2-klein-base-4B",
         "black-forest-labs/FLUX.2-klein-base-9B",
+        "black-forest-labs/FLUX.2-klein-4b-nvfp4",
         "black-forest-labs/FLUX.2-klein-9b-nvfp4",
     ],
     pipeline_model=Flux2KleinExecutor,
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=Flux2Tokenizer,
     config=Flux2ArchConfig,
 )

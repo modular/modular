@@ -19,10 +19,11 @@ This module registers operations for variable-length selective scan:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
-from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+import extensibility
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
+
+from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
@@ -44,7 +45,7 @@ comptime Strides4D = IndexList[4]
 # ============================================================================
 
 
-@compiler.register("varlen_selective_scan_fwd")
+@extensibility.register("varlen_selective_scan_fwd")
 struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     """Variable-length selective scan forward pass.
 
@@ -89,7 +90,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var dim = u.dim_size(0)
         var dstate = A.dim_size(1)
@@ -183,7 +184,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
                 varlen_selective_scan_fwd_cpu[
@@ -252,10 +253,10 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_SIZE = 128
             var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
@@ -278,30 +279,13 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -349,30 +333,13 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -420,30 +387,13 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -475,22 +425,46 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        u: InputTensor[dtype=dtype, rank=2, ...],
-        delta: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=2, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    ) -> IndexList[2]:
-        return u.shape()
+
+@extensibility.register_shape_function("varlen_selective_scan_fwd")
+def varlen_selective_scan_fwd_shape[
+    dtype: DType,
+](
+    u: InputTensor[dtype=dtype, rank=2, ...],
+    delta: InputTensor[dtype=dtype, rank=2, ...],
+    A: InputTensor[dtype=dtype, rank=2, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=1, ...],
+    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+) -> IndexList[2]:
+    """Returns the output shape for the `varlen_selective_scan_fwd` op.
+
+    The variable-length selective scan output has the same shape as the
+    packed input `u`: `(dim, total_length)`.
+
+    Parameters:
+        dtype: Element type of the scan input and output tensors.
+
+    Args:
+        u: Packed input tensor with shape `(dim, total_length)`.
+        delta: Time-step tensor with shape `(dim, total_length)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(ngroups, dstate, total_length)`.
+        C: Output projection with shape `(ngroups, dstate, total_length)`.
+        D: Skip connection with shape `(dim,)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+        query_start_loc: Cumulative sequence lengths with shape `(batch + 1,)`.
+        cache_indices: Indices into SSM states with shape `(batch,)`.
+        has_initial_state: Boolean mask with shape `(batch,)`.
+
+    Returns:
+        The output tensor shape `(dim, total_length)`.
+    """
+    return u.shape()
 
 
 # ============================================================================
@@ -498,7 +472,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 # ============================================================================
 
 
-@compiler.register("varlen_selective_state_update")
+@extensibility.register("varlen_selective_state_update")
 struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """Varlen selective state update for autoregressive inference.
 
@@ -538,7 +512,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
         state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
@@ -647,7 +621,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
                 varlen_selective_state_update_cpu[
@@ -716,10 +690,10 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_SIZE_M = 4
             var total_threads = batch * nheads * ceildiv(dim, BLOCK_SIZE_M)
 
@@ -740,30 +714,15 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),
@@ -808,30 +767,15 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),
@@ -876,30 +820,15 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),
@@ -930,22 +859,46 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=3, ...],
-        A: InputTensor[dtype=dtype, rank=3, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=2, ...],
-        z: InputTensor[dtype=dtype, rank=3, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> Tuple[IndexList[4], IndexList[3]]:
-        var batch = x.dim_size(0)
-        var nheads = x.dim_size(1)
-        var dim = x.dim_size(2)
-        var dstate = A.dim_size(2)
-        return (IndexList[4](batch, nheads, dim, dstate), x.shape())
+
+@extensibility.register_shape_function("varlen_selective_state_update")
+def varlen_selective_state_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    dt: InputTensor[dtype=dtype, rank=3, ...],
+    A: InputTensor[dtype=dtype, rank=3, ...],
+    B: InputTensor[dtype=dtype, rank=3, ...],
+    C: InputTensor[dtype=dtype, rank=3, ...],
+    D: InputTensor[dtype=dtype, rank=2, ...],
+    z: InputTensor[dtype=dtype, rank=3, ...],
+    dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> Tuple[IndexList[4], IndexList[3]]:
+    """Returns the output shapes for the `varlen_selective_state_update` op.
+
+    The update produces the updated SSM state and the single-step output.
+
+    Parameters:
+        dtype: Element type of the state update input and output tensors.
+
+    Args:
+        x: Input tensor with shape `(batch, nheads, dim)`.
+        dt: Time-delta tensor with shape `(batch, nheads, dim)`.
+        A: State transition matrix with shape `(nheads, dim, dstate)`.
+        B: Input matrix with shape `(batch, ngroups, dstate)`.
+        C: Output matrix with shape `(batch, ngroups, dstate)`.
+        D: Skip connection with shape `(nheads, dim)`.
+        z: Gating tensor with shape `(batch, nheads, dim)`.
+        dt_bias: Time-delta bias with shape `(nheads, dim)`.
+        state_batch_indices: Batch indices into the state buffer with shape
+            `(batch,)`.
+
+    Returns:
+        A tuple `(state_shape, output_shape)` where `state_shape` is
+        `(batch, nheads, dim, dstate)` and `output_shape` matches `x.shape()`.
+    """
+    var batch = x.dim_size(0)
+    var nheads = x.dim_size(1)
+    var dim = x.dim_size(2)
+    var dstate = A.dim_size(2)
+    return (IndexList[4](batch, nheads, dim, dstate), x.shape())

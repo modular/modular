@@ -53,6 +53,7 @@ of automatic kernel fusion:
 .. code-block:: python
 
     from max.experimental import functional as F
+    from max.experimental.tensor import Tensor
 
     @F.functional
     def linear(x: Tensor, weight: Tensor, bias: Tensor) -> Tensor:
@@ -73,9 +74,9 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
+    from max.experimental import functional as F
     from max.experimental.nn import Linear
-    from max.driver import CPU
-    from max.dtype import DType
+    from max.experimental.tensor import Tensor, defaults
     from max.graph import TensorType
 
     with F.lazy():
@@ -90,8 +91,11 @@ with randomly initialized weights before loading weights
     }
     model.load_state_dict(weights)
 
-    # Or compile directly without ever initializing weights
-    input_type = TensorType(DType.float32, ["batch", 2], CPU())
+    # Or compile directly without ever initializing weights.
+    # Derive the input type from the same defaults the module used, so the
+    # module, its weights, and the input type agree on dtype and device.
+    dtype, device = defaults()
+    input_type = TensorType(dtype, ["batch", 2], device)
     model = model.compile(input_type, weights=weights)
 """
 
@@ -117,12 +121,19 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
-    shard_shape,
+)
+from max.experimental.sharding.mappings import is_fully_replicated
+from max.experimental.sharding.per_shard_dim import (
+    is_per_shard_dim,
+    local_shape_at,
+    make_per_shard_dim,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -132,6 +143,61 @@ from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
+
+
+def _fold_sharded_shape(
+    shape: graph.Shape, mapping: DeviceMapping
+) -> graph.Shape:
+    """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
+    mesh = mapping.mesh
+    placements = mapping.to_placements()
+    mesh_shape = mesh.mesh_shape
+    n_devices = mesh.num_devices
+    folded: list[graph.Dim] = []
+    for ti, d in enumerate(shape):
+        if not is_per_shard_dim(d):
+            g = graph.Dim(d)
+            for mesh_axis, p in enumerate(placements):
+                if p.localized_axis() == ti and isinstance(p, Sharded):
+                    g = g * mesh_shape[mesh_axis]
+            folded.append(g)
+            continue
+        cells = list(d.per_shard)
+        if len(cells) != n_devices:
+            raise ValueError(
+                f"sharded dim {d!r} has {len(cells)} entries, expected "
+                f"{n_devices} for mesh {mesh!r}."
+            )
+        for mesh_axis in range(mesh.ndim - 1, -1, -1):
+            n = mesh_shape[mesh_axis]
+            p = placements[mesh_axis]
+            localizes_ti = p.localized_axis() == ti
+            new_cells: list[graph.Dim] = []
+            for start in range(0, len(cells), n):
+                block = cells[start : start + n]
+                if localizes_ti:
+                    new_cells.append(
+                        p.global_dim(
+                            make_per_shard_dim(tuple(block), force_wrap=True)
+                        )
+                    )
+                else:
+                    first = block[0]
+                    for x in block[1:]:
+                        if x != first:
+                            raise ValueError(
+                                f"global_shape: tensor axis {ti} has "
+                                f"per-rank cells {block!r} that disagree "
+                                f"along mesh axis {mesh_axis} (placement "
+                                f"{p!r}); non-localizing mesh axes must "
+                                "hold shape-identical shards."
+                            )
+                    new_cells.append(first)
+            cells = new_cells
+        assert len(cells) == 1
+        folded.append(cells[0])
+    return graph.Shape(folded)
+
 
 _CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
 _DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
@@ -306,14 +372,12 @@ class RealizationContext(
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Any = None,
     ) -> Tensor:
         """Registers unrealized graph value(s) with the realization context.
 
         Args:
             values: Per-shard graph values (length-1 for unsharded).
             mapping: Device mapping for distributed tensors.
-            global_shape: The global tensor shape for distributed tensors.
 
         Returns:
             A new tensor associated with the unrealized value(s).
@@ -428,7 +492,7 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
         from max.driver import CPU
         from max.dtype import DType
 
-        x = Tensor.zeros([1], dtype=DType.int32, device=CPU())
+        x = tensor.Tensor.zeros([1], dtype=DType.int32, device=CPU())
         # Use int32 as default dtype in this context
         with tensor.defaults_like(x):
             y = tensor.Tensor.zeros((2, 3))  # int32, cpu
@@ -445,68 +509,59 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
 
 
 class Tensor(DLPackArray, HasTensorValue):
-    """A multi-dimensional array with eager execution and automatic compilation.
+    """A multi-dimensional array of numeric values on a CPU or accelerator device.
 
-    The Tensor class provides a high-level interface for numerical computations
-    with automatic compilation and optimization via the MAX runtime. Operations
-    on tensors execute eagerly while benefiting from lazy evaluation and
-    graph-based optimizations behind the scenes.
+    You can create tensors using:
 
-    **Key Features:**
+    - The :class:`Tensor` constructor.
+    - Factory methods like :meth:`ones`, :meth:`zeros`, or :meth:`arange`.
+    - Other array libraries via :meth:`from_dlpack`.
 
-    - **Eager execution**: Operations execute immediately with automatic compilation.
-    - **Lazy evaluation**: Computation may be deferred until results are needed.
-    - **High performance**: Uses the Mojo compiler and optimized kernels.
-    - **Familiar API**: Supports common array operations and indexing.
-    - **Device flexibility**: Works seamlessly across CPU and accelerators.
-
-    **Creating Tensors:**
-
-    Create tensors using the constructor, factory methods like :meth:`ones`,
-    :meth:`zeros`, :meth:`arange`, or from other array libraries via
-    :meth:`from_dlpack`.
+    Tensors support the DLPack protocol for zero-copy data exchange with
+    NumPy, PyTorch, JAX, and other array libraries.
 
     .. code-block:: python
 
-        from max.experimental import tensor
+        import numpy as np
+        from max.experimental.tensor import Tensor
+        from max.dtype import DType
 
-        # Create tensors from data (like torch.tensor())
-        x = tensor.Tensor([[1.0, 2.0], [3.0, 4.0]])
-        y = tensor.Tensor.zeros((2, 3))
+        # Create from a Python scalar or nested list
+        x = Tensor(42, dtype=DType.int32)
+        y = Tensor([[1.0, 2.0], [3.0, 4.0]])
 
-        # Perform operations
-        result = x + y  # Eager execution with automatic compilation
+        # Create from any DLPack-compatible array; dtype is inherited
+        z = Tensor(np.array([1, 2, 3], dtype=np.int16))
 
-        # Access values
-        print(result.shape)  # (2, 3)
-        print(result.dtype)  # DType.float32
+        # Use factory methods like ones, zeros, arange
+        zeros = Tensor.zeros((2, 2))
 
-    **Implementation Notes:**
+        # Compute with Python operators or the functional API
+        result = y + zeros
+        print(result)
 
-    Tensors use lazy evaluation internally - they don't always hold concrete
-    data in memory. A tensor may be "unrealized" (not yet computed) until its
-    value is actually needed (e.g., when converting to other formats or calling
-    :meth:`item`). This allows the runtime to optimize sequences of
-    operations efficiently.
+    A tensor is either *realized* (backed by a concrete
+    :class:`~max.driver.Buffer` in memory) or *unrealized* (backed by a
+    symbolic graph value). MAX realizes tensors by running pre-compiled Mojo
+    kernels or JIT-compiled graphs.
 
-    Operations on tensors build a computation graph behind the scenes, which is
-    compiled and executed when needed. All illegal operations fail immediately
-    with clear error messages, ensuring a smooth development experience.
-
-    .. note::
-
-      The lazy evaluation model and JIT compilation introduce compilation overhead
-      on first execution of operations. This results in higher latency for
-      interactive operations compared to eager frameworks like NumPy or PyTorch,
-      particularly when materializing tensor values (e.g., printing or converting
-      to other formats). Subsequent operations on similar shapes and dtypes reuse
-      compiled kernels for improved performance.
-
-    **Interoperability:**
-
-    Tensors support the DLPack protocol for zero-copy data exchange with NumPy,
-    PyTorch, JAX, and other array libraries. Use :meth:`from_dlpack` to import
-    arrays and standard DLPack conversion for export.
+    Args:
+        data: The value for the tensor. Can be a scalar number, a nested
+            Python list, or any DLPack-compatible array (NumPy, PyTorch,
+            etc.). If not provided, exactly one of ``storage`` or ``state``
+            must be supplied.
+        dtype: The data type for the tensor elements. For DLPack arrays this
+            defaults to the array's own dtype; passing a conflicting value
+            raises :exc:`ValueError`. For Python scalars and lists, defaults
+            to :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on
+            accelerators.
+        device: The device where the tensor will be allocated. Defaults to
+            an accelerator if available, otherwise CPU. Only valid when
+            ``data`` is provided.
+        storage: Internal backing buffer for a realized tensor. Mutually
+            exclusive with ``data``.
+        state: Internal realization state for an unrealized tensor. Mutually
+            exclusive with ``data``.
     """
 
     # ─── Internal storage ──────────────────────────────────────────────
@@ -522,7 +577,6 @@ class Tensor(DLPackArray, HasTensorValue):
 
     # ─── Device mapping (always set) ────────────────────────────────────
     _mapping: DeviceMapping
-    _global_shape: graph.Shape | None  # always set for distributed tensors
 
     # ─── Placement helpers ────────────────────────────────────────────────
 
@@ -687,51 +741,6 @@ class Tensor(DLPackArray, HasTensorValue):
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
-        """Creates a tensor from data or from internal storage.
-
-        When called with ``data``, constructs a tensor from a scalar, nested
-        list, or DLPack-compatible array (matching PyTorch's ``torch.tensor()``
-        semantics). When called without ``data``, requires exactly one of
-        ``storage`` or ``state`` for internal construction.
-
-        For DLPack-compatible arrays (NumPy, PyTorch, etc.) the array's own
-        ``dtype`` is preserved by default; no silent precision conversion
-        happens.  For Python scalars and nested lists, ``dtype`` defaults to
-        :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on accelerators.
-
-        .. code-block:: python
-
-            from max.experimental.tensor import Tensor
-            from max.dtype import DType
-
-            # Create from scalar
-            x = Tensor(42, dtype=DType.int32)
-
-            # Create from nested list
-            y = Tensor([[1.0, 2.0], [3.0, 4.0]])
-
-            # Create from NumPy array; dtype is inherited from the array
-            import numpy as np
-            z = Tensor(np.array([1, 2, 3], dtype=np.int16))  # stays int16
-
-        Args:
-            data: The value for the tensor. Can be a scalar number, a nested
-                Python list, or any DLPack-compatible array (NumPy, PyTorch,
-                etc.). If not provided, exactly one of ``storage`` or ``state``
-                must be supplied.
-            dtype: The data type for the tensor elements.  For DLPack arrays
-                this defaults to the array's own dtype; passing a conflicting
-                value raises :exc:`ValueError`.  For Python scalars/lists this
-                defaults to :obj:`DType.float32` on CPU and
-                :obj:`DType.bfloat16` on accelerators.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise
-                CPU. Only valid when ``data`` is provided.
-            storage: Internal backing buffer for a realized tensor. Mutually
-                exclusive with ``data``.
-            state: Internal realization state for an unrealized tensor. Mutually
-                exclusive with ``data``.
-        """
         if data is not None:
             # __new__ already returned the tensor produced by F.constant;
             # __init__ is invoked on that object but nothing remains to do.
@@ -754,7 +763,6 @@ class Tensor(DLPackArray, HasTensorValue):
         self._mapping = PlacementMapping(
             DeviceMesh.single(device), (Replicated(),)
         )
-        self._global_shape = None
 
     @classmethod
     def from_graph_value(cls, value: graph.Value[Any]) -> Tensor:
@@ -776,6 +784,79 @@ class Tensor(DLPackArray, HasTensorValue):
         if not isinstance(value, GraphValue):
             raise TypeError(f"{value=} must be a tensor or buffer value")
         return current_realization_context().create_unrealized((value,))
+
+    @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.experimental import functional as F
+            from max.experimental.nn import Module
+            from max.experimental.tensor import Tensor
+            from max.graph import DeviceRef, TensorType
+
+            class ScaleByBatch(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    out_type = TensorType(x.dtype, x.shape, device=x.device)
+                    pred = Tensor.from_dim(x.shape[0]) <= 2  # scalar bool tensor on CPU
+                    then_fn, else_fn = lambda: x * 2.0, lambda: x * 4.0
+                    (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+                    return out
+
+            model = ScaleByBatch().compile(
+                TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+            )
+            result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
+
+        .. invisible-code-block: python
+
+            import numpy as np
+
+            assert np.allclose(result.to_numpy(), 2.0)  # batch 1 (<= 2) -> x * 2
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
+        """
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
 
     @classmethod
     def from_shard_values(
@@ -857,14 +938,14 @@ class Tensor(DLPackArray, HasTensorValue):
         storages: tuple[driver.Buffer, ...],
         mesh: DeviceMesh,
         placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike,
+        global_shape: graph.ShapeLike | None = None,
     ) -> Tensor:
         """Creates a realized sharded tensor from per-device buffers.
 
-        This is an internal constructor. ``storages`` must have one entry per
-        device in the mesh, in row-major order.  All shards are realized
-        (concrete storage, no pending graph values).
+        ``global_shape`` is accepted for call-site back-compat; the global
+        shape is recovered from per-rank shards at access time.
         """
+        del global_shape
         if len(storages) != mesh.num_devices:
             raise ValueError(
                 f"Expected {mesh.num_devices} storages for mesh {mesh}, "
@@ -879,7 +960,6 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._storages = storages
         instance._state = None
         instance._mapping = PlacementMapping(mesh, placements)
-        instance._global_shape = graph.Shape(global_shape)
         return instance
 
     @classmethod
@@ -888,14 +968,12 @@ class Tensor(DLPackArray, HasTensorValue):
         state: RealizationState,
         mesh: DeviceMesh,
         placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike | None = None,
     ) -> Tensor:
         """Creates an unrealized sharded tensor from a single state.
 
         ``state.values`` must have one entry per shard — all in the same
         graph.  Realization is atomic: all shards compile and execute
-        together.  If ``global_shape`` is omitted, it is derived from the
-        first shard's shape, placements, and mesh.
+        together.
         """
         if len(state.values) != mesh.num_devices:
             raise ValueError(
@@ -911,12 +989,14 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._storages = None
         instance._state = state
         instance._mapping = PlacementMapping(mesh, placements)
-        instance._global_shape = (
-            graph.Shape(global_shape) if global_shape is not None else None
-        )
         return instance
 
-    def _as_constant_external(self, name: str) -> Tensor:
+    def _as_constant_external(
+        self,
+        name: str,
+        align: int | None = None,
+        is_placeholder: bool = False,
+    ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
         For unsharded tensors, creates a single ``constant_external`` and
@@ -925,24 +1005,42 @@ class Tensor(DLPackArray, HasTensorValue):
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
         Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+
+        Args:
+            name: The name of the constant.
+            align: The alignment of the constant. If not provided,
+                the default alignment for the tensor's dtype will be used.
+            is_placeholder: When :obj:`True`, marks the constant(s) as
+                placeholders resolved by the enclosing subgraph call's
+                ``prefix`` (see :func:`max.graph.ops.call`).
+
+        Returns:
+            A tensor on the requested placement initialized from the
+            external data.
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype).to(self.device)
+            return F.constant_external(
+                name, stype, align=align, is_placeholder=is_placeholder
+            ).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
-        _placements = self._mapping.to_placements()
-        local = shard_shape(self.shape, _placements, _mesh.mesh_shape)
         values = []
+        shape = self.shape
         for i in range(_mesh.num_devices):
+            local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = F.constant_external(
+                f"{name}._shard.{i}",
+                stype,
+                align=align,
+                is_placeholder=is_placeholder,
+            )
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(
             tuple(values),
             mapping=self._mapping,
-            global_shape=self.shape,
         )
 
     def _from_buffers_like(self, buffers: Sequence[driver.Buffer]) -> Tensor:
@@ -960,7 +1058,6 @@ class Tensor(DLPackArray, HasTensorValue):
             tuple(buffers),
             self._mapping.mesh,
             self._mapping.to_placements(),
-            self.shape,
         )
 
     @classmethod
@@ -971,23 +1068,38 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
-        """Creates a tensor from a scalar, array, or nested list.
+        """Creates a constant tensor from a Python literal or array-like value.
 
-        .. deprecated::
+        .. deprecated:: 26.2
             Use ``Tensor(value, dtype=dtype, device=device)`` instead.
             ``Tensor.constant`` will be removed in a future release.
 
+        .. warning::
+
+            Loading a constant can lose precision. For example, loading
+            ``16777217`` as a ``float32`` produces ``16777216.0``.
+
         Args:
-            value: The constant value for the tensor. Can be a scalar number,
-                a nested Python list, or any DLPack-compatible array.
-            dtype: The data type for the tensor elements. If not specified,
-                defaults to :obj:`DType.float32` for CPU devices and
-                :obj:`DType.bfloat16` for accelerator devices.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise CPU.
+            value: The value to embed. A Python scalar, a (nested) sequence
+                of numbers, or an array-like object that supports DLPack,
+                such as a NumPy array.
+            dtype: The constant tensor's element type. For an array-like
+                ``value``, defaults to the array's dtype. For a Python scalar
+                or sequence, defaults to :obj:`DType.float32` on CPU or
+                :obj:`DType.bfloat16` on accelerators.
+            device: The device where the tensor is allocated. Defaults to an
+                accelerator if available, otherwise the CPU.
 
         Returns:
-            Tensor: A new tensor containing the constant value(s).
+            A ``Tensor`` containing the constant, with the same shape as
+            ``value``. A scalar ``value`` produces a rank-0 tensor.
+
+        Raises:
+            TypeError: If ``dtype`` is a sub-byte type.
+            ValueError: If ``value`` is a nested sequence that isn't
+                rectangular, if an integer in ``value`` is out of range for
+                ``dtype``, or if ``dtype`` doesn't match the dtype of an
+                array-like ``value``.
         """
         warnings.warn(
             "Tensor.constant() is deprecated. Use Tensor(value, dtype=dtype,"
@@ -1232,10 +1344,15 @@ class Tensor(DLPackArray, HasTensorValue):
     ) -> Tensor:
         """Creates a tensor with evenly spaced values within a given interval.
 
-        Returns a new 1D tensor containing a sequence of values starting from
+        Returns a new 1-D tensor containing a sequence of values starting from
         ``start`` (inclusive) and ending before ``stop`` (exclusive), with values
-        spaced by ``step``. This is similar to Python's built-in ``range()``
-        function and NumPy's ``arange()``.
+        spaced by ``step``.
+
+        Currently, graph compilation fails when ``stop - start`` isn't evenly
+        divisible by ``step``. For example, ``Tensor.arange(0, 5, 2)`` should
+        produce three values, ``[0, 2, 4]``, but shape inference declares an
+        output length of 2. The generated values therefore don't fit the
+        declared output shape.
 
         .. code-block:: python
 
@@ -1254,9 +1371,9 @@ class Tensor(DLPackArray, HasTensorValue):
             z = tensor.Tensor.arange(0, 5, dtype=DType.float32)
             # Result: [0.0, 1.0, 2.0, 3.0, 4.0]
 
-            # Create a range with float step (like numpy/pytorch)
-            w = tensor.Tensor.arange(0.0, 1.0, 0.2)
-            # Result: [0.0, 0.2, 0.4, 0.6, 0.8]
+            # Create a range with a floating-point step
+            w = tensor.Tensor.arange(0.0, 1.0, 0.25)
+            # Result: [0.0, 0.25, 0.5, 0.75]
 
             # Create a descending range with negative step
             v = tensor.Tensor.arange(5, 0, -1, dtype=DType.float32)
@@ -1276,10 +1393,18 @@ class Tensor(DLPackArray, HasTensorValue):
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
             device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise CPU.
+                specified, defaults to an accelerator if available, otherwise
+                CPU. Sharded placement is not supported.
 
         Returns:
-            Tensor: A 1D tensor containing the evenly spaced values.
+            A 1-D ``Tensor`` containing the evenly spaced values.
+
+        Raises:
+            ValueError: If inputs aren't scalar, dynamic scalar inputs omit
+                ``out_dim``, or ``device`` requests sharded placement.
+            RuntimeError: If a statically known interval isn't evenly
+                divisible by ``step``, causing the inferred output length to
+                disagree with the number of generated values.
         """
         if stop is None:
             start, stop = 0, start
@@ -1305,11 +1430,11 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
+            from max.graph import DeviceRef, TensorType
             from max.dtype import DType
 
             # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4))
+            ref_type = TensorType(DType.int32, (2, 4), device=DeviceRef.CPU())
 
             # Create range tensor matching the reference type
             x = tensor.Tensor.range_like(ref_type)
@@ -1396,6 +1521,7 @@ class Tensor(DLPackArray, HasTensorValue):
             TypeError: If the tensor is distributed.
         """
         if self.is_distributed:
+            # self.shape already reports the global, so no fold is needed.
             dist_type = DistributedTensorType(
                 self.dtype, self.shape, self.mesh, self.placements
             )
@@ -1426,36 +1552,50 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def shape(self) -> graph.Shape:
-        """Gets the global shape of the tensor.
-
-        For sharded tensors this returns the logical global shape (not the
-        per-shard shape).  If no explicit global shape was set, it is
-        derived from the first shard's shape, placements, and mesh.
+        """Gets the global (logical) shape of the tensor.
 
         Returns:
-            Shape: The shape of the tensor.
+            The global shape of the tensor.
         """
-        if self._global_shape is not None:
-            return self._global_shape
-        if self.is_distributed:
-            # Get the shard shape from the first shard.
-            if self._storages is not None:
-                shard_shape = list(self._storages[0].shape)
-            else:
-                assert self._state is not None
-                sv = self._state.values[0]
-                shard_shape = list(sv.shape)
-            # Scale sharded dims back up by mesh size.
-            assert self._mapping is not None
-            _placements = self._mapping.to_placements()
-            _mesh = self._mapping.mesh
-            for ax, p in enumerate(_placements):
-                if isinstance(p, Sharded):
-                    d = p.axis % len(shard_shape)
-                    shard_shape[d] = shard_shape[d] * _mesh.mesh_shape[ax]
-            return graph.Shape(shard_shape)
-        shape = self._backing_value.shape
-        return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
+        if not self.is_distributed:
+            backing = self._backing_value.shape
+            return (
+                backing
+                if isinstance(backing, graph.Shape)
+                else graph.Shape(backing)
+            )
+        per_rank_shapes = self._per_rank_shapes()
+        ndim = len(per_rank_shapes[0])
+        sharded_axes = {
+            ax
+            for p in self._mapping.to_placements()
+            if (ax := p.localized_axis()) is not None
+        }
+        cells = [
+            tuple(graph.Dim(s[i]) for s in per_rank_shapes) for i in range(ndim)
+        ]
+        wrapped = graph.Shape(
+            [
+                make_per_shard_dim(cells[i], force_wrap=i in sharded_axes)
+                for i in range(ndim)
+            ]
+        )
+        globals_ = _fold_sharded_shape(wrapped, self._mapping)
+        return graph.Shape(
+            [
+                make_per_shard_dim(cells[i], global_dim=globals_[i])
+                if i in sharded_axes
+                else globals_[i]
+                for i in range(ndim)
+            ]
+        )
+
+    def _per_rank_shapes(self) -> list[list[graph.Dim]]:
+        """Returns one per-rank shape list per shard, in mesh order."""
+        if self._storages is not None:
+            return [list(s.shape) for s in self._storages]
+        assert self._state is not None
+        return [list(v.shape) for v in self._state.values]
 
     @property
     def dtype(self) -> DType:
@@ -1646,7 +1786,7 @@ class Tensor(DLPackArray, HasTensorValue):
             ValueError: If the tensor is distributed and not fully replicated.
         """
         if self.is_distributed:
-            if not self._mapping.is_fully_replicated:
+            if not is_fully_replicated(self._mapping):
                 # Reuse the standard error for non-replicated distributed
                 # tensors (Sharded, Partial, etc.).
                 self._check_not_distributed("item")
@@ -1731,7 +1871,7 @@ class Tensor(DLPackArray, HasTensorValue):
             )
         elif isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
-                mapping = NamedMapping(target, self._mapping.original_spec)
+                mapping = self._mapping._resolve(target)
             else:
                 mapping = PlacementMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):
@@ -1766,44 +1906,47 @@ class Tensor(DLPackArray, HasTensorValue):
         return np.from_dlpack(t)
 
     def argmax(self, axis: int | None = -1) -> Tensor:
-        """Finds the indices of the maximum values along an axis.
+        """Returns the indices of the maximum values along an axis.
 
-        Returns a tensor containing the indices of the maximum values along
-        the specified axis. This is useful for finding the position of the
-        largest element, such as determining predicted classes in classification.
+        It's useful for finding the position of the largest element
+        along a given dimension, such as determining predicted classes
+        in classification.
+
+        When the input contains ties (identical maximum values), behavior
+        depends on the device: CPU returns the first matching index, while
+        GPU may return any of them.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a 2x4 tensor
-            x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
-            )
-
-            # Find argmax along last axis (within each row)
+            x = Tensor([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
             indices = x.argmax(axis=-1)
-            # Result: [1, 2] (index 1 in first row, index 2 in second row)
+            # indices has shape (2, 1): [[1], [2]]
 
-            # Find argmax over all elements
-            index = x.argmax(axis=None)
-            # Result: 6 (flattened index of maximum value 4.2)
+            # Or flatten before reducing:
+            flat_index = x.argmax(axis=None)
+            # flat_index has shape (1,): [6] (flattened index of max value 4.2)
 
         Args:
-            axis: The axis along which to find the maximum indices. Defaults
-                to -1 (the last axis). If None, finds the index of the maximum
-                value across all elements.
+            axis: The axis along which to compute the argmax. Negative
+                values index from the last dimension. When ``None``, the
+                tensor is flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the indices of the maximum values.
+            A ``Tensor`` with ``int64`` dtype containing the indices of the
+            maximum values along ``axis``. For an integer ``axis``, the
+            result has the same rank as the input with the ``axis``
+            dimension reduced to size ``1``. When ``axis`` is ``None``, the
+            result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.argmax(self, axis=axis)
 
     def max(self, axis: int | None = -1) -> Tensor:
-        """Computes the maximum values along an axis.
-
-        Returns a tensor containing the maximum values along the specified axis.
-        This is useful for reduction operations and finding peak values in data.
+        """Computes the maximum along a specified axis.
 
         .. code-block:: python
 
@@ -1816,31 +1959,34 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Find max along last axis (within each row)
             row_max = x.max(axis=-1)
-            # Result: [3.5, 4.2]
+            # shape (2, 1): [[3.5], [4.2]]
 
             # Find max along first axis (within each column)
             col_max = x.max(axis=0)
-            # Result: [2.3, 3.5, 4.2, 3.1]
+            # shape (1, 4): [[2.3, 3.5, 4.2, 3.1]]
 
             # Find max over all elements
             overall_max = x.max(axis=None)
-            # Result: 4.2 (maximum value across all elements)
+            # shape (1,): [4.2]
 
         Args:
-            axis: The axis along which to compute the maximum. Defaults to -1
-                (the last axis). If None, computes the maximum across all elements.
+            axis: The axis along which to compute the maximum. Negative values
+                index from the last dimension. When ``None``, the tensor is
+                flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the maximum values along the specified axis.
+            A ``Tensor`` containing the maximum along ``axis``. For an integer
+            ``axis``, the result has the same rank as the input with the
+            ``axis`` dimension reduced to size ``1``. When ``axis`` is
+            ``None``, the result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.max(self, axis=axis)
 
     def min(self, axis: int | None = -1) -> Tensor:
-        """Computes the minimum values along an axis.
-
-        Returns a tensor containing the minimum values along the specified axis.
-        This is useful for reduction operations and finding the smallest values
-        in data.
+        """Computes the minimum along a specified axis.
 
         .. code-block:: python
 
@@ -1853,31 +1999,34 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Find min along last axis (within each row)
             row_min = x.min(axis=-1)
-            # Result: [0.8, 1.9]
+            # shape (2, 1): [[0.8], [1.9]]
 
             # Find min along first axis (within each column)
             col_min = x.min(axis=0)
-            # Result: [1.2, 1.9, 2.1, 0.8]
+            # shape (1, 4): [[1.2, 1.9, 2.1, 0.8]]
 
             # Find min over all elements
             overall_min = x.min(axis=None)
-            # Result: 0.8 (minimum value across all elements)
+            # shape (1,): [0.8]
 
         Args:
-            axis: The axis along which to compute the minimum. Defaults to -1
-                (the last axis). If None, computes the minimum across all elements.
+            axis: The axis along which to compute the minimum. Negative values
+                index from the last dimension. When ``None``, the tensor is
+                flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the minimum values along the specified axis.
+            A ``Tensor`` containing the minimum along ``axis``. For an integer
+            ``axis``, the result has the same rank as the input with the
+            ``axis`` dimension reduced to size ``1``. When ``axis`` is
+            ``None``, the result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.min(self, axis=axis)
 
     def mean(self, axis: int | None = -1) -> Tensor:
-        """Computes the mean values along an axis.
-
-        Returns a tensor containing the arithmetic mean of values along the
-        specified axis. This is useful for computing averages, normalizing data,
-        or aggregating statistics.
+        """Computes the mean along a specified axis.
 
         .. code-block:: python
 
@@ -1890,31 +2039,34 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Compute mean along last axis (within each row)
             row_mean = x.mean(axis=-1)
-            # Result: [5.0, 4.0] (mean of each row)
+            # shape (2, 1): [[5.0], [4.0]]
 
             # Compute mean along first axis (within each column)
             col_mean = x.mean(axis=0)
-            # Result: [1.5, 3.5, 5.5, 7.5] (mean of each column)
+            # shape (1, 4): [[1.5, 3.5, 5.5, 7.5]]
 
             # Compute mean over all elements
             overall_mean = x.mean(axis=None)
-            # Result: 4.5 (mean of all elements)
+            # shape (1,): [4.5]
 
         Args:
-            axis: The axis along which to compute the mean. Defaults to -1
-                (the last axis). If None, computes the mean across all elements.
+            axis: The axis along which to compute the mean. Negative values
+                index from the last dimension. When ``None``, the tensor is
+                flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the mean values along the specified axis.
+            A ``Tensor`` containing the mean along ``axis``. For an integer
+            ``axis``, the result has the same rank as the input with the
+            ``axis`` dimension reduced to size ``1``; when ``axis`` is
+            ``None``, the result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.mean(self, axis=axis)
 
     def sum(self, axis: int | None = -1) -> Tensor:
-        """Computes the sum of values along an axis.
-
-        Returns a tensor containing the sum of values along the specified axis.
-        This is a fundamental reduction operation used for aggregating data,
-        computing totals, and implementing other operations like mean.
+        """Computes the sum along a specified axis.
 
         .. code-block:: python
 
@@ -1927,35 +2079,48 @@ class Tensor(DLPackArray, HasTensorValue):
 
             # Sum along last axis (within each row)
             row_sum = x.sum(axis=-1)
-            # Result: [6.0, 15.0] (sum of each row)
+            # shape (2, 1): [[6.0], [15.0]]
 
             # Sum along first axis (within each column)
             col_sum = x.sum(axis=0)
-            # Result: [5.0, 7.0, 9.0] (sum of each column)
+            # shape (1, 3): [[5.0, 7.0, 9.0]]
 
             # Sum over all elements
             total = x.sum(axis=None)
-            # Result: 21.0 (sum of all elements)
+            # shape (1,): [21.0]
 
         Args:
-            axis: The axis along which to compute the sum. Defaults to -1
-                (the last axis). If None, computes the sum across all elements.
+            axis: The axis along which to compute the sum. Negative values
+                index from the last dimension. When ``None``, the tensor is
+                flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the sum along the specified axis.
+            A ``Tensor`` containing the sum along ``axis``. For an integer
+            ``axis``, the result has the same rank as the input with the
+            ``axis`` dimension reduced to size ``1``. When ``axis`` is
+            ``None``, the result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.sum(self, axis=axis)
 
     def prod(self, axis: int | None = -1) -> Tensor:
-        """Computes the product of values along an axis.
+        """Computes the product along a specified axis.
 
         Args:
-            axis: The axis along which to compute the product. Defaults to -1
-                (the last axis). If None, computes the product across all
-                elements.
+            axis: The axis along which to compute the product. Negative values
+                index from the last dimension. When ``None``, the tensor is
+                flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the product along the specified axis.
+            A ``Tensor`` containing the product along ``axis``. For an integer
+            ``axis``, the result has the same rank as the input with the
+            ``axis`` dimension reduced to size ``1``. When ``axis`` is
+            ``None``, the result has shape ``(1,)``.
+
+        Raises:
+            ValueError: If ``axis`` is out of range.
         """
         return F.prod(self, axis=axis)
 
@@ -2000,67 +2165,69 @@ class Tensor(DLPackArray, HasTensorValue):
         return x
 
     def squeeze(self, axis: int) -> Tensor:
-        """Removes a size-1 dimension from the tensor.
+        """Removes a dimension of size ``1`` from the tensor.
 
-        Returns a tensor with the specified size-1 dimension removed. This is
-        useful for removing singleton dimensions from tensors after operations
-        that may have added them.
+        This is useful for removing singleton dimensions from tensors after
+        operations that may have added them.
 
         .. code-block:: python
 
             from max.experimental import tensor
 
-            # Create a tensor with a size-1 dimension
+            # x has shape (4, 1, 6).
             x = tensor.Tensor.ones([4, 1, 6])
-            print(x.shape)  # (4, 1, 6)
-
-            # Squeeze out the size-1 dimension
+            # Remove the size-1 dimension at axis 1, producing shape (4, 6).
             y = x.squeeze(axis=1)
-            print(y.shape)  # (4, 6)
 
         Args:
-            axis: The dimension to remove from the tensor's shape. If negative,
-                this indexes from the end of the tensor. The dimension at this
-                axis must have size 1.
+            axis: The dimension to remove from the input's shape. If negative,
+                this indexes from the end of the tensor. For example, a value
+                of ``-1`` removes the last dimension.
 
         Returns:
-            Tensor: A tensor with the specified dimension removed.
+            A ``Tensor`` containing the input with the dimension at ``axis``
+            removed. That dimension size must equal ``1``, so the result holds
+            the same elements as the input with one fewer dimension.
 
         Raises:
-            ValueError: If the dimension at the specified axis is not size 1.
+            ValueError: If the dimension at ``axis`` does not have size ``1``.
+            IndexError: If ``axis`` is out of range, including for a rank-zero
+                tensor.
         """
         return F.squeeze(self, axis)
 
     def unsqueeze(self, axis: int) -> Tensor:
-        """Inserts a size-1 dimension into the tensor.
+        """Inserts a dimension of size ``1`` into the tensor.
 
-        Returns a tensor with a new size-1 dimension inserted at the specified
-        position. This is the inverse of :meth:`squeeze` and is useful for
-        adding dimensions needed for broadcasting or matrix operations.
+        This is the inverse of :meth:`squeeze` and is useful for adding
+        dimensions needed for broadcasting or matrix operations.
 
         .. code-block:: python
 
             from max.experimental import tensor
 
-            # Create a 1D tensor
+            # x has shape (3,).
             x = tensor.Tensor([1.0, 2.0, 3.0])
-            print(x.shape)  # (3,)
-
-            # Add dimension at the end
+            # Add a size-1 dimension at the end, producing shape (3, 1).
             y = x.unsqueeze(axis=-1)
-            print(y.shape)  # (3, 1)
-
-            # Add dimension at the beginning
+            # Add a size-1 dimension at the front, producing shape (1, 3).
             z = x.unsqueeze(axis=0)
-            print(z.shape)  # (1, 3)
 
         Args:
-            axis: The index at which to insert the new dimension. If negative,
-                indexes relative to 1 plus the rank of the tensor. For example,
-                ``axis=-1`` adds a dimension at the end.
+            axis: The index at which to insert a new dimension into the input's
+                shape. Elements at that index or higher are shifted back. If
+                negative, it indexes relative to ``1`` plus the rank of the
+                tensor. For example, a value of ``-1`` adds a new dimension at
+                the end, and ``-2`` inserts the dimension immediately before
+                the last dimension.
 
         Returns:
-            Tensor: A tensor with an additional size-1 dimension.
+            A ``Tensor`` containing the input with a new dimension inserted at
+            ``axis``. That dimension has a size of ``1``, so the result holds
+            the same elements as the input with one more dimension.
+
+        Raises:
+            ValueError: If ``axis`` is out of bounds.
         """
         return F.unsqueeze(self, axis)
 
@@ -2094,76 +2261,82 @@ class Tensor(DLPackArray, HasTensorValue):
         Args:
             split_size_or_sections: Either an int (chunk size) or a list of
                 ints (exact sizes for each output tensor).
-            axis: The dimension along which to split. Defaults to 0.
+            axis: The dimension along which to split. Defaults to ``0``.
 
         Returns:
-            list[Tensor]: A list of tensors resulting from the split.
+            A list of ``Tensor`` objects resulting from the split.
+
+        Raises:
+            TypeError: If an integer chunk size is used for a non-static axis.
+            ValueError: If an explicit section size is negative or the section
+                sizes don't sum to the input size.
+            IndexError: If ``axis`` is out of range.
         """
         return cast(list[Tensor], F.split(self, split_size_or_sections, axis))
 
     def reshape(self, shape: ShapeLike) -> Tensor:
-        """Reshapes the tensor to a new shape.
+        """Reshapes the tensor.
 
-        Returns a tensor with the same data but a different shape. The total
-        number of elements must remain the same. This is useful for changing
-        tensor dimensions for different operations, such as flattening a
-        multi-dimensional tensor or converting a 1D tensor into a matrix.
+        If a value of ``-1`` is present in ``shape``, that dimension becomes an
+        automatically calculated dimension collecting all unspecified
+        dimensions. Its length becomes the number of elements in the original
+        tensor divided by the product of the other dimensions of ``shape``.
 
         .. code-block:: python
 
-            from max.experimental import tensor
             from max.dtype import DType
+            from max.experimental import tensor
 
-            # Create a 2x3 tensor
+            # x has shape (2, 3).
             x = tensor.Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
-            print(x.shape)  # (2, 3)
-
-            # Flatten to 1D
+            # Flatten the same 6 elements into shape (6,).
             y = x.reshape((6,))
-            print(y.shape)  # (6,)
-            # Values: [1, 2, 3, 4, 5, 6]
 
         Args:
-            shape: The desired output shape. Can be a tuple or list of integers.
-                The total number of elements must equal the original tensor's
-                element count.
+            shape: The new shape as an iterable of dimensions, such as a list
+                or tuple of ``int`` or ``Dim`` values. A single dimension may
+                be ``-1``.
 
         Returns:
-            Tensor: A reshaped tensor with the specified shape.
+            A ``Tensor`` containing the input with a new ``shape``. The order
+            and total number of elements stays the same as the input.
+
+        Raises:
+            ValueError: If ``shape`` contains more than one ``-1`` dimension,
+                if a ``-1`` dimension is requested while another dimension is
+                ``0``, or if the input and target shapes have a different
+                number of elements.
         """
         return F.reshape(self, shape)
 
     def broadcast_to(self, shape: ShapeLike) -> Tensor:
-        """Broadcasts the tensor to the specified shape.
+        """Broadcasts the tensor to a target shape.
 
-        Returns a tensor broadcast to the target shape, following NumPy
-        broadcasting semantics. Dimensions of size 1 in the input can be
-        expanded to match larger dimensions in the target shape.
-
-        This is equivalent to PyTorch's :func:`torch.broadcast_to` and
+        Each input dimension must either equal the corresponding target
+        dimension or be ``1`` (which is then stretched to match). This
+        follows NumPy broadcasting semantics and is equivalent to
+        PyTorch's :func:`torch.broadcast_to` and
         :meth:`torch.Tensor.expand`.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a tensor with shape (3, 1)
-            x = tensor.Tensor.ones([3, 1])
-
-            # Broadcast to (3, 4) - expands the second dimension
-            y = x.broadcast_to([3, 4])
-            print(y.shape)  # (3, 4)
+            x = Tensor.ones([3, 1])
+            result = x.broadcast_to([3, 4])
+            # result has shape (3, 4)
 
             # Add a new leading dimension
-            w = x.broadcast_to([2, 3, 1])
-            print(w.shape)  # (2, 3, 1)
+            result = x.broadcast_to([2, 3, 4])
+            # result has shape (2, 3, 4)
 
         Args:
-            shape: The target shape. Each dimension must either match the input
-                dimension or be broadcastable from size 1.
+            shape: The target shape. A static shape (no dynamic
+                dimensions).
 
         Returns:
-            Tensor: A tensor broadcast to the specified shape.
+            A ``Tensor`` with the same elements as ``self`` but with the
+            target shape.
         """
         return F.broadcast_to(self, shape)
 
@@ -2201,71 +2374,72 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.cast(self, dtype)
 
     def permute(self, dims: list[int]) -> Tensor:
-        """Permutes the dimensions of the tensor.
+        """Permutes all dimensions of the tensor.
 
-        Returns a tensor with its dimensions reordered according to the
-        specified permutation. This is useful for changing the layout of
-        multi-dimensional data, such as converting between different tensor
-        layout conventions (e.g., from ``[batch, channels, height, width]``
-        to ``[batch, height, width, channels]``).
+        This is useful for changing the layout of multi-dimensional data, such
+        as converting between different tensor layout conventions (for example,
+        from ``[batch, channels, height, width]`` to
+        ``[batch, height, width, channels]``).
 
         .. code-block:: python
 
-            from max.experimental.tensor import Tensor
             from max.dtype import DType
+            from max.experimental import tensor
 
-            # Create a 3D tensor (batch_size=2, channels=3, length=4)
-            x = Tensor(
+            # x has shape (2, 3, 4): (batch, channels, length).
+            x = tensor.Tensor(
                 [[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
                  [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
                 dtype=DType.int32,
             )
-            print(f"Original shape: {x.shape}")
-            # Output: Original shape: [Dim(2), Dim(3), Dim(4)]
-
-            # Rearrange to (batch, length, channels)
+            # Reorder to (batch, length, channels), producing shape (2, 4, 3).
             y = x.permute([0, 2, 1])
-            print(f"Permuted shape: {y.shape}")
-            # Output: Permuted shape: [Dim(2), Dim(4), Dim(3)]
 
         Args:
-            dims: A list specifying the new order of dimensions. For example,
-                ``[2, 0, 1]`` moves dimension 2 to position 0, dimension 0 to
-                position 1, and dimension 1 to position 2.
+            dims: The target order of the dimensions as a list of axis indices.
+                Each axis may be negative to index from the end of the tensor.
 
         Returns:
-            A tensor with permuted dimensions.
+            A ``Tensor`` containing the input with its dimensions reordered to
+            match ``dims``. It has the same elements and dtype as the input,
+            with the order of the elements changed according to the permutation.
+
+        Raises:
+            ValueError: If the length of ``dims`` does not match the rank of
+                the input, or if ``dims`` contains duplicate dimensions.
+            IndexError: If any dimension in ``dims`` is out of range.
         """
         return F.permute(self, dims)
 
     def transpose(self, dim1: int, dim2: int) -> Tensor:
-        """Returns a tensor that is a transposed version of input.
-
-        The given dimensions ``dim1`` and ``dim2`` are swapped.
+        """Transposes two axes of the tensor.
 
         .. code-block:: python
 
-            from max.experimental.tensor import Tensor
             from max.dtype import DType
+            from max.experimental import tensor
 
-            # Create a 2x3 matrix
-            x = Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
-            print(f"Original shape: {x.shape}")
-            # Output: Original shape: [Dim(2), Dim(3)]
-            print(x)
-
-            # Transpose dimensions 0 and 1 to get a 3x2 matrix
+            # x has shape (2, 3).
+            x = tensor.Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            # Swap axes 0 and 1, producing shape (3, 2).
             y = x.transpose(0, 1)
-            print(f"Transposed shape: {y.shape}")
-            # Output: Transposed shape: [Dim(3), Dim(2)]
-            print(y)
 
         Args:
-            dim1: The first dimension to be transposed.
-            dim2: The second dimension to be transposed.
+            dim1: One of the two axes to transpose. If negative, this indexes
+                from the end of the tensor. For example, a value of ``-1``
+                refers to the last axis.
+            dim2: The other axis to transpose. If negative, this indexes from
+                the end of the tensor.
 
         Returns:
-            A tensor with dimensions ``dim1`` and ``dim2`` swapped.
+            A ``Tensor`` containing the input with ``dim1`` and ``dim2``
+            transposed. It has the same elements and dtype as the input, with
+            the order of the elements changed according to the transposition.
+            For a rank-zero tensor, axes ``-1`` and ``0`` are accepted and the
+            scalar is returned unchanged.
+
+        Raises:
+            IndexError: If ``dim1`` or ``dim2`` is out of range.
         """
         return F.transpose(self, dim1, dim2)
 

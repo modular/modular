@@ -186,6 +186,7 @@ class DeepseekV3NextN(Module):
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
         input_row_offsets_ = list(input_row_offsets)
+        all_logits_input_row_offsets = input_row_offsets_[0]
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
             norm_embed, input_row_offsets_ = split_batch_replicated(
@@ -268,36 +269,21 @@ class DeepseekV3NextN(Module):
                 ]
             )
 
-        kv_scales: list[BufferValue] = []
-
-        # Extract dispatch metadata from KV collections for MLA decode.
-        mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].attention_dispatch_metadata is not None:
-            mla_decode_scalar_args = [
-                kv.attention_dispatch_metadata
-                for kv in kv_collections
-                if kv.attention_dispatch_metadata is not None
-            ]
-
         h = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
             signal_buffers,
-            [kv_collection.kv_blocks for kv_collection in kv_collections],
-            [kv_collection.cache_lengths for kv_collection in kv_collections],
-            [kv_collection.lookup_table for kv_collection in kv_collections],
-            [kv_collection.max_lengths for kv_collection in kv_collections],
-            kv_scales,
+            kv_collections,
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
             input_row_offsets=input_row_offsets_,
-            mla_decode_scalar_args=mla_decode_scalar_args,
             ep_inputs=ep_inputs,
         )
 
         return deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=all_logits_input_row_offsets,
             return_n_logits=return_n_logits,
             norm_shards=self.shared_head_norm_shards,
             lm_head=self.lm_head,
@@ -361,7 +347,7 @@ class DeepseekV3NextN(Module):
             ]
         )
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths (one per device)
         batch_context_length_type = TensorType(

@@ -26,6 +26,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,10 +35,10 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.primitives import block
-from std.memory import alloc
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives import block
+from std.memory import alloc, dealloc
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -50,10 +51,12 @@ from layout import (
     Coord,
     CoordLike,
     RowMajorLayout,
-    RuntimeInt,
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
+    fused_bias_residual_matmul_dispatch_sm100,
+)
 from std.utils import IndexList
 
 
@@ -67,7 +70,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -89,7 +92,7 @@ def _verify_buffers_gpu[
 
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
+    while i < Int(length):
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -137,10 +140,10 @@ def _check_verification_result[
     var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -148,7 +151,10 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host_alloc = alloc[Scalar[DType.float32]](
+        {count = NUM_BLOCKS * 5}
+    ).into_managed()
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -166,7 +172,7 @@ def _check_verification_result[
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
 
-    result_host.free()
+    dealloc(result_host_alloc^)
 
     if any_out_nz == 0:
         raise String(label, ": kernel output is all zeros")
@@ -251,9 +257,8 @@ def bench_matmul_tma_epilogue[
     cb_epilogue.init_on_device(init_type, ctx)
 
     @__copy_capture(cb_a, cb_b, cb_c, cb_epilogue)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -275,19 +280,19 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c, tensor_epilogue)
             def epilogue_lambda[
                 _dtype: DType,
-                width: Int,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
                 var epi_val = tensor_epilogue.load[width=width](
-                    Coord(Idx(idx[0]), Idx(idx[1]))
+                    Coord(idx[0], idx[1])
                 ).cast[_dtype]()
                 return val + epi_val
 
@@ -298,34 +303,26 @@ def bench_matmul_tma_epilogue[
             ](tensor_c, tensor_a, tensor_b, ctx)
 
         else:  # "tma_bias"
-            # Build epilogue TileTensor with RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
-            # to exactly match _matmul_gpu's epilogue_tensor parameter type. Idx(Int) returns
-            # RuntimeInt[DType.int] which mismatches; use RuntimeInt[DType.int64] directly.
-            var epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[0].value()))
-            )
-            var epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[1].value()))
-            )
+            # Build epilogue TileTensor with RowMajorLayout[Int64, Int64] to
+            # match the fused dispatcher's epilogue_tensor parameter type. Int
+            # returns Scalar[DType.int] which mismatches; use Int64 directly.
+            var epi_m = Int64(epilogue_shape[0].value())
+            var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_gpu = TileTensor(
                 tensor_epilogue.ptr, row_major(Coord(epi_m, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                has_epilogue_tensor=True,
-            ](
+            fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 tensor_c,
                 tensor_a,
                 tensor_b,
+                epilogue_for_gpu.as_unsafe_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_gpu,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -403,19 +400,19 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(epilogue_ver_nd)
             def ver_epilogue_lambda[
                 _dtype: DType,
-                width: Int,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
                 var epi_val = epilogue_ver_nd.load[width=width](
-                    Coord(Idx(idx[0]), Idx(idx[1]))
+                    Coord(idx[0], idx[1])
                 ).cast[_dtype]()
                 return val + epi_val
 
@@ -426,31 +423,29 @@ def bench_matmul_tma_epilogue[
             ](c_kernel_nd, a_ver_nd, b_ver_nd, ctx)
 
         else:
-            var epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[0].value()))
-            )
-            var epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[1].value()))
-            )
+            var epi_m = Int64(epilogue_shape[0].value())
+            var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_ver = TileTensor(
                 epilogue_ver_dev.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                has_epilogue_tensor=True,
-            ](
+            fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 c_kernel_nd,
                 a_ver_nd,
                 b_ver_nd,
+                epilogue_for_ver.as_unsafe_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_ver,
             )
 
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
-            var epilogue_host = alloc[Scalar[dtype]](c_size)
-            var c_ref_host = alloc[Scalar[dtype]](c_size)
+            var epilogue_host_alloc = alloc[Scalar[dtype]](
+                {count = c_size}
+            ).into_managed()
+            var epilogue_host = epilogue_host_alloc.unsafe_ptr()
+            var c_ref_host_alloc = alloc[Scalar[dtype]](
+                {count = c_size}
+            ).into_managed()
+            var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)
             ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()
@@ -462,8 +457,9 @@ def bench_matmul_tma_epilogue[
                 ).cast[dtype]()
 
             ctx.enqueue_copy(c_ref_dev, c_ref_host)
-            epilogue_host.free()
-            c_ref_host.free()
+            ctx.synchronize()
+            dealloc(epilogue_host_alloc^)
+            dealloc(c_ref_host_alloc^)
 
         comptime NUM_BLOCKS = 32
         comptime BLOCK_SIZE = 256
@@ -509,8 +505,8 @@ def create_tma_epilogue_benches[
     var shape_a = Coord(m, k)
     # transpose_b=True → B is stored as N×K
     var shape_b = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
     var epilogue_shape = Coord(m, n)
 
@@ -581,9 +577,9 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
+            M,
+            Idx[N],
+            Idx[K],
             init_type,
             verify,
             run_benchmark=run_benchmark,

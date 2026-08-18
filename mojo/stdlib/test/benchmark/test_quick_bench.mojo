@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.math
+from std.memory import alloc, dealloc, Layout, ThinAllocation
 from std.random import randint
 from std.time import sleep
 
@@ -21,21 +22,21 @@ from std.testing import TestSuite
 
 def vec_reduce[
     N: Int, dtype: DType
-](x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
+](x: Pointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
     var total: Scalar[dtype] = 0
     for i in range(N):
-        total += x[i]
+        total += x[unsafe_offset=i]
     return total
 
 
 def vec_add[
     N: Int, dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    x: Pointer[Scalar[dtype], MutAnyOrigin],
+    y: Pointer[Scalar[dtype], ImmutAnyOrigin],
+) -> Pointer[Scalar[dtype], MutAnyOrigin]:
     for i in range(N):
-        x[i] += y[i]
+        x[unsafe_offset=i] += y[unsafe_offset=i]
     return x
 
 
@@ -289,8 +290,9 @@ def test_custom() raises:
     comptime N = 1024
     comptime alignment = 64
     comptime dtype = DType.int32
-    var x = alloc[Scalar[dtype]](N, alignment=alignment)
-    var y = alloc[Scalar[dtype]](N, alignment=alignment)
+    var xy_layout = Layout[Scalar[dtype]](count=N, alignment=alignment)
+    var x = alloc(xy_layout).unsafe_leak()
+    var y = alloc(xy_layout).unsafe_leak()
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -298,7 +300,7 @@ def test_custom() raises:
 
     qb.run(
         vec_reduce[N, dtype],
-        x,
+        x.as_unsafe_any_origin(),
         bench_id=BenchId("vec_reduce"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
@@ -307,8 +309,8 @@ def test_custom() raises:
 
     qb.run(
         vec_add[N, dtype],
-        x,
-        y,
+        x.as_unsafe_any_origin(),
+        y.as_unsafe_any_origin(),
         bench_id=BenchId("vec_add"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
@@ -316,8 +318,8 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    x.free()
-    y.free()
+    dealloc(ThinAllocation(unsafe_owned_ptr=x).unsafe_with_layout(xy_layout))
+    dealloc(ThinAllocation(unsafe_owned_ptr=y).unsafe_with_layout(xy_layout))
 
 
 def test_all() raises:

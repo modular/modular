@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, warp_id, lane_id
-from std.gpu.host import DeviceContext
+from std.gpu import warp_id, lane_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx
 from std.gpu.intrinsics import threadfence
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -94,7 +95,7 @@ def wgmma_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    c0 = bitcast[DType.int32, 4](c_reg)
+    var c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
@@ -213,7 +214,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -334,7 +335,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -457,7 +458,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -580,7 +581,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

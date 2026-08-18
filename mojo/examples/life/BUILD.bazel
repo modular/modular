@@ -29,26 +29,12 @@ mojo_binary(
 )
 
 mojo_binary(
-    name = "lifev3",
-    testonly = True,
-    srcs = [
-        "gridv3.mojo",
-        "lifev3.mojo",
-    ],
-    deps = [
-        "@mojo//:std",
-        requirement("pygame-ce"),
-    ],
-)
-
-mojo_binary(
     name = "benchmark",
     testonly = True,
     srcs = [
         "benchmark.mojo",
         "gridv1.mojo",
         "gridv2.mojo",
-        "gridv3.mojo",
     ],
     deps = [
         "@mojo//:std",
@@ -76,19 +62,6 @@ mojo_test(
         "test/test_gridv2.mojo",
     ],
     main = "test/test_gridv2.mojo",
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-mojo_test(
-    name = "test_gridv3",
-    size = "small",
-    srcs = [
-        "gridv3.mojo",
-        "test/test_gridv3.mojo",
-    ],
-    main = "test/test_gridv3.mojo",
     deps = [
         "@mojo//:std",
     ],

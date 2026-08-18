@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MMABlockSpec and PipelineProgram — declarative pipeline program representation.
+"""MMABlockSpec and PipelineProgram: declarative pipeline program representation.
 
 These structures hold the compiled schedule as a sequence of MMA blocks,
 separating schedule definition from schedule expansion.
@@ -166,7 +166,10 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         """
         var n = 0
         if self.entry_wait.is_present():
-            n += 1
+            # entry_wait is followed by an s_barrier in the emit
+            # (cross-warp visibility fence after the vm drain). Count
+            # both ops together.
+            n += 2
         if self.entry_wait_lgkm.is_present():
             n += 1
         if self.pre_op_0.is_present():
@@ -237,7 +240,7 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         With `barrier_before_pre_ops=False` (default) the barrier sits
         after frags + globals, so this equals `_n_pre_barrier_ops`.
         With `barrier_before_pre_ops=True` the barrier sits right after
-        `entry_wait`/`entry_wait_lgkm`/`pre_sync` — fragments and
+        `entry_wait`/`entry_wait_lgkm`/`pre_sync`; fragments and
         globals come *after* the barrier, so they don't count here.
         """
         if not self.barrier_before_pre_ops:
@@ -289,10 +292,16 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         # (when both present) so LLVM's waitcnt-merge pass can coalesce
         # them into one `s_waitcnt vmcnt(N) lgkmcnt(M)` instruction.
         b.emit_if(self.entry_wait_lgkm)
+        # Cross-warp visibility fence — see `emit_minimal_barrier_block`
+        # for full rationale. Without this `s_barrier`, the subsequent
+        # frag-loads can race against other warps' still-pending
+        # `buffer_load_lds → LDS` writes from the previous iter.
+        if self.entry_wait.is_present():
+            b.emit(OpDesc.barrier())
         if self._entry_wait_wrap() > 0:
             b.emit(OpDesc.schedule_barrier())
 
-        @parameter
+        @__parameter
         @always_inline
         def emit_sync_section():
             if self._pre_mma_sync_wrap() > 0:
@@ -305,7 +314,7 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
             if self._pre_mma_sync_wrap() > 0:
                 b.emit(OpDesc.schedule_barrier())
 
-        @parameter
+        @__parameter
         @always_inline
         def emit_load_section():
             if self.global_before_frag:
@@ -368,6 +377,14 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
             _e(out, self.entry_wait, phase)
         if self.entry_wait_lgkm.is_present():
             _e(out, self.entry_wait_lgkm, phase)
+        # Cross-warp visibility fence — see the matching block in
+        # `emit_minimal_barrier_block` for the full rationale. The
+        # `entry_wait` (`wait_vm[N]`) is a per-warp drain; the
+        # subsequent frag-loads can race against other warps' still-
+        # pending `buffer_load_lds → LDS` writes without an explicit
+        # `s_barrier` between them.
+        if self.entry_wait.is_present():
+            _e(out, OpDesc.barrier(), phase)
         if self._entry_wait_wrap() > 0:
             _e(out, OpDesc.schedule_barrier(), phase)
 
@@ -457,7 +474,7 @@ def emit_minimal_barrier_block(
     block: MMABlockSpec, wrap_waits: Bool, global_before_frag: Bool = False
 ) -> List[OpDesc]:
     """Emit one block in the "minimal-barrier + cross-stage rotation"
-    shape — for schedules that override `build_explicit_blocks`.
+    shape: for schedules that override `build_explicit_blocks`.
 
     Layout (per block):
       - Sync-group A: `[sched_barrier]` `entry_wait` `entry_wait_lgkm`
@@ -473,13 +490,13 @@ def emit_minimal_barrier_block(
       - Final `mma`.
 
     Reads wait values, frag/global ops, barrier flags from
-    `block` — typically populated by `_construct_mma_blocks` and
+    `block`, typically populated by `_construct_mma_blocks` and
     patched by `derive_waits_from_blocks`. Schedules consume the
     derived structure and emit it in their preferred order, without
     the conditional template branching of `MMABlockSpec.expand`.
 
     Bypasses `pre_mma_set_prio` / `post_mma_*` / `fused_mma` / drain
-    flags — those don't apply under the minimal-barriers pattern.
+    flags; those don't apply under the minimal-barriers pattern.
     Schedules with different needs should write their own emitter.
 
     Args:
@@ -502,6 +519,19 @@ def emit_minimal_barrier_block(
         ops.append(block.entry_wait)
     if block.entry_wait_lgkm.is_present():
         ops.append(block.entry_wait_lgkm)
+    # Cross-warp visibility fence on top-of-half / first-cross-stage
+    # entries. The `entry_wait` (`wait_vm[N]`) only drains *this warp's*
+    # in-flight `buffer_load_lds`; it does NOT guarantee that the LDS
+    # writes from those loads are visible across the workgroup. The
+    # subsequent frag-loads (`pre_op_0/1`) read LDS regions that may
+    # have been written by other warps in the previous iter. Without an
+    # explicit `s_barrier` here, those `ds_read`s race against the
+    # other warps' still-pending LDS-write commit, producing intermittent
+    # wrong values (observed at FP8 BM=64 on a small subset of conv
+    # shapes — ~10% per-run flake in CI). Mirrors the handwritten
+    # body's top-of-iter `wait_vm + wait_lgkm + s_barrier` pattern.
+    if block.entry_wait.is_present():
+        ops.append(OpDesc.barrier())
     if wrap_waits and has_a:
         ops.append(OpDesc.schedule_barrier())
 
@@ -572,7 +602,7 @@ struct PipelineProgram(Copyable, Movable):
       - Override: schedules can supply a parallel `explicit_blocks`
         list (one `List[OpDesc]` per block) that bypasses the template
         entirely. When `explicit_blocks[i]` is non-empty the framework
-        emits those ops verbatim — gives schedules full control over
+        emits those ops verbatim, giving schedules full control over
         per-block emission shape without needing new flags.
 
     `explicit_blocks` defaults to empty (every block uses the
@@ -600,7 +630,7 @@ struct PipelineProgram(Copyable, Movable):
 
     @always_inline
     def _block_entry_count(self, block_idx: Int) -> Int:
-        """Entry count for one block — explicit override if non-empty,
+        """Entry count for one block: explicit override if non-empty,
         else the flag-driven template count.
         """
         if (

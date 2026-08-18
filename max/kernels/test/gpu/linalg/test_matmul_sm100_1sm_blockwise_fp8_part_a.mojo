@@ -18,8 +18,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -97,22 +97,22 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_scales_shape = row_major(
-        Coord(Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)), m)
+        Coord(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), BLOCK_SCALE_K)),
-            Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)),
+            ceildiv(Int(n.value()), BLOCK_SCALE_K),
+            ceildiv(Int(k.value()), BLOCK_SCALE_K),
         )
     )
 
@@ -167,29 +167,27 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = Scalar[a_type](1.0)
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = Scalar[a_type](1.0)
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                b_host[(Idx(n), Idx(k))] = Scalar[b_type](1.0)
+                b_host[n, k] = Scalar[b_type](1.0)
 
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_scales_host.flat_rank >= 2
-                a_scales_host[(Idx(k // BLOCK_SCALE_K), Idx(m))] = Scalar[
-                    scales_type
-                ](0.5)
+                comptime assert a_scales_host.flat_rank == 2
+                a_scales_host[k // BLOCK_SCALE_K, m] = Scalar[scales_type](0.5)
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                b_scales_host[
-                    (Idx(n // BLOCK_SCALE_K), Idx(k // BLOCK_SCALE_K))
-                ] = Scalar[scales_type](0.5)
+                b_scales_host[n // BLOCK_SCALE_K, k // BLOCK_SCALE_K] = Scalar[
+                    scales_type
+                ](0.5)
 
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
-        rand(a_scales_host.ptr, a_scales_host.num_elements())
-        rand(b_scales_host.ptr, b_scales_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
+        rand(a_scales_host._storage, a_scales_host.num_elements())
+        rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -237,8 +235,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_ref_tensor_lt,
         a_lt,
         b_lt,
-        a_scales_lt.get_immutable(),
-        b_scales_lt.get_immutable(),
+        a_scales_lt.as_imm(),
+        b_scales_lt.as_imm(),
         ctx,
     )
 
@@ -249,12 +247,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -321,9 +322,9 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(576),
-                Idx(7168),
+                Int(1000),
+                Idx[576],
+                Idx[7168],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -338,9 +339,9 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(576),
-                Idx[256 + 64](),
+                Int(1000),
+                Idx[576],
+                Idx[256 + 64],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -356,9 +357,9 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx(32768),
-                Idx(512),
+                Int(1000),
+                Idx[32768],
+                Idx[512],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -373,9 +374,9 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(512)),
-                Idx(4096),
-                Idx(1024),
+                Int(512),
+                Idx[4096],
+                Idx[1024],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -390,9 +391,9 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(500)),
-                Idx(24576),
-                Idx(1536),
+                Int(500),
+                Idx[24576],
+                Idx[1536],
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -407,7 +408,7 @@ def main() raises:
                 cta_group=1,
             ](
                 ctx,
-                Idx(Int(1024)),
-                Idx(1536),
-                Idx(7168),
+                Int(1024),
+                Idx[1536],
+                Idx[7168],
             )

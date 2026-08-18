@@ -24,7 +24,7 @@ from std.math.uutils import umod, ufloordiv
 from std.math.constants import log2e
 from std.algorithm.functional import unswitch
 from std.gpu import block_idx, lane_id, thread_idx
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -34,7 +34,6 @@ from layout import (
     Coord,
     Idx,
     MixedLayout,
-    RuntimeInt,
     TileTensor,
 )
 from layout.tile_layout import row_major
@@ -204,6 +203,31 @@ struct AttentionRDNA[
     cache_depth: Int = config.depth,
     output_depth: Int = config.depth,
 ]:
+    """RDNA Wave32 multi-head attention tile driver for prefill and decode.
+
+    Holds the Q/K/V register and shared-memory buffers, online-softmax state,
+    and output accumulator, and exposes the per-iteration mask, softmax, and
+    store hooks that the prefill and decode kernels in `mha.mojo` invoke.
+
+    Parameters:
+        output_type: The `DType` of the output tensor (inferred).
+        q_type: The `DType` of the query tensor (inferred).
+        k_t: The `MHAOperand` type of the key operand (inferred).
+        v_t: The `MHAOperand` type of the value operand (inferred).
+        mask_t: The `MHAMask` type applied to attention scores (inferred).
+        config: The MHA configuration holding tile, warp, and head counts.
+        group: Number of query heads sharing each KV head in GQA.
+        sink: Whether to initialize the softmax with attention sink
+            weights.
+        token_gen: Whether the kernel runs in decode (token generation)
+            mode rather than prefill (defaults to `False`).
+        q_depth: Head dimension of the query (defaults to `config.depth`).
+        cache_depth: Head dimension of each KV cache entry (defaults to
+            `config.depth`).
+        output_depth: Head dimension of the output projection (defaults
+            to `config.depth`).
+    """
+
     comptime attention_config = MHAAttentionConfigRDNA[
         Self.token_gen, Self.config, Self.group
     ]
@@ -282,7 +306,7 @@ struct AttentionRDNA[
         use_exp2=Self.use_exp2,
     ]
 
-    # Q / output / KV DRAM tile layouts. RuntimeInt rows + ComptimeInt
+    # Q / output / KV DRAM tile layouts. Scalar rows + ComptimeInt
     # depth/strides; the runtime row count drives SRD OOB clamping.
 
     comptime kv_num_heads = Self.num_heads // Self.group
@@ -291,7 +315,7 @@ struct AttentionRDNA[
         Self.num_heads * Self.q_depth if not Self.token_gen else Self.q_depth
     )
     comptime QTileLayout = MixedLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.q_depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -300,15 +324,13 @@ struct AttentionRDNA[
         * Self.output_depth if not Self.token_gen else Self.output_depth
     )
     comptime OutputTileLayout = MixedLayout[
-        Coord[
-            RuntimeInt[DType.int64], ComptimeInt[Self.output_depth]
-        ].element_types,
+        Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _kv_stride0 = Self.kv_num_heads * Self.depth
     comptime KvTileLayout = MixedLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -335,16 +357,18 @@ struct AttentionRDNA[
 
     var k_smem_ptr: UnsafePointer[
         Scalar[Self.k_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
     var v_smem_ptr: UnsafePointer[
         Scalar[Self.v_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
     var q_buffer: Self.QRegisterBufferType
+
+    @__allow_legacy_any_origin_fields
     var output_tile: TileTensor[
         Self.output_type, Self.OutputTileLayout, MutAnyOrigin
     ]
@@ -438,10 +462,10 @@ struct AttentionRDNA[
             head_idx,
             Self.KvTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
-                    Idx[Self.depth](),
+                    Int64(kv_tile_num_rows),
+                    Idx[Self.depth],
                 ),
-                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+                Coord(Idx[Self._kv_stride0], Idx[1]),
             ),
         )
 
@@ -455,6 +479,7 @@ struct AttentionRDNA[
     ) -> TileMaskStatus:
         comptime if Self.token_gen:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
@@ -463,6 +488,7 @@ struct AttentionRDNA[
             )
         else:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
@@ -499,7 +525,7 @@ struct AttentionRDNA[
         not_last_iter: Bool,
     ):
         @always_inline
-        @parameter
+        @__parameter
         def _mask_apply_impl[masked: Bool]():
             _mask_apply_rdna[
                 masked=masked,
@@ -561,13 +587,13 @@ struct AttentionRDNA[
         self.out_reg_buffer.zero()
 
         # SMEM allocations.
-        self.k_smem_ptr = stack_allocation[
+        self.k_smem_ptr = unsafe_stack_allocation[
             Self._k_smem_size,
             Self.k_t.dtype,
             address_space=AddressSpace.SHARED,
             alignment=Self._smem_alignment,
         ]()
-        self.v_smem_ptr = stack_allocation[
+        self.v_smem_ptr = unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
             address_space=AddressSpace.SHARED,
@@ -577,21 +603,25 @@ struct AttentionRDNA[
         # P buffer: dedicated SMEM for prefill (BM*BK), borrows decode-mode
         # P SMEM region (BM*BN) otherwise.
         comptime if not Self.token_gen:
-            var p_ptr = stack_allocation[
+            var p_ptr = unsafe_stack_allocation[
                 Self.BM * Self.BK,
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
         else:
-            var p_ptr = stack_allocation[
+            var p_ptr = unsafe_stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
 
-        # Q tile: pre-offset and wrapped as TileTensor with RuntimeInt rows.
+        # Q tile: pre-offset and wrapped as TileTensor with Scalar rows.
         var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(
             UInt32(Self.BM),
             UInt32(seq_len) - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
@@ -605,10 +635,10 @@ struct AttentionRDNA[
             ptr=q + Int(q_offset),
             layout=Self.QTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
-                    Idx[Self.q_depth](),
+                    Int64(valid_rows),
+                    Idx[Self.q_depth],
                 ),
-                Coord(Idx[Self._q_stride0](), Idx[1]()),
+                Coord(Idx[Self._q_stride0], Idx[1]),
             ),
         )
         self.q_buffer = Self.QRegisterBufferType(q_tile, Int(valid_rows))
@@ -619,12 +649,12 @@ struct AttentionRDNA[
             ptr=output_ptr + Int(output_offset),
             layout=Self.OutputTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
-                    Idx[Self.output_depth](),
+                    Int64(valid_rows),
+                    Idx[Self.output_depth],
                 ),
                 Coord(
-                    Idx[Self._output_stride0](),
-                    Idx[1](),
+                    Idx[Self._output_stride0],
+                    Idx[1],
                 ),
             ),
         )
@@ -673,7 +703,6 @@ struct AttentionRDNA[
         var warp_scratch = TileTensor[
             Self.accum_type,
             type_of(Self._warp_scratch_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
             self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
@@ -750,7 +779,12 @@ struct AttentionRDNA[
 
     @always_inline
     def copy_fragment_to_smem[chunk_idx: Int](self):
-        """Copy one chunk of P to shared memory."""
+        """Copy one chunk of P to shared memory.
+
+        Parameters:
+            chunk_idx: The compile-time index of the P fragment chunk to
+                copy.
+        """
         self.p_reg_buffer.copy_to_shared[chunk_idx]()
 
     @always_inline

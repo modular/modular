@@ -16,15 +16,17 @@ from std.sys import get_defined_int
 
 from comm.sync import enable_p2p
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_almost_equal, assert_true
 
 
 def p2p_copy_kernel(
     dst: UnsafePointer[Float32, MutAnyOrigin],
     src: UnsafePointer[Float32, ImmutAnyOrigin],
-    num_elements: Int,
+    num_elements_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_elements = Int(num_elements_dev)
     var tid = global_idx.x
     if tid < num_elements:
         dst[tid] = src[tid]
@@ -40,10 +42,10 @@ def launch_p2p_copy_kernel(
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
-    ctx1.enqueue_function_experimental[p2p_copy_kernel](
+    ctx1.enqueue_function[p2p_copy_kernel](
         dst_buf,
         src_buf,
-        num_elements,
+        Int32(num_elements),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
     )

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.unified_eagle_llama3.model_config import (
     UnifiedEagleLlama3Config,
@@ -38,14 +38,15 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
         dtype=DType.bfloat16,
         model_quantization_encoding=None,
         quantization_config=None,
-        kv_params=KVCacheParams(
+        kv_params=MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=4,
             head_dim=2,
             num_layers=layers,
             devices=[DeviceRef.GPU(0)],
             data_parallel_degree=1,
-            num_eagle_speculative_tokens=1,
+            speculative_method="eagle",
+            num_draft_tokens=1,
         ),
         attention_multiplier=1.0,
         embedding_multiplier=2.0,
@@ -91,10 +92,10 @@ def test_graph_construction() -> None:
     # Verify input types include draft_tokens and draft_cache_lengths.
     input_types = model.input_types()
     # Expected: tokens, input_row_offsets, return_n_logits,
-    #           + target KV (6 fields), + draft_tokens, + draft_kv_blocks,
+    #           + target KV (7 fields) + draft KV (7 fields) + draft_tokens,
     #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
-    assert len(input_types) == 17, (
-        f"Expected 18 input types, got {len(input_types)}"
+    assert len(input_types) == 24, (
+        f"Expected 24 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works
@@ -108,19 +109,38 @@ def test_graph_construction() -> None:
 
 
 def test_input_types_with_structured_output() -> None:
-    """Test that input types include bitmask when structured output is enabled."""
+    """Test that input types include the bitmask triple when structured
+    output is enabled.
+
+    The overlap path binds three inputs in order: pinned bitmask source,
+    the int64[2] wait payload consumed by ``mo.wait_host_value_with_dep``,
+    and the device-side bitmask scratch destination.
+    """
     config = create_dummy_eagle_llama3_config(enable_structured_output=True)
     model = UnifiedEagleLlama3(config)
 
-    # Verify input types include bitmask when structured output is enabled.
+    # Verify input types include the bitmask triple when structured
+    # output is enabled.
     input_types = model.input_types()
-    # Expected: 17 mandatory inputs + 1 bitmask = 18 total
-    assert len(input_types) == 18, (
-        f"Expected 18 input types (with bitmask), got {len(input_types)}"
+    # Expected: 24 mandatory inputs + 3 bitmask (pinned, wait_payload,
+    # device_bitmask_scratch) = 27 total
+    assert len(input_types) == 27, (
+        f"Expected 27 input types (with bitmask triple), got {len(input_types)}"
     )
 
-    # Verify the last input is the bitmask type.
-    bitmask_type = input_types[-1]
-    assert bitmask_type.dtype.to_numpy() == "bool", (
-        f"Expected bitmask dtype bool, got {bitmask_type.dtype}"
+    # The trailing three inputs are pinned_bitmask (packed int32 tensor),
+    # wait_payload (int64 buffer), and device_bitmask_scratch (packed int32
+    # buffer). The bitmask is stored as packed int32 (one bit per vocab token)
+    # so the GPU acceptance sampler unpacks and applies it in one fused pass.
+    pinned_type = input_types[-3]
+    payload_type = input_types[-2]
+    scratch_type = input_types[-1]
+    assert pinned_type.dtype.to_numpy() == "int32", (
+        f"Expected pinned bitmask dtype int32, got {pinned_type.dtype}"
+    )
+    assert payload_type.dtype.to_numpy() == "int64", (
+        f"Expected wait_payload dtype int64, got {payload_type.dtype}"
+    )
+    assert scratch_type.dtype.to_numpy() == "int32", (
+        f"Expected device_bitmask_scratch dtype int32, got {scratch_type.dtype}"
     )

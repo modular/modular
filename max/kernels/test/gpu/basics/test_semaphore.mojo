@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import NamedBarrierSemaphore
-from std.gpu.host import DeviceContext
+from max.gpu.sync import NamedBarrierSemaphore
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
@@ -58,7 +58,7 @@ def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
         shared_host[i] = Int32(NUM_BLOCKS)
 
     comptime kernel = test_named_barrier_semaphore_equal_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         locks_data.device_tensor().ptr,
         shared_data.device_tensor().ptr,
         grid_dim=(NUM_BLOCKS),
@@ -105,7 +105,7 @@ def test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
         shared_host[i] = Int32(NUM_BLOCKS)
 
     comptime kernel = test_named_barrier_semaphore_less_than_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         locks_data.device_tensor().ptr,
         shared_data.device_tensor().ptr,
         grid_dim=(NUM_BLOCKS),

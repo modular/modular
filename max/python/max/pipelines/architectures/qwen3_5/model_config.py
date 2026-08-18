@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import ClassVar
 
+from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -39,6 +42,12 @@ class Qwen3_5Config(Llama3Config):
     and linear attention (Gated DeltaNet) layers. Every full_attention_interval-th
     layer uses full attention, and the rest use linear attention.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
 
     # Hybrid attention parameters
     layer_types: list[str] = field(default_factory=list)
@@ -69,6 +78,9 @@ class Qwen3_5Config(Llama3Config):
 
     attn_output_gate: bool = True
     """Whether full attention layers use a sigmoid output gate."""
+
+    mamba_ssm_dtype: DType = DType.float32
+    """Dtype for SSM (state space model) computations in linear attention layers."""
 
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None
@@ -135,6 +147,11 @@ class Qwen3_5Config(Llama3Config):
         num_full_attention_layers = sum(
             1 for lt in layer_types if lt == "full_attention"
         )
+        # The MHA kernel selects tile_size == head_dim. The KV cache
+        # page_size must be >= tile_size. Qwen3.5 has head_dim=256.
+        page_size = kv_cache_config.kv_cache_page_size
+        if text_config.head_dim > 128:
+            page_size = max(page_size, text_config.head_dim)
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
@@ -142,6 +159,7 @@ class Qwen3_5Config(Llama3Config):
             num_layers=num_full_attention_layers,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
+            page_size=page_size,
         )
 
     @staticmethod
@@ -194,47 +212,44 @@ class Qwen3_5Config(Llama3Config):
         )
         return num_linear * bytes_per_layer
 
-    def infer_optimal_batch_size(self, devices: list[Any]) -> int:
+    def infer_optimal_batch_size(
+        self,
+        devices: list[Device],
+        *,
+        weights_size: int,
+        device_memory_utilization: float,
+    ) -> int:
         """Return a memory-safe default `max_batch_size` for this architecture.
 
-        Qwen3.5 allocates GPU memory for GatedDeltaNet recurrent states with
-        three distinct cost centres per active request:
+        Qwen3.5 stores GatedDeltaNet conv and recurrent state in a single
+        ``max_batch x per_req`` pool that the slot-indexed SSM kernels
+        mutate in place. There are no working copies, so peak footprint is
+        ``max_batch x per_req`` bytes.
 
-        1. **Persistent pool** (`max_batch x per_req`): pre-allocated once at
-           startup and lives for the full server lifetime.
-        2. **Input working buffers** (`batch x per_req`): gathered from the
-           pool into dense batch tensors by `get_states()` each step.
-        3. **Output working buffers** (`batch x per_req`): produced by the
-           model kernel and scattered back to the pool by `update_states()`.
-
-        Worst-case simultaneous footprint is therefore **3 x max_batch x per_req**
-        (pool + both working copies). We budget 15 % of current free GPU
-        memory for this total, so:
-
-            max_batch = 0.15 x free_memory / (3 x per_req)
-
-        This is consistent with `estimate_activation_memory()` which reserves
-        `3 x max_batch x per_req` bytes before the KV-cache allocator runs.
+        We split the post-weights utilization budget evenly: the state pool
+        gets up to half, the KV cache absorbs the rest. This uses the same
+        ``device_memory_utilization`` headroom factor as the rest of the
+        pipeline, and matches the ``estimate_activation_memory()`` reservation.
 
         Falls back to 32—safe for the 27B model on H100/A100 (80 GB)—when
         the device query fails.
         """
         per_req = self._per_request_state_bytes()
-        if per_req == 0:
-            return 512  # No recurrent overhead; use the standard default.
         try:
             free_bytes = int(
                 sum(d.stats.get("free_memory", 0) for d in devices)
             )
-            if free_bytes > 0:
-                state_budget = int(free_bytes * 0.15)
-                # Divide by 3*per_req: pool + input working + output working.
-                return max(1, state_budget // (3 * per_req))
         except Exception:
-            pass
-        # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
-        # (0.15 x 79 GB) / (3 x ~147 MB) ~= 26, so 32 gives a small margin.
-        return 32
+            free_bytes = 0
+        if free_bytes <= 0:
+            # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
+            return 32
+        budget = int(free_bytes * device_memory_utilization) - weights_size
+        if budget <= 0:
+            return 1
+        # Single in-place pool: divide half the budget by per_req.
+        max_batch = max(1, (budget // 2) // per_req)
+        return min(512, max_batch)
 
     @override
     @classmethod
@@ -277,17 +292,10 @@ class Qwen3_5Config(Llama3Config):
         )
 
         kv_cache_config = model_config.kv_cache
-        # The MHA kernel selects tile_size == head_dim. The KV cache
-        # page_size must be >= tile_size. Qwen3.5 has head_dim=256.
-        if text_config.head_dim > 128:
-            kv_cache_config.kv_cache_page_size = max(
-                kv_cache_config.kv_cache_page_size, text_config.head_dim
-            )
-
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            model_config.kv_cache.kv_cache_format,
+        )
         n_devices = len(model_config.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -346,6 +354,16 @@ class Qwen3_5Config(Llama3Config):
         )
         attn_output_gate = getattr(text_config, "attn_output_gate", True)
 
+        _mamba_dtype_map: dict[str, DType] = {
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float16": DType.float16,
+        }
+        mamba_ssm_dtype_str = getattr(text_config, "mamba_ssm_dtype", "float32")
+        mamba_ssm_dtype = _mamba_dtype_map.get(
+            mamba_ssm_dtype_str, DType.float32
+        )
+
         # Handle tie_word_embeddings from top-level config
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False
@@ -402,6 +420,7 @@ class Qwen3_5Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             tie_word_embeddings=tie_word_embeddings,
+            quantization_encoding=base_config.quantization_encoding,
             # Hybrid attention parameters
             layer_types=layer_types,
             full_attention_interval=getattr(
@@ -414,6 +433,7 @@ class Qwen3_5Config(Llama3Config):
             linear_conv_kernel_dim=linear_conv_kernel_dim,
             partial_rotary_factor=partial_rotary_factor,
             attn_output_gate=attn_output_gate,
+            mamba_ssm_dtype=mamba_ssm_dtype,
             # Vision (optional)
             vision_config=vision_cfg,
             image_token_id=image_token_id,
@@ -421,15 +441,5 @@ class Qwen3_5Config(Llama3Config):
             vision_start_token_id=vision_start_token_id,
             mrope_section=mrope_section,
         )
-
-        # Set a safe default max_batch_size if not explicitly set by user.
-        # Qwen3.5 has per-request GPU overhead (recurrent-state buffers)
-        # beyond the KV cache, so it needs a smaller batch size than the
-        # global default.
-        if pipeline_config.runtime.max_batch_size is None:
-            safe_batch_size = config_instance.infer_optimal_batch_size(
-                device_refs
-            )
-            pipeline_config.runtime.max_batch_size = safe_batch_size
 
         return config_instance

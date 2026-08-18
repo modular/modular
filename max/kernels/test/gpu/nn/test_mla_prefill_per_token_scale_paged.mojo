@@ -59,7 +59,7 @@ from std.math import ceildiv
 from std.random import randn, seed
 from std.sys import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -76,7 +76,7 @@ from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 
 from _paged_prefill_test_utils import (
@@ -444,9 +444,9 @@ def run_test_paged_prefill_per_token_scale[
         q_nope_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -454,37 +454,37 @@ def run_test_paged_prefill_per_token_scale[
         q_rope_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[(depth - kv_depth)](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[(depth - kv_depth)],
             )
         ),
     )
     var q_scale_device = TileTensor(
         q_scale_device_buf,
-        row_major((Idx(batch_size * seq_len_padded), Idx[1]())),
+        row_major((batch_size * seq_len_padded, Idx[1])),
     )
     var k_device = TileTensor(
         k_device_buf,
         row_major(
             (
-                Idx(batch_size * num_keys_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * num_keys_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
     var k_scale_device = TileTensor(
         k_scale_device_buf,
-        row_major((Idx(batch_size * num_keys_padded), Idx[1]())),
+        row_major((batch_size * num_keys_padded, Idx[1])),
     )
     var v_device = TileTensor(
         v_device_buf,
         row_major(
             (
-                Idx(batch_size * num_keys_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * num_keys_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -492,14 +492,14 @@ def run_test_paged_prefill_per_token_scale[
         output_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
-    var input_ro_tt = TileTensor(input_ro_buf, row_major(Idx(batch_size + 1)))
-    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(Idx(batch_size + 1)))
+    var input_ro_tt = TileTensor(input_ro_buf, row_major(batch_size + 1))
+    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(batch_size + 1))
 
     # ------------------------------------------------------------------
     # Step 7: Build the PagedKVCacheCollection for K_rope. UNLIKE the
@@ -540,21 +540,21 @@ def run_test_paged_prefill_per_token_scale[
     )
 
     var kv_collection = PagedKVCacheCollection[rope_type, kv_params, page_size](
-        LayoutTensor[rope_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[rope_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -713,10 +713,10 @@ def run_test_paged_prefill_per_token_scale[
         q_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -724,10 +724,10 @@ def run_test_paged_prefill_per_token_scale[
         k_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -735,10 +735,10 @@ def run_test_paged_prefill_per_token_scale[
         v_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -746,10 +746,10 @@ def run_test_paged_prefill_per_token_scale[
         output_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -761,8 +761,12 @@ def run_test_paged_prefill_per_token_scale[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q_ref_4d_device.to_layout_tensor(),

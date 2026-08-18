@@ -15,10 +15,10 @@
 # Figures 16.8, 16.9, 16.10, 16.11, 16.12 translated from CUDA to Mojo
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 # Scoring constants
 comptime MATCH = 1
@@ -59,11 +59,11 @@ def max4(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 def sw_kernel_square(
     sw: UnsafePointer[Int32, MutAnyOrigin],
-    rea: UnsafePointer[UInt8, MutAnyOrigin],
-    ref_seq: UnsafePointer[UInt8, MutAnyOrigin],
-    L: Int,
-    d: Int,
-    tile_width: Int,
+    rea: UnsafePointer[UInt8, ImmutAnyOrigin],
+    ref_seq: UnsafePointer[UInt8, ImmutAnyOrigin],
+    L_dev: Int32,
+    d_dev: Int32,
+    tile_width_dev: Int32,
 ):
     """Figure 16.9: Smith-Waterman kernel with thread block-level tiling.
 
@@ -71,12 +71,16 @@ def sw_kernel_square(
         sw: Scoring matrix (L x L, flattened).
         rea: Query sequence (read).
         ref_seq: Reference sequence.
-        L: Length of scoring matrix side (sequence length + 1).
-        d: Current anti-diagonal of tiles.
-        tile_width: Width of each tile.
+        L_dev: Length of scoring matrix side (sequence length + 1).
+        d_dev: Current anti-diagonal of tiles.
+        tile_width_dev: Width of each tile.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var L = Int(L_dev)
+    var d = Int(d_dev)
+    var tile_width = Int(tile_width_dev)
     # Allocate shared memory for tile
-    var swTile = stack_allocation[
+    var swTile = unsafe_stack_allocation[
         MAX_TILE_WIDTH * MAX_TILE_WIDTH,
         Scalar[DType.int32],
         address_space=AddressSpace.SHARED,
@@ -177,7 +181,7 @@ def max4_host(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 
 def cpu_smith_waterman(
-    sw: UnsafePointer[Int32, MutAnyOrigin],
+    sw: UnsafePointer[mut=True, Int32, _],
     rea: UnsafePointer[UInt8, _],
     ref_seq: UnsafePointer[UInt8, _],
     L: Int,
@@ -219,7 +223,7 @@ def cpu_smith_waterman(
 
 
 def generate_random_sequence(
-    seq: UnsafePointer[UInt8, MutAnyOrigin],
+    seq: UnsafePointer[mut=True, UInt8, _],
     length: Int,
     mut seed: UInt32,
 ) -> UInt32:
@@ -368,13 +372,13 @@ def main() raises:
         # Figure 16.8: Loop over anti-diagonals of tiles
         for d in range(2 * numTiles_x - 1):
             # Figure 16.8: Kernel call
-            ctx.enqueue_function_experimental[sw_kernel_square](
+            ctx.enqueue_function[sw_kernel_square](
                 d_sw,
                 d_rea,
                 d_ref,
-                L,
-                d,
-                tile_width,
+                Int32(L),
+                Int32(d),
+                Int32(tile_width),
                 grid_dim=(numBlocks, 1, 1),
                 block_dim=(tile_width, 1, 1),
             )

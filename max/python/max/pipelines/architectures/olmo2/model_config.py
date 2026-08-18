@@ -16,14 +16,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithStoredKVParams,
+)
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -38,49 +43,33 @@ class Olmo2Config(Llama3Config):
     Olmo2 models have an explicit head_dim field in their configuration.
     """
 
-    @staticmethod
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
-        Olmo2 models have an explicit head_dim field in their configuration,
-        unlike Llama models where it needs to be calculated.
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree > 1:
+        """Olmo2 does not support data parallelism; delegate to grouped-attention default."""
+        if pipeline_config.model.data_parallel_degree > 1:
             raise ValueError(
                 "Data parallelism is not supported for Olmo2 models"
             )
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
-            head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
+        return ArchConfigWithStoredKVParams.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
@@ -147,10 +136,10 @@ class Olmo2Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -195,9 +184,9 @@ class Olmo2Config(Llama3Config):
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
-            lora_config=base_config.lora_config,
             logits_scaling=base_config.logits_scaling,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
         )
 
     def finalize(

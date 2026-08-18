@@ -15,8 +15,8 @@ from std.random import random_float64
 from std.sys import align_of, size_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -90,14 +90,14 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -129,12 +129,12 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_summ[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -144,14 +144,14 @@ def test_matmul_sm100_epilogue[
         # while also testing arithmetic operations
         return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
+            c_host_copy[i, j] = c_host[i, j]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -210,12 +210,12 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_host_lt = c_host_copy.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_host_lt)
     def test_lambda_add_coords_summ_local[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -228,18 +228,15 @@ def test_matmul_sm100_epilogue[
         # alias compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(Int(m.value())):
             for j in range(Int(n.value())):
-                comptime assert c_host_ref.flat_rank >= 2
-                c_host_ref[
-                    (Idx(i), Idx(j))
-                ] = test_lambda_add_coords_summ_local(
-                    IndexList[2](i, j),
-                    c_host_ref[(Idx(i), Idx(j))],
+                comptime assert c_host_ref.flat_rank == 2
+                c_host_ref[i, j] = test_lambda_add_coords_summ_local(
+                    IndexList[2](i, j), c_host_ref[i, j]
                 )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -288,7 +285,7 @@ def main() raises:
 
                 comptime for register_based_epilogue in [True, False]:
                     # Helper to run test with varying cluster/k_group/sizes
-                    @parameter
+                    @__parameter
                     def run[
                         MType: CoordLike,
                         NType: CoordLike,
@@ -314,16 +311,14 @@ def main() raises:
                         ](ctx, m, n, k)
 
                     # FASTER mode: 2 key test cases only
-                    run[4, 4](Idx(Int(1000)), Idx(1024), Idx(1024))
+                    run[4, 4](Int(1000), Idx[1024], Idx[1024])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Idx(Int(512)), Idx(4096), Idx(1024))
-                        run[4, 4, k_group=2](
-                            Idx(Int(500)), Idx(2048), Idx(4096)
-                        )
-                        run[8, 2](Idx(Int(1024)), Idx(256), Idx(128))
+                        run[4, 4](Int(512), Idx[4096], Idx[1024])
+                        run[4, 4, k_group=2](Int(500), Idx[2048], Idx[4096])
+                        run[8, 2](Int(1024), Idx[256], Idx[128])
 
-                    run[2, 2](Idx(1024), Idx(1024), Idx(2048))
+                    run[2, 2](Idx[1024], Idx[1024], Idx[2048])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Idx(Int(8192)), Idx(2560), Idx(8192))
+                        run[4, 4](Int(8192), Idx[2560], Idx[8192])

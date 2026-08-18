@@ -21,10 +21,10 @@ from std.math import sqrt
 from std.random import randint, randn, seed
 from std.sys import argv
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
-from std.memory import UnsafePointer
+from std.memory import Pointer
 from shmem import *
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
@@ -64,13 +64,13 @@ def welford_update(
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
+](topk_ids: Pointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() {read} -> Int:
+        def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -98,10 +98,10 @@ def test_dispatch[
     comptime max_recv_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_tokens], Idx[hidden_size])
     )
     comptime output_scales_tt_layout = row_major(
-        (Idx[hidden_size // group_size](), Idx[max_recv_tokens]())
+        (Idx[hidden_size // group_size], Idx[max_recv_tokens])
     )
     comptime token_fmt_type = BlockwiseFP8TokenFormat[
         fp8_dtype=fp8_dtype,
@@ -174,19 +174,19 @@ def test_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_tokens], Idx[hidden_size]),
     )
     var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_scales_buf,
-        row_major(Idx[hidden_size // group_size](), Idx[max_recv_tokens]()),
+        row_major(Idx[hidden_size // group_size], Idx[max_recv_tokens]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -196,7 +196,7 @@ def test_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_tokens], Idx[2]),
     )
 
     var format_handler = token_fmt_type(output_tensor, output_scales_tensor)
@@ -216,7 +216,7 @@ def test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function[dispatch_async, dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -231,7 +231,7 @@ def test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
+    var func_wait = ctx.compile_function[dispatch_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_async_stat_m: Float64 = 0
@@ -242,15 +242,13 @@ def test_dispatch[
     var e2e_stat_m2: Float64 = 0
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs: InlineArray[
-            UnsafePointer[UInt8, MutAnyOrigin], 1
-        ] = [recv_buf]
-        var recv_count_ptrs: InlineArray[
-            UnsafePointer[UInt64, MutAnyOrigin], 1
-        ] = [recv_count]
+        var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
+        var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
+            recv_count
+        ]
 
         ctx.enqueue_function(
             func,
@@ -266,7 +264,7 @@ def test_dispatch[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async_wait(ctx: DeviceContext) raises:
         ctx.enqueue_function(
             func_wait,
@@ -283,13 +281,13 @@ def test_dispatch[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_e2e(ctx: DeviceContext) raises:
         run_dispatch_async(ctx)
         run_dispatch_async_wait(ctx)
 
     @always_inline
-    @parameter
+    @__parameter
     def clean_up(ctx: DeviceContext) raises:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
@@ -452,7 +450,7 @@ def test_dispatch[
                             remote_rank_top_k_ids[
                                 remote_loc * Int32(top_k) + remote_topk_id
                             ],
-                            curr_expert,
+                            Int32(curr_expert),
                         )
 
                         var remote_rank_input_tokens = (
@@ -507,7 +505,7 @@ def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

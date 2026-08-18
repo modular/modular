@@ -18,6 +18,7 @@ automatically handles `Bencher` setup and the `keep()` calls needed to prevent
 optimization, supporting functions with 0-10 arguments.
 """
 
+from .compiler import keep
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
 
@@ -71,10 +72,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func()
@@ -112,10 +113,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0)
@@ -159,10 +160,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1)
@@ -210,10 +211,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2)
@@ -265,10 +266,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3)
@@ -324,10 +325,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4)
@@ -387,10 +388,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5)
@@ -454,10 +455,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6)
@@ -525,10 +526,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7)
@@ -600,10 +601,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8)
@@ -679,10 +680,10 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8, x9)

@@ -11,6 +11,16 @@ max.nn
 
 .. currentmodule:: max.nn
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   nn.attention
+   nn.kernels
+   nn.kv_cache
+
 Base classes
 ------------
 
@@ -39,7 +49,6 @@ Linear layers
    Embedding
    GPTQLinear
    Linear
-   LinearLoRA
    MLP
    StackedLinear
    VocabParallelEmbedding
@@ -56,17 +65,6 @@ Normalization
    GroupNorm
    LayerNorm
    RMSNorm
-
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AttentionWithRopeAndLoRA
-   SupportsLoRA
 
 Rotary embeddings
 -----------------
@@ -124,6 +122,7 @@ Mixture of experts
    :template: autosummary/class.rst
 
    Allreduce
+   ~max.nn.comm.ep.EPCommBuffers
    MoE
    MoEGate
    MoEQuantized
@@ -173,17 +172,9 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   build_max_lengths_tensor
+   build_max_lengths_tensors
    clamp
+   forward_moe_sharded_layers
    split_batch
    split_batch_replicated
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   nn.attention
-   nn.kernels
-   nn.kv_cache

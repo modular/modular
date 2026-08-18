@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std._plugin import CurrentPlugin
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.format._utils import _WriteBufferHeap, _WriteBufferStack
 from std.sys import _libc as libc
 from std.ffi import (
@@ -24,7 +24,8 @@ from std.ffi import (
     c_size_t,
     c_ssize_t,
     external_call,
-    _CPointer,
+    CStringSlice,
+    OptionalPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import (
@@ -43,11 +44,19 @@ from std.sys._amdgpu import (
 from std.sys._metal_print import _metal_print_write
 from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from std.sys.info import CompilationTarget
-from std.sys.intrinsics import _type_is_eq
 
 from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
+
+
+# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
+comptime _PrintEmitPluginHookFnType = def[O: Origin](
+    cstr: CStringSlice[O],
+    file_value: FileDescriptor,
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.print_emit_fn`; keep in sync with the `print` emit path."""
+
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -135,13 +144,13 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var buffer = OptionalPointer[UInt8, MutUntrackedOrigin]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call["getdelim", c_ssize_t](
-            UnsafePointer(to=buffer),
-            UnsafePointer(to=n),
+            Pointer(to=buffer),
+            Pointer(to=n),
             ord(delimiter),
             self.handle,
         )
@@ -150,17 +159,19 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(unsafe_cast[Type=NoneType](buffer))
+            libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutExternalOrigin](
-                ptr=buffer.unsafe_value(), length=bytes_read - 1
+            StringSlice(
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
+                )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(unsafe_cast[Type=NoneType](buffer))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
         return s^
 
 
@@ -183,25 +194,13 @@ def _flush(file: FileDescriptor = stdout):
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C printf call. Load
-    # all the members of the pack.
-
     with _fdopen(file) as fd:
-        # FIXME: external_call should handle this
-        _ = __mlir_op.`pop.external_call`[
-            func="KGEN_CompilerRT_fprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<none>,`,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !pop.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
+        # The pack is loaded so the variadic arguments are the values
+        # themselves rather than references to them.
+        _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[fmt]().as_c_string_slice(),
             args.get_loaded_kgen_pack(),
         )
 
@@ -212,103 +211,107 @@ def _printf[
 ](*args: *types, file: FileDescriptor = stdout):
     if __is_run_in_comptime_interpreter:
         _printf_cpu[fmt](*args, file=file)
+        return
+
+    comptime if is_nvidia_gpu():
+        # The argument pack will contain references for each value in the pack,
+        # but we want to pass their values directly into the C printf call. Load
+        # all the members of the pack.
+        var loaded_pack = args.get_loaded_kgen_pack()
+
+        _ = external_call["vprintf", Int32](
+            get_static_string[fmt]().as_c_string_slice(),
+            Pointer(to=loaded_pack),
+        )
+    elif is_amd_gpu():
+        # This is adapted from Triton's third party method for lowering
+        # AMD printf calls:
+        # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
+        def _to_uint64[T: AnyType, //](value: T) -> UInt64:
+            comptime if T == UInt64:
+                return rebind[UInt64](value)
+            elif T == UInt32:
+                return UInt64(rebind[UInt32](value))
+            elif T == UInt16:
+                return UInt64(rebind[UInt16](value))
+            elif T == UInt8:
+                return UInt64(rebind[UInt8](value))
+            elif T == Int64:
+                return UInt64(rebind[Int64](value))
+            elif T == Int32:
+                return UInt64(rebind[Int32](value))
+            elif T == Int16:
+                return UInt64(rebind[Int16](value))
+            elif T == Int8:
+                return UInt64(rebind[Int8](value))
+            elif T == Float16:
+                return bitcast[DType.uint64](Float64(rebind[Float16](value)))
+            elif T == Float32:
+                return bitcast[DType.uint64](Float64(rebind[Float32](value)))
+            elif T == Float64:
+                return bitcast[DType.uint64](rebind[Float64](value))
+            elif T == Int:
+                return UInt64(rebind[Int](value))
+            elif T == UInt:
+                return UInt64(rebind[UInt](value))
+            return 0
+
+        comptime args_len = types.length
+
+        var message = printf_begin()
+        # `get_static_string` guarantees a trailing nul in static memory (just
+        # past the returned range); include it so the AMD fprintf service sees a
+        # terminated format string even when `len(fmt)` is a multiple of 8.
+        # `as_bytes()` alone drops the nul, corrupting output (MSTDL-1597).
+        var fmt_str = get_static_string[fmt]()
+        message = printf_append_string_n(
+            message,
+            Span(
+                unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
+                length=fmt_str.byte_length() + 1,
+            ),
+            args_len == 0,
+        )
+        comptime k_args_per_group = 7
+
+        comptime for group in range(0, args_len, k_args_per_group):
+            comptime bound = min(group + k_args_per_group, args_len)
+            comptime num_args = bound - group
+
+            var arguments = Array[UInt64, k_args_per_group](fill=0)
+
+            comptime for i in range(num_args):
+                arguments[i] = _to_uint64(args[group + i])
+            message = printf_append_args(
+                message,
+                UInt32(num_args),
+                arguments[0],
+                arguments[1],
+                arguments[2],
+                arguments[3],
+                arguments[4],
+                arguments[5],
+                arguments[6],
+                Int32(Int(bound == args_len)),
+            )
+
+    elif is_apple_gpu():
+        # Apple GPU: format the template string and write to the shared
+        # print buffer. Metal doesn't support printf-style variadic args.
+        var buf = _WriteBufferHeap()
+        buf.write_string(fmt)
+        var cstr = buf.nul_terminate()
+        _metal_print_write(
+            StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+        )
+    elif not is_gpu():
+        _printf_cpu[fmt](*args, file=file)
     else:
-        comptime if is_nvidia_gpu():
-            # The argument pack will contain references for each value in the pack,
-            # but we want to pass their values directly into the C printf call. Load
-            # all the members of the pack.
-            var loaded_pack = args.get_loaded_kgen_pack()
-
-            _ = external_call["vprintf", Int32](
-                # Guarantee this is nul terminated.
-                get_static_string[fmt]().unsafe_ptr(),
-                Pointer(to=loaded_pack),
-            )
-        elif is_amd_gpu():
-            # This is adapted from Triton's third party method for lowering
-            # AMD printf calls:
-            # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
-            def _to_uint64[T: AnyType, //](value: T) -> UInt64:
-                comptime if _type_is_eq[T, UInt64]():
-                    return rebind[UInt64](value)
-                elif _type_is_eq[T, UInt32]():
-                    return UInt64(rebind[UInt32](value))
-                elif _type_is_eq[T, UInt16]():
-                    return UInt64(rebind[UInt16](value))
-                elif _type_is_eq[T, UInt8]():
-                    return UInt64(rebind[UInt8](value))
-                elif _type_is_eq[T, Int64]():
-                    return UInt64(rebind[Int64](value))
-                elif _type_is_eq[T, Int32]():
-                    return UInt64(rebind[Int32](value))
-                elif _type_is_eq[T, Int16]():
-                    return UInt64(rebind[Int16](value))
-                elif _type_is_eq[T, Int8]():
-                    return UInt64(rebind[Int8](value))
-                elif _type_is_eq[T, Float16]():
-                    return bitcast[DType.uint64](
-                        Float64(rebind[Float16](value))
-                    )
-                elif _type_is_eq[T, Float32]():
-                    return bitcast[DType.uint64](
-                        Float64(rebind[Float32](value))
-                    )
-                elif _type_is_eq[T, Float64]():
-                    return bitcast[DType.uint64](rebind[Float64](value))
-                elif _type_is_eq[T, Int]():
-                    return UInt64(rebind[Int](value))
-                elif _type_is_eq[T, UInt]():
-                    return UInt64(rebind[UInt](value))
-                return 0
-
-            comptime args_len = types.size
-
-            var message = printf_begin()
-            message = printf_append_string_n(
-                message, fmt.as_bytes(), args_len == 0
-            )
-            comptime k_args_per_group = 7
-
-            comptime for group in range(0, args_len, k_args_per_group):
-                comptime bound = min(group + k_args_per_group, args_len)
-                comptime num_args = bound - group
-
-                var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
-
-                comptime for i in range(num_args):
-                    arguments[i] = _to_uint64(args[group + i])
-                message = printf_append_args(
-                    message,
-                    UInt32(num_args),
-                    arguments[0],
-                    arguments[1],
-                    arguments[2],
-                    arguments[3],
-                    arguments[4],
-                    arguments[5],
-                    arguments[6],
-                    Int32(Int(bound == args_len)),
-                )
-
-        elif is_apple_gpu():
-            # Apple GPU: format the template string and write to the shared
-            # print buffer. Metal doesn't support printf-style variadic args.
-            var buf = _WriteBufferHeap()
-            buf.write_string(fmt)
-            _ = buf.nul_terminate()
-            var s = buf.as_string_slice()
-            _metal_print_write(
-                s.unsafe_ptr().bitcast[UInt8](),
-                s.byte_length(),
-            )
-        elif not is_gpu():
-            _printf_cpu[fmt](*args, file=file)
-        else:
-            # If we aren't targeting either a known GPU vendor, or CPU, issue
-            # a target error.
-            CompilationTarget.unsupported_target_error[
-                operation=__get_current_function_name()
-            ]()
+        # If we aren't targeting either a known GPU vendor, or CPU, issue
+        # a target error.
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -319,7 +322,7 @@ def _printf[
 @no_inline
 def _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
+](str: MutPointer[UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -335,29 +338,15 @@ def _snprintf[
         The number of bytes written into the output string.
     """
 
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C snprintf call. Load
-    # all the members of the pack.
-    var loaded_pack = args.get_loaded_kgen_pack()
-
-    # FIXME: external_call should handle this
+    # int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
+    # The pack is loaded so the variadic arguments are the values themselves
+    # rather than references to them.
     return Int(
-        __mlir_op.`pop.external_call`[
-            func="snprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<scalar<si8>>,`,
-                `!pop.scalar<index>, `,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !pop.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr(),
-            loaded_pack,
+            get_static_string[fmt]().as_c_string_slice(),
+            args.get_loaded_kgen_pack(),
         )
     )
 
@@ -372,8 +361,8 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StaticString = " ",
-    end: StaticString = "\n",
+    sep: StringSlice = " ",
+    end: StringSlice = "\n",
     flush: Bool = False,
     var file: FileDescriptor = stdout,
 ):
@@ -381,12 +370,16 @@ def print[
     and followed by `end`.
 
     This function accepts any number of values, but their types must implement
-    the [`Writable`](/docs/std/format/Writable) trait. Most built-in types
+    the [`Writable`](/docs/std/format/Writable/) trait. Most built-in types
     (like `Int`, `Float64`, `Bool`, `String`) implement the
-    [`Writable`](/docs/std/format/Writable) trait.
+    [`Writable`](/docs/std/format/Writable/) trait.
 
-    For string formatting, use the
-    [`format()`](/docs/std/collections/string/string/String#format) function.
+    For string formatting, you can use the
+    [`format()`](/docs/std/collections/string/string/String/#format) method
+    or, preferably, a template string
+    ([`TString`](/docs/std/format/tstring/TString/), written `t"..."`)
+    which interpolates expressions directly without allocating an
+    intermediate `String`.
 
     Examples:
 
@@ -396,6 +389,9 @@ def print[
     print("The answer is", 42)               # The answer is 42
 
     print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
+
+    var name = "Mojo"
+    print(t"{name} is 🔥")                   # Mojo is 🔥
     ```
 
     Parameters:
@@ -409,92 +405,59 @@ def print[
         file: The output stream.
     """
 
+    comptime assert Ts.all_conforms_to[
+        Writable
+    ]()  # satisfy _write_to where clause.
+
     if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)
-        comptime length = values.__len__()
+        values._write_to(buffer, sep=sep, end=end)
 
-        comptime for i in range(length):
-            values[i].write_to(buffer)
-            if i < length - 1:
-                sep.write_to(buffer)
-
-        end.write_to(buffer)
         buffer.flush()
         if flush:
             _flush(file=file)
-    else:
-        comptime if CurrentPlugin.print_emit_fn:
-            var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
+        return
 
-            end.write_to(buffer)
-            var cstr = buffer.nul_terminate()
+    comptime if CurrentPlugin.print_emit_fn:
+        var buffer = _WriteBufferHeap()
+        values._write_to(buffer, sep=sep, end=end)
 
-            comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
+        var cstr = buffer.nul_terminate()
 
-            # FIXME: The origin param of `_emit` should be inferred from `cstr`.
-            _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
-        elif is_gpu() and is_apple_gpu():
-            # Apple GPU: same formatting path as other GPUs but output
-            # goes through Metal os_log via _metal_print_write.
-            var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
+        comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
+        # FIXME: The origin param of `_emit` should be inferred from `cstr`.
+        _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
+    elif is_gpu():
+        var buffer = _WriteBufferHeap()
+        values._write_to(buffer, sep=sep, end=end)
 
-            end.write_to(buffer)
-            _ = buffer.nul_terminate()
+        var cstr = buffer.nul_terminate()
 
-            var slice = buffer.as_string_slice()
-            _metal_print_write(
-                slice.unsafe_ptr().bitcast[UInt8](),
-                slice.byte_length(),
+        comptime if is_nvidia_gpu():
+            _printf["%s"](cstr.unsafe_ptr())
+        elif is_amd_gpu():
+            var msg = printf_begin()
+            _ = printf_append_string_n(
+                msg, cstr.as_bytes_with_nul(), is_last=True
             )
-        elif is_gpu():
-            var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
-
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
-            _ = buffer.nul_terminate()
-
-            var slice = buffer.as_string_slice()
-
-            comptime if is_nvidia_gpu():
-                _printf["%s"](slice.unsafe_ptr())
-            elif is_amd_gpu():
-                var msg = printf_begin()
-                _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
-            else:
-                CompilationTarget.unsupported_target_error[
-                    operation=__get_current_function_name()
-                ]()
+        elif is_apple_gpu():
+            _metal_print_write(
+                StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
+            )
         else:
-            var buffer = _WriteBufferStack(file)
-            comptime length = values.__len__()
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
+    else:
+        var buffer = _WriteBufferStack(file)
+        values._write_to(buffer, sep=sep, end=end)
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
+        buffer.flush()
 
-                comptime if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
-            buffer.flush()
-            if flush:
-                _flush(file=file)
+        if flush:
+            _flush(file=file)
 
 
 # ===----------------------------------------------------------------------=== #

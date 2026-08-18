@@ -13,9 +13,9 @@
 
 from std.sys import size_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -27,7 +27,7 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index, IndexList
 
@@ -51,7 +51,7 @@ def tma_swizzle_load_kernel[
     ]()
 
     comptime __tile_layout = Layout.row_major(tileM, tileN)
-    tile = LayoutTensor[
+    var tile = LayoutTensor[
         dtype,
         __tile_layout,
         MutAnyOrigin,
@@ -59,7 +59,7 @@ def tma_swizzle_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -78,7 +78,7 @@ def tma_swizzle_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    var dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)
@@ -128,7 +128,7 @@ def test_tma_swizzle[
     comptime descN = type_of(tma_tensor).desc_shape[1]
     comptime desc_tile_size = descM * descN
     comptime __desc_layout = Layout.row_major(descM, descN)
-    desc_tile = LayoutTensor[
+    var desc_tile = LayoutTensor[
         dtype, __desc_layout, MutAnyOrigin
     ].stack_allocation()
 
@@ -139,26 +139,26 @@ def test_tma_swizzle[
         type_of(tma_tensor).tile_shape,
         type_of(tma_tensor).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),
         block_dim=(1),
     )
 
-    src_host = src.tensor()
-    dst_host = dst.tensor()
+    var src_host = src.tensor()
+    var dst_host = dst.tensor()
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    dst_tile_ptr = dst_host.ptr
+    var dst_tile_ptr = dst_host.ptr
     for desc_tile_m in range(shape[0] // descM):
         for desc_tile_n in range(shape[1] // descN):
             desc_tile.copy_from(
                 src_host.tile[descM, descN](desc_tile_m, desc_tile_n)
             )
             for i in range(desc_tile_size):
-                desc_idx = swizzle(i)
+                var desc_idx = swizzle(i)
                 if (
                     desc_tile.ptr[desc_idx].cast[DType.float64]()
                     != dst_tile_ptr[i].cast[DType.float64]()

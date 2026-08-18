@@ -14,9 +14,10 @@
 from std.math import ceildiv
 from std.math.uutils import umod
 
-from std.gpu import Semaphore, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, row_major
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import Semaphore
+from max.gpu.host import DeviceBuffer, DeviceContext
+from layout import PointerStorage, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import alloc
 from std.testing import assert_almost_equal
@@ -145,20 +146,32 @@ def first_wave_kernel[
     C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
     B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
     locks: UnsafePointer[Int32, MutAnyOrigin],
-    stride_am: Int,
-    stride_ak: Int,
-    stride_bk: Int,
-    stride_bn: Int,
-    stride_cm: Int,
-    stride_cn: Int,
-    total_full_tiles_streamk: Int,
-    total_partial_tiles_streamk: Int,
-    iters_per_tile: Int,
+    stride_am_dev: Int32,
+    stride_ak_dev: Int32,
+    stride_bk_dev: Int32,
+    stride_bn_dev: Int32,
+    stride_cm_dev: Int32,
+    stride_cn_dev: Int32,
+    total_full_tiles_streamk_dev: Int32,
+    total_partial_tiles_streamk_dev: Int32,
+    iters_per_tile_dev: Int32,
 ):
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
+    var stride_am = Int(stride_am_dev)
+    var stride_ak = Int(stride_ak_dev)
+    var stride_bk = Int(stride_bk_dev)
+    var stride_bn = Int(stride_bn_dev)
+    var stride_cm = Int(stride_cm_dev)
+    var stride_cn = Int(stride_cn_dev)
+    var total_full_tiles_streamk = Int(total_full_tiles_streamk_dev)
+    var total_partial_tiles_streamk = Int(total_partial_tiles_streamk_dev)
+    var iters_per_tile = Int(iters_per_tile_dev)
     var pid = block_idx.x
 
     var start_iter = Int(
@@ -217,18 +230,28 @@ def full_tiles_kernel[
     C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
     B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
     locks: UnsafePointer[Int32, ImmutAnyOrigin],
-    stride_am: Int,
-    stride_ak: Int,
-    stride_bk: Int,
-    stride_bn: Int,
-    stride_cm: Int,
-    stride_cn: Int,
-    total_tiles_streamk: Int,
+    stride_am_dev: Int32,
+    stride_ak_dev: Int32,
+    stride_bk_dev: Int32,
+    stride_bn_dev: Int32,
+    stride_cm_dev: Int32,
+    stride_cn_dev: Int32,
+    total_tiles_streamk_dev: Int32,
 ):
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
+    var stride_am = Int(stride_am_dev)
+    var stride_ak = Int(stride_ak_dev)
+    var stride_bk = Int(stride_bk_dev)
+    var stride_bn = Int(stride_bn_dev)
+    var stride_cm = Int(stride_cm_dev)
+    var stride_cn = Int(stride_cn_dev)
+    var total_tiles_streamk = Int(total_tiles_streamk_dev)
     var tile_id = block_idx.x + total_tiles_streamk
     var pid: IndexList[2]
     if GROUP_M > 0:
@@ -294,9 +317,25 @@ def matmul_stream_k[
     *,
     total_programs_streamk: Int,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[
+        mut=True,
+        c_type,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    a: TileTensor[
+        a_type,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
+    b: TileTensor[
+        b_type,
+        address_space=AddressSpace.GENERIC,
+        ...,
+        Storage=PointerStorage[element_width=1],
+    ],
     M: Int,
     N: Int,
     K: Int,
@@ -353,13 +392,13 @@ def matmul_stream_k[
     )
 
     var c_buffer = DeviceBuffer[c_type](
-        ctx, c.ptr, c.num_elements(), owning=False
+        ctx, c._storage, c.num_elements(), owning=False
     )
     var a_buffer = DeviceBuffer[a_type](
-        ctx, a.ptr, a.num_elements(), owning=False
+        ctx, a._storage, a.num_elements(), owning=False
     )
     var b_buffer = DeviceBuffer[b_type](
-        ctx, b.ptr, b.num_elements(), owning=False
+        ctx, b._storage, b.num_elements(), owning=False
     )
 
     if total_programs_streamk > 0:
@@ -373,23 +412,23 @@ def matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function_experimental[first_wave](
+        ctx.enqueue_function[first_wave](
             c_buffer,
             a_buffer,
             b_buffer,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             locks_data,
-            K,
-            1,
-            N,
-            1,
-            N,
-            1,
-            total_full_tiles_streamk,
-            total_partial_tiles_streamk,
-            iters_per_tile,
+            Int32(K),
+            Int32(1),
+            Int32(N),
+            Int32(1),
+            Int32(N),
+            Int32(1),
+            Int32(total_full_tiles_streamk),
+            Int32(total_partial_tiles_streamk),
+            Int32(iters_per_tile),
             grid_dim=total_programs_streamk,
             block_dim=(BLK_N, BLK_M),
         )
@@ -405,21 +444,21 @@ def matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function_experimental[full_tiles](
+        ctx.enqueue_function[full_tiles](
             c_buffer,
             a_buffer,
             b_buffer,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             locks_data,
-            K,
-            1,
-            N,
-            1,
-            N,
-            1,
-            total_tiles_streamk,
+            Int32(K),
+            Int32(1),
+            Int32(N),
+            Int32(1),
+            Int32(N),
+            Int32(1),
+            Int32(total_tiles_streamk),
             grid_dim=total_blocking_tiles,
             block_dim=(BLK_N, BLK_M),
         )
@@ -434,7 +473,7 @@ def run_matmul_stream_k[
     M: Int,
     N: Int,
     K: Int,
-](ctx: DeviceContext,) raises:
+](ctx: DeviceContext) raises:
     print("== run_matmul kernel stream_k")
 
     var a_host = alloc[Scalar[dtype]](M * K)
@@ -486,7 +525,7 @@ def run_matmul_stream_k[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
 
     var c_buf_n = TileTensor(c_device_n, row_major[M, N]())
@@ -501,13 +540,13 @@ def run_matmul_stream_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_buf_n,
         a_buf.as_immut(),
         b_buf.as_immut(),
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

@@ -27,3 +27,14 @@ Custom ops
    :template: autosummary/function.rst
 
    graph_op
+
+Dtype conversion
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   max_dtype_to_torch
+   torch_dtype_to_max

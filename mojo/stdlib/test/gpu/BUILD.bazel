@@ -1,9 +1,23 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
 _LIT_TESTS = [
-    "test_apple_mma_invalid_types.mojo",
+    "test_target_accelerator_detection.mojo",
+]
+
+# Host-side checks over the `GPUInfo` registry: no device code, so they need no
+# GPU to run.
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = ["@mojo//:std"],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _LIT_TESTS,
+    )
 ]
 
 lit_tests(

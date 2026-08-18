@@ -190,7 +190,7 @@ def test_different_layouts_arithmetic() raises:
 
 
 def test_flatten() raises:
-    var stack = InlineArray[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](
         stack
     ).flatten()
@@ -200,14 +200,14 @@ def test_flatten() raises:
 
 
 def test_get_shape() raises:
-    var stack = InlineArray[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](stack)
     assert_equal(4, tensor.get_shape()[0])
     assert_equal(4, tensor.get_shape()[1])
 
 
 def test_reshape() raises:
-    var stack = InlineArray[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout(16)](stack).reshape[
         Layout.row_major[2]()
     ](RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](4, 4)))
@@ -220,7 +220,7 @@ def test_aligned_load() raises:
     """Tests aligned_load with both index types."""
     # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
     # without going out of bounds (column 3 + width 4 = 7)
-    var storage = InlineArray[Float32, 4 * 7](uninitialized=True)
+    var storage = Array[Float32, 4 * 7](uninitialized=True)
     var tensor = LayoutTensor[
         DType.float32,
         Layout([4, 7]),
@@ -255,8 +255,11 @@ def test_aligned_load() raises:
 
 
 def main() raises:
-    test_runtime_and_compile_time_dim_and_stride(Idx(120), Idx[512]())
+    test_runtime_and_compile_time_dim_and_stride(Idx[120], Idx[512])
     test_nested_layout_shape()
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
     test_aligned_load()
+    test_flatten()
+    test_get_shape()
+    test_reshape()
