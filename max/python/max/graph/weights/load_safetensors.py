@@ -238,7 +238,7 @@ class SafetensorWeights(Weights):
         dtype: DType | None = None,
         shape: ShapeLike | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
         if quantization_encoding is not None:

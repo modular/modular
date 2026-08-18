@@ -67,10 +67,10 @@ cli = cyclopts.App()
 async def serve(
     pipeline_config: Annotated[
         PipelineConfig, Parameter(name="*")
-    ] = PipelineConfig(),
+    ] = PipelineConfig(),  # noqa: B008
     context_config: Annotated[
         ContextConfig, Parameter(name="*")
-    ] = ContextConfig(),
+    ] = ContextConfig(),  # noqa: B008
     *,
     host: str = "localhost",
     port: int = 8000,

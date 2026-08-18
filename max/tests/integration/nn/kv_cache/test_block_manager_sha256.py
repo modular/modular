@@ -48,7 +48,7 @@ from max.pipelines.modeling.types import RequestID
 
 def _make_ctx(
     tokens: np.ndarray,
-    request_id: RequestID = RequestID("req-1"),
+    request_id: RequestID = RequestID("req-1"),  # noqa: B008
     *,
     cache_salt: str | None = None,
 ) -> TextContext:

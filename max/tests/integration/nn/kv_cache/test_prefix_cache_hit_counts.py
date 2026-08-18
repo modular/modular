@@ -45,7 +45,7 @@ BLOCK_SIZE = 8
 
 def _make_ctx(
     tokens: np.ndarray,
-    request_id: RequestID = RequestID("req-1"),
+    request_id: RequestID = RequestID("req-1"),  # noqa: B008
 ) -> TextContext:
     """Build a minimal TextContext-like stub (see test_block_manager_sha256).
 

@@ -1427,7 +1427,7 @@ class Scheduler:
         build_opts: list[str],
         dryrun: bool,
         output_suffix: str = "output.csv",
-        progress: Progress = Progress(),
+        progress: Progress = Progress(),  # noqa: B008
         use_shared_lib: bool = False,
         output_dir_list: list[Path] | None = None,
         cache_dir: Path | None = None,

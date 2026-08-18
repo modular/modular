@@ -85,7 +85,7 @@ def create_kv_cache(
     enable_prefix_caching: bool = False,
     kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     num_speculative_tokens: int = 0,
     is_mla: bool = False,
     tp_per_replica: int = 1,
@@ -200,7 +200,7 @@ def create_paged_scheduler(
     kv_connector_config: KVConnectorConfig | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     num_speculative_tokens: int = 0,
     max_pending_requests: int | None = None,
 ) -> tuple[

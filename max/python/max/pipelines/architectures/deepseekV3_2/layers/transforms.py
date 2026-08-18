@@ -89,7 +89,7 @@ class HadamardTransform:
         self,
         scale: float = 1.0,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.GPU(),
+        device: DeviceRef = DeviceRef.GPU(),  # noqa: B008
     ):
         self.scale = scale
         self.dtype = dtype

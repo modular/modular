@@ -59,7 +59,6 @@ ignore = [
   "ANN003", # TODO: Missing type annotation for **kwargs
   "ANN204", # TODO: Missing return type annotation for special method
   "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
-  "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
   "C408", # Rewrites `dict(foo="bar")` to `{"foo": "bar"}`, questionable readability improvement

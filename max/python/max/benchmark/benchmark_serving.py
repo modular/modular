@@ -1570,7 +1570,7 @@ def parse_args(
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
-        ] = ServingBenchmarkConfig(),
+        ] = ServingBenchmarkConfig(),  # noqa: B008
     ) -> None:
         parsed_configs.append(config)
 
