@@ -7,8 +7,8 @@ working through the codebase for the first time, start here.
 ## Table of contents
 
 - [development.md](development.md)—**Mojo standard library development**: Set
-up your environment, fork and branch, install the nightly Mojo compiler (for
-example, with Pixi), and run tests. Start here if you're new to contributing.
+  up your environment, fork and branch, build the library and run tests. Start
+  here if you're new to contributing.
 
 - [style-guide.md](style-guide.md)—**Coding standards and style guide**:
   Conventions for stdlib code: file layout, `mojo format`, naming, value
@@ -20,12 +20,8 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   for packages, modules, types, fields, aliases, and functions.
 
 - [faq.md](faq.md)—**Frequently asked questions**: Contributor-focused FAQ for
-  the standard library (platform support, bug reporting, `AnyType` vs
-  `__TypeOfAllTypes`, MLIR dialects, compiler-runtime).
-
-- [governance-structure.md](governance-structure.md)—**Mojo standard library
-  governance structure**: Who leads the stdlib, how reviews and proposals work,
-  and how the structure may evolve.
+  the standard library (platform support, bug reporting, MLIR dialects,
+  compiler runtime).
 
 - [adding-gpu-targets.md](adding-gpu-targets.md)—**Adding a new GPU target**:
   Contributor guide for extending `std/gpu/host/info.mojo` with a new GPU
@@ -35,7 +31,7 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
 ## Other docs
 
 - [`oss/modular/mojo/docs`](https://www.mojolang.org/docs): Mojo user
-  documentation (published at www.mojolang.org).
+  documentation (published at <https://www.mojolang.org>).
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.
