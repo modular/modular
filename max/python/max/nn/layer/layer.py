@@ -513,7 +513,7 @@ class Module(Layer, ABC):
         if strict and (missing_keys or unused_keys):
             parts = []
             if missing_keys:
-                sorted_missing = sorted(list(missing_keys))
+                sorted_missing = sorted(missing_keys)
                 parts.append(
                     f"Missing required weights: {', '.join(sorted_missing)}"
                 )
@@ -529,7 +529,7 @@ class Module(Layer, ABC):
 
             if unused_keys:
                 parts.append(
-                    f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
+                    f"Unexpected keys in state_dict: {', '.join(sorted(unused_keys))}"
                 )
 
             raise ValueError(

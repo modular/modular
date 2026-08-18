@@ -1526,24 +1526,24 @@ class TextBatchConstructor:
         replica_priorities: set[RequestType | None] | list[RequestType | None]
         match self.batch_scheduling_strategy:
             case BatchSchedulingStrategy.DECODE_FIRST:
-                replica_priorities = set(
+                replica_priorities = {
                     self._identify_priority(idx)
                     for idx in range(self.num_replicas)
-                )
+                }
                 if RequestType.TG in replica_priorities:
                     priority_override = RequestType.TG
             case BatchSchedulingStrategy.PREFILL_FIRST:
-                replica_priorities = set(
+                replica_priorities = {
                     self._identify_priority(idx)
                     for idx in range(self.num_replicas)
-                )
+                }
                 if RequestType.CE in replica_priorities:
                     priority_override = RequestType.CE
             case BatchSchedulingStrategy.BALANCED:
-                replica_priorities = list(
+                replica_priorities = [
                     self._identify_priority(idx)
                     for idx in range(self.num_replicas)
-                )
+                ]
 
                 # Count occurrences of each priority type
                 ce_count = replica_priorities.count(RequestType.CE)

@@ -118,9 +118,9 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         outputs per request.
         """
         tracer: Tracer = Tracer()
-        replica_batches = list(
+        replica_batches = [
             list(replica_batch.values()) for replica_batch in inputs.batches
-        )
+        ]
         # Flatten our batch for consistent indexing.
         context_batch = flatten2d(replica_batches)
 

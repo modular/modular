@@ -62,6 +62,7 @@ ignore = [
   "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
+  "C408", # Rewrites `dict(foo="bar")` to `{"foo": "bar"}`, questionable readability improvement
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)
   "E402", # TODO: import top of file
@@ -94,17 +95,6 @@ ignore = [
   "ASYNC230",
   "ASYNC251",
   "BLE001",
-  "C400",
-  "C401",
-  "C403",
-  "C405",
-  "C408",
-  "C409",
-  "C410",
-  "C414",
-  "C417",
-  "C418",
-  "C419",
   "DTZ001",
   "DTZ005",
   "DTZ006",

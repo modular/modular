@@ -68,7 +68,7 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
 
-    repeats = list(Dim(d) for d in repeats)
+    repeats = [Dim(d) for d in repeats]
     if len(shape) != len(repeats):
         raise ValueError(
             "Input rank and number of elements in repeats must match:"
