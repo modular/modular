@@ -2279,6 +2279,9 @@ def topk_topp_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 @__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
 def topk_softmax_sample_kernel[
     block_size: Int,

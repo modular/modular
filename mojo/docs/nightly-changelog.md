@@ -296,6 +296,13 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   used to be an infinite loop - iterating forever at runtime, and hanging the
   compiler at comptime.
 
+- A strided `range()` no longer iterates forever when the element after the
+  last one falls outside the element type, as in
+  `range(UInt8(250), UInt8(255), UInt8(2))`. The cursor used to wrap past the
+  type's limit and land back inside the range, so iteration restarted near the
+  opposite limit and never agreed with `len()`. This affected signed and
+  unsigned ranges in both step directions.
+
 - `reversed()` on a scalar `range()` no longer yields an empty iterator when
   the range starts within one step of the element type's limit, as in
   `reversed(range(Int8.MIN, Int8.MIN + 8, Int8(1)))`. Unsigned ranges, and
