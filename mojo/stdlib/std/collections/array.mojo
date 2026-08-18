@@ -37,7 +37,9 @@ import std.math
 import std.memory
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.collections import check_bounds
+from std.builtin.builtin_slice import ContiguousSlice
+from std.collections import check_bounds, check_slice_bounds
+from std.collections.span import Span
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
@@ -676,6 +678,32 @@ struct Array[T: AnyType, length: Int](
         """
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
+
+    @stable(since="1.0")
+    @always_inline
+    def __getitem__[
+        origin: Origin, //
+    ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+        """Gets the sequence of elements at the specified positions.
+
+        Aborts if `slice`'s start or end index is out of bounds (valid range
+        is `0` to `len(self)`, inclusive), or if start is greater than end.
+        Negative indices are not supported and always abort.
+
+        Parameters:
+            origin: The origin of `Array`.
+
+        Args:
+            slice: A slice that specifies the positions of the new array view.
+
+        Returns:
+            A span over the specified slice.
+        """
+        var start, end = check_slice_bounds(slice, len(self))
+        return Span[Self.T, origin](
+            unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
+            length=end - start,
+        )
 
     @stable(since="1.0")
     @always_inline

@@ -30,6 +30,7 @@ from test_utils import (
     check_write_to,
 )
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
+from std.builtin.builtin_slice import ContiguousSlice
 
 
 def test_array_unsafe_get() raises:
@@ -699,6 +700,33 @@ def test_array_with_explicit_destroy_type() raises:
     arr^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1, 2])
+
+
+def test_array_slicing() raises:
+    var arr: Array[Int, 5] = [0, 10, 20, 30, 40]
+
+    # full slice [:]
+    var full = arr[ContiguousSlice(None, None, None)]
+    assert_equal(len(full), 5)
+    assert_equal(full[0], 0)
+    assert_equal(full[4], 40)
+
+    # partial slice [a:b]
+    var partial = arr[ContiguousSlice(1, 4, None)]
+    assert_equal(len(partial), 3)
+    assert_equal(partial[0], 10)
+    assert_equal(partial[1], 20)
+    assert_equal(partial[2], 30)
+
+    # empty slice (within bounds)
+    var empty = arr[ContiguousSlice(2, 2, None)]
+    assert_equal(len(empty), 0)
+
+    # mutation through the returned Span reflects back on the original Array
+    var mut_arr: Array[Int, 5] = [0, 10, 20, 30, 40]
+    var mut_span = mut_arr[ContiguousSlice(1, 4, None)]
+    mut_span[0] = 99
+    assert_equal(mut_arr[1], 99)
 
 
 def main() raises:
