@@ -5,7 +5,7 @@
 // CHECK-LABEL: "func_gen_type_builder.concrete"
 // CHECK-SAME: () -> !kgen.generator<(index, f32) throws -> index>
 "func_gen_type_builder.concrete"() : () -> !kgen.func_gen_type_builder<
-  #kgen<param.decls[]>,
+  #kgen<fn_gen_builder.param.decls[]>,
   #kgen.param_list<index, f32> : !kgen.param_list<!kgen.type>,
   #kgen.type<index> : !kgen.type,
   #kgen.fn_metadata<[read, read], "throws">>
@@ -15,18 +15,18 @@
 // CHECK-LABEL: "func_gen_type_builder.parametric"
 // CHECK-SAME: () -> !kgen.generator<<type, type>(!kgen.param<*(0,0)>, !kgen.param<*(0,1)>) -> !kgen.param<*(0,0)>>
 "func_gen_type_builder.parametric"() : () -> !kgen.func_gen_type_builder<
-  #kgen<param.decls[T : !kgen.type, U : !kgen.type]>,
-  #kgen.param_list<#kgen.param.decl.ref<"T">, #kgen.param.decl.ref<"U">> : !kgen.param_list<!kgen.type>,
-  #kgen.param.decl.ref<"T"> : !kgen.type,
+  #kgen<fn_gen_builder.param.decls[T : !kgen.type, U : !kgen.type]> : !kgen.non_struct_type,
+  #kgen.param_list<#kgen.fn_gen_builder.param.decl.ref<"T", !kgen.type>, #kgen.fn_gen_builder.param.decl.ref<"U", !kgen.type>> : !kgen.param_list<!kgen.type>,
+  #kgen.fn_gen_builder.param.decl.ref<"T", !kgen.type>,
   #kgen.fn_metadata<[read, read], "none">>
 
 // A parameter may be declared in terms of a parameter declared before it.
 // CHECK-LABEL: "func_gen_type_builder.dependent_param"
 // CHECK-SAME: () -> !kgen.generator<<type, *(0,0)>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>>
 "func_gen_type_builder.dependent_param"() : () -> !kgen.func_gen_type_builder<
-  #kgen<param.decls[T : !kgen.type, x : !kgen.param<T>]>,
-  #kgen.param_list<#kgen.param.decl.ref<"T">> : !kgen.param_list<!kgen.type>,
-  #kgen.param.decl.ref<"T"> : !kgen.type,
+  #kgen<fn_gen_builder.param.decls[T : !kgen.type, x : !kgen.param<#kgen.fn_gen_builder.param.decl.ref<"T", !kgen.type>>]>,
+  #kgen.param_list<#kgen.fn_gen_builder.param.decl.ref<"T", !kgen.type>> : !kgen.param_list<!kgen.type>,
+  #kgen.fn_gen_builder.param.decl.ref<"T", !kgen.type>,
   #kgen.fn_metadata<[read], "none">>
 
 // Every component is a parameter expression, so a builder that is still

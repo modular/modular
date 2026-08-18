@@ -35,46 +35,56 @@ using namespace M;
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
-// IndexRefRemapper
+// NameToIndexRefRemapper
 //===----------------------------------------------------------------------===//
 
-Attribute IndexRefRemapper::tryReplace(Attribute attr, size_t depth) {
-  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+/// Populate the remapper with named input and result parameters.
+template <typename NameDeclT, typename NameRefT>
+NameToIndexRefRemapper<NameDeclT, NameRefT>::NameToIndexRefRemapper(
+    ArrayRef<NameDeclT> inputParams, size_t offset)
+    : offset(offset) {
+  for (auto [idx, param] : llvm::enumerate(inputParams))
+    mapping.try_emplace(param.getName(), idx);
+}
+template <typename NameDeclT, typename NameRefT>
+NameToIndexRefRemapper<NameDeclT, NameRefT>::NameToIndexRefRemapper(
+    ArrayRef<NameRefT> inputParams, size_t offset)
+    : offset(offset) {
+  for (auto [idx, param] : llvm::enumerate(inputParams))
+    mapping.try_emplace(param.getName(), idx);
+}
+
+/// Append a parameter declaration to the remapper.
+template <typename NameDeclT, typename NameRefT>
+void NameToIndexRefRemapper<NameDeclT, NameRefT>::appendParamDecl(
+    NameDeclT paramDecl) {
+  mapping.try_emplace(paramDecl.getName(), mapping.size());
+}
+
+// CRTP methods.
+template <typename NameDeclT, typename NameRefT>
+Attribute
+NameToIndexRefRemapper<NameDeclT, NameRefT>::tryReplace(Attribute attr,
+                                                        size_t depth) {
+  if (auto ref = dyn_cast<NameRefT>(attr)) {
     if (auto it = mapping.find(ref.getName()); it != mapping.end())
       return ParamIndexRefAttr::get(depth, it->second,
-                                    replaceImpl(ref.getType(), depth));
+                                    Base::replaceImpl(ref.getType(), depth));
   }
   if (offset != 0) {
     if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
       if (ref.getDepth() == depth)
         return ParamIndexRefAttr::get(depth, ref.getIndex() + offset,
-                                      replaceImpl(ref.getType(), depth));
+                                      Base::replaceImpl(ref.getType(), depth));
     }
   }
   return nullptr;
 }
 
-IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
-                                   size_t offset)
-    : offset(offset) {
-
-  /// Populate the remapper with the given named input parameters.
-  for (auto [idx, param] : llvm::enumerate(inputParams))
-    mapping.try_emplace(param.getName(), idx);
-}
-
-IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams,
-                                   size_t offset)
-    : offset(offset) {
-
-  /// Populate the remapper with the given named input parameters.
-  for (auto [idx, param] : llvm::enumerate(inputParams))
-    mapping.try_emplace(param.getName(), idx);
-}
-
-void IndexRefRemapper::appendParamDecl(ParamDeclAttr paramDecl) {
-  mapping.try_emplace(paramDecl.getName(), mapping.size());
-}
+// Explicit instantiation, these are the only two variants.
+template class M::KGEN::NameToIndexRefRemapper<ParamDeclAttr, ParamDeclRefAttr>;
+template class M::KGEN::NameToIndexRefRemapper<FnGenBuilderParamDeclAttr,
+                                               FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // IndexDepthAdjuster
