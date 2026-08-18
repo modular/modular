@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hf_repo_lock import load_db
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
-from smoke_tests.smoke_test import MODEL_RECIPES
+from smoke_tests.smoke_test import MODEL_RECIPES, _load_hf_repo_lock
 
 
 def test_hf_repo_lock_tsv_reachable() -> None:
-    assert len(load_db()) > 0, "hf-repo-lock.tsv not found or empty"
+    assert len(_load_hf_repo_lock()) > 0, "hf-repo-lock.tsv not found or empty"
 
 
 def _custom_recipe_keys() -> list[str]:
@@ -36,11 +35,11 @@ def test_model_aliases_contain_exactly_one_double_underscore() -> None:
 
 def test_all_alias_hf_model_paths_in_hf_repo_lock() -> None:
     """Every custom recipe key's hf_model_path prefix must be pinned."""
-    lock = load_db()
+    lock = _load_hf_repo_lock()
     missing = [
         alias
         for alias in _custom_recipe_keys()
-        if alias.rsplit("__", 1)[0] not in lock
+        if alias.rsplit("__", 1)[0].casefold() not in lock
     ]
     assert not missing, (
         f"custom recipe hf_model_path prefixes missing from hf-repo-lock.tsv: {missing}"
@@ -48,7 +47,7 @@ def test_all_alias_hf_model_paths_in_hf_repo_lock() -> None:
 
 
 def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
-    lock = {repo.casefold() for repo in load_db()}
+    lock = _load_hf_repo_lock()
     missing = []
     for recipe_path in MODEL_RECIPES.values():
         recipe = smoke_test._load_recipe(recipe_path)
@@ -67,7 +66,7 @@ def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
 
 
 def test_all_recipe_draft_model_paths_in_hf_repo_lock() -> None:
-    lock = {repo.casefold() for repo in load_db()}
+    lock = _load_hf_repo_lock()
     missing = []
     for recipe_path in MODEL_RECIPES.values():
         recipe = smoke_test._load_recipe(recipe_path)

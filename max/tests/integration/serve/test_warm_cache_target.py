@@ -14,14 +14,10 @@
 
 import subprocess
 
-import hf_repo_lock
 import python.runfiles
 
 # Use SmolLM-135M for fast testing
 MODEL_NAME = "HuggingFaceTB/SmolLM-135M"
-_model_revision = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
-assert _model_revision is not None
-MODEL_REVISION: str = _model_revision
 
 
 def _get_pipelines_binary() -> str:
@@ -49,10 +45,6 @@ def test_warm_cache_target_cuda() -> None:
             "warm-cache",
             "--model",
             MODEL_NAME,
-            "--huggingface-model-revision",
-            MODEL_REVISION,
-            "--huggingface-weight-revision",
-            MODEL_REVISION,
             "--devices",
             "gpu:0",
             "--target",
@@ -97,10 +89,6 @@ def test_warm_cache_target_cuda_default() -> None:
             "warm-cache",
             "--model",
             MODEL_NAME,
-            "--huggingface-model-revision",
-            MODEL_REVISION,
-            "--huggingface-weight-revision",
-            MODEL_REVISION,
             "--devices",
             "gpu:0",
             "--target",
@@ -144,10 +132,6 @@ def test_warm_cache_target_hip() -> None:
             "warm-cache",
             "--model",
             MODEL_NAME,
-            "--huggingface-model-revision",
-            MODEL_REVISION,
-            "--huggingface-weight-revision",
-            MODEL_REVISION,
             "--devices",
             "gpu:0",
             "--target",
@@ -191,10 +175,6 @@ def test_warm_cache_target_multiple_gpus() -> None:
             "warm-cache",
             "--model",
             MODEL_NAME,
-            "--huggingface-model-revision",
-            MODEL_REVISION,
-            "--huggingface-weight-revision",
-            MODEL_REVISION,
             "--devices",
             "gpu:0,1,2",
             "--target",

@@ -25,17 +25,28 @@ the dedicated HF workflow.
 
 from __future__ import annotations
 
-import hf_repo_lock
+import csv
+from pathlib import Path
+
 import huggingface_hub
 import pytest
 
+# Sentinel row that is not a real Hugging Face repo.
 EXAMPLE_KEY = "000EXAMPLE-for-unit-test/repo"
 
+_HF_REPO_LOCK = Path(__file__).parent / "hf-repo-lock.tsv"
 
-@pytest.mark.parametrize(
-    "repo_id",
-    sorted(repo for repo in hf_repo_lock.load_db() if repo != EXAMPLE_KEY),
-)
+
+def _locked_repo_ids() -> list[str]:
+    with _HF_REPO_LOCK.open() as f:
+        return sorted(
+            row["hf_repo"]
+            for row in csv.DictReader(f, dialect="excel-tab")
+            if row["hf_repo"] != EXAMPLE_KEY
+        )
+
+
+@pytest.mark.parametrize("repo_id", _locked_repo_ids())
 def test_canonical_casing(repo_id: str) -> None:
     info = huggingface_hub.repo_info(repo_id)
     assert info.id == repo_id, (

@@ -19,7 +19,6 @@ runtime, and are checked against the reference ``transformers`` tokenizer.
 
 from __future__ import annotations
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from max.experimental.cascade import LocalRuntime
@@ -29,14 +28,12 @@ from max.pipelines.lib import generate_local_model_path
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 def _model_path() -> str:
     """Resolve a cached local path for the test model, else the repo id."""
-    assert REVISION is not None
     try:
-        return generate_local_model_path(REPO_ID, REVISION)
+        return generate_local_model_path(REPO_ID)
     except FileNotFoundError:
         # Not pre-cached; fall back to the repo id so the HF hub downloads it
         # (requires network; the bazel target is tagged ``requires-network``).

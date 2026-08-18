@@ -15,7 +15,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 
-import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
 from max.pipelines.context import TextContext
 from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
@@ -36,7 +35,6 @@ from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 @contextmanager
@@ -57,11 +55,8 @@ def retrieve_mock_text_generation_pipeline(
     if not device_specs:
         device_specs = scan_available_devices()
 
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     mock_config = DummyPipelineConfig(
-        model_path=generate_local_model_path(REPO_ID, REVISION),
+        model_path=generate_local_model_path(REPO_ID),
         max_length=max_length,
         max_batch_size=None,
         device_specs=device_specs,

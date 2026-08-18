@@ -14,14 +14,18 @@
 import json
 
 from click.testing import CliRunner
-from hf_repo_lock import load_db
 from smoke_tests import smoke_test, smoke_test_github_matrix
+from smoke_tests.smoke_test import _load_hf_repo_lock
 
 
 def test_all_models_in_hf_repo_lock() -> None:
     """Every smoke test model must have a pinned revision in hf-repo-lock.tsv."""
-    lock = load_db()
-    missing = [m for m in smoke_test_github_matrix.HF_MODELS if m not in lock]
+    lock = _load_hf_repo_lock()
+    missing = [
+        m
+        for m in smoke_test_github_matrix.HF_MODELS
+        if m.casefold() not in lock
+    ]
     assert not missing, f"Models missing from hf-repo-lock.tsv: {missing}"
 
 

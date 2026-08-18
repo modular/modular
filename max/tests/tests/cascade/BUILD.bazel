@@ -166,7 +166,6 @@ modular_py_test(
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/workers",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("pytest-asyncio"),
         requirement("transformers"),
@@ -246,8 +245,8 @@ modular_py_test(
         # runtime); pipelines provides the CommonTextGenPipeline class.
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/pipelines:all_pipelines",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

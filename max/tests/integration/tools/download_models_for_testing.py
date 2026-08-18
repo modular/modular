@@ -19,7 +19,6 @@ from dataclasses import dataclass
 
 import click
 import huggingface_hub
-from max.tests.integration.hf_repo_lock import revision_for_hf_repo
 
 
 @dataclass(frozen=True)
@@ -48,14 +47,6 @@ def resolve_download_request(repo_spec: str) -> RepoDownloadRequest:
             repo_id=repo_id,
             revision=explicit_revision,
             revision_source="explicit revision",
-        )
-
-    locked_revision = revision_for_hf_repo(repo_id)
-    if locked_revision is not None:
-        return RepoDownloadRequest(
-            repo_id=repo_id,
-            revision=locked_revision,
-            revision_source="hf-repo-lock.tsv",
         )
 
     return RepoDownloadRequest(

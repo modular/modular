@@ -117,11 +117,10 @@ def test_pipeline_weight_repos_are_locked() -> None:
 
     Pipelines that use the two-repo layout name their quantized weight repo only
     through a ``transformer_weight_path`` override, not as the pipeline's model
-    id. ``hf_repo_lock.apply_to_config`` looks that weight repo up in the lock
-    and raises ``No locked revision found for weight repository`` when it is
-    missing, crashing the pipeline at run time (and the offline cache cannot
-    resolve it under ``HF_HUB_OFFLINE``). Requiring an exact match against the
-    lock key additionally enforces the weight repo's canonical casing.
+    id. The lock is what the cache populator downloads, so a weight repo missing
+    from it never reaches the runners' cache and the pipeline cannot resolve it
+    under ``HF_HUB_OFFLINE``. Requiring an exact match against the lock key
+    additionally enforces the weight repo's canonical casing.
     """
     locked = _locked_repos()
     violations: list[str] = []
@@ -131,7 +130,7 @@ def test_pipeline_weight_repos_are_locked() -> None:
                 violations.append(f"  pipeline {name!r}: weight repo {repo!r}")
     assert not violations, (
         "Logit verification pipelines reference weight repositories missing "
-        "from hf-repo-lock.tsv. apply_to_config raises 'No locked revision "
-        "found for weight repository' for these at run time; add a row pinning "
-        "each to its Hugging Face commit:\n" + "\n".join(violations)
+        "from hf-repo-lock.tsv, so the cache populator never fetches them and "
+        "they cannot resolve offline; add a row pinning each to its Hugging "
+        "Face commit:\n" + "\n".join(violations)
     )

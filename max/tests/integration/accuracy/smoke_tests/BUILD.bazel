@@ -35,6 +35,7 @@ modular_py_binary(
     name = "smoke_test",
     testonly = True,
     srcs = ["smoke_test.py"],
+    data = ["//max/tests/integration:hf-repo-lock.tsv"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     # Mirror the package default plus //max_private so private archs (e.g.
@@ -56,7 +57,6 @@ modular_py_binary(
         requirement("pydantic"),
         requirement("pyyaml"),
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
     ],
 )
 

@@ -21,7 +21,6 @@ resolution, subprocess spawn, ZMQ proxy, and per-request streaming.
 
 from __future__ import annotations
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
@@ -31,20 +30,19 @@ from max.experimental.cascade.pipelines.all_pipelines import build_pipeline
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
 )
+from max.pipelines.architectures import register_all_models
 from max.pipelines.lib import PipelineConfig, generate_local_model_path
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 def _model_path() -> str:
     """Resolve a cached local path for the test model, else the repo id."""
-    assert REVISION is not None
     try:
-        return generate_local_model_path(REPO_ID, REVISION)
+        return generate_local_model_path(REPO_ID)
     except FileNotFoundError:
         return REPO_ID
 
@@ -59,6 +57,9 @@ async def _text_pipeline(model_path: str) -> CommonTextGenPipeline:
     re-implementing resolution/binding. A fresh config per call gives each test
     its own instance.
     """
+    # `build_pipeline` resolves the arch by name, so the registry has to be
+    # populated first. Importing `max.pipelines.lib` alone does not do it.
+    register_all_models()
     config = PipelineConfig(
         models=ModelManifest(
             {

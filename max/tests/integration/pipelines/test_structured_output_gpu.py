@@ -16,7 +16,6 @@ import asyncio
 import json
 from typing import cast
 
-import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
 from max.pipelines import (
@@ -49,15 +48,10 @@ pytest_plugins = "test_common.registry"
 def test_smollm_with_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
         sampling=SamplingConfig(enable_structured_output=True),
         runtime=PipelineRuntimeConfig(max_batch_size=1),
@@ -163,15 +157,10 @@ def test_multistep_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
     """Test structured output over multiple single-step pipeline invocations."""
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
         sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
@@ -258,15 +247,10 @@ def test_multi_step_guided_decoding_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
     """Test that guided decoding works over repeated single-step invocations."""
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
         sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
@@ -341,15 +325,10 @@ def test_overlap_pipeline_structured_output_gpu(
     valid JSON output conforming to the schema.
     """
 
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
         sampling=SamplingConfig(enable_structured_output=True),
         runtime=PipelineRuntimeConfig(
@@ -449,15 +428,10 @@ def test_heterogeneous_batch_structured_output_gpu(
     - Structured output requests produce valid JSON conforming to their schema
     - Non-structured requests generate unconstrained output (not blocked by bitmask)
     """
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
         sampling=SamplingConfig(enable_structured_output=True),
         # Use batch_size=2 for heterogeneous batch testing.
