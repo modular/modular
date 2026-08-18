@@ -171,6 +171,19 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
+  pipeline is loaded: the effective `max_length`, `max_batch_size`,
+  `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
+  and its schedulers consume.
+- Renamed `MemoryEstimator.estimate_memory_footprint` to
+  `MemoryEstimator.plan_from_sizes`, after the `MemoryPlan` it returns. Use
+  `MemoryEstimator.plan` instead to plan from a `PipelineConfig` alone;
+  `plan_from_sizes` is for callers that have already computed the weight,
+  activation, and signal-buffer sizes.
+- Made `MemoryEstimator.free_memory`, `static_memory_size`,
+  `available_kv_cache_memory`, and `max_supported_sequence_length` private.
+  They are steps within a memory plan rather than useful on their own, and
+  the values they produced are now available on `MemoryPlan`.
 - Added opt-in token-balanced CE scheduling across data-parallel replicas.
   With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
   encoding requests wait in an unbound pool and are placed by a per-step

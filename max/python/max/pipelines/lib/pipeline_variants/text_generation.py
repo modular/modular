@@ -94,7 +94,7 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
-from ..memory_estimation import _MemoryPlan
+from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
@@ -148,7 +148,7 @@ class TextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
-        memory_plan: _MemoryPlan,
+        memory_plan: MemoryPlan,
     ) -> None:
         """Initialize a text generation pipeline instance.
 

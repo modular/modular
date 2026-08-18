@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 import json
 import logging
@@ -44,12 +43,10 @@ from transformers import (
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
+from max.pipelines.lib.memory_estimation import MemoryEstimator, MemoryPlan
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
-from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .arch_lookup import (
     ARCH_LOOKUP,
@@ -239,153 +236,6 @@ def _apply_thinking_region(
         tokenizer, tokenizer.new_context, reasoning_parser_name
     )
     tokenizer.new_context = wrapper  # type: ignore[method-assign]
-
-
-def _run_memory_planning(
-    pipeline_config: Any,
-    arch: Any,
-    draft_arch: Any = None,
-) -> _MemoryPlan:
-    """Runs memory estimation and resolves max_length / max_batch_size.
-
-    Called by ``retrieve_factory`` after the config is constructed.
-    Returns a :class:`_MemoryPlan` whose
-    ``max_batch_size`` is passed to the pipeline constructor.
-
-    Also applies ``max_length`` clamping and ``max_batch_total_tokens``
-    defaulting, which depend on memory estimation output.
-    """
-    # Multi-component pipelines (diffusion models) have no "main" model entry
-    # — they store per-component configs (transformer, vae, text_encoder, etc.)
-    # and don't use a KV cache, so skip memory estimation entirely.
-    if "main" not in pipeline_config.models:
-        return _MemoryPlan(
-            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
-            footprint=0,
-        )
-
-    model_config = pipeline_config.model
-
-    if not issubclass(arch.pipeline_model, PipelineModel):
-        return _MemoryPlan(
-            max_batch_size=pipeline_config.runtime.max_batch_size or 1,
-            footprint=0,
-            device_specs=tuple(model_config.device_specs),
-        )
-
-    effective_specs = tuple(model_config.device_specs)
-    logger.info(
-        "devices: %s",
-        ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
-    )
-    devices = load_devices(effective_specs)
-    arch_config = arch.config.initialize(
-        pipeline_config, model_config=model_config
-    )
-
-    max_batch_size = pipeline_config.runtime.max_batch_size
-    if arch.memory_planner is not None:
-        planner = arch.memory_planner(arch_config)
-        weights_size = planner.estimate_weights_size(pipeline_config)
-        if max_batch_size is None:
-            max_batch_size = planner.infer_max_batch_size(
-                pipeline_config, devices, weights_size
-            )
-        activation_size = planner.estimate_activation_memory(
-            pipeline_config, model_config.huggingface_config
-        )
-        signal_buffer_size = planner.estimate_signal_buffer_memory(
-            pipeline_config, arch_config
-        )
-    else:
-        # ``memory_planner=None`` is the fallback for architectures not yet
-        # wired to a MemoryPlanner. If adding a new architecture that uses a
-        # KV cache, set ``memory_planner=PagedMemoryPlanner`` on its
-        # ``SupportedArchitecture``.
-        weights_size = model_config.weights_size()
-        activation_size = 0
-        signal_buffer_size = pipeline_config.estimate_signal_buffer_memory(
-            arch_config
-        )
-
-    plan = MemoryEstimator.estimate_memory_footprint(
-        pipeline_config,
-        model_config,
-        arch_config,
-        devices,
-        weights_size,
-        activation_size,
-        signal_buffer_size,
-        arch=arch,
-        max_batch_size=max_batch_size,
-    )
-
-    # Clamp max_length to what the KV cache can support.
-    if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-        weights_size,
-        activation_size,
-        model_config,
-        devices,
-        arch_config,
-        signal_buffer_size,
-        available_cache_memory=plan.available_cache_memory,
-    ):
-        if model_config.max_length is None:
-            model_config.max_length = clamped_max_seq_len
-        elif model_config.max_length > clamped_max_seq_len:
-            logging.warning(
-                "Clamping max_length from %d to %d due to capacity of KV Cache",
-                model_config.max_length,
-                clamped_max_seq_len,
-            )
-            model_config.max_length = clamped_max_seq_len
-
-    # For speculative decoding, clamp max_length to the draft model's limit
-    # (the draft shares the target model's KV cache).
-    if draft_arch is not None and pipeline_config.draft_model is not None:
-        draft_arch_config = draft_arch.config.initialize(
-            pipeline_config, model_config=pipeline_config.draft_model
-        )
-        draft_max_seq_len = draft_arch_config.get_max_seq_len()
-        if (
-            model_config.max_length is not None
-            and model_config.max_length > draft_max_seq_len
-        ):
-            logger.info(
-                "Clamping max_length from %d to %d (draft model max sequence length)",
-                model_config.max_length,
-                draft_max_seq_len,
-            )
-            model_config.max_length = draft_max_seq_len
-            pipeline_config.draft_model.max_length = draft_max_seq_len
-
-    # Validate that architectures requiring chunked prefill have it configured.
-    # Must run after max_length is resolved.
-    if (
-        arch.requires_max_batch_context_length
-        and pipeline_config.runtime.max_batch_total_tokens is None
-    ):
-        logger.warning(
-            "Architecture '%s' requires max-batch-total-tokens to be specified "
-            "but found None. Defaulting to the max sequence length of the model: %s",
-            arch.name,
-            model_config.max_length,
-        )
-        pipeline_config.runtime.max_batch_total_tokens = model_config.max_length
-
-    # TODO(MXF-517): Fold this into a consolidated startup logger that reports
-    # all resolved runtime values together. It logs here, from the planner that
-    # computes the budget, because the value is no longer mutated onto the config
-    # for log_basic_config to read.
-    if plan.available_cache_memory is not None:
-        logger.info(
-            "cache_memory: %s",
-            to_human_readable_bytes(plan.available_cache_memory),
-        )
-
-    # Specs rather than Device objects: the plan is pickled into the
-    # model-worker process.
-    return dataclasses.replace(plan, device_specs=tuple(effective_specs))
 
 
 def _retrieve_chat_template(chat_template: Path | None) -> str | None:
@@ -844,10 +694,24 @@ class PipelineRegistry:
                     "MAX-Optimized architecture not found for `draft_model`"
                 )
 
-        # Memory planning: derive sizes, run estimation, resolve max_length.
-        memory_plan = _run_memory_planning(
-            pipeline_config, arch, draft_arch=draft_arch
-        )
+        # Memory planning only understands PipelineModel-based architectures;
+        # anything else (a raw Module, an executor) gets a pass-through plan
+        # carrying the config's own values. Multi-component pipelines have no
+        # "main" model and are handled inside ``for_pipeline``.
+        if "main" in pipeline_config.models and not issubclass(
+            arch.pipeline_model, PipelineModel
+        ):
+            memory_plan = MemoryPlan(
+                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                footprint=0,
+                max_length=pipeline_config.model.max_length,
+                device_specs=tuple(pipeline_config.model.device_specs),
+                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+            )
+        else:
+            memory_plan = MemoryEstimator.plan(
+                pipeline_config, arch, draft_arch=draft_arch
+            )
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 

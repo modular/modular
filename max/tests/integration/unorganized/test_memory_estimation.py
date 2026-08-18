@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+from typing import Any
 from unittest.mock import MagicMock, PropertyMock, mock_open, patch
 
 import pytest
@@ -29,6 +31,7 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.lib.memory_estimation import (
+    MemoryPlan,
     _cgroup_memory_limit_paths,
     _host_memory_limit,
     _kv_params_per_layer_depth,
@@ -121,7 +124,7 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
 
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -138,6 +141,106 @@ def test_memory_estimation__infer_optimal_batch_size() -> None:
         devices=[CPU()],
     )
     assert inferred_batch_size == 1
+
+
+def _dummy_llama_config(max_length: int | None) -> DummyPipelineConfig:
+    """A dummy config whose mocked HF config carries concrete KV-sizing ints."""
+    config = DummyPipelineConfig(
+        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
+        max_batch_size=None,
+        max_length=max_length,
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+    )
+    hf_config = config.model.huggingface_config
+    hf_config.max_position_embeddings = 4096
+    hf_config.num_key_value_heads = 8
+    hf_config.hidden_size = 1024
+    hf_config.num_hidden_layers = 4
+    return config
+
+
+def _estimate(config: DummyPipelineConfig, **kwargs: Any) -> MemoryPlan:
+    """Runs a successful estimate against ample mocked device memory."""
+    with patch(
+        "max.driver.Device.stats", new_callable=PropertyMock
+    ) as device_mock:
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        arch_config = DUMMY_LLAMA_ARCH.config.initialize(config)
+        estimate = MemoryEstimator.plan_from_sizes(
+            config,
+            config.model,
+            arch_config,
+            [CPU()],
+            GIB,
+            0,
+            **kwargs,
+        )
+        assert isinstance(estimate, MemoryPlan)
+        return estimate
+
+
+def test_estimate__carries_default_max_length_without_config_write() -> None:
+    """With --max-length unset, the estimate carries the architecture default
+    and the config keeps recording that the user never set one."""
+    config = _dummy_llama_config(max_length=None)
+    estimate = _estimate(config)
+    assert estimate.max_length == 4096
+    assert config.model.max_length is None
+
+
+def test_estimate__carries_user_max_length() -> None:
+    config = _dummy_llama_config(max_length=512)
+    estimate = _estimate(config)
+    assert estimate.max_length == 512
+    assert config.model.max_length == 512
+
+
+def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
+    None
+):
+    arch = dataclasses.replace(
+        DUMMY_LLAMA_ARCH, requires_max_batch_context_length=True
+    )
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        config = _dummy_llama_config(max_length=512)
+        plan = MemoryEstimator.plan(config, arch)
+        assert plan.max_batch_total_tokens == plan.max_length == 512
+        # The plan carries a user-set cap unchanged instead.
+        config = _dummy_llama_config(max_length=512)
+        config.runtime.max_batch_total_tokens = 2048
+        plan = MemoryEstimator.plan(config, arch)
+        assert plan.max_batch_total_tokens == 2048
+
+
+def test_for_pipeline__publishes_plan_values_onto_config() -> None:
+    """Until readers migrate to the plan, planning publishes its resolved
+    values onto the config in one place, at the end."""
+    config = _dummy_llama_config(max_length=None)
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 100 * GIB}
+        plan = MemoryEstimator.plan(config, DUMMY_LLAMA_ARCH)
+    assert plan.max_length == 4096
+    assert config.model.max_length == 4096
+    assert config.runtime.max_batch_total_tokens is None
+    assert plan.device_specs == (DeviceSpec.cpu(),)
 
 
 @pytest.mark.skip("TODO: AITLIB-238")
@@ -162,7 +265,7 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
             )
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -192,7 +295,7 @@ def test_memory_estimation__raise_oom_error_all_defaults(
             )
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -225,7 +328,7 @@ def test_memory_estimation__raise_oom_error_max_length_set() -> None:
             )
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -256,7 +359,7 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set() -> None:
             )
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,
@@ -286,7 +389,7 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
             )
             devices = load_devices(mock_config.model.device_specs)
             arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
-            MemoryEstimator.estimate_memory_footprint(
+            MemoryEstimator.plan_from_sizes(
                 mock_config,
                 mock_config.model,
                 arch_config,

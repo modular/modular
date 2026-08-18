@@ -31,7 +31,7 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
     Reserves a per-device activation budget (a base sized from the KV cache
     dtype), scaled by the device count to match the total-across-devices
     budget in
-    :meth:`MemoryEstimator.estimate_memory_footprint`.  Also provides vision
+    :meth:`MemoryEstimator.plan_from_sizes`.  Also provides vision
     cache entry byte estimation for the KV-and-vision-cache reservation path.
     """
 
