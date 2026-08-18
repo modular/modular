@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 from max.support.algorithm import flatten2d
 
 from .interfaces import PipelineModel
-from .memory_estimation import _MemoryPlan
+from .memory_estimation import MemoryPlan
 
 logger = logging.getLogger("max.pipelines")
 
@@ -68,7 +68,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         tokenizer: PipelineTokenizer[
             BaseContextType, npt.NDArray[np.integer[Any]], TextGenerationRequest
         ],
-        memory_plan: _MemoryPlan,
+        memory_plan: MemoryPlan,
     ) -> None:
         del tokenizer  # Unused.
         self._pipeline_config = pipeline_config

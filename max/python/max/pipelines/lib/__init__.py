@@ -83,7 +83,7 @@ from .interfaces import (
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
-from .memory_estimation import MemoryEstimator
+from .memory_estimation import MemoryEstimator, MemoryPlan
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
@@ -127,6 +127,7 @@ __all__ = [
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MemoryEstimator",
+    "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
     "ModelOutputs",
