@@ -96,8 +96,8 @@ def load_kv_manager(
         # PagedKVCacheManagerInterface. Delete this branch once
         # JengaKVCacheManager replaces PagedKVCacheManager outright.
         logger.warning(
-            "JengaKVCacheManager is experimental and incompatible with features "
-            "like KVCache offloading or Spec Decoding."
+            "JengaKVCacheManager is experimental and incompatible with "
+            "features like KVCache offloading."
         )
         return JengaKVCacheManager.create(
             params=params,
