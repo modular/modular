@@ -72,9 +72,9 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
+    tile_sf_layout_k_major_typed,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -2062,26 +2062,31 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
 
-    # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
+    # keep the physical SMEM buffer BM x MMA_N. Use typed layouts as source of
+    # truth; bridge to legacy Layout for LayoutTensor and the MMA descriptor
+    # pipeline.
+    comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]()
+    ].to_layout()
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    # The typed form requires whole scale-factor atoms, which keeps it in step
+    # with the `BM // SF_MN_GROUP_SIZE` atom counts `sfa_smem_size` and
+    # `sfb_smem_size` use to size the buffers these layouts describe.
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         BM,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    ].to_layout()
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         MMA_N,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ].to_layout()
 
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,

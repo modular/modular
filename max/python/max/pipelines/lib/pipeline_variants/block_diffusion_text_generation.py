@@ -153,7 +153,8 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             res = self._generate_canvas(canvas_batch)
 
         # Commit prefix-cache bookkeeping after context updates.
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
         return res
 
     def _sample_canvas(

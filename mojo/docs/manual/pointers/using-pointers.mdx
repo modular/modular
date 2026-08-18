@@ -97,7 +97,7 @@ initialized or uninitialized:
 - Uninitialized. Just like any variable, a variable of type `Pointer` can
   be declared but uninitialized.
 
-  ```mojo
+  ```mojo no-test
   var ptr: Pointer[Int, MutUntrackedOrigin]
   ```
 
@@ -117,10 +117,10 @@ initialized or uninitialized:
 
 - Pointing to initialized memory. You can initialize an allocated, uninitialized
   pointer by moving or copying an existing value into the memory. Or you can
-  construct a pointer to an existing value by calling the constructor with the
+  construct a pointer to an existing value by calling the initializer with the
   `to` keyword argument.
 
-  ```mojo
+  ```mojo no-test
   ptr.unsafe_write(value^)
   # or
   ptr.unsafe_write(copy=value)
@@ -131,7 +131,7 @@ initialized or uninitialized:
   Once the value is initialized, you can read or mutate it using the dereference
   syntax:
 
-  ```mojo
+  ```mojo no-test
   var oldValue = ptr[]
   ptr[] = newValue
   ```
@@ -214,7 +214,7 @@ To initialize allocated memory, `Pointer` provides the
 [`unsafe_write()`](/docs/std/memory/pointer/Pointer/#unsafe_write)
 method, which moves a value into the pointer's memory location:
 
-```mojo
+```mojo no-test
 str_ptr.unsafe_write(my_string^)
 ```
 
@@ -235,7 +235,7 @@ ptr.unsafe_write(copy=my_value)
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
-`Pointer` constructor with the keyword `to` argument. This is useful for
+`Pointer` initializer with the keyword `to` argument. This is useful for
 getting a pointer to a value on the stack, for example.
 
 ```mojo
@@ -265,7 +265,7 @@ ptr[] = 0
 If you've allocated space for multiple values, you can use subscript syntax with
 the `unsafe_offset` keyword argument to access the values:
 
-```mojo
+```mojo no-test
 ptr[unsafe_offset=3] = 0
 # Equivalent to:
 ptr.unsafe_offset(3)[] = 0
@@ -274,7 +274,7 @@ ptr.unsafe_offset(3)[] = 0
 You cannot safely use the dereference operator on uninitialized memory, even to
 *initialize* a pointee. This is because assigning to a dereferenced pointer
 calls lifecycle methods on the existing pointee (such as the destructor, move
-constructor or copy constructor).
+initializer or copy initializer).
 
 ```mojo
 var allocation = alloc[String]({count = 1})
@@ -289,7 +289,7 @@ str_ptr[] += " pointers"  # Works now
 The
 [`unsafe_take_pointee()`](/docs/std/memory/pointer/Pointer/#unsafe_take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is a
-consuming move. It invokes the move constructor on the destination value. It
+consuming move. It invokes the move initializer on the destination value. It
 leaves the memory location uninitialized.
 
 The
@@ -354,7 +354,7 @@ The offset can also be negative, to move backward through the block. Because
 assign the result back to a variable to advance it:
 
 ```mojo
-# Advance an existing pointer one element:
+# Advance the pointer one element:
 ptr = ptr.unsafe_offset(1)
 ```
 
@@ -363,12 +363,12 @@ ptr = ptr.unsafe_offset(1)
 
 ![Four consecutive memory locations at addresses 0x..101 through 0x..104,
 holding the characters M, o, j, and o. first_ptr points to the first location,
-and first_ptr + 2 points to the
-third.](../images/pointers/pointer-offset.png#light)
+and first_ptr.unsafe_offset(2) points to
+the third.](../images/pointers/pointer-offset.png#light)
 ![Four consecutive memory locations at addresses 0x..101 through 0x..104,
 holding the characters M, o, j, and o. first_ptr points to the first location,
-and first_ptr + 2 points to the
-third.](../images/pointers/pointer-offset-dark.png#dark)
+and first_ptr.unsafe_offset(2) points to
+the third.](../images/pointers/pointer-offset-dark.png#dark)
 
 <figcaption><b>Figure 3.</b> Pointer offsets</figcaption>
 </figure>
@@ -432,7 +432,7 @@ tracked by Mojo's lifetime checker and you're responsible for freeing it.
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside
 of the struct. For example, if you implement a static array type that allocates
-memory in its constructor, deallocates it in its destructor, and doesn't expose
+memory in its initializer, deallocates it in its destructor, and doesn't expose
 the pointer outside of the struct, the default origin is fine.
 
 But if the struct exposes a pointer or reference to that memory, you need to set
@@ -552,10 +552,8 @@ struct Counter:
         return self._alloc.unsafe_ptr()[]
 
     def __deinit__(deinit self):
-        dealloc(
-            # Convert ThinAllocation back into Allocation
-            self._alloc^.unsafe_with_layout(Self._layout)
-        )
+        # Convert ThinAllocation back into Allocation
+        dealloc(self._alloc^.unsafe_with_layout(Self._layout))
 ```
 
 To deallocate a `ThinAllocation`, you need to supply the original layout
@@ -563,7 +561,7 @@ to reconstruct an `Allocation` using the `unsafe_with_layout()` method.
 This example shows storing the layout as a comptime member; for a struct
 with a dynamic size, you can reconstruct the original layout:
 
-```mojo
+```mojo no-test
 self._alloc^.unsafe_with_layout({count = size})
 ```
 

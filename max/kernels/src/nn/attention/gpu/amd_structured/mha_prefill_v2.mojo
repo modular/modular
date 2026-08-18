@@ -1437,9 +1437,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # ragged kernel does) doesn't survive the TileTensor abstraction.
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((_num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(_num_keys, Self.KV_BLOCK)))
         )
         comptime assert Self.NUM_HEADS % Self.NUM_KV_HEADS == 0, (
             "MhaPrefillV2: NUM_HEADS must be a multiple of NUM_KV_HEADS"
@@ -1534,9 +1532,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var max_q_end_pos = (
             max_tile_idx_local + 1
         ) * Self.Q_BLOCK_SIZE + _start_pos
-        var max_num_tiles_calc = (
-            max_q_end_pos + Self.KV_BLOCK - 1
-        ) // Self.KV_BLOCK
+        var max_num_tiles_calc = ceildiv(max_q_end_pos, Self.KV_BLOCK)
         var max_num_tiles_local: Int
         # FULL_MASK skip at the loop boundary for `CausalMask` (the
         # common case). For an arbitrary `MHAMask` we can't statically

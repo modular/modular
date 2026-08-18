@@ -491,9 +491,12 @@ def bench_matmul[
             c_row_major=True,
         )
 
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {
+        mut cb_a, mut cb_b, mut cb_c, mut cb_a_scales, mut cb_b_scales, imm
+    }:
         var a = TileTensor(cb_a.offset_ptr(iteration), row_major(shape_a))
         var b = TileTensor(cb_b.offset_ptr(iteration), row_major(shape_b))
         var c = TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c))
@@ -545,7 +548,7 @@ def bench_matmul[
     @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -765,9 +768,10 @@ def bench_mxfp4_amd[
                 c_row_major=True,
             )
 
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
         var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)
         var c_tt = TileTensor[mut=True](cb_c.offset_ptr(iteration), c_shape)
@@ -785,7 +789,7 @@ def bench_mxfp4_amd[
     @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

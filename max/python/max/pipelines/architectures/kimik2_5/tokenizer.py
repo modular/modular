@@ -33,7 +33,11 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    VisionPreprocessCache,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.tokenizer import (
     resolve_single_special_token,
     run_with_default_executor,
@@ -44,6 +48,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
+from PIL import Image
 from transformers import AutoTokenizer
 
 from .context import KimiK2_5TextAndVisionContext
@@ -60,6 +65,9 @@ logger = logging.getLogger("max.pipelines")
 
 # Kimi K2.5 special token for image placeholder padding.
 _MEDIA_PAD_TOKEN = "<|media_pad|>"
+
+# One image's patchified pixels and its (t, h, w) grid, as cached.
+_PreprocessedImage = tuple[npt.NDArray[Any], npt.NDArray[np.int64]]
 
 
 def _sanitize_kimi_tool_schemas(
@@ -218,6 +226,10 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             media_proc_cfg=media_proc_cfg
         )
 
+        self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
+        )
+
         # rope_max_width is needed to compute per-image position IDs.
         vision_cfg = getattr(config, "vision_config", None)
         self.rope_max_width: int = int(
@@ -314,14 +326,52 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         assert isinstance(templated, str)
         return templated
 
+    def _preprocess_image(
+        self, image_hash: int | None, image: bytes | Image.Image
+    ) -> _PreprocessedImage:
+        """Preprocesses one image, reusing a cached result when available.
+
+        The cache key is the digest of the raw encoded bytes plus the
+        resolution size class -- the same key ``new_context`` hands to the
+        vision encoder cache, computed once by the caller and shared by both.
+        Hitting here skips the resize, normalize and patchify that the encoder
+        cache cannot skip, since it is consulted only after that work has run.
+
+        ``KimiK2_5VisionProcessor.preprocess`` resizes, normalizes and
+        patchifies each item with no cross-item state and only concatenates at
+        the end, so preprocessing one image at a time and concatenating
+        afterwards is bit-identical to the batched call it replaces.
+
+        Args:
+            image_hash: The image's content digest, or ``None`` when no media
+                caching needs one.
+            image: The image as raw bytes, or already decoded by the API server.
+
+        Returns:
+            The image's patchified pixels and its ``(t, h, w)`` grid.
+        """
+
+        def preprocess() -> _PreprocessedImage:
+            # _to_pil accepts both a PIL.Image and raw bytes.
+            outputs = self.vision_processor.preprocess(
+                [{"type": "image", "image": _to_pil(image)}]
+            )
+            return outputs["pixel_values"], outputs["grid_thws"][0]
+
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
+
     def _process_images(
-        self, request: TextGenerationRequest
+        self,
+        request: TextGenerationRequest,
+        image_hashes: Sequence[int | None],
     ) -> dict[str, npt.NDArray[Any]]:
         """Converts raw image bytes from the request into preprocessed arrays.
 
         Args:
             request: The text generation request containing raw image bytes
                 in ``request.images``.
+            image_hashes: One content digest per image, positionally matching
+                ``request.images``, or ``None`` where no digest was needed.
 
         Returns:
             Dictionary with ``pixel_values`` and ``grid_thws`` arrays,
@@ -330,12 +380,24 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if not request.images:
             return {}
 
-        # _to_pil accepts both a PIL.Image and raw bytes.
-        pil_images = [
-            _to_pil(image) for image in request.images_for_processing()
+        per_image = [
+            self._preprocess_image(image_hash, image)
+            for image_hash, image in zip(
+                image_hashes, request.images_for_processing(), strict=True
+            )
         ]
-        medias = [{"type": "image", "image": img} for img in pil_images]
-        return self.vision_processor.preprocess(medias)
+        # Reassembles exactly what the batched call returned, so every caller
+        # downstream sees the same two arrays it always did -- including their
+        # writability, since concatenating copies out of the frozen cached
+        # payloads.
+        return {
+            "pixel_values": np.concatenate(
+                [pixels for pixels, _ in per_image], axis=0
+            ),
+            "grid_thws": np.stack(
+                [grid for _, grid in per_image], axis=0
+            ).astype(np.int64),
+        }
 
     async def new_context(
         self, request: TextGenerationRequest
@@ -368,6 +430,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         num_placeholders = len(placeholder_positions)
 
         merge_len = self.vision_processor.cfg.merge_kernel_size**2
+        image_hashes: list[int | None] = []
         if request.images:
             if num_placeholders != len(request.images):
                 raise ValueError(
@@ -375,8 +438,34 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     f"must match number of images ({len(request.images)})"
                 )
 
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixels): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. The vision processor resizes deterministically
+            # from the encoded bytes + fixed config, so the process-wide
+            # total-patch budget is the size tier. request.images is 1:1 with
+            # pixel_values and start_and_end_idxs (one processed chunk + one
+            # contiguous media-pad run per image).
+            #
+            # One digest per image, shared by the preprocessed-tensor cache in
+            # _process_images and the vision encoder cache downstream.
+            # Computing it in both places would hash every image's bytes twice,
+            # which on a cache hit is most of the work that remains.
+            image_size_tier = self.vision_processor.cfg.in_patch_limit
+            image_hashes = (
+                [
+                    hash_image(raw_bytes, image_size_tier)
+                    for raw_bytes in request.images
+                ]
+                if self.enable_prefix_caching
+                or self.enable_vision_caching
+                or self._preprocess_cache.enabled
+                else [None] * len(request.images)
+            )
+
             # Process images through the custom vision processor.
-            vision_outputs = self._process_images(request)
+            vision_outputs = self._process_images(request, image_hashes)
 
             grid_thws = np.empty((0, 3), dtype=np.int64)
             pixel_values: list[npt.NDArray[Any]] = []
@@ -463,16 +552,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             array=encoded_prompt.astype(np.int64, copy=False),
         )
 
-        # Key each image on its raw encoded bytes (+ the resolution size
-        # class), not on hash_image(pixels): the raw-byte key is byte-identical
-        # across torch/BLAS/device so a separate encoder can reproduce it for
-        # cache-aware routing, whereas the post-resize float hash cannot. The
-        # vision processor resizes deterministically from the encoded bytes +
-        # fixed config, so the process-wide total-patch budget is the size
-        # tier. request.images is 1:1 with pixel_values and start_and_end_idxs
-        # (one processed chunk + one contiguous media-pad run per image).
-        image_size_tier = self.vision_processor.cfg.in_patch_limit
-
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -498,18 +577,19 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixels,
-                    image_hash=hash_image(raw_bytes, image_size_tier)
+                    image_hash=image_hash
                     if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixels, raw_bytes in zip(
+                for (start_idx, end_idx), pixels, image_hash in zip(
                     start_and_end_idxs,
                     pixel_values,
-                    request.images,
+                    image_hashes,
                     strict=True,
                 )
             ],
             vision_token_ids=self.vision_token_ids,
+            cache_salt=request.cache_salt,
         )
 
         return context

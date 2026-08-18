@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -246,6 +247,10 @@ class UnifiedEagleOutputs(ModelOutputs):
     num_accepted_draft_tokens: Buffer
     next_tokens: Buffer
     next_draft_tokens: Buffer
+    next_draft_probs_full: Buffer | None = None
+    """The distribution each next-step draft token was sampled from,
+    ``[batch_size, num_speculative_tokens, vocab_size]``. Only populated when
+    the graph was built with ``draft_proposal="sampled"``."""
 
     # HACK: These are required to inherit from ModelOutputs but are unused
     # for UnifiedEagleOutputs!
@@ -264,6 +269,10 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     """
 
     draft_tokens: Buffer | None = None
+    draft_probs_full: Buffer | None = None
+    """The distribution each ``draft_tokens`` entry was sampled from,
+    ``[batch_size, num_speculative_tokens, vocab_size]``. Only set when
+    ``draft_proposal="sampled"``."""
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -282,11 +291,17 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     so the buffer tail and the graph signature derive the decision from one
     place. Set by each capable module's ``prepare_initial_token_inputs``."""
 
+    sampled_draft_proposal: bool = False
+    """Whether this graph was compiled with ``draft_proposal="sampled"``,
+    which gates the ``draft_probs_full`` buffer in the tail. Only
+    ``UnifiedEagleLlama3`` and ``Eagle3MHAMiniMaxM3Unified`` set this today."""
+
     def _spec_decode_tail_buffers(
         self,
         *,
         include_in_thinking_phase: bool,
         supports_structured_output: bool = True,
+        include_draft_probs_full: bool = False,
     ) -> tuple[Buffer, ...]:
         # draft_tokens, seed, and the five sampling params are unconditional in
         # build_spec_decode_input_types; assert them so a missing one is a loud
@@ -294,6 +309,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         # {"target", "draft"} tree, packed by super().buffers.)
         assert self.draft_tokens is not None
         tail: tuple[Buffer, ...] = (self.draft_tokens,)
+        if include_draft_probs_full:
+            assert self.draft_probs_full is not None
+            tail += (self.draft_probs_full,)
         assert self.seed is not None
         tail += (self.seed,)
         assert self.temperature is not None
@@ -312,9 +330,11 @@ class UnifiedSpecDecodeInputs(ModelInputs):
             assert self.in_thinking_phase is not None
             tail += (self.in_thinking_phase,)
         # Gate the bitmask triple on two compile-time flags, not a runtime
-        # pinned_bitmask is not None check: supports_structured_output
-        # is False for dflash (sets pinned_bitmask but declares no bitmask graph
-        # inputs); structured_output mirrors needs_bitmask_constraints.
+        # pinned_bitmask is not None check: supports_structured_output is False
+        # for the dflash Llama3 graph, which still declares no bitmask graph
+        # inputs even though the pipeline may set pinned_bitmask;
+        # structured_output mirrors needs_bitmask_constraints, the same value
+        # that gates the triple in build_spec_decode_input_types.
         if supports_structured_output and self.structured_output:
             assert self.pinned_bitmask is not None
             assert self.wait_payload is not None
@@ -435,6 +455,36 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def batch_processor(self) -> BatchProcessor[Any, Any] | None:
         """Returns the batch processor when configured."""
         return self._batch_processor
+
+    def _maybe_release_host_weights(self, *models: Any) -> None:
+        """Releases the host copies of the weights after the model is loaded.
+
+        Gated on ``MODULAR_MAX_RELEASE_HOST_WEIGHTS=1``. Once the compiled
+        model holds its device copy, drops the references that pin host
+        weight memory: the engine registry (:meth:`Model.release_weights`),
+        the retained state dicts, and the weight loader's file mappings.
+
+        GPU deployments only: a CPU-resident weight is read in place on
+        every execution, and releasing it is undefined behavior. ModuleV3
+        compiled callables do not support the release.
+        """
+        if os.environ.get("MODULAR_MAX_RELEASE_HOST_WEIGHTS") != "1":
+            return
+        for model in models:
+            release_weights = getattr(model, "release_weights", None)
+            if release_weights is not None:
+                release_weights()
+        for attr in (
+            "state_dict",
+            "_vision_weights_dict",
+            "_language_weights_dict",
+        ):
+            if hasattr(self, attr):
+                setattr(self, attr, {})
+        close = getattr(self.weights, "close", None)
+        if close is not None:
+            close()
+        logger.info("Released host weight memory after model load.")
 
     @property
     def huggingface_config(self) -> AutoConfig:
@@ -682,6 +732,7 @@ class GraphPipelineModel(PipelineModel[BaseContextType]):
             self.state_dict = weights_registry
             model = session.load(graph, weights_registry=weights_registry)
 
+        self._maybe_release_host_weights(model)
         self._wire_batch_processor(model, model_config)
         return model
 
@@ -924,6 +975,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
             self.state_dict = weights_registry
             model = session.load(graph, weights_registry=weights_registry)
 
+        self._maybe_release_host_weights(model)
         self._wire_batch_processor(model, model_config)
         return model
 
@@ -1007,6 +1059,7 @@ class MultiGraphPipelineModelWithKVCache(
                 weights_registry={**vision_registry, **language_registry},
             )
 
+        self._maybe_release_host_weights(*models.values())
         vision_model = (
             models[vision_graph.name] if vision_graph is not None else None
         )

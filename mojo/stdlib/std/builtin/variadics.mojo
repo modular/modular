@@ -86,10 +86,6 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    @deprecated("`TypeList.size` is deprecated, use `TypeList.length`.")
-    comptime size = Self.length
-    """The number of types in the list. Deprecated alias for `length`."""
-
     comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,
@@ -1197,7 +1193,9 @@ struct VariadicList[
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
+                Pointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements(
         deinit self,
@@ -1476,7 +1474,9 @@ struct VariadicPack[
                 comptime assert conforms_to(element_type, Deinitable)
 
                 # Safety: We own the elements in this pack.
-                Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
+                Pointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing

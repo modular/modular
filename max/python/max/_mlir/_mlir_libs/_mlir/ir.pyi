@@ -2673,6 +2673,9 @@ class IntegerAttr(Attribute):
     def __int__(self) -> int:
         """Converts the value of the integer attribute to a Python int"""
 
+    def __index__(self) -> int:
+        """Converts the value of the integer attribute to a Python int"""
+
 class IntegerSetAttr(Attribute):
     def __init__(self, cast_from_attr: Attribute) -> None: ...
     @property

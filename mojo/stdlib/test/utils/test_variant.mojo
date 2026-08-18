@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.os import abort
 from std.traits import (
     IsTriviallyCopyable,
@@ -63,13 +63,13 @@ struct Poison(ImplicitlyCopyable):
         pass
 
     def __init__(out self, *, copy: Self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
     def __init__(out self, *, deinit move: Self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
     def __deinit__(deinit self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
 
 comptime TestVariant = Variant[MoveCopyCounter, Poison]

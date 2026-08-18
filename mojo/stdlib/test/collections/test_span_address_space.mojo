@@ -50,10 +50,7 @@ def _tile_sum[
 # Address-space-generic: one body, reusable for global, shared and local tiles.
 def _scale_in_place[
     dtype: DType, //
-](
-    buf: Span[mut=True, Scalar[dtype], _, address_space=_],
-    factor: Scalar[dtype],
-):
+](buf: MutSpan[Scalar[dtype], _, address_space=_], factor: Scalar[dtype],):
     for i in range(len(buf)):
         buf[i] *= factor
 

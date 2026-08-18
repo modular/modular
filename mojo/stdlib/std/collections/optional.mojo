@@ -40,7 +40,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast, rebind_var
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple
@@ -1057,9 +1057,7 @@ struct _NicheableOptionalRegStorage[
     @always_inline
     def __init__(out self):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[
-            UnsafeMaybeUninit[Self.T]
-        ]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
         Self.T.write_niche[index=0](ptr)
 
     @always_inline
@@ -1076,9 +1074,7 @@ struct _NicheableOptionalRegStorage[
 
     @always_inline
     def __bool__(self) -> Bool:
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[
-            UnsafeMaybeUninit[Self.T]
-        ]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
 
 

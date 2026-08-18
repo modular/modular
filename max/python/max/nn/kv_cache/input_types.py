@@ -49,6 +49,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     max_prompt_length: _Tensor
     max_cache_length: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
+    # Page lookup table for ``kv_scales``, present when the scales are paged
+    # independently of the values so a request's scale pages carry their own
+    # ids. ``None`` means the two share one block-id space and ``lookup_table``
+    # resolves both, which is what every non-pooled cache does.
+    scales_lookup_table: _Tensor | None = None
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
     # Capturable-graph scalars: when present, the SM100 MLA dispatcher uses
@@ -95,6 +100,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
             *(
+                (self.scales_lookup_table or self.lookup_table,)
+                if self.kv_scales
+                else ()
+            ),
+            *(
                 (self.attention_dispatch_metadata,)
                 if self.attention_dispatch_metadata
                 else ()
@@ -127,6 +137,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.max_prompt_length,
             self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
+            *(
+                (self.scales_lookup_table or self.lookup_table,)
+                if self.kv_scales
+                else ()
+            ),
             # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
             # this field before calling an op, so this is ``()`` at op sites.
             *(self.kv_blocks_per_layer or ()),
@@ -148,6 +163,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             max_prompt_length=next(it),
             max_cache_length=next(it),
             kv_scales=next(it) if self.kv_scales else None,
+            scales_lookup_table=next(it) if self.kv_scales else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata
             else None,

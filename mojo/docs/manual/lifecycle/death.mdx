@@ -101,8 +101,8 @@ and algorithms.
 ### Benefits of ASAP destruction
 
 Similar to other languages, Mojo follows the principle that objects/values
-acquire resources in a constructor (`__init__()`) and release resources in
-a destructor (`__deinit__()`). However, Mojo's ASAP destruction has some
+acquire resources in an initializer (`__init__()`) and release resources in
+a deinitializer (`__deinit__()`). However, Mojo's ASAP destruction has some
 advantages over scope-based destruction (such as the C++ [RAII
 pattern](https://en.cppreference.com/w/cpp/language/raii), which waits until
 the end of the code scope to destroy values):
@@ -132,7 +132,7 @@ a default no-op destructor (`__deinit__()`), which you can override.
 
 Create a custom `__deinit__()` implementation to perform any required cleanup.
 This might include freeing dynamically allocated memory (for example,
-through `UnsafePointer`) or releasing long-lived resources such as file
+through `dealloc()`) or releasing long-lived resources such as file
 handles.
 
 Types that are simple collections of other types usually don't need to
@@ -151,12 +151,13 @@ There's no need to define the `__deinit__()` destructor for this, because it's
 a simple collection of other types (`String` and `Int`), and it doesn't
 dynamically allocate memory.
 
-Whereas, the following struct must define the `__deinit__()` method to free
-the memory allocated by its
-[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/):
+Whereas, the following struct allocates memory, so it must define the
+`__deinit__()` method to free that memory. The
+[`ThinAllocation`](/docs/std/memory/alloc/ThinAllocation/) type used
+here is a handle to the allocated memory.
 
 ```mojo
-from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory import alloc, dealloc, ThinAllocation
 
 struct HeapArray(Writable):
     var data: ThinAllocation[Int]
@@ -169,7 +170,7 @@ struct HeapArray(Writable):
         for i in range(self.size):
             ptr.unsafe_offset(i).unsafe_write(values[i])
 
-    def write_to(self, mut writer: Some[Writer]):    
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         var ptr = self.data.unsafe_ptr()
         for i in range(self.size):
@@ -201,13 +202,15 @@ grants exclusive ownership of the value and marks it as destroyed at the
 end of the function. (For more information on the `deinit` convention, see
 [Instance initialization](/docs/manual/lifecycle/initialization/)).
 
-Note that a pointer doesn't *own* any values in the memory it points to, so
-when a pointer is destroyed, Mojo doesn't call the destructors on those values.
+Note that a pointer doesn't *own* any values in the memory it points to, so when
+a pointer is destroyed, Mojo doesn't call the deinitializers on those values.
+Likewise, an allocation is a handle to memory, but it doesn't own the values
+stored in that memory.
 
-So in the `HeapArray` example above, calling `unsafe_free()` on the pointer
-releases the memory, but doesn't call the destructors on the stored values. To
-invoke the destructors, use the `unsafe_deinit_pointee()` method provided by
-the `UnsafePointer` type.
+So in the `HeapArray` example above, calling `dealloc()` releases the memory,
+but doesn't call the deinitializers on the stored values. That's why the
+destructor loops over the elements first, invoking the `unsafe_deinit_pointee()`
+method provided by the `Pointer` type, and only then deallocates.
 
 :::note
 
@@ -515,7 +518,7 @@ it's likewise impossible to destroy an object by destroying only its fields.
 
 ### Field lifetimes during move and destruction {#field-lifetimes-during-destruct-and-move}
 
-Both the consuming move constructor and the destructor take their operand
+Both the consuming move initializer and the destructor take their operand
 with the `deinit` argument convention. This grants exclusive ownership of
 the value and marks it as destroyed at the end of the function. Within the
 function body, Mojo's ASAP policy still applies to fields: each field is

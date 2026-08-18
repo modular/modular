@@ -51,7 +51,14 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -310,6 +317,25 @@ def _heartbeat_overrides() -> dict[str, int]:
         overrides[keyword] = value
 
     return overrides
+
+
+def _nixl_backend_override() -> NixlBackendType | None:
+    """The validated NIXL transfer backend override, or ``None`` when unset.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
+    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
+    ``auto`` mean auto-select (``None`` here) — the dKV server's own
+    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
+    must not crash the MAX pod — and anything else goes through the same
+    validator as the KV transfer engine, so a typo fails model load with the
+    accepted set rather than surfacing as a handshake mismatch. The default
+    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
+    the connector auto-selects.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    return validate_nixl_backend(raw)
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -655,13 +681,22 @@ class DKVConnector:
         # provided dkv_connector extension to be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
+        # The Rust client creates a NIXL agent, which dlopens the transport
+        # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
+        # for the verbs flavors, rdma-core) symbols that must already be
+        # RTLD_GLOBAL in this process or the plugin faults as it loads. The
+        # libfabric flavor links its stack and needs none of this, but the
+        # preload skips absent libraries, so it stays backend-agnostic here
+        # rather than duplicating the backend dispatch.
+        preload_nixl_plugin_deps()
+
         if not replica_kv_memory or not all(replica_kv_memory):
             raise ValueError(
                 "DKVConnector requires at least one KV cache buffer per replica"
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        backend = _nixl_backend_override()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
@@ -1054,22 +1089,14 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
+    def host_block_count(self) -> BlockCount:
+        # BlockManager gates the load path on host_block_count.total > 0. dKV
+        # capacity is managed externally by the dKV service.
+        return BlockCount(free=sys.maxsize, total=sys.maxsize)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""

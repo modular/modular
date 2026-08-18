@@ -267,7 +267,7 @@ compile-time value.)
 
 You'll see that `Self.T` is used throughout the struct where you'd
 usually see a type name. For example, as the formal type for the `elements` in
-the constructor, and the return type of the `__getitem__()` method.
+the initializer, and the return type of the `__getitem__()` method.
 
 Here's an example of using `ParameterizedArray`:
 
@@ -618,7 +618,7 @@ allows Mojo to report the correct error.
 :::
 
 Mojo can also infer the values of struct parameters from the arguments passed to
-a constructor or static method.
+an initializer or static method.
 
 For example, consider the following struct:
 
@@ -638,7 +638,7 @@ def use_one():
 Note that you can create an instance of `One` without specifying the `Type`
 parameter—Mojo can infer it from the `value` argument.
 
-You can also infer parameters from a parameterized type passed to a constructor
+You can also infer parameters from a parameterized type passed to a initializer
 or static method:
 
 ```mojo
@@ -663,7 +663,7 @@ def use_two() raises:
     # Error: parameter inferred to two different values
 ```
 
-`Two` takes a `Type` parameter, and its constructor takes values of type
+`Two` takes a `Type` parameter, and its initializer takes values of type
 `One[Type]`. When constructing an instance of `Two`, you don't need to specify
 the `Type` parameter, since it can be inferred from the arguments.
 
@@ -842,7 +842,7 @@ to infer the infer-only values from bound parameters or arguments.
 
 There are sometimes cases where it's useful to specify an infer-only parameter
 by keyword. For example, the
-[`Span`](/docs/std/memory/span/Span/) type
+[`Span`](/docs/std/collections/span/Span/) type
 is parameterized on [origin](/docs/manual/values/lifetimes/):
 
 ```mojo no-test
@@ -1028,7 +1028,7 @@ You specify the `V` parameter later, when you use `StringKeyDict`.
 
 When used as a `comptime` value, any default values on unbound parameters are
 retained until a concrete type is formed (for example, by calling a struct's
-constructor):
+initializer):
 
 ```mojo
 @fieldwise_init

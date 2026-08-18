@@ -110,6 +110,8 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     SF_ATOM_M,
     SF_MN_GROUP_SIZE,
+    _is_packed_fp4,
+    block_scaled_operands_compatible,
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
 )
@@ -612,9 +614,7 @@ struct RealSwiGLUOutput[
         # i3) are contiguous in linear memory, so each (row, i1) pair
         # zeroes 4 bytes via a single uint32 store instead of 4
         # separate `set_sf` byte writes.
-        var pad_end_local = (
-            (tokens_e + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-        ) * SF_MN_GROUP_SIZE
+        var pad_end_local = align_up(tokens_e, SF_MN_GROUP_SIZE)
         var pad_total = pad_end_local - tokens_e
         if pad_total <= 0:
             return
@@ -964,8 +964,22 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
-    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    # TMA transaction sizes count the bytes the copy engine READS from global
+    # memory. An unpacked-FP4 operand occupies BK shared-memory bytes but is
+    # sourced from half as many packed ones, and a barrier told to expect the
+    # shared-memory figure never completes.
+    comptime a_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.a_type, Self.b_type
+    ]() else 1
+    comptime b_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.b_type, Self.a_type
+    ]() else 1
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[
+        Self.a_type
+    ]() // Self.a_gmem_bytes_per_elem_recip
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[
+        Self.b_type
+    ]() // Self.b_gmem_bytes_per_elem_recip
     comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -1100,9 +1114,9 @@ struct Grouped1D1DMatmulKernel[
     @staticmethod
     def validate_config():
         """Compile-time validation of kernel configuration."""
-        comptime assert (
-            Self.a_type == Self.b_type
-        ), "A and B types must match for block-scaled GEMM"
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "A and B types must match for block-scaled GEMM, or be the W4A8 pair"
         comptime assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "SFA and SFB types must match"
@@ -1354,7 +1368,7 @@ struct Grouped1D1DMatmulKernel[
                 grp += 1
                 si = ei
                 continue
-            var mb = (gs + _cta_m - 1) / _cta_m
+            var mb = ceildiv(gs, _cta_m)
             var cum = cumsum + mb
             var bs = cum * _num_n_blks
             if nbi < bs:
@@ -3148,8 +3162,8 @@ struct Grouped1D1DMatmulKernel[
         # body strips entirely. The TMEM load, SMEM scatter, and both
         # WarpGroupBarrier syncs still execute — isolates "structural epi
         # cost" from "cooperative compute cost". OUTPUT IS INVALID.
-        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else (
-            (work_per_stage + total_threads - 1) // total_threads
+        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else ceildiv(
+            work_per_stage, total_threads
         )
 
         # Per-tile pipeline START/END events are recorded by the outer

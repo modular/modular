@@ -31,6 +31,7 @@ from .moe import MoE
 from .quant_strategy import (
     BlockScaledStrategy,
     Fp8Strategy,
+    Mxfp6Strategy,
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
@@ -60,6 +61,26 @@ class MoEQuantized(MoE):
         assert self.quant_config is not None
         if self._uses_nvidia_block_scaled_ep_layout:
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
+        elif self.quant_config.is_mxfp6:
+            # Deliberately not a subclass of Mxfp4Strategy: the
+            # `isinstance(strategy, Mxfp4Strategy)` branches below select the
+            # A-scale slot folds, which have no FP6 producer -- writing scales
+            # in the grouped matmul's slot layout is unimplemented in
+            # `fused_silu_mxfp6_kernel` (it asserts on
+            # `fuse_a_scale_preshuffle`). The fused *activation* kernel does
+            # exist for FP6 (`ep.fused_silu.mxfp6`), so MXFP6 is admitted to
+            # that branch explicitly with the fold inputs at 0; it is the
+            # isinstance checks for the folds it must stay out of.
+            if not self.quant_config.block_scaled_preshuffled_b:
+                raise ValueError(
+                    "MXFP6 MoE requires preshuffled B weights: the 24-byte FP6 "
+                    "lane fragment is read plane-split and the dense "
+                    "row-major grouped kernel cannot address it. The weight "
+                    "loader must call preshuffle_mxfp4_b_experts with "
+                    "lane_bytes=MXFP6_LANE_BYTES and set "
+                    "block_scaled_preshuffled_b=True."
+                )
+            return Mxfp6Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp4 or self.quant_config.is_mxfp8:
             # MXFP8 shares this path: the MOGG grouped-matmul op infers the
             # element packing from the tensors, and the E8M0 scale layout is
@@ -101,6 +122,7 @@ class MoEQuantized(MoE):
             and uses_mx_ep_token_format(
                 self.ep_batch_manager.config, self.quant_config
             )
+            and not self.quant_config.is_mxfp6
             and self.quant_config.block_scaled_preshuffled_b
         )
 
@@ -172,7 +194,11 @@ class MoEQuantized(MoE):
         """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.quant_config is not None
         assert self.quant_config.weight_scale.block_size is not None
-        if not (self.quant_config.is_fp4 or self.quant_config.is_mxfp8):
+        if not (
+            self.quant_config.is_fp4
+            or self.quant_config.is_mxfp8
+            or self.quant_config.is_mxfp6
+        ):
             assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
@@ -372,7 +398,7 @@ class MoEQuantized(MoE):
                 swiglu_limit=self.swiglu_limit,
             )
         else:
-            if isinstance(strategy, BlockScaledStrategy):
+            if isinstance(strategy, (BlockScaledStrategy, Mxfp6Strategy)):
                 # MXFP4 EP down path: fuse activation (SiLU or clamped SwiGLU) +
                 # MXFP4 quantize in one kernel. Up-proj A-scale folds into the
                 # slot layout when the dispatch fold is on (KS224, ep_wait); the

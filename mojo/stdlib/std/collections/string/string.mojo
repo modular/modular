@@ -550,12 +550,12 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=unsafe_uninit_length)
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     def __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: Pointer[mut=False, c_char, _],
+        unsafe_from_utf8_ptr: ImmPointer[c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -575,9 +575,7 @@ struct String(
             )
         )
 
-    def __init__(
-        out self, *, unsafe_from_utf8_ptr: Pointer[mut=False, UInt8, _]
-    ):
+    def __init__(out self, *, unsafe_from_utf8_ptr: ImmPointer[UInt8, _]):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
@@ -1045,8 +1043,8 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        self.unsafe_ptr_mut().unsafe_offset(length).unsafe_write(byte)
-        self.set_byte_length(length + 1)
+        self.unsafe_ptr_mut().unsafe_offset(length).write(byte)
+        self._set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):
         """Append a codepoint to the string.
@@ -1061,7 +1059,7 @@ struct String(
         _ = codepoint.unsafe_write_utf8(
             self.unsafe_ptr_mut().unsafe_offset(length)
         )
-        self.set_byte_length(new_length)
+        self._set_byte_length(new_length)
 
     def __radd__(self, other: StringSlice[mut=False, _]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -1074,7 +1072,7 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    def _iadd(mut self, other: Span[mut=False, Byte, _]):
+    def _iadd(mut self, other: ImmSpan[Byte, _]):
         var other_len = len(other)
         if other_len == 0:
             return
@@ -1085,7 +1083,7 @@ struct String(
             src=other.unsafe_ptr(),
             count=other_len,
         )
-        self.set_byte_length(new_len)
+        self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
     def __iadd__(mut self, other: StringSlice[mut=False, _]):
@@ -1527,18 +1525,6 @@ struct String(
             length=self.byte_length(),
         )
 
-    @deprecated("Use `StringSpan(str)` instead.")
-    @__unsafe_nested_origins_read_only
-    def as_string_slice(
-        ref self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Returns a string slice of the data owned by this string.
-
-        Returns:
-            A string slice pointing to the data owned by this string.
-        """
-        return self._interior_slice()
-
     def byte_length(self) -> Int:
         """Get the string length in bytes.
 
@@ -1604,10 +1590,11 @@ struct String(
         """
         return StringSlice(self).count_codepoints()
 
-    def set_byte_length(mut self, new_len: Int):
+    def _set_byte_length(mut self, new_len: Int):
         """Set the byte length of the `String`.
 
-        This is an internal helper method that updates the length field.
+        This only updates the length field. The caller is responsible for
+        ensuring the buffer holds at least `new_len` initialized bytes.
 
         Args:
             new_len: The new byte length to set.
@@ -2249,7 +2236,7 @@ struct String(
                 length,
                 " which does not lie on a codepoint boundary.",
             )
-        self.set_byte_length(length)
+        self._set_byte_length(length)
 
     def resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
@@ -2273,7 +2260,7 @@ struct String(
         )
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     def reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
@@ -2293,7 +2280,7 @@ struct String(
     def _inline_string(mut self):
         var length = self.byte_length()
         var new_string = Self()
-        new_string.set_byte_length(length)
+        new_string._set_byte_length(length)
         var dst = Pointer(to=new_string).unsafe_bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):

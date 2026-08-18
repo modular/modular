@@ -227,7 +227,7 @@ with how to construct instances of our Mojo type from within Python.
 
 ### Constructing Mojo objects in Python
 
-Mojo types can be constructed from Python by declaring a Mojo constructor
+Mojo types can be constructed from Python by declaring a Mojo initializer
 function as a Python-compatible object initializer using
 [`def_py_init()`](/docs/std/python/bindings/PythonTypeBuilder/#def_py_init) when
 you add the type to your module. For example:
@@ -297,7 +297,7 @@ counter = counter_module.Counter()  # Creates Counter()
 In Python, object construction happens across both the `__new__()` and
 `__init__()` methods, so the `__init__()` method is technically just the
 attribute initializer. However, in a Mojo struct, there's no `__new__()`
-method, so we prefer to always call `__init__()` the constructor.
+method, so we prefer to always call `__init__()` the initializer.
 
 :::
 

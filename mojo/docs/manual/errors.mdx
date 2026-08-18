@@ -49,7 +49,7 @@ type for most Mojo code. It carries a text message describing what went wrong,
 and it's the right choice for application-level error handling—simple,
 well-supported, and sufficient for the majority of use cases.
 
-You can raise an `Error` with the constructor or a string literal shorthand:
+You can raise an `Error` with the initializer or a string literal shorthand:
 
 ```mojo
 # These are equivalent
@@ -492,7 +492,7 @@ distinguish between conditions without carrying different data per condition.
 
 ## The `Never` type
 
-`Never` is a type with no constructors—it can't be instantiated. This makes
+`Never` is a type with no initializers. It can't be instantiated. This makes
 it useful in error-handling signatures to express two opposite guarantees:
 
 - `raises YourErrorType -> Never` — The function *always* raises and never

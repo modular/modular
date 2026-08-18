@@ -21,19 +21,25 @@ import os
 import platform
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from time import time
 
 import numpy as np
 import requests
-from max.serve.config import Settings
+from max.profiler import set_gpu_profiling_state
+from max.serve.config import KernelTraceLevel, Settings
 from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
     configure_histogram_shadow_emission,
 )
 from opentelemetry._logs import set_logger_provider
+from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
+)
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter,
 )
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import set_meter_provider
@@ -59,9 +65,22 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
+
+request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
+    "max.serve.request_trace_ctx", default=None
+)
+"""The OTel context extracted from the current request's inbound W3C
+traceparent/tracestate headers (or None). Set once per request by the route
+handler in openai_routes.py before it calls into the pipeline, so it is
+already populated by the time TextContext is constructed in llm.py — even
+though route handlers and the pipeline live in different modules, ContextVar
+values propagate through the whole async call chain within the same task."""
 
 
 def _getCloudProvider() -> str:
@@ -133,9 +152,12 @@ HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = _log_spaced_buckets(
 
 # Percentages / utilization ratios (0-100). Linear rather than geometric, since
 # utilization is only actionable near saturation: 5% steps through the bulk,
-# tightening to 2% above 90%.
+# tightening to 1% above 90% so a nearly-full KV cache tier resolves to a
+# single point instead of a range. Kept to 29 boundaries because several of
+# these metrics carry a label that multiplies the series count (batch_type,
+# draft position).
 HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = tuple(
-    float(pct) for pct in (*range(0, 91, 5), *range(92, 101, 2))
+    float(pct) for pct in (*range(0, 91, 5), *range(91, 101))
 )
 
 # Token counts per request/batch and other unbounded counts. Log-spaced from 1
@@ -303,11 +325,18 @@ def configure_logging(
     logging_handlers: list[logging.Handler] = []
 
     # Set up log filtering
+    # ``uvicorn`` owns the HTTP error log: an exception escaping the ASGI app,
+    # a malformed request, and the cancellation of in-flight requests when the
+    # graceful-shutdown drain expires are all reported there and nowhere else.
+    # Dropping them left connection-level failures with no server-side trace at
+    # all. The ``uvicorn`` logger is pinned to WARNING below, so this admits
+    # warnings and errors without the per-request ``uvicorn.access`` stream.
     components_to_log = [
         "root",
         "max._entrypoints",
         "max.pipelines",
         "max.serve",
+        "uvicorn",
     ]
     try:
         if settings.logs_enable_components is not None:
@@ -603,6 +632,73 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics disabled.")
     else:
         logger.info("Metrics initialized.")
+
+
+def configure_tracing(settings: Settings) -> None:
+    if not settings.disable_telemetry:
+        # If the user set either standard OTel env var (e.g. for an
+        # in-cluster DD agent), let OTLPSpanExporter resolve the endpoint
+        # itself: its own env-var handling appends the signal-specific
+        # "/v1/traces" path to OTEL_EXPORTER_OTLP_ENDPOINT, which a plain
+        # os.environ.get() read here would not. Only fall back to the shared
+        # Modular telemetry endpoint when neither var is set.
+        user_configured_endpoint = os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+        ) or os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        exporter = (
+            OTLPSpanExporter()
+            if user_configured_endpoint
+            else OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+        )
+        provider = TracerProvider(resource=logs_resource)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        set_tracer_provider(provider)
+
+    logger = logging.getLogger()
+    if settings.disable_telemetry:
+        logger.info("Tracing disabled.")
+    else:
+        logger.info("Tracing initialized.")
+
+
+_kernel_trace_level = KernelTraceLevel.OFF
+
+
+def batch_spans_enabled() -> bool:
+    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
+    return _kernel_trace_level >= KernelTraceLevel.BATCH
+
+
+def configure_kernel_tracing(settings: Settings) -> None:
+    """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
+
+    Must be called in the model worker process before ``InferenceSession``
+    is constructed so that the libkineto auto-start picks up the enabled
+    flag. Also records the level read by :func:`batch_spans_enabled`, so it
+    must run before the scheduler starts.
+
+    Args:
+        settings: Server settings carrying ``kernel_trace_level``.
+    """
+    global _kernel_trace_level
+    level = settings.kernel_trace_level
+    _kernel_trace_level = level
+    if level < KernelTraceLevel.OP:
+        return
+
+    if level == KernelTraceLevel.KERNEL:
+        # Full libkineto kernel timeline: enable detailed NVTX tracing and
+        # the libkineto auto-start that fires on InferenceSession construction.
+        set_gpu_profiling_state("detailed")
+        os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+    else:
+        # OP level: op-level NVTX user-annotation ranges only.
+        set_gpu_profiling_state("on")
+
+    logging.getLogger("max.serve").info(
+        "Kernel tracing initialized: level=%s", level.value
+    )
 
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK

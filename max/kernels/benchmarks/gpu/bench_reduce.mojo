@@ -76,7 +76,7 @@ def run_reduce[
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals.unsafe_offset(i).unsafe_write(
+        expected_vals.unsafe_offset(i).write(
             Scalar[dtype](shape[axis]) * Scalar[dtype](1)
         )
 
@@ -84,7 +84,7 @@ def run_reduce[
 
     comptime res_layout = Layout.row_major[rank]()
     var res_device = LayoutTensor[dtype, res_layout](
-        res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
+        res_buffer.unsafe_ptr(), RuntimeLayout[res_layout].row_major(out_shape)
     )
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
@@ -110,39 +110,39 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut b: Bencher):
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_in, mut res_device, imm}:
+        var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
+            cb_in.offset_ptr(iteration),
+            RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+        )
+
+        @__copy_capture(input_lt)
         @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
-                cb_in.offset_ptr(iteration),
-                RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+        def input_fn[
+            dtype: DType,
+            width: Int,
+            _rank: Int,
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_lt.load[width=width](rebind[IndexList[rank]](coords))
             )
 
-            @__copy_capture(input_lt)
-            @__parameter
-            def input_fn[
-                dtype: DType,
-                width: Int,
-                _rank: Int,
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return rebind[SIMD[dtype, width]](
-                    input_lt.load[width=width](rebind[IndexList[rank]](coords))
-                )
+        reduce_launch[
+            num_reductions,
+            input_fn,
+            output_fn,
+            reduce_wrapper,
+            rank,
+            dtype,
+            reduce_dim=axis,
+        ](shape, StaticTuple[_, num_reductions](init), ctx)
 
-            reduce_launch[
-                num_reductions,
-                input_fn,
-                output_fn,
-                reduce_wrapper,
-                rank,
-                dtype,
-                reduce_dim=axis,
-            ](shape, StaticTuple[_, num_reductions](init), ctx)
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @__parameter
+    @always_inline
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

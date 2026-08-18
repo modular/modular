@@ -18,8 +18,7 @@ import math
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property, reduce
-from operator import mul
+from functools import cached_property
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
@@ -71,6 +70,44 @@ def _filter_tiny_cache_lengths(
 ) -> list[int]:
     min_cache_length = 1 + 2 * num_draft_tokens
     return [cl for cl in probe_lengths if cl >= min_cache_length]
+
+
+@dataclass(frozen=True)
+class KVCacheGroupId:
+    """Identifies the caches a model reuses and evicts together.
+
+    Caches behind the same attention pattern share a prefix-cache hit and an
+    external tier namespace, so this doubles as the key for both.
+    """
+
+    type: Literal["full", "sliding_window"]
+    window_size: int = -1
+
+    def __post_init__(self):
+        if self.type == "full":
+            if self.window_size != -1:
+                raise ValueError("Window size must be -1 for full groups.")
+        elif self.type == "sliding_window":
+            if self.window_size <= 0:
+                raise ValueError(
+                    "Window size must be positive for sliding window groups."
+                )
+
+    def is_sliding_window(self) -> bool:
+        return self.type == "sliding_window"
+
+    def is_full(self) -> bool:
+        return self.type == "full"
+
+    @classmethod
+    def full(cls) -> KVCacheGroupId:
+        return cls(type="full")
+
+    def __repr__(self) -> str:
+        if self.type == "full":
+            return "full_group"
+        elif self.type == "sliding_window":
+            return f"sliding_window_group({self.window_size})"
 
 
 class KVConnectorType(str, Enum):
@@ -565,10 +602,17 @@ class KVCacheAssignments:
     """
 
     cache_lengths_by_device: list[Buffer]
-    lookup_table_by_device: list[Buffer]
+    lookup_table_by_device: list[dict[str, Buffer]]
     max_prompt_length: Buffer
     max_cache_length: Buffer
     batch_characteristics: BatchCharacteristics
+
+
+@dataclass(frozen=True)
+class KVLeafRegion:
+    leaf_id: str
+    group_id: KVCacheGroupId
+    bytes_per_page: int
 
 
 @runtime_checkable
@@ -604,12 +648,20 @@ class KVCacheParamInterface(Protocol):
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
-        One for autoregressive drafts (``eagle``, ``mtp``);
-        equal to ``num_draft_tokens`` for block drafts (``dflash``).
+        Zero when speculative decoding is disabled; one for autoregressive
+        drafts (``eagle``, ``mtp``); equal to ``num_draft_tokens`` for block
+        drafts (``dflash``).
         """
-        if self.speculative_method == "dflash":
+        if self.speculative_method is None:
+            return 0
+        elif self.speculative_method == "dflash":
             return self.num_draft_tokens
-        return 1
+        elif self.speculative_method in ("mtp", "eagle"):
+            return 1
+        else:
+            raise ValueError(
+                f"Unrecognized speculative_method: {self.speculative_method!r}"
+            )
 
     @property
     def bytes_per_block(self) -> int:
@@ -687,6 +739,7 @@ class KVCacheParamInterface(Protocol):
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
+        _prefix: str = "",
     ) -> KVCacheInputsInterface[Buffer, Buffer]:
         """Builds the runtime KV-cache inputs spanning all replicas.
 
@@ -704,6 +757,16 @@ class KVCacheParamInterface(Protocol):
         Requires that the model is a basic height-1 tree. This method does not work
         on nested trees.
         """
+        ...
+
+    def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
+        """Returns the leaves of the KV cache."""
+        ...
+
+    def slab_to_buffer_views(
+        self, buffers: Sequence[Buffer]
+    ) -> KVCacheBufferInterface:
+        """Converts a slab of memory into a buffer view."""
         ...
 
 
@@ -789,6 +852,9 @@ class KVCacheParams(KVCacheParamInterface):
     """Total draft tokens generated per speculative iteration.
 
     Zero when no speculative decoding is configured."""
+
+    window_size: int | None = None
+    """Window size for the sliding window attention. None for global attention."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -881,26 +947,24 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def quantized_kv_cache(self) -> bool:
-        """Returns whether FP8 KV cache quantization is enabled.
-
-        Returns:
-            ``True`` when the cache dtype is ``float8_e4m3fn`` or
-            ``float8_e4m3fnuz`` and a valid quantization scale dtype is
-            configured; ``False`` otherwise.
-        """
+        """Returns whether KV cache quantization is enabled."""
         # Supported quantized-KV storage schemes: FP8_E4M3 (fp32 / e8m0 scales)
         # and int8 (fp16 per-block absmax scales).
-        valid_scale = False
-        if self.kvcache_quant_config is not None:
-            valid_scale = self.kvcache_quant_config.scale_dtype in (
-                DType.float32,
-                DType.float8_e8m0fnu,
-                DType.float16,
-            )
+        if self.kvcache_quant_config is None:
+            return False
+        value_dtypes = (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.int8,
+        )
+        scale_dtypes = (
+            DType.float32,
+            DType.float8_e8m0fnu,
+            DType.float16,
+        )
         return (
-            self.dtype
-            in (DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.int8)
-            and valid_scale
+            self.dtype in value_dtypes
+            and self.kvcache_quant_config.scale_dtype in scale_dtypes
         )
 
     @property
@@ -1035,20 +1099,29 @@ class KVCacheParams(KVCacheParamInterface):
         Returns:
             The number of bytes per cache block.
         """
-        base_bytes = (
-            reduce(mul, self.shape_per_block, 1)
+        return self.bytes_per_value_block + self.bytes_per_scale_block
+
+    @property
+    def bytes_per_value_block(self) -> int:
+        """Returns the number of bytes per value block."""
+        return (
+            math.prod(self.shape_per_block)
             * self.dtype.size_in_bytes
             * self.tensor_parallel_degree
         )
-        if self.quantized_kv_cache and self.kvcache_quant_config is not None:
-            # Add bytes needed to store the quantization scales.
-            scale_bytes = (
-                reduce(mul, self.shape_per_scale_block, 1)
-                * self.kvcache_quant_config.scale_dtype.size_in_bytes
-                * self.tensor_parallel_degree
-            )
-            base_bytes += scale_bytes
-        return base_bytes
+
+    @property
+    def bytes_per_scale_block(self) -> int:
+        """Returns the number of bytes per scale block."""
+        if not (
+            self.quantized_kv_cache and self.kvcache_quant_config is not None
+        ):
+            return 0
+        return (
+            math.prod(self.shape_per_scale_block)
+            * self.kvcache_quant_config.scale_dtype.size_in_bytes
+            * self.tensor_parallel_degree
+        )
 
     def _get_symbolic_inputs_for_replica(
         self, replica_idx: int, prefix: str, page_namespace: str = ""
@@ -1094,8 +1167,7 @@ class KVCacheParams(KVCacheParamInterface):
                 # layer; otherwise ``layer_buffers[0]`` below raises an opaque
                 # IndexError.
                 raise ValueError(
-                    "per_layer_buffers requires num_layers >= 1, got"
-                    f" {self.num_layers}"
+                    f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
                 )
             if self.kv_connector in (
                 KVConnectorType.tiered,
@@ -1210,6 +1282,7 @@ class KVCacheParams(KVCacheParamInterface):
         max_prompt_length: Buffer,
         max_cache_length: Buffer,
         kv_scales: Buffer | None,
+        scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
@@ -1222,6 +1295,7 @@ class KVCacheParams(KVCacheParamInterface):
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
+        _prefix: str = "",
     ) -> KVCacheInputsInterface[Buffer, Buffer]:
         """Builds the runtime KV-cache leaf spanning all replicas.
 
@@ -1248,7 +1322,7 @@ class KVCacheParams(KVCacheParamInterface):
                 else None
             )
 
-            for i, (cl, lut, blocks) in enumerate(
+            for i, (cl, luts, blocks) in enumerate(
                 zip(
                     assignment.cache_lengths_by_device,
                     assignment.lookup_table_by_device,
@@ -1257,8 +1331,14 @@ class KVCacheParams(KVCacheParamInterface):
                 )
             ):
                 device = blocks.device
+                lut = luts[_prefix + str(self.group_id)]
                 kv_scales = (
                     buffer.scales[i] if buffer.scales is not None else None
+                )
+                scales_lut = (
+                    luts[_prefix + str(self.group_id) + "/scales"]
+                    if buffer.scales is not None
+                    else None
                 )
                 blocks_per_layer = (
                     buffer.values_per_layer[i]
@@ -1279,6 +1359,7 @@ class KVCacheParams(KVCacheParamInterface):
                         assignment.max_prompt_length,
                         assignment.max_cache_length,
                         kv_scales,
+                        scales_lut,
                         target_key,
                         draft_key,
                         max_cl,
@@ -1298,6 +1379,60 @@ class KVCacheParams(KVCacheParamInterface):
         """
         raise ValueError(
             "Unflattening a basic KV tree is only supported for MultiKVCacheParams"
+        )
+
+    @property
+    def group_id(self) -> KVCacheGroupId:
+        if self.window_size is not None:
+            return KVCacheGroupId(
+                type="sliding_window", window_size=self.window_size
+            )
+        else:
+            return KVCacheGroupId(type="full")
+
+    def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
+        """Returns the leaves of the KV cache."""
+        leaves = {
+            _prefix + str(self.group_id): KVLeafRegion(
+                leaf_id=_prefix + str(self.group_id),
+                group_id=self.group_id,
+                bytes_per_page=self.bytes_per_block,
+            )
+        }
+
+        if self.quantized_kv_cache:
+            leaves[_prefix + str(self.group_id) + "/scales"] = KVLeafRegion(
+                leaf_id=_prefix + str(self.group_id) + "/scales",
+                group_id=self.group_id,
+                bytes_per_page=self.bytes_per_scale_block,
+            )
+
+        return leaves
+
+    def slab_to_buffer_views(
+        self, buffers: Sequence[Buffer]
+    ) -> KVCacheBufferInterface:
+        """Converts a slab of memory into a buffer view."""
+
+        def _view(b: Buffer, shape: Sequence[int], dtype: DType) -> Buffer:
+            total_bytes = b.num_elements * b.dtype.size_in_bytes
+            bytes_per_page = math.prod(shape) * dtype.size_in_bytes
+            num_little_pages = total_bytes // bytes_per_page
+            assert num_little_pages * bytes_per_page == total_bytes
+            return b.view(shape=(num_little_pages, *shape), dtype=dtype)
+
+        quant_config = self.kvcache_quant_config
+        return KVCacheBuffer(
+            replicates_kv_across_tp=self.replicates_kv_across_tp,
+            values=[
+                _view(b, self.shape_per_block, self.dtype) for b in buffers
+            ],
+            scales=[
+                _view(b, self.shape_per_scale_block, quant_config.scale_dtype)
+                for b in buffers
+            ]
+            if self.quantized_kv_cache and quant_config is not None
+            else None,
         )
 
 
@@ -1512,6 +1647,7 @@ class MHAKVCacheParams(KVCacheParams):
         max_prompt_length: Buffer,
         max_cache_length: Buffer,
         kv_scales: Buffer | None,
+        scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
@@ -1525,6 +1661,7 @@ class MHAKVCacheParams(KVCacheParams):
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
+            scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length
             ),
@@ -1702,6 +1839,7 @@ class MLAKVCacheParams(KVCacheParams):
         max_prompt_length: Buffer,
         max_cache_length: Buffer,
         kv_scales: Buffer | None,
+        scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
         max_cache_valid_length: int,
@@ -1721,6 +1859,7 @@ class MLAKVCacheParams(KVCacheParams):
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
+            scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=target_key.pack_into_buffer(
                 device, max_cache_valid_length
             ),
@@ -1850,8 +1989,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         devices = {tuple(p.devices) for p in params}
         if len(devices) > 1:
             raise ValueError(
-                "All params must use the same number of devices, got:"
-                f" {devices}"
+                f"All params must use the same number of devices, got: {devices}"
             )
 
         enable_prefix_caching = {p.enable_prefix_caching for p in params}
@@ -1874,8 +2012,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         kv_connectors = {p.kv_connector for p in params}
         if len(kv_connectors) > 1:
             raise ValueError(
-                "All params must use the same kv_connector, got:"
-                f" {kv_connectors}"
+                f"All params must use the same kv_connector, got: {kv_connectors}"
             )
 
         # ``KVConnectorConfig`` is not hashable, so compare by equality against
@@ -1915,15 +2052,13 @@ class MultiKVCacheParams(KVCacheParamInterface):
         kv_hash_algos = {p.kv_hash_algo for p in params}
         if len(kv_hash_algos) > 1:
             raise ValueError(
-                "All params must use the same kv_hash_algo, got:"
-                f" {kv_hash_algos}"
+                f"All params must use the same kv_hash_algo, got: {kv_hash_algos}"
             )
 
         kv_hash_seeds = {p.kv_hash_seed for p in params}
         if len(kv_hash_seeds) > 1:
             raise ValueError(
-                "All params must use the same kv_hash_seed, got:"
-                f" {kv_hash_seeds}"
+                f"All params must use the same kv_hash_seed, got: {kv_hash_seeds}"
             )
 
     @property
@@ -2072,6 +2207,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
+        _prefix: str = "",
     ) -> KVCacheInputsInterface[Buffer, Buffer]:
         """Builds the runtime KV-cache tree spanning all replicas.
 
@@ -2087,10 +2223,30 @@ class MultiKVCacheParams(KVCacheParamInterface):
         return MultiKVCacheInputs(
             children={
                 k: p.build_runtime_inputs(
-                    assignments, [b.children[k] for b in multi_buffers]
+                    assignments,
+                    [b.children[k] for b in multi_buffers],
+                    _prefix=_prefix + k + ".",
                 )
                 for k, p in self.children.items()
             }
+        )
+
+    def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
+        """Returns the leaves of the KV cache."""
+        leaves: dict[str, KVLeafRegion] = {}
+        for k, v in self.children.items():
+            leaves.update(v.leaves(_prefix + k + "."))
+        return leaves
+
+    def slab_to_buffer_views(
+        self, buffers: Sequence[Buffer]
+    ) -> KVCacheBufferInterface:
+        """Converts a slab of memory into a buffer view."""
+        return MultiKVCacheBuffer(
+            children={
+                child_id: child.slab_to_buffer_views(buffers)
+                for child_id, child in self.children.items()
+            },
         )
 
 

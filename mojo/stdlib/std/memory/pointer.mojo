@@ -45,11 +45,11 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
-from std.traits import IsTriviallyMovable
+from std.traits import IsTriviallyDeinitable, IsTriviallyMovable
 from std.memory.address_space import AddressSpace
 from std.memory import unsafe_memcpy
 from std.memory.memory import _free
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.memory._poison import _check_not_poison
 from std._plugin import CurrentPlugin
 from std.python import PythonObject
@@ -116,10 +116,10 @@ struct _PointerNicheStorage[
     @always_inline
     def as_uninit[
         U: AnyType
-    ](ref self) -> Pointer[UnsafeMaybeUninit[U], origin_of(self)]:
+    ](ref self) -> Pointer[MaybeUninit[U], origin_of(self)]:
         return (
             Pointer(to=self.address)
-            .unsafe_bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_bitcast[MaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -215,11 +215,6 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
-
-
-@doc_hidden
-@deprecated(use=ImmPointer)
-comptime ImmutPointer = ImmPointer
 
 
 # ===-----------------------------------------------------------------------===#
@@ -376,7 +371,7 @@ struct Pointer[
     # Check for absence, then unwrap to use the pointer.
     if maybe_ptr:
         var ptr = maybe_ptr.value()
-        ptr.unsafe_write(42)
+        ptr.write(42)
         print(ptr[])  # => 42
         dealloc(
             ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
@@ -401,10 +396,6 @@ struct Pointer[
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
-
-    @deprecated("`Pointer.type` is deprecated, use `Pointer.T` instead.")
-    comptime type = Self.T
-    """A temporary deprecated type alias while renaming Pointer's parameter `T`."""
 
     comptime _mlir_lit_ref = __mlir_type[
         `!lit.ref<`,
@@ -528,26 +519,7 @@ struct Pointer[
 
     @always_inline("builtin")
     @implicit
-    @doc_hidden
-    # TODO(MOCO-4504): This is needed otherwise the `ImmOrigin`
-    # conversion constructor is picked instead.
     def __init__(
-        other: Pointer,
-        out self: Pointer[
-            other.T,
-            other.origin,
-            address_space=other.address_space,
-        ],
-    ):
-        self._mlir_value = other._mlir_value
-
-    @always_inline("builtin")
-    @implicit
-    def __init__[
-        # TODO(MOCO-4504): This is needed otherwise this constructor
-        # is preferred over a normal copy when doing `Pointer(pointer)`.
-        __disambig: NoneType = None,
-    ](
         other: Pointer,
         out self: Pointer[
             other.T,
@@ -556,9 +528,6 @@ struct Pointer[
         ],
     ):
         """Implicitly casts a mutable pointer to immutable.
-
-        Parameters:
-            __disambig: A dummy parameter to make overload resolution prefer the normal "copy" constructor.
 
         Args:
             other: The mutable pointer to cast from.
@@ -600,7 +569,7 @@ struct Pointer[
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
         memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
             {}
         )
@@ -608,9 +577,7 @@ struct Pointer[
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
         comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
         return Int(memory.unsafe_bitcast[NullType]()[]) == null_address
@@ -840,11 +807,12 @@ struct Pointer[
 
         Safety:
 
-        - Both pointers should point into the same allocation (or one past
+        - Both pointers must point into the same allocation (or one past
           its end); the distance between pointers into unrelated
           allocations is not meaningful.
         - The byte distance between the two pointers must be an exact
-          multiple of `size_of[T]()`.
+          multiple of `size_of[T]()`. Violating this is undefined
+          behavior.
 
         Examples:
 
@@ -1224,11 +1192,12 @@ struct Pointer[
 
         Safety:
 
-        - Both pointers should point into the same allocation (or one past
+        - Both pointers must point into the same allocation (or one past
           its end); the distance between pointers into unrelated
           allocations is not meaningful.
         - The byte distance between the two pointers must be an exact
-          multiple of `size_of[T]()`.
+          multiple of `size_of[T]()`. Violating this is undefined
+          behavior.
 
         Examples:
 
@@ -1251,9 +1220,11 @@ struct Pointer[
             byte_diff % size_of[Self.T]() == 0,
             "pointer difference is not a multiple of the element size",
         )
-        # TODO(MSTDL-2917): use an exact-division intrinsic here for better
-        # codegen, since this divide is always exact.
-        return byte_diff // size_of[Self.T]()
+        return Int(
+            mlir_value=__mlir_op.`pop.div`[isExact=__mlir_attr.`unit`](
+                byte_diff._mlir_value, size_of[Self.T]()._mlir_value
+            )
+        )
 
     @always_inline
     @staticmethod
@@ -1299,7 +1270,7 @@ struct Pointer[
     @always_inline("nodebug")
     def swap_pointees[
         U: Movable
-    ](self: Pointer[mut=True, U, _], other: Pointer[mut=True, U, _],):
+    ](self: MutPointer[U, _], other: MutPointer[U, _],):
         """Swap the values at the pointers.
 
         This function assumes that `self` and `other` _may_ overlap in memory.
@@ -1331,13 +1302,19 @@ struct Pointer[
             # and an unsafe_memcpy between the pointers it produces 3 load and
             # 3 stores.
 
-            var self_tmp = UnsafeMaybeUninit[U]()
-            var other_tmp = UnsafeMaybeUninit[U]()
+            var self_tmp = MaybeUninit[U]()
+            var other_tmp = MaybeUninit[U]()
             unsafe_memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
             unsafe_memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
 
             unsafe_memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
             unsafe_memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+
+            # Safety:
+            # The memcpy moved the values from the temporary storage into
+            # self & other, so the values are uninitialized.
+            self_tmp^.unsafe_forget()
+            other_tmp^.unsafe_forget()
         else:
             # If `moveinit` is NOT trivial, we need to check if the pointers are
             # the same to avoid undefined behavior when moving from rhs to lhs.
@@ -1369,22 +1346,6 @@ struct Pointer[
         return {
             _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
         }
-
-    @doc_hidden
-    @always_inline("nodebug")
-    @deprecated(use=unsafe_as_noalias)
-    def as_noalias_ptr(self) -> Self:
-        """Cast the pointer to a new pointer that is known not to locally alias
-        any other pointer. In other words, the pointer transitively does not
-        comptime any other memory value declared in the local function context.
-
-        This information is relayed to the optimizer. If the pointer does
-        locally alias another memory value, the behaviour is undefined.
-
-        Returns:
-            A noalias pointer.
-        """
-        return self.unsafe_as_noalias()
 
     @__allow_legacy_custom_self_type
     @always_inline("nodebug")
@@ -1675,7 +1636,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -1721,7 +1682,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -1765,7 +1726,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -1825,7 +1786,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -1850,7 +1811,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -1873,7 +1834,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         self.unsafe_store[
             width,
             alignment=alignment,
@@ -1890,7 +1851,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         comptime assert width > 0, "width must be a positive integer value"
         comptime assert (
             alignment > 0
@@ -1958,7 +1919,7 @@ struct Pointer[
         //,
         width: SIMDLength = 1,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: S,
     ):
@@ -1994,7 +1955,7 @@ struct Pointer[
         //,
         width: SIMDLength = 1,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: S,
     ):
@@ -2107,7 +2068,7 @@ struct Pointer[
         width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -2186,7 +2147,7 @@ struct Pointer[
         width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -2197,13 +2158,13 @@ struct Pointer[
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_free)
-    def free(self: Pointer[mut=True, Self.T, ...]):
+    def free(self: MutPointer[Self.T, ...]):
         """Free the memory referenced by the pointer."""
         _free(self)
 
     @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_free(self: Pointer[mut=True, Self.T, ...]):
+    def unsafe_free(self: MutPointer[Self.T, ...]):
         """Frees the memory referenced by the pointer."""
         _free(self)
 
@@ -2254,6 +2215,12 @@ struct Pointer[
     ]
 
     @always_inline("nodebug")
+    @deprecated(
+        "`mut_cast` is deprecated in favor of explicitly specifying a"
+        " mutability on the pointer type (`ImmPointer` or `MutPointer`). If"
+        " a mutability cast is truly needed (this should almost always be"
+        " avoided), use `unsafe_mut_cast` instead."
+    )
     def mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
@@ -2350,14 +2317,6 @@ struct Pointer[
         """
         return self.unsafe_mut_cast[False]()
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=as_imm)
-    def as_immutable(
-        self,
-    ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
-        return self.as_imm()
-
     @always_inline("builtin")
     def as_unsafe_any_origin(
         self,
@@ -2429,29 +2388,6 @@ struct Pointer[
         address_space=target_address_space,
     ]:
         return self.unsafe_address_space_cast[target_address_space]()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_deinit_pointee)
-    def destroy_pointee[
-        U: Deinitable, //
-    ](self: Pointer[U, _]) where type_of(self).mut:
-        _ = __get_address_as_owned_value(self._mlir_value)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_deinit_pointee_with)
-    def destroy_pointee_with(
-        self: Pointer[
-            Self.T,
-            _,
-            address_space=AddressSpace.GENERIC,
-        ],
-        destroy_func: def(var Self.T) thin,
-    ) where type_of(self).mut:
-        destroy_func(__get_address_as_owned_value(self._mlir_value))
 
     @always_inline
     def unsafe_deinit_pointee(
@@ -2547,16 +2483,6 @@ struct Pointer[
     ](self: Pointer[U, _]) -> U where type_of(self).mut:
         return self.unsafe_take_pointee()
 
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write)
-    def init_pointee_move[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _], var value: U) where type_of(self).mut:
-        __get_address_as_uninit_lvalue(self._mlir_value) = value^
-
     @always_inline
     def unsafe_write(
         self,
@@ -2602,6 +2528,42 @@ struct Pointer[
 
     @__allow_legacy_custom_self_type
     @always_inline
+    def write[
+        U: Movable, //
+    ](self: Pointer[U, _], var value: U, /) where (
+        type_of(self).mut and IsTriviallyDeinitable[U]
+    ):
+        """Write `value` into the pointer location, moving from `value`.
+
+        Unlike `unsafe_write()`, this is safe to call even when the pointee
+        already holds a live value: `U` is constrained to be trivially
+        deinitializable, so there's no destructor to skip and overwriting
+        a previous value can't leak a resource.
+
+        Example:
+
+        ```mojo
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Int].single())
+        var ptr = allocation.unsafe_ptr()
+        ptr.write(41)
+        ptr.write(42)  # OK: overwriting is safe, `Int` has no destructor.
+        print(ptr[])  # => 42
+        dealloc(allocation^)
+        ```
+
+        Parameters:
+            U: The type the pointer points to, which must be `Movable` and
+                trivially deinitializable.
+
+        Args:
+            value: The value to emplace.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = value^
+
+    @__allow_legacy_custom_self_type
+    @always_inline
     def unsafe_write[
         U: Movable, //
     ](self: Pointer[U, _], var value: U, /) where type_of(self).mut:
@@ -2623,6 +2585,10 @@ struct Pointer[
         ptr.unsafe_deinit_pointee()
         dealloc(allocation^)
         ```
+
+        If `U` is trivially deinitializable (for example, `Int`), prefer
+        `write()` instead: it overwrites safely, since there's no
+        destructor that a previous value could leak.
 
         Parameters:
             U: The type the pointer points to, which must be `Movable`.
@@ -2669,16 +2635,6 @@ struct Pointer[
           leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write)
-    def init_pointee_copy[
-        U: Copyable,
-        //,
-    ](self: Pointer[U, _], value: U) where type_of(self).mut:
-        self.unsafe_write(init_with=lambda () {imm} -> U: value.copy())
 
     @__allow_legacy_custom_self_type
     @always_inline
@@ -2747,15 +2703,3 @@ struct Pointer[
         __get_address_as_uninit_lvalue(
             self._mlir_value
         ) = __get_address_as_owned_value(src._mlir_value)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write_move_from)
-    def init_pointee_move_from[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _], src: Pointer[U, _]) where (
-        type_of(self).mut and type_of(src).mut
-    ):
-        self.unsafe_write_move_from(src)

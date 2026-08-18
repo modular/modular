@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
@@ -22,6 +23,23 @@ modular_py_library(
         "//oss/modular/max/tests:__subpackages__",
     ],
     deps = ["//max/python/max:_core"],
+)
+
+# Needs no GPU and no RDMA hardware, so unlike the suite below it runs on any
+# Linux worker. Paths come through args so the external-repo runfiles layout
+# stays Bazel's to compute.
+sh_test(
+    name = "ucx_symbol_versions_test",
+    srcs = ["ucx_symbol_versions_test.sh"],
+    args = [
+        "$(rootpath @llvm-project//llvm:llvm-readelf)",
+        "$(rootpath @nixl_upstream//:cpu-verbs/libplugin_UCX.so)",
+    ],
+    data = [
+        "@llvm-project//llvm:llvm-readelf",
+        "@nixl_upstream//:cpu-verbs/libplugin_UCX.so",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 modular_py_test(

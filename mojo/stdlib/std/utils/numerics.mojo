@@ -977,7 +977,6 @@ def nextafter[
     ), "nextafter only supports float32 and float64 types"
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -986,7 +985,6 @@ def nextafter[
         )
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:

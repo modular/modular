@@ -128,7 +128,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             False otherwise.
         """
         return __mlir_attr[
-            `#kgen.param.expr<eq,`,
+            `#kgen.param.identical<`,
             Self.__arch(),
             `, `,
             _get_kgen_string[name](),
@@ -563,7 +563,7 @@ def is_triple[
         True if the triple matches and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         _triple_attr[target](),
         `, `,
         name.value,
@@ -1066,7 +1066,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -1090,7 +1090,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -1428,8 +1428,8 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
-        "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
-        osver.unsafe_ptr(),
+        "kern.osproductversion".as_c_string_slice(),
+        osver.unsafe_as_bytes_mut().unsafe_ptr(),
         Pointer(to=buf_len),
         Optional[Pointer[NoneType, MutAnyOrigin]](),
         Int(0),

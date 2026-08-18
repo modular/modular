@@ -49,9 +49,9 @@ def all_variadic(value: c_int):
 
 
 def main():
-    var buf = alloc[c_char]({count = 16}).unsafe_leak()
+    var allocation = alloc[c_char]({count = 16}).into_managed()
+    var buf = allocation.unsafe_ptr()
     print(Int(format_into(buf, 16)), length_of(buf))
-    buf.unsafe_free()
     # This test stops at LLVM IR, so `mojo_test_all_variadic` needs no
     # definition; the call exists only to force its declaration into the IR.
     all_variadic(c_int(0))

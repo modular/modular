@@ -111,9 +111,8 @@ def bench_rms_norm_fused_fp8[
     )
     @__parameter
     def bench_rms_norm(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Construct buffers with offsets
             var data_ptr_offset = cb_data.offset_ptr(iteration)
             var rms_output_ptr_offset = cb_rms_output.offset_ptr(iteration)
@@ -157,7 +156,7 @@ def bench_rms_norm_fused_fp8[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_rms_norm](
         BenchId(
@@ -177,9 +176,8 @@ def bench_rms_norm_fused_fp8[
     )
     @__parameter
     def bench_fp8_quant(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Input function for FP8 quant (reads from RMS norm output)
             var rms_ptr_offset = cb_rms_output.offset_ptr(iteration)
 
@@ -205,7 +203,7 @@ def bench_rms_norm_fused_fp8[
                 num_cols=cols,
             ](fp8_input_fn, fp8_output_tt, scales_tt, Float32(448.0), ctx, rows)
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fp8_quant](
         BenchId(
@@ -229,9 +227,8 @@ def bench_rms_norm_fused_fp8[
     )
     @__parameter
     def bench_fused(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx_: DeviceContext, iteration: Int) raises {imm}:
             # Input function with offset
             var data_ptr_offset = cb_data.offset_ptr(iteration)
 
@@ -279,7 +276,7 @@ def bench_rms_norm_fused_fp8[
                 fused_scales_tt,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fused](
         BenchId(

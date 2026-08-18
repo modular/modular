@@ -31,6 +31,10 @@ from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
 )
+from nn.attention.gpu.amd_structured.config import (
+    mha_decode_fold_tile_q_seq_len,
+    mha_decode_fold_wide_mma,
+)
 from nn.attention.mha_mask import CausalMask
 from std.sys.info import _is_amd_rdna
 from std.testing import (
@@ -56,6 +60,7 @@ def test[
     depth: Int,
     num_heads: Int,
     group: Int = 1,
+    batch_size: Int = 1,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -76,9 +81,10 @@ def test[
         seq_len,
         "num_keys:",
         num_keys,
+        "batch_size:",
+        batch_size,
     )
     # Query, key, value dimensions.
-    comptime batch_size = 1
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
     comptime mask_type = DType.bfloat16
@@ -89,7 +95,7 @@ def test[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = num_heads * seq_len * num_keys
+    var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
     var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
@@ -265,19 +271,20 @@ def test[
 
     var rtol = 6e-2 if qkv_type.is_float8() else 3e-2
     var atol = 1e-3 if qkv_type.is_float8() else 1e-5
-    for h in range(num_heads):
-        for s in range(seq_len):
-            for d in range(depth):
-                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
-                    DType.float64
-                ]()
-                var actual = flash_output_ptr[
-                    d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
-                if not isclose(actual, expect, atol=atol, rtol=rtol):
-                    var rerr = abs((actual - expect) / expect)
-                    print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
+    # Batch is outermost on purpose: a query-row stride taken from the tile's
+    # height leaves batch 0 intact and lands its pad rows on batch 1, which a
+    # batch-0-only check cannot see.
+    for b in range(batch_size):
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var idx = d + depth * (h + num_heads * (s + seq_len * b))
+                    var expect = output_ptr[idx].cast[DType.float64]()
+                    var actual = flash_output_ptr[idx].cast[DType.float64]()
+                    if not isclose(actual, expect, atol=atol, rtol=rtol):
+                        var rerr = abs((actual - expect) / expect)
+                        print(b, h, s, d, actual, expect, rerr)
+                    assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -336,6 +343,44 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 208, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 1024, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 5000, ctx)
+            # Batch > 1 is what makes the query-row STRIDES observable: every
+            # address is `<per-token stride> * batch_idx`, so a stride taken
+            # from the tile's slot count is a no-op at batch 1. `num_keys` past
+            # one partition reaches the split-K stat planes, same stride.
+            test[dtype, depth=depth, num_heads=16, group=16, batch_size=3](
+                seq_len, 208, ctx
+            )
+            test[dtype, depth=depth, num_heads=16, group=16, batch_size=3](
+                seq_len, 5000, ctx
+            )
+        # 32 heads exercises row -> (token, head) at num_heads != MMA_M, and
+        # S=3 is the only ODD width reaching the wide MMA (96 rows tile 32
+        # without tiling S). Gate on S=3 too, or an eligibility change there
+        # would silently drop it to prefill and still pass.
+        comptime if _mha_decode_fold_ok[
+            dtype, depth, 32, 32, 3
+        ]() and _mha_decode_fold_ok[dtype, depth, 32, 32, 4]():
+            for seq_len in [3, 4]:
+                test[dtype, depth=depth, num_heads=32, group=32](
+                    seq_len, 208, ctx
+                )
+                test[dtype, depth=depth, num_heads=32, group=32](
+                    seq_len, 1024, ctx
+                )
+        # 24 heads is OUTSIDE the pad's divisor set (128 % 24 != 0), so S=4
+        # keeps its own 96 rows — on fp8 the only way to execute the THREE-warp
+        # wide-MFMA CTA (BM=96, WM=32, 192 threads), since every 96-row width at
+        # 16 or 32 heads pads onto the four-warp tile. It is also the only fold
+        # shape whose heads-inner divisor is not a power of two, the divide
+        # behind `store_partition_info`'s row split and the mask's row -> token.
+        # 5000 keys puts it through split-K, so the odd warp count reaches the
+        # stat writes.
+        comptime if _mha_decode_fold_ok[dtype, depth, 24, 24, 4]():
+            test[dtype, depth=depth, num_heads=24, group=24](4, 208, ctx)
+            test[dtype, depth=depth, num_heads=24, group=24](4, 5000, ctx)
+            test[dtype, depth=depth, num_heads=24, group=24, batch_size=3](
+                4, 5000, ctx
+            )
         # One query head per KV head: rows are the S tokens and the Q/O row
         # stride becomes the BSHD token stride, which only num_heads > 1
         # exercises; the KV-head base term in the split-K stat write needs
@@ -389,6 +434,12 @@ def test_fold_eligibility() raises:
     assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 4](), available)
     assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 8](), available)
     assert_equal(_mha_decode_fold_ok[bf16, 128, 8, 8, 8](), available)
+    # The head counts the numerical cases run, which are gated on THIS answer:
+    # without an entry each, tightening eligibility would silently delete those
+    # cases and stay green.
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 32, 32, 3](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 32, 32, 4](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 24, 24, 4](), available)
     # Ragged exempts the padded-batch exclusion.
     assert_equal(
         _mha_decode_fold_ok[
@@ -400,6 +451,9 @@ def test_fold_eligibility() raises:
     comptime fp8 = DType.float8_e4m3fn
     assert_equal(_mha_decode_fold_ok[fp8, 128, 16, 1, 4](), available)
     assert_equal(_mha_decode_fold_ok[fp8, 128, 16, 16, 4](), available)
+    # The fp8 arm of the 24-head case, which is the one that reaches the wide
+    # MMA's three-warp geometry.
+    assert_equal(_mha_decode_fold_ok[fp8, 128, 24, 24, 4](), available)
 
     # S=1 is plain decode, not a fold arm.
     assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 1]())
@@ -436,8 +490,70 @@ def test_fold_eligibility() raises:
     )
 
 
+def test_fold_wide_mma() raises:
+    """Pin `mha_decode_fold_wide_mma`'s answer per shape.
+
+    The wide arm is a pure perf choice — every width is numerically correct on
+    either MFMA — so the numerical cases above pass whether or not the predicate
+    fires, and a predicate gone quietly false is a silent no-op. This table is
+    the only signal of which widths take it.
+
+    These are the predicate's answers on RAW widths, several of which dispatch
+    never passes: `mha_decode_fold_tile_q_seq_len` pads first, so at 16 heads
+    every width from S=3 up arrives here as 8. The composed assertion at the end
+    is what ties the table to the widths that ship.
+    """
+    comptime fp8 = DType.float8_e4m3fn
+    comptime bf16 = DType.bfloat16
+
+    # 32 rows per warp, so 96 rows (S=6 at 16 heads) is the narrowest width
+    # leaving the three warps the split-K partition count assumes.
+    assert_true(mha_decode_fold_wide_mma[fp8, 16, 16, 6]())
+    assert_true(mha_decode_fold_wide_mma[fp8, 16, 16, 8]())
+    # 128 and 96 rows at 32 heads — the widths that carry an odd S.
+    assert_true(mha_decode_fold_wide_mma[fp8, 32, 32, 3]())
+    assert_true(mha_decode_fold_wide_mma[fp8, 32, 32, 4]())
+    # 96 rows at a head count the pad cannot reach, which is the only way a
+    # 3-warp CTA actually launches. Covered numerically in `test_helper`.
+    assert_true(mha_decode_fold_wide_mma[fp8, 24, 24, 4]())
+    assert_equal(mha_decode_fold_tile_q_seq_len[fp8, 24, 24, 4](), 4)
+
+    # Two warps: the kernel is fine, the partition count callers pass is not.
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 16, 4]())
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 16, 2]())
+    # Rows that do not tile 32 would leave a warp a partial M-tile.
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 16, 7]())
+    # The narrow arm owns S token rows, not `num_heads * S` of them, and keeps
+    # the four-way N split whose P cannot be warp-local.
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 1, 6]())
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 1, 8]())
+    # bf16 stays on its 16-row shape: it doubles every SMEM term, so halving the
+    # warps would only halve the waves.
+    assert_false(mha_decode_fold_wide_mma[bf16, 16, 16, 6]())
+    assert_false(mha_decode_fold_wide_mma[bf16, 16, 16, 8]())
+    # S=1 is plain decode.
+    assert_false(mha_decode_fold_wide_mma[fp8, 16, 16, 1]())
+
+    # Compose the two in the order dispatch does, so the `False` rows above
+    # cannot be read as "S=4 at 16 heads launches a 2-warp CTA" — the pad takes
+    # that width to 8 slots first, and 8 IS wide.
+    comptime for s in [3, 4, 5, 6, 7, 8]:
+        assert_true(
+            mha_decode_fold_wide_mma[
+                fp8, 16, 16, mha_decode_fold_tile_q_seq_len[fp8, 16, 16, s]()
+            ]()
+        )
+    assert_equal(mha_decode_fold_tile_q_seq_len[fp8, 16, 16, 2](), 2)
+    assert_false(
+        mha_decode_fold_wide_mma[
+            fp8, 16, 16, mha_decode_fold_tile_q_seq_len[fp8, 16, 16, 2]()
+        ]()
+    )
+
+
 def main() raises:
     test_fold_eligibility()
+    test_fold_wide_mma()
     with DeviceContext() as ctx:
         comptime if USE_FP8:
             comptime for depth in [128, 256]:

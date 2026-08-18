@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, PropertyMock, patch
 
+import huggingface_hub
 import pytest
 from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
@@ -54,6 +56,12 @@ from test_common.registry import prepare_registry
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
+
+requires_hf_network = pytest.mark.skipif(
+    os.environ.get("HF_HUB_OFFLINE", "0") == "1",
+    reason="Verifies weight files against live HuggingFace; presubmit runs "
+    "offline, the HF workflow covers this (SERVOPT-900)",
+)
 
 
 def _serve_optimization_arch(
@@ -382,7 +390,7 @@ class TestNeedsBitmaskConstraints:
 
 
 class TestSpeculativeArchitectureOverride:
-    """Tests for ``_resolve_speculative_target_architecture``.
+    """Tests for ``_apply_speculative_target_architecture``.
 
     The override must rewrite ``model.huggingface_config.architectures[0]`` to
     the unified spec-decode target arch. The registry applies it *before*
@@ -419,7 +427,7 @@ class TestSpeculativeArchitectureOverride:
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
         # Invoke the method unbound on the lightweight stand-in.
-        PipelineConfig._resolve_speculative_target_architecture(cfg)  # type: ignore[arg-type]
+        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
         return cfg.model.huggingface_config.architectures[0]
 
     def test_deepseek_mtp_no_draft(self) -> None:
@@ -634,16 +642,10 @@ class TestDraftModelQuantizationEncoding:
                 if model_config.quantization_encoding is None:
                     model_config.quantization_encoding = draft_encoding
 
-        with (
-            patch.object(
-                PipelineConfig,
-                "_validate_model_config_against_arch",
-                side_effect=fake_validate_against_arch,
-            ),
-            patch.object(
-                PipelineConfig,
-                "_validate_remaining_pipeline_config",
-            ),
+        with patch.object(
+            PipelineConfig,
+            "_validate_model_config_against_arch",
+            side_effect=fake_validate_against_arch,
         ):
             config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
@@ -697,6 +699,7 @@ class TestFloat32WeightFallbackScoping:
     supported by MAX engine``).
     """
 
+    @mock_hf_repo_access
     def test_draft_model_bf16_encoding_preserved_over_f32_only_repo(
         self,
     ) -> None:
@@ -820,6 +823,7 @@ def test_config_init__raises_with_no_model_path() -> None:
         )
 
 
+@requires_hf_network
 @prepare_registry
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
@@ -844,6 +848,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
+@requires_hf_network
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config_post_init__other_repo_weights(
@@ -874,6 +879,7 @@ def test_config_post_init__other_repo_weights(
     assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
+@requires_hf_network
 def test_config_init__reformats_with_str_weights_path(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -926,55 +932,50 @@ def test_validate_model_path__correct_repo_id_provided(
     assert config.model.model_path == modular_ai_llama_3_1_local_path
 
 
+@requires_hf_network
+@prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
+    """Arch-dependent encoding validation runs on the ``from_args`` path."""
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    with pytest.raises(ValueError):
-        # This should raise, as q4_k != f32.
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=llama_3_1_8b_instruct_local_path,
-                        quantization_encoding="q4_k",
-                        weight_path=[
-                            Path(
-                                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                            )
-                        ],
-                        max_length=1,
+    with pytest.raises(ValueError, match="'q4_k' not supported by MAX engine"):
+        # This should raise: the dummy Llama arch does not support q4_k.
+        PipelineConfig.from_args(
+            PipelineArgs(
+                model_path=llama_3_1_8b_instruct_local_path,
+                quantization_encoding="q4_k",
+                weight_path=[
+                    Path(
+                        "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
                     )
-                }
-            ),
+                ],
+                max_length=1,
+                runtime=PipelineRuntimeConfig(
+                    max_batch_size=1,
+                    prefer_module_v3=True,
+                ),
+            )
+        )
+
+    # This should not raise, as float32 == f32.
+    PipelineConfig.from_args(
+        PipelineArgs(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding="float32",
+            weight_path=[
+                Path(
+                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                )
+            ],
+            max_length=1,
             runtime=PipelineRuntimeConfig(
                 max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
-
-    # This should not raise, as float32 == f32.
-    PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    quantization_encoding="float32",
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                        )
-                    ],
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
     )
 
 
@@ -1111,28 +1112,31 @@ def test_config__test_retrieve_factory_with_known_architecture(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__test_retrieve_factory_with_unsupported_model_path(
     gemma_3_1b_it_local_path: str,
 ) -> None:
+    # Construction leaves unregistered architectures alone; the registry
+    # rejects them when the pipeline factory is retrieved.
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=gemma_3_1b_it_local_path, max_length=1
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            prefer_module_v3=True,
+        ),
+    )
+
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    # Should now raise an error since HuggingFace fallback is removed
-    with pytest.raises(
-        ValueError, match="MAX-optimized architecture not available"
-    ):
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=gemma_3_1b_it_local_path, max_length=1
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(
-                max_batch_size=1,
-                prefer_module_v3=True,
-            ),
-        )
+    # Should raise an error since HuggingFace fallback is removed.
+    with pytest.raises(ValueError, match="No architecture found for"):
+        PIPELINE_REGISTRY.retrieve_factory(config)
 
 
 class LimitedPickler(pickle.Unpickler):
@@ -1299,6 +1303,7 @@ def test_config__validates_lora_configuration(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__validates_lora_only_supported_for_llama(
     gemma_3_1b_it_local_path: str,
 ) -> None:
@@ -1311,22 +1316,20 @@ def test_config__validates_lora_only_supported_for_llama(
         ValueError,
         match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
     ):
-        _ = PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=gemma_3_1b_it_local_path,
-                        device_specs=[DeviceSpec.accelerator()],
-                        quantization_encoding="bfloat16",
-                        kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                        max_length=1,
-                    )
-                }
-            ),
-            lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=True,
-            ),
+        _ = PipelineConfig.from_args(
+            PipelineArgs(
+                model_path=gemma_3_1b_it_local_path,
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                kv_cache=KVCacheConfig(enable_prefix_caching=False),
+                max_length=1,
+                lora=LoRAConfig(
+                    enable_lora=True, lora_paths=["/some/lora/path"]
+                ),
+                runtime=PipelineRuntimeConfig(
+                    prefer_module_v3=True,
+                ),
+            )
         )
 
 
@@ -1367,6 +1370,7 @@ def test_config__validates_lora_works_for_llama(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__validates_lora_incompatible_with_prefix_caching(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1399,6 +1403,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
@@ -1491,6 +1496,20 @@ def test_manifest_discovers_diffusion_components() -> None:
     from transformers import PretrainedConfig
 
     diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
+
+    # Manifest discovery reads the real per-component configs, so offline
+    # runs need the snapshot in the local HF cache (cache contents vary by
+    # CI runner); online lanes always cover this test.
+    if huggingface_hub.constants.HF_HUB_OFFLINE:
+        try:
+            huggingface_hub.snapshot_download(
+                repo_id=diffusion_model, local_files_only=True
+            )
+        except huggingface_hub.errors.LocalEntryNotFoundError:
+            pytest.skip(
+                f"{diffusion_model} is not in the local HF cache and "
+                "HF_HUB_OFFLINE is enabled"
+            )
 
     manifest = ModelManifest.from_model_path(diffusion_model)
 
@@ -1586,7 +1605,7 @@ class TestSamplingConfig:
         ("KimiK25ForConditionalGeneration", True, True, 16, False, True, True),
         ("UnifiedEagleLlama3ForCausalLM", True, True, 16, False, True, True),
         ("LlamaForCausalLM", True, True, 16, False, False, False),
-        ("LlamaForCausalLM", True, True, None, False, True, False),
+        ("LlamaForCausalLM", True, True, None, False, True, True),
         ("LlamaForCausalLM", True, True, 16, True, True, False),
         ("SomeOtherArchitecture", True, True, 16, False, True, True),
     ],
@@ -1924,20 +1943,19 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 @prepare_registry
 @mock_pipeline_config_resolve
 @pytest.mark.parametrize(
-    "num_speculative_tokens,expected_device_graph_capture",
-    [
-        (1, True),
-        (2, False),
-        (5, False),
-    ],
+    "num_speculative_tokens",
+    [1, 2, 5],
     ids=["1_spec_token", "2_spec_tokens", "5_spec_tokens"],
 )
 def test_auto_device_graph_capture_eagle_gating(
     num_speculative_tokens: int,
-    expected_device_graph_capture: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Eagle arch auto-enables graph capture only when num_speculative_tokens <= 1."""
+    """Eagle arch auto-enables graph capture for any num_speculative_tokens.
+
+    Device graphs support num_speculative_tokens > 1 since #83956, so the
+    old <= 1 gate no longer exists.
+    """
     monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
     arch = SimpleNamespace(
         name="UnifiedEagleLlama3ForCausalLM",
@@ -1967,7 +1985,7 @@ def test_auto_device_graph_capture_eagle_gating(
     )
     config._validate_and_resolve_overlap_scheduler(arch=arch)
 
-    assert config.runtime.device_graph_capture is expected_device_graph_capture
+    assert config.runtime.device_graph_capture is True
 
 
 @prepare_registry

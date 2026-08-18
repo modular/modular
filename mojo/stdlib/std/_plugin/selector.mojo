@@ -53,7 +53,7 @@ struct PluginSelector[
     def _matches[target: _TargetType, idx: __mlir_type.index]() -> Bool:
         """Returns whether plugin `idx` matches `target`."""
         return __mlir_attr[
-            `#kgen.param.expr<eq,`,
+            `#kgen.param.identical<`,
             __mlir_attr[
                 `#kgen.param.expr<target_get_field,`,
                 target,

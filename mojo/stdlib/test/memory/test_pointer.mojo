@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from test_utils import check_write_to
 from std.testing import TestSuite
 from std.testing import (
@@ -112,7 +112,7 @@ def test_nicheable() raises:
 
     assert_equal(PointerType.niche_count(), 1)
 
-    var memory = UnsafeMaybeUninit[PointerType]()
+    var memory = MaybeUninit[PointerType]()
 
     PointerType.write_niche(Pointer(to=memory))
     assert_true(PointerType.isa_niche(Pointer(to=memory)))
@@ -124,9 +124,7 @@ def test_nicheable() raises:
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def _test_get_imm() raises -> Int:
-    def foo(
-        x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
-    ) -> Int:
+    def foo(x: ImmPointer[Int, ...], y: ImmPointer[Int, ...]) -> Int:
         return x[]
 
     var x = Int(0)

@@ -326,7 +326,7 @@ threads executing the kernel using the following structures:
 :::note
 
 All of these dimensions and indices are
-[`Int`](https://mojolang.org/docs/std/builtin/int/Int/) values.
+[`Int`](https://mojolang.org/docs/std/builtin/simd/#int) values.
 
 :::
 
@@ -477,7 +477,7 @@ def process_vector(vector: Pointer[Float32, MutAnyOrigin], size: Int32):
 All values passed to a kernel function must be of types that conform to the
 [`DevicePassable`](https://mojolang.org/docs/std/builtin/device_passable/DevicePassable/)
 trait. The trait declares a
-[`comptime` member](https://mojolang.org/docs/manual/traits/#comptime-members-for-generics)
+[`comptime` member](https://mojolang.org/docs/manual/traits/#required-comptime-members)
 named `device_type` that maps the type as used on the CPU host to a
 corresponding type used on the GPU device.
 

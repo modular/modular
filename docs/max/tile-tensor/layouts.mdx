@@ -169,7 +169,7 @@ structure that can hold both compile-time and run-time integer values. Each
 element of a `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord`](https://mojolang.org/docs/std/utils/coord/coord/)
+values using the [`coord`](https://mojolang.org/docs/std/utils/coord/#coord)
 comptime alias:
 
 ```mojo
@@ -179,7 +179,7 @@ var runtime_coords = Coord(Int32(a), Int32(b), Int32(c))
 
 You can mix compile-time and run-time values: use a plain `Int` (or any
 `CoordLike`) for run-time values, and
-[`Idx[N]`](https://mojolang.org/docs/std/utils/coord/Idx/) for compile-time
+[`Idx[N]`](https://mojolang.org/docs/std/utils/coord/#idx) for compile-time
 integers.
 
 ```mojo

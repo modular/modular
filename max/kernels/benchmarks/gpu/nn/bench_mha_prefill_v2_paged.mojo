@@ -272,9 +272,8 @@ def run_mha_prefill_v2_paged[
         @always_inline
         @__copy_capture(cb_q, cb_o, k_operand, v_operand)
         def bench_func(mut b: Bencher):
-            @__parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]
                 ]()
@@ -312,7 +311,7 @@ def run_mha_prefill_v2_paged[
                     ctx,
                 )
 
-            bencher_iter_custom[_kernel_launch](b, ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             # Causal: half the tiles. Matches `bench_mha_prefill_v2`'s

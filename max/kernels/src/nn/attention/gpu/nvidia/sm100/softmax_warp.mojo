@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Softmax warp group logic for FA4 (SM100 Flash Attention)."""
 
-from std.math import exp2, log2, recip, align_up
+from std.math import ceildiv, exp2, log2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf
@@ -1298,7 +1298,7 @@ def fa4_ws_splitk_reduce_scatter_write[
     @__parameter
     @always_inline
     def reduce_scatter_p[P_static: Int]():
-        comptime bpp = (m_pack + P_static - 1) // P_static
+        comptime bpp = ceildiv(m_pack, P_static)
         var e = elect()
         # ---- (3) publish: WG0 warp 0 ONLY, exactly rows*P_static arrivals ----
         if band_g == UInt32(0):
@@ -2015,7 +2015,7 @@ def fa4_splitk_reduce_scatter_write[
     @__parameter
     @always_inline
     def reduce_scatter_p[P_static: Int]():
-        comptime bpp = (iters_total + P_static - 1) // P_static
+        comptime bpp = ceildiv(iters_total, P_static)
         comptime for p_static in range(P_static):
             comptime ob = p_static * bpp
             comptime ipw = min(bpp, iters_total - ob) if ob < iters_total else 0

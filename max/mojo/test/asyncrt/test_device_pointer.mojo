@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for `DevicePointer` offset arithmetic and bounds checking.
+"""Tests for `DevicePointer` arithmetic, bounds checking, and origin casts.
 
-These tests exercise the host-side offset math on `DevicePointer` without
-touching the device. They run against any `DeviceContext` backend, including
-`api="cpu"`, so no GPU is required.
+These tests exercise the host-side offset math and origin/mutability casts on
+`DevicePointer` without touching the device. They run against any
+`DeviceContext` backend, including `api="cpu"`, so no GPU is required.
 
 A `DevicePointer` keeps its `DeviceBuffer` alive for as long as the pointer is
 live, so tests can use a pointer freely after the buffer's last *textual* use
@@ -383,6 +383,62 @@ def test_unsafe_ptr_advances_by_offset() raises:
     var p = buf.device_ptr()
     var q = p + 8
     assert_true(q.unsafe_ptr() == Pointer(p.unsafe_ptr()).unsafe_offset(8))
+
+
+# ===-----------------------------------------------------------------------===#
+# Origin and mutability casts
+# ===-----------------------------------------------------------------------===#
+#
+# The casts are compile-time reinterprets, so the type system is what checks
+# them: every `_offset_of_imm` / `_offset_of_mut` call and every annotated
+# result type below fails to compile if its cast did not take effect.
+
+
+def _offset_of_imm(p: DevicePointer[mut=False, DType.float32, _]) -> Int:
+    return p.offset()
+
+
+def _offset_of_mut(p: DevicePointer[mut=True, DType.float32, _]) -> Int:
+    return p.offset()
+
+
+def test_as_imm_yields_immutable_borrow() raises:
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr() + 4
+    var q = p.as_imm()
+    assert_equal(_offset_of_imm(q), 4)
+    assert_equal(len(q.buffer()), _LENGTH)
+    assert_true(q == p)
+
+
+def test_unsafe_mut_cast_restores_mutability() raises:
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr().as_imm() + 16
+    assert_equal(_offset_of_mut(p.unsafe_mut_cast[True]()), 16)
+
+
+def test_unsafe_origin_cast_retargets_origin() raises:
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr() + 4
+    var q: DevicePointer[
+        DType.float32, MutUntrackedOrigin
+    ] = p.unsafe_origin_cast[MutUntrackedOrigin]()
+    assert_equal(q.offset(), 4)
+    assert_true(q == p)
+
+
+def test_as_unsafe_any_origin_discards_origin() raises:
+    var ctx = create_test_device_context()
+    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var p = buf.device_ptr() + 8
+    var q: DevicePointer[
+        DType.float32, MutUnsafeAnyOrigin
+    ] = p.as_unsafe_any_origin()
+    assert_equal(q.offset(), 8)
+    assert_true(q == p)
 
 
 # ===-----------------------------------------------------------------------===#

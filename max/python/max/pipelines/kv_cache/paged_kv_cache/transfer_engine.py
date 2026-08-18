@@ -25,7 +25,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -34,73 +34,17 @@ if TYPE_CHECKING:
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
 from ._ucx_env import configure_ucx_env
-from .cache_manager import PagedKVCacheManager
+from .cache_manager import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
-
-NixlBackendType = Literal["ucx", "libfabric", "uccl"]
-
-_NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
-_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric", "uccl"}
-
-# GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, in
-# its per-vendor flavors) references but does not itself dlopen. The upstream
-# plugin manager loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``;
-# ``RTLD_NOW`` requires every undefined symbol (CUDA driver, NVML, HSA,
-# optionally RDMA verbs) to be resolvable at load time, and ``RTLD_LOCAL``
-# means the plugin cannot see symbols unless they were already loaded
-# ``RTLD_GLOBAL`` into the process.
-_NIXL_PLUGIN_DEP_LIBS: tuple[str, ...] = (
-    # RDMA verbs (only needed by the *-verbs UCX flavors); harmless if absent.
-    "libibverbs.so.1",
-    "libmlx5.so.1",
-    # CUDA driver + NVML: required by the CUDA-flavor UCX plugin.
-    "libcuda.so.1",
-    "libnvidia-ml.so.1",
-    # HSA runtime: required by the ROCm-flavor UCX plugins.
-    "libhsa-runtime64.so.1",
-)
-
-_nixl_plugin_deps_preloaded = False
-
-
-def _preload_nixl_plugin_deps() -> None:
-    """Pre-loads the UCX plugin's runtime dependencies with ``RTLD_GLOBAL``.
-
-    The upstream NIXL plugin manager ``dlopen``s ``libplugin_UCX.so`` with
-    ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin flavor (selected per host
-    GPU vendor via ``NIXL_PLUGIN_DIR``) references CUDA/NVML, HSA, or RDMA
-    verbs symbols; ``RTLD_LOCAL`` prevents the plugin from resolving them
-    against the process unless they were previously loaded with
-    ``RTLD_GLOBAL``. Without this, ``get_plugin_params("UCX")`` returns
-    ``NIXL_ERR_NOT_FOUND`` because the plugin fails to load.
-
-    The Modular NIXL fork performed this preload inside its plugin-manager
-    constructor; upstream does not, so we restore it here. It runs in every
-    process that constructs a transfer engine — including ``spawn``-ed
-    multiprocessing children, which do NOT inherit the parent's ``RTLD_GLOBAL``
-    handles. Libraries that are absent on the host (e.g. CUDA on an AMD/CPU
-    box) are skipped; the plugin simply cannot load there, which is reported by
-    the existing availability checks rather than masked.
-    """
-    global _nixl_plugin_deps_preloaded
-    if _nixl_plugin_deps_preloaded:
-        return
-    for lib_name in _NIXL_PLUGIN_DEP_LIBS:
-        try:
-            ctypes.CDLL(lib_name, mode=ctypes.RTLD_GLOBAL)
-        except OSError:
-            # Not present on this host; the corresponding UCX flavor cannot be
-            # used here. This is not an error to swallow — it is a genuine
-            # "this transport is unavailable on this machine" signal that
-            # surfaces downstream via get_available_plugins / get_plugin_params.
-            logger.debug(
-                "NIXL plugin dependency %s not found; skipping preload",
-                lib_name,
-            )
-    _nixl_plugin_deps_preloaded = True
 
 
 def _plugin_load_error(upstream_backend_type: str) -> str | None:
@@ -130,16 +74,11 @@ def _plugin_load_error(upstream_backend_type: str) -> str | None:
 def _get_nixl_backend_type() -> NixlBackendType:
     """Returns the NIXL backend type from the environment.
 
-    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``).
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``). The default
+    is this engine's, not the validator's: the dKV connector reads the same
+    variable through the same validator but auto-selects when it is unset.
     """
-    raw = os.environ.get(_NIXL_BACKEND_ENV_VAR, "ucx").strip().lower()
-    if raw not in _SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unsupported NIXL transfer backend {raw!r} "
-            f"(set via {_NIXL_BACKEND_ENV_VAR}). "
-            f"Supported backends: {sorted(_SUPPORTED_BACKENDS)}"
-        )
-    return raw  # type: ignore[return-value]
+    return validate_nixl_backend(os.environ.get(NIXL_BACKEND_ENV_VAR, "ucx"))
 
 
 def _default_uccl_socket_ifname_if_unset() -> None:
@@ -416,7 +355,7 @@ class TensorAgent:
         # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
         # before the NIXL plugin manager dlopens the plugin. Must run in this
         # process (e.g. spawn-ed children do not inherit RTLD_GLOBAL handles).
-        _preload_nixl_plugin_deps()
+        preload_nixl_plugin_deps()
 
         if backend_type == "uccl":
             _default_uccl_socket_ifname_if_unset()
@@ -2020,7 +1959,7 @@ class KVTransferEngine(TransferEngine):
 
     @classmethod
     def from_paged_kv_cache(
-        cls, name: str, kv_cache: PagedKVCacheManager
+        cls, name: str, kv_cache: PagedKVCacheManagerInterface
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 

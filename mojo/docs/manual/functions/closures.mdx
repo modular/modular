@@ -60,27 +60,6 @@ execution later, elsewhere, or on different hardware.
 This separation between defining work and executing work is central
 to how Mojo expresses computation.
 
-Closures already appear throughout the Mojo standard library.
-Functions such as `parallelize`, `vectorize`, and `elementwise`
-accept closures. You describe the work; the library decides how to
-distribute it across SIMD lanes, threads, or cores.
-
-GPU kernels extend the same idea. A closure captures the values a
-kernel needs, then executes across a hardware dispatch geometry.
-This pattern appears in reductions and accumulations, where
-a closure captures running state and updates it while processing
-elements. It also appears in custom iteration, where the iterator
-controls traversal and the closure controls behavior.
-
-In many languages, closures also power asynchronous programming. You
-pass a closure as a callback that runs after an operation completes,
-carrying the state and cleanup logic it needs.
-
-Mojo doesn't yet support async execution or escaping closures
-(closures that outlive their enclosing scope), but the underlying
-model is the same: closures define what should happen, while
-something else decides when and where it runs.
-
 ## The capture list
 
 A capture list such as `{imm x, mut y}` tells the compiler how the
@@ -218,7 +197,7 @@ def main():
 ```
 
 :::note
-Copy captures call the value's copy constructor at the point
+Copy captures call the value's copy initializer at the point
 where the closure is defined. For types with expensive copies
 (large lists, strings with allocations), prefer `imm` or `mut`
 when you don't need an independent copy.
@@ -275,7 +254,7 @@ def main():
 
 :::note
 When you copy a closure created with `{var^}`, each captured value
-is copied again through its copy constructor. For closures that
+is copied again through its copy initializer. For closures that
 capture large or expensive values, be aware of the cost.
 :::
 
@@ -483,27 +462,3 @@ def main():
 
 The closure `record` mutates `log` in the outer scope. Each call
 appends to the same list without passing it as an argument.
-
-### Separating logic from execution
-
-The standard library uses closures to separate what you compute
-from how it gets executed. You provide the logic; the library
-handles parallelism, vectorization, or hardware dispatch.
-
-```mojo
-from max.algorithm import parallelize
-
-def main():
-    var results = List[Int](length=8, fill=0)
-
-    def work(i: Int) {mut results}:
-        results[i] = i * i
-
-    parallelize(work, 8)
-    print(results)  # [0, 1, 4, 9, 16, 25, 36, 49]
-```
-
-You define `work` with the logic for a single element. `parallelize` calls
-it across available threads. Each call to `work` accesses the same `results`
-through mutable capture. The squared values land in the outer list, ready
-to use after `parallelize` finishes.

@@ -108,7 +108,7 @@ class TestSpeculativeArchitectureRewrite:
 
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
-        PipelineConfig._resolve_speculative_target_architecture(cfg)  # type: ignore[arg-type]
+        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
         return cfg.model.huggingface_config.architectures[0]
 
     def test_gemma4_dspark_31b_pair(self) -> None:

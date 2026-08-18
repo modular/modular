@@ -17,7 +17,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
-from .dispatch import _scaling_kind
+from linalg.fp4_utils import block_scaled_umma_kind, is_w4a8_operand_pair
 from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch
 from .grouped_matmul_swiglu_mxfp8 import grouped_matmul_swiglu_mxfp8_dispatch
 
@@ -101,7 +101,16 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             HF config `swiglu_limit` value.
     """
 
-    comptime scaling_kind = _scaling_kind[a.dtype, a_scales.dtype]()
+    # Neither fused epilogue builds the padded FP4 TMA copy that a packed B
+    # needs, so the mixed pair has to be rejected here rather than inferred
+    # into `kind::mxf8f6f4` and silently fed unpadded weights.
+    comptime assert not is_w4a8_operand_pair[a.dtype, b.dtype](), (
+        "the fused SwiGLU epilogue does not support W4A8; run the plain"
+        " grouped block-scaled matmul and fuse separately"
+    )
+    comptime scaling_kind = block_scaled_umma_kind[
+        a.dtype, b.dtype, a_scales.dtype
+    ]()
 
     comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_swiglu_nvfp4_dispatch[

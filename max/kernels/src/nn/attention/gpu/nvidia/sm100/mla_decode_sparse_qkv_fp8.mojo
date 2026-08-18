@@ -51,15 +51,20 @@ permute, not a dtype conversion):
                       BF16-overlay aliasing -- this uses a separate,
                       non-overlaid destination buffer).
 
-SMEM layout (FP8, N = num_kv_stages; expect N ~= 2 at the GLM-5.2 shape,
-since the linear + SW64 buffer pair costs the same total bytes/stage as the
-old kernel's own KV region):
+SMEM layout (FP8, N = num_kv_stages, M = num_kv_mma_stages; expect N ~= 2 at
+the target shape, since the linear + SW64 buffer pair costs the same total
+bytes/stage as the old kernel's own KV region). The two KV buffers do NOT
+share a depth: `PV_REL(i)` frees the SW64 slot that `CVT` reclaims for tile
+i + M, and that WAR edge is the back-edge of the loop that sets the kernel's
+steady-state rate, so the rate is bounded by (cycle weight) / M. The gather
+ring is not on that loop, so leftover SMEM buys depth on the SW64 side only
+-- a symmetric extra stage does not fit:
   Q FP8:          64 x 576 x 1 = 36864 bytes         (SWIZZLE_64B, persistent)
   KV linear-in:   N x 64 x 576 x 1 bytes              (SWIZZLE_NONE, gather dest)
-  KV SW64-out:    N x 64 x 576 x 1 bytes              (SWIZZLE_64B, MMA operand)
+  KV SW64-out:    M x 64 x 576 x 1 bytes              (SWIZZLE_64B, MMA operand)
   P stages:       N x 64 x 64 x 1 bytes               (SWIZZLE_64B, separate region)
   max/li:         128 x 4 x 3 = 1536 bytes
-  barriers:       (8N+11) fixed + output + idx_bars (2N) barriers
+  barriers:       (6N+2M+11) fixed + output + idx_bars (2N) barriers
   ptr_tmem_addr:  4 bytes
   idx_smem:       N x 64 x 4 bytes
 """
@@ -199,6 +204,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     ]
 
     comptime num_stages = Self.config.num_kv_stages
+    # Depth of the SW64 ring only. `PV_REL(i)` frees the slot that
+    # `CVT_SW64_ACQ(i + num_mma_stages)` reclaims, and that WAR edge is the
+    # back-edge of the loop that sets this kernel's steady-state rate, so the
+    # bound is (cycle weight) / this depth. The linear gather ring is not on
+    # that loop and stays at `num_stages`.
+    comptime num_mma_stages = Self.config.num_kv_mma_stages
 
     # The ground-truth SW64 destination layout the MMA operand descriptor
     # already reads today -- the re-swizzle WG's job is to reproduce this
@@ -414,9 +425,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # source. Same per-stage size as the SW64 destination below.
         var kv_smem_linear = q_smem + Self.BlockElems * Self.NumQKBlocks
         # SW64 destination the native FP8 MMA reads -- byte-identical role
-        # to the single-buffer kernel's `kv_smem`.
+        # to the single-buffer kernel's `kv_smem`, one ring deeper.
         var kv_smem = kv_smem_linear + Self.KVStageElems * kv_total_stages
-        var p_smem = kv_smem + Self.KVStageElems * kv_total_stages
+        var p_smem = kv_smem + Self.KVStageElems * Self.num_mma_stages
 
         # Output SMEM reuses the SW64 KV region (same as the single-buffer
         # native FP8 kernel and the BF16 kernel).
@@ -451,7 +462,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # kernel's own KV pipeline, just producer side is now a warpgroup
         # instead of a single TMA leader thread.
         var kv_pipeline_mma = KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
+            num_kv_stages=Self.num_mma_stages,
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
@@ -1093,7 +1104,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             num_consumer=WARPGROUP_SIZE,
         ],
         kv_pipeline_mma: KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
+            num_kv_stages=Self.num_mma_stages,
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
@@ -1146,6 +1157,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
+            num_stages=Self.num_mma_stages,
         ](kv_pipeline_mma, kv_smem_sw64)
 
         var lane: Int = thread_idx.x & 0x7F
@@ -1211,7 +1223,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             num_consumer=WARPGROUP_SIZE,
         ],
         kv_pipeline_mma: KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
+            num_kv_stages=Self.num_mma_stages,
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
@@ -1242,6 +1254,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
+            num_stages=Self.num_mma_stages,
         ](kv_pipeline_mma, kv_smem)
         var s_prod = DecodeSProducerN[Self.num_stages](s_bars.producer())
         comptime s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
@@ -1290,7 +1303,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline_mma: KVPipelineGeneric[
-            num_kv_stages=Self.config.num_kv_stages,
+            num_kv_stages=Self.num_mma_stages,
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
@@ -1321,6 +1334,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config,
             num_producer=WARPGROUP_SIZE,
             num_consumer=2,
+            num_stages=Self.num_mma_stages,
         ](kv_pipeline_mma, kv_smem)
         var p_cons = DecodePConsumerN[Self.num_stages](p_bars.consumer())
         var o_prod = DecodeOProducer(o_bars.producer())

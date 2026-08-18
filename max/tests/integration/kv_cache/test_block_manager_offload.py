@@ -32,6 +32,7 @@ from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -114,20 +115,12 @@ class RecordingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def num_host_blocks(self) -> int:
-        return 0
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -145,15 +138,15 @@ class _ExternalTierConnector(RecordingConnector):
     """A dKV-style connector that advertises an external tier.
 
     ``get_full_blocks_from_prefix_cache`` gates the G0 recency ``touch`` behind
-    its ``num_host_blocks == 0`` early-return, so the touch-firing tests need a
-    connector whose ``num_host_blocks`` is positive (a plain
+    its ``host_block_count.total == 0`` early-return, so the touch-firing
+    tests need a connector whose host block count is positive (a plain
     ``RecordingConnector`` reports 0, i.e. no external tier). Records touches
     like its base so a test can assert on them.
     """
 
     @property
-    def num_host_blocks(self) -> int:
-        return 1024
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=1024, total=1024)
 
 
 _FAKE_BYTES_PER_PAGE = 64
@@ -438,7 +431,7 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     stays MRU under dKV's reverse full-attention LRU (the ordering correction,
     CLIN-1533). It fires exactly once and, the whole prefix being on device,
     issues no ``load``. Uses an external-tier connector because the anchor is
-    gated on ``num_host_blocks``.
+    gated on ``host_block_count.total``.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-hit")
@@ -462,8 +455,8 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     (``num_blocks_to_load == 0``), so both ``device_blocks`` and ``host_blocks``
     are empty and the ``if device_blocks or host_blocks`` gate suppresses the
     anchor -- even though the load path ran (``load`` was called). Uses an
-    external-tier connector so the ``num_host_blocks`` gate is passed and the
-    empty-result gate is what's exercised.
+    external-tier connector so the ``host_block_count.total`` gate is passed
+    and the empty-result gate is what's exercised.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-cold")
@@ -681,11 +674,11 @@ def test_cross_replica_copy_disabled_count_is_local_only() -> None:
 def test_touch_not_fired_without_external_tier() -> None:
     """A connector with no external tier is never touched on a device hit.
 
-    The G0 recency ``touch`` is gated behind the ``num_host_blocks == 0``
-    early-return, so a NullConnector-style connector (``num_host_blocks == 0``,
+    The G0 recency ``touch`` is gated behind the ``host_block_count.total == 0``
+    early-return, so a NullConnector-style connector (``host_block_count.total == 0``,
     whose ``touch`` is a pure no-op) sees no ``touch`` call at all and pays no
     per-hit payload cost. A plain ``RecordingConnector`` reports
-    ``num_host_blocks == 0`` and records any touch, so the empty ``touches``
+    ``host_block_count.total == 0`` and records any touch, so the empty ``touches``
     assertion verifies the gate rather than a silent no-op.
     """
     bm, connector = (

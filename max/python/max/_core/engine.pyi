@@ -370,6 +370,16 @@ class Model:
         """
 
     def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def release_weights(self) -> None:
+        """
+        Drops the host-side weight references held by this model.
+
+        Releases the weights registry and the owning references, so the host
+        weight memory can be freed once the caller drops its own references.
+        Safe only when every weight was copied to its execution device during
+        model init: reading a host weight after this call is undefined
+        behavior. ``reload`` remains usable afterwards.
+        """
 
 class DebugConfig:
     """

@@ -59,14 +59,11 @@ from std.io.io import input, print
 from std.builtin.anytype import (
     Some,
     SomeTypeList,
-    ImplicitlyDestructible,
-    ImplicitlyDeletable,
 )
 from std.builtin.bool import Bool, Boolable, all, any
 from std.builtin.breakpoint import breakpoint
 from std.builtin.builtin_slice import Slice, slice
 from std.builtin.comparable import Comparable, Equatable
-from std.builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from std.builtin.debug_assert import debug_assert
 from std.builtin.dtype import DType
 from std.builtin.error import Error
@@ -95,13 +92,9 @@ from std.math.math import (
 )
 from std.builtin.none import NoneType
 from std.builtin.range import range
-from std.builtin.rebind import (
-    rebind,
-    rebind_var,
-    trait_downcast,
-)
+from std.builtin.rebind import rebind, rebind_var
 from std.builtin.reversed import ReversibleRange, reversed
-from std.builtin.simd_length import SIMDSize, SIMDLength
+from std.builtin.simd_length import SIMDLength
 from std.builtin.simd import (
     SIMD,
     BFloat16,
@@ -163,41 +156,29 @@ from std.memory import (
     alloc,
     AddressSpace,
     ImmOpaquePointer,
-    ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
     OptionalPointer,
-    OptionalUnsafePointer,
     ImmPointer,
     MutPointer,
     Pointer,
-    ImmUnsafePointer,
-    ImmutUnsafePointer,
-    MutUnsafePointer,
     UnsafePointer,
 )
 from std.origin import (
     AnyOrigin,
     ImmutAnyOrigin,
     ImmOrigin,
-    ImmutOrigin,
     MutAnyOrigin,
     MutOrigin,
     Origin,
     OriginSet,
     ImmStaticOrigin,
-    StaticConstantOrigin,
-    ExternalOrigin,
-    ImmutExternalOrigin,
-    MutExternalOrigin,
     UntrackedOrigin,
     ImmUntrackedOrigin,
-    ImmutUntrackedOrigin,
     MutUntrackedOrigin,
     UnsafeAnyOrigin,
     MutUnsafeAnyOrigin,
     ImmUnsafeAnyOrigin,
-    ImmutUnsafeAnyOrigin,
 )
 from std.reflection import reflect
 from std.traits import (

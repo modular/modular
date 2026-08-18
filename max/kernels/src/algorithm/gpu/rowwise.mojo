@@ -35,7 +35,7 @@ No GPU primitives leak into the body: it sees `ctx`, lambdas, and
 the helpers above.
 """
 
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering, fence
 from std.bit import log2_floor, next_power_of_two
 from std.gpu import (
     WARP_SIZE,
@@ -60,8 +60,12 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
-from std.sys.info import has_apple_gpu_accelerator
-from std.utils.coord import Coord, coord_to_index_list
+from std.sys.info import (
+    has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    is_apple_gpu,
+)
+from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -74,7 +78,23 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 comptime _PDL_LEVEL = PDLLevel.ON
 comptime _SM_OVERPROVISION = 32
+
+# Output rows per SM the long-reduce-axis tiled kernel needs to beat
+# cooperative.
 comptime _THREAD_SAT_OUTPUTS_PER_SM = 256
+
+# Minimum output rows per SM for the short-reduce-axis tiled tier: a
+# measured cooperative-vs-tiled crossover, not an SM-coverage guarantee
+# (both tiers are latency-bound in this band). The MI355 value doubles
+# as the default for unmeasured devices.
+comptime _TILED_MIN_ROWS_DEFAULT = 16
+comptime _TILED_MIN_ROWS_NVIDIA = 1
+
+# Row-size cutoff below which the non-inner tiled kernel beats the
+# cooperative one, scaled at the use site by cooperative's wave count.
+# Measured crossovers; the MI355 value doubles as the default.
+comptime _ROW_SIZE_CUTOFF_NVIDIA = 32
+comptime _ROW_SIZE_CUTOFF_DEFAULT = 8
 
 # Inner-axis block-tier SIMD-full thresholds. Switch to the SIMD
 # path only with enough `iters_full` axis steps to amortize address
@@ -113,11 +133,34 @@ comptime _SPLITK_MIN_ROW = 32768
 comptime _SPLITK_MIN_ROW_BYTES = 224 * 1024
 comptime _SPLITK_MAX_SIMD = 4
 
-# Threads per block for the split-K tier. Matches the legacy
-# `twophase_reduce_kernel`'s `unsaturated_block_size`. Smaller than
+# Threads per block for the PER-ELEMENT-OUTPUT split-K tier. Matches the
+# legacy `twophase_reduce_kernel`'s `unsaturated_block_size`. Smaller than
 # `BLOCK_SIZE = 256` so more blocks fit per SM under the scattered
 # global-load atomic-finish pattern.
 comptime _SPLITK_BLOCK_SIZE = 128
+
+# The per-row split-K tuning below — finish ordering, block size, blocks per
+# row, wide stripe — was measured on MI355X only. Other targets keep the
+# pre-tuning path until swept there; the sibling per-element tier's own B200
+# A/B (see `_SPLITK_TOTAL_BLOCKS_TARGET`) changes sign past ~20 rows, so the
+# direction does not transfer for free.
+comptime _SPLITK_ROW_TIER_TUNED = has_amd_gpu_accelerator()
+
+# Threads per block for the PER-ROW split-K tier — each block pays a fixed
+# cross-block-finish toll, so it wants few wide blocks. Kept separate from
+# `_SPLITK_BLOCK_SIZE`, whose 128 was tuned against its own B200 A/B.
+comptime _SPLITK_ROW_BLOCK_SIZE = (
+    256 if _SPLITK_ROW_TIER_TUNED else _SPLITK_BLOCK_SIZE
+)
+
+# Blocks per row once the rows alone saturate the device: past a handful, extra
+# blocks buy only more cross-block finishes (at 16-128 rows, 128/row -> 8 is
+# 2.4-4.1x). Rows still get more when too few of them to fill the device.
+comptime _SPLITK_TARGET_BLOCKS_PER_ROW = 8
+
+# Damping on the device-fill term above: 1-row and 16-row shapes want opposite
+# block counts. 2 costs ~6% at 16 rows, against the 20% undamped costs at 1 row.
+comptime _SPLITK_FILL_DIVISOR = 2
 
 # Total-block target for the PER-ELEMENT-OUTPUT split-K tier
 # (normalize-shaped bodies' `num_splits`, below), independent of the per-row
@@ -594,18 +637,22 @@ def reduce[
             coords[ctx.axis] = k
             tile_fn[W, rank](coords)
     elif ctx._tier == ReduceTier.Splitk:
-        # Split-K iteration: threads scalar-stripe across
-        # `blocks_per_row * BLOCK_SIZE` lanes so adjacent threads load
-        # adjacent elements (coalesced per-warp transactions on
-        # narrow-SIMD dtypes — matches legacy `twophase_reduce_kernel`).
+        # Split-K iteration: threads stripe `sw`-wide tiles across
+        # `blocks_per_row * BLOCK_SIZE` lanes, so adjacent threads load
+        # adjacent tiles (coalesced per-warp transactions).
+        comptime sw = ctx.simd_width
         var blocks_per_row = Int(ctx._blocks_per_row)
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
         var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
-        for elem_idx in range(row_tid, axis_size, row_total_threads):
+
+        # `sw > 1` is dispatched only when `sw` divides the row, so the stripe
+        # needs no ragged tail: every in-range `elem_idx` has a full tile behind
+        # it.
+        for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
             coords[ctx.axis] = elem_idx
-            tile_fn[1, rank](coords)
+            tile_fn[sw, rank](coords)
     else:
         # Block tier (cooperative, simd along axis).
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
@@ -685,14 +732,16 @@ def reduce[
             coords[ctx.axis] = k
             tile_fn[W, rank](state, coords)
     elif ctx._tier == ReduceTier.Splitk:
+        comptime sw = ctx.simd_width
         var blocks_per_row = Int(ctx._blocks_per_row)
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
         var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
-        for elem_idx in range(row_tid, axis_size, row_total_threads):
+
+        for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
             coords[ctx.axis] = elem_idx
-            tile_fn[1, rank](state, coords)
+            tile_fn[sw, rank](state, coords)
     else:
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
         var tid = thread_idx.x
@@ -766,10 +815,29 @@ def pjoin[
         # atomically increments the per-row counter; the atomic's
         # release semantics make the partial write visible to the
         # block whose increment last reaches `blocks_per_row`.
+        # Release-only, not seq_cst: only the last arriver reads the partials,
+        # so the acquire rides a fence in that branch instead of costing a
+        # `buffer_inv` per CTA. Off the tuned path the counter stays seq_cst,
+        # which subsumes both halves — except on Apple GPU, which rejects
+        # `seq_cst` at lowering, so it keeps the relaxed ordering the stdlib
+        # defaults to there. The tier never launches on Metal (gated in
+        # `launch`), but the phased split-K params still instantiate this.
+        comptime _finish_ordering = (
+            Ordering.RELEASE if _SPLITK_ROW_TIER_TUNED else (
+                Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+            )
+        )
         # The partials buffer uses fixed `_SPLITK_STATE_BYTES` slots
         # (independent of State's size), so address each slot via byte
         # arithmetic + bitcast — `UnsafePointer[State]` indexing would
         # stride by `size_of[State]()` and walk off the slot bounds.
+        #
+        # The slot holds `State.Single`, not the `W`-lane broadcast: the block's
+        # result is a scalar, which holds the second `BlockReducer` tree's shmem
+        # at width-1 whatever `simd_width` the tier runs at.
+        comptime assert (
+            size_of[State.Single]() <= _SPLITK_STATE_BYTES
+        ), "split-K partial slot too small for this monoid's width-1 state"
         var blocks_per_row_ = Int(ctx._blocks_per_row)
         var row_idx_ = Int(ctx._row_idx)
         var block_in_row_ = Int(ctx._block_in_row)
@@ -785,14 +853,22 @@ def pjoin[
         if tid_ == 0:
             var slot_ptr = (
                 row_base_bytes + block_in_row_ * _SPLITK_STATE_BYTES
-            ).bitcast[State]()
-            slot_ptr[0] = state
-            var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
+            ).bitcast[State.Single]()
+            slot_ptr[0] = s
+            var prev = Atomic[Int32].fetch_add[ordering=_finish_ordering](
+                counter_ptr, Int32(1)
+            )
             last_shmem[0] = Int(prev) + 1 == blocks_per_row_
         barrier()
         ctx._is_last_block = last_shmem[0]
 
         if ctx._is_last_block:
+            # Acquire half of the `fetch_add`'s RELEASE — must cover every
+            # thread that loads a partial below, so it cannot be narrowed to
+            # thread 0. On gfx9 `barrier()` invalidates no cache, so it is no
+            # substitute. Redundant when the counter is seq_cst.
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                fence[Ordering.ACQUIRE]()
             # Cross-block join: the first `blocks_per_row` threads each
             # load one partial, the rest pad with the monoid identity,
             # then one block-wide combine folds them.
@@ -807,17 +883,15 @@ def pjoin[
             # the SIMD acc that `join` compares. Calling `generic` here
             # skipped that publish and left every partial's acc tied at
             # the identity, so the lowest per-block index won the
-            # tie-break instead of the row's argmax. The split-K tier
-            # runs at `simd_width == 1`, so `State` is already its own
-            # `Single` and `join_parallel`'s post-`reduce` contract holds.
-            var local = State()
+            # tie-break instead of the row's argmax.
+            var local = State.Single()
             if Int(tid_) < blocks_per_row_:
                 var slot_ptr = (
                     row_base_bytes + Int(tid_) * _SPLITK_STATE_BYTES
-                ).bitcast[State]()
+                ).bitcast[State.Single]()
                 local = slot_ptr[0]
             local.join_parallel(BlockReducer[ctx.BLOCK_SIZE]())
-            state = local
+            state = State(local)
     else:
         # Block tier: collapse to width-1, block-join the small scalar (register
         # shuffle instead of a W-wide shmem tree), broadcast back.
@@ -962,10 +1036,14 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
     """Block-per-row kernel: one block per row, grid-strided over rows."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         # `body` borrowed + copied (not consumed) so the launch's dispatch
         # closures can construct the kernel without moving out of a
         # copy-captured value.
@@ -978,8 +1056,8 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -987,7 +1065,7 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
                 var row_coords = _get_nd_indices_from_flat_index(
                     row_idx, self.shape, Self.params.axis
                 )
-                self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+                self.body[Self.params](row_coords, ctx)
 
 
 struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -997,10 +1075,14 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     grid-strided over row groups."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         self.body = body
         self.shape = shape
 
@@ -1011,8 +1093,8 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     )
     def __call__(self) capturing:
         comptime warps_per_block = Self.params.BLOCK_SIZE // WARP_SIZE
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1026,9 +1108,7 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
                     var row_coords = _get_nd_indices_from_flat_index(
                         row_idx, self.shape, Self.params.axis
                     )
-                    self.body[Self.params](
-                        Coord(row_coords.canonicalize()), ctx
-                    )
+                    self.body[Self.params](row_coords, ctx)
 
 
 struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -1039,10 +1119,14 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
     Grid-strided over output tiles."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         self.body = body
         self.shape = shape
 
@@ -1052,8 +1136,16 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var axis_size = self.shape[Self.params.axis]
-        var num_outputs = self.shape.flattened_length() // axis_size
+        # The body needs one of these to take the one-thread-per-output
+        # branches; without either it compiles fine and reduces across
+        # output rows.
+        comptime assert (
+            Self.params.emit_tile_width > 1
+            or Self.params._tier == ReduceTier.Serial
+        ), "tiled kernel needs a one-thread-per-output tier"
+
+        var axis_size = Int(self.shape[Self.params.axis].value())
+        var num_outputs = Int(self.shape.product()) // axis_size
 
         # Index math is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
@@ -1071,7 +1163,7 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
                 var row_coords = _get_nd_indices_from_flat_index(
                     base, self.shape, Self.params.axis
                 )
-                self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+                self.body[Self.params](row_coords, ctx)
                 base += stride
 
 
@@ -1085,7 +1177,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     without seeing the split-K plumbing."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var counters: UnsafePointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
@@ -1094,7 +1186,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: IndexList[Self.rank],
+        shape: DynamicCoord[DType.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         counters: UnsafePointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
@@ -1111,8 +1203,8 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         var qr = udivmod(Int(block_idx.x), Int(self.blocks_per_row))
         var row_idx_ = qr[0]
@@ -1134,7 +1226,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
                 row_idx=Int32(row_idx_),
                 is_last_block=False,
             )
-            self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+            self.body[Self.params](row_coords, ctx)
 
 
 struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -1147,7 +1239,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
@@ -1156,7 +1248,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: IndexList[Self.rank],
+        shape: DynamicCoord[DType.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         num_splits: Int32,
         phase: Int32,
@@ -1173,8 +1265,8 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         var qr = udivmod(Int(block_idx.x), Int(self.num_splits))
         var row_idx_ = qr[0]
@@ -1196,7 +1288,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
             is_last_block=False,
             phase=self.phase,
         )
-        self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+        self.body[Self.params](row_coords, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1212,7 +1304,6 @@ def launch[
     supports_splitk: Bool = True,
     computationally_expensive: Bool = False,
     BLOCK_SIZE: Int = 256,
-    TILED_BLOCK_SIZE: Int = 32,
     COOPERATIVE_BLOCK_SIZE: Int = 128,
     WARP_BLOCK_WARPS: Int = 4,
     cache_dtype: Optional[DType] = None,
@@ -1229,9 +1320,14 @@ def launch[
       Warp-per-row when `row_size <= WARP_SIZE`, else block-per-row
       with a 2D SIMD-width heuristic over
       `(num_rows, row_size, sm_count)`.
-    - **Non-inner axis**, output count saturates the device — tiled
-      kernel (one thread per row tile, coalesced SIMD load + store on
-      the innermost non-axis dim).
+    - **Non-inner axis**, SIMD-tileable, and either (the reduce axis
+      is short and the output rows clear the per-SM floor) or the
+      output count saturates the device — tiled kernel (one thread per
+      row tile, coalesced SIMD load + store on the innermost non-axis
+      dim).
+    - **Non-inner axis**, short reduce axis clearing the same floor,
+      not SIMD-tileable — scalar (`W = 1`) tiled kernel: same
+      one-thread-per-output layout, without the vectorized load.
     - **Non-inner axis** otherwise — block-per-output cooperative
       (one block per output row, threads collaborate on the strided
       reduce axis with `simd_width = 1`).
@@ -1255,9 +1351,6 @@ def launch[
             address math for cheap reductions. Softmax / log-softmax
             / layernorm set this; plain sum / max do not.
         BLOCK_SIZE: Threads per block for the inner-axis block tier.
-        TILED_BLOCK_SIZE: Threads per block for the tiled tier (small
-            by design — more blocks per SM under scattered-write
-            pressure).
         COOPERATIVE_BLOCK_SIZE: Threads per block for the non-inner
             cooperative tier.
         WARP_BLOCK_WARPS: Warps per block for the warp tier.
@@ -1292,7 +1385,19 @@ def launch[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime effective_simd = simd_width
 
+    # One wave per block: the smallest tiled block that leaves no lane idle.
+    comptime tiled_block_size = ctx.default_device_info.warp_size
+
+    comptime is_nvidia_device = ctx.default_device_info.api == "cuda"
+    comptime tiled_min_rows_per_sm = (
+        _TILED_MIN_ROWS_NVIDIA if is_nvidia_device else _TILED_MIN_ROWS_DEFAULT
+    )
+    comptime tiled_row_size_cutoff = (
+        _ROW_SIZE_CUTOFF_NVIDIA if is_nvidia_device else _ROW_SIZE_CUTOFF_DEFAULT
+    )
+
     var shape_il = coord_to_index_list(shape)
+    var shape_dc = Coord(shape_il)
     var row_size = shape_il[axis]
     var num_rows = shape_il.flattened_length() // row_size
     if num_rows == 0 or row_size == 0:
@@ -1302,35 +1407,73 @@ def launch[
     comptime if axis != rank - 1:
         var innermost = shape_il[rank - 1]
         var sat_threshold = sm_count * _THREAD_SAT_OUTPUTS_PER_SM
+        # The row size tiled can afford scales with cooperative's wave count.
+        var coop_waves = ceildiv(num_rows, sm_count * _SM_OVERPROVISION)
+        var short_axis_ok = (
+            row_size <= tiled_row_size_cutoff * coop_waves
+            and num_rows >= sm_count * tiled_min_rows_per_sm
+        )
+        var occupancy_ok = short_axis_ok or num_rows >= sat_threshold
         # Tiled non-inner tier: the monoid is W-wide (lanes = the W
         # adjacent output columns the thread owns), `join_parallel` /
         # `reduce` no-op here, and the body's `emit` writes
         # `emit_tile_width` lanes.
-        var use_tiled = (
+        var use_full_tiled = (
             effective_simd > 1
             and innermost >= effective_simd
             and innermost % effective_simd == 0
             and num_rows % effective_simd == 0
-            and num_rows >= sat_threshold
+            and occupancy_ok
         )
 
-        if use_tiled:
+        if use_full_tiled:
             comptime W = effective_simd
             comptime tiled_params = ContextParams(
                 axis=axis,
                 emit_tile_width=W,
-                BLOCK_SIZE=TILED_BLOCK_SIZE,
+                BLOCK_SIZE=tiled_block_size,
                 simd_width=W,
                 target="gpu",
             )
             var num_blocks = min(
-                (num_rows + TILED_BLOCK_SIZE * W - 1) // (TILED_BLOCK_SIZE * W),
+                ceildiv(num_rows, tiled_block_size * W),
                 sm_count * _SM_OVERPROVISION,
             )
             ctx.enqueue_function(
-                _TiledKernel[rank, tiled_params, Body](body, shape_il),
+                _TiledKernel[rank, tiled_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
-                block_dim=TILED_BLOCK_SIZE,
+                block_dim=tiled_block_size,
+                attributes=pdl_launch_attributes(_PDL_LEVEL),
+            )
+            return
+
+        # Scalar (W=1) tiled fallback for short-axis shapes the
+        # full-width tier can't tile evenly. `tier=Serial` marks the
+        # one-thread-per-output contract that `emit_tile_width == 1`
+        # can't carry.
+        # TODO: retry with W/2, W/4, ... before giving up on
+        # vectorization — shapes that miss at W often divide at a
+        # smaller power of two, and scalar loses ~2.4x to the vector
+        # tier at large sizes. Deferred: each extra width instantiates
+        # _TiledKernel for every rowwise body, and the halved widths
+        # are unmeasured.
+        if effective_simd > 1 and short_axis_ok:
+            comptime w1_params = ContextParams(
+                axis=axis,
+                emit_tile_width=1,
+                BLOCK_SIZE=tiled_block_size,
+                simd_width=1,
+                target="gpu",
+                tier=ReduceTier.Serial,
+            )
+            var w1_num_blocks = min(
+                ceildiv(num_rows, tiled_block_size),
+                sm_count * _SM_OVERPROVISION,
+            )
+            ctx.enqueue_function(
+                _TiledKernel[rank, w1_params, Body](body, shape_dc),
+                grid_dim=w1_num_blocks,
+                block_dim=tiled_block_size,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
             )
             return
@@ -1345,7 +1488,7 @@ def launch[
         )
         var coop_num_blocks = min(num_rows, sm_count * _SM_OVERPROVISION)
         ctx.enqueue_function(
-            _BlockKernel[rank, coop_params, Body](body, shape_il),
+            _BlockKernel[rank, coop_params, Body](body, shape_dc),
             grid_dim=coop_num_blocks,
             block_dim=COOPERATIVE_BLOCK_SIZE,
             attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1409,7 +1552,7 @@ def launch[
                 ctx.enqueue_function(
                     _PointwiseSplitkKernel[rank, splitk_params, Body](
                         body,
-                        shape_il,
+                        shape_dc,
                         partials_ptr,
                         Int32(num_splits),
                         Int32(phase),
@@ -1446,7 +1589,7 @@ def launch[
     if row_size <= warp_max:
         comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_BLOCK_WARPS
         var num_blocks = min(
-            (num_rows + WARP_BLOCK_WARPS - 1) // WARP_BLOCK_WARPS,
+            ceildiv(num_rows, WARP_BLOCK_WARPS),
             sm_count * _SM_OVERPROVISION,
         )
 
@@ -1462,7 +1605,7 @@ def launch[
                 target="gpu",
             )
             ctx.enqueue_function(
-                _WarpKernel[rank, warp_params, Body](body, shape_il),
+                _WarpKernel[rank, warp_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=WARP_BLOCK_SIZE,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1514,17 +1657,25 @@ def launch[
         and not has_apple_gpu_accelerator()
     ):
         if num_rows < sm_count and row_size >= _SPLITK_MIN_ROW:
-            # Cap `blocks_per_row` at `_SPLITK_BLOCK_SIZE`: the
-            # last-arriving block's cross-block join loads one partial
-            # per thread, so it can fold at most `BLOCK_SIZE` partials.
-            # Without the cap, an under-saturated grid (e.g.
-            # `num_rows = 1`, large sm_count) sets `blocks_per_row` to
-            # thousands and the reduce silently drops every partial
-            # past index 127.
-            var blocks_per_row = min(
-                _SPLITK_BLOCK_SIZE,
-                max(1, (sm_count * _SM_OVERPROVISION) // num_rows),
-            )
+            # Cap `blocks_per_row` at `_SPLITK_ROW_BLOCK_SIZE`: the
+            # last-arriving block folds one partial per thread, so past
+            # `BLOCK_SIZE` the reduce silently drops partials. Below the cap,
+            # keep splitting while the rows alone cannot fill the device — a
+            # single huge row needs every block it can get.
+            var blocks_per_row: Int
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                blocks_per_row = min(
+                    _SPLITK_ROW_BLOCK_SIZE,
+                    max(
+                        _SPLITK_TARGET_BLOCKS_PER_ROW,
+                        ceildiv(sm_count, num_rows * _SPLITK_FILL_DIVISOR),
+                    ),
+                )
+            else:
+                blocks_per_row = min(
+                    _SPLITK_ROW_BLOCK_SIZE,
+                    max(1, (sm_count * _SM_OVERPROVISION) // num_rows),
+                )
             var total_blocks = num_rows * blocks_per_row
 
             var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
@@ -1533,33 +1684,61 @@ def launch[
             var counters_buf = ctx.enqueue_create_buffer[DType.int32](num_rows)
             ctx.enqueue_memset(counters_buf, Int32(0))
 
-            # Split-K uses scalar (simd=1) thread-striped loads (see
-            # the `is_splitk_tier` branch of `rowwise.reduce`), so no
-            # alignment-based unswitch is needed.
-            comptime splitk_params = ContextParams(
-                axis=axis,
-                emit_tile_width=1,
-                BLOCK_SIZE=_SPLITK_BLOCK_SIZE,
-                tier=ReduceTier.Splitk,
-                simd_width=1,
-                target="gpu",
+            var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+            var counters_ptr = counters_buf.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+
+            @__parameter
+            @__copy_capture(
+                shape_il,
+                body,
+                partials_ptr,
+                counters_ptr,
+                blocks_per_row,
+                total_blocks,
             )
-            ctx.enqueue_function(
-                _SplitkKernel[rank, splitk_params, Body](
-                    body,
-                    shape_il,
-                    partials_buf.unsafe_ptr().unsafe_origin_cast[
-                        MutUntrackedOrigin
-                    ](),
-                    counters_buf.unsafe_ptr().unsafe_origin_cast[
-                        MutUntrackedOrigin
-                    ](),
-                    Int32(blocks_per_row),
-                ),
-                grid_dim=total_blocks,
-                block_dim=_SPLITK_BLOCK_SIZE,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+            def dispatch_splitk[use_simd: Bool]() raises:
+                comptime sw = effective_simd if use_simd else 1
+                comptime splitk_params = ContextParams(
+                    axis=axis,
+                    emit_tile_width=1,
+                    BLOCK_SIZE=_SPLITK_ROW_BLOCK_SIZE,
+                    tier=ReduceTier.Splitk,
+                    simd_width=sw,
+                    target="gpu",
+                )
+                ctx.enqueue_function(
+                    _SplitkKernel[rank, splitk_params, Body](
+                        body,
+                        shape_dc,
+                        partials_ptr,
+                        counters_ptr,
+                        Int32(blocks_per_row),
+                    ),
+                    grid_dim=total_blocks,
+                    block_dim=_SPLITK_ROW_BLOCK_SIZE,
+                    attributes=pdl_launch_attributes(_PDL_LEVEL),
+                )
+
+            # Same two conditions as the block tier's `use_simd_full`: the width
+            # must divide the row (the alignment a body's `ws > 1` load is
+            # promised), and one full stripe pass must fit the row.
+            var use_simd_full = (
+                effective_simd > 1
+                and row_size % effective_simd == 0
+                and row_size
+                >= blocks_per_row * _SPLITK_ROW_BLOCK_SIZE * effective_simd
             )
+            # `unswitch` instantiates both arms, so gate it comptime rather than
+            # folding the tier flag into the predicate: off the tuned path the
+            # wide-stripe kernel could never launch but would still be compiled.
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                unswitch[dispatch_splitk](use_simd_full)
+            else:
+                dispatch_splitk[False]()
 
             _ = partials_buf
             _ = counters_buf
@@ -1607,7 +1786,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1618,7 +1797,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1636,9 +1815,7 @@ def launch[
         # grid stride. Under-utilization gate (#104) drops to sw=1 when
         # `row_size < BLOCK_SIZE * simd` so all threads stay busy with
         # scalar grid-stride loads rather than 1/N of them doing SIMD.
-        var iters_full = (row_size + BLOCK_SIZE * effective_simd - 1) // (
-            BLOCK_SIZE * effective_simd
-        )
+        var iters_full = ceildiv(row_size, BLOCK_SIZE * effective_simd)
         var enough_work_for_simd = row_size >= BLOCK_SIZE * effective_simd
         var use_simd_full = (
             effective_simd > 1
@@ -1665,7 +1842,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BLOCK_SIZE,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1676,7 +1853,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BLOCK_SIZE,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1709,7 +1886,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1720,7 +1897,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),

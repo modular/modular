@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from .block_manager import PrefixCacheHits
 from .block_utils import InsufficientBlocksError
-from .cache_manager import PagedKVCacheManager
+from .cache_manager import BlockCount, PagedKVCacheManager
+from .cache_manager_interface import PagedKVCacheManagerInterface
 from .dummy_cache_manager import DummyKVCache
+from .jenga_cache_manager import JengaKVCacheManager
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -24,11 +26,14 @@ from .transfer_engine import (
 )
 
 __all__ = [
+    "BlockCount",
     "DummyKVCache",
     "InsufficientBlocksError",
+    "JengaKVCacheManager",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "PagedKVCacheManager",
+    "PagedKVCacheManagerInterface",
     "PrefixCacheHits",
     "TransferReqData",
     "available_port",

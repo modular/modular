@@ -511,8 +511,10 @@ def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     # Pump prefill until cleanup_active_transfers observes the completed send
     # transfer — the flattened-engine transfer must be released symmetrically.
     run_until(
-        lambda: not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers,
+        lambda: (
+            not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+        ),
         prefill,
     )
     assert prefill.active_transfers == {}
@@ -701,6 +703,7 @@ def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
     mock_pipeline.has_pending_outputs.return_value = True
     mock_pipeline.execute.return_value = {}
     mock_pipeline.batch_spec_decode_metrics.return_value = None
+    mock_pipeline.overlap_active = True
     mock_pipeline.take_completed_batch_stats.return_value = None
     decode.pipeline = mock_pipeline
 
@@ -755,12 +758,12 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     req_id = ctx.request_id
 
     # Record baseline KV usage.
-    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
 
     # Send to prefill -> allocates KV blocks on decode
     decode.run_iteration()
 
-    pages_after_send = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_after_send = decode.kv_cache.block_count(replica_idx=0).used
     assert pages_after_send > pages_before, (
         "Expected KV blocks to be allocated after sending to prefill"
     )
@@ -776,11 +779,76 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     assert batch[req_id].result is None  # cancelled
 
     # KV blocks must be released back to pool
-    pages_after_cancel = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_after_cancel = decode.kv_cache.block_count(replica_idx=0).used
     assert pages_after_cancel == pages_before, (
         f"KV blocks leaked after cancel: had {pages_before} before, "
         f"{pages_after_cancel} after cancel (expected {pages_before}). "
         f"Delta = {pages_after_cancel - pages_before} pages leaked."
+    )
+
+
+def test_cancel_after_prefill_response_defers_release_until_transfer_completes() -> (
+    None
+):
+    """Cancelling with a transfer in flight must defer KV block release
+    until the transfer engine confirms completion. ``is_complete`` is
+    forced ``False`` while cancelling, since real completion can otherwise
+    race the cancel and make this non-deterministic.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
+
+    q.request_queue.put(ctx)
+    decode.run_iteration()  # sends to prefill
+    prefill.run_iteration()  # prefill runs CE, sends PrefillResponse
+
+    # Decode receives the PrefillResponse: now in both prefill_reqs and
+    # inflight_transfers (dual membership), transfer in flight.
+    run_until(lambda: req_id in decode.inflight_transfers, decode, prefill)
+    assert req_id in decode.prefill_reqs
+
+    # Cancel while the transfer engine still reports it in flight.
+    q.cancel_queue.put([req_id])
+    with patch.object(
+        decode.transfer_engine, "is_complete", return_value=False
+    ):
+        decode.run_iteration()
+
+    # Cancellation must be deferred: still tracked in both dicts, blocks
+    # not yet released, but the client already got its cancelled() result.
+    assert req_id in decode.prefill_reqs
+    assert req_id in decode.inflight_transfers
+    assert req_id in decode.cancelled_reqs
+    pages_while_deferred = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_while_deferred > pages_before, (
+        "Blocks must not be released while the transfer is still in flight"
+    )
+    # The PrefillResponse's own generated-token result was queued before the
+    # cancellation, so scan for the cancelled entry rather than assuming it's
+    # first.
+    all_outputs = []
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        if req_id in batch:
+            all_outputs.append(batch[req_id])
+    assert all_outputs and all_outputs[-1].result is None  # cancelled
+
+    # Pump both schedulers until the transfer actually completes.
+    run_until(lambda: req_id not in decode.inflight_transfers, decode, prefill)
+
+    # Only now must the deferred cleanup have run.
+    assert req_id not in decode.prefill_reqs
+    assert req_id not in decode.cancelled_reqs
+    assert not decode.batch_constructor.contains(req_id)
+    pages_after_completion = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_after_completion == pages_before, (
+        f"KV blocks leaked after deferred cancel cleanup: had "
+        f"{pages_before} before, {pages_after_completion} after "
+        f"(expected {pages_before})."
     )
 
 
@@ -903,11 +971,11 @@ def test_completed_request_cleans_up_all_state() -> None:
     )
 
     # Initially no KV pages allocated on decode
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0
 
     # Send to prefill -> allocates decode KV blocks
     decode.run_iteration()
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) > 0, (
+    assert decode.kv_cache.block_count(replica_idx=0).used > 0, (
         "Expected KV pages allocated after sending to prefill"
     )
 
@@ -916,11 +984,13 @@ def test_completed_request_cleans_up_all_state() -> None:
     # transfer completing and cleans up.
     prefill.run_iteration()
     run_until(
-        lambda: not decode.inflight_transfers
-        and not decode.prefill_reqs
-        and decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-        and not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers,
+        lambda: (
+            not decode.inflight_transfers
+            and not decode.prefill_reqs
+            and decode.kv_cache.block_count(replica_idx=0).used == 0
+            and not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+        ),
         decode,
         prefill,
     )
@@ -932,10 +1002,10 @@ def test_completed_request_cleans_up_all_state() -> None:
     assert prefill.transfer_engine.inflight_send_transfers == {}
 
     # Both KV caches released
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0, (
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0, (
         "Decode KV pages not freed after request completed"
     )
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
 
 
 def test_multiple_requests_all_transfers_cleaned_up() -> None:
@@ -956,11 +1026,13 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
 
     # Both sides need to poll for transfer completion
     run_until(
-        lambda: not decode.inflight_transfers
-        and not decode.prefill_reqs
-        and not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers
-        and prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0,
+        lambda: (
+            not decode.inflight_transfers
+            and not decode.prefill_reqs
+            and not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+            and prefill.kv_cache.block_count(replica_idx=0).used == 0
+        ),
         decode,
         prefill,
     )
@@ -969,11 +1041,12 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
     assert decode.prefill_reqs == {}
     assert prefill.active_transfers == {}
     assert prefill.transfer_engine.inflight_send_transfers == {}
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
 
 
 def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
-    """A request cancelled while prefill is in-flight does not enter the decode batch."""
+    """A request cancelled mid-prefill never enters the decode batch;
+    prefill_reqs cleanup is deferred until its in-flight transfer completes."""
     decode, prefill, q, ctx = (
         create_default_di_scheduler_and_submit_one_request()
     )
@@ -987,12 +1060,18 @@ def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
 
     prefill.run_iteration()
 
-    # Decode processes cancel + in-flight prefill response
-    # Request should not enter the decode batch
+    # Decode processes cancel + in-flight prefill response in one tick: the
+    # transfer that response kicked off is still running, so cleanup is
+    # deferred rather than dropped.
     decode.run_iteration()
 
-    # Request must not be in decode batch or prefill_reqs
-    assert req_id not in decode.prefill_reqs
+    assert req_id in decode.prefill_reqs
+    assert req_id in decode.cancelled_reqs
+    assert not decode.batch_constructor.contains(req_id)
+
+    # Once the transfer actually completes, the deferred cleanup runs.
+    run_until(lambda: req_id not in decode.prefill_reqs, decode, prefill)
+    assert req_id not in decode.cancelled_reqs
     assert not decode.batch_constructor.contains(req_id)
 
     # The final response should be the cancelled sentinel
@@ -1379,6 +1458,51 @@ def test_overlap_prefill_cancel_between_defer_and_resolve() -> None:
             break
 
 
+def test_overlap_prefill_pending_first_token_defers_insufficient_blocks() -> (
+    None
+):
+    """A CE-complete request parked in _pending_first_token still holds its
+    KV blocks and frees them via the same path as active_transfers, so a
+    new CE request hitting InsufficientBlocksError at that moment must
+    requeue as transient rather than raise (SERVOPT-1551)."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, num_blocks=2, page_size=128
+    )
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=200, output_len=5
+    )
+    q.request_queue.put(ctx1)
+
+    # Iteration 1: req1 completes CE and is deferred into
+    # _pending_first_token, pinning both KV blocks. It is not yet promoted to
+    # active_transfers, and clear_tg_reqs() has emptied the TG queue.
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert ctx1.request_id in prefill._pending_first_token
+    assert len(prefill.active_transfers) == 0
+    assert prefill.kv_cache.block_count(0).free == 0
+    assert prefill.batch_constructor._is_anything_inflight(0)
+
+    # A new CE request arrives while req1 pins every block.
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=200, output_len=5
+    )
+    prefill.batch_constructor.enqueue_new_request(ctx2)
+
+    # Iteration 2: batch construction hits InsufficientBlocksError for req2
+    # with an empty batch and no TG work. The pending-first-token request
+    # counts as an in-flight transfer, so the error is transient: req2 is
+    # requeued instead of crashing the worker.
+    prefill.run_iteration()
+    assert ctx2.request_id in prefill.batch_constructor.all_ce_reqs
+
+    # The flush in iteration 2 resolved req1 into a real transfer.
+    assert len(prefill._pending_first_token) == 0
+    assert ctx1.request_id in prefill.active_transfers
+
+
 # E2E tests for DI with overlap scheduling on decode, prefill, or both
 
 
@@ -1520,11 +1644,13 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     prefill.run_iteration()
     prefill.run_iteration()
     run_until(
-        lambda: len(done_request_ids(q)) == num_requests
-        and decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-        and prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
-        and not decode.inflight_transfers
-        and not prefill.active_transfers,
+        lambda: (
+            len(done_request_ids(q)) == num_requests
+            and decode.kv_cache.block_count(replica_idx=0).used == 0
+            and prefill.kv_cache.block_count(replica_idx=0).used == 0
+            and not decode.inflight_transfers
+            and not prefill.active_transfers
+        ),
         decode,
         prefill,
     )
@@ -1538,8 +1664,8 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     assert done_count == num_requests
 
     # All KV pages must be released on both sides
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
     # No lingering transfer state
     assert decode.inflight_transfers == {}
     assert prefill.active_transfers == {}
@@ -2345,7 +2471,7 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
     q.request_queue.put(ctx)
     req_id = ctx.request_id
 
-    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
 
     # Send to prefill but never run prefill, so PrefillResponse never arrives.
     decode.run_iteration()
@@ -2361,7 +2487,7 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
 
     assert req_id not in decode.prefill_reqs
     assert decode.prefill_reqs_per_replica[0] == 0
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == pages_before
+    assert decode.kv_cache.block_count(replica_idx=0).used == pages_before
 
     saw_cancel_response = False
     while not q.response_queue.empty():
@@ -2380,6 +2506,73 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
         if isinstance(msg, CancelRequest) and msg.id == req_id:
             saw_cancel_to_prefill = True
     assert saw_cancel_to_prefill
+
+
+# ---------------------------------------------------------------------------
+# prefill_reqs is counted as in-flight KV work (SERVOPT-1551): a request
+# awaiting prefill converts into a tg_reqs reservation on the same blocks
+# rather than releasing them, but that reservation is then preemptible like
+# any other TG request, so its presence still means an InsufficientBlocksError
+# isn't necessarily a dead end.
+# ---------------------------------------------------------------------------
+
+
+def _setup_tg_alloc_deferred_with_pending_prefill() -> DecodeScheduler:
+    """Drives a decode scheduler into a TG deficit alongside a pending
+    prefill reservation.
+
+    With num_blocks=2 and page_size=128: req1 (100-token prompt) completes
+    prefill, holds one page, and generates until the page fills, at which
+    point its next-token alloc needs a second page. req2's decode-side
+    reservation pins that last page while it waits for a PrefillResponse
+    that never arrives (prefill is not pumped after req2 is sent).
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        num_blocks=2, page_size=128
+    )
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=200
+    )
+    q.request_queue.put(ctx1)
+    decode.run_iteration()
+    prefill.run_iteration()
+    run_until(
+        lambda: decode.batch_constructor.contains(ctx1.request_id),
+        decode,
+        prefill,
+    )
+
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx2)
+    decode.reserve_memory_and_send_to_prefill()
+    assert ctx2.request_id in decode.prefill_reqs
+    assert len(decode.pending_reqs) == 0
+
+    # The upcoming InsufficientBlocksError must be attributable solely to
+    # req2's pending-prefill reservation: no local KV transfers and no
+    # cordoned onloads that would already make the failure non-fatal.
+    assert not decode.kv_cache.pending_transfers_exist(0)
+    assert len(decode.batch_constructor._onloading_reqs) == 0
+
+    return decode
+
+
+def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
+    """A TG alloc failure racing against a pending-prefill reservation
+    defers rather than raising: once req2's PrefillResponse lands, its
+    reservation converts into a preemptible TG request, so the deficit
+    isn't necessarily permanent."""
+    decode = _setup_tg_alloc_deferred_with_pending_prefill()
+    assert len(decode.prefill_reqs) == 1
+
+    # Generate until req1 fills its page; the next alloc needs a second
+    # block, which only req2's pending-prefill reservation holds. Must not
+    # raise -- prefill_reqs counts as in-flight work.
+    for _ in range(40):
+        decode.run_iteration()
 
 
 # ---------------------------------------------------------------------------

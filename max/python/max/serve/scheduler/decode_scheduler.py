@@ -28,7 +28,7 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
 )
 from max.pipelines.lib import (
@@ -94,7 +94,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
@@ -123,6 +123,12 @@ class DecodeScheduler(Scheduler):
         self.prefill_reqs_per_replica: list[int] = [
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
+        # Requests cancelled while their KV transfer was already in flight.
+        # Releasing their blocks immediately would free memory the transfer
+        # is still writing into, racing a future allocation that reuses the
+        # same blocks. cleanup is deferred to check_for_completed_transfers,
+        # once the transfer engine confirms the write actually landed.
+        self.cancelled_reqs: set[RequestID] = set()
 
         self.transfer_engine = KVTransferEngine.from_paged_kv_cache(
             name=f"decode_agent_{uuid.uuid4()}",
@@ -134,6 +140,15 @@ class DecodeScheduler(Scheduler):
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
             dp_padder=dp_padder,
+            # A prefill_reqs entry doesn't free its own blocks on
+            # resolution -- it converts into a tg_reqs reservation on the
+            # same blocks -- but that reservation is then preemptible like
+            # any other TG request, so its presence still means a stuck
+            # allocation isn't necessarily a dead end. inflight_transfers
+            # is a strict subset of prefill_reqs (an entry only exists
+            # there once its matching prefill_reqs entry does), so
+            # counting prefill_reqs alone covers both.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self._last_batch_activity: float = time.monotonic()
@@ -268,9 +283,7 @@ class DecodeScheduler(Scheduler):
             and (
                 self.kv_cache is None
                 or any(
-                    self.kv_cache.get_num_used_pages(replica_idx)
-                    / self.kv_cache.get_num_pages(replica_idx)
-                    < 0.9
+                    self.kv_cache.block_count(replica_idx).used_pct < 90
                     for replica_idx in range(
                         self.scheduler_config.data_parallel_degree
                     )
@@ -326,14 +339,25 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
-                pending = self.prefill_reqs.pop(req_id)
+                pending = self.prefill_reqs[req_id]
                 data = pending.context
                 dst_replica_idx = pending.replica_idx
-                self.prefill_reqs_per_replica[dst_replica_idx] -= 1
 
-                # Release the KV cache blocks that were allocated on the
-                # decode GPU before sending this request to prefill
-                self.kv_cache.release(data)
+                if req_id in self.inflight_transfers:
+                    # A PrefillResponse already landed and the KV transfer
+                    # is running -- releasing these blocks now would free
+                    # memory that transfer is still writing into. Mark it
+                    # cancelled and defer prefill_reqs/inflight_transfers
+                    # cleanup and the block release to
+                    # check_for_completed_transfers, once the transfer
+                    # engine confirms the write actually landed.
+                    self.cancelled_reqs.add(req_id)
+                else:
+                    # No transfer in flight yet, so nothing is writing to
+                    # these blocks -- safe to release immediately.
+                    del self.prefill_reqs[req_id]
+                    self.prefill_reqs_per_replica[dst_replica_idx] -= 1
+                    self.kv_cache.release(data)
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -368,8 +392,9 @@ class DecodeScheduler(Scheduler):
           completed.
 
         Each evicted request releases its KV cache blocks, decrements
-        ``prefill_reqs_per_replica``, and surfaces a cancelled
-        ``SchedulerResult``.
+        ``prefill_reqs_per_replica``, and (unless already in
+        ``cancelled_reqs``, where both already happened) surfaces a
+        cancelled result and cancels prefill.
         """
         ttl_s = self.scheduler_config.decode_request_ttl_s
         if ttl_s is None:
@@ -413,6 +438,14 @@ class DecodeScheduler(Scheduler):
             if pending.sent_at < cutoff
         ]
         for req_id in expired_transfers:
+            # Already cancelled (see _handle_cancelled_requests): the client
+            # was told "cancelled" when the cancel was processed, so don't
+            # re-notify it or re-send a cancel prefill already got -- just
+            # finish the deferred release, since the transfer is now
+            # considered dead rather than merely slow.
+            already_cancelled = req_id in self.cancelled_reqs
+            self.cancelled_reqs.discard(req_id)
+
             pending_transfer = self.inflight_transfers.pop(req_id)
             try:
                 self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
@@ -426,10 +459,12 @@ class DecodeScheduler(Scheduler):
                 pending = self.prefill_reqs.pop(req_id)
                 self.prefill_reqs_per_replica[pending.replica_idx] -= 1
                 self.kv_cache.release(pending.context)
-                self._send_cancel_to_prefill(req_id, pending.context)
-            self.response_queue.put_nowait(
-                {req_id: SchedulerResult.cancelled()}
-            )
+                if not already_cancelled:
+                    self._send_cancel_to_prefill(req_id, pending.context)
+            if not already_cancelled:
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
             logger.warning(
                 "Evicting stuck inflight transfer %s after %.1fs (TTL=%.1fs)",
                 req_id,
@@ -454,12 +489,12 @@ class DecodeScheduler(Scheduler):
         )
 
     def check_for_completed_transfers(self) -> None:
-        """Checks for the completion of KVCache transfers.
+        """Marks completed transfers ready for TG, or -- for ones cancelled
+        mid-flight -- releases their KV blocks now that the write landed.
 
-        For transfers that have been completed, we will mark the request as ready
-        for token generation by enqueuing it into the text batch constructor.
-
-        We also ensure that the metadata is cleaned up in the transfer engine.
+        Must run after ``_handle_cancelled_requests`` within the same
+        iteration, so a same-tick cancellation is already in
+        ``cancelled_reqs`` before this checks it.
         """
 
         request_ids = list(self.inflight_transfers.keys())
@@ -474,10 +509,27 @@ class DecodeScheduler(Scheduler):
             del self.inflight_transfers[request_id]
             self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
 
-            # When cancelled, the request is removed from prefill_reqs
-            # therefore the request should only be added to the active_batch
-            # if it is still in prefill_reqs.
+            if request_id in self.cancelled_reqs:
+                # Cancelled while the transfer was in flight (see
+                # _handle_cancelled_requests): the write has now actually
+                # landed, so it's finally safe to release the blocks and
+                # drop the deferred prefill_reqs entry.
+                self.cancelled_reqs.discard(request_id)
+                pending = self.prefill_reqs.pop(request_id, None)
+                if pending is not None:
+                    self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+                    self.kv_cache.release(pending.context)
+                continue
+
             if request_id not in self.prefill_reqs:
+                # Shouldn't happen: every cancellation now routes through
+                # cancelled_reqs above. Don't silently promote an orphaned
+                # transfer into a TG request if it does.
+                logger.warning(
+                    "Transfer for request %s completed with no matching "
+                    "prefill_reqs or cancelled_reqs entry -- dropping.",
+                    request_id,
+                )
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
@@ -487,8 +539,17 @@ class DecodeScheduler(Scheduler):
                 pending.context, pending.replica_idx
             )
 
-        # Manage for cancelled requests
-        self._handle_cancelled_requests()
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of prefill_reqs entries on this replica -- inflight_transfers
+        is a strict subset (an entry only exists there once its matching
+        prefill_reqs entry does), so counting the superset covers both.
+        Scoped to replica_idx: a reservation on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for pending in self.prefill_reqs.values()
+            if pending.replica_idx == replica_idx
+        )
 
     @traced
     def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
@@ -555,6 +616,11 @@ class DecodeScheduler(Scheduler):
 
         # Eagerly reserve memory and send to prefill worker
         self.reserve_memory_and_send_to_prefill()
+
+        # Process cancellations before completions: a cancellation and its
+        # transfer's completion can land in the same tick, and cancelled_reqs
+        # must be marked before check_for_completed_transfers checks it.
+        self._handle_cancelled_requests()
 
         # Update the active decode batch
         self.check_for_completed_transfers()
@@ -624,7 +690,7 @@ class DecodeScheduler(Scheduler):
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
-            batch_execution_time_is_previous=is_overlap_active,
+            overlap_active=is_overlap_active,
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
             else None,

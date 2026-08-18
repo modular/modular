@@ -175,6 +175,70 @@ def test_streaming_reassembles_call() -> None:
     assert json.loads(args) == {"location": "Paris"}
 
 
+def _string_arg_schema(prop: str = "expression") -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {prop: {"type": "string"}},
+        "required": [prop],
+    }
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("2", "2"), ("null", "null"), ("true", "true"), ("3.14", "3.14")],
+)
+def test_streaming_coerces_bare_scalar_to_string(
+    raw: str, expected: str
+) -> None:
+    # A bare value whose text is a JSON scalar must be coerced back to the
+    # schema's string type, mirroring the non-streaming coerce_arguments path.
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        f"<tool_call>calc<arg_key>expression</arg_key><arg_value>{raw}",
+        "</arg_value></tool_call>",
+    ]
+    _, name, args = _collect_stream(parser, chunks)
+    assert name == "calc"
+    assert json.loads(args) == {"expression": expected}
+
+
+def test_streaming_leaves_non_json_string_untouched() -> None:
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        "<tool_call>calc<arg_key>expression</arg_key><arg_value>2 + 2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": "2 + 2"}
+
+
+def test_streaming_without_schema_does_not_coerce() -> None:
+    # No set_streaming_tool_schemas: bare scalars decode as JSON (unchanged).
+    parser = GlmToolParser()
+    chunks = [
+        "<tool_call>calc<arg_key>expression</arg_key><arg_value>2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": 2}
+
+
+def test_streaming_coercion_is_prefix_stable_across_deltas() -> None:
+    # The value's tokens straddle deltas; the emitted diffs must still
+    # concatenate into valid JSON carrying the coerced string.
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        "<tool_call>calc<arg_key>expr",
+        "ession</arg_key><arg_value>2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": "2"}
+
+
 # ---------------------------------------------------------------------------
 # Constrained-decoding grammar (xgrammar StructuralTag)
 # ---------------------------------------------------------------------------

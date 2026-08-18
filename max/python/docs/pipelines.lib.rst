@@ -79,6 +79,7 @@ Utilities
    CompilationTimer
    HuggingFaceRepo
    ModelManifest
+   VisionPreprocessCache
    WeightPathParser
 
 Functions

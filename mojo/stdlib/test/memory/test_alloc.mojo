@@ -82,7 +82,7 @@ def test_alloc_and_free_round_trip_reads_and_writes_values() raises:
     var a = alloc(layout)
     var ptr = a.unsafe_ptr()
     for i in range(5):
-        ptr.unsafe_offset(i).unsafe_write(i)
+        ptr.unsafe_offset(i).write(i)
     # `assert_equal` can raise, and an `Allocation` must be consumed on
     # every path (including the raising one). So accumulate into a plain `Bool`,
     # `dealloc` the handle, and only then assert.
@@ -105,7 +105,7 @@ def test_alloc_with_layout_single_supports_one_element() raises:
     var layout = Layout[Int64].single()
     var a = alloc(layout)
     var ptr = a.unsafe_ptr()
-    ptr.unsafe_write(42)
+    ptr.write(42)
     var value = ptr[]
     dealloc(a^)
     assert_equal(value, 42)
@@ -115,7 +115,7 @@ def test_allocation_unsafe_span_covers_layout_count() raises:
     var a = alloc(Layout[Int](count=3))
     var ptr = a.unsafe_ptr()
     for i in range(3):
-        ptr.unsafe_offset(i).unsafe_write(i * 10)
+        ptr.unsafe_offset(i).write(i * 10)
     var span = a.unsafe_span()
     var span_len = len(span)
     var first = span[0]
@@ -136,7 +136,7 @@ def test_allocation_count_matches_layout() raises:
 def test_allocation_unsized_then_unsafe_with_layout_round_trip() raises:
     var layout = Layout[Int](count=4)
     var a = alloc(layout)
-    a.unsafe_ptr().unsafe_write(99)
+    a.unsafe_ptr().write(99)
     var thin = a^.into_thin()
     var value = thin.unsafe_ptr()[]
     dealloc(thin^.unsafe_with_layout(layout))
@@ -146,8 +146,8 @@ def test_allocation_unsized_then_unsafe_with_layout_round_trip() raises:
 def test_allocation_unsafe_leak_then_reconstruct() raises:
     var layout = Layout[Int](count=2)
     var ptr = alloc(layout).unsafe_leak()
-    ptr.unsafe_write(5)
-    ptr.unsafe_offset(1).unsafe_write(6)
+    ptr.write(5)
+    ptr.unsafe_offset(1).write(6)
     var total = ptr[unsafe_offset=0] + ptr[unsafe_offset=1]
     dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
     assert_equal(total, 11)
@@ -156,7 +156,7 @@ def test_allocation_unsafe_leak_then_reconstruct() raises:
 def test_thin_allocation_unsafe_with_layout_and_unsafe_ptr() raises:
     var layout = Layout[Int](count=1)
     var thin = ThinAllocation(unsafe_owned_ptr=alloc(layout).unsafe_leak())
-    thin.unsafe_ptr().unsafe_write(7)
+    thin.unsafe_ptr().write(7)
     var value = thin.unsafe_ptr()[]
     dealloc(thin^.unsafe_with_layout(layout))
     assert_equal(value, 7)
@@ -192,18 +192,9 @@ def test_deletable_allocation_auto_deallocs_at_last_use() raises:
     var total = 0
     for i in range(3):
         var deletable = alloc(Layout[Int](count=1)).into_managed()
-        deletable.unsafe_ptr().unsafe_write(i)
+        deletable.unsafe_ptr().write(i)
         total += deletable.unsafe_ptr()[]
     assert_equal(total, 0 + 1 + 2)
-
-
-def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
-    var deleted = False
-    var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
-    var deletable = alloc(Layout[type_of(obs)](count=1)).into_managed()
-    deletable.unsafe_ptr().unsafe_write(obs^)
-    _ = deletable^
-    assert_false(deleted)
 
 
 def test_dealloc_does_not_run_pointee_destructors() raises:
@@ -224,6 +215,17 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var ran = deleted
     dealloc(a^)
     assert_true(ran)
+
+
+def test_alloc_count_0() raises:
+    comptime ZST = Array[Int, 0]
+    var zst_alloc = alloc(Layout[ZST](count=0)).into_managed()
+    assert_equal(zst_alloc.layout().count(), 0)
+    dealloc(zst_alloc^)
+
+    var int_alloc = alloc(Layout[Int](count=0)).into_managed()
+    assert_equal(int_alloc.layout().count(), 0)
+    dealloc(int_alloc^)
 
 
 def test_alloc_free_single_zst() raises:

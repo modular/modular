@@ -79,7 +79,7 @@ def _drive_one_request(
     kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])
     ctx.update(42)
-    kv_manager.step([[ctx]])
+    kv_manager.step(ctx)
     return ctx
 
 

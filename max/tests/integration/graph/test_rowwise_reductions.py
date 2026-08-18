@@ -73,8 +73,10 @@ _INT_OUT = {"argmax", "argmin"}
 # Small inner-axis column counts: even + odd, small + a wider row.
 _INNER_COLS = [32, 127, 128, 512]
 _INNER_ROWS = 8
-# Non-inner (reduce over axis 0): (reduce_len, cols). Even + odd reduce length.
-_NONINNER_SHAPES = [(33, 16), (64, 33)]
+# Non-inner (reduce over axis 0): (reduce_len, cols). Even + odd reduce length,
+# even + odd cols, and short reduce axes crossed with SIMD-divisible and
+# non-SIMD-divisible cols at small and large output counts.
+_NONINNER_SHAPES = [(33, 16), (64, 33), (8, 8192), (8, 8193), (8, 9)]
 
 
 def _torch_dtype(dtype: DType) -> torch.dtype:

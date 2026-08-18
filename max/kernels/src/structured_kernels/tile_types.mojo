@@ -515,6 +515,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    unpack_fp4: Bool = False,
 ](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
@@ -530,6 +531,9 @@ def create_tma_tile[
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
         swizzle_mode: TMA swizzle mode.
+        unpack_fp4: When True, `tensor` is nibble-packed E2M1 held as `uint8`
+            and the copy pads it into shared memory so a K extent spans one
+            byte per element.
 
     Args:
         ctx: Device context for TMA descriptor creation.
@@ -543,6 +547,7 @@ def create_tma_tile[
         swizzle_mode=swizzle_mode,
         __tile_shape=_to_index_list[tma_tile_layout](),
         __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
+        unpack_fp4=unpack_fp4,
     ](ctx, tensor)
 
 

@@ -30,7 +30,7 @@ Sink is handled entirely in `Attention.__init__` (rowmax/rowsum are
 pre-filled from sink_weights); the kernel body needs no sink-specific code.
 """
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
@@ -116,7 +116,7 @@ __extension Attention:
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
         )
-        comptime _smem_depth = ceildiv(Self.depth, Self.BK) * Self.BK
+        comptime _smem_depth = align_up(Self.depth, Self.BK)
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
             mma_shape=Self.mma_shape,

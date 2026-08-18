@@ -3209,7 +3209,7 @@ def pack_filter_from_fcrs(
     var rscf_buf_alloc = alloc[Scalar[filter.dtype]](
         {count = total_elems}
     ).into_managed()
-    var rscf_buf = UnsafePointer(rscf_buf_alloc.unsafe_ptr())
+    var rscf_buf = rscf_buf_alloc.unsafe_ptr()
 
     # Transpose FCRS→RSCF or FCQRS→QRSCF and create a TileTensor for packing.
     comptime if filter_lt.rank == 4:
@@ -3838,9 +3838,7 @@ def _get_cudnn_meta(
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = UnsafePointer(
-        alloc[CuDNNConvMeta]({count = 1}).unsafe_leak()
-    )
+    var new_ptr_meta = alloc[CuDNNConvMeta]({count = 1}).unsafe_leak()
     new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -3971,9 +3969,7 @@ def _get_cached_cudnn_meta_nhwc_full(
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = UnsafePointer(
-        alloc[CachedCuDNNMetaNHWCFull]({count = 1}).unsafe_leak()
-    )
+    var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull]({count = 1}).unsafe_leak()
     new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -4350,9 +4346,9 @@ def _get_cached_miopen_meta[
         check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = UnsafePointer(
-        alloc[CachedMIOpenMeta[conv_rank]]({count = 1}).unsafe_leak()
-    )
+    var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](
+        {count = 1}
+    ).unsafe_leak()
     new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -4821,7 +4817,9 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
@@ -6030,17 +6028,17 @@ def _conv3d_cudnn_depth_tiled[
 
     # Descriptor arrays (reused across tiles).
     var input_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var input_dims = UnsafePointer(input_dims_alloc.unsafe_ptr())
+    var input_dims = input_dims_alloc.unsafe_ptr()
     var output_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var output_dims = UnsafePointer(output_dims_alloc.unsafe_ptr())
+    var output_dims = output_dims_alloc.unsafe_ptr()
     var filter_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var filter_dims = UnsafePointer(filter_dims_alloc.unsafe_ptr())
+    var filter_dims = filter_dims_alloc.unsafe_ptr()
     var pad_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var pad_a = UnsafePointer(pad_a_alloc.unsafe_ptr())
+    var pad_a = pad_a_alloc.unsafe_ptr()
     var stride_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var stride_a = UnsafePointer(stride_a_alloc.unsafe_ptr())
+    var stride_a = stride_a_alloc.unsafe_ptr()
     var dilation_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var dilation_a = UnsafePointer(dilation_a_alloc.unsafe_ptr())
+    var dilation_a = dilation_a_alloc.unsafe_ptr()
 
     # Filter dims (constant across tiles).
     filter_dims[0] = Int32(filter.dim[0]())
@@ -6295,7 +6293,7 @@ def _conv3d_cudnn[
     # --- Set up cuDNN descriptors (required every call — shared state) ---
     # Input: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
     var input_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var input_dims = UnsafePointer(input_dims_alloc.unsafe_ptr())
+    var input_dims = input_dims_alloc.unsafe_ptr()
     input_dims[0] = Int32(input.dim[0]())  # N
     input_dims[1] = Int32(input.dim[4]())  # C
     input_dims[2] = Int32(input.dim[1]())  # D
@@ -6314,7 +6312,7 @@ def _conv3d_cudnn[
 
     # Filter: FCQRS layout [F, C/groups, Q, R, S], described as NCHW format.
     var filter_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var filter_dims = UnsafePointer(filter_dims_alloc.unsafe_ptr())
+    var filter_dims = filter_dims_alloc.unsafe_ptr()
     filter_dims[0] = Int32(filter.dim[0]())  # F (out_channels)
     filter_dims[1] = Int32(filter.dim[1]())  # C (in_channels / groups)
     filter_dims[2] = Int32(filter.dim[2]())  # Q (depth)
@@ -6333,19 +6331,19 @@ def _conv3d_cudnn[
 
     # Convolution: 3 spatial dimensions.
     var pad_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var pad_a = UnsafePointer(pad_a_alloc.unsafe_ptr())
+    var pad_a = pad_a_alloc.unsafe_ptr()
     pad_a[0] = Int32(padding[0])
     pad_a[1] = Int32(padding[1])
     pad_a[2] = Int32(padding[2])
 
     var stride_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var stride_a = UnsafePointer(stride_a_alloc.unsafe_ptr())
+    var stride_a = stride_a_alloc.unsafe_ptr()
     stride_a[0] = Int32(stride[0])
     stride_a[1] = Int32(stride[1])
     stride_a[2] = Int32(stride[2])
 
     var dilation_a_alloc = alloc[Int32]({count = 3}).into_managed()
-    var dilation_a = UnsafePointer(dilation_a_alloc.unsafe_ptr())
+    var dilation_a = dilation_a_alloc.unsafe_ptr()
     dilation_a[0] = Int32(dilation[0])
     dilation_a[1] = Int32(dilation[1])
     dilation_a[2] = Int32(dilation[2])
@@ -6370,7 +6368,7 @@ def _conv3d_cudnn[
 
     # Output: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
     var output_dims_alloc = alloc[Int32]({count = 5}).into_managed()
-    var output_dims = UnsafePointer(output_dims_alloc.unsafe_ptr())
+    var output_dims = output_dims_alloc.unsafe_ptr()
     output_dims[0] = Int32(output.dim[0]())  # N
     output_dims[1] = Int32(output.dim[4]())  # C (out_channels)
     output_dims[2] = Int32(output.dim[1]())  # D_out

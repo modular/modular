@@ -90,6 +90,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "google/gemma-4-31B-it__jenga": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_jenga.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
@@ -167,7 +168,6 @@ def is_vision_model(model: str) -> bool:
             "gemma-3",
             "gemma-4",
             "idefics",
-            "inkling",
             "internvl",
             "kimi-k2",
             "kimi-vl",
@@ -473,16 +473,18 @@ def get_server_cmd(
             SGLANG += [f"--tp-size={gpu_count}"]
             VLLM += [f"--tensor-parallel-size={gpu_count}"]
 
-    # Force MAX to rely solely on the KVConnector for prefix cache hits to test
-    # cpu/disk KV offload code paths.
-    if framework in ("max", "max-ci") and (
-        "--kv-connector" in serve_extra_args
-        or (
+    if framework in ("max", "max-ci"):
+        # Force MAX to rely solely on the KVConnector for prefix cache hits to test
+        # cpu/disk KV offload code paths.
+        if "--kv-connector" in serve_extra_args or (
             recipe is not None
             and recipe.model.kv_cache.kv_connector is not None
-        )
-    ):
-        env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+        ):
+            env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+
+        # Enable experimental Jenga KV cache allocator
+        if recipe_path is not None and "_jenga" in recipe_path.casefold():
+            env["MODULAR_USE_JENGA_KV_CACHE"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"

@@ -35,7 +35,7 @@ from std.format._utils import _WriteBufferStack
 from std.os import PathLike as stdPathLike, abort, makedirs, remove
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
-from std.ffi import c_int, c_ssize_t, external_call, _CPointer
+from std.ffi import c_int, c_ssize_t, external_call
 from std.sys import size_of
 from std.sys._libc_errno import ErrNo, get_errno
 from std.sys.info import platform_map
@@ -638,7 +638,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
     def _write(
         self,
-        ptr: Pointer[mut=False, UInt8, _, address_space=_],
+        ptr: ImmPointer[UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.

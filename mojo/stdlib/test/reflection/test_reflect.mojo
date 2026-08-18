@@ -458,8 +458,8 @@ def test_closure_capture_struct_reflection() raises:
 
     closure()
 
-    # field_types()[0] of the wrapper struct is the capture struct.
-    comptime captures = reflect[reflect[type_of(closure)].field_types()[0]]
+    # The closure type is the storage struct; its fields are the captures.
+    comptime captures = reflect[type_of(closure)]
     # closure captures s — one field.
     assert_equal(captures.field_count(), 1)
 
@@ -467,6 +467,29 @@ def test_closure_capture_struct_reflection() raises:
     comptime s_type = captures.field_types()[0]
     assert_true(reflect[s_type].is_struct())
     assert_equal(reflect[s_type].field_count(), 2)
+
+
+def test_imm_capture_field_type_name() raises:
+    """`{imm}`/`{mut}` capture fields are refs; `name()` prints the pointee."""
+    var a: Int = 0
+    var b: Int = 1
+    var s = String("x")
+
+    def closure() {imm a, imm b, mut s}:
+        _ = a
+        _ = b
+        s += "!"
+
+    closure()
+
+    comptime captures = reflect[type_of(closure)]
+    assert_equal(captures.field_count(), 3)
+    comptime a_type = captures.field_types()[0]
+    assert_false(reflect[a_type].is_struct())
+    assert_equal(reflect[a_type].name(), "ref[SIMD[DType.int, 1]]")
+    comptime s_type = captures.field_types()[2]
+    assert_false(reflect[s_type].is_struct())
+    assert_equal(reflect[s_type].name(), "ref[String]")
 
 
 def test_nested_closure_capture_reflection() raises:
@@ -483,8 +506,8 @@ def test_nested_closure_capture_reflection() raises:
 
     outer()
 
-    # field_types()[0] of the wrapper struct is the capture struct.
-    comptime outer_captures = reflect[reflect[type_of(outer)].field_types()[0]]
+    # The outer closure type is its storage struct.
+    comptime outer_captures = reflect[type_of(outer)]
     # outer captures y, z, inner — three fields.
     assert_equal(outer_captures.field_count(), 3)
 
@@ -492,14 +515,10 @@ def test_nested_closure_capture_reflection() raises:
     comptime inner_type = outer_captures.field_types()[2]
     assert_true(reflect[inner_type].is_struct())
 
-    # inner's wrapper struct has one field: its capture struct.
+    # inner's storage has one capture field: x (UInt32).
     comptime inner_r = reflect[inner_type]
     assert_equal(inner_r.field_count(), 1)
-
-    # inner's capture struct is itself a struct containing x (UInt32).
-    comptime inner_captures = inner_r.field_types()[0]
-    assert_true(reflect[inner_captures].is_struct())
-    assert_equal(reflect[inner_captures].field_count(), 1)
+    assert_true(reflect[inner_r.field_types()[0]].is_struct())
 
 
 def test_deeply_nested_closure_capture_reflection() raises:
@@ -520,30 +539,23 @@ def test_deeply_nested_closure_capture_reflection() raises:
 
     c()
 
-    # Navigate into c's capture struct.
-    comptime c_captures = reflect[reflect[type_of(c)].field_types()[0]]
+    # Navigate into c's storage struct.
+    comptime c_captures = reflect[type_of(c)]
     # c captures z, w, b — three fields.
     assert_equal(c_captures.field_count(), 3)
 
     # b is c's third capture.
     comptime b_type = reflect[c_captures.field_types()[2]]
     assert_true(b_type.is_struct())
-    assert_equal(b_type.field_count(), 1)
-
-    # b's capture struct is itself a struct containing y and a.
-    comptime b_captures = reflect[b_type.field_types()[0]]
-    assert_true(b_captures.is_struct())
-    assert_equal(b_captures.field_count(), 2)
+    # b's storage has two capture fields: y and a.
+    assert_equal(b_type.field_count(), 2)
 
     # a is b's second capture and is a struct.
-    comptime a_type = reflect[b_captures.field_types()[1]]
+    comptime a_type = reflect[b_type.field_types()[1]]
     assert_true(a_type.is_struct())
+    # a's storage has one capture field: x.
     assert_equal(a_type.field_count(), 1)
-
-    # a's capture struct is itself a struct containing x.
-    comptime a_captures = reflect[a_type.field_types()[0]]
-    assert_true(a_captures.is_struct())
-    assert_equal(a_captures.field_count(), 1)
+    assert_true(reflect[a_type.field_types()[0]].is_struct())
 
 
 def main() raises:

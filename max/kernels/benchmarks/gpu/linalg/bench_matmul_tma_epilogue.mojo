@@ -154,7 +154,7 @@ def _check_verification_result[
     var result_host_alloc = alloc[Scalar[DType.float32]](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
-    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -257,9 +257,8 @@ def bench_matmul_tma_epilogue[
     cb_epilogue.init_on_device(init_type, ctx)
 
     @__copy_capture(cb_a, cb_b, cb_c, cb_epilogue)
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -323,7 +322,7 @@ def bench_matmul_tma_epilogue[
     @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -442,11 +441,11 @@ def bench_matmul_tma_epilogue[
             var epilogue_host_alloc = alloc[Scalar[dtype]](
                 {count = c_size}
             ).into_managed()
-            var epilogue_host = UnsafePointer(epilogue_host_alloc.unsafe_ptr())
+            var epilogue_host = epilogue_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
                 {count = c_size}
             ).into_managed()
-            var c_ref_host = UnsafePointer(c_ref_host_alloc.unsafe_ptr())
+            var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)
             ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()

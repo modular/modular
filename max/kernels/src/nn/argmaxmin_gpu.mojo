@@ -20,7 +20,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.math import ceildiv, iota
+from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -94,7 +94,7 @@ def _argmaxmin_scan[
     var lane_stride = block_size * simd_width
     var trip = lane_stride * unroll
     var num_trips = num_elements // trip
-    var vec_end = (num_elements // simd_width) * simd_width
+    var vec_end = align_down(num_elements, simd_width)
 
     for t in range(num_trips):
         var offset = t * trip + tid * simd_width
@@ -168,7 +168,7 @@ def _argmaxmin_block_partial[
 
     # Ragged tail: fewer than `simd_width` elements, all at higher indices
     # than anything scanned above, so a strict insert keeps first-index.
-    var vec_end = (count // simd_width) * simd_width
+    var vec_end = align_down(count, simd_width)
     if tid < count - vec_end:
         partial.insert(chunk[vec_end + tid], vec_end + tid)
 

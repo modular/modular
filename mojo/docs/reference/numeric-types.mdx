@@ -608,7 +608,7 @@ Variables have a fixed type and never convert implicitly.
 ## Explicit conversions
 
 Converting between numeric types always requires an explicit
-constructor or cast. Mojo doesn't perform implicit numeric
+initializer or cast. Mojo doesn't perform implicit numeric
 conversions between variables:
 
 ```mojo
@@ -626,7 +626,7 @@ var b = a.cast[DType.int32]()     # Float32 → Int32
 var c = a.cast[DType.float64]()   # Float32 → Float64
 ```
 
-Between `Int` and `SIMD`-based types, use constructors:
+Between `Int` and `SIMD`-based types, use initializers:
 
 ```mojo
 var i = 42                        # Int

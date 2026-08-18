@@ -71,11 +71,77 @@ def _rs_rms_norm_graph(
     signals: Signals,
     rows_per_device: list[int],
     group_size: int | None,
+    with_residual: bool = True,
 ) -> Graph:
     devices = signals.devices
     num_devices = len(devices)
+    if not with_residual:
+        return _rs_rms_norm_graph_no_residual(
+            signals, rows_per_device, group_size
+        )
     with Graph(
         "reduce_scatter_rms_norm",
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=[rows_per_device[i], COLS],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ]
+            + [
+                TensorType(dtype=DType.bfloat16, shape=[COLS], device=device)
+                for device in devices
+            ]
+            + [
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=[rows_per_device[i], COLS],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ]
+            + signals.input_types(),
+        ),
+    ) as graph:
+        inputs = [v.tensor for v in graph.inputs[:num_devices]]
+        gammas = [v.tensor for v in graph.inputs[num_devices : 2 * num_devices]]
+        residuals = [
+            v.tensor for v in graph.inputs[2 * num_devices : 3 * num_devices]
+        ]
+        sigs = [v.buffer for v in graph.inputs[3 * num_devices :]]
+        normed, residual = ops.reduce_scatter_rms_norm(
+            inputs=inputs,
+            signal_buffers=sigs,
+            gammas=gammas,
+            epsilon=EPS,
+            residuals=residuals,
+            weight_offset=WEIGHT_OFFSET,
+            group_size=group_size,
+        )
+        graph.output(*normed, *residual)
+        return graph
+
+
+def _rs_rms_norm_graph_no_residual(
+    signals: Signals,
+    rows_per_device: list[int],
+    group_size: int | None,
+) -> Graph:
+    """The op with `residuals` omitted: a plain reduce-scatter + norm.
+
+    No residual input block at all, so the operand slots the op still requires
+    are the ones the builder fills with the inputs. That is what makes the
+    zero-residual oracle in `_check` load-bearing here: if `has_residual` were
+    not threaded, the kernel would add each device's own activations to the
+    sum and the oracle would miss by a whole input.
+    """
+    devices = signals.devices
+    num_devices = len(devices)
+    with Graph(
+        "reduce_scatter_rms_norm_no_residual",
         input_types=cast(
             list[Type[Any]],
             [
@@ -93,13 +159,12 @@ def _rs_rms_norm_graph(
             + signals.input_types(),
         ),
     ) as graph:
-        inputs = [v.tensor for v in graph.inputs[:num_devices]]
-        gammas = [v.tensor for v in graph.inputs[num_devices : 2 * num_devices]]
-        sigs = [v.buffer for v in graph.inputs[2 * num_devices :]]
         normed, residual = ops.reduce_scatter_rms_norm(
-            inputs=inputs,
-            signal_buffers=sigs,
-            gammas=gammas,
+            inputs=[v.tensor for v in graph.inputs[:num_devices]],
+            signal_buffers=[v.buffer for v in graph.inputs[2 * num_devices :]],
+            gammas=[
+                v.tensor for v in graph.inputs[num_devices : 2 * num_devices]
+            ],
             epsilon=EPS,
             weight_offset=WEIGHT_OFFSET,
             group_size=group_size,
@@ -121,13 +186,29 @@ def _host_rmsnorm(shard_f32: np.ndarray, gamma_f32: np.ndarray) -> np.ndarray:
 
 
 def _inputs_and_gammas(
-    rows_per_device: list[int], devices: list[Accelerator]
-) -> tuple[list[Buffer], list[Buffer], list[np.ndarray], list[np.ndarray]]:
-    """Positive varied per-device activations + a DISTINCT gamma per device."""
+    rows_per_device: list[int],
+    devices: list[Accelerator],
+    group_size: int,
+) -> tuple[
+    list[Buffer],
+    list[Buffer],
+    list[Buffer],
+    list[np.ndarray],
+    list[np.ndarray],
+    list[np.ndarray],
+]:
+    """Positive varied per-device activations + a DISTINCT gamma per device.
+
+    The residual is REPLICATED within each group, which the op requires: every
+    rank adds its own shard of it, so ranks disagreeing on the residual would
+    each fold a different value into the same group sum.
+    """
     tensor_inputs: list[Buffer] = []
     gamma_inputs: list[Buffer] = []
+    residual_inputs: list[Buffer] = []
     host_acts: list[np.ndarray] = []
     host_gammas: list[np.ndarray] = []
+    host_residuals: list[np.ndarray] = []
     offset = 0
     for i, rows in enumerate(rows_per_device):
         size = rows * COLS
@@ -137,6 +218,17 @@ def _inputs_and_gammas(
         tensor_inputs.append(_to_device_bf16(arr, devices[i]))
         offset += size
 
+        # Keyed on the GROUP, so it is bit-identical within one and differs
+        # across them: folding a sibling group's residual would show up.
+        group_id = i // group_size
+        res = (
+            (((np.arange(size) + 13 * group_id) % 17) - 8)
+            .reshape(rows, COLS)
+            .astype(np.float32)
+        )
+        host_residuals.append(_bf16(res))
+        residual_inputs.append(_to_device_bf16(res, devices[i]))
+
         # Per-device gamma spaced 0.5 apart, WELL outside the 2e-2 tolerance
         # below: at 0.01 the tolerance swallows the difference and a
         # group-local-vs-device gamma index swap goes undetected.
@@ -144,7 +236,14 @@ def _inputs_and_gammas(
         gamma = gamma.astype(np.float32)
         host_gammas.append(_bf16(gamma))
         gamma_inputs.append(_to_device_bf16(gamma, devices[i]))
-    return tensor_inputs, gamma_inputs, host_acts, host_gammas
+    return (
+        tensor_inputs,
+        gamma_inputs,
+        residual_inputs,
+        host_acts,
+        host_gammas,
+        host_residuals,
+    )
 
 
 def _check(
@@ -154,6 +253,7 @@ def _check(
     rows_per_device: list[int],
     host_acts: list[np.ndarray],
     host_gammas: list[np.ndarray],
+    host_residuals: list[np.ndarray],
     label: str,
 ) -> None:
     normed_out = outputs[:num_gpus]
@@ -164,7 +264,12 @@ def _check(
         group_rows = rows_per_device[group_start]
         # The reduce-scatter sums ONLY this group's devices; a handler that
         # slices the wrong window reduces a different (or a cross-group) set.
-        group_sum = _bf16(np.sum([host_acts[d] for d in group], axis=0))
+        # Peer sum rounded to bf16 first, then the residual added and rounded
+        # again -- the order both arms use. It enters the total exactly once.
+        group_sum = _bf16(
+            _bf16(np.sum([host_acts[d] for d in group], axis=0))
+            + host_residuals[group_start]
+        )
 
         row = 0
         for local_rank, dev_idx in enumerate(group):
@@ -202,6 +307,59 @@ def _check(
         (4, 1024, "two_launch"),  # 256 rows/rank -> above -> two-launch
     ],
 )
+def test_reduce_scatter_rms_norm_no_residual_execution(
+    num_gpus: int, rows: int, regime: str
+) -> None:
+    """Omitting the residual gives a plain reduce-scatter + norm, both arms.
+
+    Both arms, because the residual is folded in two structurally different
+    places -- inside the fused kernel, and in the two-launch arm's
+    reduce-scatter epilogue -- so a flag threaded to only one of them passes a
+    single-arm test.
+    """
+    if num_gpus > accelerator_count():
+        pytest.skip(
+            f"Not enough GPUs ({num_gpus}) for {regime} reduce_scatter_rms_norm."
+        )
+
+    rows_per_device = [rows] * num_gpus
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _rs_rms_norm_graph(
+        signals, rows_per_device, group_size=None, with_residual=False
+    )
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, _, host_acts, host_gammas, _ = (
+        _inputs_and_gammas(rows_per_device, devices, num_gpus)
+    )
+    outputs = compiled.execute(
+        *tensor_inputs, *gamma_inputs, *signals.buffers()
+    )
+    # A zero residual is the exact oracle: adding 0.0 then rounding to bf16 is
+    # the identity, so `_check` reduces to reduce-scatter + norm.
+    zero_residuals = [np.zeros_like(a) for a in host_acts]
+    _check(
+        list(outputs),
+        num_gpus,
+        num_gpus,
+        rows_per_device,
+        host_acts,
+        host_gammas,
+        zero_residuals,
+        f"{regime}-no-residual",
+    )
+
+
+@pytest.mark.parametrize(
+    "num_gpus, rows, regime",
+    [
+        (4, 8, "fused"),  # 2 rows/rank -> below threshold -> fused kernel
+        (4, 1024, "two_launch"),  # 256 rows/rank -> above -> two-launch
+    ],
+)
 def test_reduce_scatter_rms_norm_execution(
     num_gpus: int, rows: int, regime: str
 ) -> None:
@@ -219,11 +377,16 @@ def test_reduce_scatter_rms_norm_execution(
     session = InferenceSession(devices=[host, *devices])
     compiled = session.load(graph)
 
-    tensor_inputs, gamma_inputs, host_acts, host_gammas = _inputs_and_gammas(
-        rows_per_device, devices
-    )
+    (
+        tensor_inputs,
+        gamma_inputs,
+        residual_inputs,
+        host_acts,
+        host_gammas,
+        host_residuals,
+    ) = _inputs_and_gammas(rows_per_device, devices, num_gpus)
     outputs = compiled.execute(
-        *tensor_inputs, *gamma_inputs, *signals.buffers()
+        *tensor_inputs, *gamma_inputs, *residual_inputs, *signals.buffers()
     )
     _check(
         list(outputs),
@@ -232,6 +395,7 @@ def test_reduce_scatter_rms_norm_execution(
         rows_per_device,
         host_acts,
         host_gammas,
+        host_residuals,
         regime,
     )
 
@@ -260,11 +424,11 @@ def test_reduce_scatter_rms_norm_empty_batch(group_size: int | None) -> None:
     session = InferenceSession(devices=[host, *devices])
     compiled = session.load(graph)
 
-    tensor_inputs, gamma_inputs, _, _ = _inputs_and_gammas(
-        rows_per_device, devices
+    tensor_inputs, gamma_inputs, residual_inputs, _, _, _ = _inputs_and_gammas(
+        rows_per_device, devices, group_size or num_gpus
     )
     outputs = compiled.execute(
-        *tensor_inputs, *gamma_inputs, *signals.buffers()
+        *tensor_inputs, *gamma_inputs, *residual_inputs, *signals.buffers()
     )
 
     # The contract is that it does not raise and returns empty shards. Every
@@ -310,11 +474,16 @@ def test_grouped_reduce_scatter_rms_norm_execution() -> None:
     session = InferenceSession(devices=[host, *devices])
     compiled = session.load(graph)
 
-    tensor_inputs, gamma_inputs, host_acts, host_gammas = _inputs_and_gammas(
-        rows_per_device, devices
-    )
+    (
+        tensor_inputs,
+        gamma_inputs,
+        residual_inputs,
+        host_acts,
+        host_gammas,
+        host_residuals,
+    ) = _inputs_and_gammas(rows_per_device, devices, group_size or num_gpus)
     outputs = compiled.execute(
-        *tensor_inputs, *gamma_inputs, *signals.buffers()
+        *tensor_inputs, *gamma_inputs, *residual_inputs, *signals.buffers()
     )
     _check(
         list(outputs),
@@ -323,6 +492,7 @@ def test_grouped_reduce_scatter_rms_norm_execution() -> None:
         rows_per_device,
         host_acts,
         host_gammas,
+        host_residuals,
         "grouped-2xTP2",
     )
 
@@ -350,11 +520,16 @@ def test_grouped_reduce_scatter_rms_norm_ragged_execution() -> None:
     session = InferenceSession(devices=[host, *devices])
     compiled = session.load(graph)
 
-    tensor_inputs, gamma_inputs, host_acts, host_gammas = _inputs_and_gammas(
-        rows_per_device, devices
-    )
+    (
+        tensor_inputs,
+        gamma_inputs,
+        residual_inputs,
+        host_acts,
+        host_gammas,
+        host_residuals,
+    ) = _inputs_and_gammas(rows_per_device, devices, group_size or num_gpus)
     outputs = compiled.execute(
-        *tensor_inputs, *gamma_inputs, *signals.buffers()
+        *tensor_inputs, *gamma_inputs, *residual_inputs, *signals.buffers()
     )
     _check(
         list(outputs),
@@ -363,5 +538,6 @@ def test_grouped_reduce_scatter_rms_norm_ragged_execution() -> None:
         rows_per_device,
         host_acts,
         host_gammas,
+        host_residuals,
         "grouped-ragged",
     )

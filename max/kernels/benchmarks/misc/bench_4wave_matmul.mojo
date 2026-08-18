@@ -224,7 +224,7 @@ def verify_matmul[
     var result_host_alloc = alloc[Scalar[DType.float32]](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
-    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -421,9 +421,8 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -476,7 +475,7 @@ def bench_matmul[
     @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

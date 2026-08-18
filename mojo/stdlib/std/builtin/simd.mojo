@@ -607,10 +607,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    @deprecated(use=length)
-    comptime size = Self.length
-    """A temporary deprecated alias while renaming SIMD's parameter `size`."""
-
     comptime MAX = Self(_max_or_inf[Self.dtype]())
     """Gets the maximum value for the SIMD value, potentially +inf."""
 
@@ -3787,7 +3783,6 @@ def _convert_float8_to_f32[
     else:
 
         @always_inline
-        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -3843,7 +3838,6 @@ def _convert_f32_to_float8[
     else:
 
         @always_inline
-        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -4048,7 +4042,6 @@ def _convert_f32_to_float8_ue8m0[
     else:
 
         @always_inline
-        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -4155,10 +4148,9 @@ def _bfloat16_to_f32[
     size: SIMDLength
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @always_inline
-    @__parameter
     def wrapper_fn[
         input_dtype: DType, result_dtype: DType
-    ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
+    ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
         return _bfloat16_to_f32_scalar(
             val._refine[DType.bfloat16](),
         )._refine[result_dtype]()
@@ -4178,7 +4170,7 @@ def _simd_apply[
     //,
     func: def[input_dtype: DType, result_dtype: DType](
         Scalar[input_dtype]
-    ) capturing -> Scalar[result_dtype],
+    ) thin -> Scalar[result_dtype],
     *,
     result_dtype: DType = input_dtype,
 ](x: SIMD[input_dtype, simd_width]) -> SIMD[result_dtype, simd_width]:
@@ -4211,7 +4203,7 @@ def _simd_apply[
     //,
     func: def[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType](
         Scalar[lhs_dtype], Scalar[rhs_dtype]
-    ) capturing -> Scalar[result_dtype],
+    ) thin -> Scalar[result_dtype],
     *,
     result_dtype: DType,
 ](x: SIMD[_, simd_width], y: SIMD[_, simd_width]) -> SIMD[

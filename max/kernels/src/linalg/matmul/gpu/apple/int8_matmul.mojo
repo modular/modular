@@ -48,7 +48,7 @@ from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from max.gpu.host import DeviceContext
 from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
-from std.math import round
+from std.math import ceildiv, round
 from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
@@ -113,7 +113,7 @@ struct Int8DequantWriter[
 
     Parameters:
         c_origin: Mutable `MutOrigin` of the C output write view (inferred).
-        s_origin: Immutable `ImmutOrigin` shared by the scale and bias read
+        s_origin: Immutable `ImmOrigin` shared by the scale and bias read
             views (inferred).
         c_type: Output element type (`bf16` / `fp16` / `fp32`).
         c_layout: `TensorLayout` of the C output `TileTensor`.
@@ -712,8 +712,8 @@ struct AppleM5Int8MatMul[
         comptime SG_M_i = Int32(Self.SG_M)
         comptime SG_N_i = Int32(Self.SG_N)
 
-        var grid_m = (m + BM_i - 1) // BM_i
-        var grid_n = (n + BN_i - 1) // BN_i
+        var grid_m = ceildiv(m, BM_i)
+        var grid_n = ceildiv(n, BN_i)
 
         var tile_mn = Self.morton_decode_2d_rect(
             UInt32(block_idx.x), log2_grid_m, log2_grid_n
@@ -880,8 +880,8 @@ def enqueue_apple_int8_matmul[
         "Apple int8 matmul: K and N must fit in UInt16",
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0

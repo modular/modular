@@ -15,24 +15,22 @@
 
 All tests use fake local safetensors/GGUF repos with no network access.
 
-Encoding/weight-path inference for LLM models happens in the consumer
-(an ``ArchConfig.initialize``): it calls the pure
-``_select_quantization_encoding()`` helper to pick the effective encoding,
-then ``validate_and_resolve_with_resolved_quantization_encoding()`` to
-validate device compatibility and discover weight files -- not inside
-``MAXModelConfig.resolve()``, which only validates device_specs and parses
-weight-path identity. Most tests below drive those two steps directly
-(via the helpers) rather than going through the full
-``PipelineConfig``/registry machinery, to keep the setup narrow.
+Encoding/weight-path resolution for LLM models happens at construction:
+``PipelineConfig.from_args`` calls ``_populate_weights_and_encoding()``
+once the architecture is known, which selects the effective encoding and
+discovers weight files. Most tests below drive that resolver (or the pure
+``_select_quantization_encoding()`` helper) directly rather than going
+through the full ``PipelineConfig``/registry machinery, to keep the setup
+narrow.
 """
 
 import json
 import os
-import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import get_args
 from unittest.mock import patch
 
 import pytest
@@ -40,7 +38,7 @@ from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.config.model_config import (
-    _select_dtype_cast,
+    _populate_weights_and_encoding,
     _select_quantization_encoding,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -49,6 +47,10 @@ from max.pipelines.weights.hf_utils import (
 )
 from max.pipelines.weights.hf_utils import (
     generate_local_model_path as _real_generate_local_model_path,
+)
+from test_common.fake_weights import (
+    write_fake_safetensors,
+    write_mixed_safetensors,
 )
 
 _DEFAULT_ENCODING: SupportedEncoding = "bfloat16"
@@ -62,40 +64,6 @@ CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
 # ---------------------------------------------------------------------------
 
 
-def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
-    """Write a minimal safetensors file with a single tensor of the given dtype."""
-    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00\x00")
-
-
-def _write_mixed_safetensors(path: str, tensors: dict[str, str]) -> None:
-    """Write a safetensors file with multiple tensors of different dtypes.
-
-    Args:
-        path: File path to write.
-        tensors: Mapping of tensor name to safetensors dtype string,
-            e.g. {"model.layers.0.weight": "U8", "model.norm.weight": "BF16"}.
-    """
-    header: dict[str, dict[str, object]] = {}
-    offset = 0
-    for name, dtype in tensors.items():
-        header[name] = {
-            "dtype": dtype,
-            "shape": [1],
-            "data_offsets": [offset, offset + 2],
-        }
-        offset += 2
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00" * offset)
-
-
 def _make_local_repo(
     tmpdir: str,
     safetensors_files: dict[str, dict[str, str]] | None = None,
@@ -106,7 +74,7 @@ def _make_local_repo(
     Args:
         tmpdir: Root temp directory.
         safetensors_files: Mapping of relative path to {tensor_name: dtype}.
-            If the dict has one entry, uses _write_fake_safetensors for simplicity.
+            If the dict has one entry, uses write_fake_safetensors for simplicity.
         gguf_files: List of relative GGUF filenames to create as empty files.
 
     Returns:
@@ -118,9 +86,9 @@ def _make_local_repo(
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             if len(tensors) == 1:
                 _, dtype = next(iter(tensors.items()))
-                _write_fake_safetensors(full_path, dtype=dtype)
+                write_fake_safetensors(full_path, dtype=dtype)
             else:
-                _write_mixed_safetensors(full_path, tensors)
+                write_mixed_safetensors(full_path, tensors)
     if gguf_files:
         for rel_path in gguf_files:
             full_path = os.path.join(tmpdir, rel_path)
@@ -183,16 +151,16 @@ def _resolve_encoding_and_weight_path(
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
-    """Resolves both encoding and weight_path the way a consumer does in
-    production: select the effective encoding, then validate device
-    compatibility and discover weight files against that resolved encoding.
+    """Resolves both encoding and weight_path via
+    :func:`_populate_weights_and_encoding`, the resolver
+    ``PipelineConfig.from_args`` runs. Every encoding is treated as
+    architecture-supported so these tests exercise inference/discovery, not
+    the supported-encodings gate.
     """
-    encoding = _select_quantization_encoding(config, default_encoding)
-    cast_from, _ = _select_dtype_cast(config, default_encoding)
-    config.quantization_encoding = encoding
-    config.validate_and_resolve_with_resolved_quantization_encoding(
-        resolved_encoding=encoding,
-        applied_dtype_cast_from=cast_from,
+    _populate_weights_and_encoding(
+        config,
+        default_encoding=default_encoding,
+        supported_encodings=set(get_args(SupportedEncoding)),
         default_weights_format=default_weights_format,
     )
 
@@ -502,7 +470,7 @@ class TestEncodingFromExplicitWeightPath:
         """Encoding should be parsed from filename when a hint is present."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fp = os.path.join(tmpdir, "model-bf16.safetensors")
-            _write_fake_safetensors(fp, dtype="BF16")
+            write_fake_safetensors(fp, dtype="BF16")
             explicit = [Path(fp)]
             config = _make_config(
                 tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit

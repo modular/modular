@@ -147,8 +147,9 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @__parameter
-    def run_func() raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1](
                 a_device,
@@ -170,13 +171,8 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        bencher_iter_custom[kernel_launch](b, context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("copy_pdl", input_id=String("length=", length)),
@@ -218,8 +214,9 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @__parameter
-    def run_func() raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1_n](
                 a_device,
@@ -239,13 +236,8 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        bencher_iter_custom[kernel_launch](b, context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("copy_n", input_id=String("length=", length)),

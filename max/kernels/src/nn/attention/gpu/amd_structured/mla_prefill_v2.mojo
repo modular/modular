@@ -1874,9 +1874,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(num_keys, Self.KV_BLOCK)))
         )
         comptime assert (
             Self.NUM_HEADS % Self.NUM_KV_HEADS == 0
@@ -1961,21 +1959,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var max_q_end_pos_i32 = (
                 max_tile_idx_local_i32 + 1
             ) * _QBS_I32 + Int32(start_pos)
-            var max_num_tiles_calc_i32 = (
-                max_q_end_pos_i32 + _KVB_I32 - 1
-            ) // _KVB_I32
+            var max_num_tiles_calc_i32 = ceildiv(max_q_end_pos_i32, _KVB_I32)
             var max_num_tiles_local: Int
             comptime if mask_t == CausalMask:
-                var capped_i32 = (
-                    max_num_tiles_calc_i32 if max_num_tiles_calc_i32
-                    < num_tiles_i32 else num_tiles_i32
-                )
-                var floor4_i32 = (
-                    Int32(4) if num_tiles_i32 >= 4 else num_tiles_i32
-                )
-                max_num_tiles_local = Int(
-                    floor4_i32 if capped_i32 < floor4_i32 else capped_i32
-                )
+                var capped_i32 = min(max_num_tiles_calc_i32, num_tiles_i32)
+                var floor4_i32 = min(Int32(4), num_tiles_i32)
+                max_num_tiles_local = Int(max(capped_i32, floor4_i32))
             else:
                 max_num_tiles_local = num_tiles
 

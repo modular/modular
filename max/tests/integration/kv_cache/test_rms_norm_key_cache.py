@@ -319,7 +319,8 @@ def test_rms_norm_new_key_cache(
 
     for ctx in batch:
         ctx.update(42)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 

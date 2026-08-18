@@ -28,6 +28,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -110,7 +111,14 @@ from .apple.fa_prefill import (
     fa_prefill_apple,
 )
 from .amd_structured.attention import Attention
-from .amd_structured.config import decode_mma_shape
+from .amd_structured.config import (
+    _MHA_DECODE_FOLD_MAX_ROWS,
+    _MHA_DECODE_FOLD_WM,
+    _mha_decode_fold_warp_m,
+    decode_mma_shape,
+    mha_decode_fold_tile_q_seq_len,
+    mha_decode_fold_wide_mma,
+)
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
     MhaPrefillV2,
@@ -298,8 +306,6 @@ def flash_attention[
 # verifies K+1 tokens and an EAGLE3 draft's step-0 catch-up declares that width
 # plus one, so K <= 7 needs 9.
 comptime _MHA_DECODE_FOLD_MAX_S = 9
-# One 16-row MFMA M-tile per warp.
-comptime _MHA_DECODE_FOLD_WM = 16
 
 
 @always_inline
@@ -337,20 +343,16 @@ def _mha_decode_fold_ok[
         `True` when the token fold applies to this shape.
     """
 
-    # Warp M-tiles the single-KV-head arm may stack, one warp each. 8 fits a
-    # 16-query-head 1+7 verify (128 rows, 512 threads); its 96 KiB of LDS drops
-    # the CU to one CTA, but at twice the warps, so waves per CU hold.
-    comptime max_m_tiles = 8
-
     return (
         has_amd_gpu_accelerator()
-        and not _is_amd_rdna()
+        and not has_amd_rdna_gpu_accelerator()
         # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
         # is tested through the fold; widen once a test covers them.
         and (dtype == DType.bfloat16 or dtype.is_float8())
-        # The fold stacks query rows over `_MHA_DECODE_FOLD_WM`-row warp
-        # M-tiles, so it needs a decode MFMA that tall. bf16 always is; fp8
-        # picks between a 16-row and a 32-row shape by depth.
+        # The row bounds below count `_MHA_DECODE_FOLD_WM`-row M-tiles, so this
+        # arm's starting shape must be that tall. Asks for the UNFOLDED shape on
+        # purpose: a width that clears `mha_decode_fold_wide_mma` overrides it
+        # to 32 rows, which tile 16 evenly either way.
         and decode_mma_shape[dtype, depth, num_heads]()[0]
         == _MHA_DECODE_FOLD_WM
         # At WN == BN each warp's K and V register tiles span the whole depth,
@@ -382,15 +384,15 @@ def _mha_decode_fold_ok[
         # groups. Each brings its own block geometry:
         and (
             (
-                # Single KV head: `num_heads*S` rows stack over 16-row warp
-                # M-tiles, so they must tile evenly and need two — at
-                # num_warps_m == 1 P stops being warp-local
-                # (`Attention._warp_local_p`) and falls back to the
-                # register-resident P chain never exercised there.
+                # Single KV head: `num_heads*S` rows stack over 16-row M-tiles,
+                # so they must tile evenly and need two — at num_warps_m == 1 P
+                # stops being warp-local and falls back to the register-resident
+                # chain never exercised there. `_mha_decode_fold_warp_m` picks
+                # how many tiles a warp takes, within both bounds.
                 group == num_heads
                 and (num_heads * S) % _MHA_DECODE_FOLD_WM == 0
                 and num_heads * S >= 2 * _MHA_DECODE_FOLD_WM
-                and num_heads * S <= max_m_tiles * _MHA_DECODE_FOLD_WM
+                and num_heads * S <= _MHA_DECODE_FOLD_MAX_ROWS
             )
             or (
                 # One query head per KV head: a CTA owns just its S token rows,
@@ -1227,7 +1229,7 @@ def flash_attention_dispatch[
                     # and output.dtype == DType.bfloat16
                     # and (config.depth == 64 or config.depth == 128)
                     # and has_amd_gpu_accelerator()
-                    # and not _is_amd_rdna()
+                    # and not has_amd_rdna_gpu_accelerator()
                     # and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
@@ -1693,16 +1695,47 @@ def flash_attention_dispatch[
                                     # S == 1 geometry; a single KV head stacks
                                     # `num_heads*S` rows over warp M-tiles.
                                     comptime _fold_narrow = S == 1 or group == 1
+                                    # Token SLOTS the tile is built from: only
+                                    # the geometry below follows this, never a
+                                    # stride. The kernel is handed the REAL
+                                    # width and re-derives this from the SAME
+                                    # expression, so keep the two textually
+                                    # identical rather than guarding either
+                                    # side, or the agreement is a coincidence.
+                                    comptime TILE_S = mha_decode_fold_tile_q_seq_len[
+                                        dtype, num_heads, group, S
+                                    ]()
+                                    # Rows the stacked arm's tile holds, dead
+                                    # ones included.
+                                    comptime fold_rows = num_heads * TILE_S
+                                    comptime _fold_wide = (
+                                        not _fold_narrow
+                                        and mha_decode_fold_wide_mma[
+                                            dtype, num_heads, group, TILE_S
+                                        ]()
+                                    )
                                     comptime BM_S = (
-                                        BM if _fold_narrow else num_heads * S
+                                        BM if _fold_narrow else fold_rows
                                     )
                                     comptime BN_S = (
                                         BN if _fold_narrow else fold_BN
                                     )
                                     comptime WM_S = (
-                                        WM if _fold_narrow else _MHA_DECODE_FOLD_WM
+                                        WM if _fold_narrow else _mha_decode_fold_warp_m[
+                                            dtype, num_heads, group, TILE_S
+                                        ]()
                                     )
                                     comptime WN_S = WN if _fold_narrow else BN_S
+                                    # One MMA strip per SMEM block, so BK is READ
+                                    # OFF the shape the kernel will pick rather
+                                    # than restated beside it — a restated
+                                    # literal mis-counts the QK/PV strip loops.
+                                    comptime BK_S = decode_mma_shape[
+                                        dtype,
+                                        depth,
+                                        num_heads,
+                                        fold_wide_mma=True,
+                                    ]()[2] if _fold_wide else BK
                                     comptime num_threads_S = (
                                         (BM_S // WM_S)
                                         * (BN_S // WN_S)
@@ -1717,7 +1750,7 @@ def flash_attention_dispatch[
                                         type_of(valid_length.value()).layout,
                                         BM=BM_S,
                                         BN=BN_S,
-                                        BK=BK,
+                                        BK=BK_S,
                                         WM=WM_S,
                                         WN=WN_S,
                                         depth=depth,
@@ -4461,8 +4494,11 @@ def mha_decoding[
         _use_valid_length: `True` to read per-sequence valid lengths.
         _is_cache_length_accurate: `True` when cache length is exact.
         decoding_warp_split_k: Enable warp-level split-K within a CTA.
-        q_seq_len: Query tokens per sequence folded into the MMA M dimension
-            (`BM = num_heads * q_seq_len`, heads-inner). 1 is plain decode.
+        q_seq_len: Query tokens per sequence folded into the MMA M dimension;
+            1 is plain decode. A property of the TENSOR, not the geometry —
+            the fold may build a taller tile (`mha_decode_fold_tile_q_seq_len`).
+            The non-ragged arms take every Q/output/split-K stride from it;
+            ragged recovers the true length from `input_row_offsets`.
 
     Args:
         q_ptr: Pointer to query data.
@@ -4496,6 +4532,29 @@ def mha_decoding[
     comptime assert not (
         q_seq_len > 1 and is_nvidia_gpu()
     ), "the q_seq_len > 1 decode token fold is AMD-only"
+    # Token SLOTS the tile is built from. DERIVED rather than passed: the host
+    # sizes `BM`/`WM`/`BK` from this same function, so launch and kernel cannot
+    # disagree. Sizes geometry ONLY — every stride below uses `q_seq_len`.
+    comptime tile_q_seq_len = mha_decode_fold_tile_q_seq_len[
+        q_type, num_heads, group, q_seq_len
+    ]()
+    # `Attention.mask_status` re-derives the fold width from the TILE and uses
+    # it as the decode span base `num_keys - fold_seq_len`, which a padded tile
+    # overstates. `_mha_decode_fold_ok` excludes such masks today; this keeps
+    # lifting that exclusion a build break rather than a wrong span.
+    comptime assert not (
+        tile_q_seq_len != q_seq_len and mask_t.check_mask_during_decoding
+    ), (
+        "a padded fold tile and check_mask_during_decoding are mutually"
+        " exclusive: mask_status would span the tile's slots, not the tokens"
+    )
+    # `_mha_decode_fold_ok` checks that ceiling against the width a sequence
+    # CARRIES, and the pad raises the tile above it — so the height that really
+    # launches gets its own check, read off `BM` rather than re-derived.
+    comptime assert (
+        not (q_seq_len > 1 and group == num_heads)
+        or BM <= _MHA_DECODE_FOLD_MAX_ROWS
+    ), "the padded fold tile exceeds the fold's query-row ceiling"
 
     var seq_len: Int
     var q_batch_offset: Int
@@ -4672,7 +4731,7 @@ def mha_decoding[
                 attn_seq_len = seq_len
 
             var attention = Attention[
-                config, group, sink, token_gen=True, q_seq_len=q_seq_len
+                config, group, sink, token_gen=True, q_seq_len=tile_q_seq_len
             ](
                 output_ptr + output_batch_offset,
                 q_ptr + q_batch_offset,

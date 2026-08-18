@@ -121,6 +121,21 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "fake_weights",
+    testonly = True,
+    srcs = ["fake_weights.py"],
+    imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+)
+
+modular_py_library(
     name = "github_utils",
     testonly = True,
     srcs = ["github_utils.py"],

@@ -94,7 +94,8 @@ async def test_step() -> None:
         kv_manager.runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
@@ -160,14 +161,14 @@ async def test_release_returns_pages_to_the_claiming_replica_once() -> None:
     ctx = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(ctx, replica_idx=1)
     kv_manager.alloc(ctx)
-    assert kv_manager.get_num_used_pages(1) > 0
+    assert kv_manager.block_count(replica_idx=1).used > 0
 
     kv_manager.release(ctx)
 
     # The pages went back to the replica that lent them, and replica 0 -- the
     # index a claim-less release would fall back to -- was never touched.
-    assert kv_manager.get_num_used_pages(1) == 0
-    assert kv_manager.get_num_used_pages(0) == 0
+    assert kv_manager.block_count(replica_idx=1).used == 0
+    assert kv_manager.block_count(replica_idx=0).used == 0
 
     with pytest.raises(ValueError, match="not claimed"):
         kv_manager.release(ctx)
@@ -191,17 +192,19 @@ async def test_fetch_paged() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reserve_claims_and_releases() -> None:
+async def test_claim_alloc_and_release() -> None:
     kv_manager = _make_kv_manager()
     contexts = [
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
     ]
 
-    with kv_manager.reserve([contexts]):
-        for context in contexts:
-            assert kv_manager.contains(context)
+    for context in contexts:
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
+        assert kv_manager.contains(context)
 
     for context in contexts:
+        kv_manager.release(context)
         assert not kv_manager.contains(context)
 
 
@@ -572,7 +575,7 @@ async def test_multi_cache_lifecycle() -> None:
     ctx.update(42)
 
     # Single step covers all caches.
-    kv_manager.step([[ctx]])
+    kv_manager.step(ctx)
 
     # Single release covers all caches.
     kv_manager.release(ctx)

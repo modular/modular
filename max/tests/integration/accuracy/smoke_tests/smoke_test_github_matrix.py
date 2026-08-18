@@ -22,12 +22,12 @@ from collections.abc import Mapping
 import click
 
 RUNNERS = {
-    "B200": "modrunner-b200",
+    "B200": "modrunner-b200-efa",
     "MI355": "modrunner-mi355",
-    "2xB200": "modrunner-b200-2x",
+    "2xB200": "modrunner-b200-efa-2x",
     "2xMI355": "modrunner-mi355-2x",
     "4xMI355": "modrunner-mi355-4x",
-    "8xB200": "modrunner-b200-8x",
+    "8xB200": "modrunner-b200-efa-8x",
     "8xMI355": "modrunner-mi355-8x",
     "8xB200_internal": "modrunner-prod-2-b200-8x",
 }
@@ -45,6 +45,7 @@ NON_XL = (set(RUNNERS) - XL) | {"8xB200_internal"}
 DISABLE = set(RUNNERS)
 # Runs only on the dedicated internal 8xB200 runner; everything else excluded.
 INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
+B200_2X_ONLY = set(RUNNERS) - {"2xB200"}
 # The AMD members of XL. A B200-only model excludes the whole set rather than
 # naming one runner, so adding the next AMD runner is a change here and not a
 # sweep over every entry that forgot to mention it.
@@ -111,6 +112,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | AMD_XL | {"max"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL | {"8xMI355"},
     "openai/gpt-oss-20b": XL | {"2xMI355"},
+    "thinkingmachines/Inkling-Small-NVFP4": B200_2X_ONLY,
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
@@ -140,6 +142,9 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | AMD_XL,
+    # Jenga requires data_parallel_degree=1 and doesn't support KVConnector /
+    # disaggregated serving yet, so it can't run on multi-GPU runners.
+    "google/gemma-4-31B-it__jenga": MULTI,
 }
 
 MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}

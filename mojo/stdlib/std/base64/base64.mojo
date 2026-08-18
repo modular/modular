@@ -79,7 +79,7 @@ def _ascii_to_value(char: Byte) raises -> Byte:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -107,7 +107,7 @@ def b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
+def b64encode(input_bytes: ImmSpan[Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:

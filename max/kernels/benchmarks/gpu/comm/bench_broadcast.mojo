@@ -232,9 +232,8 @@ def bench_broadcast[
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_immut()
@@ -260,7 +259,7 @@ def bench_broadcast[
                     rank=ctx_idx,
                 )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

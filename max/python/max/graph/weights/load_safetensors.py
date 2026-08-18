@@ -217,6 +217,18 @@ class SafetensorWeights(Weights):
             Shape(tensor.shape),
         )
 
+    def close(self) -> None:
+        """Releases the checkpoint file mappings and cached tensors.
+
+        Drops the file handles and cached tensors (shared with prefix
+        clones), letting the mappings unmap once nothing else references
+        them. Only call after the weights are on their execution device;
+        later reads through this object raise.
+        """
+        self._st_file_handles.clear()
+        self._st_weight_map.clear()
+        self._allocated.clear()
+
     def exists(self) -> bool:
         """Returns True if a tensor exists for the current name."""
         return self.name in self._tensors_to_file_idx

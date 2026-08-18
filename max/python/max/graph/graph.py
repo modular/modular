@@ -648,7 +648,7 @@ class Graph:
             include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
-            to ``.mojoc``/``.mojopkg`` or ``.mojo`` sources with custom ops.
+            to ``.mojoc`` or ``.mojo`` sources with custom ops.
         kernel_library: Optional pre-built kernel library to use. Defaults to
             ``None`` (a new library is created from ``custom_extensions`` if
             needed).
@@ -884,7 +884,7 @@ class Graph:
                 type is added automatically for operation sequencing.
             path: An optional path to a saved subgraph definition to load
                 from disk.
-            custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
+            custom_extensions: Paths to custom op libraries (``.mojoc``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
             is_device_graph: Should the subgraph be synthesized to a device graph

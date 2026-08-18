@@ -35,12 +35,21 @@ def test_default_algo_matches_legacy() -> None:
     assert all(isinstance(h, bytes) and len(h) == 8 for h in legacy)
 
 
-def test_ahash64_rejects_seed_or_salt() -> None:
+def test_ahash64_salt_isolation() -> None:
+    """Two requests with same prompt but different salt must not collide."""
     tokens = np.arange(128, dtype=np.int32)
-    with pytest.raises(ValueError, match="algo"):
-        hash_request_tokens(tokens, 128, seed=b"\x00" * 32)
-    with pytest.raises(ValueError, match="algo"):
-        hash_request_tokens(tokens, 128, salt="x")
+    a = hash_request_tokens(tokens, 128, algo="ahash64", salt="user-1")
+    b = hash_request_tokens(tokens, 128, algo="ahash64", salt="user-2")
+    assert a != b
+    assert all(x != y for x, y in zip(a, b, strict=False))
+
+
+def test_ahash64_seed_isolation() -> None:
+    """Different seeds also produce different chains."""
+    tokens = np.arange(128, dtype=np.int32)
+    a = hash_request_tokens(tokens, 128, algo="ahash64", seed=b"\x00" * 32)
+    b = hash_request_tokens(tokens, 128, algo="ahash64", seed=b"\xab" * 32)
+    assert a != b
 
 
 def test_token_hash_override_replaces_only_target_token_and_restores() -> None:

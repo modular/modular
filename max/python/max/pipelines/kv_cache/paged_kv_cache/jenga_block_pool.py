@@ -36,7 +36,7 @@ def lcm(*numbers: int) -> int:
 
 def compute_jenga_ratios(
     available_bytes: int, cache_sizes: Mapping[str, int]
-) -> tuple[int, dict[str, int]]:
+) -> tuple[int, int, dict[str, int]]:
     """Fits a byte budget to a huge block geometry every cache tiles exactly.
 
     A huge block is the least common multiple of the caches' page sizes, so it
@@ -50,8 +50,8 @@ def compute_jenga_ratios(
         cache_sizes: Each cache's page size in bytes.
 
     Returns:
-        How many huge blocks the budget holds, and how many pages of each cache
-        one huge block holds.
+        How many huge blocks the budget holds, size of each huge block in bytes,
+        and how many pages of each cache it holds.
 
     Raises:
         ValueError: If the arguments are not positive, or if the budget is too
@@ -82,10 +82,14 @@ def compute_jenga_ratios(
             f"{to_human_readable_bytes(2 * huge_page_bytes)} -- because huge "
             f"block 0 is the null page every cache shares."
         )
-    return num_huge_blocks, {
-        cache_id: huge_page_bytes // size
-        for cache_id, size in cache_sizes.items()
-    }
+    return (
+        num_huge_blocks,
+        huge_page_bytes,
+        {
+            cache_id: huge_page_bytes // size
+            for cache_id, size in cache_sizes.items()
+        },
+    )
 
 
 class JengaBlockPool:

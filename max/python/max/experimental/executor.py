@@ -258,9 +258,11 @@ class JitExecutor:
                 if not self.sync_on_interpreter_fallback:
                     raise
                 warnings.warn(
-                    f"The eager interpreter failed on this graph ({e!r});"
-                    " serving it with the compiled model instead. Please"
-                    " file a bug against MAX Framework.",
+                    (
+                        f"The eager interpreter failed on this graph ({e!r});"
+                        " serving it with the compiled model instead. Please"
+                        " file a bug against MAX Framework."
+                    ),
                     stacklevel=2,
                 )
 
@@ -268,6 +270,60 @@ class JitExecutor:
 
 
 CompositeExecutor = JitExecutor
+
+
+class _FallbackExecutor:
+    """Executes via the interpreter, compiling only graphs it cannot serve.
+
+    Unlike :class:`JitExecutor`, nothing is compiled in the background: a
+    graph the interpreter serves never touches the compiler, and a graph it
+    refuses is compiled synchronously in-process and cached for the life of
+    this executor.
+
+    Internal executor for CI use, selected with
+    ``MAX_EAGER_EXECUTOR=fallback-internal``.  Not a supported mode; it may
+    change or be removed without notice.
+    """
+
+    cache: dict[EagerCacheKey, engine.Model]
+    lock: threading.Lock
+
+    def __init__(self, *, interpreter: Executor) -> None:
+        """Initializes the executor.
+
+        Args:
+            interpreter: Executor serving graphs that don't need compilation.
+        """
+        self.cache = {}
+        self.lock = threading.Lock()
+        self.interpreter = interpreter
+
+    def execute(
+        self, graph: Graph, inputs: Sequence[driver.Buffer]
+    ) -> Sequence[driver.Buffer | None]:
+        """Executes *graph*, compiling it only if the interpreter fails."""
+        try:
+            return self.interpreter.execute(graph, inputs)
+        except UnsupportedGraphError:
+            pass
+        # TODO(MXF-595): narrow to a typed interpreter refusal.
+        except Exception as e:
+            warnings.warn(
+                (
+                    f"The eager interpreter failed on this graph ({e!r});"
+                    " serving it with a synchronously compiled model instead."
+                    " Please file a bug against MAX Framework."
+                ),
+                stacklevel=2,
+            )
+        key = _eager_model_cache_key(graph)
+        with self.lock:
+            model = self.cache.get(key)
+        if model is None:
+            compiled = _session().load(graph)
+            with self.lock:
+                model = self.cache.setdefault(key, compiled)
+        return model(*inputs)
 
 
 _MAX_EAGER_EXECUTOR_ENV_VAR = "MAX_EAGER_EXECUTOR"
@@ -286,11 +342,20 @@ def _default_composite() -> CompositeExecutor:
     )
 
 
+def _fallback_internal() -> _FallbackExecutor:
+    """Builds the internal interpret-first, compile-on-refusal executor."""
+    return _FallbackExecutor(
+        interpreter=InterpreterExecutor(max_ops=_interpreter_max_ops()),
+    )
+
+
 _EXECUTORS: dict[str, Callable[[], Executor]] = {
     "composite": _default_composite,
     "jit": _default_composite,
     "compile": CompilingExecutor,
     "interpreter": InterpreterExecutor,
+    # TODO(SDLC-4307): CI stopgap until composite stops background compiles.
+    "fallback-internal": _fallback_internal,
 }
 
 
@@ -299,9 +364,10 @@ def _executor_from_env() -> Executor:
         os.environ.get(_MAX_EAGER_EXECUTOR_ENV_VAR, "composite").lower().strip()
     )
     if name not in _EXECUTORS:
+        supported = sorted(n for n in _EXECUTORS if not n.endswith("-internal"))
         raise ValueError(
             f"{_MAX_EAGER_EXECUTOR_ENV_VAR}={name!r}: expected one of "
-            f"{sorted(_EXECUTORS)}"
+            f"{supported}"
         )
     return _EXECUTORS[name]()
 

@@ -66,6 +66,14 @@ with `kbench`.
     sudo utils/setup-gpu-clock.sh
     ```
 
+    On a board that sits at its software power cap, this does **not** pin the
+    SM clock — its `nvidia-smi -ac` step is refused by recent drivers and still
+    exits 0. Check `nvidia-smi --query-gpu=clocks_event_reasons.sw_power_cap`,
+    and if the cap is active, pin below the sustainable clock instead
+    (`sudo nvidia-smi -lgc <mhz>,<mhz>`, released afterwards with `-rgc`). See
+    [Pinning GPU clocks](/docs/internal/GpuClockPinning.md) for why, and for
+    what the difference does to the noise floor.
+
 1. Verify your environment is set up correctly by running the following command
    from the top-level `modular` directory:
 

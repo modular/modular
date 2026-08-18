@@ -29,13 +29,16 @@ from .kernels import (
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
     dynamic_block_scaled_matmul_amd,
+    dynamic_block_scaled_matmul_mxfp6,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
+    mxfp6_dequant,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
+    quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
@@ -192,6 +195,49 @@ def _matmul_float4_mxfp4(
     return res
 
 
+def _matmul_float6_mxfp6(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    fp6_format: str,
+) -> TensorValue:
+    """Computes ``x @ weight.T`` with MXFP6 quantization (A6W6).
+
+    MXFP6 sibling of :func:`_matmul_float4_mxfp4`: the activation is
+    dynamically quantized to the same FP6 encoding as the weights, so both
+    operands drive the CDNA4 ``f8f6f4`` MFMA at 24 bytes per lane.
+
+    Args:
+        x: The input tensor in bf16.
+        weight: The packed FP6 weights, uint8 ``[N, K * 3 // 4]``.
+        weight_scale: The E8M0 weight scales, ``[N, K // 32]``.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+
+    Returns:
+        The output tensor in bf16.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 requires the AMD CDNA4 block-scaled MFMA (gfx950); no other "
+            "target implements a 6-bit block-scaled matmul"
+        )
+
+    x_fp6, x_scales = quantize_dynamic_block_scaled_mxfp6(
+        x,
+        fp6_format=fp6_format,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.uint8,
+    )
+    return dynamic_block_scaled_matmul_mxfp6(
+        x_fp6,
+        weight,
+        x_scales,
+        weight_scale.to(x.device),
+        fp6_format=fp6_format,
+        out_type=DType.bfloat16,
+    )
+
+
 def _matmul_float8_mxfp8(
     x: TensorValue,
     weight: TensorValue,
@@ -227,12 +273,8 @@ def _matmul_float8_mxfp8(
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
-        return dynamic_block_scaled_matmul_amd(
-            x_fp8,
-            weight,
-            x_scales,
-            weight_scale.to(x.device),
-            out_type=DType.bfloat16,
+        return _matmul_float8_mxfp8_prequantized(
+            x_fp8, x_scales, weight, weight_scale
         )
 
     x, x_scales = quantize_dynamic_block_scaled(
@@ -253,6 +295,40 @@ def _matmul_float8_mxfp8(
         x_scales,
         weight_scale,
         sf_vector_size=32,
+        out_type=DType.bfloat16,
+    )
+
+
+def _matmul_float8_mxfp8_prequantized(
+    x_fp8: TensorValue,
+    x_scales: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Computes the AMD MXFP8 matmul from an already-quantized activation.
+
+    The AMD arm of :func:`_matmul_float8_mxfp8`, minus the dynamic quantize:
+    single owner for the operand order, scale layout (rank-2 E8M0, no SF-atom
+    interleave on CDNA), and output dtype. Callers that produce the
+    ``(data, scales)`` pair themselves -- e.g. the MSA attention op that fuses
+    the quantize into its split-K combine -- must go through here so a scale
+    layout change lands in one place.
+
+    Args:
+        x_fp8: The activation in ``float8_e4m3fn``, shape ``[M, K]``.
+        x_scales: The activation's E8M0 block scales, rank-2 ``[M, K // 32]``.
+        weight: The weight tensor in ``float8_e4m3fn``, shape ``[N, K]``.
+        weight_scale: The E8M0 weight scales, rank-2 ``[N, K // 32]`` as loaded
+            from the checkpoint.
+
+    Returns:
+        The output tensor in bf16, shape ``[M, N]``.
+    """
+    return dynamic_block_scaled_matmul_amd(
+        x_fp8,
+        weight,
+        x_scales,
+        weight_scale.to(x_fp8.device),
         out_type=DType.bfloat16,
     )
 
@@ -483,6 +559,13 @@ def quantized_matmul(
                 weight,
                 weight_scale,
             )
+        case QuantFormat.MXFP6:
+            return _matmul_float6_mxfp6(
+                x,
+                weight,
+                weight_scale,
+                quant_config.mxfp6_format,
+            )
         case QuantFormat.MXFP8:
             return _matmul_float8_mxfp8(
                 x,
@@ -561,9 +644,13 @@ def quantized_fused_qkv_matmul(
                 scales_type=DType.float8_e8m0fnu,
                 out_type=DType.float8_e4m3fn,
             )
-            weight_scale = block_scales_interleave(
-                weight_scale.to(x.device), sf_vector_size=32
-            )
+            # Only SM100 needs the rank-5 SF-atom interleave; CDNA4 consumes the
+            # checkpoint's rank-2 E8M0 scales directly.
+            weight_scale = weight_scale.to(x.device)
+            if not _is_amd_gpu():
+                weight_scale = block_scales_interleave(
+                    weight_scale, sf_vector_size=32
+                )
             return _fused_qkv_ragged_matmul_scaled_mxfp8(
                 kv_params,
                 input=x_fp8,
@@ -691,6 +778,7 @@ def quantized_fused_qkv_index_matmul(
     idx_head_dim: int,
     quant_config: QuantConfig,
     weight_scale: TensorValue,
+    prequantized: tuple[TensorValue, TensorValue] | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
 
@@ -721,6 +809,9 @@ def quantized_fused_qkv_index_matmul(
         idx_head_dim: Index head dimension (also the IndexK width).
         quant_config: The quantization configuration; must be MXFP8.
         weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
+        prequantized: ``(x_fp8, x_scales)`` for ``x``, skipping the quantize.
+            Scales are the plain rank-2 ``[rows, hidden / 32]`` E8M0 layout,
+            NOT the interleaved weight-scale one.
 
     Returns:
         A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is
@@ -732,12 +823,39 @@ def quantized_fused_qkv_index_matmul(
             "quantized_fused_qkv_index_matmul only supports MXFP8, got"
             f" {quant_config.format}"
         )
-    x_fp8, x_scales = quantize_dynamic_block_scaled(
-        x,
-        sf_vector_size=32,
-        scales_type=DType.float8_e8m0fnu,
-        out_type=DType.float8_e4m3fn,
-    )
+    if prequantized is not None:
+        x_fp8, x_scales = prequantized
+        if not _is_amd_gpu():
+            raise ValueError(
+                "prequantized carries the plain rank-2 [rows, hidden/32] E8M0"
+                " scale the CDNA4 kernel takes; the SM100 op wants the"
+                " interleaved SF-atom layout, so it must quantize its own"
+                " activation."
+            )
+        if (
+            x_fp8.dtype != DType.float8_e4m3fn
+            or x_scales.dtype != DType.float8_e8m0fnu
+        ):
+            raise ValueError(
+                "prequantized must be (float8_e4m3fn, float8_e8m0fnu), got"
+                f" ({x_fp8.dtype}, {x_scales.dtype})"
+            )
+        if x_fp8.shape != x.shape:
+            raise ValueError(
+                f"prequantized payload shape {x_fp8.shape} != x {x.shape}"
+            )
+        if x_scales.rank != 2 or x_scales.shape[0] != x.shape[0]:
+            raise ValueError(
+                "prequantized scales must be rank-2 [rows, hidden/32]; got"
+                f" {x_scales.shape} for x {x.shape}"
+            )
+    else:
+        x_fp8, x_scales = quantize_dynamic_block_scaled(
+            x,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+        )
     if not _is_amd_gpu():
         weight_scale = block_scales_interleave(
             weight_scale.to(x.device), sf_vector_size=32
@@ -793,6 +911,20 @@ def quantized_grouped_matmul(
         case QuantFormat.MXFP4:
             dequanted = mxfp4_dequant(
                 weight, weight_scale, out_type=DType.bfloat16
+            )
+            return grouped_matmul_ragged(
+                x,
+                dequanted,
+                expert_start_indices,
+                expert_ids,
+                usage_stats,
+            )
+        case QuantFormat.MXFP6:
+            dequanted = mxfp6_dequant(
+                weight,
+                weight_scale,
+                fp6_format=quant_config.mxfp6_format,
+                out_type=DType.bfloat16,
             )
             return grouped_matmul_ragged(
                 x,

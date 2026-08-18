@@ -328,29 +328,23 @@ def main() raises:
         var a_offsets_host_alloc = alloc[Scalar[DType.uint32]](
             {count = num_active_experts + 1}
         ).into_managed()
-        var a_offsets_host = UnsafePointer(a_offsets_host_alloc.unsafe_ptr())
+        var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
         var a_scale_offsets_host_alloc = alloc[Scalar[DType.uint32]](
             {count = num_active_experts}
         ).into_managed()
-        var a_scale_offsets_host = UnsafePointer(
-            a_scale_offsets_host_alloc.unsafe_ptr()
-        )
+        var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
         var expert_ids_host_alloc = alloc[Scalar[DType.int32]](
             {count = num_active_experts}
         ).into_managed()
-        var expert_ids_host = UnsafePointer(expert_ids_host_alloc.unsafe_ptr())
+        var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
         var expert_scales_host_alloc = alloc[Scalar[DType.float32]](
             {count = num_experts}
         ).into_managed()
-        var expert_scales_host = UnsafePointer(
-            expert_scales_host_alloc.unsafe_ptr()
-        )
+        var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
         var input_scales_host_alloc = alloc[Scalar[DType.float32]](
             {count = num_active_experts}
         ).into_managed()
-        var input_scales_host = UnsafePointer(
-            input_scales_host_alloc.unsafe_ptr()
-        )
+        var input_scales_host = input_scales_host_alloc.unsafe_ptr()
 
         a_offsets_host[0] = 0
         var sf_acc = 0
@@ -487,33 +481,19 @@ def main() raises:
             trace_buf_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-        @__parameter
         @always_inline
-        @__copy_capture(
-            cb_a,
-            cb_b,
-            cb_a_scales,
-            cb_b_scales,
-            a_offsets_tt,
-            a_scale_offsets_tt,
-            expert_ids_tt,
-            expert_scales_tt,
-            input_scales_tt,
-            c_bf16_tt,
-            o_tt,
-            s_tt,
-            swiglu_out,
-            trace_buf_gmem,
-            a_scale_dim0,
-            M,
-            num_active_experts,
-            fused,
-            match_bf16,
-            matmul_only,
-            disable_pdl,
-            trace,
-        )
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(
+            ctx: DeviceContext, iteration: Int
+        ) raises {
+            mut cb_a,
+            mut cb_b,
+            mut cb_a_scales,
+            mut cb_b_scales,
+            mut c_bf16_tt,
+            mut o_tt,
+            mut s_tt,
+            imm,
+        }:
             var a_tt = TileTensor(
                 cb_a.offset_ptr(iteration),
                 row_major(Coord(_ri(M), Idx[packed_K])),
@@ -701,7 +681,7 @@ def main() raises:
         @__parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         var m = Bench()
         m.bench_function[bench_func](
@@ -754,7 +734,7 @@ def main() raises:
             var trace_host_alloc = alloc[Scalar[DType.uint64]](
                 {count = trace_buf_size}
             ).into_managed()
-            var trace_host = UnsafePointer(trace_host_alloc.unsafe_ptr())
+            var trace_host = trace_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(trace_host, trace_buf_dev)
             ctx.synchronize()
             comptime max_tiles = 8  # mirrors SWIGLU_MAX_TRACED_TILES

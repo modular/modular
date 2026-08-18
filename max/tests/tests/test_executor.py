@@ -34,6 +34,7 @@ from max.experimental.executor import (
     UnsupportedGraphError,
     _eager_model_cache_key,
     _executor_from_env,
+    _FallbackExecutor,
     default_executor,
     set_default_executor,
 )
@@ -152,9 +153,10 @@ class TestExecutorProtocol:
             InterpreterExecutor(),
             CompilingExecutor(),
             JitExecutor(interpreter=InterpreterExecutor()),
+            _FallbackExecutor(interpreter=InterpreterExecutor()),
             _RecordingExecutor(),
         ],
-        ids=["interpreter", "compiling", "jit", "duck-typed"],
+        ids=["interpreter", "compiling", "jit", "fallback", "duck-typed"],
     )
     def test_conforms_to_protocol(self, executor: object) -> None:
         """Concrete and duck-typed executors satisfy the Executor protocol."""
@@ -420,6 +422,65 @@ class TestJitExecutorConcurrency:
         assert len(inits) == 1
 
 
+class TestFallbackExecutor:
+    def test_served_graph_never_compiles(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A graph the interpreter serves never touches the compiler."""
+
+        def _no_session() -> engine.InferenceSession:
+            pytest.fail("compiled an interpreter-served graph")
+
+        monkeypatch.setattr(executor_module, "_session", _no_session)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor())
+        graph, buf = _add_graph()
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+
+    def test_refused_graph_compiles_synchronously(self) -> None:
+        """A refused graph is served by an in-process compile."""
+        graph, buf = _add_graph()
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+        assert len(executor.cache) == 1
+
+    def test_identical_refused_graphs_share_one_compile(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Structurally identical refused graphs share a cache entry."""
+        real_session = executor_module._session
+        sessions: list[engine.InferenceSession] = []
+
+        def _counting_session() -> engine.InferenceSession:
+            sessions.append(real_session())
+            return sessions[-1]
+
+        monkeypatch.setattr(executor_module, "_session", _counting_session)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        graph1, buf1 = _add_graph()
+        graph2, buf2 = _add_graph()
+
+        (first,) = executor.execute(graph1, [buf1])
+        (second,) = executor.execute(graph2, [buf2])
+
+        assert _values(first) == pytest.approx([4.0, 5.0])
+        assert _values(second) == pytest.approx([4.0, 5.0])
+        assert len(executor.cache) == 1
+        assert len(sessions) == 1
+
+    def test_interpreter_runtime_error_falls_back_with_warning(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A mid-execution interpreter failure warns and serves compiled."""
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor())
+        graph, buf = _add_graph()
+        with pytest.warns(UserWarning, match="file a bug"):
+            (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+
+
 class TestDefaultExecutor:
     @pytest.mark.parametrize(
         ("env_value", "expected"),
@@ -429,8 +490,16 @@ class TestDefaultExecutor:
             ("jit", JitExecutor),
             ("interpreter", InterpreterExecutor),
             ("compile", CompilingExecutor),
+            ("fallback-internal", _FallbackExecutor),
         ],
-        ids=["unset", "composite", "jit", "interpreter", "compile"],
+        ids=[
+            "unset",
+            "composite",
+            "jit",
+            "interpreter",
+            "compile",
+            "fallback-internal",
+        ],
     )
     def test_env_selects_executor(
         self,

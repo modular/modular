@@ -87,6 +87,7 @@ _NN_LIGHT_GPU_TESTS = [
     "test_graph_observes_pending_driver_work_gpu.py",
     "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
+    "test_launch_trace_graph_gpu.py",
     "test_moe_gpu.py",
     "test_sleep_gpu.py",
     "test_slice_gpu.py",

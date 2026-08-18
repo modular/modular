@@ -15,6 +15,7 @@ dependencies = [
   "cachetools",
   "clickhouse-connect",
   "codeowners",
+  "cursor-sdk",
   "cyclopts",
   "datasets",
   "decord2>=3.4.0",  # MiniMax-M3 / qwen2.5-VL video decode (imported as `decord`)

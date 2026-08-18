@@ -278,9 +278,7 @@ struct TileLoaderTMA[
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst._storage.mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[Self._dtype]](),
+            dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
             dst.layout,
         )
 
@@ -430,9 +428,7 @@ struct TileLoaderCPAsync[
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst._storage.mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[Self._dtype]](),
+            dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
             dst.layout,
         )
         var dst_vec = dst_exact.vectorize[1, Self.vector_size]()

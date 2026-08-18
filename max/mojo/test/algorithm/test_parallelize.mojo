@@ -46,12 +46,10 @@ def test_sync_parallelize() raises:
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
-        @__copy_capture(start)
-        @__parameter
-        def add_two(idx: Int):
+        def add_two(idx: Int) {var}:
             vector[start + idx] = vector[start + idx] + 2
 
-        map[add_two](end - start)
+        map(end - start, add_two)
 
     sync_parallelize[parallel_fn](num_work_items)
 
@@ -78,12 +76,10 @@ def test_parallelize() raises:
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
-        @__copy_capture(start)
-        @__parameter
-        def add_two(idx: Int):
+        def add_two(idx: Int) {var}:
             vector[start + idx] = vector[start + idx] + 2
 
-        map[add_two](end - start)
+        map(end - start, add_two)
 
     parallelize[parallel_fn](num_work_items)
 

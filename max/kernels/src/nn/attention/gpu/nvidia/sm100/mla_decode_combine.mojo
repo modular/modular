@@ -35,13 +35,27 @@ from std.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
+    PDLLevel,
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
 from layout import TileTensor
 from std.memory import unsafe_stack_allocation
+from std.sys import get_defined_bool
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+
+
+# The kernels below already wait on dependent grids and the decode producer
+# already triggers them, but neither has an effect unless the consumer launch
+# opts in. Opting in makes that whole contract live for the first time, and a
+# rare illegal-address abort at context teardown tracks with it, so the level
+# stays off until the mechanism is settled. Enabling it is a source edit: the
+# define cannot be set through the build, because the package that reads it is
+# precompiled and `mojo precompile` takes no `-D`.
+comptime MLA_DECODE_COMBINE_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MLA_DECODE_COMBINE_PDL", False
+]() else PDLLevel.OFF
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1052,7 +1066,7 @@ def launch_mla_combine_kernel_split_parallel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
     )
 
 
@@ -1182,7 +1196,7 @@ def launch_mla_combine_kernel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
     )
 
 

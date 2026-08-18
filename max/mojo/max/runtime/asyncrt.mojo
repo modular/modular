@@ -13,7 +13,7 @@
 """This module implements the low level concurrency library."""
 
 from std.ffi import external_call
-from std.runtime.asyncrt import parallelism_level as std_parallelism_level
+from std.runtime import parallelism_level as std_parallelism_level
 
 from max.gpu.host import DeviceContext
 

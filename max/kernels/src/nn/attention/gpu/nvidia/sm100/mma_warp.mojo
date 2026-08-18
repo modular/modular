@@ -131,7 +131,7 @@ def fa4_mma[
     # `BN // m_pack` @ m_pack=4 -- a coincidence of today's depth-128 numbers,
     # not an identity that holds generally). This is exactly the V TMA box's
     # KEY-row count, so it reads from that one definition.
-    comptime pv_bk_chunk = config.v_e_box_rows()
+    comptime pv_bk_chunk = config.v_e_chunk_rows()
     comptime pv_bk = (
         pv_bk_chunk if is_reduction_split else (
             BN // config.m_pack

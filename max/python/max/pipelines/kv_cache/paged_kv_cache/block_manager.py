@@ -58,8 +58,6 @@ from .block_utils import (
 
 logger = logging.getLogger("max.pipelines")
 
-SALT_DROPPED_WARNED: bool = False
-
 
 def compute_block_hashes(
     ctx: TextContext,
@@ -125,19 +123,6 @@ def compute_block_hashes(
             )
         token_hash_overrides.extend(ctx.token_hash_overrides)
 
-    cache_salt = ctx.cache_salt
-    if cache_salt is not None and kv_hash_algo == "ahash64":
-        global SALT_DROPPED_WARNED
-        if not SALT_DROPPED_WARNED:
-            logger.warning(
-                "cache_salt was supplied on a request but "
-                "kv_cache_hash_algo=ahash64; salt is being dropped. Set "
-                "kv_cache_hash_algo=sha256 to enable per-request "
-                "prefix-cache isolation."
-            )
-            SALT_DROPPED_WARNED = True
-        cache_salt = None
-
     return hash_request_tokens(
         token_ids=unhashed_tokens,
         block_size=block_size,
@@ -146,7 +131,7 @@ def compute_block_hashes(
         token_hash_overrides=token_hash_overrides,
         algo=kv_hash_algo,
         seed=kv_hash_seed,
-        salt=cache_salt,
+        salt=ctx.cache_salt,
     )
 
 
@@ -172,7 +157,7 @@ class _PendingTransfer:
 def _compute_seq_len(
     ctx: TextContext,
     num_draft_tokens: int,
-    num_draft_tokens_per_step: int = 1,
+    num_draft_tokens_per_step: int = 0,
     max_num_input_tokens: int | None = None,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
@@ -198,9 +183,14 @@ def _compute_seq_len(
     # bonus token — exactly the slot the ``- 1`` here was reclaiming under the
     # "last generated token has no KV entry" optimization. For block drafts
     # that bonus position *does* get a KV entry (forward_block writes it as
-    # part of the speculative tail), so we add it back.
+    # part of the speculative tail), so we add it back. Guard on
+    # ``num_draft_tokens > 0`` so a disabled request (0, 0) never matches this
+    # by coincidence.
     block_draft_extra = (
-        1 if num_draft_tokens_per_step == num_draft_tokens else 0
+        1
+        if num_draft_tokens > 0
+        and num_draft_tokens_per_step == num_draft_tokens
+        else 0
     )
     # Avoid allocating blocks for the entire sequence when chunked prefill is used.
     # This is critically important for SWA.
@@ -755,7 +745,7 @@ class BlockManager:
         """
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
-        if connector.num_host_blocks == 0 or not desired_hashes:
+        if connector.host_block_count.total == 0 or not desired_hashes:
             return [], CompletedTransfer(TransferDirection.LOAD)
 
         # Limit by available device blocks.
@@ -847,7 +837,7 @@ class BlockManager:
         remaining = block_hashes[num_device_hits:]
         num_host_hits = 0
         num_disk_hits = 0
-        if len(remaining) > 0 and self.connector.num_host_blocks > 0:
+        if len(remaining) > 0 and self.connector.host_block_count.total > 0:
             num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
                 remaining
             )
@@ -886,7 +876,7 @@ class BlockManager:
             uncommitted_hashes, replica_idx
         )
 
-        if self.connector.num_host_blocks == 0:
+        if self.connector.host_block_count.total == 0:
             return device_blocks, CompletedTransfer(TransferDirection.LOAD)
 
         # remove the hashes that were found in the device prefix cache
@@ -919,7 +909,7 @@ class BlockManager:
         # loads it. Refreshing it would require touching the full `req_hashes`
         # on every admission -- the contended behavior this change removes.
         # dKV touches the resident subset and tolerates
-        # missing keys. The num_host_blocks early-return above gates on "has
+        # missing keys. The host_block_count early-return above gates on "has
         # host blocks," NOT "has an external tier": it skips only a connector
         # with no host blocks (NullConnector); the host/disk tiered connector
         # passes the gate and calls its no-op touch -- only DKVConnector does
@@ -1120,7 +1110,7 @@ class BlockManager:
         self,
         ctx: TextContext,
         num_draft_tokens: int = 0,
-        num_draft_tokens_per_step: int = 1,
+        num_draft_tokens_per_step: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -1134,12 +1124,12 @@ class BlockManager:
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
-                per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``); equal to
-                ``num_draft_tokens`` for block drafts (``dflash``). Used by
-                ``_compute_seq_len`` to size the cache for block drafts,
-                whose ``forward_block`` writes one extra position past the
-                bonus token.
+                per draft forward. Zero when speculative decoding is
+                disabled; one for autoregressive drafts (``eagle``, ``mtp``);
+                equal to ``num_draft_tokens`` for block drafts (``dflash``).
+                Used by ``_compute_seq_len`` to size the cache for block
+                drafts, whose ``forward_block`` writes one extra position
+                past the bonus token.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -1207,7 +1197,7 @@ class BlockManager:
         self,
         ctx: TextContext,
         num_draft_tokens: int = 0,
-        num_draft_tokens_per_step: int = 1,
+        num_draft_tokens_per_step: int = 0,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
@@ -1216,12 +1206,12 @@ class BlockManager:
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
-                per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``); equal to
-                ``num_draft_tokens`` for block drafts (``dflash``). Used by
-                ``_compute_seq_len`` to size the cache for block drafts,
-                whose ``forward_block`` writes one extra position past the
-                bonus token.
+                per draft forward. Zero when speculative decoding is
+                disabled; one for autoregressive drafts (``eagle``, ``mtp``);
+                equal to ``num_draft_tokens`` for block drafts (``dflash``).
+                Used by ``_compute_seq_len`` to size the cache for block
+                drafts, whose ``forward_block`` writes one extra position
+                past the bonus token.
 
         Returns:
             The number of new blocks to allocate.

@@ -2446,6 +2446,31 @@ def fma_ftz(
     ](a, b, c)
 
 
+def _ptx_f32_literal[value: Float32]() -> String:
+    """Formats `value` as a PTX `0f`-prefixed 32-bit float literal.
+
+    PTX spells a float immediate as its raw IEEE-754 bit pattern in exactly
+    eight hex digits, so this pads to width rather than using `hex()` (which
+    trims leading zeros and carries an `0x` prefix).
+
+    Parameters:
+        value: The float32 constant to encode.
+
+    Returns:
+        The PTX literal, e.g. `0fC61C4000` for -10000.0.
+    """
+    comptime bits = bitcast[DType.uint32](value)
+    var lit = String("0f")
+
+    comptime for i in range(8):
+        comptime nibble = Int((bits >> UInt32(4 * (7 - i))) & UInt32(0xF))
+        # '0'-'9' then 'A'-'F'.
+        comptime code = (48 + nibble) if nibble < 10 else (55 + nibble)
+        lit += chr(code)
+
+    return lit
+
+
 def _mask_select8_asm[byte_idx: Int]() -> String:
     """Builds the PTX body for `mask_select8`.
 
@@ -2455,7 +2480,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
     stays inside one `{ ... }` block so the bit-extraction is adjacent to the
     selects. This mirrors the cold region ptxas already emits for this mask:
     `R2P ...,0x7f` for the 7-bit group + `LOP3.LUT ...,0x80` for the 8th bit,
-    both consumed by `selp.f32 ...,0fC61C4000,score`.
+    both consumed by `selp.f32 ...,<MASK_VALUE>,score`.
 
     Parameters:
         byte_idx: Which mask byte (0..3) this block applies.
@@ -2463,6 +2488,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
     Returns:
         The assembled PTX string.
     """
+    comptime mv = _ptx_f32_literal[Float32(MASK_VALUE)]()
     # Bits 0-6: the R2P group. 7 (`and` + `setp.eq...,0`) then 7 `selp`, so at
     # most 7 predicates are live; ptxas folds the 7 `setp` into `R2P ...,0x7f`.
     var asm = String("{\n.reg .pred %p<7>;\n.reg .b32 %t<7>;\n")
@@ -2481,16 +2507,16 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
         )
 
     comptime for j in range(7):
-        asm += String(
-            "selp.f32 $", j, ", 0fC61C4000, $", 8 + j, ", %p", j, ";\n"
-        )
+        asm += String("selp.f32 $", j, ", ", mv, ", $", 8 + j, ", %p", j, ";\n")
 
     # Bit 7 (the 8th lane): reuse %p0/%t0, free after the selps above, so this
     # never pushes liveness to 8. This is the cold region's `LOP3.LUT ...,0x80`.
     asm += String(
         "and.b32 %t0, $16, ",
         hex(UInt32(1) << UInt32(8 * byte_idx + 7)),
-        ";\nsetp.eq.u32 %p0, %t0, 0;\nselp.f32 $7, 0fC61C4000, $15, %p0;\n",
+        ";\nsetp.eq.u32 %p0, %t0, 0;\nselp.f32 $7, ",
+        mv,
+        ", $15, %p0;\n",
     )
 
     asm += "}"
@@ -2523,7 +2549,7 @@ def mask_select8[
     """Masks 8 contiguous scores against one byte of a 32-column bitmask.
 
     Lane `j` keeps its score if bit `8*byte_idx + j` of `mask_bits` is set,
-    otherwise it becomes `MASK_VALUE` (-10000). The 8 `and`/`setp`/`selp` are
+    otherwise it becomes `MASK_VALUE`. The 8 `and`/`setp`/`selp` are
     confined to a single opaque PTX block so the bit-extraction sits adjacent to
     the selects: the predicate live-set stays bounded (avoiding the wide
     up-front bit pre-extraction that spills) and the shape stays `R2P`-eligible.
@@ -2686,10 +2712,84 @@ def expect_bytes_pred(
 
 
 @always_inline
+def store_global_pred[
+    dtype: DType,
+    address_space: AddressSpace,
+    //,
+](
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _, address_space=address_space],
+    value: Scalar[dtype],
+    pred: Int32,
+):
+    """Issue a global store predicated on `pred != 0`.
+
+    Equivalent to:
+
+        if pred != 0:
+            ptr[] = value
+
+    but folds the guard into a PTX `@%p` predicate on the store, so ptxas emits
+    a single predicated `STG` instead of the `BSSY`/`BRA`/`NOP`/`BSYNC`
+    reconvergence quartet an `if` costs.
+
+    That is a real trade, not a free win. The `if` form gives ptxas a basic
+    block boundary, which caps the scheduling region; this form does not, so
+    ptxas may hoist the producers of `value` across neighbouring code and spill.
+    Measure spill counts, not just the instruction count, when switching a site
+    to this helper.
+
+    There is no `~{memory}` clobber, matching `expect_bytes_pred` and the
+    `st.shared.v4.b32` helper above: adding one would force LLVM to reload every
+    value it has cached from memory at each call site. Callers must therefore
+    not read back what they store here without an explicit fence.
+
+    Parameters:
+        dtype: Element dtype of the store; must be 4 or 8 bytes (inferred).
+        address_space: Address space of `ptr` (inferred).
+
+    Args:
+        ptr: Destination address. Must point into global memory -- the
+            instruction is `st.global`, so a generic pointer into shared or
+            local memory is undefined behaviour rather than a compile error.
+        value: The value to store when `pred` is nonzero.
+        pred: Runtime predicate; the store is skipped when this is 0.
+    """
+    comptime assert (
+        address_space == AddressSpace.GENERIC
+        or address_space == AddressSpace.GLOBAL
+    ), "store_global_pred emits `st.global`; the pointer must address gmem"
+    comptime size = size_of[dtype]()
+    comptime assert size in (4, 8), (
+        "store_global_pred handles 4- and 8-byte scalars; got a "
+        + String(size)
+        + "-byte dtype"
+    )
+    comptime bits = "b32" if size == 4 else "b64"
+    # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
+    # pair covers float and integer dtypes alike; `st.global.bXX` is
+    # bit-preserving.
+    comptime word_type = DType.uint32 if size == 4 else DType.uint64
+    comptime word_constraint = "r" if size == 4 else "l"
+
+    inlined_assembly[
+        """{
+        .reg .pred %p;
+        setp.ne.s32 %p, $2, 0;
+        @%p st.global."""
+        + bits
+        + """ [$0], $1;
+        }""",
+        NoneType,
+        constraints="l," + word_constraint + ",r",
+    ](ptr, bitcast[word_type](value), pred)
+
+
+@always_inline
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](x: Array[Scalar[DType.float32], BN], out res: StaticTuple[Float32, width],):
     """Reduces `BN` float32 scores into `width` lane-maxima using FTZ max."""
+    comptime assert 3 * width <= BN
     res = {}
 
     comptime for w in range(width):

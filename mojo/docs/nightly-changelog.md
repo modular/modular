@@ -16,6 +16,28 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- A `thin` function type can now carry trailing `where` clauses, constraining
+  the parameters it declares. This lets a generic algorithm state what it
+  promises the function it is handed, instead of leaving the constraint to be
+  restated at every binding site.
+
+  ```mojo
+  comptime Kernel = def[w: Int](Int) thin -> None where (
+      w > 0, "width must be positive"
+  )
+
+  def apply[F: Kernel](x: Int):
+      F[4](x)     # ok
+      F[0](x)     # error: violated constraint
+  ```
+
+  The clause binds to the innermost function type, so a declaration-level
+  `where` that follows a function-type result needs that result parenthesized:
+
+  ```mojo
+  def make[n: Int]() -> (def() thin -> None) where n > 0: ...
+  ```
+
 ## Language changes
 
 - Renamed the `@parameter` decorator on parametric closures to
@@ -90,6 +112,14 @@ This version is still a work in progress.
   predicates rather than functions, so drop the call parens at use sites, for
   example `IsTriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
 
+- Renamed `UnsafeMaybeUninit` to `MaybeUninit`. It conforms to `Movable`,
+  `Copyable`/`ImplicitlyCopyable`, and `Deinitable` only when the contained
+  type's own move, copy, or implicit deinitializer is trivial, since
+  moving, copying, or destroying a `MaybeUninit` only touches its raw bits,
+  never the contained value's own lifecycle methods. Gating conformance this way
+  turns what would otherwise be silent memory-safety bugs into compile-time
+  errors.
+
 - `Atomic` is now parameterized on a value type `T` instead of a `DType`.
   Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
@@ -100,8 +130,21 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
+  `unsafe_write()` for types that are trivially deinitializable (for example
+  `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
+  through `write()` can't leak a resource, so it's callable without first
+  destroying the previous value. Prefer it over `unsafe_write()` whenever the
+  pointee type is trivially deinitializable.
+
+- `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
+  mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
+  is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
+
+- Uncaught exceptions now print to `stderr`, not `stdout`.
 
 ## GPU programming
 
@@ -115,7 +158,6 @@ This version is still a work in progress.
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
-Each entry names its replacement.
 
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.
@@ -129,6 +171,9 @@ Each entry names its replacement.
 - Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
   instead.
 
+- Removed `String.set_byte_length()`, an internal helper that set the length
+  field without reserving capacity.
+
 - Removed the `validate` parameter from
   [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
   validates. Passing `validate=False` did not skip any work on valid input; it
@@ -136,7 +181,86 @@ Each entry names its replacement.
   output bytes. Drop `[validate=True]` from existing calls; calls that relied on
   the default now raise instead of returning garbage.
 
+- Removed the origin aliases left over from the `Immut` to `Imm` and
+  `External` to `Untracked` renames. Use the surviving spelling in each case:
+  `ImmOrigin` for `ImmutOrigin`, `ImmUnsafeAnyOrigin` for
+  `ImmutUnsafeAnyOrigin`, `ImmStaticOrigin` for `StaticConstantOrigin`,
+  `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
+  `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
+  `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
+
+- Removed the pre-unification pointer aliases `MutUnsafePointer`,
+  `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
+  `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
+  `ImmOpaquePointer`, and `OptionalPointer` instead. `UnsafePointer` itself
+  remains available, but is deprecated in favor of `Pointer`.
+
+- Removed the raw memory functions superseded by their `unsafe_`-prefixed
+  spellings: `memcpy`, `memset`, `memset_zero`, `uninit_move_n`,
+  `uninit_copy_n`, and `destroy_n`. Use `unsafe_memcpy`, `unsafe_memset`,
+  `unsafe_memset_zero`, `unsafe_uninit_move_n`, `unsafe_uninit_copy_n`, and
+  `unsafe_destroy_n` instead.
+
+- Removed the `size` aliases left from the `size` to `length` rename:
+  `SIMD.size`, `Array.size`, `TypeList.size`, and the `SIMDSize` alias for
+  `SIMDLength`. Use `length` and `SIMDLength`.
+
+- Removed the `as_immutable()` and `get_immutable()` methods on `Pointer`,
+  `Span`, and `StringSpan`. Use `as_imm()`.
+
+- Removed the `ImmutSpan` alias. Use `ImmSpan`.
+
+- Removed `String.as_string_slice()`. Construct a `StringSpan` from the string
+  instead: `StringSpan(my_string)`.
+
+- Removed the `ImplicitlyDestructible` and `ImplicitlyDeletable` aliases. Use
+  `Deinitable`.
+
+- Removed the deprecated ownership-transfer methods: `List.steal_data()` and
+  `OwnedPointer.steal_data()` are now `unsafe_take_allocation()`,
+  `OwnedPointer.take()` is `into_inner()`, and `Variant.take()` and
+  `Variant.unsafe_take()` are `unwrap()` and `unsafe_unwrap()`.
+
+- Removed the `Pointer` methods superseded by their `unsafe_`-prefixed
+  spellings: `as_noalias_ptr()`, `destroy_pointee()`, `destroy_pointee_with()`,
+  `init_pointee_move()`, `init_pointee_copy()`, and `init_pointee_move_from()`.
+  Use `unsafe_as_noalias()`, `unsafe_deinit_pointee()`,
+  `unsafe_deinit_pointee_with()`, `unsafe_write()`, and
+  `unsafe_write_move_from()`. The `Pointer.type` alias for `Pointer.T` is gone
+  as well.
+
+- Removed the `ConditionalType` type function and the `std.utils.type_functions`
+  module. Use the ternary expression `T if cond else U`.
+
+- Removed `trait_downcast()`. Constrain on the trait instead, with
+  `conforms_to(type_of(src), Trait)` in a `where` clause or a
+  `comptime assert`.
+
+- Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
+  an argument to `run(f)` instead, which accepts a unified closure.
+
+- Removed `AnyCoroutine`, `Coroutine` and `RaisingCoroutine` from the prelude,
+  and made the module that defines them private. Mojo's async support is
+  unfinished, and these types being globally visible led people to build on an
+  API that carries no stability guarantees. `async def` is unaffected: the
+  compiler still synthesizes these types for you, so they continue to appear in
+  inferred types and diagnostics. There is no supported way to name them
+  directly.
+
+- Removed the async task API from the public `std.runtime.asyncrt` module,
+  which is now private. `initialize_runtime()` and `parallelism_level()` are
+  unaffected and have moved up to the `std.runtime` package, so import them
+  from `std.runtime` instead of `std.runtime.asyncrt`.
+
+- Removed support for `.mojopkg` files after a period of deprecation. Use
+  `.mojoc` files instead.
+
 ## Fixed
+
+- `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
+  files next to the host output file. Building a kernel that an earlier build
+  had already compiled could write them into the earlier build's output
+  directory, or skip them with no diagnostic.
 
 - Parametric `raises` now accepts any primary expression as the thrown type in
   a function signature, matching the syntax positions where types otherwise
@@ -163,3 +287,13 @@ Each entry names its replacement.
 - `base64.b64decode()` now raises an error when the input length is not
   divisible by 4 instead of reading past the end of the input (or aborting
   when asserts are enabled).
+
+- On macOS, `os.stat()` and `os.lstat()` no longer return a negative
+  `st_mode` for regular files. The underlying `mode_t` and `nlink_t` C type
+  aliases were declared as signed 16-bit integers, but macOS defines them as
+  unsigned, so any mode with the `S_IFREG` bit set (every regular file)
+  sign-extended into a negative `Int`.
+
+- `PythonObject` no longer leaks a CPython reference per positional argument
+  when calling a Python object, nor when setting an item, attribute, or set
+  literal element.

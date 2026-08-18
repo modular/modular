@@ -89,7 +89,9 @@ def test_gemma4_31b() -> None:
         "sliding_attention/values": mha_page_bytes(50, 16, 256),
         "full_attention/values": mha_page_bytes(10, 4, 512),
     }
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, cache_sizes
+    )
 
     # A global page is a tenth of a sliding one, so the sliding page is itself
     # the huge block: pairing these two caches wastes nothing and strands
@@ -116,7 +118,7 @@ def test_gemma4_31b_with_quantized_scales() -> None:
             10, 4, 512 // 128, dtype_bytes=BF16
         ),
     }
-    _, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    _, _, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
 
     # Scale pages are 64x smaller than their values, so they set the ratios
     # without enlarging the huge block: it stays the largest page, as above.
@@ -135,7 +137,9 @@ def test_gemma4_31b_with_vision_encoder() -> None:
         "full_attention/values": mha_page_bytes(10, 4, 512),
         "vision/values": siglip_vision_page_bytes(),
     }
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, cache_sizes
+    )
 
     # The tower's 15.2 MiB page carries 27 * 9 = 243 as its odd part, and the
     # text pages carry 25, so the lcm multiplies both in: a 23.7 GiB huge block
@@ -157,7 +161,9 @@ def test_kimi_k2_5_mla_with_vision_encoder() -> None:
         "target/values": mla_page_bytes(61, 512 + 64),
         "vision/values": siglip_vision_page_bytes(),
     }
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, cache_sizes
+    )
 
     # MLA fares better than gemma4 against the same tower: both pages already
     # carry a factor of 9, so the lcm only picks up 61 and 27, landing on
@@ -173,7 +179,9 @@ def test_kimi_k2_5_mla_with_drafter_and_vision_encoder() -> None:
         "draft/values": mha_page_bytes(1, 64, 128),
         "vision/values": siglip_vision_page_bytes(),
     }
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, cache_sizes
+    )
 
     # Three geometries with nothing in common: the drafter forces the 2^22 of
     # its power-of-two page, MLA forces 61, and the tower forces 3^5, giving a
@@ -195,7 +203,9 @@ def test_kimi_k2_5_mla_with_eagle3_drafter() -> None:
         "target/values": mla_page_bytes(61, 512 + 64),
         "draft/values": mha_page_bytes(1, 64, 128),
     }
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, cache_sizes)
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, cache_sizes
+    )
 
     # 61 layers over a latent of 64 * 9 leaves 549 = 9 * 61 odd, while the
     # drafter's page is a power of two, so the lcm keeps both odd parts: a
@@ -211,7 +221,9 @@ def test_kimi_k2_5_mla_alone() -> None:
     # A single cache needs no common multiple, so its page is the huge block
     # and the budget divides evenly.
     page = mla_page_bytes(61, 512 + 64)
-    num_huge_blocks, ratios = compute_jenga_ratios(120 * GIB, {"values": page})
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
+        120 * GIB, {"values": page}
+    )
 
     assert ratios == {"values": 1}
     assert num_huge_blocks == 120 * GIB // page
@@ -222,7 +234,7 @@ def test_identical_pages_share_a_huge_block() -> None:
     # say -- tile the huge block one page each, so neither constrains the
     # other and the pool splits between them purely by demand.
     page = mha_page_bytes(24, 8, 128)
-    num_huge_blocks, ratios = compute_jenga_ratios(
+    num_huge_blocks, _huge_page_bytes, ratios = compute_jenga_ratios(
         8 * GIB, {"target/values": page, "draft/values": page}
     )
 
@@ -239,6 +251,7 @@ def test_budget_that_holds_one_huge_block_is_rejected() -> None:
         compute_jenga_ratios(page, {"values": page})
     assert compute_jenga_ratios(2 * page, {"values": page}) == (
         2,
+        page,
         {"values": 1},
     )
 

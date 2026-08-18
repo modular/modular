@@ -40,6 +40,7 @@ struct PreshuffledBLoader[
     N: Int,
     K_BYTES: Int,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    lane_bytes: Int = 16,
 ](TrivialRegisterPassable):
     """Per-lane B fragment loader from preshuffled GMEM (DRAM -> VGPR direct).
 
@@ -54,7 +55,14 @@ struct PreshuffledBLoader[
         cache_policy: Cache hint for the B load. Defaults to `ALWAYS` (normal
             cached, flydsl `b_nt=0`); set `STREAMING` (NT=1, flydsl `b_nt=2`)
             to skip caching B fragments that are streamed once and never reused.
+        lane_bytes: Bytes one lane feeds the MFMA: 16 for FP4, 24 for FP6, 32
+            for FP8. Widths above 16, or not a power of two, are split into
+            planes (see `Shuffler.b_plane_byte_off`) and loaded with one
+            instruction each.
     """
+
+    comptime num_planes = Shuffler[1].num_planes[Self.lane_bytes]()
+    comptime reg_bytes = 16 if Self.lane_bytes <= 16 else 32
 
     var bc: AMDBufferResource
 
@@ -70,25 +78,42 @@ struct PreshuffledBLoader[
         self.bc = make_amd_buffer_resource(b_gmem_tile)
 
     @always_inline
-    def load_fragment(self, n: Int, k_byte: Int) -> SIMD[DType.uint8, 16]:
-        """Loads the 16-byte B fragment at logical `(n, k_byte)`.
+    def load_fragment(
+        self, n: Int, k_byte: Int
+    ) -> SIMD[DType.uint8, Self.reg_bytes]:
+        """Loads one lane's B fragment at logical `(n, k_byte)`.
 
         For one MFMA dispatch a lane calls this with
         `(n = warp_n_off + n_mma * 16 + lane % 16,
-          k_byte = k_tile * 64 + (lane // 16) * 16)`.
+          k_byte = k_tile * MFMA_K_BYTES + (lane // 16) * lane_bytes)`.
+
+        A single-plane fragment is one `buffer_load_dwordx4`, byte-identical to
+        the layout this loader has always used. A multi-plane fragment issues
+        one naturally-aligned load per plane and assembles them in registers;
+        the payload stays contiguous, which is what the MFMA requires.
 
         Args:
             n: Logical N row index into the `[N, K_BYTES]` tile.
             k_byte: Logical K byte index into the `[N, K_BYTES]` tile.
         """
-        var byte_off = Int32(
-            Shuffler[1].b_5d_grouped_layout[N=Self.N, K_BYTES=Self.K_BYTES](
-                Coord(Idx[0], n, k_byte)
+        var frag = SIMD[DType.uint8, Self.reg_bytes](0)
+
+        comptime for p in range(Self.num_planes):
+            comptime pb = Shuffler[1].plane_bytes[Self.lane_bytes, p]()
+            var off = Int32(
+                Shuffler[1].b_plane_byte_off[
+                    N=Self.N,
+                    K_BYTES=Self.K_BYTES,
+                    lane_bytes=Self.lane_bytes,
+                    plane=p,
+                ](0, n, k_byte)
             )
-        )
-        return self.bc.load[DType.uint8, 16, cache_policy=Self.cache_policy](
-            byte_off
-        )
+            frag = frag.insert[offset=p * 16](
+                self.bc.load[DType.uint8, pb, cache_policy=Self.cache_policy](
+                    off
+                )
+            )
+        return frag
 
 
 struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](

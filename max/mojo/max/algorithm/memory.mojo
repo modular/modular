@@ -24,7 +24,7 @@ from . import sync_parallelize
 from std.math import ceildiv
 
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
+from std.runtime import parallelism_level
 
 
 def unsafe_parallel_memcpy[

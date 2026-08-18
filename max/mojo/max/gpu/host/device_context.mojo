@@ -39,7 +39,6 @@ from std.ffi import (
     c_size_t,
     external_call,
     CStringSlice,
-    _CPointer,
 )
 from std.sys import (
     bit_width_of,
@@ -68,11 +67,11 @@ from std.builtin.device_passable import (
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import reflect, reflect_fn
 from std.memory import unsafe_stack_allocation
-from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
+from std.memory import alloc, dealloc, ThinAllocation, Layout, MaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
     AnyCoroutine,
     _coro_resume_fn,
     _coro_destroy_fn,
@@ -141,55 +140,55 @@ comptime _DeviceContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceContextCpp, origin]
+] = OptionalPointer[_DeviceContextCpp, origin]
 
 comptime _DeviceBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceBufferCpp, origin]
+] = OptionalPointer[_DeviceBufferCpp, origin]
 
 comptime _DeviceFunctionPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceFunctionCpp, origin]
+] = OptionalPointer[_DeviceFunctionCpp, origin]
 
 comptime _DeviceMulticastBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceMulticastBufferCpp, origin]
+] = OptionalPointer[_DeviceMulticastBufferCpp, origin]
 
 comptime _DeviceStreamPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceStreamCpp, origin]
+] = OptionalPointer[_DeviceStreamCpp, origin]
 
 comptime _DeviceEventPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceEventCpp, origin]
+] = OptionalPointer[_DeviceEventCpp, origin]
 
 comptime _DeviceTimerPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceTimerCpp, origin]
+] = OptionalPointer[_DeviceTimerCpp, origin]
 
 comptime _CompletionFlagPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_CompletionFlagCpp, origin]
+] = OptionalPointer[_CompletionFlagCpp, origin]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceContextScopeCpp, origin]
+] = OptionalPointer[_DeviceContextScopeCpp, origin]
 
 comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
     CStringSlice[origin]
@@ -1013,6 +1012,100 @@ struct DevicePointer[
         return Optional(
             self._buffer[]._handle.value().unsafe_bitcast[NoneType]()
         )
+
+    # ===------------------------------------------------------------------=== #
+    # Origin and mutability casts
+    # ===------------------------------------------------------------------=== #
+
+    # `origin` appears only in the `_buffer` field's type parameters, never in
+    # any field's layout, so the casts below reinterpret the whole handle, as
+    # `Span.as_imm` does.
+    comptime _OriginCastType[
+        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
+    ] = DevicePointer[Self.dtype, target_origin]
+
+    @always_inline("builtin")
+    def unsafe_mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
+        """Changes the mutability of the borrow of the `DeviceBuffer`.
+
+        To unconditionally drop mutability use `as_imm`.
+
+        Parameters:
+            target_mut: Mutability of the resulting `DevicePointer`.
+
+        Returns:
+            A `DevicePointer` referencing the same `DeviceBuffer` at the same
+            offset, but with the newly specified mutability.
+
+        Safety:
+            Casting an immutable borrow to mutable claims mutation rights the
+            caller does not hold, which defeats exclusivity checking: mutating
+            the `DeviceBuffer` through the result while another borrow of it is
+            live is undefined behavior. Prefer binding the mutability at the
+            function signature level, for example taking a
+            `DevicePointer[mut=True, dtype, _]` argument over an unbound
+            `DevicePointer[dtype, _]`.
+        """
+        return rebind[
+            Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]
+        ](self)
+
+    @always_inline("builtin")
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[target_origin]:
+        """Changes the origin of the borrow of the `DeviceBuffer`.
+
+        To unconditionally discard the origin use `as_unsafe_any_origin`.
+
+        Parameters:
+            target_origin: Origin of the resulting `DevicePointer`.
+
+        Returns:
+            A `DevicePointer` referencing the same `DeviceBuffer` at the same
+            offset, but with the newly specified origin.
+
+        Safety:
+            The result names `target_origin` rather than the `DeviceBuffer` it
+            refers into, so the lifetime checker no longer keeps that buffer
+            alive; using the result once the buffer is destroyed is undefined
+            behavior. Prefer parameterizing the origin at the function level
+            over casting it.
+        """
+        return rebind[Self._OriginCastType[target_origin]](self)
+
+    @always_inline("builtin")
+    def as_imm(self) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
+        """Changes the borrow of the `DeviceBuffer` to immutable.
+
+        Unlike `unsafe_mut_cast` this is always safe: dropping mutability
+        cannot introduce aliasing.
+
+        Returns:
+            A `DevicePointer` referencing the same `DeviceBuffer` at the same
+            offset, but with an immutable borrow.
+        """
+        return self.unsafe_mut_cast[False]()
+
+    @always_inline("builtin")
+    def as_unsafe_any_origin(
+        self,
+    ) -> Self._OriginCastType[UnsafeAnyOrigin[mut=Self.mut]]:
+        """Discards the origin of the borrow of the `DeviceBuffer`.
+
+        Returns:
+            A `DevicePointer` with the origin set to `UnsafeAnyOrigin`.
+
+        Safety:
+            `UnsafeAnyOrigin` might alias any live value, which forces the
+            lifetime checker into its most conservative behavior: it extends
+            unrelated lifetimes and turns off exclusivity checking. The caller
+            takes over keeping the `DeviceBuffer` alive. A concrete origin is
+            always preferable.
+        """
+        return self.unsafe_origin_cast[UnsafeAnyOrigin[mut=Self.mut]]()
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -5845,7 +5938,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         return DeviceStream(result)
 
     def create_external_stream(
-        self, external_stream: _CPointer[mut=True, NoneType, _]
+        self, external_stream: OptionalPointer[mut=True, NoneType, _]
     ) raises -> DeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 
@@ -6691,12 +6784,12 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         if gpu_count != num_gpu_devices:
             raise Error("Invalid number of GPU device contexts")
 
-        # Build the result in an `UnsafeMaybeUninit` staging array. Its
+        # Build the result in a `MaybeUninit` staging array. Its
         # `__deinit__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
-        var staging = Array[UnsafeMaybeUninit[DeviceContext], num_gpu_devices](
+        var staging = Array[MaybeUninit[DeviceContext], num_gpu_devices](
             uninitialized=True
         )
         var dev_idx = 0

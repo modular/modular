@@ -423,7 +423,7 @@ struct _WriteBufferHeap(Writable, Writer):
             abort()
         unsafe_memcpy(
             dest=self._data.unsafe_offset(self._pos),
-            src=string.unsafe_ptr(),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self._pos += len_bytes
@@ -460,7 +460,7 @@ struct _WriteBufferHeap(Writable, Writer):
             unsafe_from_utf8=Span[Byte, origin](
                 # `_data` is untracked, so handing it out under `origin` takes
                 # an explicit cast; untracked-to-named is never implicit.
-                unsafe_ptr=self._data.mut_cast[mut]().unsafe_origin_cast[
+                unsafe_ptr=self._data.unsafe_mut_cast[mut]().unsafe_origin_cast[
                     origin
                 ](),
                 length=self._pos,
@@ -519,7 +519,7 @@ struct _WriteBufferStack[
         # Continue writing to buffer
         unsafe_memcpy(
             dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
-            src=string.unsafe_ptr(),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self.pos += len_bytes

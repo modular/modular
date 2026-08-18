@@ -1320,7 +1320,7 @@ def iota[
 def iota[
     dtype: DType, //
 ](
-    buff: Pointer[mut=True, Scalar[dtype], _, address_space=_],
+    buff: MutPointer[Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1345,9 +1345,7 @@ def iota[
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-def iota[
-    dtype: DType, //
-](span: Span[mut=True, Scalar[dtype], _], offset: Int = 0):
+def iota[dtype: DType, //](span: MutSpan[Scalar[dtype], _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Parameters:
@@ -1360,7 +1358,7 @@ def iota[
     iota(span.unsafe_ptr(), len(span), offset)
 
 
-def iota(span: Span[mut=True, Int, _], offset: Int = 0):
+def iota(span: MutSpan[Int, _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Args:
@@ -1720,14 +1718,12 @@ def atan2[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2522,14 +2518,12 @@ def hypot[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2785,7 +2779,6 @@ def remainder[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2794,7 +2787,6 @@ def remainder[
         )
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2947,14 +2939,12 @@ def scalb[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:

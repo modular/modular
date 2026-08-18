@@ -19,7 +19,7 @@ and target resolution but not the end-to-end user experience on
 different host hardware.
 
 **Where:** Placed in _/oss/modular/mojo/docs/code/tools_
-under _README-Compilation-Targets.md_ and _test\_cross\_compile.sh_.
+under _README-Compilation-Targets.md_ and _test\_compilation\_targets.sh_.
 
 **Important note:** On non-Apple hosts, test 18 will fail. `metal:4` is
 hardcoded to the test.
@@ -66,7 +66,7 @@ comptime `❌`: Int32 = 0
 def kernel(
     value: Pointer[Scalar[DType.int32], MutAnyOrigin],
 ):
-    value[0] = `✅`
+    value[unsafe_offset=0] = `✅`
 
 
 def main() raises:

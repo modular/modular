@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing as mp
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
@@ -51,6 +52,7 @@ from max.benchmark.benchmark_shared.datasets._hf_download import (
 )
 from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
+    _init_encoder,
 )
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
     ChatJudgeBenchmarkDataset,
@@ -110,6 +112,44 @@ def _fake_loader(
     revision: str | None,
 ) -> _FakeTokenizer:
     return _FakeTokenizer(model_max_length=model_max_length or 4096)
+
+
+def _raising_loader(
+    name_or_path: str,
+    model_max_length: int | None,
+    trust_remote_code: bool,
+    revision: str | None,
+) -> _FakeTokenizer:
+    raise OSError("simulated Hub-offline tokenizer load failure")
+
+
+def test_init_encoder_exits_quietly_on_loader_failure() -> None:
+    """A worker whose tokenizer load fails exits via `SystemExit` with a
+    logged warning, instead of letting the raw exception escape the pool
+    initializer (which `BaseProcess._bootstrap` would otherwise print as an
+    unhandled-exception traceback per crashed worker -- see MXSERV-373)."""
+    root = logging.getLogger()
+    saved_handlers = list(root.handlers)
+    saved_level = root.level
+    log_queue: mp.Queue[logging.LogRecord] = mp.get_context("spawn").Queue(-1)
+    try:
+        with pytest.raises(SystemExit):
+            _init_encoder(
+                "fake-model",
+                None,
+                False,
+                None,
+                None,
+                _raising_loader,
+                log_queue,
+                logging.INFO,
+            )
+        record = log_queue.get(timeout=5)
+        assert record.levelno == logging.WARNING
+        assert "fake-model" in record.getMessage()
+    finally:
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
 
 
 def test_dataset_registry_structure() -> None:
@@ -1234,8 +1274,9 @@ def test_nemotron_opencode_sample_requests(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()
@@ -1282,8 +1323,9 @@ def test_nemotron_opencode_disable_tool_calls(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()
@@ -1313,8 +1355,9 @@ def test_nemotron_opencode_gen_multiturn(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()

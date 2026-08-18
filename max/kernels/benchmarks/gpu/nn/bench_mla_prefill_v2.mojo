@@ -369,9 +369,8 @@ def run_mla_prefill_v2[
             num_cu,
         )
         def bench_func(mut b: Bencher):
-            @__parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]
                 ]()
@@ -479,7 +478,7 @@ def run_mla_prefill_v2[
                     block_dim=_kernel.NUM_THREADS,
                 )
 
-            bencher_iter_custom[_kernel_launch](b, ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             # MLA prefill FLOPs (NullMask — full attention, NOT half for

@@ -95,6 +95,9 @@ def _from_device(buf: Buffer, dtype: DType) -> np.ndarray:
             .view(ml_dtypes.bfloat16)
             .astype(np.float32)
         )
+    if dtype == DType.float8_e4m3fn:
+        # Raw bytes: the FP8 arms are compared bit-for-bit, not numerically.
+        return out.view(DType.uint8).to_numpy()
     return out.to_numpy()
 
 
@@ -108,6 +111,8 @@ def _build_graph(
     interleaved: bool,
     rope_dim: int,
     combined_width: int | None,
+    q_out_dtype: DType | None = None,
+    fold_cast: bool = True,
 ) -> Graph:
     """Builds a graph returning normalized + RoPE'd Q.
 
@@ -116,6 +121,9 @@ def _build_graph(
     carves Q out with a ``slice`` + ``reshape`` view (fused prologue). Q is
     always embedded at column ``HEAD_DIM`` of the combined buffer so the slice
     has a non-zero offset.
+
+    ``fold_cast`` picks which side produces ``q_out_dtype``: True asks the op
+    directly, False appends a separate ``ops.cast``.
     """
     if combined_width is None:
         in_type = TensorType(
@@ -168,23 +176,23 @@ def _build_graph(
             max_prompt_length.tensor,
             max_cache_length.tensor,
         )
-        g.output(
-            fused_qk_rms_norm_rope_ragged(
-                kv_params,
-                inp,
-                row_offsets,
-                kv_collection,
-                q_gamma=q_gamma,
-                k_gamma=k_gamma,
-                freqs_cis=freqs_cis,
-                epsilon=EPSILON,
-                layer_idx=ops.constant(
-                    LAYER_IDX, DType.uint32, DeviceRef.CPU()
-                ),
-                weight_offset=0.0,
-                interleaved=interleaved,
-            )
+        q = fused_qk_rms_norm_rope_ragged(
+            kv_params,
+            inp,
+            row_offsets,
+            kv_collection,
+            q_gamma=q_gamma,
+            k_gamma=k_gamma,
+            freqs_cis=freqs_cis,
+            epsilon=EPSILON,
+            layer_idx=ops.constant(LAYER_IDX, DType.uint32, DeviceRef.CPU()),
+            weight_offset=0.0,
+            interleaved=interleaved,
+            q_out_dtype=q_out_dtype if fold_cast else None,
         )
+        if q_out_dtype is not None and not fold_cast:
+            q = ops.cast(q, q_out_dtype)
+        g.output(q)
     return g
 
 
@@ -209,12 +217,16 @@ def _run(
     q_np: np.ndarray,
     gamma: np.ndarray,
     combined_width: int | None,
+    q_out_dtype: DType | None = None,
+    fold_cast: bool = True,
 ) -> np.ndarray:
     graph = _build_graph(
         dtype,
         interleaved=interleaved,
         rope_dim=rope_dim,
         combined_width=combined_width,
+        q_out_dtype=q_out_dtype,
+        fold_cast=fold_cast,
     )
     model = session.load(graph)
 
@@ -258,7 +270,7 @@ def _run(
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)
-    return _from_device(result, dtype)
+    return _from_device(result, q_out_dtype or dtype)
 
 
 @pytest.mark.parametrize(
@@ -315,3 +327,73 @@ def test_fused_matches_unfused(
     assert direct.shape == (TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)
     assert not np.any(np.isnan(fused))
     np.testing.assert_array_equal(fused, direct)
+
+
+@pytest.mark.parametrize(
+    "interleaved", [True, False], ids=["interleaved", "split"]
+)
+def test_q_out_dtype_matches_separate_cast(
+    gpu: tuple[InferenceSession, Accelerator],
+    interleaved: bool,
+) -> None:
+    """Folding the Q output cast into the op must not change a single byte.
+
+    Legitimate only because the op rounds to the compute dtype first -- exactly
+    what the separate ``mo.cast`` saw. Compared as raw FP8 bytes.
+    """
+    dtype = DType.bfloat16
+    q_out_dtype = DType.float8_e4m3fn
+    session, device = gpu
+    rope_dim = HEAD_DIM // 2
+
+    rng = np.random.default_rng(0)
+    q_np = rng.standard_normal((TOTAL_SEQ_LEN, NUM_Q_HEADS, HEAD_DIM)).astype(
+        np.float32
+    )
+    gamma = rng.standard_normal(HEAD_DIM).astype(np.float32)
+
+    folded = _run(
+        session,
+        device,
+        dtype,
+        interleaved=interleaved,
+        rope_dim=rope_dim,
+        q_np=q_np,
+        gamma=gamma,
+        combined_width=None,
+        q_out_dtype=q_out_dtype,
+        fold_cast=True,
+    )
+    separate = _run(
+        session,
+        device,
+        dtype,
+        interleaved=interleaved,
+        rope_dim=rope_dim,
+        q_np=q_np,
+        gamma=gamma,
+        combined_width=None,
+        q_out_dtype=q_out_dtype,
+        fold_cast=False,
+    )
+
+    # Both arms share the same `SIMD.cast`, so an out-of-range Q lands on the
+    # SAME byte on both sides -- range loss, not NaN, is this gate's blind spot.
+    # A finite out-of-range value saturates on both vendors (NVPTX lowers to
+    # `cvt.rn.satfinite`, AMDGPU clamps before `cvt.pk.fp8.f32`); measured on
+    # gfx950, scaling gamma by 1e4 puts every extreme element on 0x7E/0xFE
+    # (+/-448) with zero NaN. So `>= 0x7E` covers both, since 0x7F is NaN.
+    at_limit = int(np.count_nonzero((separate & 0x7F) >= 0x7E))
+    assert at_limit == 0, (
+        f"{at_limit} of {separate.size} FP8 Q bytes sit at the e4m3 limit"
+        " (+/-448, or NaN): a value left the representable range and both arms"
+        " round it the same way"
+    )
+    # An all-zero pair compares equal while proving nothing, so require >90%
+    # finite nonzero (0x00/0x80 are +/-0).
+    live = int(np.count_nonzero((separate & 0x7F) != 0x00))
+    assert live > 0.9 * separate.size, (
+        f"only {live} of {separate.size} FP8 bytes are finite non-zero; the"
+        " byte comparison would be vacuous"
+    )
+    np.testing.assert_array_equal(folded, separate)

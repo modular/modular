@@ -67,14 +67,13 @@ def run_row_scatter[
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * cols * size_of[dtype]()
@@ -124,14 +123,13 @@ def run_elem_scatter[
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * size_of[dtype]()

@@ -46,7 +46,7 @@ def test_init_from_invalid_byte_span() raises:
 
 def test_c_string_slice_from_ptr() raises:
     var string = String("mojo!\0")
-    var ptr = string.unsafe_ptr().unsafe_bitcast[Int8]()
+    var ptr = string.as_bytes().unsafe_ptr().unsafe_bitcast[Int8]()
     var cslice = CStringSlice(unsafe_from_ptr=ptr)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
@@ -58,7 +58,7 @@ def test_c_string_slice_from_nul_string() raises:
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
+    assert_equal(Int(cslice.unsafe_ptr()), Int(string.as_bytes().unsafe_ptr()))
 
 
 def test_c_string_slice_from_nul_span() raises:
@@ -74,7 +74,7 @@ def test_c_string_slice_from_string() raises:
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
+    assert_equal(Int(cslice.unsafe_ptr()), Int(string.as_bytes().unsafe_ptr()))
 
 
 def test_c_string_slice_from_span() raises:

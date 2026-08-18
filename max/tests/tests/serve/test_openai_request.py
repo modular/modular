@@ -1003,6 +1003,127 @@ def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
     }
 
 
+def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": "Hello"}],
+            **payload,
+        }
+    )
+    return request.resolved_chat_template_kwargs
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        pytest.param({}, None, id="no_reasoning_controls"),
+        pytest.param(
+            {"chat_template_kwargs": {"enable_thinking": False}},
+            {"enable_thinking": False},
+            id="passthrough_without_reasoning_controls",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high"},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "none"},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "none"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="client_effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="client_effort_enables_thinking",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {
+                    "reasoning_effort": "none",
+                    "enable_thinking": True,
+                }
+            },
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "none",
+            },
+            id="client_toggle_wins_over_client_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="openrouter_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "high"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "high",
+            },
+            id="openrouter_enabled_wins_over_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high", "reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort_wins",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {
+                    "reasoning_effort": "low",
+                    "enable_thinking": False,
+                },
+            },
+            {
+                "reasoning_effort": "low",
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="client_kwargs_win",
+        ),
+    ],
+)
+def test_resolved_chat_template_kwargs(
+    payload: dict[str, Any], expected: dict[str, Any] | None
+) -> None:
+    """Reasoning controls are folded into the kwargs the chat template sees."""
+    assert _chat_template_kwargs_for(payload) == expected
+
+
 # ---------------------------------------------------------------------------
 # MiniMax v1/chat/completions format-correctness conformance.
 # ---------------------------------------------------------------------------
@@ -1135,6 +1256,24 @@ async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
         }
     )
     with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+
+async def test_openai_rejects_text_content_part_without_text_field() -> None:
+    """``{'type': 'text'}`` parts must include ``text`` and error cleanly."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": [{"type": "text"}]}],
+        }
+    )
+
+    with pytest.raises(
+        InputError,
+        match=r"Content part of type 'text' must include a 'text' field\.",
+    ):
         await openai_parse_chat_completion_request(
             request, wrap_content=True, settings=Settings()
         )

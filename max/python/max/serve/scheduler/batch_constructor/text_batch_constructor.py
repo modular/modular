@@ -23,7 +23,10 @@ from enum import Enum
 
 from max.pipelines.context import TextGenerationOutput
 from max.pipelines.context.context import TextContext
-from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    InsufficientBlocksError,
+    PagedKVCacheManagerInterface,
+)
 from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
@@ -41,6 +44,7 @@ from ..lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
+from .grammar_gate import AsyncGrammarGate
 from .token_budget import (
     ActiveTokenBudget,
     BudgetStatus,
@@ -86,6 +90,17 @@ class _BoundRequest:
 
     ctx: TextContext
     replica_idx: int
+
+
+@dataclass
+class _GrammarPendingRequest:
+    """A fresh CE request held back while its grammar matcher builds off-thread.
+
+    ``replica_idx`` preserves a caller-pinned replica for promotion.
+    """
+
+    ctx: TextContext
+    replica_idx: int | None
 
 
 @dataclass
@@ -445,10 +460,10 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
-        get_inflight_kv_transfer_count: Callable[[], int] | None = None,
+        get_inflight_kv_transfer_count: Callable[[int], int] | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -460,6 +475,14 @@ class TextBatchConstructor:
         )
 
         self._lora_manager: LoRAManagerV3 | None = get_lora_manager(pipeline)
+
+        # Gated requests are held before DP pooling/binding, so the CE
+        # planner only ever prices grammar-ready work.
+        self._grammar_gate = AsyncGrammarGate.create(pipeline)
+        self._grammar_pending: OrderedDict[
+            RequestID, _GrammarPendingRequest
+        ] = OrderedDict()
+        self._grammar_failed: list[tuple[RequestID, str]] = []
 
         self.num_replicas = self.scheduler_config.data_parallel_degree
         if self._lora_manager and self.num_replicas > 1:
@@ -580,7 +603,24 @@ class TextBatchConstructor:
             replica_idx: The replica index to assign the request to.
                 If None, the next replica index will be automatically chosen.
         """
+        # Decode-side requests (generated_length != 0) built their matcher at
+        # prefill admission.
+        if self._grammar_gate is not None and ctx.tokens.generated_length == 0:
+            self._grammar_gate.submit(ctx)
+            if not self._grammar_gate.is_ready(ctx):
+                self._grammar_pending[ctx.request_id] = _GrammarPendingRequest(
+                    ctx=ctx, replica_idx=replica_idx
+                )
+                return
+            error = self._grammar_gate.install_ready(ctx)
+            if error is not None:
+                self._fail_grammar_request(ctx.request_id, error)
+                return
 
+        self._admit_request(ctx, replica_idx)
+
+    def _admit_request(self, ctx: TextContext, replica_idx: int | None) -> None:
+        """Admits a grammar-ready request into the DP pool or a replica queue."""
         # DP-balanced CE deferral: fresh CE requests enter an unbound pool and
         # are bound to a replica by the per-step planner, which prices them by
         # estimated post-prefix-cache length. Caller-pinned requests and
@@ -704,8 +744,48 @@ class TextBatchConstructor:
         return (
             request_id in self._bound_requests
             or request_id in self._ce_pending
+            or request_id in self._grammar_pending
             or request_id in self._onloading_reqs
         )
+
+    def _promote_grammar_ready_requests(self) -> None:
+        """Admits held requests whose matcher build finished.
+
+        Runs before the DP CE planner so promotions join this iteration's
+        pool/bind flow. The ready matcher is installed here; a request whose
+        build failed is failed instead of admitted, so nothing strands.
+        """
+        gate = self._grammar_gate
+        if gate is None or not self._grammar_pending:
+            return
+        ready_ids = [
+            req_id
+            for req_id, pending in self._grammar_pending.items()
+            if gate.is_ready(pending.ctx)
+        ]
+        for req_id in ready_ids:
+            pending = self._grammar_pending.pop(req_id)
+            error = gate.install_ready(pending.ctx)
+            if error is None:
+                self._admit_request(pending.ctx, pending.replica_idx)
+            else:
+                self._fail_grammar_request(req_id, error)
+
+    def _fail_grammar_request(self, request_id: RequestID, error: str) -> None:
+        """Fails a request whose grammar build errored, without admitting it.
+
+        Nothing was claimed for the request (it was never bound), so only the
+        pipeline needs releasing; the owning scheduler drains
+        :meth:`take_grammar_failed` to terminate it client-side.
+        """
+        self.pipeline.release(request_id)
+        self._grammar_failed.append((request_id, error))
+
+    def take_grammar_failed(self) -> list[tuple[RequestID, str]]:
+        """Returns and clears requests failed by the grammar gate."""
+        failed = self._grammar_failed
+        self._grammar_failed = []
+        return failed
 
     def release_request(self, request_id: RequestID) -> None:
         """
@@ -720,6 +800,15 @@ class TextBatchConstructor:
         """
         if not self.contains(request_id):
             raise ValueError(f"Request {request_id} not found in any replica.")
+
+        # Grammar-gated requests are not bound to a replica yet: nothing was
+        # claimed in the KV cache and no replica queue holds them.
+        if request_id in self._grammar_pending:
+            del self._grammar_pending[request_id]
+            assert self._grammar_gate is not None
+            self._grammar_gate.release(request_id)
+            self.pipeline.release(request_id)
+            return
 
         # Pooled CE requests are not bound to a replica yet: nothing was
         # claimed in the KV cache and no replica queue holds them.
@@ -777,6 +866,9 @@ class TextBatchConstructor:
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
 
+        if self._grammar_gate is not None:
+            self._grammar_gate.release(request_id)
+
         # _bound_requests is the source of truth for whether a request
         # is managed by the scheduler (checked by contains()).
         # Remove from here, marking the request as fully released.
@@ -804,6 +896,11 @@ class TextBatchConstructor:
         reqs.update(
             (req_id, pending.ctx)
             for req_id, pending in self._ce_pending.items()
+        )
+        # Grammar-gated requests are still pending CE work.
+        reqs.update(
+            (req_id, pending.ctx)
+            for req_id, pending in self._grammar_pending.items()
         )
         # Cordoned onloading requests are still pending CE work.
         reqs.update(
@@ -865,11 +962,23 @@ class TextBatchConstructor:
                 + f" Total Preemption Count: {self.total_preemption_count}"
             )
 
-    def _identify_priority(self, replica_idx: int) -> RequestType:
+    def _identify_priority(self, replica_idx: int) -> RequestType | None:
         # DP CE balancing deferred this replica's CE work for this iteration;
         # run TG instead (the planner only defers replicas that have TG work).
         if replica_idx in self._ce_deferred_replicas:
             return RequestType.TG
+
+        # A replica with no CE and no TG requests has no preference at all --
+        # returning TG here (as the fallback below would) is indistinguishable
+        # from a genuine TG preference to any caller that aggregates priority
+        # across replicas (SERVOPT-1560: a spurious TG "vote" from an idle
+        # replica broadcast as a batch-wide override, starving a sibling
+        # replica's real, ready CE request forever).
+        if (
+            not self.replicas[replica_idx].ce_reqs
+            and not self.replicas[replica_idx].tg_reqs
+        ):
+            return None
 
         # If there are no CE requests, prioritize TG
         if len(self.replicas[replica_idx].ce_reqs) == 0:
@@ -882,11 +991,7 @@ class TextBatchConstructor:
         # Under KV pressure, drain TG before admitting more CE work: a new
         # prefill competes for the blocks in-flight generations still need,
         # and preempting one of those discards prefill already paid for.
-        kv_percentage = (
-            100
-            * self.kv_cache.get_num_used_pages(replica_idx)
-            / self.kv_cache.get_num_pages(replica_idx)
-        )
+        kv_percentage = self.kv_cache.block_count(replica_idx).used_pct
         if kv_percentage > self.tg_priority_kv_percentage:
             return RequestType.TG
 
@@ -897,13 +1002,38 @@ class TextBatchConstructor:
         # Otherwise, prioritize CE
         return RequestType.CE
 
-    def _inflight_kv_transfer_count(self) -> int:
-        # Cordoned onloading requests hold KV blocks while their H2D is in
-        # flight, so count them alongside any external (DI prefill) transfers.
-        count = len(self._onloading_reqs)
+    def _is_anything_inflight(self, replica_idx: int) -> bool:
+        """Whether anything that could still resolve into runnable work is
+        in flight on this replica -- existence, not magnitude, since the
+        fatal-vs-defer decision only needs to know whether anything at all
+        is happening, not how much. Checked across cordoned onloads (H2D
+        landing), any device-side pending transfer (e.g. a D2H offload),
+        and any external (DI prefill/decode) signal. Scoped to
+        replica_idx: a transfer on a different replica's device pool
+        can't free blocks on this one.
+        """
+        if any(
+            onloading.replica_idx == replica_idx
+            for onloading in self._onloading_reqs.values()
+        ):
+            return True
+        if self.kv_cache.pending_transfers_exist(replica_idx):
+            return True
         if self._get_inflight_kv_transfer_count is not None:
-            count += self._get_inflight_kv_transfer_count()
-        return count
+            return self._get_inflight_kv_transfer_count(replica_idx) > 0
+        return False
+
+    def _is_insufficient_blocks_fatal(
+        self, replica_idx: int, no_other_work: bool
+    ) -> bool:
+        """Fatal only when there's no other runnable work and nothing at
+        all is in flight -- presence, not magnitude, since a deficit
+        sized against what's in flight now can't see a transfer that
+        starts next iteration. A wrong "fatal" verdict kills the worker;
+        a wrong "defer" verdict just costs a retry, so this errs toward
+        retrying whenever anything at all is in flight.
+        """
+        return no_other_work and not self._is_anything_inflight(replica_idx)
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         # Deferred by the DP CE balancer this iteration (also covers paths
@@ -949,20 +1079,28 @@ class TextBatchConstructor:
 
                 try:
                     onload_event = self.kv_cache.alloc(ctx)
-                except InsufficientBlocksError:
-                    # Only a genuine OOM (nothing else to run and no in-flight
-                    # transfer that will free blocks once it lands) is fatal.
-                    # Otherwise requeue and retry next iteration; poll_transfers
-                    # unpins completed transfers' blocks in the meantime.
-                    if (
-                        len(replica_requests.tg_reqs) == 0
-                        and len(batch) == 0
-                        and self._inflight_kv_transfer_count() == 0
-                        and not self.kv_cache.pending_transfers_exist(
-                            replica_idx
-                        )
-                    ):
-                        raise
+                except InsufficientBlocksError as e:
+                    # Only fatal with no other work (no TG, no
+                    # already-admitted CE this iteration) and nothing in
+                    # flight can cover the deficit; otherwise requeue and
+                    # retry next iteration -- poll_transfers unpins
+                    # completed transfers' blocks in the meantime.
+                    no_other_work = (
+                        len(replica_requests.tg_reqs) == 0 and len(batch) == 0
+                    )
+                    fatal = self._is_insufficient_blocks_fatal(
+                        replica_idx, no_other_work
+                    )
+                    if fatal:
+                        held_blocks = len(self.kv_cache.get_req_blocks(ctx))
+                        raise InsufficientBlocksError(
+                            f"_add_ce_requests: InsufficientBlocksError is "
+                            f"fatal on replica {replica_idx} -- no other "
+                            f"work and nothing in flight to free blocks. "
+                            f"Request {ctx.request_id} has "
+                            f"{len(ctx.tokens)} tokens and already holds "
+                            f"{held_blocks} blocks. {e}"
+                        ) from e
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 
@@ -1039,19 +1177,28 @@ class TextBatchConstructor:
                 try:
                     self.kv_cache.alloc(candidate_context)
                     break
-                except InsufficientBlocksError:
+                except InsufficientBlocksError as e:
                     if len(candidate_ids) == 0:
-                        # Only a genuine OOM is fatal: nothing left to preempt,
-                        # an empty batch, and no in-flight transfer that will
-                        # free blocks once it lands.
-                        if (
-                            len(batch) == 0
-                            and self._inflight_kv_transfer_count() == 0
-                            and not self.kv_cache.pending_transfers_exist(
-                                replica_idx
+                        # Only a genuine OOM is fatal: nothing left to
+                        # preempt, an empty batch, and the deficit can't be
+                        # covered by anything in flight.
+                        fatal = self._is_insufficient_blocks_fatal(
+                            replica_idx, no_other_work=len(batch) == 0
+                        )
+                        if fatal:
+                            held_blocks = len(
+                                self.kv_cache.get_req_blocks(candidate_context)
                             )
-                        ):
-                            raise
+                            raise InsufficientBlocksError(
+                                f"_add_tg_requests: InsufficientBlocksError "
+                                f"is fatal on replica {replica_idx} -- no "
+                                f"other work and nothing in flight to free "
+                                f"blocks. Request "
+                                f"{candidate_context.request_id} has "
+                                f"{len(candidate_context.tokens)} tokens "
+                                f"and already holds {held_blocks} "
+                                f"blocks. {e}"
+                            ) from e
                         return
 
                     # Pop the oldest candidate id
@@ -1135,6 +1282,11 @@ class TextBatchConstructor:
                     and priority_override is None
                 ):
                     self._add_ce_requests(batch, replica_idx)
+
+            case None:
+                # Genuinely idle replica (no CE, no TG requests): nothing to
+                # add either way.
+                pass
 
         return batch
 
@@ -1359,12 +1511,19 @@ class TextBatchConstructor:
         # request-level side here.
         self._readmit_completed_onloads()
 
+        self._promote_grammar_ready_requests()
+
         # DP-balanced CE deferral: decide this iteration's CE work (late
         # binding + per-replica deferral) before priorities are identified.
         self._plan_ce_step()
 
         priority_override = None
-        replica_priorities: set[RequestType] | list[RequestType]
+        # None entries (replicas with no CE and no TG requests -- see
+        # _identify_priority) fail every membership/count check below on
+        # their own, so an idle replica never casts a vote: SERVOPT-1560 was
+        # exactly this default being indistinguishable from a genuine TG
+        # preference once aggregated across replicas.
+        replica_priorities: set[RequestType | None] | list[RequestType | None]
         match self.batch_scheduling_strategy:
             case BatchSchedulingStrategy.DECODE_FIRST:
                 replica_priorities = set(

@@ -28,7 +28,7 @@ import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
@@ -71,11 +71,14 @@ from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
     _create_response_format,
+    _get_cache_salt,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
+    _set_batch_id_attributes,
     get_tool_parser,
     openai_create_chat_completion,
     openai_parse_chat_completion_request,
@@ -642,6 +645,47 @@ def test_create_chat_completion_request_with_cache_salt() -> None:
         CreateChatCompletionRequest.model_validate(request_oversized)
 
 
+def _make_request(headers: dict[str, str]) -> Request:
+    """Minimal fastapi.Request carrying only headers, for testing
+    header-extraction helpers without a full app/TestClient."""
+    scope = {
+        "type": "http",
+        "headers": [
+            (k.lower().encode(), v.encode()) for k, v in headers.items()
+        ],
+    }
+    return Request(scope)
+
+
+def test_get_cache_salt_header_takes_precedence_over_body() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-header"
+    )
+
+
+def test_get_cache_salt_falls_back_to_body_without_header() -> None:
+    request = _make_request({})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-body"
+    )
+
+
+def test_get_cache_salt_returns_none_when_neither_present() -> None:
+    request = _make_request({})
+    assert _get_cache_salt(request, None, use_client_cache_salt=True) is None
+
+
+def test_get_cache_salt_ignored_when_not_trusted() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=False)
+        is None
+    )
+
+
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
     """Test that CreateChatCompletionRequest correctly parses chat_template_kwargs field."""
     # Test with chat_template_kwargs provided
@@ -669,6 +713,89 @@ def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
         request_without_kwargs
     )
     assert parsed_request_default.chat_template_kwargs is None
+
+
+# ============================================================================
+# Tests for batch id span attributes
+# ============================================================================
+
+
+def _chunk(batch_id: int | None) -> TokenGeneratorOutput:
+    return TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE, batch_id=batch_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("batch_ids", "expected_first", "expected_last"),
+    [
+        ([], None, None),
+        ([None], None, None),
+        ([None, None], None, None),
+        ([5], 5, 5),
+        ([10, 11, 12], 10, 12),
+        # A request that is admitted late, or released early, has no batch id
+        # on its leading/trailing chunks; those must be skipped rather than
+        # reported as the bounds.
+        ([None, 10, 11, None], 10, 11),
+        ([10, None, None, 14], 10, 14),
+        ([None, None, 7, None], 7, 7),
+        # batch_id is a scheduler-wide counter, so a preempted request can see
+        # it move backwards. first/last are positional, never min/max.
+        ([12, 11, 10], 12, 10),
+    ],
+)
+def test_batch_id_returns_first_and_last_non_none(
+    batch_ids: list[int | None],
+    expected_first: int | None,
+    expected_last: int | None,
+) -> None:
+    chunks = [_chunk(b) for b in batch_ids]
+    assert _batch_id(chunks) == expected_first
+    assert _batch_id(chunks, last=True) == expected_last
+
+
+def test_batch_id_spans_a_multi_prompt_batch() -> None:
+    """The completions route flattens per-prompt chunk lists before scanning.
+
+    The bounds must cover the whole flattened batch -- reading them off any
+    single prompt's chunks would under-report the span.
+    """
+    prompt_a = [_chunk(10), _chunk(11), _chunk(12)]
+    prompt_b = [_chunk(11), _chunk(12), _chunk(13), _chunk(14)]
+    all_outputs = [c for req in (prompt_a, prompt_b) for c in req]
+
+    assert _batch_id(all_outputs) == 10
+    assert _batch_id(all_outputs, last=True) == 14
+
+
+def test_batch_id_does_not_consume_the_sequence() -> None:
+    """Both directions are scanned from the same list, so it must be reusable."""
+    chunks = [_chunk(10), _chunk(11)]
+
+    assert _batch_id(chunks) == 10
+    assert _batch_id(chunks, last=True) == 11
+    # Re-reading yields the same answers.
+    assert _batch_id(chunks) == 10
+    assert _batch_id(chunks, last=True) == 11
+
+
+def test_set_batch_id_attributes_tags_both_bounds() -> None:
+    span = Mock()
+
+    _set_batch_id_attributes(span, [_chunk(10), _chunk(11), _chunk(12)])
+
+    span.set_attribute.assert_any_call("max.first_batch_id", 10)
+    span.set_attribute.assert_any_call("max.last_batch_id", 12)
+
+
+def test_set_batch_id_attributes_skips_unknown_bounds() -> None:
+    """No batch id was ever observed, so neither attribute is worth emitting."""
+    span = Mock()
+
+    _set_batch_id_attributes(span, [_chunk(None)])
+
+    span.set_attribute.assert_not_called()
 
 
 # ============================================================================

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import UnsafePointer
-from std.math import align_down, ceildiv, clamp, rsqrt
+from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
@@ -382,6 +382,7 @@ def rms_norm_gpu_warp_tiling_128[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -410,7 +411,7 @@ def rms_norm_gpu_warp_tiling_128[
     var local_tid = umod(tid, half_warp_size)
     var idx = local_tid * simd_width
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         var gamma_val = SIMD[dtype, simd_width](0)
         if row < _num_rows and idx < _num_cols:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
@@ -467,6 +468,7 @@ def rms_norm_gpu_warp_per_row[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -499,7 +501,7 @@ def rms_norm_gpu_warp_per_row[
             fill=SIMD[accum_type, simd_width](0)
         )
 
-        with PDL():
+        with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Single load pass: cache each chunk and accumulate mean-of-squares.
             var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
@@ -536,7 +538,7 @@ def rms_norm_gpu_warp_per_row[
                         )
                     output_fn[simd_width, align](row, col, norm_val)
     else:
-        with PDL():
+        with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Pass 1: accumulate the per-thread mean-of-squares scalar only.
             var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
@@ -642,6 +644,7 @@ def rms_norm_gpu_warp_tiling[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
@@ -675,7 +678,7 @@ def rms_norm_gpu_warp_tiling[
         fill=SIMD[dtype, simd_width](0)
     )
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         var thread_m2 = Scalar[accum_type](0)
 
         comptime for c in range(chunks_per_thread):
@@ -820,6 +823,7 @@ def rms_norm_gpu_block[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -829,7 +833,7 @@ def rms_norm_gpu_block[
     var _num_cols = Int(num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         _rms_norm_gpu_block_subkernel[
             simd_width,
             max_warps_per_block,
@@ -848,7 +852,7 @@ def rms_norm_gpu[
         Coord, SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
@@ -972,7 +976,7 @@ def rms_norm_gpu[
 
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        align_up(ceildiv(cols, simd_width), WARP_SIZE),
         WARP_SIZE * max_warps_per_block,
     )
 
@@ -986,7 +990,7 @@ def rms_norm_gpu[
     def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
-            ceildiv(threads, WARP_SIZE) * WARP_SIZE,
+            align_up(threads, WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
 
@@ -1062,6 +1066,7 @@ def rms_norm_gpu[
                 input_fn_il,
                 output_fn_il,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 shape_il.canonicalize(),
@@ -1102,6 +1107,7 @@ def rms_norm_gpu[
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
@@ -1150,6 +1156,7 @@ def rms_norm_gpu[
                             input_fn_2d,
                             output_fn_2d,
                             multiply_before_cast=multiply_before_cast,
+                            pdl_level=pdl_level,
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
@@ -1174,6 +1181,7 @@ def rms_norm_gpu[
                     input_fn_2d,
                     output_fn_2d,
                     multiply_before_cast=multiply_before_cast,
+                    pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
@@ -1233,6 +1241,7 @@ def rms_norm_gpu[
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
@@ -1254,6 +1263,7 @@ def rms_norm_gpu[
             input_fn_2d,
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel](
             gamma,
@@ -1698,7 +1708,7 @@ def apply_qk_rms_norm_gpu[
     if q_cols % simd_width == 0 and k_cols % simd_width == 0:
         # Vectorized loads/stores; size threads for the wider operand.
         var block_dim = min(
-            ceildiv(ceildiv(max_cols, simd_width), WARP_SIZE) * WARP_SIZE,
+            align_up(ceildiv(max_cols, simd_width), WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
@@ -1750,7 +1760,7 @@ def apply_qk_rms_norm_gpu[
     else:
         # General N (incl. non-multiple of vector width): scalar loads/stores.
         var block_dim = min(
-            ceildiv(max_cols, WARP_SIZE) * WARP_SIZE,
+            align_up(max_cols, WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
@@ -2319,7 +2329,7 @@ def group_norm_gpu_multi_block_norm[
                 # same channel (common case for large _spatial dims), load
                 # gamma/beta once and broadcast.
                 var c_first = c_base + offset // _spatial
-                var c_last = c_base + (offset + simd_width - 1) // _spatial
+                var c_last = c_base + ceildiv(offset + simd_width - 1, _spatial)
                 if c_first == c_last:
                     var gamma_val = gamma_fn[1](Index(c_first)).cast[
                         accum_type
@@ -2419,7 +2429,7 @@ def group_norm_gpu[
             # the thread's starting column lands near a boundary.  Fall back
             # to element-wise scalar loads in that case so each element's
             # full (n, c, h, w) index is recomputed independently.
-            if (col + simd_width - 1) // inner_volume != c_offset:
+            if ceildiv(col + simd_width - 1, inner_volume) != c_offset:
                 var result = SIMD[dtype, simd_width]()
                 for i in range(simd_width):
                     var cur_col = col + i
@@ -2438,7 +2448,7 @@ def group_norm_gpu[
             c += c_offset
             indices = IndexList[rank](n, c, l)
 
-            if (col + simd_width - 1) // inner_volume != c_offset:
+            if ceildiv(col + simd_width - 1, inner_volume) != c_offset:
                 var result = SIMD[dtype, simd_width]()
                 for i in range(simd_width):
                     var cur_col = col + i
@@ -2542,7 +2552,7 @@ def group_norm_gpu[
                 var total_simd_elems = group_size // simd_width
                 var chunk_simd_size = ceildiv(total_simd_elems, num_splits)
                 var mb_block_dim = min(
-                    ceildiv(chunk_simd_size, WARP_SIZE) * WARP_SIZE,
+                    align_up(chunk_simd_size, WARP_SIZE),
                     mb_max_block_dim,
                 )
                 var mb_grid_dim = Int(num_rows) * num_splits

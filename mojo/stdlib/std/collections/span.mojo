@@ -73,11 +73,6 @@ Parameters:
 """
 
 
-@doc_hidden
-@deprecated(use=ImmSpan)
-comptime ImmutSpan = ImmSpan
-
-
 @fieldwise_init
 struct _SpanIter[
     mut: Bool,
@@ -309,55 +304,30 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] list: List[downcast[Self.T, Movable]],
-    ):
+        out self,
+        ref[Self.origin] list: List[Self.T],
+    ) where conforms_to(Self.T, Movable):
         """Construct a `Span` from a `List`.
 
         Args:
             list: The list to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](list.unsafe_ptr())
-        self._len = list._len
+        self._data = rebind[type_of(self._data)](list.unsafe_ptr())
+        self._len = len(list)
 
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] array: Array[downcast[Self.T, Movable], _],
+        out self,
+        ref[Self.origin, Self.address_space] array: Array[Self.T, _],
     ):
         """Construct a `Span` from an `Array`.
 
         Args:
             array: The array to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](array.unsafe_ptr())
-        self._len = array.length
-
-    @always_inline
-    @implicit
-    def __init__[
-        array_origin: Origin[mut=Self.mut],
-        U: Copyable,
-        size: Int,
-        //,
-    ](
-        out self: Span[U, array_origin],
-        ref[array_origin] array: Array[U, size],
-    ):
-        """Construct a `Span` from an `Array`.
-
-        Parameters:
-            array_origin: The origin of the array.
-            U: The type of the elements in the `Array`.
-            size: The size of the `Array`.
-
-        Args:
-            array: The array to which the span refers.
-        """
-
         self._data = array.unsafe_ptr()
-        self._len = size
+        self._len = array.length
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -633,12 +603,6 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
-    @doc_hidden
-    @always_inline
-    @deprecated(use=as_imm)
-    def get_immutable(self) -> Self.Immutable:
-        return self.as_imm()
-
     @always_inline
     def unsafe_get(
         self, idx: Some[Indexer]
@@ -691,7 +655,7 @@ struct Span[
     @always_inline
     @__allow_legacy_custom_self_type
     def copy_from(
-        self: Span[mut=True, Self.T, _], other: Span[Self.T, _]
+        self: MutSpan[Self.T, _], other: Span[Self.T, _]
     ) where conforms_to(Self.T, Copyable & Deinitable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -808,7 +772,7 @@ struct Span[
     @always_inline
     @__allow_legacy_custom_self_type
     def unsafe_swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) where conforms_to(Self.T, Movable):
         """Swap the values at indices `a` and `b` without performing bounds checking.
 
@@ -840,7 +804,7 @@ struct Span[
 
     @__allow_legacy_custom_self_type
     def swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) raises where conforms_to(Self.T, Movable):
         """
         Swap the values at indices `a` and `b`.
@@ -893,7 +857,7 @@ struct Span[
         }
 
     @__allow_legacy_custom_self_type
-    def reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
+    def reverse[dtype: DType, //](self: MutSpan[Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -934,7 +898,7 @@ struct Span[
         dtype: DType,
         //,
     ](
-        self: Span[mut=True, Scalar[dtype], _],
+        self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
     ):
         """Apply the function to the `Span` inplace.
@@ -970,7 +934,7 @@ struct Span[
         dtype: DType,
         //,
     ](
-        self: Span[mut=True, Scalar[dtype], _],
+        self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
         cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],

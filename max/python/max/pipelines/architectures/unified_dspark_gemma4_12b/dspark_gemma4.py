@@ -45,6 +45,9 @@ from ..gemma4.layers.rotary_embedding import (
 
 
 def _get(obj: Any, name: str, default: Any = None) -> Any:
+    """Reads *name* from an HF config object or a plain (nested) dict."""
+    if isinstance(obj, dict):
+        return obj.get(name, default)
     return getattr(obj, name, default)
 
 

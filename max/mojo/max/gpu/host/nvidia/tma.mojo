@@ -66,6 +66,21 @@ struct TensorMapDataType(TrivialRegisterPassable):
     """TensorFloat-32 format."""
     comptime TFLOAT32_FTZ = Self(12)
     """TensorFloat-32 with flush-to-zero for denormals."""
+    comptime PACKED_FP4_ALIGN8B = Self(13)
+    """Nibble-packed 4-bit source, landed packed in shared memory.
+
+    Copies 16 U4 values into 8 shared-memory bytes with no gaps.
+    """
+    comptime PACKED_FP4_ALIGN16B = Self(14)
+    """Nibble-packed 4-bit source, landed padded in shared memory.
+
+    Copies 16 U4 values into 16 shared-memory bytes: 8 bytes of packed data
+    then an 8-byte gap. The values stay nibble-packed -- it is the padding that
+    makes a K extent span one byte per element. This is the layout the SM100
+    `kind::mxf8f6f4` UMMA reads an E2M1 operand from, so it is what lets FP4
+    weights stay 4-bit in global memory while feeding a tensor-core kind whose
+    operands are byte addressed.
+    """
 
     @staticmethod
     def from_dtype[dtype: DType]() -> Self:
@@ -303,15 +318,6 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         """
         self.data = StaticTuple[UInt8, 128]()
 
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Creates a copy of a TMA descriptor.
-
-        Args:
-            copy: The descriptor to copy.
-        """
-        self.data = copy.data
-
 
 def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
@@ -334,6 +340,7 @@ def create_tma_descriptor[
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    unpack_fp4: Bool = False,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -355,6 +362,14 @@ def create_tma_descriptor[
         rank: The number of dimensions (1-5).
         swizzle_mode: The swizzle pattern to apply in shared memory.
         l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
+        unpack_fp4: When True, `global_buf` holds nibble-packed E2M1 (two
+            values per `uint8`) and the copy pads it on the way into shared
+            memory: each 16-value group lands in 16 bytes as 8 packed bytes
+            followed by an 8-byte gap (see `PACKED_FP4_ALIGN16B`). The values
+            stay nibble-packed; it is the padding that makes a K extent span
+            one byte per element. `global_shape` and `shared_mem_shape` are
+            then counted in FP4 ELEMENTS on the innermost dimension, while
+            `global_strides` stays in `uint8` units.
 
     Args:
         global_buf: Device buffer containing the global memory tensor.
@@ -394,9 +409,30 @@ def create_tma_descriptor[
         " but is: ",
         global_strides_arg[0],
     )
+    comptime if unpack_fp4:
+        comptime assert (
+            dtype == DType.uint8
+        ), "packed FP4 must be presented as uint8, two E2M1 values per byte"
+        # `cuTensorMapEncodeTiled` requires globalDim[0] % 128 == 0 for the
+        # ALIGN16B packed types, and 32-byte alignment on globalAddress.
+        debug_assert(
+            global_dim_arg[0] % 128 == 0,
+            (
+                "packed FP4 TMA requires the innermost extent to be a multiple"
+                " of 128 elements, but is: "
+            ),
+            global_dim_arg[0],
+        )
+
+    comptime data_type = (
+        TensorMapDataType.PACKED_FP4_ALIGN16B if unpack_fp4 else TensorMapDataType.from_dtype[
+            dtype
+        ]()
+    )
+
     global_buf._tensor_map_encode_tiled(
         tensor_map_ptr,
-        TensorMapDataType.from_dtype[dtype]()._value,
+        data_type._value,
         Int32(rank),
         global_dim_arg.unsafe_ptr(),
         # global_strides_arg[0] is implicitly size_of[dtype]()

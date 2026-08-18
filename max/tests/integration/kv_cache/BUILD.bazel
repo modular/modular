@@ -100,6 +100,7 @@ modular_py_test(
             "*_distributed_gpu.py",
             "test_lora_*.py",
             "test_msa_fp8_kv_store_gpu.py",
+            "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
         ],
     ) + ["conftest.py"],
@@ -149,6 +150,31 @@ modular_py_test(
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Dedicated target for the fused MSA attention + MXFP8 quantize bit-exactness
+# test (AMD gfx950 only)
+modular_py_test(
+    name = "test_msa_mxfp8_attention_gpu",
+    srcs = [
+        "test_msa_mxfp8_attention_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],

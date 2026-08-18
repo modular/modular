@@ -26,7 +26,7 @@ from std.format._utils import (
     TypeNames,
 )
 from std.hashlib.hasher import Hasher
-from std.memory.unsafe_maybe_uninit import UnsafeMaybeUninit
+from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,
     dealloc,
@@ -37,7 +37,9 @@ from std.memory.alloc import (
 
 
 @doc_hidden
-struct _ArcPointerInner[T: Movable & Deinitable]:
+struct _ArcPointerInner[T: Movable & Deinitable](
+    Movable where False,
+):
     """
     The backing _shared_ piece of an ArcPointer.
     Referenced by all Arc and Weak for a given value.
@@ -46,7 +48,7 @@ struct _ArcPointerInner[T: Movable & Deinitable]:
 
     var strong: Atomic[UInt64]
     var weak: Atomic[UInt64]
-    var payload: UnsafeMaybeUninit[Self.T]
+    var payload: MaybeUninit[Self.T]
 
     @doc_hidden
     def __init__(out self, var value: Self.T):
@@ -57,7 +59,13 @@ struct _ArcPointerInner[T: Movable & Deinitable]:
         """
         self.strong = Atomic(UInt64(1))
         self.weak = Atomic(UInt64(1))
-        self.payload = UnsafeMaybeUninit[Self.T](value^)
+        self.payload = MaybeUninit[Self.T](value^)
+
+    def __deinit__(deinit self):
+        # Safety:
+        # The payload has already been destroyed from the
+        # final ref-count drop.
+        self.payload^.unsafe_forget()
 
     def add_strong(mut self):
         """Atomically increment the strong refcount."""
@@ -316,7 +324,7 @@ struct ArcPointer[T: Movable & Deinitable](
         # TODO: consider removing this method.
         return (
             Pointer(to=self._inner[].payload_ref())
-            .mut_cast[mut]()
+            .unsafe_mut_cast[mut]()
             .unsafe_origin_cast[origin]()
         )
 

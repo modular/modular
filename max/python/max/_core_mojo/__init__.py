@@ -31,6 +31,7 @@ def block_hasher(
     tokens: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: bytes = b"\x00" * 8,
+    seed: bytes = b"\x00" * 32,
 ) -> list[bytes]:
     """Hash tokens into blocks for prefix caching.
 
@@ -47,6 +48,9 @@ def block_hasher(
         block_size: The number of tokens per block. Must be greater than 0.
         parent_hash: The hash value of the parent block, as 8 big-endian
             signed bytes.
+        seed: 32 bytes mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt. All-zero (the default)
+            reproduces the unseeded hash exactly.
 
     Returns:
         A list of block hash values, each 8 big-endian signed bytes.
@@ -63,11 +67,14 @@ def block_hasher(
         raise ValueError(
             f"parent_hash must be exactly 8 bytes, got {len(parent_hash)}"
         )
+    if len(seed) != 32:
+        raise ValueError(f"seed must be exactly 32 bytes, got {len(seed)}")
     ph_int = int.from_bytes(parent_hash, "big", signed=True)
     # Cast the array to int32 as that is what the mojo block hasher expects.
     if tokens.dtype != np.int32:
         tokens = tokens.astype(np.int32)
-    result = mojo_block_hasher(tokens, block_size, ph_int)
+    seed_arr = np.frombuffer(seed, dtype=np.uint8)
+    result = mojo_block_hasher(tokens, block_size, ph_int, seed_arr)
     return [h.to_bytes(8, "big", signed=True) for h in result]
 
 

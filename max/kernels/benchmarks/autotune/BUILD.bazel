@@ -201,7 +201,7 @@ modular_run_binary_test(
 # their own modular_py_binary that pairs the same kbench harness with a
 # different `mojo_deps` set — most notably, a stdlib overlay other than
 # `@mojo//:std`. Carries no mojo_deps itself so the consumer fully
-# controls which `std.mojopkg` lands in runfiles.
+# controls which `std.mojoc` lands in runfiles.
 modular_py_library(
     name = "kbench_lib",
     srcs = [

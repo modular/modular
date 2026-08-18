@@ -33,6 +33,7 @@ not here -- this routine produces the per-element dequantized weight only.
 """
 
 from std.gpu import global_idx
+from std.math import ceildiv
 from max.gpu.host import DeviceContext
 
 from layout import TileTensor, Idx
@@ -167,6 +168,6 @@ def enqueue_fp4_materialize[
         out_w,
         packed.as_immut(),
         scales.as_immut(),
-        grid_dim=((K + BLK - 1) // BLK, (N + BLK - 1) // BLK),
+        grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
         block_dim=(BLK, BLK),
     )

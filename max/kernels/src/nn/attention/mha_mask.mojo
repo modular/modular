@@ -468,7 +468,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
 # CausalMask
 # ===-----------------------------------------------------------------------===#
 
-comptime MASK_VALUE = -10_000
+# Finite mask sentinel. Must sit far below any physically reachable QK score
+# (raw or scale*log2e-scaled) so it can never win the online-softmax row max
+# and zero out a row's real columns, yet stay finite so a fully-masked row
+# computes MASK_VALUE - MASK_VALUE = 0 instead of -inf - -inf = NaN. A power of
+# two so float32 and bfloat16 hold it exactly and agree bit-for-bit.
+comptime MASK_VALUE = -FloatLiteral(2**100)
 
 
 @fieldwise_init
@@ -515,7 +520,7 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
-        # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
+        # TODO(KERN-782): MASK_VALUE should be -inf but softmax saturates with NaNs.
         var masked_score_vec = (
             SIMD[index_type, width](q_idx).ge(
                 iota[index_type, width](Scalar[index_type](k_idx))
@@ -914,12 +919,20 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
     ) -> TileMaskStatus:
         var q_start_window = tile_offset[0] // Self.local_window_size
         var q_end_window = (
-            tile_offset[0] + tile_size[0] - 1
-        ) // Self.local_window_size
+            ceildiv(
+                tile_offset[0] + tile_size[0],
+                Self.local_window_size,
+            )
+            - 1
+        )
         var k_start_window = tile_offset[1] // Self.local_window_size
         var k_end_window = (
-            tile_offset[1] + tile_size[1] - 1
-        ) // Self.local_window_size
+            ceildiv(
+                tile_offset[1] + tile_size[1],
+                Self.local_window_size,
+            )
+            - 1
+        )
 
         var overlapping_windows = (
             k_end_window >= q_start_window and q_end_window >= k_start_window
@@ -1073,7 +1086,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         # Build the chunk window as `high_mask ^ low_mask` (a contiguous run
         # of set bits) and AND in the OOB cutoff.
         comptime W: Int32 = Int32(Self.local_window_size)
-        var c_q: Int32 = (score_row // W) * W
+        var c_q: Int32 = align_down(score_row, W)
 
         var lo: Int32 = max(min(c_q - col_start, Int32(32)), Int32(0))
         var hi: Int32 = max(min(c_q + W - col_start, Int32(32)), Int32(0))

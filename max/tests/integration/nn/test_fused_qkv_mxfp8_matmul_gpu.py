@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Numeric test for the fused MXFP8 QKV-matmul-with-KV-write kernel on SM100.
+"""Numeric test for the fused MXFP8 QKV-matmul-with-KV-write kernel.
 
-Exercises the ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path that
-``quantized_fused_qkv_matmul`` uses for ``QuantFormat.MXFP8``: the activation
-and the concatenated QKV weight are quantized to ``float8_e4m3fn`` with E8M0
-block scales, the fused matmul runs, the Q projection is returned, and K/V are
-written in place into a paged KV cache.
+Exercises the ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path (and its
+``.amd`` CDNA4 sibling, which differs only in taking rank-2 rather than rank-5
+E8M0 scales) that ``quantized_fused_qkv_matmul`` uses for ``QuantFormat.MXFP8``:
+the activation and the concatenated QKV weight are quantized to
+``float8_e4m3fn`` with E8M0 block scales, the fused matmul runs, the Q
+projection is returned, and K/V are written in place into a paged KV cache.
 
 It checks two things:
 
@@ -77,6 +78,16 @@ def _skip_if_not_supported() -> None:
         pytest.skip("MXFP8 block-scaled MMA only supports NVIDIA GPUs")
     if not is_b100_b200():
         pytest.skip("MXFP8 block-scaled MMA requires B100 or B200 (SM100)")
+
+
+def _skip_if_no_fused_qkv_mxfp8() -> None:
+    """The 3-way fused QKV has both an SM100 and a CDNA4 op behind one wrapper."""
+    if accelerator_count() == 0:
+        pytest.skip("No GPU available for MXFP8 fused-QKV test")
+    if accelerator_api() != "hip" and not is_b100_b200():
+        pytest.skip(
+            "MXFP8 block-scaled MMA requires B100/B200 (SM100) or CDNA4"
+        )
 
 
 def _skip_if_not_amd() -> None:
@@ -298,6 +309,12 @@ def _run_path(
     [
         ("prefill", 96, 16, 4, 128, 768),
         ("decode", 1, 16, 4, 128, 768),
+        # Production M3 dense-layer shape at TP=4 (N=2304, K=6144). The short-K
+        # cases above leave CDNA4's split-K dispatch unqualified (3 BK-tiles,
+        # below its 2-tiles-per-split floor); K=6144 gives 24 tiles -> 12
+        # splits, which is what routes the KV-scatter epilogue through the
+        # split-K reduce kernel instead of the matmul's own store path.
+        ("decode_splitk", 1, 16, 1, 128, 6144),
     ],
 )
 def test_fused_qkv_mxfp8_matmul(
@@ -308,7 +325,7 @@ def test_fused_qkv_mxfp8_matmul(
     head_dim: int,
     hidden: int,
 ) -> None:
-    _skip_if_not_supported()
+    _skip_if_no_fused_qkv_mxfp8()
 
     qkv_dim = (num_heads + 2 * num_kv_heads) * head_dim
 
@@ -635,14 +652,22 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
 
     def _run(
         stacked: bool,
+        pre: str | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32."""
+        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32.
+
+        `pre` is the `(fp8, e8m0)` pair a producer epilogue would hand the op:
+        "same" is what the op would compute itself, "foreign" unrelated rows.
+        """
         main_sym = main_params.get_symbolic_inputs().inputs[0]
         index_sym = index_params.get_symbolic_inputs().inputs[0]
         n_main = len(main_sym.flatten())
 
+        name = "stacked" if stacked else "separate"
+        if pre is not None:
+            name += f"_pre_{pre}"
         with Graph(
-            f"qkv_index_mxfp8_amd_{'stacked' if stacked else 'separate'}",
+            f"qkv_index_mxfp8_amd_{name}",
             input_types=[
                 TensorType(
                     DType.bfloat16, (seq_len, hidden), device=device_ref
@@ -685,6 +710,19 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 out_type=DType.float8_e4m3fn,
             )
             if stacked:
+                pre_pair = None
+                if pre is not None:
+                    # "foreign" borrows the first `seq_len` weight rows: right
+                    # shape and dtype, unrelated values.
+                    pre_src = (
+                        a.tensor if pre == "same" else wqkv.tensor[:seq_len]
+                    )
+                    pre_pair = quantize_dynamic_block_scaled(
+                        pre_src,
+                        sf_vector_size=32,
+                        scales_type=DType.float8_e8m0fnu,
+                        out_type=DType.float8_e4m3fn,
+                    )
                 q, index_q = quantized_fused_qkv_index_matmul(
                     kv_params=main_params,
                     index_kv_params=index_params,
@@ -699,6 +737,7 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                     idx_head_dim=idx_head_dim,
                     quant_config=_mxfp8_quant_config(),
                     weight_scale=w_scales,
+                    prequantized=pre_pair,
                 )
             else:
                 a_q, a_scales = quantize_dynamic_block_scaled(
@@ -797,3 +836,24 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
     assert np.any(index_st != 0.0), (
         "stacked path left the index cache unwritten"
     )
+
+    # Two arms: byte-equality against the op's own quantize is the layout gate,
+    # but an op ignoring the pair and requantizing `x` would pass it too -- so
+    # arm 2 feeds unrelated rows and requires the outputs to MOVE.
+    q_same, iq_same, main_same, index_same = _run(stacked=True, pre="same")
+    np.testing.assert_array_equal(q_same, q_st)
+    np.testing.assert_array_equal(iq_same, iq_st)
+    np.testing.assert_array_equal(main_same, main_st)
+    np.testing.assert_array_equal(index_same, index_st)
+
+    q_fgn, iq_fgn, main_fgn, index_fgn = _run(stacked=True, pre="foreign")
+    for name, got, ref in (
+        ("Q", q_fgn, q_st),
+        ("IndexQ", iq_fgn, iq_st),
+        ("main KV", main_fgn, main_st),
+        ("IndexK", index_fgn, index_st),
+    ):
+        assert not np.array_equal(got, ref), (
+            f"{name} unchanged when `prequantized` carried unrelated rows: the"
+            " op is quantizing `x` itself and ignoring the pair"
+        )

@@ -20,6 +20,7 @@ build_test(
     name = "fuzz_build_test",
     tags = ["gpu"],
     targets = [
+        ":fuzz_attn_res_mix.mojo.test",
         ":fuzz_block_scaled_fp4.mojo.test",
         ":fuzz_block_scaled_mxfp8.mojo.test",
         ":fuzz_ep_combine.mojo.test",
@@ -32,6 +33,7 @@ build_test(
         ":fuzz_fused_swiglu_mxfp8.mojo.test",
         ":fuzz_gemv_split_k.mojo.test",
         ":fuzz_grouped_matmul_mxfp8.mojo.test",
+        ":fuzz_grouped_matmul_sm100_w4a8.mojo.test",
         ":fuzz_layer_norm.mojo.test",
         ":fuzz_matmul.mojo.test",
         ":fuzz_mha_causal.mojo.test",
@@ -556,6 +558,34 @@ mojo_test(
     ],
 )
 
+# Target: attn_res_mix (K3's fused attention-residual softmax mixture). Fuzzes
+# hidden against both the grid-stride and warp moduli, the candidate count
+# across the op's whole comptime dispatch ladder, and the PDL producer
+# handshake at every shape.
+mojo_test(
+    name = "fuzz_attn_res_mix.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_attn_res_mix.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_attn_res_mix.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//Kernels/lib/attn_res",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Target: block-scaled FP4 SM100 matmul small_bn (thin wrapper over the testbed).
 # B200-only. memcheck+pool-off surfaces a small_bn scale-factor over-read across
 # fuzzed M.
@@ -660,6 +690,44 @@ mojo_test(
     ],
 )
 
+# Target: grouped block-scaled W4A8 SM100 matmul -- E4M3 activations against
+# nibble-packed E2M1 weights. Same ragged fuzz axis as the MXFP8 target, but the
+# two operands disagree on bytes-per-K-row (the weights stay packed in GMEM and
+# the FP4 TMA copy unpacks them), which is the geometry a boundary search is
+# here to stress. Drives the dispatch entry point so scaling-kind inference from
+# B's dtype and the AB_swapped operand wiring are covered too. `ref` (--check)
+# compares against an exact host FP32 recompute at one BF16 ulp -- no vendor
+# BLAS path takes this operand pair. K must stay a multiple of 128. B200-only.
+mojo_test(
+    name = "fuzz_grouped_matmul_sm100_w4a8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_grouped_matmul_sm100_w4a8.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_grouped_matmul_sm100_w4a8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Target: MoE router `single_group_router` (the MiniMax-M3 n_groups=1 routing
 # path: top-k expert selection by score+bias, unbiased normalized scaled
 # weights). num_tokens + the score value-distribution are the fuzz axes;
@@ -700,7 +768,8 @@ mojo_test(
 # (`-D N=..`, multiple of 32). `contract` (--contract, default) checks the
 # finiteness guard (a finite-but-large input must not cast to NaN -- the
 # SERVOPT-1420 class) and scale validity; `ref` (--check) is a coarse dequant
-# round-trip. B200-only (SM100 TCGEN05 interleaved scales).
+# round-trip. Dual-arch (B200 SM100 TCGEN05 interleaved scales + MI355 rank-2
+# scales), via quantize_dynamic_block_scaled's vendor dispatch.
 mojo_test(
     name = "fuzz_mxfp8_quantize.mojo.test",
     size = "large",
@@ -717,10 +786,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:linalg",
@@ -1132,6 +1202,13 @@ modular_py_binary(
     name = "fuzz",
     testonly = True,
     srcs = ["fuzz.py"],
+    # The curated regression corpus is this binary's runtime input:
+    # `--replay-corpus` reads every entry and re-runs it as the deterministic
+    # gate. Globbed so recording a new anchor needs no BUILD edit.
+    data = glob(
+        ["corpus/**/*.json"],
+        allow_empty = True,
+    ),
     main = "fuzz.py",
     tags = ["manual"],
 )

@@ -105,6 +105,7 @@ from .tokenizer import (
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
+from .vision_preprocess_cache import VisionPreprocessCache
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -157,6 +158,7 @@ __all__ = [
     "TextTokenizer",
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
+    "VisionPreprocessCache",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

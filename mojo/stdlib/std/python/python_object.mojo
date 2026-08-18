@@ -22,7 +22,7 @@ from std.python import PythonObject
 from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import _CPointer, c_double, c_int, c_long, c_size_t, c_ssize_t
+from std.ffi import c_double, c_int, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -356,7 +356,10 @@ struct PythonObject(
         var set_ptr = cpy.PySet_New({})
 
         for i in range(len(values)):
-            var errno = cpy.PySet_Add(set_ptr, values[i].steal_data())
+            # PySet_Add doesn't steal the value reference.
+            var value_ptr = values[i].steal_data()
+            var errno = cpy.PySet_Add(set_ptr, value_ptr)
+            cpy.Py_DecRef(value_ptr)
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=set_ptr)
@@ -463,9 +466,10 @@ struct PythonObject(
             If setting the attribute fails.
         """
         ref cpy = Python().cpython()
-        var errno = cpy.PyObject_SetAttrString(
-            self._obj_ptr, name^, value.steal_data()
-        )
+        # PyObject_SetAttrString doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetAttrString(self._obj_ptr, name^, value_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -565,19 +569,20 @@ struct PythonObject(
         var size = len(args)
         var key_ptr: PyObjectPtr
         if size == 1:
-            key_ptr = cpy.Py_NewRef(args[0].steal_data())
+            key_ptr = cpy.Py_NewRef(args[0]._obj_ptr)
         else:
             key_ptr = cpy.PyTuple_New(size)
 
             for i in range(size):
                 _ = cpy.PyTuple_SetItem(
-                    key_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                    key_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
                 )
 
-        var errno = cpy.PyObject_SetItem(
-            self._obj_ptr, key_ptr, value.steal_data()
-        )
+        # PyObject_SetItem doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetItem(self._obj_ptr, key_ptr, value_ptr)
         cpy.Py_DecRef(key_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -1286,7 +1291,7 @@ struct PythonObject(
 
         for i in range(size):
             _ = cpy.PyTuple_SetItem(
-                args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                args_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
             )
         var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)

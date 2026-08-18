@@ -102,6 +102,8 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk import gumbel_sampling_fused_gpu
+from nn.topk_fi import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
@@ -1638,7 +1640,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 
 @extensibility.register("mo.composite.rope.ragged")
-struct Struct_rope_ragged_paged[interleaved: Bool]:
+struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
     """Registers the `mo.composite.rope.ragged` graph op with the graph compiler.
 
     Parameters:
@@ -1646,6 +1648,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             components (real, imag, real, imag, ...) as in GGUF, rather
             than splitting them into halves (real, ..., real, imag, ...,
             imag) as in safetensors.
+        rope_first: Whether a partial RoPE rotates the leading columns of
+            each head, leaving the trailing ones to pass through, rather
+            than the other way around.
     """
 
     @always_inline
@@ -1678,6 +1683,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                         trace_arg("start_pos", start_pos.shape()),
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         "interleaved=" + String(Self.interleaved),
+                        "rope_first=" + String(Self.rope_first),
                         "target=" + String(target),
                     ]
                 )
@@ -1703,6 +1709,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
+            rope_first=Self.rope_first,
         ](
             x_tensor,
             row_offsets_tensor,
@@ -2563,6 +2570,143 @@ struct Struct_fused_token_sampling:
                 .as_unsafe_any_origin()
                 .as_immut(),
             )
+
+
+@extensibility.register("sampler.fused_token_sampling_with_dist")
+struct Struct_fused_token_sampling_with_dist:
+    """Registers the `sampler.fused_token_sampling_with_dist` graph op.
+
+    Samples one token per row under joint top-k/top-p with temperature, and
+    also returns the masked, renormalized distribution it drew from.
+    Speculative decoding subtracts that distribution to build its rejection
+    residual, and reads the sampled token's probability out of it. Op arity
+    is fixed, so this is a second registration over the same kernel as
+    `sampler.fused_token_sampling` rather than an optional output on it.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        dist_dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        max_k: Scalar,
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.fused_token_sampling_with_dist is GPU-only"
+        topk_topp_sampling_from_prob[
+            from_logits=True, emit_dist=True, dist_dtype=dist_dtype
+        ](
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            Int(max_k),
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            rng_seed=seed.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            out_dist=out_dist.to_tile_tensor[
+                DType.int64
+            ]().as_unsafe_any_origin(),
+        )
+
+
+@extensibility.register("sampler.topk_topp_masked_probs")
+struct Struct_topk_topp_masked_probs:
+    """Registers the `sampler.topk_topp_masked_probs` graph op.
+
+    Writes each row's top-k/top-p masked renormalized softmax, without
+    sampling. Speculative decoding verification reads the target's masked
+    probabilities and builds its rejection residual straight from this
+    tensor, so nothing is sorted and no distribution is rebuilt in-graph.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        probs: OutputTensor[dtype=DType.float32, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.topk_topp_masked_probs is GPU-only"
+        topk_topp_masked_probs(
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            probs.to_tile_tensor[DType.int64]().as_unsafe_any_origin(),
+            top_k_val=-1,
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+        )
+
+
+@extensibility.register("sampler.gumbel_argmax_from_probs")
+struct Struct_gumbel_argmax_from_probs:
+    """Registers the `sampler.gumbel_argmax_from_probs` graph op.
+
+    Draws one token per row proportionally to a row of unnormalized
+    probabilities, by Gumbel-max over `ln(p)`. The noise comes from the
+    per-row seed inside the kernel, so the caller passes no noise tensor.
+    Rows with equal seeds draw with equal noise, which is how a request's
+    draft positions share one noise row.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        probs: InputTensor[dtype=DType.float32, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.gumbel_argmax_from_probs is GPU-only"
+        gumbel_sampling_fused_gpu[from_probs=True](
+            ctx,
+            probs.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            seed=seed.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+        )
 
 
 @extensibility.register("min_p_sampling")

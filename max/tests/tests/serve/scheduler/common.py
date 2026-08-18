@@ -35,7 +35,10 @@ from max.pipelines.context import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
+)
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.modeling.types import (
     BatchType,
@@ -187,7 +190,7 @@ def create_kv_cache(
     )
 
     assert all(
-        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        kv_manager.block_count(replica_idx=replica_idx).total == num_blocks
         for replica_idx in range(dp)
     )
     return kv_manager
@@ -266,7 +269,7 @@ class FakeTokenGeneratorPipeline(
 ):
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 42,
         num_speculative_tokens: int = 0,
@@ -317,7 +320,8 @@ class FakeTokenGeneratorPipeline(
                 responses[req_id] = output
 
         # Step the kv cache manager
-        self.kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self.kv_manager.step(ctx)
 
         # If num spec tokens, populate the draft tokens for the reqs
         if self.num_speculative_tokens > 0:
@@ -362,7 +366,7 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
 
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 99,  # test sentinel; no semantic meaning
         num_speculative_tokens: int = 0,
@@ -461,7 +465,8 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                         123
                     ] * self.num_speculative_tokens
 
-            self.kv_manager.step(inputs.batches)
+            for ctx in inputs.flat_batch:
+                self.kv_manager.step(ctx)
             self._pending_outputs = new_outputs
             self._pending_contexts = list(inputs.flat_batch)
             self._pending_inputs = inputs
@@ -635,6 +640,10 @@ def run_until_completion(
         ):
             for onloading in list(batch_constructor._onloading_reqs.values()):
                 onloading.event.synchronize()
+            # KVConnector pending-transfer bookkeeping is legacy-manager-only
+            # (Jenga doesn't support KVConnector), so narrow before reaching
+            # into internals this helper's synchronization actually needs.
+            assert isinstance(kv_cache, PagedKVCacheManager)
             for pending_list in kv_cache._block_manager._pending_transfers:
                 for pending in list(pending_list):
                     pending.event.synchronize()

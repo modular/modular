@@ -248,6 +248,7 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager.cache_params.return_value = mock_kv_params
     pipeline._kv_manager._total_num_pages = 100
+    pipeline._kv_manager.effective_max_seq_length = 100 * 128
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
     pipeline._fold_sampler_into_graph = False
@@ -297,13 +298,14 @@ def _make_effective_cache_length_pipeline(
     mock_kv_params.num_draft_tokens_per_step = num_draft_tokens_per_step
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager._total_num_pages = total_num_pages
+    pipeline._kv_manager.effective_max_seq_length = total_num_pages * page_size
     return pipeline
 
 
 @pytest.mark.parametrize(
     ("num_draft_tokens", "num_draft_tokens_per_step", "expected_slack"),
     [
-        (0, 1, 0),  # speculative decoding disabled: strict no-op
+        (0, 0, 0),  # speculative decoding disabled: strict no-op
         (3, 1, 10),  # eagle/mtp autoregressive drafts: 3*3 + 0 + 1
         (4, 4, 14),  # dflash block drafts: 3*4 + 1 + 1
     ],

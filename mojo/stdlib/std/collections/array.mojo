@@ -41,11 +41,13 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
+from std.sys import is_gpu, size_of
 from std.memory import (
-    UnsafeMaybeUninit,
+    MaybeUninit,
     forget_deinit,
     unsafe_destroy_n,
     unsafe_uninit_move_n,
+    unsafe_uninit_copy_n,
 )
 from std.traits import (
     IsTriviallyCopyable,
@@ -261,10 +263,6 @@ struct Array[T: AnyType, length: Int](
     ```
     """
 
-    @deprecated("`Array.size` is deprecated, use `Array.length`.")
-    comptime size = Self.length
-    """The number of elements in the array. Deprecated alias for `length`."""
-
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
     comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]
@@ -373,15 +371,13 @@ struct Array[T: AnyType, length: Int](
     def __init__(
         out self,
         *,
-        var unsafe_assume_initialized: Array[
-            UnsafeMaybeUninit[Self.T], Self.length
-        ],
+        var unsafe_assume_initialized: Array[MaybeUninit[Self.T], Self.length],
     ) where conforms_to(Self.T, Movable):
         """Constructs an `Array` from an `Array` of
-        `UnsafeMaybeUninit`.
+        `MaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
+            unsafe_assume_initialized: The array of `MaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:
@@ -400,6 +396,7 @@ struct Array[T: AnyType, length: Int](
             self.unsafe_ptr().unsafe_offset(i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
+        std.memory.forget_deinit(unsafe_assume_initialized^)
 
     @always_inline
     def __init__(
@@ -541,6 +538,21 @@ struct Array[T: AnyType, length: Int](
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
+    @staticmethod
+    def _byte_size_favors_field_copy() -> Bool:
+        """Returns whether `Self`'s total byte size favors a direct field
+        copy over `unsafe_uninit_{copy,move}_n`.
+
+        A field copy wins below ~1024 bytes. Above that, `unsafe_uninit_*_n`
+        wins by a growing margin, since it scales with bytes while a field
+        copy scales closer to element count once too large for registers.
+
+        Returns:
+            `True` if size alone favors a direct field copy.
+        """
+        comptime TRIVIAL_FAST_PATH_MAX_BYTES = 1024
+        return size_of[Self.T]() * Self.length <= TRIVIAL_FAST_PATH_MAX_BYTES
+
     @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Copy constructs the array from another array.
@@ -555,13 +567,15 @@ struct Array[T: AnyType, length: Int](
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
-        comptime if IsTriviallyCopyable[Self.T]:
+        comptime if IsTriviallyCopyable[
+            Self.T
+        ] and Self._byte_size_favors_field_copy():
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
-            var base = self.unsafe_ptr()
-            for idx in range(Self.length):
-                base.unsafe_offset(idx).unsafe_write(copy=copy.unsafe_get(idx))
+            unsafe_uninit_copy_n[overlapping=False](
+                dest=self.unsafe_ptr(), src=copy.unsafe_ptr(), count=Self.length
+            )
 
     @stable(since="1.0")
     def __init__(
@@ -575,16 +589,17 @@ struct Array[T: AnyType, length: Int](
         Notes:
             Moves the elements from the source array into this array.
         """
-
-        comptime if IsTriviallyMovable[Self.T]:
+        comptime if IsTriviallyMovable[
+            Self.T
+        ] and Self._byte_size_favors_field_copy():
             self._array = move._array
         else:
             self = Self(uninitialized=True)
-            for idx in range(Self.length):
-                var other_ptr = move.unsafe_ptr().unsafe_offset(idx)
-                self.unsafe_ptr().unsafe_offset(idx).unsafe_write_move_from(
-                    other_ptr
-                )
+            unsafe_uninit_move_n[overlapping=False](
+                dest=self.unsafe_ptr(),
+                src=move.unsafe_ptr(),
+                count=Self.length,
+            )
 
     @stable(since="1.0")
     def __deinit__(
