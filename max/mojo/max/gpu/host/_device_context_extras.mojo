@@ -208,7 +208,7 @@ __extension DeviceExternalFunction:
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Launches the device function with the specified arguments and configuration.
 
@@ -299,7 +299,7 @@ __extension DeviceContext:
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -419,7 +419,7 @@ __extension DeviceContext:
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Enqueues a pre-compiled checked function for execution on this device.
 

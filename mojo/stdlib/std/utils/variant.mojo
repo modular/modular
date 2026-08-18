@@ -788,6 +788,10 @@ struct Variant[*Ts: AnyType](
         return self._storage^.unwrap[T]()
 
     @always_inline
+    def _unsafe_unchecked_unwrap[T: Movable](deinit self) -> T:
+        return self._storage^.unwrap[T]()
+
+    @always_inline
     def unsafe_unwrap[T: Movable](deinit self) -> T:
         """Unsafely take the current value of the variant with the provided type.
 
@@ -950,6 +954,12 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         return self._storage.isa[T]()
 
+    @always_inline
+    def _unsafe_unchecked_get[T: AnyType](ref self) -> ref[self] T:
+        return self._storage.unsafe_ptr[T]().unsafe_origin_cast[
+            origin_of(self)
+        ]()[]
+
     def unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
@@ -969,9 +979,7 @@ struct Variant[*Ts: AnyType](
         """
         Self._check[T]()
         assert self.isa[T](), "get: wrong variant type"
-        return self._storage.unsafe_ptr[T]().unsafe_origin_cast[
-            origin_of(self)
-        ]()[]
+        return self._unsafe_unchecked_get[T]()
 
     # ===-------------------------------------------------------------------===#
     # In-place construction primitives

@@ -1137,7 +1137,7 @@ def external_call[
     callee: StaticString,
     return_type: RegisterPassable,
     *types: AnyType,
-    num_fixed_args: OptionalReg[Int] = None,
+    num_fixed_args: Optional[Int] = None,
 ](*args: *types) -> return_type:
     """Calls an external function.
 
@@ -1209,13 +1209,6 @@ def external_call[
     # assert above has already failed the build and emitting the attribute
     # would bury that message under the op verifier's error.
     comptime declares_variadic = num_fixed_args.or_else(-1) >= 0
-    # The count is `OptionalReg`, not `Optional`, and is read through `or_else`
-    # rather than `value()`: allocation calls `external_call`, so anything this
-    # function's parameter domain reaches which allocates — `Optional`'s
-    # `Variant` storage, or the `String` that `value()`'s empty-case `abort()`
-    # formats — makes that domain recursively require itself. Elaboration
-    # deadlocks on such a cycle instead of reporting it, so the whole stdlib
-    # stops compiling under `-D ASSERT=all`.
     comptime fixed_args = num_fixed_args.or_else(0)
 
     comptime if return_type == NoneType:
