@@ -23,8 +23,8 @@ def register_internal(name: StaticString):
     `mo.custom` op. Used by built-in
     [MAX Graph operations](/api/python/graph.ops).
 
-    For registering [custom operations](/max/develop/custom-ops/), use the
-    [@extensibility.register](/mojo/manual/decorators/extensibility-register) decorator,
+    For registering [custom operations](/develop/custom-ops/), use the
+    [@extensibility.register](/api/mojo/extensibility/decorators/register/) decorator,
     instead.
 
     For instance:

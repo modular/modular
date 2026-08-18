@@ -16,7 +16,7 @@ Provides the `@register` / `@register_internal` decorators, the
 `ManagedTensorSlice` type and supporting tensor specs/IO enums, plus the
 elementwise operation traits.
 
-For registering [custom operations](/max/develop/custom-ops/), use the Mojo
+For registering [custom operations](/develop/custom-ops/), use the Mojo
 [@extensibility.register](https://mojolang.org/docs/reference/decorators/extensibility-register/)
 decorator instead.
 """
