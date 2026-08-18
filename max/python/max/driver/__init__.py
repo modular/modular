@@ -61,9 +61,6 @@ from .driver import (
     scan_available_devices,
 )
 
-del driver  # type: ignore
-del buffer  # type: ignore
-
 
 @contextlib.contextmanager
 def launch_trace() -> Iterator[list[LaunchTraceEntry]]:
