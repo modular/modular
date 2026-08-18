@@ -19,8 +19,8 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard, Union
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
@@ -382,12 +382,12 @@ def _slice_symbolic_tensor(
 
     starts, stops, steps = slice_arguments(indices, x.shape)
 
-    sliced_tensor = Graph.current._add_op(
-        rmo.slice,
-        x,
-        Shape(starts).to_mlir(),
-        Shape(stops).to_mlir(),
-        Shape(steps).to_mlir(),
+    sliced_tensor = Graph.current._add_op_generated(
+        rmo.SliceOp,
+        input=x,
+        starts=Shape(starts),
+        stops=Shape(stops),
+        steps=Shape(steps),
     )[0].tensor
 
     # Account for None entries in the slice indices by unsqueezing those dims.
@@ -401,23 +401,66 @@ def _slice_symbolic_tensor(
 
 
 def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
-    """Slices out a subtensor view of the input tensor based on `indices`.
+    """Slices out a subtensor of the input tensor based on ``indices``.
 
-    The semantics of :obj:`slice_tensor()` follow NumPy slicing semantics with the
-    following restrictions:
+    The ``indices`` use NumPy-style slicing conventions, with one index per
+    dimension. Each index is one of:
 
     - Slice indices must not index out of ``[-dim - 1, dim - 1]`` for negative step,
       or ``[-dim, dim]`` for positive step.
+    - A negative ``step``, or slicing a symbolic dim, requires the
+      ``(slice, out_dim)`` tuple form, where ``out_dim`` names the size of the
+      resulting dimension: ``(slice(None, None, -1), 2)`` reverses a dimension
+      of size 2.
 
     .. code-block:: python
 
-        # Reverse a tensor.
-        slice_tensor(x, [slice(None, None, -1)])
-        # Unsqueeze the second last dimension of a tensor.
-        slice_tensor(x, [..., None, slice(None)])
+        import numpy as np
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        input_type = TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())
+        with Graph("slice_tensor", input_types=[input_type]) as graph:
+            x = graph.inputs[0].tensor
+            # Reverse rows: step=-1 requires the (slice, out_dim) tuple form.
+            reversed_rows = ops.slice_tensor(
+                x, [(slice(None, None, -1), 2), slice(None)]
+            )
+            # Unsqueeze the second-to-last dim via [..., None, slice(None)].
+            unsqueezed = ops.slice_tensor(x, [..., None, slice(None)])
+            graph.output(reversed_rows, unsqueezed)
+
+        model = InferenceSession(devices=[CPU()]).load(graph)
+        rev, unsq = model.execute(
+            np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        )
+        # rev:  [[4.0, 5.0, 6.0], [1.0, 2.0, 3.0]]
+        # unsq: [[[1.0, 2.0, 3.0]], [[4.0, 5.0, 6.0]]]  (shape (2, 1, 3))
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(
+            rev.to_numpy(), [[4.0, 5.0, 6.0], [1.0, 2.0, 3.0]]
+        )
+        np.testing.assert_allclose(
+            unsq.to_numpy(), [[[1.0, 2.0, 3.0]], [[4.0, 5.0, 6.0]]]
+        )
 
     Returns:
-        The sliced subtensor of `x`.
+        A ``TensorValue`` representing the sliced subtensor of ``x``.
+
+    Raises:
+        IndexError: If an integer index or slice bound is out of range for its
+            dimension.
+        ValueError: If ``x`` is a scalar, if an index ``TensorValue`` isn't a
+            scalar, if a slice step isn't positive, or if an index form is
+            unsupported.
+        TypeError: If an index for a symbolically-shaped dimension isn't a
+            slice or integer.
+        NotImplementedError: If a slice on a dynamic dimension omits the
+            ``(slice, out_dim)`` form needed to compute its output size.
     """
     x = TensorValue(x)
 
@@ -436,6 +479,12 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     assert_on_host(starts=starts, stops=stops, steps=steps)
 
     unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
-    return Graph.current._add_op(
-        rmo.mo_slice, unsqueezed_type.to_mlir(), x, starts, stops, steps
+    return Graph.current._add_op_generated(
+        rmo.MoSliceOp,
+        result=unsqueezed_type,
+        input=x,
+        start=starts,
+        stop=stops,
+        step=steps,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor.reshape(squeezed_shape)

@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
 from std.testing import assert_equal
 
 
@@ -21,10 +21,11 @@ from std.testing import assert_equal
 def simple_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
     multiplier: Float32,
 ):
     """Simple kernel that multiplies input by a multiplier."""
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -72,14 +73,14 @@ def test_event_record_and_synchronize(ctx: DeviceContext) raises:
     # Create event and stream
     var event = ctx.create_event()
     var stream = ctx.create_stream()
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Launch kernel on stream
     stream.enqueue_function(
         func,
         input_device,
         output_device,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -130,14 +131,14 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
     var stream1 = ctx.create_stream()
     var stream2 = ctx.create_stream()
     var event = ctx.create_event()
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Stream 1: input -> intermediate (multiply by multiplier1)
     stream1.enqueue_function(
         func,
         input_device,
         intermediate_device,
-        length,
+        Int32(length),
         multiplier1,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -152,7 +153,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
         func,
         intermediate_device,
         output_device,
-        length,
+        Int32(length),
         multiplier2,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -199,7 +200,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext) raises:
         output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
         multipliers.append(Float32(i + 1))
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Launch kernels on all streams
     for i in range(num_streams):
@@ -207,7 +208,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext) raises:
             func,
             input_device,
             output_devices[i],
-            length,
+            Int32(length),
             multipliers[i],
             grid_dim=ceildiv(length, 32),
             block_dim=32,
@@ -260,14 +261,14 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
     var event1_copied = event1
     var event2_moved = event2^
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Stage 1: input -> buffer1 (multiply by 2)
     stream1.enqueue_function(
         func,
         input_device,
         buffer1,
-        length,
+        Int32(length),
         Float32(2.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -280,7 +281,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
         func,
         buffer1,
         buffer2,
-        length,
+        Int32(length),
         Float32(3.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -293,7 +294,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
         func,
         buffer2,
         buffer3,
-        length,
+        Int32(length),
         Float32(5.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -345,12 +346,12 @@ def test_event_across_context_streams(ctx: DeviceContext) raises:
     custom_stream.enqueue_wait_for(event)
 
     # Launch kernel on custom stream
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
     custom_stream.enqueue_function(
         func,
         input_device,
         output_device,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,

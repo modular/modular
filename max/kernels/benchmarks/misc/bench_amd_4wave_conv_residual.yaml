@@ -1,0 +1,95 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# kbench shape suite for `amd_4wave_conv_fprop_with_residual` on
+# MI355X (BF16). Each row drives one `mojo` invocation of
+# `bench_amd_4wave_conv_residual.mojo` with the per-row shape passed
+# as `-D` defines. The Mojo file runs three timed variants on the
+# shape (direct / wrapper-no-res / wrapper-fused).
+#
+# Reproduce:
+#
+#     python benchmarks/autotune/kbench.py \
+#         max/kernels/benchmarks/misc/bench_amd_4wave_conv_residual.yaml
+#
+# Shapes are FLUX.2 VAE-style: square H=W, R=S=3 with pad=1 by
+# default, plus a 1×1 pointwise and a K-padded shape exercising the
+# `R*S*C_in % 256 != 0` path.
+
+name: bench_amd_4wave_conv_residual
+file: $KERNEL_BENCHMARKS_ROOT/misc/bench_amd_4wave_conv_residual.mojo
+
+params:
+
+# vae-256ch-3×3 @ 32×32 — K=2304=9×256 (aligned).
+- N_BATCH: 1
+  H: 32
+  W: 32
+  C_IN: 256
+  C_OUT: 256
+  R: 3
+  S: 3
+  STRIDE: 1
+  PAD: 1
+  LABEL: vae-256ch-3x3
+
+# vae-512ch-3×3 @ 16×16 — K=4608=18×256 (aligned).
+- N_BATCH: 1
+  H: 16
+  W: 16
+  C_IN: 512
+  C_OUT: 512
+  R: 3
+  S: 3
+  STRIDE: 1
+  PAD: 1
+  LABEL: vae-512ch-3x3
+
+# vae-256ch-3×3 @ 64×64 — larger spatial; same K=2304.
+- N_BATCH: 1
+  H: 64
+  W: 64
+  C_IN: 256
+  C_OUT: 256
+  R: 3
+  S: 3
+  STRIDE: 1
+  PAD: 1
+  LABEL: vae-256ch-3x3-64x64
+
+# pointwise-512ch @ 32×32 — R=S=1, pad=0, K=512=2×256 (aligned).
+# Smallest K in the suite; wrapper overhead dominates more here.
+- N_BATCH: 1
+  H: 32
+  W: 32
+  C_IN: 512
+  C_OUT: 512
+  R: 1
+  S: 1
+  STRIDE: 1
+  PAD: 0
+  LABEL: pointwise-512ch
+
+# vae-128ch-3×3 @ 64×64 — K_real=9*128=1152, K_padded=1280
+# (NOT 256-aligned). Exercises the in-launcher K-pad copy. No
+# direct baseline reported.
+- N_BATCH: 1
+  H: 64
+  W: 64
+  C_IN: 128
+  C_OUT: 128
+  R: 3
+  S: 3
+  STRIDE: 1
+  PAD: 1
+  LABEL: vae-128ch-3x3-kpad

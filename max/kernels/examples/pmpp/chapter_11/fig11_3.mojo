@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 from std.math import abs
 
@@ -24,7 +24,7 @@ comptime SEG_SIZE = 256
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
@@ -36,7 +36,7 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory
-    var buffer_s = stack_allocation[
+    var buffer_s = unsafe_stack_allocation[
         SEG_SIZE,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -69,8 +69,8 @@ def scan_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -114,7 +114,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[scan_kernel](
+        ctx.enqueue_function[scan_kernel](
             d_input,
             d_output,
             UInt32(N),

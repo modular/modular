@@ -16,16 +16,16 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 # ========================== KERNEL CODE ==========================
 
 
 def vec_add_kernel(
-    a_d: UnsafePointer[Float32, MutExternalOrigin],
-    b_d: UnsafePointer[Float32, MutExternalOrigin],
-    c_d: UnsafePointer[Float32, MutExternalOrigin],
-    n: Int,
+    a_d: UnsafePointer[Float32, MutUntrackedOrigin],
+    b_d: UnsafePointer[Float32, MutUntrackedOrigin],
+    c_d: UnsafePointer[Float32, MutUntrackedOrigin],
+    n_dev: Int32,
 ):
     """GPU kernel for vector addition.
 
@@ -33,17 +33,19 @@ def vec_add_kernel(
         a_d: Input vector A (device).
         b_d: Input vector B (device).
         c_d: Output vector C (device).
-        n: Number of elements in the vectors.
+        n_dev: Number of elements in the vectors.
     """
+    # Int is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var i = global_idx.x
     if i < n:
         c_d[i] = a_d[i] + b_d[i]
 
 
 def vec_add(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    c: UnsafePointer[Float32, MutUntrackedOrigin],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -72,11 +74,11 @@ def vec_add(
     var grid_dim = ceildiv(n, block_dim)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[vec_add_kernel](
+    ctx.enqueue_function[vec_add_kernel](
         a_d,
         b_d,
         c_d,
-        n,
+        Int32(n),
         grid_dim=grid_dim,
         block_dim=block_dim,
     )

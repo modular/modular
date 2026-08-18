@@ -17,7 +17,7 @@ from std.sys import argv
 
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -26,7 +26,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from nn.attention.gpu.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -213,6 +213,7 @@ def test[
             v,
             mask.bitcast[qkv_type](),
             scale,
+            ctx,
         )
 
     # Device pointers
@@ -231,40 +232,30 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask3d = TileTensor(
         mask_device_ptr,
-        row_major(Idx(batch_size), Idx(seq_len), Idx(num_keys)),
+        row_major(batch_size, seq_len, num_keys),
     )
     var mask4d = TileTensor(
         mask_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -316,10 +307,10 @@ def test[
             output_ref_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(seq_len),
-                    Idx[num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    seq_len,
+                    Idx[num_heads],
+                    Idx[depth],
                 )
             ),
         )
@@ -516,6 +507,24 @@ def test_context_encoding[
             against_gpu_naive=True,
         ](256, 256, ctx, use_adversarial_softmax_input=True)
 
+    # Long-context AMD CDNA prefill gate. seq_len=4096 with BF16-output
+    # causal prefill on CDNA fires the gate in `flash_attention_dispatch`,
+    # routing through `mha_prefill_v2`. Validates that (a) the gate builds
+    # + launches the kernel correctly, (b) the `LayoutTensor → TileTensor`
+    # adapters in the gate preserve the data, and (c) the output matches
+    # the gpu_naive reference within BF16 attention tolerance. Guarded on
+    # depth in {64, 128} (the gate's depth eligibility); other depths fall
+    # through to FA2.
+    comptime if depth == 64 or depth == 128:
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=16,
+            against_gpu_naive=True,
+        ](4096, 4096, ctx)
+
 
 def test_decoding[
     batch_size: Int,
@@ -633,7 +642,7 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 128, 256, 512]
+        comptime depths = [64, 80, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]

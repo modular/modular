@@ -13,17 +13,17 @@
 
 
 from std.math import iota
-from register import *
-import compiler_internal as compiler
-from tensor import OutputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import *
+import extensibility
+from extensibility import OutputTensor
+from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 
 from std.utils.index import IndexList
 
 
-@compiler.register("reduce_buffers")
+@extensibility.register("reduce_buffers")
 struct ReduceBuffers:
     @staticmethod
     def execute(
@@ -39,7 +39,7 @@ struct SIMDPair[S0: Int, S1: Int](ImplicitlyCopyable, RegisterPassable):
     var y: SIMD[DType.int32, Self.S1]
 
 
-@compiler.register("make_simd_pair")
+@extensibility.register("make_simd_pair")
 struct MakeSimdPair:
     @staticmethod
     def execute[P0: Int, P1: Int]() -> SIMDPair[P0, P1]:
@@ -48,7 +48,7 @@ struct MakeSimdPair:
         )
 
 
-@compiler.register("kernel_with_parameterized_opaque")
+@extensibility.register("kernel_with_parameterized_opaque")
 struct ParameterizedOpaqueType:
     @staticmethod
     def execute[
@@ -60,6 +60,9 @@ struct ParameterizedOpaqueType:
         output.store(IndexList[1](0), x.x)
         output.store(IndexList[1](P0), x.y)
 
-    @staticmethod
-    def shape[P0: Int](x: SIMDPair[P0, _]) -> IndexList[1]:
-        return IndexList[1](x.S0 + x.S1)
+
+@extensibility.register_shape_function("kernel_with_parameterized_opaque")
+def kernel_with_parameterized_opaque_shape[
+    P0: Int
+](x: SIMDPair[P0, _]) -> IndexList[1]:
+    return IndexList[1](x.S0 + x.S1)

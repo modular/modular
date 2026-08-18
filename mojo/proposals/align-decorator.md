@@ -1,6 +1,6 @@
 # `@align(N)` Decorator for Struct Alignment
 
-**Status**: Accepted.
+**Status**: Implemented.
 
 Author: Joe Loser
 
@@ -69,7 +69,7 @@ var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
 
 ```mojo
 struct BlockingSpinLock(Defaultable):
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
 ```
 
 Without cache-line alignment, multiple `BlockingSpinLock` instances in an array
@@ -81,7 +81,7 @@ With `@align`:
 ```mojo
 @align(64)  # Cache line size
 struct BlockingSpinLock(Defaultable):
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
 ```
 
 ### Current Workarounds
@@ -116,7 +116,7 @@ Where `N` is a compile-time constant that must be a positive power of 2.
    - Stack allocations
    - Heap allocations via `align_of[T]()`
    - Struct embeddings (a struct containing an aligned struct inherits the
-      alignment requirement)
+     alignment requirement)
 4. **Reflected in `align_of[T]()`**: The library `align_of` function returns
    the effective alignment including the decorator.
 
@@ -187,7 +187,7 @@ Support alignment on individual struct fields:
 ```mojo
 struct MixedAlignment:
     @align(64)
-    var hot_data: Atomic[DType.int64]
+    var hot_data: Atomic[Int64]
     var cold_data: Int
 ```
 

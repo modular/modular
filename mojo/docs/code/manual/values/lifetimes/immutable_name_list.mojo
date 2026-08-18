@@ -20,7 +20,7 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names[0]] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
@@ -33,5 +33,5 @@ def pass_immutable_list(list: NameList) raises:
 
 
 def main() raises:
-    list = NameList("Sophie", "Jack", "Diana")
+    var list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)

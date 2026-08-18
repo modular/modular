@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
 from std.testing import assert_equal
 
 
@@ -40,7 +40,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
     comptime kernel = dynamic_smem_kernel
 
     # 16 KB allocation — valid on all platforms including Metal (32 KB limit).
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,

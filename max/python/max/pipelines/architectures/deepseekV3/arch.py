@@ -12,13 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import DeepseekV3BatchProcessor
+from .memory_planner import DeepseekV3MemoryPlanner
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
+from .tool_parser import resolve_deepseekv3_tool_parser
 
 deepseekV3_arch = SupportedArchitecture(
     name="DeepseekV3ForCausalLM",
@@ -26,12 +29,8 @@ deepseekV3_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
     tokenizer=TextTokenizer,
@@ -40,7 +39,10 @@ deepseekV3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    batching=DeepseekV3BatchProcessor,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
+    tool_parser=resolve_deepseekv3_tool_parser,
+    memory_planner=DeepseekV3MemoryPlanner,
 )

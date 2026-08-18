@@ -23,11 +23,12 @@ Test cases from CUTLASS (simplest first):
 
 from std.sys import size_of
 from layout import Layout, LayoutTensor
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.testing import assert_false
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 
 from layout.tma_async import (
@@ -353,7 +354,7 @@ def run_im2col_test[
         BK,
     ]
 
-    ctx.enqueue_function_unchecked[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         act_tma,
         output_device,
         0,  # k_coord

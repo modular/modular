@@ -14,22 +14,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
-    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
+)
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -106,12 +118,22 @@ class Gemma3VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
+class Gemma3ForConditionalGenerationConfig(
+    ArchVLConfigWithTextSubconfig,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Base configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
 
     boi_token_index: int
     """The begin-of-image token index to wrap the image prompt"""
@@ -160,6 +182,9 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
     quant_config: QuantConfig | None = None
     """Scaled quantization configuration."""
 
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
+
     head_dim: int = 256
     """The attention head dimension."""
 
@@ -171,45 +196,9 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
-    def get_kv_params(self) -> KVCacheParams:
-        """Returns the KV cache parameters."""
-        return self.kv_params
-
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded text config."""
-        return self.text_config.get_max_seq_len()
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_key_value_heads,
-            head_dim=huggingface_config.text_config.head_dim,
-            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
-                huggingface_config
-            ),
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-        )
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.text_config.max_position_embeddings
 
     @override
     @classmethod
@@ -256,21 +245,22 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
         Returns:
             A Gemma3ForConditionalGenerationConfig instance ready for finalization.
         """
-        _weights_format = weights_format(pipeline_config.model.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+        interleaved_rope_weights = _interleaved_rope_weights(
+            pipeline_config.model
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
         ]
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -317,6 +307,7 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
             eoi_token_index=huggingface_config.eoi_token_index,
             image_token_index=huggingface_config.image_token_index,
             initializer_range=0.0,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

@@ -17,12 +17,12 @@ from std.random import rand
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
@@ -67,10 +67,14 @@ def gemv_tma_kernel[
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
     a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
     b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
     var bidx = block_idx.x
     var block_row = bidx * BLOCK_SIZE_M
 
@@ -90,7 +94,7 @@ def gemv_tma_kernel[
         UnsafePointer[
             Scalar[dtype],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -112,24 +116,22 @@ def gemv_tma_kernel[
     var a_smem = LayoutTensorIter[
         dtype,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_size * NUM_PIPELINE_STAGES,
     )
 
     var b_smem = LayoutTensorIter[
         dtype,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_size * NUM_PIPELINE_STAGES,
     )
 
@@ -138,7 +140,7 @@ def gemv_tma_kernel[
     ]()
 
     # Initialize dot products for all rows before column processing.
-    var dot_products = InlineArray[Scalar[accum_type], ROWS_PER_WARP](fill=0)
+    var dot_products = Array[Scalar[accum_type], ROWS_PER_WARP](fill=0)
 
     if thread_idx.x == 0:
         comptime for i in range(NUM_PIPELINE_STAGES):
@@ -284,15 +286,15 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tma_desc_a,
         tma_desc_b,
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
@@ -340,9 +342,9 @@ def test_gemv_tma[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_tt = TileTensor(a_device, row_major(a_shape)).as_any_origin()
-    var b_tt = TileTensor(b_device, row_major(b_shape)).as_any_origin()
-    var c_tt = TileTensor(c_device, row_major(c_shape)).as_any_origin()
+    var a_tt = TileTensor(a_device, row_major(a_shape)).as_unsafe_any_origin()
+    var b_tt = TileTensor(b_device, row_major(b_shape)).as_unsafe_any_origin()
+    var c_tt = TileTensor(c_device, row_major(c_shape)).as_unsafe_any_origin()
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -370,7 +372,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,
@@ -404,7 +406,7 @@ def test_gemv_tma[
         )
     else:
         # Compare with vendor BLAS for correctness.
-        var b_2d_shape = Coord(Idx(K), Idx[1]())
+        var b_2d_shape = Coord(K, Idx[1])
         var b_2d = TileTensor(b_device, row_major(b_2d_shape))
         var c_ref_tt = TileTensor(c_device_ref, row_major(c_shape))
         vendor_blas.matmul(
@@ -436,15 +438,15 @@ def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )
 
         test_gemv_tma[DType.float32](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )

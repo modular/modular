@@ -51,9 +51,11 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
+from std.memory import UnsafePointer
 from nn.fold import fold
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from std.utils.index import Index, IndexList
 
@@ -81,7 +83,8 @@ def test[
         capacity=input_shape.flattened_length()
     )
     input_stack.resize(input_shape.flattened_length(), 0)
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     _copy_values_to_tile_tensor(input, input_values)
 
     # Create expected tensor with dynamic layout
@@ -90,7 +93,8 @@ def test[
         capacity=output_shape.flattened_length()
     )
     expected_stack.resize(output_shape.flattened_length(), 0)
-    var expected = TileTensor(expected_stack.unsafe_ptr(), output_layout)
+    var expected_stack_ptr = expected_stack.unsafe_ptr()
+    var expected = TileTensor(expected_stack_ptr, output_layout)
     _copy_values_to_tile_tensor(expected, expected_output)
 
     # Create output tensor with dynamic layout
@@ -98,14 +102,15 @@ def test[
         capacity=output_shape.flattened_length()
     )
     output_stack.resize(output_shape.flattened_length(), 0)
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
         output=output,
         output_size=output_size,
         kernel_size=kernel_size,
-        ctx=DeviceContextPtr(),
+        ctx=DeviceContext(api="cpu"),
     )
 
     # Check results, return on the first failed comparison.

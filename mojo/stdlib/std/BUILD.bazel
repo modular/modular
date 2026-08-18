@@ -37,11 +37,16 @@ filegroup(
 
 mojo_library(
     name = "std",
-    srcs = [
-        ":std_srcs",
-    ],
+    srcs = [":std_srcs"],
+    docs_hosted_on_mojolang = True,
     docs_title = "Mojo standard library",
+    show_stability_markers = "stable",
+    stability_doc_url = "/docs/api-docs/stability/",
+    use_production_compiler_for_asan = True,
     validate_missing_docs = True,
+    deps = [
+        "//KGEN:CompilerRT",
+    ],
 )
 
 pkg_files(

@@ -32,7 +32,6 @@ def test_size_of_dtypes() raises:
     assert_equal(size_of[DType.float8_e4m3fnuz](), 1)
     assert_equal(size_of[DType.bfloat16](), 2)
     assert_equal(size_of[DType.float16](), 2)
-    assert_equal(size_of[DType.invalid](), 0)
 
 
 def main() raises:

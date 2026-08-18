@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
@@ -36,7 +36,7 @@ def test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: param0
     # CHECK: );
     comptime kernel = kernel_with_list
-    ctx.enqueue_function_experimental[kernel, dump_asm=True](
+    ctx.enqueue_function[kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )
     with res_device.map_to_host() as res_host:

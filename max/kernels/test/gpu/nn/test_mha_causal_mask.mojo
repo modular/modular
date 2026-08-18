@@ -17,8 +17,8 @@ from std.sys import argv, size_of
 from std.sys.defines import get_defined_int
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import (
     Idx,
     TileTensor,
@@ -100,44 +100,40 @@ def test[
 
     # K and V are filled with uniform constants for this test instead of being
     # randomly initialized.
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    rand(k_ptr.as_span())
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    k_device_ptr.enqueue_fill(Scalar[qkv_type](0.25))
 
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    rand(v_ptr.as_span())
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    v_device_ptr.enqueue_fill(Scalar[qkv_type](0.5))
 
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
 
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -174,9 +170,7 @@ def test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_device_ref = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     mha_gpu_naive(
@@ -256,8 +250,8 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr[d + depth * (h + s * num_heads)]
-                    rep = output_ptr[d + depth * (h + s * num_heads)]
+                    var orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    var rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
@@ -508,17 +502,20 @@ def main() raises:
             ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @parameter
+        @__parameter
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutAnyOrigin
+            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            return LayoutTensor[
-                DType.uint32, Layout.row_major(1), MutAnyOrigin
-            ](dev_buf.unsafe_ptr())
+            # TODO(KERN-3155): This is a bug!
+            # The returned device buffer will have its deleter run
+            # before the return potentially causing a read/writer-after-free.
+            return {
+                dev_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_t = make_vl(128, ctx)

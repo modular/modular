@@ -13,8 +13,8 @@
 
 from std.os import abort
 
-import compiler_internal as compiler
-from tensor import ManagedTensorSlice, InputTensor, OutputTensor
+import extensibility
+from extensibility import ManagedTensorSlice, InputTensor, OutputTensor
 
 from std.utils.index import IndexList
 
@@ -33,8 +33,8 @@ struct Counter[stride: Int](Movable):
         self.b = b
         print("counter init", a, b)
 
-    def __del__(deinit self):
-        print("counter del")
+    def __deinit__(deinit self):
+        print("counter deinit")
 
     def bump(mut self):
         self.a += Self.stride
@@ -42,7 +42,7 @@ struct Counter[stride: Int](Movable):
         print("bumped", self.a, self.b)
 
 
-@compiler.register("make_counter_from_tensor")
+@extensibility.register("make_counter_from_tensor")
 struct MakeCounterFromTensor:
     @staticmethod
     def execute[
@@ -52,7 +52,7 @@ struct MakeCounterFromTensor:
         return Counter[stride](Int(init[0]), Int(init[1]))
 
 
-@compiler.register("make_counter")
+@extensibility.register("make_counter")
 struct MakeCounter:
     @staticmethod
     def execute[stride: Int]() -> Counter[stride]:
@@ -60,7 +60,7 @@ struct MakeCounter:
         return Counter[stride]()
 
 
-@compiler.register("bump_counter")
+@extensibility.register("bump_counter")
 struct BumpCounter:
     @staticmethod
     def execute[
@@ -70,7 +70,7 @@ struct BumpCounter:
         c.bump()
 
 
-@compiler.register("read_counter")
+@extensibility.register("read_counter")
 struct ReadCounter:
     @staticmethod
     def execute[

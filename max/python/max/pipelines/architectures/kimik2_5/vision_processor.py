@@ -34,7 +34,9 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from PIL import Image
+from max.pipelines.context.exceptions import InputError
+from max.support.math import ceildiv
+from PIL import Image, UnidentifiedImageError
 
 
 @dataclass
@@ -78,7 +80,17 @@ def _to_pil(data: bytes | Image.Image) -> Image.Image:
     if isinstance(data, Image.Image):
         return data.convert("RGB")
     if isinstance(data, bytes):
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        try:
+            return Image.open(io.BytesIO(data)).convert("RGB")
+        except (
+            UnidentifiedImageError,
+            OSError,
+            Image.DecompressionBombError,
+        ) as e:
+            raise InputError(
+                "Invalid image input: image bytes could not be decoded as a "
+                "supported image."
+            ) from e
     raise ValueError(f"Unsupported data type: {type(data)}")
 
 
@@ -151,6 +163,27 @@ def navit_resize_image(
     )
 
     factor = merge_kernel_size * patch_size
+    merge_sq = merge_kernel_size * merge_kernel_size
+
+    if fixed_output_tokens is None:
+        # The pre-pad scaling bounds patches by in_patch_limit, but padding
+        # to the merge-kernel boundary can push the post-pad count above
+        # the cap by up to one row plus one column. Work in merge-cell units
+        # (what the encoder actually sees) and trim from the longer side
+        # until under cap.
+        cells_w = ceildiv(new_w, factor)
+        cells_h = ceildiv(new_h, factor)
+        max_tokens = in_patch_limit // merge_sq
+        while cells_w * cells_h > max_tokens:
+            if cells_w >= cells_h and cells_w > 1:
+                cells_w -= 1
+            elif cells_h > 1:
+                cells_h -= 1
+            else:
+                break
+        new_w = min(new_w, cells_w * factor)
+        new_h = min(new_h, cells_h * factor)
+
     pad_width = (factor - new_w % factor) % factor
     pad_height = (factor - new_h % factor) % factor
 
@@ -402,7 +435,7 @@ class KimiK2_5VisionProcessor:
         Requires the ``av`` (PyAV) package for video decoding.
         """
         try:
-            import av
+            from max.pipelines.context import open_video_container
         except ImportError as exc:
             raise ImportError(
                 "Video processing requires the 'av' package. "
@@ -415,9 +448,7 @@ class KimiK2_5VisionProcessor:
         elif isinstance(video_url, bytes):
             src = io.BytesIO(video_url)
 
-        container = av.open(src)
-        if not isinstance(container, av.container.InputContainer):
-            raise TypeError(f"Expected InputContainer, got {type(container)}")
+        container = open_video_container(src)
         stream = container.streams.video[0]
         fps: float = float(stream.average_rate or stream.base_rate or 30.0)
         num_frames: int = stream.frames or 0

@@ -13,6 +13,7 @@
 
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from max.gpu.host import DeviceContext
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from std.utils import IndexList, StaticTuple
@@ -46,15 +47,15 @@ def test_concat() raises:
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
@@ -64,15 +65,15 @@ def test_concat() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2.make_dynamic[DType.int64]().as_any_origin().as_immut(),
-        x3.make_dynamic[DType.int64]().as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -81,8 +82,11 @@ def test_concat() raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    concat[dtype, False, epilogue_fn=epilogue_plus_one](
-        output.make_dynamic[DType.int64](), concat_axis, input_tuple
+    concat[dtype, epilogue_fn=epilogue_plus_one](
+        output.make_dynamic[DType.int64](),
+        concat_axis,
+        input_tuple,
+        DeviceContext(api="cpu"),
     )
 
     # CHECK: == test_concat
@@ -96,11 +100,11 @@ def test_concat() raises:
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
-        output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        output._storage,
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 def test_concat_parallel() raises:
@@ -113,9 +117,9 @@ def test_concat_parallel() raises:
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -125,7 +129,7 @@ def test_concat_parallel() raises:
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
@@ -134,15 +138,15 @@ def test_concat_parallel() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2_dyn.as_any_origin().as_immut(),
-        x3_dyn.as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2_dyn.as_unsafe_any_origin().as_immut(),
+        x3_dyn.as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -167,11 +171,11 @@ def test_concat_parallel() raises:
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
-        output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        output._storage,
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 # CHECK-LABEL: test_concat_inner
@@ -185,9 +189,9 @@ def test_concat_inner() raises:
     comptime l1 = row_major[1, 1, 1, 2, 2]()
     comptime l2 = row_major[1, 1, 2, 2, 2]()
     comptime l3 = row_major[1, 1, 3, 2, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -197,7 +201,7 @@ def test_concat_inner() raises:
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[1, 1, 6, 2, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
@@ -206,17 +210,17 @@ def test_concat_inner() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2_dyn.as_any_origin().as_immut(),
-        x3_dyn.as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2_dyn.as_unsafe_any_origin().as_immut(),
+        x3_dyn.as_unsafe_any_origin().as_immut(),
     )
 
     var input_vec = _tuple_to_list(input_tuple)
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -233,11 +237,11 @@ def test_concat_inner() raises:
     # CHECK-COUNT-8: 2.0
     # CHECK-COUNT-12: 3.0
     var output_flat = TileTensor(
-        output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        output._storage,
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 def main() raises:

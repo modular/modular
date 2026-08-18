@@ -19,7 +19,9 @@ import enum
 import functools
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -186,7 +188,9 @@ def _to_uint8_image(image: np.ndarray) -> np.ndarray:
         )
     if image_array.dtype == np.uint8:
         return image_array
-    return (np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
+    # Round before cast: `.astype(uint8)` truncates, which biases every pixel
+    # down by ~0.5.  Matches diffusers' `(x * 255).round().astype(uint8)`.
+    return np.round(np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 def _save_pixel_outputs(
@@ -536,20 +540,124 @@ class InfraError(Exception):
     """Raised when an error with the runner environment has been encountered."""
 
 
+def _parse_required_bytes_from_oom(exc_str: str) -> int | None:
+    """Parse the required memory in bytes from an OOM error message.
+
+    Handles the format produced by ``to_human_readable_bytes``:
+    ``"Model size exceeds available memory (510.14 GiB > 127.23 GiB)."``.
+    """
+    unit_to_bytes = {
+        "KiB": 1024,
+        "MiB": 1024**2,
+        "GiB": 1024**3,
+        "TiB": 1024**4,
+    }
+    pattern = re.compile(
+        r"Model size exceeds available memory \((\d+\.?\d*)\s*(KiB|MiB|GiB|TiB)"
+    )
+    match = pattern.search(exc_str)
+    if not match:
+        return None
+    value, unit = float(match.group(1)), match.group(2)
+    return int(value * unit_to_bytes[unit])
+
+
+def _query_total_vram_bytes() -> int | None:
+    """Return total VRAM in bytes across all GPUs on this node.
+
+    Tries ``nvidia-smi`` first, then ``rocm-smi``. Returns ``None`` if
+    neither tool is available or parsing fails.
+    """
+    # NVIDIA: memory.total is reported in MiB
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=10,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        total_mib = sum(
+            float(line) for line in out.strip().splitlines() if line.strip()
+        )
+        return int(total_mib * 1024**2)
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ):
+        pass
+
+    # AMD: text format, e.g. "GPU[0] : VRAM Total Memory (MB): 290816"
+    try:
+        out = subprocess.check_output(
+            ["rocm-smi", "--showmeminfo", "vram"],
+            timeout=10,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        total_mb = 0
+        for line in out.splitlines():
+            if "Total" in line and "MB" in line:
+                try:
+                    total_mb += int(line.split()[-2])
+                except (ValueError, IndexError):
+                    pass
+        if total_mb > 0:
+            return total_mb * 1024**2
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
+        pass
+
+    return None
+
+
 @contextlib.contextmanager
 def detect_infra_errors() -> Generator[None, None, None]:
     try:
         yield
     except ValueError as exc:
         exc_str = str(exc)
+        if "429" in exc_str and (
+            "huggingface.co" in exc_str or "hf.co" in exc_str
+        ):
+            raise InfraError("HuggingFace API rate limit") from exc
         if (
             'failed to create device: No supported "gpu" device available.'
             in exc_str
-            and "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
-        ):
+            and (
+                "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
+                or "cuInit failed with 802" in exc_str
+                or "CUDA_ERROR_SYSTEM_NOT_INITIALIZED" in exc_str
+            )
+            # e.g. "ValueError: GPU id 4 requested but only GPU IDs [0, 1, 2, 3] are available."
+        ) or "requested but only GPU IDs" in exc_str:
             raise InfraError(
                 "GPU device seems to have fallen off from runner"
             ) from exc
+        raise
+    except Exception as exc:
+        exc_str = str(exc)
+        if "Error 802: system not yet initialized" in exc_str:
+            raise InfraError(
+                "GPU device seems to have fallen off from runner"
+            ) from exc
+        if "Model size exceeds available memory" in exc_str:
+            required = _parse_required_bytes_from_oom(exc_str)
+            total = _query_total_vram_bytes()
+            if required is not None and total is not None and required < total:
+                raise InfraError(
+                    f"Insufficient free VRAM — model requires "
+                    f"{required / 1024**3:.2f} GiB but only "
+                    f"{total / 1024**3:.2f} GiB total on node."
+                ) from exc
         raise
 
 

@@ -13,9 +13,10 @@
 
 from std.math import ceildiv
 
-from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from layout import TileTensor, Coord, Idx, row_major
 
 comptime BLOCK_DIM = 8
@@ -24,61 +25,69 @@ comptime BLOCK_DIM = 8
 def stencil1d(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
+    arr_size_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
     var tid = global_idx.x
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
+    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
     if 0 < tid < arr_size - 1:
         b.store(
-            Coord(Idx(tid)),
-            Float32(coeff0) * a.load[width=1](Coord(Idx(tid - 1)))
-            + Float32(coeff1) * a.load[width=1](Coord(Idx(tid)))
-            + Float32(coeff2) * a.load[width=1](Coord(Idx(tid + 1))),
+            Coord(tid),
+            Float32(coeff0) * a.load[width=1](Coord(tid - 1))
+            + Float32(coeff1) * a.load[width=1](Coord(tid))
+            + Float32(coeff2) * a.load[width=1](Coord(tid + 1)),
         )
 
 
 def stencil1d_smem(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
+    arr_size_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
     var tid = global_idx.x
     var lindex = thread_idx.x + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
+    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
-    a_shared[lindex] = a.load[width=1](Coord(Idx(tid)))
+    a_shared[lindex] = a.load[width=1](Coord(tid))
     if thread_idx.x == 0:
         a_shared[lindex - 1] = (
-            a.load[width=1](Coord(Idx(tid - 1))) if 0
-            <= tid - 1
-            < arr_size else 0
+            a.load[width=1](Coord(tid - 1)) if 0 <= tid - 1 < arr_size else 0
         )
 
         var idx = tid + Int(BLOCK_DIM)
         a_shared[lindex + BLOCK_DIM] = (
-            a.load[width=1](Coord(Idx(idx))) if idx < arr_size else 0
+            a.load[width=1](Coord(idx)) if idx < arr_size else 0
         )
 
     barrier()
 
     if 0 < tid < arr_size - 1:
         b.store(
-            Coord(Idx(tid)),
+            Coord(tid),
             Float32(coeff0) * a_shared[lindex - 1]
             + Float32(coeff1) * a_shared[lindex]
             + Float32(coeff2) * a_shared[lindex + 1],
@@ -111,13 +120,13 @@ def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     comptime func_select = stencil1d_smem if smem == True else stencil1d
 
     for _ in range(iterations):
-        ctx.enqueue_function_experimental[func_select](
+        ctx.enqueue_function[func_select](
             a_device,
             b_device,
-            m,
-            coeff0,
-            coeff1,
-            coeff2,
+            Int32(m),
+            Int32(coeff0),
+            Int32(coeff1),
+            Int32(coeff2),
             grid_dim=(ceildiv(m, BLOCK_DIM)),
             block_dim=(BLOCK_DIM),
         )

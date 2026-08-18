@@ -30,13 +30,13 @@ from std.sys import (
 )
 from std.ffi import c_int, c_size_t
 
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceContext,
     DeviceFunction,
     DeviceStream,
 )
-from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
+from max.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
+from max.gpu.host._amdgpu_hip import HIP, HIP_MODULE
 
 from ._rocshmem import (
     rocshmem_my_pe,
@@ -159,10 +159,10 @@ struct SHMEMUniqueID(ImplicitlyCopyable):
     """Unique ID that must be identical across all threads and nodes to establish
     communication."""
 
-    var data: InlineArray[Byte, 128]
+    var data: Array[Byte, 128]
 
     def __init__(out self):
-        self.data = InlineArray[Byte, 128](fill=0)
+        self.data = Array[Byte, 128](fill=0)
 
     def __init__(out self, *, copy: Self):
         self.data = copy.data.copy()
@@ -325,7 +325,7 @@ def shmem_init_thread_tcp(
         var uid = shmem_create_uniqueid(server_ip, c_int(server_port))
         rocshmem_init_thread_tcp(
             ctx,
-            UnsafePointer(to=uid),
+            UnsafePointer(to=uid).as_unsafe_any_origin(),
             node_id=node_id,
             total_nodes=total_nodes,
             gpus_per_node=gpus_per_node,
@@ -417,7 +417,7 @@ def shmem_n_pes() -> c_int:
 
 def shmem_malloc[
     dtype: DType
-](size: Int) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: Int) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -460,7 +460,7 @@ def shmem_malloc[
 def shmem_calloc[
     dtype: DType
 ](count: Int, size: Int = Int(size_of[dtype]())) raises -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
@@ -505,7 +505,7 @@ def shmem_calloc[
 
 def shmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
+](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:
@@ -915,7 +915,9 @@ def shmem_signal_wait_until(
     """
 
     comptime if is_nvidia_gpu():
-        nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
+        nvshmem_signal_wait_until(
+            sig_addr.as_unsafe_any_origin(), cmp, cmp_value
+        )
     elif is_amd_gpu():
         rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
@@ -979,7 +981,7 @@ def shmem_signal_op(
     """
 
     comptime if is_nvidia_gpu():
-        nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
+        nvshmemx_signal_op(sig_addr.as_unsafe_any_origin(), signal, sig_op, pe)
     elif is_amd_gpu():
         rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:

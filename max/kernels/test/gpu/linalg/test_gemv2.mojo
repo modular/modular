@@ -16,20 +16,20 @@
 from std.random import random_si64
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    type: DType, width: Int, *, alignment: Int = 1
+    type: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
-@parameter
+@__parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
@@ -56,7 +56,7 @@ def test[
     M: Optional[Int],
     N: Optional[Int],
     K: Optional[Int],
-](ctx: DeviceContext, m: Int, n: Int, k: Int,) raises:
+](ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
     comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."
@@ -102,20 +102,20 @@ def test[
     comptime static_b_dim1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_dev,
-        row_major(Coord(Idx(m), Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_tensor = TileTensor(
         b_dev,
         row_major(
             Coord(
-                Idx[static_b_dim0.value()](),
-                Idx[static_b_dim1.value()](),
+                Idx[static_b_dim0.value()],
+                Idx[static_b_dim1.value()],
             )
         ),
     )
     var c_tensor = TileTensor(
         c_dev,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
@@ -129,13 +129,13 @@ def test[
 
     var c_tt = TileTensor(
         c_ref_dev,
-        row_major(Coord(Idx(m), Idx(n))),
+        row_major(Coord(m, n)),
     )
-    var a_tt = TileTensor[mut=False](a_dev, row_major(Coord(Idx(m), Idx(k))))
+    var a_tt = TileTensor[mut=False](a_dev, row_major(Coord(m, k)))
     var b_shape_0 = n if transpose_b else k
     var b_shape_1 = k if transpose_b else n
     var b_tt = TileTensor[mut=False](
-        b_dev, row_major(Coord(Idx(b_shape_0), Idx(b_shape_1)))
+        b_dev, row_major(Coord(b_shape_0, b_shape_1))
     )
 
     comptime BLOCK_DIM = 16
@@ -149,13 +149,13 @@ def test[
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
-    ctx.enqueue_function_experimental[naive_kernel](
+    ctx.enqueue_function[naive_kernel](
         c_tt,
         a_tt,
         b_tt,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -238,6 +238,17 @@ def main() raises:
         test_gemv_split_k[DType.float8_e4m3fn](ctx)
 
         # BF16-only tests for other GEMV paths (FP8 not supported here)
+
+        # GEMV_KERNEL_VECTOR: M = 1, N wider than the split-K grid limit and
+        # K shallow enough that the kernel packs several rows per warp.
+        test[
+            in_type=DType.bfloat16,
+            out_type=DType.bfloat16,
+            transpose_b=True,
+            M=None,
+            N=Int(262144),
+            K=Int(256),
+        ](ctx, 1, 262144, 256)
 
         # GEMV_KERNEL_VECTOR: N = 1, K % simd_width == 0, transpose_b = False
         test[

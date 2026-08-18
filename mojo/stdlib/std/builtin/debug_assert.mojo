@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std._plugin import CurrentPlugin
 from std.format._utils import _WriteBufferHeap
 from std.io.io import _printf
 from std.os import abort
@@ -32,11 +33,18 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import (
+    _get_kgen_string,
+    get_static_string,
+)
 from std.reflection import call_location, SourceLocation
 
 comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
+
+comptime _NO_MESSAGE = "assertion failed"
+"""Must remain a string literal: the no-message path passes `byte_length() + 1`
+and relies on the trailing nul in static memory."""
 
 
 @always_inline("nodebug")
@@ -51,7 +59,7 @@ def _string_free_comptime_assert[
     """
 
     __mlir_op.`kgen.param.assert`[
-        cond=cond.__mlir_i1__(),
+        cond=cond.__mlir_bool__(),
         message=_get_kgen_string[msg, *extra](),
     ]()
 
@@ -86,12 +94,33 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 
 @always_inline
+def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
+    """Reports a failed assertion, formatting the message if there is one."""
+
+    comptime if messages.__len__() == 0:
+        _debug_assert_msg(
+            _NO_MESSAGE.unsafe_ptr(), _NO_MESSAGE.byte_length() + 1, location
+        )
+    else:
+        var message = _WriteBufferHeap()
+
+        comptime for i in range(messages.__len__()):
+            messages[i].write_to(message)
+
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
+        _debug_assert_msg(
+            bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
+        )
+
+
+@always_inline
 def debug_assert[
-    cond: def() capturing[_] -> Bool,
+    Cond: def() -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts, location: Optional[SourceLocation] = None):
+](cond: Cond, *messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -141,19 +170,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -164,17 +192,17 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
-        cond: The function to invoke to check if the assertion holds.
+        Cond: The type of the closure to invoke to check if the assertion holds.
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
@@ -182,6 +210,7 @@ def debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
+        cond: The closure to invoke to check if the assertion holds.
         messages: A set of [`Writable`](/docs/std/format/Writable/)
             arguments to convert to a `String` message.
         location: Source location to report on assertion failure.
@@ -191,18 +220,14 @@ def debug_assert[
         if cond():
             return
 
-        var message = _WriteBufferHeap()
-
-        comptime for i in range(messages.__len__()):
-            messages[i].write_to(message)
-
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
-        _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
-            location.value() if location else call_location(),
+        # `debug_assert` is used a lot, so its body must generate short, concise
+        # code. Avoid standard library functions that contain error/abort code
+        # inside; those cause code bloat at every call site.
+        #
+        # `call_location()` must be resolved here rather than in the callee, so
+        # that the reported location stays at this assert's own caller.
+        _debug_assert_fail(
+            *messages, location=location.or_else(call_location())
         )
 
 
@@ -262,19 +287,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -285,14 +309,14 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
         assert_mode: Determines when the assert is turned on.
@@ -315,21 +339,88 @@ def debug_assert[
         if cond:
             return
 
-        var message = _WriteBufferHeap()
-
-        comptime for i in range(messages.__len__()):
-            messages[i].write_to(message)
-
-        _ = message.nul_terminate()
-
-        var slice = message.as_string_slice()
-
-        _debug_assert_msg(
-            slice.unsafe_ptr(),
-            slice.byte_length(),
-            location.value() if location else call_location(),
+        # See the sibling overload: avoid stdlib functions carrying error/abort
+        # code, and resolve `call_location()` here rather than in the callee.
+        _debug_assert_fail(
+            *messages, location=location.or_else(call_location())
         )
 
+    elif _use_compiler_assume:
+        assume(cond)
+
+
+# The two no-message overloads below omit `location` on purpose: they are
+# optimized for fast compile time, because they are used frequently. An
+# `Optional[SourceLocation]` and an `or_else` call generate extra IR and thus
+# slow compilation down.
+@always_inline
+def debug_assert[
+    Cond: def() -> Bool,
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+](cond: Cond):
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    def main():
+        var x = 1
+
+        def check() {x} -> Bool:
+            return x > 0
+
+        debug_assert(check)
+    ```
+
+    Parameters:
+        Cond: The type of the closure to invoke to check if the assertion holds.
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+
+    Args:
+        cond: The closure to invoke to check if the assertion holds.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond():
+            return
+
+        _debug_assert_fail(location=call_location())
+
+
+@always_inline
+def debug_assert[
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+    _use_compiler_assume: Bool = False,
+](cond: Bool):
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    var x = 1
+    debug_assert(x > 0)
+    ```
+
+    Parameters:
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+        _use_compiler_assume: If true, assume the condition is true for repeated
+            checks, to help the compiler optimize (default False).
+
+    Args:
+        cond: The bool value to assert.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond:
+            return
+
+        _debug_assert_fail(location=call_location())
     elif _use_compiler_assume:
         assume(cond)
 
@@ -389,19 +480,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -412,14 +502,14 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
         assert_mode: Determines when the assert is turned on.
@@ -450,7 +540,7 @@ def debug_assert[
 
 @no_inline
 def _debug_assert_msg(
-    message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
+    message: ImmPointer[Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -461,65 +551,104 @@ def _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    if __is_run_in_comptime_interpreter:
-        print("At: ", loc, ": Assert Error: ", message, sep="")
-
+    # The `else` branch is required (not just for clarity): its `_printf`
+    # paths recurse via `Optional.value()` → `debug_assert`. `comptime if
+    # X: return` does not elide unconditional post-return code, so the
+    # fallback must live in `else:` to be comptime-elided when a plugin
+    # owns emission.
+    comptime if CurrentPlugin._handles_debug_assert:
+        CurrentPlugin.debug_assert_emit_fn(message, length, loc)
         comptime if ASSERT_MODE != "warn":
             abort()
         return
-
-    comptime fmt = (
-        "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
-        " Assert Error: %s\n"
-    )
-
-    comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
-
-        _printf[fmt](
-            loc.file_name().unsafe_ptr(),
-            loc.line(),
-            loc.column(),
-            UInt(block_idx.x),
-            UInt(block_idx.y),
-            UInt(block_idx.z),
-            UInt(thread_idx.x),
-            UInt(thread_idx.y),
-            UInt(thread_idx.z),
-            message,
-        )
-    # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
-    elif is_amd_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
-
-        var fd = printf_begin()
-        _ = printf_append_string_n(fd, fmt.as_bytes(), False)
-        # Runtime %s types must be passed as separate append_string calls
-        _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
-        # Can only pass 7 args at a time
-        _ = printf_append_args(
-            fd,
-            7,
-            UInt64(loc.line()),
-            UInt64(loc.column()),
-            UInt64(block_idx.x),
-            UInt64(block_idx.y),
-            UInt64(block_idx.z),
-            UInt64(thread_idx.x),
-            UInt64(thread_idx.y),
-            0,
-        )
-        # Pass last arg
-        _ = printf_append_args(fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0)
-        # Append message and finalize
-        _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
-        _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name().unsafe_ptr(),
-            loc.line(),
-            loc.column(),
-            message,
+        if __is_run_in_comptime_interpreter:
+            print("At: ", loc, ": Assert Error: ", message, sep="")
+
+            comptime if ASSERT_MODE != "warn":
+                abort()
+            return
+
+        comptime fmt = (
+            "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
+            " Assert Error: %s\n"
         )
 
-    comptime if ASSERT_MODE != "warn":
-        abort()
+        comptime if is_nvidia_gpu():
+            from std.gpu.primitives.id import block_idx, thread_idx
+
+            _printf[fmt](
+                loc.file_name().as_c_string_slice(),
+                loc.line(),
+                loc.column(),
+                UInt(block_idx.x),
+                UInt(block_idx.y),
+                UInt(block_idx.z),
+                UInt(thread_idx.x),
+                UInt(thread_idx.y),
+                UInt(thread_idx.z),
+                message,
+            )
+        # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
+        elif is_amd_gpu():
+            from std.gpu.primitives.id import block_idx, thread_idx
+
+            var fd = printf_begin()
+            # Each appended string must carry its own nul terminator so the AMD
+            # fprintf service can delimit it; `as_bytes()` omits the nul, which
+            # corrupts output when a string's length is a multiple of 8.
+            # `get_static_string` guarantees a trailing nul in static memory
+            # just past the returned range.
+            var fmt_str = get_static_string[fmt]()
+            _ = printf_append_string_n(
+                fd,
+                Span(
+                    unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
+                    length=fmt_str.byte_length() + 1,
+                ),
+                False,
+            )
+            # Runtime %s types must be passed as separate append_string calls.
+            # `file_name()` is a string literal, so its trailing nul lives in
+            # static memory just past the range (same guarantee the NVIDIA `%s`
+            # path relies on).
+            var file_name = loc.file_name()
+            _ = printf_append_string_n(
+                fd,
+                Span(
+                    unsafe_ptr=file_name.as_bytes().unsafe_ptr(),
+                    length=file_name.byte_length() + 1,
+                ),
+                False,
+            )
+            # Can only pass 7 args at a time
+            _ = printf_append_args(
+                fd,
+                7,
+                UInt64(loc.line()),
+                UInt64(loc.column()),
+                UInt64(block_idx.x),
+                UInt64(block_idx.y),
+                UInt64(block_idx.z),
+                UInt64(thread_idx.x),
+                UInt64(thread_idx.y),
+                0,
+            )
+            # Pass last arg
+            _ = printf_append_args(
+                fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0
+            )
+            # Append message and finalize
+            _ = printf_append_string_n(
+                fd, Span(unsafe_ptr=message, length=length), True
+            )
+        else:
+            _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
+                loc.file_name().as_c_string_slice(),
+                loc.line(),
+                loc.column(),
+                message,
+            )
+
+        comptime if ASSERT_MODE != "warn":
+            abort()

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def kernel():
@@ -21,5 +21,5 @@ def kernel():
 def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
         ctx.synchronize()

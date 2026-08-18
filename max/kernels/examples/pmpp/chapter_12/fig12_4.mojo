@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import vote, shuffle_idx
 from std.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
@@ -121,7 +121,7 @@ def main() raises:
         print("Input size:", N, "elements")
 
         comptime kernel = filter_kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             d_input,
             d_output,
             d_output_size,

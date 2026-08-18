@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -47,15 +47,15 @@ def test_matmul[
 
     var a_tt = TileTensor(
         a_device,
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         b_device,
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )
     var c_tt = TileTensor(
         c_device,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
 
     matmul(
@@ -72,19 +72,19 @@ def test_matmul[
     # Create immutable TileTensors for the naive kernel reference.
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_immut_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_immut_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )
 
     # Run naive matmul.
@@ -99,13 +99,13 @@ def test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_immut_tt,
         b_immut_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

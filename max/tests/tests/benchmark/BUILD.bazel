@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -14,13 +13,30 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "test_benchmark_datasets_functional.py",
-            "test_benchmark_throughput_*.py",
         ],
     ),
+    env = {
+        # Cap the tokenizer spawn pool so unit tests don't fan out across
+        # cpu_count workers.
+        "MAX_BENCHMARK_MAX_TOKENIZER_THREADS": "2",
+    },
+    # TODO(MXTOOLS-443): This glob fans out into 20 py_test targets, each
+    # paying a full `transformers` import. Scheduled together on a contended
+    # macOS worker they starve each other and time out at the 1200s cap, still
+    # inside pytest collection.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/benchmark/benchmark_shared",
-        "//max/python/max/diagnostics",
+        "//max/python/max/benchmark/benchmark_shared:model_csv",
+        "//max/python/max/benchmark/benchmark_shared:percentile_metrics",
+        "//max/python/max/profiler",
+        requirement("aiohttp"),
+        requirement("huggingface-hub"),
+        requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),
         requirement("pydantic"),
@@ -36,6 +52,11 @@ modular_py_test(
 modular_py_test(
     name = "test_benchmark_datasets_functional",
     srcs = ["test_benchmark_datasets_functional.py"],
+    env = {
+        # Cap the tokenizer spawn pool so the functional tests don't fan
+        # out across cpu_count workers.
+        "MAX_BENCHMARK_MAX_TOKENIZER_THREADS": "2",
+    },
     tags = [
         "requires-network",
     ],
@@ -48,36 +69,5 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
-    ],
-)
-
-modular_py_test(
-    name = "test_benchmark_throughput_cpu",
-    size = "large",
-    srcs = glob(
-        ["test_benchmark_throughput_*_cpu.py"],
-    ),
-    data = [
-        "//max/python/max/benchmark:benchmark_throughput",
-        "//max/python/max/benchmark:python_files",
-        "//max/python/max/benchmark:yaml_files",
-    ],
-    env = {
-        "BENCHMARK_THROUGHPUT_BINARY": "$(location //max/python/max/benchmark:benchmark_throughput)",
-    },
-    tags = [
-        "no-sandbox",
-        "requires-network",
-    ],
-    target_compatible_with = select({
-        # TODO(MAXSERV-1036): Disabled due to timeouts on aarch64 machines, fix this
-        "//:linux_aarch64": ["@platforms//:incompatible"],
-        # Disabled on macOS: exceeds 600s CI timeout cap (full model inference too slow)
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
     ],
 )

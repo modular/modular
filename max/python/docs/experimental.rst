@@ -23,7 +23,7 @@ Modules
    experimental.nn
    experimental.nn.norm
    experimental.nn.rope
-   experimental.random
    experimental.sharding
    experimental.tensor
+   experimental.testing
    experimental.torch

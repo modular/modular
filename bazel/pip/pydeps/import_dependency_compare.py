@@ -29,8 +29,17 @@ from typing_extensions import override
 _THIRD_PARTY_IMPORTS = {
     "apache_tvm_ffi": ["tvm_ffi"],
     "flashinfer_python": ["flashinfer"],
-    "google_auth": ["google.auth"],
+    "google_auth": [
+        "google.auth",
+        "google.oauth2",
+    ],
     "google_cloud_bigquery": ["google.cloud.bigquery"],
+    "google_cloud_core": [
+        "google.cloud.client",
+        "google.cloud.environment_vars",
+        "google.cloud.exceptions",
+        "google.cloud.operation",
+    ],
     "grpcio": ["grpc"],
     "protobuf": ["google.protobuf"],
     "ipython": ["IPython"],

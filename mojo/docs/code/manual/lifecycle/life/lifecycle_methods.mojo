@@ -29,17 +29,17 @@ struct MyPet(Copyable):
         self.name = copy.name
         self.age = copy.age
 
-    def __init__(out self, *, deinit take: Self):
-        self.name = take.name^
-        self.age = take.age
+    def __init__(out self, *, deinit move: Self):
+        self.name = move.name^
+        self.age = move.age
 
 
 def main():
-    pet = MyPet("Fido", 3)
-    pet2 = pet.copy()
+    var pet = MyPet("Fido", 3)
+    var pet2 = pet.copy()
     print(pet2.name)
     print(pet2.age)
-    pet3 = pet.copy()
+    var pet3 = pet.copy()
     print(pet3.name)
-    pet4 = pet^
+    var pet4 = pet^
     print(pet4.name)

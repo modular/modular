@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -27,7 +27,11 @@ from max.pipelines.architectures.llama3.model_config import (
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -139,6 +143,9 @@ class VisionConfig:
 class InternVLConfig(ArchConfigWithKVCache):
     """Configuration for InternVL models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     devices: list[DeviceRef]
     """Devices that the InternVL model is parallelized over."""
 
@@ -156,6 +163,8 @@ class InternVLConfig(ArchConfigWithKVCache):
     # Composed language model configuration.
     llm_config: Qwen2Config | Qwen3Config
     """Language model configuration (Qwen2 or Qwen3)."""
+
+    quantization_encoding: SupportedEncoding | None = None
 
     def get_kv_params(self) -> KVCacheParams:
         """Returns the KV cache parameters from the embedded LLM config."""
@@ -271,6 +280,10 @@ class InternVLConfig(ArchConfigWithKVCache):
                 pipeline_config, hf_llm_config
             )
 
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
+
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -285,6 +298,7 @@ class InternVLConfig(ArchConfigWithKVCache):
             vision_config=vision_config,
             # Composed language model configuration
             llm_config=llm_config,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

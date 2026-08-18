@@ -12,27 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from std.ffi import external_call, _CPointer, _get_global
+from std.ffi import external_call, _get_global
 from std.sys.compile import SanitizeAddress
+from std.sys import stderr
 
 
-def _init_global_runtime() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+def _init_global_runtime() -> (
+    OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+):
     return external_call[
-        "KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
+        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
 
 
-def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def _destroy_global_runtime(
+    ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+):
     """Destroy the global runtime if ever used."""
-    external_call["KGEN_CompilerRT_AsyncRT_ReleaseRuntime", NoneType](ptr)
+    external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
 
 
 @always_inline
 def _ensure_runtime_init():
     var current_runtime = external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
-        _CPointer[NoneType, ExternalOrigin[mut=True]],
+        "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
+        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
     if current_runtime:
         return
@@ -103,8 +108,17 @@ def __wrap_and_execute_raising_main[
     except e:
         var stack_trace = e.get_stack_trace()
         if stack_trace:
-            print(stack_trace.value())
-        print("Unhandled exception caught during execution:", e)
+            print(stack_trace.value(), file=stderr)
+        else:
+            print(
+                (
+                    "stack trace was not collected. Enable stack trace"
+                    " collection with environment variable"
+                    " `MODULAR_DEBUG=stack-trace-on-error`"
+                ),
+                file=stderr,
+            )
+        print("Unhandled exception caught during execution:", e, file=stderr)
         return 1
 
     # Delete any globals we have allocated.

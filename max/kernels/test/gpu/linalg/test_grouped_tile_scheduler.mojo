@@ -22,7 +22,7 @@ These tests verify:
 from std.gpu import block_idx, grid_dim, thread_idx
 from std.iter import zip
 from std.itertools import count
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, row_major as new_row_major
 from layout._utils import ManagedLayoutTensor
 
@@ -152,7 +152,7 @@ def test_single_group(ctx: DeviceContext) raises:
 
     # Expected tiles: (64/16) * (64/16) = 4 * 4 = 16
     comptime expected_tiles = 16
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         problem_sizes.device_tensor(),
         Int32(1),  # num_groups
         visited_group.device_tensor(),
@@ -261,7 +261,7 @@ def test_two_groups(ctx: DeviceContext) raises:
         tile_m, tile_n, tile_k, max_groups, max_tiles
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         problem_sizes.device_tensor(),
         Int32(2),  # num_groups
         visited_group.device_tensor(),

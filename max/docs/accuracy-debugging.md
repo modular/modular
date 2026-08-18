@@ -141,7 +141,7 @@ The code lives in the `transformers` package, which is read-only by default.
 Make it editable with this script:
 
 ```bash
-bash utils/local_transformers_setup/setup_local_transformers.sh
+bash oss/modular/utils/local_transformers_setup/setup_local_transformers.sh
 ```
 
 To find the model's source code, refer to the `torch_tensors.log` from the first
@@ -161,6 +161,7 @@ to the `torch_debug` directory:
 class Gemma3MLP(nn.Module):
     def forward(self, x):
         import os
+
         os.makedirs("torch_debug", exist_ok=True)
 
         torch.save(x, "torch_debug/mlp_input.pt")
@@ -247,7 +248,7 @@ issue, or you have enough information to submit a detailed bug report.
 When you're done, remember to restore the read-only transformers installation:
 
 ```bash
-bash utils/local_transformers_setup/cleanup_local_transformers.sh
+bash oss/modular/utils/local_transformers_setup/cleanup_local_transformers.sh
 ```
 
 ## Common issues
@@ -341,20 +342,18 @@ session.set_debug_print_options(style=PrintStyle.COMPACT)
 # Full tensor contents to console (with configurable decimal precision)
 session.set_debug_print_options(
     style=PrintStyle.FULL,
-    precision=8  # digits of precision (default: 6)
+    precision=8,  # digits of precision (default: 6)
 )
 
 # Save as MAX checkpoint files (recommended for compare_tensors)
 session.set_debug_print_options(
-    style=PrintStyle.BINARY_MAX_CHECKPOINT,
-    output_directory="/tmp/max_output"
+    style=PrintStyle.BINARY_MAX_CHECKPOINT, output_directory="/tmp/max_output"
 )
 
 # Raw binary buffer (loadable with numpy.frombuffer, but requires
 # you to specify dtype and shape when loading)
 session.set_debug_print_options(
-    style=PrintStyle.BINARY,
-    output_directory="/tmp/max_output"
+    style=PrintStyle.BINARY, output_directory="/tmp/max_output"
 )
 ```
 
@@ -404,7 +403,7 @@ hook.remove()
 
 By default, `debug_model` runs with only 1 hidden layer to speed up debugging.
 This is usually sufficient since bugs often appear in the first layer. If
-needed, you can increase the layer coun with `--num-hidden-layers`:
+needed, you can increase the layer count with `--num-hidden-layers`:
 
 ```bash
 # Use 3 hidden layers
