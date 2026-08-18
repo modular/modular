@@ -562,16 +562,17 @@ class UnifiedSpecDecodeBatchProcessor(
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime)
-        device0 = runtime.devices[0]
         assert runtime.max_batch_size is not None
         max_batch_input_tokens = (
             runtime.pipeline_config.runtime.max_batch_input_tokens
         )
-        self._persistent_input_buffers = PersistentInputBuffers.alloc(
-            max_batch_size=runtime.max_batch_size,
-            max_batch_input_tokens=max_batch_input_tokens,
-            device=device0,
-        )
+        self._persistent_input_buffers: PersistentInputBuffers | None = None
+        if not is_virtual_device_mode():
+            self._persistent_input_buffers = PersistentInputBuffers.alloc(
+                max_batch_size=runtime.max_batch_size,
+                max_batch_input_tokens=max_batch_input_tokens,
+                device=runtime.devices[0],
+            )
         self._seed_counter = 0
 
     def _next_seed(self, device0: Device) -> Buffer:
@@ -607,6 +608,7 @@ class UnifiedSpecDecodeBatchProcessor(
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
         batch_size = len(context_batch)
 
+        assert self._persistent_input_buffers is not None
         persistent_tokens = self._persistent_input_buffers.tokens
         persistent_tokens = persistent_tokens[:total_seq_len]
         persistent_input_row_offsets = (
