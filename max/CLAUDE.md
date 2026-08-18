@@ -323,8 +323,10 @@ When investigating model issues or comparing configurations between models:
    ```
 
 3. **Model versions are locked in**:
-   - Check `max/tests/integration/hf-repo-lock.tsv` for
-     exact revision hashes
+   - Our CI runners resolve models offline against a lockfile of exact revision
+     hashes, kept with the internal HuggingFace cache populator that downloads
+     them (`CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv`,
+     not present in the open-source tree)
    - This ensures reproducible builds and tests
 
 ### Adding New Operations

@@ -13,11 +13,7 @@
 
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
-from smoke_tests.smoke_test import MODEL_RECIPES, _load_hf_repo_lock
-
-
-def test_hf_repo_lock_tsv_reachable() -> None:
-    assert len(_load_hf_repo_lock()) > 0, "hf-repo-lock.tsv not found or empty"
+from smoke_tests.smoke_test import MODEL_RECIPES
 
 
 def _custom_recipe_keys() -> list[str]:
@@ -31,57 +27,6 @@ def test_model_aliases_contain_exactly_one_double_underscore() -> None:
             f"Model alias {alias!r} must contain exactly one '__'"
             f" (found {count})"
         )
-
-
-def test_all_alias_hf_model_paths_in_hf_repo_lock() -> None:
-    """Every custom recipe key's hf_model_path prefix must be pinned."""
-    lock = _load_hf_repo_lock()
-    missing = [
-        alias
-        for alias in _custom_recipe_keys()
-        if alias.rsplit("__", 1)[0].casefold() not in lock
-    ]
-    assert not missing, (
-        f"custom recipe hf_model_path prefixes missing from hf-repo-lock.tsv: {missing}"
-    )
-
-
-def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
-    lock = _load_hf_repo_lock()
-    missing = []
-    for recipe_path in MODEL_RECIPES.values():
-        recipe = smoke_test._load_recipe(recipe_path)
-        model_path = recipe.model.model_path
-        assert model_path is not None
-        # Local filesystem paths (e.g. pre-staged weights on a dedicated
-        # runner) can't be pinned in hf-repo-lock.tsv.
-        if model_path.startswith(("/", "./", "../")):
-            continue
-        if model_path.casefold() not in lock:
-            missing.append((recipe_path, model_path))
-
-    assert not missing, (
-        f"MODEL_RECIPES model paths missing from hf-repo-lock.tsv: {missing}"
-    )
-
-
-def test_all_recipe_draft_model_paths_in_hf_repo_lock() -> None:
-    lock = _load_hf_repo_lock()
-    missing = []
-    for recipe_path in MODEL_RECIPES.values():
-        recipe = smoke_test._load_recipe(recipe_path)
-        if recipe.draft_model is None:
-            continue
-        model_path = recipe.draft_model.model_path
-        assert model_path is not None
-        if model_path.startswith(("/", "./", "../")):
-            continue
-        if model_path.casefold() not in lock:
-            missing.append((recipe_path, model_path))
-
-    assert not missing, (
-        f"recipe draft_model paths missing from hf-repo-lock.tsv: {missing}"
-    )
 
 
 def test_all_model_recipes_load() -> None:
@@ -112,15 +57,6 @@ def test_hf_repos_for_model_prefers_recipe_casing() -> None:
         "meta-llama/llama-3.1-8b-instruct__eagle"
     )
     assert repos[0][0] == "meta-llama/Llama-3.1-8B-Instruct"
-
-
-def test_hf_repos_for_model_revisions_pinned() -> None:
-    """Every returned repo has a pinned revision from hf-repo-lock.tsv."""
-    for alias in MODEL_RECIPES:
-        for repo, revision in smoke_test.hf_repos_for_model(alias):
-            assert revision, (
-                f"alias={alias!r} repo={repo!r} has no locked revision"
-            )
 
 
 def test_model_aliases_lookup_is_case_insensitive() -> None:
