@@ -702,7 +702,7 @@ struct TransientScheduler[
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
-        return MHATileState.__init__(0, ptr, 1)
+        return MHATileState(0, ptr, 1)
 
     @always_inline
     def unsafe_seq_info[
