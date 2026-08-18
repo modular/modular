@@ -42,23 +42,22 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import (
-    barrier,
     block_idx,
     grid_dim as gpu_grid_dim,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
     cp_async_bulk_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives import elect_one_sync
-from std.gpu.sync import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
@@ -230,12 +229,10 @@ def main() raises:
         var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
         var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
 
-        @parameter
         @always_inline
-        def bench_func(mut b: Bencher):
-            @parameter
+        def bench_func(mut b: Bencher) {imm}:
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
@@ -247,9 +244,10 @@ def main() raises:
                     shared_mem_bytes=smem_bytes,
                 )
 
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "cp_async_bulk",
                 input_id=String(

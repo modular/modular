@@ -18,14 +18,9 @@ from std.testing import TestSuite, assert_equal
 
 
 def vec_func(
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[Float32, MutAnyOrigin],
-    in1: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, MutAnyOrigin],
+    in1: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -59,26 +54,26 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
-    in1_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev1 = ctx1.enqueue_create_buffer[T](length)
     in1_dev1.enqueue_fill(1.0)
-    in1_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev2 = ctx1.enqueue_create_buffer[T](length)
     in1_dev2.enqueue_fill(2.0)
-    in1_dev3 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev3 = ctx1.enqueue_create_buffer[T](length)
     in1_dev3.enqueue_fill(3.0)
 
     # Initialize the device outputs with known bad values.
-    out_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev1 = ctx1.enqueue_create_buffer[T](length)
     out_dev1.enqueue_fill(101.0)
-    out_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev2 = ctx1.enqueue_create_buffer[T](length)
     out_dev2.enqueue_fill(102.0)
-    out_dev3 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev3 = ctx1.enqueue_create_buffer[T](length)
     out_dev3.enqueue_fill(103.0)
     # Initialize the result buffer on a second queue with known bad values.
-    out_host1 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host1 = ctx2.enqueue_create_host_buffer[T](length)
     out_host1.enqueue_fill(0.1)
-    out_host2 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host2 = ctx2.enqueue_create_host_buffer[T](length)
     out_host2.enqueue_fill(0.2)
-    out_host3 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host3 = ctx2.enqueue_create_host_buffer[T](length)
     out_host3.enqueue_fill(0.3)
 
     for i in range(10):

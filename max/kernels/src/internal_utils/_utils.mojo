@@ -91,14 +91,14 @@ def bench_compile_time[
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
-    @parameter
+    @__parameter
     def bench_call(mut b: Bencher) raises:
         @always_inline
-        @parameter
+        @__parameter
         def bench_iter() raises:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
-                keep(s.unsafe_ptr())
+                keep(s)
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
                     var func = DeviceFunction[
@@ -116,7 +116,7 @@ def bench_compile_time[
     if len(m.info_vec) > 0:
         ref ref_measures = m.info_vec[0].measures
         for i in range(len(ref_measures)):
-            metric = ref_measures[i].metric
+            var metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
 
     m.bench_function[bench_call](
@@ -139,11 +139,9 @@ def parse_shape[name: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime zero = "0".unsafe_ptr()[unsafe_offset=0]
-    comptime x_ptr = "x".unsafe_ptr()[unsafe_offset=0]
-    comptime name_unsafe_ptr: UnsafePointer[
-        Byte, ImmStaticOrigin
-    ] = name.unsafe_ptr()
+    comptime zero = "0".ptr()[unsafe_offset=0]
+    comptime x_ptr = "x".ptr()[unsafe_offset=0]
+    comptime name_unsafe_ptr = name.as_bytes().unsafe_ptr()
 
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
@@ -275,7 +273,7 @@ struct Mode(TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write to.
         """
-        s = List[String]()
+        var s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
         if Self.BENCHMARK == self:
@@ -362,7 +360,7 @@ def init_vector_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @parameter
+    @__parameter
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
@@ -437,7 +435,7 @@ def _init_block_scaled_scales_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @parameter
+    @__parameter
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:

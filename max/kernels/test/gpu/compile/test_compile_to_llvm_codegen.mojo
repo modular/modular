@@ -14,7 +14,7 @@
 from std.gpu import thread_idx
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 
 
 # CHECK-LABEL: test_array_offset

@@ -25,11 +25,11 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
 from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from max.benchmark import bencher_iter_custom
@@ -45,25 +45,22 @@ comptime dtype = DType.int32
 
 def sum_kernel[
     size: Int, batch_size: Int
-](
-    output: UnsafePointer[Int32, MutAnyOrigin],
-    a: UnsafePointer[Int32, MutAnyOrigin],
-):
+](output: Pointer[Int32, MutAnyOrigin], a: Pointer[Int32, MutAnyOrigin],):
     """Efficient reduction of the vector a."""
     comptime KERNEL_TPB: Int = 512
-    sums = unsafe_stack_allocation[
+    var sums = unsafe_stack_allocation[
         KERNEL_TPB,
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
     ]()
 
-    global_tid = block_idx.x * block_dim.x + thread_idx.x
-    tid = thread_idx.x
-    threads_in_grid = KERNEL_TPB * NUM_BLOCKS
+    var global_tid = block_idx.x * block_dim.x + thread_idx.x
+    var tid = thread_idx.x
+    var threads_in_grid = KERNEL_TPB * NUM_BLOCKS
     var sum: Int32 = 0
 
     for i in range(global_tid, size, threads_in_grid):
-        idx = i * batch_size
+        var idx = i * batch_size
         # Load in a vectorized fashion and reduce the loaded SIMD vector
         if idx < size:
             sum += a.unsafe_load[width=batch_size](idx).reduce_add()
@@ -72,7 +69,7 @@ def sum_kernel[
 
     # Reduce until the first warp
 
-    active_threads = KERNEL_TPB
+    var active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
     comptime for power in range(1, KERNEL_LOG_TPB - log2_floor(WARP_SIZE) + 1):
@@ -92,29 +89,28 @@ def sum_kernel[
 
 struct SumKernelBenchmarkParams:
     @__allow_legacy_any_origin_fields
-    var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var out_ptr: Pointer[Int32, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var a_ptr: Pointer[Int32, MutAnyOrigin]
 
     def __init__(
         out self,
-        out_ptr: UnsafePointer[mut=True, Int32, _],
-        a_ptr: UnsafePointer[mut=True, Int32, _],
+        out_ptr: Pointer[mut=True, Int32, _],
+        a_ptr: Pointer[mut=True, Int32, _],
     ):
         self.out_ptr = out_ptr.as_unsafe_any_origin()
         self.a_ptr = a_ptr.as_unsafe_any_origin()
 
 
 # Benchmark function for sum_kernel
-@parameter
+@__parameter
 @always_inline
 def sum_kernel_benchmark(
     mut b: Bencher, input_data: SumKernelBenchmarkParams
 ) capturing raises:
-    @parameter
     @always_inline
-    def kernel_launch_sum(ctx: DeviceContext) raises:
+    def kernel_launch_sum(ctx: DeviceContext) raises {imm}:
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr
         var a_ptr = input_data.a_ptr
@@ -128,7 +124,7 @@ def sum_kernel_benchmark(
         )
 
     var bench_ctx = DeviceContext()
-    bencher_iter_custom[kernel_launch_sum](b, bench_ctx)
+    bencher_iter_custom(b, kernel_launch_sum, bench_ctx)
 
 
 def main() raises:
@@ -137,9 +133,9 @@ def main() raises:
     with DeviceContext() as ctx:
         # Allocate memory on the device
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
-        out = ctx.enqueue_create_buffer[dtype](1)
+        var out = ctx.enqueue_create_buffer[dtype](1)
         out.enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        var a = ctx.enqueue_create_buffer[dtype](SIZE)
         a.enqueue_fill(0)
 
         # Initialise a with random integers between 0 and 10
@@ -157,7 +153,7 @@ def main() raises:
 
         # Calculate the sum in a sequential fashion on the host
         # for correctness check
-        expected = ctx.enqueue_create_host_buffer[dtype](1)
+        var expected = ctx.enqueue_create_host_buffer[dtype](1)
         expected.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):

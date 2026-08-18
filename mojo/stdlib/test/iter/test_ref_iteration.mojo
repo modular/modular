@@ -13,8 +13,7 @@
 """Tests for by-reference iteration over move-only types."""
 
 from std.iter import StopIteration
-from std.memory import alloc
-from std.memory.memory import _free
+from std.memory import Allocation, alloc, dealloc
 from std.testing import TestSuite, assert_equal
 from test_utils import ExplicitCopyOnly
 
@@ -78,7 +77,7 @@ struct _RefIter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
+struct MoveOnlyList[T: Movable & Deinitable]:
     """A simple list that holds move-only types."""
 
     var _data: Pointer[Self.T, MutUntrackedOrigin]
@@ -94,7 +93,11 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
         for i in range(self._len):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._capacity > 0:
-            _free(self._data)
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self._data, layout={count = self._capacity}
+                )
+            )
 
     def __len__(self) -> Int:
         return self._len
@@ -103,14 +106,19 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
         if self._len >= self._capacity:
             var new_cap = self._capacity * 2 if self._capacity > 0 else 4
             var new_data: Pointer[Self.T, MutUntrackedOrigin] = alloc[Self.T](
-                new_cap
-            )
+                {count = new_cap}
+            ).unsafe_leak()
             for i in range(self._len):
                 new_data.unsafe_offset(i).unsafe_write(
                     self._data.unsafe_offset(i).unsafe_take_pointee()
                 )
             if self._capacity > 0:
-                _free(self._data)
+                dealloc(
+                    Allocation(
+                        unsafe_owned_ptr=self._data,
+                        layout={count = self._capacity},
+                    )
+                )
             self._data = new_data
             self._capacity = new_cap
         self._data.unsafe_offset(self._len).unsafe_write(value^)

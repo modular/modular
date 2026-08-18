@@ -130,7 +130,9 @@ def dispatch_sm100_conv2d[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
@@ -265,7 +267,7 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch[
             swizzle: TensorMapSwizzle,

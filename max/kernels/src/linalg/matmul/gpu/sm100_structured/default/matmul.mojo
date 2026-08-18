@@ -26,12 +26,14 @@ from comm import MAX_GPUS, Signal
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
-from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
+from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     Coord,
     Idx,
+    PointerStorage,
     RowMajorLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major as tt_row_major,
 )
@@ -72,13 +74,19 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
+    EpilogueStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            config.c_type,
+            EpilogueLayoutType,
+            ImmutAnyOrigin,
+            Storage=EpilogueStorageType,
+        ]
     ] = None,
 ) raises:
     """Internal matmul launch for SM100. Always takes rank-3 TileTensors.
@@ -223,7 +231,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     comptime KernelType = type_of(matmul_kernel)
 
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
         a_tma_tile_shape,
@@ -236,7 +244,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
         b_tma_tile_shape,
@@ -392,13 +400,19 @@ def blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
+    EpilogueStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            config.c_type,
+            EpilogueLayoutType,
+            ImmutAnyOrigin,
+            Storage=EpilogueStorageType,
+        ]
     ] = None,
 ) raises:
     """Public entry point for SM100 matmul (non-batched, rank-2 inputs).
@@ -422,6 +436,8 @@ def blackwell_matmul_tma_umma_warp_specialized[
             when set, enables kernel profiling (defaults to None).
         EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
             RowMajorLayout[Int64, Int64]).
+        EpilogueStorageType: Storage type of the epilogue tensor (defaults to
+            PointerStorage[element_width=1]).
     Args:
         c_device: Output TileTensor of shape (M, N).
         a_device: LHS TileTensor of shape (M, K).
@@ -585,14 +601,14 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # Create 2D TMA descriptors using kernel's _splitk layout types
     comptime KernelType = type_of(matmul_kernel)
 
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         KernelType.ATileLayout_splitk,
         KernelType.ADescLayout_splitk,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         KernelType.BTileLayout_splitk,
         KernelType.BDescLayout_splitk,
         Index(
@@ -740,13 +756,19 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
+    EpilogueStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            config.c_type,
+            EpilogueLayoutType,
+            ImmutAnyOrigin,
+            Storage=EpilogueStorageType,
+        ]
     ] = None,
 ) raises:
     """Public entry point for batched SM100 BF16 matmul.
@@ -770,6 +792,8 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             when set, enables kernel profiling (defaults to None).
         EpilogueLayoutType: Layout type of the epilogue tensor (defaults to
             RowMajorLayout[Int64, Int64]).
+        EpilogueStorageType: Storage type of the epilogue tensor (defaults to
+            PointerStorage[element_width=1]).
     Args:
         c_device: Output TileTensor of shape (M, N) or (B, M, N).
         a_device: LHS TileTensor of shape (M, K) or (B, M, K).
@@ -784,7 +808,10 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             comptime new_config = config.swap_AB_type()
             comptime SwappedEpilogue = OptionalReg[
                 TileTensor[
-                    new_config.c_type, EpilogueLayoutType, ImmutAnyOrigin
+                    new_config.c_type,
+                    EpilogueLayoutType,
+                    ImmutAnyOrigin,
+                    Storage=EpilogueStorageType,
                 ]
             ]
             _blackwell_matmul_tma_umma_warp_specialized[
@@ -821,7 +848,10 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             comptime new_config = config.swap_AB_type()
             comptime SwappedEpilogue = OptionalReg[
                 TileTensor[
-                    new_config.c_type, EpilogueLayoutType, ImmutAnyOrigin
+                    new_config.c_type,
+                    EpilogueLayoutType,
+                    ImmutAnyOrigin,
+                    Storage=EpilogueStorageType,
                 ]
             ]
             _blackwell_matmul_tma_umma_warp_specialized[
@@ -927,13 +957,13 @@ def matmul_sm100_fallback[
     comptime kernel = fallback_kernel.run
 
     # Create TMA descriptors using kernel-derived layout types
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         FallbackKernelType.ATileLayout,
         FallbackKernelType.ADescLayout,
         Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         FallbackKernelType.BTileLayout,
         FallbackKernelType.BDescLayout,
         Index(BN, BK) if transpose_b else Index(BK, BN),

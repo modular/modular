@@ -13,6 +13,16 @@ Public API:
   calls. Expands to one CPU build action per spec plus a ``filegroup``
   bundling the per-spec ``.mef`` files under a single ``name`` the consumer
   depends on.
+- ``precompiled_mefs_target``: the same, with the producer built in the
+  **target** configuration instead of ``CFG_WORKAROUND``. A MEF's host-ELF
+  kernels are bound to the device-context ABI they were compiled against, and
+  on a macOS host driving remote execution ``CFG_WORKAROUND`` resolves to the
+  exec configuration, which drops configuration flags like
+  ``--//:hal_device_context``: the artifact then fails to initialize in the
+  consumer's configuration (missing ``AsyncRT_DeviceContext_*``/HAL symbols).
+  Use this variant when the consumer's configuration swaps the device-context
+  implementation; prefer ``precompiled_mefs`` elsewhere, where the exec
+  configuration lets one artifact serve any consuming configuration.
 - ``CPU_TORCH``: In cases where the graph generation depends on Pytorch, use
   this as an extra array of deps for only the MEF generation.
 
@@ -100,6 +110,13 @@ cd "${EXE}.runfiles/_main"
 
     return [DefaultInfo(files = depset(mefs))]
 
+_PRODUCER_DOC = "A modular_py_binary whose __main__ calls precompile_entrypoint()."
+
+_SPECS_ATTR = attr.string_list(
+    mandatory = True,
+    doc = "Spec names to compile, each passed as --spec.",
+)
+
 _precompiled_mefs = rule(
     doc = "Compiles graph specs to MEFs as a CPU build action.",
     implementation = _precompiled_mefs_impl,
@@ -108,12 +125,28 @@ _precompiled_mefs = rule(
             mandatory = True,
             executable = True,
             cfg = CFG_WORKAROUND,
-            doc = "A modular_py_binary whose __main__ calls precompile_entrypoint().",
+            doc = _PRODUCER_DOC,
         ),
-        "specs": attr.string_list(
+        "specs": _SPECS_ATTR,
+    },
+    toolchains = [
+        "@rules_mojo//:toolchain_type",
+    ],
+)
+
+_precompiled_mefs_target = rule(
+    doc = "precompiled_mefs with the producer in the target configuration, so " +
+          "the artifacts match a consumer whose configuration swaps the " +
+          "device-context implementation (see this file's docstring).",
+    implementation = _precompiled_mefs_impl,
+    attrs = {
+        "producer": attr.label(
             mandatory = True,
-            doc = "Spec names to compile, each passed as --spec.",
+            executable = True,
+            cfg = "target",
+            doc = _PRODUCER_DOC,
         ),
+        "specs": _SPECS_ATTR,
     },
     toolchains = [
         "@rules_mojo//:toolchain_type",
@@ -137,6 +170,27 @@ def precompiled_mefs(
         **kwargs: Common attrs (visibility, tags, ...) forwarded to all targets.
     """
     _precompiled_mefs(
+        testonly = testonly,
+        **kwargs
+    )
+
+def precompiled_mefs_target(
+        testonly = True,
+        **kwargs):
+    """``precompiled_mefs`` with the producer in the target configuration.
+
+    Needed when the consumer's build configuration swaps an ABI the artifact's
+    host-ELF kernels are bound to (e.g. ``--config=hal-device-context``): the
+    producer must then be built in the same configuration as the consumer, not
+    in ``CFG_WORKAROUND`` (which resolves to the exec configuration on a macOS
+    host driving remote execution, silently dropping such flags).
+
+    Args:
+        testonly: Whether the generated targets are test-only. Defaults to
+            ``True`` (MEFs are test fixtures produced by a testonly producer).
+        **kwargs: Common attrs (visibility, tags, ...) forwarded to all targets.
+    """
+    _precompiled_mefs_target(
         testonly = testonly,
         **kwargs
     )

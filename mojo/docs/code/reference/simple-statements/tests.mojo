@@ -106,9 +106,9 @@ def test_ref_binding_observe_underlying() raises:
 
 
 def test_annotated_assignment() raises:
-    x: Int = 42
-    name: String = "Alice"
-    values: List[Float64] = []
+    var x: Int = 42
+    var name: String = "Alice"
+    var values: List[Float64] = []
     assert_equal(x, 42)
     assert_equal(name, "Alice")
     assert_equal(len(values), 0)
@@ -134,7 +134,7 @@ def test_comptime_type_alias() raises:
 
 
 def test_chained_same_value() raises:
-    var x = y = z = "Hello"
+    var x = var y = var z = "Hello"
     assert_equal(x, "Hello")
     assert_equal(y, "Hello")
     assert_equal(z, "Hello")
@@ -361,7 +361,7 @@ def test_comptime_constants() raises:
 # Trait composition alias and a trait with an associated comptime type.
 # Declaring these at module scope is the test: the file compiling is the
 # verification that the syntax and the semantic check pass.
-comptime Permissive = ImplicitlyCopyable & ImplicitlyDeletable
+comptime Permissive = ImplicitlyCopyable & Deinitable
 
 
 trait SimpleTrait(Writable):

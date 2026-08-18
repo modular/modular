@@ -15,7 +15,7 @@
 This module provides string formatting functionality similar to Python's
 `str.format()` method. The `format()` method (available on the
 [`String`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan`](/docs/std/collections/string/string_span/StringSpan/#format)
 types) takes the current string as a template (or "format string"), which can
 contain literal text and/or replacement fields delimited by curly braces (`{}`).
 The replacement fields are replaced with the values of the arguments.
@@ -65,13 +65,13 @@ var s4 = "{!r}".format("test")  # "'test'"
 
 This module has no public API; its functionality is available through the
 [`String.format()`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice.format()`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan.format()`](/docs/std/collections/string/string_span/StringSpan/#format)
 methods.
 """
 
 
 from std.builtin.globals import global_constant
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
@@ -130,7 +130,7 @@ struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
 
 @always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDeletable & Copyable, //, list: List[T]
+    T: Deinitable & Copyable, //, list: List[T]
 ]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
@@ -159,12 +159,12 @@ struct _FormatUtils:
         """Format the arguments using the given format string and precompiled entries.
         """
         var offset = 0
-        var ptr = compiled.format.unsafe_ptr()
+        var ptr = compiled.format.as_bytes().unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
 
         @always_inline
         def _build_slice(
-            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
                 unsafe_from_utf8=Span(
@@ -345,15 +345,15 @@ struct _FormatUtils:
         var entries = List[EntryType]()
         var start = Optional[Int](None)
         var skip_next = False
-        var fmt_ptr = format.unsafe_ptr()
-        var fmt_len = format.byte_length()
+        var fmt_bytes = format.as_bytes()
+        var fmt_len = len(fmt_bytes)
         var total_estimated_entry_byte_width = 0
 
         for i in range(fmt_len):
             if skip_next:
                 skip_next = False
                 continue
-            if fmt_ptr[unsafe_offset=i] == `{`:
+            if fmt_bytes.unsafe_get(i) == `{`:
                 if not start:
                     start = i
                     continue
@@ -363,12 +363,10 @@ struct _FormatUtils:
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
                 continue
-            elif fmt_ptr[unsafe_offset=i] == `}`:
+            elif fmt_bytes.unsafe_get(i) == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[
-                        unsafe_offset=i + 1
-                    ] == `}`:
+                    if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
@@ -529,7 +527,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
                 unsafe_from_utf8=Span[UInt8, p.origin](
@@ -537,8 +535,10 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
                 )
             )
 
-        var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
-        var field_ptr = field.unsafe_ptr()
+        var field = _build_slice(
+            fmt_src.as_bytes().unsafe_ptr(), start_value + 1, i
+        )
+        var field_ptr = field.as_bytes().unsafe_ptr()
         var field_len = i - (start_value + 1)
         var exclamation_index = -1
         var idx = 0
@@ -583,11 +583,10 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
                 manual_indexing_count += 1
             except e:
 
-                @parameter
-                def check_string() -> Bool:
+                def check_string() {e} -> Bool:
                     return "not convertible to integer" in String(e)
 
-                debug_assert[check_string]("Not the expected error from atol")
+                debug_assert(check_string, "Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})

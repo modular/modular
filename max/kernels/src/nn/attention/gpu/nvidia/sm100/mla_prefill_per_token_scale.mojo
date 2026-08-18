@@ -43,9 +43,9 @@ from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
+from max.gpu.sync import barrier
 from std.gpu.primitives.warp import broadcast
-from std.gpu.memory import AddressSpace
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -480,8 +480,8 @@ __extension SM100MLA:
         comptime assert Self.KRopeType.dtype == config.rope_gmem_dtype
         comptime assert not Self.SchedulerType.may_advance
 
-        mask = pack.mask
-        max_seq_len = pack.max_seq_len
+        var mask = pack.mask
+        var max_seq_len = pack.max_seq_len
 
         # Matches the thin entrypoint's switch predicate; see the generic
         # kernel for the rationale. A 1Q instantiation has
@@ -534,7 +534,7 @@ __extension SM100MLA:
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_nope_tma_op.prefetch_descriptor()
             if e != 0:
@@ -856,7 +856,7 @@ __extension SM100MLA:
             seq_info, max_seq_len
         )
         var q_head_idx: UInt32 = seq_info.head_idx
-        e = elect()
+        var e = elect()
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
@@ -916,7 +916,7 @@ __extension SM100MLA:
             Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_nope/V/k_scale sub-tile pages at `current_kv_row`."""
@@ -927,7 +927,7 @@ __extension SM100MLA:
                 UInt32(ceildiv(Int(num_keys - current_kv_row), Int(kv_sub_BN))),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _rope_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_rope sub-tile pages at `current_kv_row`."""
@@ -955,7 +955,7 @@ __extension SM100MLA:
 
         # K_rope shared closure. Bytes are accounted by the caller on
         # the K barrier (no separate CVT mbar — unlike blockscale).
-        @parameter
+        @__parameter
         @always_inline
         def _produce_k_rope[
             partial: Bool,
@@ -1010,7 +1010,7 @@ __extension SM100MLA:
                 )
 
         # k_scale shared closure. Bytes accounted by caller on `mbar`.
-        @parameter
+        @__parameter
         @always_inline
         def _produce_k_scale[
             partial: Bool,
@@ -1060,7 +1060,7 @@ __extension SM100MLA:
         # (kv_pipeline.producer_mbar() in shared-KV,
         # pipeline_v.get_tile().mbar in non-shared-KV), so this closure
         # emits its own partial-aware `expect_bytes_pred` directly.
-        @parameter
+        @__parameter
         @always_inline
         def _produce_v[
             partial: Bool,
@@ -1118,7 +1118,7 @@ __extension SM100MLA:
             )
             var k_scale_idx: UInt32 = 0
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_kv_buffer_ptr() -> (
                 SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
@@ -1128,7 +1128,7 @@ __extension SM100MLA:
                     kv_stage_elems
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_rope_smem_ptr() -> (
                 SharedMemPointer[Scalar[Self.KRopeType.dtype]]
@@ -1141,7 +1141,7 @@ __extension SM100MLA:
                 """
                 return rope_smem_base + rope_idx * UInt32(rope_stage_elems)
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_k_scale_smem_ptr() -> (
                 SharedMemPointer[Scalar[config.scale_dtype]]
@@ -1149,7 +1149,7 @@ __extension SM100MLA:
                 """Current k_scale buffer slot."""
                 return k_scale_smem + k_scale_idx * UInt32(k_scale_elems)
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_fused[
                 partial: Bool,
@@ -1254,7 +1254,7 @@ __extension SM100MLA:
                 # rope+k_scale buffer cycle / step). The first peeled K
                 # slot passes `acquire=False` (initial producer
                 # phase = 1).
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_k_1q[
                     partial: Bool,
@@ -1282,7 +1282,7 @@ __extension SM100MLA:
                     k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
                     kv_pipeline.state.step()
 
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_v_1q[
                     partial: Bool
@@ -1659,7 +1659,7 @@ __extension SM100MLA:
             comptime k_rope_split_sub = Self.rope_depth * rope_sub_BN
             comptime KNopeSplitSub = SMemTensorLT[k_nope_split_sub]
 
-            @parameter
+            @__parameter
             @always_inline
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
@@ -1676,7 +1676,7 @@ __extension SM100MLA:
                     pair.smem.ptr
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_split[
                 partial: Bool,
@@ -1739,7 +1739,7 @@ __extension SM100MLA:
                 var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
                     k_elements_per_stage
                 )
-                k_nope_smem_local, k_rope_smem_local = split_smem[
+                var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
@@ -2127,7 +2127,7 @@ def mla_sm100_prefill_per_token_scale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    q_nope_tma_op = q_tma[
+    var q_nope_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.nope_depth,
@@ -2140,7 +2140,7 @@ def mla_sm100_prefill_per_token_scale[
         num_rows_q,
     )
 
-    q_rope_tma_op = q_tma[
+    var q_rope_tma_op = q_tma[
         fa4_config.rope_gmem_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.rope_depth,
@@ -2154,27 +2154,27 @@ def mla_sm100_prefill_per_token_scale[
     )
 
     # Per-Q-tile box (128 in both 1Q/2Q modes); 2Q issues two TMAs.
-    q_scale_tma_op = q_scale_tma[BM=fa4_config.q_tile_rows()](ctx, q_scale)
+    var q_scale_tma_op = q_scale_tma[BM=fa4_config.q_tile_rows()](ctx, q_scale)
 
-    k_nope_tma_op = k_nope.create_tma_tile[
+    var k_nope_tma_op = k_nope.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KType.page_size),
         depth=fa4_config.nope_depth,
     ](ctx)
 
-    k_rope_tma_op = k_rope.create_tma_tile[
+    var k_rope_tma_op = k_rope.create_tma_tile[
         fa4_config.rope_gmem_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         depth=cache_depth,
         BK=fa4_config.rope_depth,
     ](ctx)
 
-    k_scale_tma_op = k_nope.create_scale_tma_tile[
+    var k_scale_tma_op = k_nope.create_scale_tma_tile[
         kv_sub_tile_rows(fa4_config.BN, KType.page_size)
     ](ctx)
 
     # V gmem width is ov_depth (= v_head_dim).
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KType.page_size),
         depth=ov_depth,
@@ -2193,7 +2193,7 @@ def mla_sm100_prefill_per_token_scale[
     # configs (Q nope/rope TMAs, q_scale box, and ragged store use
     # `BM // num_q` = 128 in both modes; K/V/rope/k_scale TMA shapes
     # are BM-independent), so they are passed through unchanged.
-    @parameter
+    @__parameter
     @always_inline
     def _launch[cfg: MLAConfig]() raises:
         comptime assert cfg.supported(), cfg.fa4_config.description()

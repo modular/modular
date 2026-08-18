@@ -530,11 +530,10 @@ class TextContext:
     """Optional per-request salt that isolates this prompt's prefix-cache
     entries from other requests sharing the same tokens.
 
-    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
-    ``BlockManager.compute_hashes_for_request`` to derive the root parent
-    hash. Has effect only when ``kv_cache_hash_algo`` is ``sha256`` or
-    ``sha256_64``; under ``ahash64`` the salt is dropped with a one-time
-    warning. Capped at 512 chars at the OpenAI schema layer.
+    Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
+    Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
+    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
+    at 512 chars at the OpenAI schema layer.
     """
 
     dkv_hint_instance_name: str = field(default="")
@@ -564,6 +563,13 @@ class TextContext:
     buffer. Incremented by :meth:`update_with_future_token` and decremented by
     :meth:`realize_future_token`; the placeholders always occupy the last
     ``_pending_future_count`` positions of ``tokens.all``."""
+
+    trace_carrier: dict[str, str] | None = field(default=None)
+    """Serialized W3C trace context (via ``opentelemetry.propagate.inject``)
+    captured from the inbound request's OTel context. Threaded onto this
+    context because it crosses into the model-worker process by value, so the
+    scheduler can re-``extract`` it and parent its phase spans under the
+    caller's trace instead of starting new root spans."""
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.

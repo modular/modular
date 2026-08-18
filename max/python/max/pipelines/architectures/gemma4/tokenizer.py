@@ -32,7 +32,11 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import GrammarEnforcementState
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    VisionPreprocessCache,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import open_image, resolve_single_special_token
 from max.pipelines.modeling.types import (
@@ -41,12 +45,21 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
+from PIL import Image
 from transformers import AutoTokenizer, GenerationConfig
 
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
 from .processing_utils import load_processor_config
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
+
+_PreprocessedImage = tuple[npt.NDArray[np.float32], npt.NDArray[np.int32], int]
+"""One image's ``(pixel_values, position_ids, num_soft_tokens)``."""
+
+_PreprocessedVideo = tuple[
+    npt.NDArray[np.float32], npt.NDArray[np.int32], int, VideoMetadata
+]
+"""One video's ``(pixel_values, position_ids, num_soft_tokens, metadata)``."""
 
 
 class SpecialToken(str, Enum):
@@ -178,6 +191,10 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **proc_cfg.get("image_processor", {}),
         )
 
+        self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
+        )
+
         # Video token — the upstream tokenizer_config.json doesn't include
         # <|video|> yet (the HF Processor adds it dynamically).  Mirror that
         # here so the token is in the vocabulary for tokenization.
@@ -192,6 +209,18 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         self.video_processor = Gemma4VideoProcessor(
             **proc_cfg.get("video_processor", {}),
         )
+
+        # A video's resolution size class folds in the frame count as well as
+        # the per-frame soft-token budget, since both change the tensors the
+        # processor emits. Derived once so the preprocess cache and the
+        # vision-cache key in ``new_context`` cannot drift apart.
+        self._video_size_tier = (
+            self.video_processor.max_soft_tokens << 16
+            | self.video_processor.num_frames
+        )
+        self._video_preprocess_cache: VisionPreprocessCache[
+            _PreprocessedVideo
+        ] = VisionPreprocessCache.for_videos(pipeline_config.runtime)
 
         self._patch_chat_template_for_video()
 
@@ -358,6 +387,84 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         kwargs_no_skip = {**kwargs, "skip_special_tokens": False}
         return await super().decode(np.array(filtered_ids), **kwargs_no_skip)
 
+    def _preprocess_image(
+        self, image_hash: int | None, image: bytes | Image.Image
+    ) -> _PreprocessedImage:
+        """Preprocesses one image, reusing a cached result when available.
+
+        The cache key is the digest of the raw encoded bytes plus the
+        resolution size class -- byte for byte the key ``new_context`` hands to
+        the vision encoder cache, computed once by the caller and shared by
+        both, so hashing does not happen twice. Hitting here saves
+        the resize, rescale and patchify that the encoder cache cannot skip,
+        since it is consulted only after this work has already happened. The
+        decode is already done by then on the serving path (the API server
+        decodes once at admission), so only offline callers save that too.
+
+        ``img_processor`` loops over images with no cross-image state, so
+        preprocessing one image at a time is bit-identical to the batched call
+        it replaces.
+
+        Args:
+            image_hash: The image's content digest, or ``None`` when nothing
+                needs one because no media caching is enabled.
+            image: The image as bytes, or already decoded by the API server.
+
+        Returns:
+            The image's ``(pixel_values, position_ids, num_soft_tokens)``.
+        """
+
+        def preprocess() -> _PreprocessedImage:
+            pixels, pos_ids, softs = self.img_processor(
+                [to_rgb(open_image(image))]
+            )
+            return pixels[0], pos_ids[0], softs[0]
+
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
+
+    def _preprocess_video(
+        self, video_hash: int | None, raw_bytes: bytes
+    ) -> _PreprocessedVideo:
+        """Preprocesses one video, reusing a cached result when available.
+
+        Keyed like :meth:`_preprocess_image`, on the digest of the raw encoded
+        bytes plus the size class, computed once by the caller and shared with
+        the vision-cache key. A hit here is worth considerably more than an
+        image one: videos are never decoded at admission, so the decode of
+        every sampled frame happens inside ``video_processor`` and a hit skips
+        all of it.
+
+        ``video_processor`` loops over videos with no cross-video state, so
+        preprocessing one video at a time is bit-identical to the batched call
+        it replaces.
+
+        Args:
+            video_hash: The video's content digest, or ``None`` when nothing
+                needs one because no media caching is enabled.
+            raw_bytes: The raw encoded video bytes, preprocessed on a miss.
+
+        Returns:
+            The video's ``(pixel_values, position_ids, num_soft_tokens,
+            metadata)``.
+        """
+
+        def preprocess() -> _PreprocessedVideo:
+            pvs, poss, softs, metadata = self.video_processor([raw_bytes])
+            return pvs[0], poss[0], softs[0], metadata[0]
+
+        return self._video_preprocess_cache.get_or_preprocess(
+            video_hash, preprocess
+        )
+
+    def _preprocess_videos(
+        self, video_hashes: Sequence[int | None], videos: Sequence[bytes]
+    ) -> list[_PreprocessedVideo]:
+        """Preprocesses each video, for dispatch to a worker thread."""
+        return [
+            self._preprocess_video(video_hash, raw_bytes)
+            for video_hash, raw_bytes in zip(video_hashes, videos, strict=True)
+        ]
+
     async def new_context(
         self, request: TextGenerationRequest
     ) -> Gemma4Context:
@@ -381,15 +488,40 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         pixel_values_list: list[npt.NDArray[np.float32]] = []
         pixel_position_ids_list: list[npt.NDArray[np.int32]] = []
         num_soft_tokens: list[int] | None = None
+        image_hashes: list[int | None] = []
+
+        needs_image_hash = (
+            self.enable_prefix_caching or self.enable_vision_caching
+        )
 
         if request.images:
-            images = [
-                to_rgb(open_image(image))
-                for image in request.images_for_processing()
-            ]
-            pixel_values_list, pixel_position_ids_list, num_soft_tokens = (
-                self.img_processor(images)
+            # One digest per image, shared by the preprocessed-tensor cache
+            # here and the vision encoder cache downstream. Computing it in
+            # both places would hash every image's bytes twice, which on a
+            # cache hit is most of the work that remains.
+            #
+            # request.images (raw encoded bytes) is 1:1 with
+            # images_for_processing() (the same images, decoded once by the
+            # API server when it served the request).
+            image_hashes = (
+                [
+                    hash_image(raw_bytes, self.img_processor.max_soft_tokens)
+                    for raw_bytes in request.images
+                ]
+                if needs_image_hash or self._preprocess_cache.enabled
+                else [None] * len(request.images)
             )
+            per_image = [
+                self._preprocess_image(image_hash, image)
+                for image_hash, image in zip(
+                    image_hashes,
+                    request.images_for_processing(),
+                    strict=True,
+                )
+            ]
+            pixel_values_list = [pixels for pixels, _, _ in per_image]
+            pixel_position_ids_list = [pos_ids for _, pos_ids, _ in per_image]
+            num_soft_tokens = [softs for _, _, softs in per_image]
 
         video_frame_patches: list[npt.NDArray[np.float32]] = []
         video_frame_pos_ids: list[npt.NDArray[np.int32]] = []
@@ -398,12 +530,23 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         video_hashes: list[int] = []
         frames_per_video: list[int] = []
         if request.videos:
-            (
-                padded_pvs,
-                padded_pos,
-                video_num_soft_tokens,
-                video_metadata_list,
-            ) = await asyncio.to_thread(self.video_processor, request.videos)
+            # As for images: one digest per video, shared by the preprocess
+            # cache and the vision-cache key below.
+            computed_video_hashes: list[int | None] = (
+                [
+                    hash_image(raw_bytes, self._video_size_tier)
+                    for raw_bytes in request.videos
+                ]
+                if needs_image_hash or self._video_preprocess_cache.enabled
+                else [None] * len(request.videos)
+            )
+            per_video = await asyncio.to_thread(
+                self._preprocess_videos, computed_video_hashes, request.videos
+            )
+            padded_pvs = [pvs for pvs, _, _, _ in per_video]
+            padded_pos = [pos for _, pos, _, _ in per_video]
+            video_num_soft_tokens = [softs for _, _, softs, _ in per_video]
+            video_metadata_list = [meta for _, _, _, meta in per_video]
             frames_per_video = [int(pv.shape[0]) for pv in padded_pvs]
             for pv, pos in zip(padded_pvs, padded_pos, strict=True):
                 real_mask = pos[:, :, 0] >= 0
@@ -412,15 +555,12 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                     video_frame_patches.append(pv[f, :n_real, :])
                     video_frame_pos_ids.append(pos[f, :n_real, :])
 
-            if self.enable_prefix_caching or self.enable_vision_caching:
-                video_size_tier = (
-                    self.video_processor.max_soft_tokens << 16
-                    | self.video_processor.num_frames
-                )
-                for raw_bytes, _metadata in zip(
-                    request.videos, video_metadata_list, strict=True
-                ):
-                    video_hashes.append(hash_image(raw_bytes, video_size_tier))
+            if needs_image_hash:
+                video_hashes = [
+                    video_hash
+                    for video_hash in computed_video_hashes
+                    if video_hash is not None
+                ]
 
         # Expand image placeholders
         if isinstance(prompt, str):
@@ -519,29 +659,23 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
-        needs_image_hash = (
-            self.enable_prefix_caching or self.enable_vision_caching
-        )
         image_token_ranges = find_contiguous_ranges(
             encoded_prompt, [self.image_token_id]
         )
-        image_size_tier = self.img_processor.max_soft_tokens
         image_entries = (
             (
                 ImageMetadata(
                     start_idx=int(start_idx),
                     end_idx=int(end_idx),
                     pixel_values=pixels,
-                    image_hash=hash_image(raw_bytes, image_size_tier)
-                    if needs_image_hash
-                    else None,
+                    image_hash=image_hash if needs_image_hash else None,
                 ),
                 pos_ids,
             )
-            for (start_idx, end_idx), pixels, raw_bytes, pos_ids in zip(
+            for (start_idx, end_idx), pixels, image_hash, pos_ids in zip(
                 image_token_ranges,
                 pixel_values_list,
-                request.images,
+                image_hashes,
                 pixel_position_ids_list,
                 strict=True,
             )
@@ -627,6 +761,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
 
         return context

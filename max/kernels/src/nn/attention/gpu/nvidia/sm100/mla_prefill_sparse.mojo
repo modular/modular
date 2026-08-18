@@ -29,21 +29,20 @@ from std.gpu import (
     warp_id,
     thread_idx,
     WARP_SIZE,
-    barrier,
 )
+from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
@@ -358,6 +357,7 @@ struct MLAPrefillSparse[
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
         ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
         var shared_qkv_ptr: UnsafePointer[
+            mut=True,
             Scalar[Self.qkv_dtype],
             origin_of(shared_qkv),
             address_space=AddressSpace.SHARED,
@@ -1068,6 +1068,7 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
         ],
         smem_tensor: TileTensor[
+            mut=True,
             Self.qkv_dtype,
             address_space=AddressSpace.SHARED,
             ...,
@@ -1079,7 +1080,7 @@ struct MLAPrefillSparse[
         comptime col_dim = smem_tensor.static_shape[1]
         comptime num_col_tiles = col_dim // 64
         comptime row_dim = smem_tensor.static_shape[0]
-        tma_smem_tensor = TileTensor(
+        var tma_smem_tensor = TileTensor(
             smem_tensor.ptr,
             row_major[row_dim * num_col_tiles, 64](),
         )
@@ -1118,6 +1119,7 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
         ],
         smem_tensor: TileTensor[
+            mut=True,
             Self.qkv_dtype,
             address_space=AddressSpace.SHARED,
             ...,
@@ -1214,7 +1216,10 @@ struct MLAPrefillSparse[
         ],
         kv_lut: Self.KVLUTType,
         k_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            mut=True,
+            Scalar[Self.qkv_dtype],
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         qk_ss_done: UnsafePointer[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
@@ -1357,7 +1362,10 @@ struct MLAPrefillSparse[
             Self.v_desc_shape,
         ],
         v_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            mut=True,
+            Scalar[Self.qkv_dtype],
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         sv_p0_done: UnsafePointer[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
@@ -1512,7 +1520,7 @@ def mla_prefill_sparse[
     # completes -> deadlock). For num_q_heads < 64 the kernel issues the
     # depth-tile sub-copies manually at the padded 64-row stride. NFC at
     # 64/128 (real == padded).
-    q_tma_op = create_tensor_tile[
+    var q_tma_op = create_tensor_tile[
         Index(1, config.num_q_heads // config.cta_group, q_depth),
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
@@ -1521,7 +1529,7 @@ def mla_prefill_sparse[
     # we load 64 tokens gathered from different kv blocks for each CTA
     # Both CTA in the pair load 64 into their peer
     # so each CTA will have 128 topk tokens
-    k_tma_op = kv_operand.create_gather4_tma_tile[
+    var k_tma_op = kv_operand.create_gather4_tma_tile[
         tile_width=config.qk_depth,
         tile_stride=config.qk_depth,
         swizzle_mode=config.k_swizzle_mode,
@@ -1539,7 +1547,7 @@ def mla_prefill_sparse[
     # V_SMEM_COLS_PER_CTA = MMA_N / cta_group; each CTA contributes its
     # slice of V to the cluster MMA, with `col_idx = cta_id *
     # V_SMEM_COLS_PER_CTA` selecting its V col range.
-    v_tma_op = kv_operand.create_gather4_tma_tile[
+    var v_tma_op = kv_operand.create_gather4_tma_tile[
         tile_width=config.v_depth // 2 // config.cta_group,
         tile_stride=config.qk_depth,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
@@ -1553,7 +1561,7 @@ def mla_prefill_sparse[
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
 
-    o_tma_op = create_tensor_tile[
+    var o_tma_op = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),

@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
-from std.ffi import _CPointer
+from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from std.gpu.host._amdgpu_hip import hipStream_t, HIP
+from max.gpu.host._amdgpu_hip import hipStream_t, HIP
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import size_of
@@ -57,7 +56,8 @@ def _init_rocshmem_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/librocshmem.so
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
     try:
         return OwnedDLHandle(
@@ -469,7 +469,9 @@ def rocshmem_malloc[
 ](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        def(c_size_t) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
+        def(
+            c_size_t,
+        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -484,7 +486,7 @@ def rocshmem_calloc[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -493,7 +495,7 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: _CPointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:

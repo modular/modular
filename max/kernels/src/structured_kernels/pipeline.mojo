@@ -79,8 +79,6 @@ Direct API (for special cases):
 
 from std.sys import size_of
 
-from std.gpu.memory import AddressSpace
-
 from .pipeline_backend import PipelineBackend, NvidiaMbarBackend
 
 # SM100 (B200) warp-specialized pipeline backoff hint, in nanoseconds.
@@ -513,7 +511,7 @@ struct ProducerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Unified handle for producing to a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.
@@ -641,7 +639,7 @@ struct ConsumerStage[
     pipeline_origin: MutOrigin,
     num_stages: Int,
     Backend: PipelineBackend = NvidiaMbarBackend[num_stages],
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Unified handle for consuming from a pipeline stage.
 
     Works as both a linear type (direct use) and within context managers.

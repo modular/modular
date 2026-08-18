@@ -196,7 +196,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
     def unsafe_decode_utf8_codepoint(
-        s: Span[mut=False, UInt8, _],
+        s: ImmSpan[UInt8, _],
     ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
@@ -299,7 +299,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         var char_len = self.utf8_byte_length()
         var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        _ = self.unsafe_write_utf8(result.unsafe_as_bytes_mut().unsafe_ptr())
         w.write_string(result)
 
     @no_inline
@@ -492,7 +492,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     @always_inline
     def unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: Pointer[mut=True, Byte, ...]) -> Int:
+    ](self, ptr: MutPointer[Byte, ...]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:

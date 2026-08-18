@@ -47,14 +47,13 @@ Endpoint = Literal[
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
     "atom": "/reset_prefix_cache",
     "atom-chat": "/reset_prefix_cache",
+    "mach": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
     "vllm-chat": "/reset_prefix_cache",
     "sglang": "/flush_cache",
     "sglang-chat": "/flush_cache",
-    # mach deliberately omitted: the Mammoth orchestrator fronting it has no
-    # way to fan a cache-reset call over its gRPC connection to the engine.
 }
 
 BenchmarkTask = Literal[
@@ -167,6 +166,26 @@ class BaseBenchmarkConfig(ConfigFileModel):
     tokenizer: str | None = Field(
         default=None,
         description="Name or path of the tokenizer, if not using the default tokenizer.",
+    )
+
+    tokenizer_local_files_only: bool = Field(
+        default=False,
+        description=(
+            "Load the tokenizer from the local HF cache only. Set this for a"
+            " checkpoint the Hub will not serve this caller, where the remote"
+            " chat-template probe fails instead of degrading."
+        ),
+    )
+
+    tokenizer_revision: str | None = Field(
+        default=None,
+        description=(
+            "Commit revision to load the tokenizer at. Set this for a"
+            " checkpoint whose revision cannot be looked up on the Hub (a"
+            " private repo, or one staged into the cache with no branch ref),"
+            " where the default lookup returns nothing and the load falls back"
+            " to ``main``."
+        ),
     )
 
     model_max_length: int | None = Field(
@@ -597,6 +616,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     ignore_first_turn_stats: bool = Field(
         default=False,
         description="Ignore the first turn statistics in multiturn chat sessions.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    use_session_id_as_cache_salt: bool = Field(
+        default=False,
+        description="Send each multi-turn chat session's id as the X-Cache-Salt header on every request in that session, so MAX Serve's per-session KV-cache isolation can be measured. Same salt across a session's turns; distinct salt per session. No-op against servers that ignore the header.",
         json_schema_extra={"group": "Traffic Control"},
     )
 

@@ -43,15 +43,14 @@ from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    syncwarp,
     warp_id,
 )
+from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
@@ -83,7 +82,7 @@ comptime NEG_INF = Float32(-3.0e38)
 def _threadgroup_barrier_mem_none():
     """Threadgroup execution barrier with no memory fence.
 
-    `std.gpu.barrier()` hardcodes `mem_threadgroup` (a full LDS fence); this
+    `max.gpu.barrier()` hardcodes `mem_threadgroup` (a full LDS fence); this
     emits `llvm.air.wg.barrier` with the fence cleared. Apple/M5-only.
 
     Do NOT delete as vestigial: though a runtime no-op for this no-SMEM,
@@ -1014,7 +1013,7 @@ def fa_prefill_apple[
         comptime D = di * MMA_DIM
         if depth == D:
 
-            @parameter
+            @__parameter
             def _enqueue[sg: Int]() raises:
                 comptime core_kernel = fa_prefill_apple_core[
                     q_type,
@@ -1055,7 +1054,7 @@ def fa_prefill_apple[
                     block_dim=sg * WARP_SIZE,
                 )
 
-            @parameter
+            @__parameter
             def _dispatch[sg: Int]() raises:
                 _enqueue[sg]()
 

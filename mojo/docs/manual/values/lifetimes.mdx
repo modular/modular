@@ -8,7 +8,7 @@ description: Working with origins and references.
 
 The Mojo compiler includes a lifetime checker, a compiler pass that analyzes
 dataflow through your program. It identifies when variables are valid and
-inserts destructor calls when a variable's lifetime ends.
+inserts deinitializer calls when a variable's lifetime ends.
 
 The Mojo compiler uses a special value called an *origin* to track the lifetime
 of variables and the validity of references.
@@ -25,7 +25,7 @@ def print_str(s: String):
     print(s)
 
 def main():
-    name: String = "Joan"
+    var name: String = "Joan"
     print_str(name)
 ```
 
@@ -82,7 +82,7 @@ struct ImmutRef[origin: ImmOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin/)
+Or you can use the [`Origin`](/docs/std/origin/Origin/)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -109,8 +109,8 @@ value.
 from std.memory import Pointer
 
 def use_pointer():
-    a = 10
-    ptr = Pointer(to=a)
+    var a = 10
+    var ptr = Pointer(to=a)
 ```
 
 ### Origin sets
@@ -149,11 +149,10 @@ value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
 [`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral/#as_string_slice)
-returns a
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/) pointing
-to the original string literal. String literals are static—they're allocated at
-compile time and never destroyed—so the slice is created with an immutable,
-static origin.
+returns a [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/)
+pointing to the original string literal. String literals are static—they're
+allocated at compile time and never destroyed—so the slice is created with an
+immutable, static origin.
 
 #### Derived origins
 
@@ -236,12 +235,12 @@ The untracked origins, `MutUntrackedOrigin` and `ImmUntrackedOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
-[`alloc()`](/docs/std/memory/unsafe_pointer/alloc/) function returns an
-`UnsafePointer` to a new dynamically-allocated block of memory, with the origin
+[`alloc()`](/docs/std/memory/alloc/alloc/) function returns an
+`Allocation` for a new dynamically-allocated block of memory, with the origin
 `MutUntrackedOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
 for managing the lifetime yourself: for example, a struct that allocates memory
-should generally free that memory in its destructor.
+should generally free that memory in its deinitializer.
 
 #### Wildcard origins
 
@@ -307,7 +306,7 @@ specifier can be either:
   ref[self]
   ```
 
-- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace/) value.
+- An [`AddressSpace`](/docs/std/memory/address_space/AddressSpace/) value.
 
 - An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
@@ -340,7 +339,7 @@ def to_byte_span[
     return Span(list)
 
 def main():
-    list: List[Byte] = [77, 111, 106, 111]
+    var list: List[Byte] = [77, 111, 106, 111]
     _ = to_byte_span(list)
 ```
 
@@ -369,7 +368,7 @@ and `__setitem__()` dunder methods. These are invoked to read from and write to
 a subscripted item in a collection:
 
 ```mojo
-value = list[a]
+var value = list[a]
 list[b] += 10
 ```
 
@@ -403,7 +402,7 @@ struct NameList:
             raise Error("index out of bounds")
 
 def main() raises:
-    list = NameList("Thor", "Athena", "Dana", "Vrinda")
+    var list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)
     name += "?"
@@ -448,7 +447,7 @@ def pass_immutable_list(list: NameList) raises:
     # list[2] += "?" # Error, this list is immutable
 
 def main() raises:
-    list = NameList("Sophie", "Jack", "Diana")
+    var list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)
 ```
 

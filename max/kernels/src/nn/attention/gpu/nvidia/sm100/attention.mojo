@@ -19,7 +19,7 @@ from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from kv_cache.types import _kv_fold_base_ok, kv_sub_tile_rows
 
 
@@ -209,8 +209,15 @@ struct FA4Config[
         return self.v_cols_per_cta()
 
     @always_inline
-    def v_e_box_rows(self) -> Int:
-        """Layout-E (`m_pack == 2`) V TMA box KEY-row count per issued sub-tile.
+    def v_e_chunk_rows(self) -> Int:
+        """Layout-E (`m_pack == 2`) V reduction-chunk KEY-row count.
+
+        NOT the TMA box row count -- deliberately not named `..._box_rows`. This
+        is the chunk the P@V MMA reduces over (`mma_warp`'s `pv_bk_chunk`) and
+        the SMEM region one issued sub-tile lands in (`load_warp`'s
+        `partition_region_elems`); `v_tma_box_rows()` splits it FURTHER when
+        `page_size` is smaller, and conflating the two is what let a
+        page-oblivious descriptor pair with a page-split issue loop.
 
         Layout-E KEY-splits V into `m_pack * num_qk_stages` per-partition
         reduction-chunk sub-tiles instead of Layout-G's DEPTH-split
@@ -230,7 +237,11 @@ struct FA4Config[
     def v_e_box_cols(self) -> Int:
         """Layout-E (`m_pack == 2`) V TMA box depth (columns) per issued
         sub-tile: the FULL `padded_ov_depth`, since Layout-E splits V by KEY
-        (reduction), not by depth. Sibling of `v_e_box_rows()`.
+        (reduction), not by depth. Counterpart of `v_e_chunk_rows()`.
+
+        This one DOES keep the `box` name: paging partitions the KEY axis only,
+        so unlike the row count this is the descriptor's column count outright,
+        with nothing further to split.
         """
         return self.padded_ov_depth
 
@@ -242,13 +253,25 @@ struct FA4Config[
         (dispatch `create_tma_tile`, kernel `VTMAOpType`, the `fa4_load`
         signature), so the box shape stays syntactically identical across
         sites -- the same single-source-of-truth rule `v_box_cols()`
-        documents. Layout-E (`m_pack == 2`) uses the KEY-split
-        `v_e_box_rows()`; Layout-G / non-WS use `kv_sub_tile_rows(BN,
-        page_size)` (byte-identical to the historical inline expression).
+        documents.
+
+        One composition, two row sources: Layout-E (`m_pack == 2`) starts from
+        its KEY-split reduction chunk `v_e_chunk_rows()`, Layout-G / non-WS from
+        the whole tile `BN`; BOTH are then split by paging. The paging split
+        does not substitute for the reduction split -- `v_e_chunk_rows()` is a
+        MATH partition (which keys one P@V MMA reduces) while `page_size` is a
+        PHYSICAL address discontinuity, so when `page_size < v_e_chunk_rows()` a
+        reduction chunk straddles pages and must be cut again.
+        `_tma_copy_kv_impl` re-derives that same cut as its per-issue row count
+        (`kv_sub_tile_rows(tile_rows, page_size)`) and issues `pages_per_iter`
+        TMAs of the descriptor's box, so a box built without the paging term
+        would over-deliver by exactly that factor and desync the KV ring's
+        `expect_tx` accounting. `kv_sub_tile_rows` is the identity whenever
+        `page_size >= rows`, so Layout-G / non-WS stay byte-identical to the
+        historical inline expression.
         """
-        if self.m_pack == 2:
-            return self.v_e_box_rows()
-        return kv_sub_tile_rows(self.BN, page_size)
+        var rows = self.v_e_chunk_rows() if self.m_pack == 2 else self.BN
+        return kv_sub_tile_rows(rows, page_size)
 
     @always_inline
     def v_tma_box_cols(self) -> Int:
@@ -595,7 +618,7 @@ struct FA4Config[
             self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
         else:
             self.swizzle_mode = swizzle_mode
-        swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
+        var swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
         # `nope_depth < 0` (default) means "no separate nope dim" — used by MHA
         # and by DeepSeek-style MLA where the non-rope Q/K width equals the V
@@ -769,7 +792,7 @@ struct FA4Config[
         # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace).
         # Cross-stage P's 10 mbars are added further down, once
         # `use_shared_kv` is decided -- `crossp_supported` needs it.
-        misc_mbars_fixed_size = (
+        var misc_mbars_fixed_size = (
             8
             + order_barrier_count
             + 2 * self.num_pv_stages
@@ -780,7 +803,7 @@ struct FA4Config[
 
         # rope occupies the Q/K columns past the non-rope (nope) part, so it is
         # padded_qk - padded_nope (NOT padded_ov, which is the V/output depth).
-        rope_depth = self.padded_qk_depth - self.padded_nope_depth
+        var rope_depth = self.padded_qk_depth - self.padded_nope_depth
 
         # smem use is (NOTE: smem uses padded depth):
         # BM*depth*dtype_size + num_kv_stages*(2*mbar_size + BN*depth*dtype_size) <= smem_remaining
@@ -827,16 +850,16 @@ struct FA4Config[
         # The shared K_nope/V buffer stage fits the wider of K_nope/V; pair-CTA
         # halves it below. Inline `max` (not `shared_kv_cols()`) — `self` is
         # partially initialized here (a method call would borrow all of `self`).
-        kv_data_elems = self.BN * max(
+        var kv_data_elems = self.BN * max(
             self.padded_nope_depth, self.padded_ov_depth
         )
         if pair_cta:
             kv_data_elems //= 2
-        bytes_per_kv = (
+        var bytes_per_kv = (
             kv_data_elems * Self.qkv_dtype_size + 2 * Self.mbar_size
         )  # KV barriers
-        kv_rows = self.BN // 2 if pair_cta else self.BN
-        bytes_per_k = (
+        var kv_rows = self.BN // 2 if pair_cta else self.BN
+        var bytes_per_k = (
             kv_rows * rope_depth * Self.rope_dtype_size
             + kv_rows * Self.scale_dtype_size
         )  # k scale buffers
@@ -846,7 +869,7 @@ struct FA4Config[
         # If `kv_slots` is even we use the non-shared pipelines (dedicated K and
         # V rings); if odd, the shared ring (K and V (sub-)tiles interleaved).
 
-        remaining = Self.sm100_smem_carveout - smem_use
+        var remaining = Self.sm100_smem_carveout - smem_use
         if use_ws:
             # WS depth-split KV: K and V are BOTH split by depth into uniform
             # BN x (depth // num_qk_stages) sub-tiles, so one ring can hold
@@ -854,14 +877,14 @@ struct FA4Config[
             # Count the sub-tile slots that fit, then pick the pipeline by
             # parity. rope/scale are 0 on the WS MHA path (enforced by
             # supported()), so a sub-tile is purely K/V data + its 2 barriers.
-            sub_depth = (
+            var sub_depth = (
                 max(self.padded_nope_depth, self.padded_ov_depth)
                 // self.num_qk_stages
             )
-            bytes_per_subtile = (
+            var bytes_per_subtile = (
                 self.BN * sub_depth * Self.qkv_dtype_size + 2 * Self.mbar_size
             )
-            kv_slots = remaining // bytes_per_subtile
+            var kv_slots = remaining // bytes_per_subtile
             smem_use += kv_slots * bytes_per_subtile
             # WS always uses the SHARED sub-tile ring: K depth-halves and V
             # depth-tiles interleave in ONE ring of `kv_slots` 32768-B slots, so
@@ -879,13 +902,13 @@ struct FA4Config[
             # remaining >= kv_slots * bytes_per_kv
             #   + ceildiv(kv_slots,2) * bytes_per_k
             #   = kv_slots * (bytes_per_kv + bytes_per_k/2) (kv_slots even)
-            kv_slots = remaining // (bytes_per_kv + bytes_per_k // 2)
+            var kv_slots = remaining // (bytes_per_kv + bytes_per_k // 2)
             # A pinned num_qk_stages > 1 requires the non-shared pipeline (the
             # shared ring never stages K), so round an odd slot count down to
             # even to force the non-shared path below.
             if num_qk_stages > 1 and kv_slots % 2 == 1:
                 kv_slots -= 1
-            bytes_used = (
+            var bytes_used = (
                 kv_slots * bytes_per_kv + ceildiv(kv_slots, 2) * bytes_per_k
             )
             if bytes_used > remaining:
@@ -923,10 +946,10 @@ struct FA4Config[
                             self.padded_qk_depth // Self.MMA_K,
                         )
                     # we need an extra bytes
-                    barrier_bytes_per_stage = (
+                    var barrier_bytes_per_stage = (
                         self.num_kv_stages * 2 * Self.mbar_size
                     )
-                    total_smem_use = (
+                    var total_smem_use = (
                         smem_use
                         + (self.num_qk_stages - 1) * barrier_bytes_per_stage
                     )
@@ -983,7 +1006,7 @@ struct FA4Config[
         # num_q==1 single-CTA path; any other config must leave it disabled.
         if self.num_q != 1 and self.splitk_partitions != 1:
             return False
-        base = (
+        var base = (
             self.BN >= 64
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols

@@ -176,7 +176,7 @@ __extension Attention:
 
         # Phase 1: Q_nope @ K^T (depth // BK iterations)
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk_nope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
@@ -196,7 +196,7 @@ __extension Attention:
 
         # Phase 2: Q_rope @ K_rope^T (rope_depth // BK iterations)
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk_rope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
@@ -215,7 +215,7 @@ __extension Attention:
                     )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             comptime PVMmaOp = TiledMmaOp[
                 accum_type,
@@ -264,7 +264,7 @@ __extension Attention:
         comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             comptime next_slot = 1 - slot
 

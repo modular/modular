@@ -19,8 +19,9 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -35,10 +36,10 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import fence_async_view_proxy, external_memory
+from max.gpu.memory import fence_async_view_proxy, external_memory
 from max.gpu.compute.mma import st_matrix
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
@@ -684,7 +685,7 @@ def kernel_6[
         alignment=128,
     ]
 
-    base_ptr_smem = rebind[
+    var base_ptr_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -745,9 +746,9 @@ def kernel_6[
     var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -780,7 +781,7 @@ def kernel_6[
     var consumer_phase = PipelineState[num_pipeline_stages]()
     var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -934,11 +935,11 @@ def blackwell_kernel_6[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -949,7 +950,7 @@ def blackwell_kernel_6[
 
     # Create a separate TMA descriptor for the 32-column leftover tile
     # Using SWIZZLE_64B to match the swizzle pattern used in st_matrix for leftover
-    c_tma_op = create_tma_tile[
+    var c_tma_op = create_tma_tile[
         BM,
         64 if MMA_N == prev_power_of_two(MMA_N) else 32,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B if MMA_N
@@ -1123,7 +1124,7 @@ def test_blackwell_kernel_6[
         comptime num_warmup = 20
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_6[
                 transpose_b=transpose_b,

@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
-from std.gpu.memory import CacheOperation
+from max.gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd

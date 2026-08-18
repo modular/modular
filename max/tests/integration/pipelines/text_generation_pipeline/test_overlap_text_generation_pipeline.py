@@ -248,6 +248,7 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager.cache_params.return_value = mock_kv_params
     pipeline._kv_manager._total_num_pages = 100
+    pipeline._kv_manager.effective_max_seq_length = 100 * 128
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
     pipeline._fold_sampler_into_graph = False
@@ -297,13 +298,14 @@ def _make_effective_cache_length_pipeline(
     mock_kv_params.num_draft_tokens_per_step = num_draft_tokens_per_step
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager._total_num_pages = total_num_pages
+    pipeline._kv_manager.effective_max_seq_length = total_num_pages * page_size
     return pipeline
 
 
 @pytest.mark.parametrize(
     ("num_draft_tokens", "num_draft_tokens_per_step", "expected_slack"),
     [
-        (0, 1, 0),  # speculative decoding disabled: strict no-op
+        (0, 0, 0),  # speculative decoding disabled: strict no-op
         (3, 1, 10),  # eagle/mtp autoregressive drafts: 3*3 + 0 + 1
         (4, 4, 14),  # dflash block drafts: 3*4 + 1 + 1
     ],
@@ -357,8 +359,10 @@ def test_effective_max_cache_length_covers_compute_seq_len(
     # Worst-case boundary request: committed tokens fill the context window and
     # carry the FUTURE_TOKEN placeholder, with the previous overlap batch's
     # drafts all counted as accepted.
+    tokens = TokenBuffer(np.zeros(max_seq_len + 1, dtype=np.int64))
+    tokens.skip_processing(max_seq_len)
     boundary_ctx = SimpleNamespace(
-        tokens=[0] * (max_seq_len + 1),
+        tokens=tokens,
         pending_future_count=1,
         spec_decoding_state=SimpleNamespace(
             maybe_accepted_draft_tokens=[0] * num_draft_tokens
@@ -2303,7 +2307,7 @@ class TestAssignBitmaskInputs:
 
         structured_output.compute_speculative_bitmasks.assert_not_called()
         overlap_state.prime.assert_not_called()
-        mock_device.default_stream.synchronize.assert_not_called()
+        mock_device.default_queue.synchronize.assert_not_called()
         assert spec_state.has_precomputed_bitmask is False
         # Views from get_input_views are wired to model_inputs.
         overlap_state.get_input_views.assert_called_once_with(2, self._NUM_POS)
@@ -2338,7 +2342,7 @@ class TestAssignBitmaskInputs:
             num_draft_tokens_to_verify=self._K,
         )
 
-        mock_device.default_stream.synchronize.assert_not_called()
+        mock_device.default_queue.synchronize.assert_not_called()
         structured_output.compute_speculative_bitmasks.assert_called_once()
         overlap_state.prime.assert_called_once()
         assert spec_state.has_precomputed_bitmask is False

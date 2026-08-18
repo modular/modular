@@ -24,7 +24,6 @@ from std.python._cpython import (
     Py_TPFLAGS_LONG_SUBCLASS,
     Py_TPFLAGS_LIST_SUBCLASS,
 )
-from std.ffi import _CPointer
 from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.testing import (
     assert_equal,
@@ -73,7 +72,7 @@ def _test_exception_handling_api(cpy: CPython) raises:
     cpy.PyErr_Clear()
 
     cpy.PyErr_SetString(
-        ValueError, msg.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+        ValueError, msg.as_c_string_slice().ptr().as_unsafe_any_origin()
     )
     assert_true(cpy.PyErr_Occurred())
 
@@ -341,7 +340,7 @@ def _test_module_object_api(cpy: CPython) raises:
     # returns 0 on success, -1 on failure
     assert_equal(
         cpy.PyModule_AddObjectRef(
-            mod, name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(), n
+            mod, name.as_c_string_slice().ptr().as_unsafe_any_origin(), n
         ),
         0,
     )
@@ -384,9 +383,9 @@ def _test_capsule_api(cpy: CPython) raises:
     # `assert_equal` can raise, and the allocation must be freed on every path.
     var capsule_impl_addr = Int(capsule_impl_ptr)
     dealloc(
-        ThinAllocation(
-            unsafe_assume_ownership=capsule_impl_ptr
-        ).unsafe_with_layout(capsule_impl_layout)
+        ThinAllocation(unsafe_owned_ptr=capsule_impl_ptr).unsafe_with_layout(
+            capsule_impl_layout
+        )
     )
     assert_equal(capsule_impl_addr, Int(capsule_pointer))
     with assert_raises(contains="called with incorrect name"):
@@ -395,7 +394,7 @@ def _test_capsule_api(cpy: CPython) raises:
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", _CPointer[NoneType, MutUntrackedOrigin]
+        "PyObject_Malloc", OptionalPointer[NoneType, MutUntrackedOrigin]
     ](64)
     assert_true(ptr)
 

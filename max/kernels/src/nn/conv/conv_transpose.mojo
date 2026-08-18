@@ -55,6 +55,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.coord import DynamicCoord
 from layout.tensor_storage import TensorStorage
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
@@ -271,7 +272,7 @@ def conv_transpose_shape[
     output_shape[0] = batch_size
     output_shape[input.rank - 1] = output_channels
 
-    @parameter
+    @__parameter
     @always_inline
     def compute_output_spatial_dim(
         input_spatial_dim: Int,
@@ -488,7 +489,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: IndexList[2]
+    var cf_tile_size: DynamicCoord[DType.int64, 2]
 
     @staticmethod
     def run(
@@ -555,7 +556,7 @@ struct ConvTransposedPacked[
         var num_tasks = num_partitions.flattened_length()
 
         @__copy_capture(num_partitions, cf_tile_size)
-        @parameter
+        @__parameter
         def task_func(task_id: Int):
             var partition = get_partition(
                 task_id,
@@ -587,7 +588,7 @@ struct ConvTransposedPacked[
                 filter,
                 conv_shape,
                 partition,
-                task_tile_size,
+                Coord(task_tile_size),
             )
             instance._batch_group_loop()
 
@@ -630,7 +631,7 @@ struct ConvTransposedPacked[
             self._zero_output(n, g)
 
             # ConvTransposed computation
-            self._c_tile_loop(n, g, self.cf_tile_size[0])
+            self._c_tile_loop(n, g, Int(self.cf_tile_size[0].value()))
 
             # Epilogue. Avoid putting it after register tiling for now because
             # input row i may update output row i-1. It's hard to tell if a row
@@ -641,7 +642,7 @@ struct ConvTransposedPacked[
         """Loop over C tiles."""
 
         @always_inline
-        @parameter
+        @__parameter
         def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
 
@@ -675,7 +676,7 @@ struct ConvTransposedPacked[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self.input_space_loop[
                 micro_kernel_height, size // simd_size, False, last_c_tile
@@ -780,16 +781,16 @@ struct ConvTransposedPacked[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
+        comptime w_axis = Self.InputLayoutType.rank - 3
         var left_pad_impact_end = ceildiv(
-            self.conv_shape.pad_w[0],
-            self.conv_shape.stride[self.input.rank - 3],
+            self.conv_shape.pad_w_lower(),
+            self.conv_shape.stride_at[w_axis](),
         )
         var right_pad_impact_start = (
             self.conv_shape.wo()
-            + self.conv_shape.pad_w[0]
-            - self.conv_shape.s()
-            * self.conv_shape.dilation[self.input.rank - 3]
-        ) // self.conv_shape.stride[self.input.rank - 3] + 1
+            + self.conv_shape.pad_w_lower()
+            - self.conv_shape.s() * self.conv_shape.dilation_at[w_axis]()
+        ) // self.conv_shape.stride_at[w_axis]() + 1
         # print("pad effect", left_pad_impact_end, right_pad_impact_start)
 
         comptime if Self.InputLayoutType.rank == 4:
@@ -864,16 +865,19 @@ struct ConvTransposedPacked[
             # < 0 while the actual output ho index is within [0, ho). In the
             # inner loops, `ho_nbr = ho + r * dilation` where r within [0, R)
             # can tell if a row is in padding i.e. ho_nbr < 0  or ho_nbr > wo-1.
-            var ho = h * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+            var ho = (
+                h * self.conv_shape.stride_at[0]()
+                - self.conv_shape.pad_h_lower()
+            )
 
             var input_base = input + self.conv_shape.c * self.conv_shape.w() * h
 
             # Points output to the start of the row
             var output_base = output + self.conv_shape.f * (
-                -self.conv_shape.pad_w[0] + self.conv_shape.wo() * ho
+                -self.conv_shape.pad_w_lower() + self.conv_shape.wo() * ho
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                 update_w_tile_2d[
@@ -898,7 +902,7 @@ struct ConvTransposedPacked[
 
                 input_base = input_base + height * self.conv_shape.c
                 output_base = output_base + (
-                    height * self.conv_shape.stride[1] * self.conv_shape.f
+                    height * self.conv_shape.stride_at[1]() * self.conv_shape.f
                 )
 
             tile_middle_unswitch_boundaries[
@@ -938,7 +942,10 @@ struct ConvTransposedPacked[
         comptime simd_size = simd_width_of[Self.output_type]()
 
         for d in range(self.conv_shape.d()):
-            var do = d * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
+            var do = (
+                d * self.conv_shape.stride_at[0]()
+                - self.conv_shape.pad_d_lower()
+            )
 
             for h in range(
                 self.partition.ho_or_howo_offset,
@@ -946,7 +953,7 @@ struct ConvTransposedPacked[
                 + self.partition.ho_or_howo_size,
             ):
                 # fmt: off
-                var ho = h * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
+                var ho = h * self.conv_shape.stride_at[1]() - self.conv_shape.pad_h_lower()
                 # fmt: on
 
                 var input_base = (
@@ -957,11 +964,11 @@ struct ConvTransposedPacked[
                 )
 
                 var output_base = output + self.conv_shape.f * (
-                    -self.conv_shape.pad_w[0]
+                    -self.conv_shape.pad_w_lower()
                     + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
                 )
 
-                @parameter
+                @__parameter
                 @always_inline
                 def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                     update_w_tile_3d[
@@ -986,7 +993,9 @@ struct ConvTransposedPacked[
 
                     input_base = input_base + height * self.conv_shape.c
                     output_base = output_base + (
-                        height * self.conv_shape.stride[2] * self.conv_shape.f
+                        height
+                        * self.conv_shape.stride_at[2]()
+                        * self.conv_shape.f
                     )
 
                 tile_middle_unswitch_boundaries[
@@ -1099,8 +1108,8 @@ def update_w_tile_2d[
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
-    var output_stride_by_s = conv_shape.dilation[1] * conv_shape.f
-    var output_stride_by_r = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.f
+    var output_stride_by_s = conv_shape.dilation_at[1]() * conv_shape.f
+    var output_stride_by_r = conv_shape.dilation_at[0]() * conv_shape.wo() * conv_shape.f
     # fmt: on
 
     # Filter stride when s increments by 1.
@@ -1113,8 +1122,8 @@ def update_w_tile_2d[
 
     # Output coordinates
     var howo = Index(
-        hw[0] * conv_shape.stride[0] - conv_shape.pad_h[0],
-        hw[1] * conv_shape.stride[1] - conv_shape.pad_w[0],
+        hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_h_lower(),
+        hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_w_lower(),
     )
 
     # This will be all lifted to simd registers for FMA unless the micro
@@ -1122,7 +1131,7 @@ def update_w_tile_2d[
 
     for r in range(conv_shape.r()):
         # Skip the row if it falls into padding.
-        var ho_nbr = howo[0] + r * conv_shape.dilation[0]
+        var ho_nbr = howo[0] + r * conv_shape.dilation_at[0]()
         if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
             continue
 
@@ -1138,7 +1147,7 @@ def update_w_tile_2d[
                 comptime assert (
                     micro_kernel_height == 1
                 ), "The tile must only have 1 point when effected bypadding."
-                var wo_nbr = howo[1] + s * conv_shape.dilation[1]
+                var wo_nbr = howo[1] + s * conv_shape.dilation_at[1]()
                 if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                     continue
 
@@ -1150,7 +1159,7 @@ def update_w_tile_2d[
             ](
                 c_tile_size,
                 output_ptr,
-                conv_shape.f * conv_shape.stride[1],
+                conv_shape.f * conv_shape.stride_at[1](),
                 input,
                 conv_shape.c,
                 filter_ptr,
@@ -1215,9 +1224,9 @@ def update_w_tile_3d[
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
-    var output_stride_by_s = conv_shape.dilation[2] * conv_shape.f
-    var output_stride_by_r = conv_shape.dilation[1] * conv_shape.wo() * conv_shape.f
-    var output_stride_by_q = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.ho() * conv_shape.f
+    var output_stride_by_s = conv_shape.dilation_at[2]() * conv_shape.f
+    var output_stride_by_r = conv_shape.dilation_at[1]() * conv_shape.wo() * conv_shape.f
+    var output_stride_by_q = conv_shape.dilation_at[0]() * conv_shape.wo() * conv_shape.ho() * conv_shape.f
     # fmt: on
 
     # Filter stride when s increments by 1.
@@ -1230,21 +1239,21 @@ def update_w_tile_3d[
 
     # Output coordinates
     var howo = Index(
-        hw[0] * conv_shape.stride[0] - conv_shape.pad_d[0],
-        hw[1] * conv_shape.stride[1] - conv_shape.pad_h[0],
-        hw[2] * conv_shape.stride[2] - conv_shape.pad_w[0],
+        hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_d_lower(),
+        hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_h_lower(),
+        hw[2] * conv_shape.stride_at[2]() - conv_shape.pad_w_lower(),
     )
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
 
     for q in range(conv_shape.q()):
-        var do_nbr = howo[0] + q * conv_shape.dilation[0]
+        var do_nbr = howo[0] + q * conv_shape.dilation_at[0]()
         if do_nbr < 0 or do_nbr >= conv_shape.do():
             continue
 
         for r in range(conv_shape.r()):
-            var ho_nbr = howo[1] + r * conv_shape.dilation[1]
+            var ho_nbr = howo[1] + r * conv_shape.dilation_at[1]()
             if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
                 continue
 
@@ -1262,7 +1271,7 @@ def update_w_tile_3d[
 
                 comptime if effected_by_padding:
                     comptime assert micro_kernel_height == 1
-                    var wo_nbr = howo[2] + s * conv_shape.dilation[2]
+                    var wo_nbr = howo[2] + s * conv_shape.dilation_at[2]()
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                         continue
 
@@ -1274,7 +1283,7 @@ def update_w_tile_3d[
                 ](
                     c_tile_size,
                     output_ptr,
-                    conv_shape.f * conv_shape.stride[2],
+                    conv_shape.f * conv_shape.stride_at[2](),
                     input,
                     conv_shape.c,
                     filter_ptr,
@@ -1459,7 +1468,7 @@ def pack_filter(
 
         @always_inline
         @__copy_capture(group_start, C, F_per_group, F)
-        @parameter
+        @__parameter
         def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = (
                 group_start + f_tile_start * window_dims_prod * C
@@ -1570,7 +1579,7 @@ def conv_transposed_cpu[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1640,7 +1649,7 @@ def conv_transposed_cpu[
 
         # The closure updates a row segment of the output.
         @always_inline
-        @parameter
+        @__parameter
         def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
@@ -1676,7 +1685,7 @@ def conv_transposed_cpu[
         comptime if not filter_packed:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=packed_filter_ptr
+                    unsafe_owned_ptr=packed_filter_ptr
                 ).unsafe_with_layout(packed_filter_alloc_layout)
             )
 
@@ -1754,7 +1763,7 @@ def conv_transposed_gpu[
         ](coords: Coord) {var}:
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout(coords)
-            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
+            var vec = output_tmp.raw_load[width=_width, alignment=align](idx)
             epilogue(coord_to_index_list(coords), vec)
 
         elementwise[simd_width_of[output_type](), target="gpu"](

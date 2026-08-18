@@ -45,7 +45,6 @@ from std.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -815,6 +814,21 @@ def run_test_sparse_qkv_fp8[
     ctx.enqueue_copy(d_indices_device, h_indices)
     ctx.synchronize()
 
+    # Logical sparse indices, matching production: `selected_tokens` is a
+    # score-sorted, non-monotonic permutation of logical positions, so this
+    # feeds the causal-by-logical-position mask its expected input. Only
+    # meaningful when use_causal.
+    var h_logical_indices = ctx.enqueue_create_host_buffer[DType.int32](
+        total_indices
+    )
+    for idx in range(total_indices):
+        h_logical_indices[idx] = Int32(selected_tokens[idx])
+    var logical_indices_device = ctx.enqueue_create_buffer[DType.int32](
+        total_indices
+    )
+    ctx.enqueue_copy(logical_indices_device, h_logical_indices)
+    ctx.synchronize()
+
     # -----------------------------------------------------------------------
     # Build TileTensors and call flare_mla_decoding.
     # -----------------------------------------------------------------------
@@ -904,6 +918,9 @@ def run_test_sparse_qkv_fp8[
             ),
             indices_stride=indices_stride,
             num_partitions_in=_np_ovr,
+            logical_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+                logical_indices_device.unsafe_ptr()
+            ),
         )
     else:
         flare_mla_decoding[
@@ -2820,6 +2837,50 @@ def main() raises:
                 256,
                 ctx,
                 topk=64,
+            )
+
+            # Multi-token Q with genuine sparsity (topk << num_keys) so the
+            # score-sorted selection is not logical-position-sorted: exercises
+            # causal masking by logical position rather than gather-slot order.
+            run_test_sparse_qkv_fp8[DType.float8_e4m3fn, 16, use_causal=True](
+                "sparse_qkv_fp8_causal_multitoken_b2_h16_cl256_topk64_seq8",
+                2,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=8,
+            )
+
+            # The logical-position mask reads its slots in batches of 8 and
+            # picks up the remainder one at a time. A thread owns 32 slots, so
+            # the cases above (topk a multiple of 32) only ever run whole
+            # batches, and the topk=70 case above only ever runs the remainder:
+            # the tail's shift base is carried out of the batch loop and no
+            # shape yet reaches it with a nonzero carry. These land the
+            # remainder at 3, 7 and 1 slots after a whole batch. Prime cache
+            # lengths and q also keep the paged gather off its tile boundaries.
+            run_test_sparse_qkv_fp8[DType.float8_e4m3fn, 16, use_causal=True](
+                "sparse_qkv_fp8_causal_b1_h16_cl251_topk43",
+                1,
+                251,
+                ctx,
+                topk=43,
+            )
+            run_test_sparse_qkv_fp8[DType.float8_e4m3fn, 16, use_causal=True](
+                "sparse_qkv_fp8_causal_multitoken_b2_h16_cl257_topk79_seq5",
+                2,
+                257,
+                ctx,
+                topk=79,
+                q_max_seq_len=5,
+            )
+            run_test_sparse_qkv_fp8[DType.float8_e4m3fn, 16, use_causal=True](
+                "sparse_qkv_fp8_causal_multitoken_b3_h16_cl509_topk73_seq3",
+                3,
+                509,
+                ctx,
+                topk=73,
+                q_max_seq_len=3,
             )
 
             # =====================================================

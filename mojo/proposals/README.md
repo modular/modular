@@ -8,7 +8,7 @@ There is no attempt to keep these up-to-date as the language evolves, so they
 are more for historical reference than as a user-guide for the language.
 
 > **Note for Mojo users:** For learning Mojo, please refer to the
-> [official documentation](https://docs.modular.com/mojo/) instead. These
+> [official documentation](https://mojolang.org/docs/) instead. These
 > proposals describe internal design discussions and may not reflect the
 > current state of the language.
 
@@ -81,13 +81,13 @@ These proposals have been accepted and implementation is in progress.
 
 These proposals are still being discussed or refined.
 
-| Proposal                                          | Description                                             | Status   |
-|---------------------------------------------------|---------------------------------------------------------|----------|
-| [edge-case-behaviors](edge-case-behaviors.md)     | Edge case behavior definitions                          | Draft    |
-| [mojo-and-dynamism](mojo-and-dynamism.md)         | Mojo and dynamic features                               | Proposed |
-| [parameter-to-comptime](parameter-to-comptime.md) | Replace `@parameter` with `comptime` statement modifier | Proposed |
-| [struct-extensions](struct-extensions.md)         | Struct extension mechanism                              | Draft    |
-| [unavailable-decorator](unavailable-decorator.md) | `@unavailable` decorator for intentionally-removed APIs | Accepted |
+| Proposal                                          | Description                                               | Status   |
+|---------------------------------------------------|-----------------------------------------------------------|----------|
+| [edge-case-behaviors](edge-case-behaviors.md)     | Edge case behavior definitions                            | Draft    |
+| [mojo-and-dynamism](mojo-and-dynamism.md)         | Mojo and dynamic features                                 | Proposed |
+| [parameter-to-comptime](parameter-to-comptime.md) | Replace `@__parameter` with `comptime` statement modifier | Proposed |
+| [struct-extensions](struct-extensions.md)         | Struct extension mechanism                                | Draft    |
+| [unavailable-decorator](unavailable-decorator.md) | `@unavailable` decorator for intentionally-removed APIs   | Accepted |
 
 ## Abandoned Proposals
 

@@ -300,7 +300,7 @@ def _write_int[
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    buf.unsafe_ptr().unsafe_offset(offset).unsafe_write(
+    buf.unsafe_ptr().unsafe_offset(offset).write(
         0
     )  # Write NUL terminator at the end
 
@@ -311,17 +311,16 @@ def _write_int[
     # Write the digits of the number
     var remaining_int = value
 
-    @parameter
     def process_digits[
         get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
         div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
-    ]():
+    ]() {mut}:
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
 
             # Write the char representing the value of the least significant
             # digit.
-            buf.unsafe_ptr().unsafe_offset(offset).unsafe_write(
+            buf.unsafe_ptr().unsafe_offset(offset).write(
                 digit_chars_array.unsafe_ptr()[unsafe_offset=Int(digit_value)]
             )
 

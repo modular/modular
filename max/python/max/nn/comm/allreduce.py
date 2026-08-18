@@ -18,7 +18,13 @@ import logging
 from collections.abc import Iterable, Sequence
 
 import numpy as np
-from max.driver import Accelerator, Buffer, Device, enable_all_peer_access
+from max.driver import (
+    Accelerator,
+    Buffer,
+    Device,
+    enable_all_peer_access,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -192,8 +198,12 @@ class Signals:
             devices: Driver devices to allocate a buffer on, one each.
 
         Returns:
-            One initialized signal buffer per device, in ``devices`` order.
+            One initialized signal buffer per device, in ``devices`` order, or
+            an empty list in compile-only (virtual device) mode.
         """
+        if is_virtual_device_mode():
+            return []
+
         # Peer access is only meaningful with more than one GPU; the call is
         # idempotent and wrapped so a P2P-incapable host degrades gracefully.
         if len(devices) > 1:

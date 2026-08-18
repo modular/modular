@@ -348,7 +348,7 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
 def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
-    @parameter
+    @__parameter
     def test_block_k[
         in_type: DType,
         out_type: DType,
@@ -373,7 +373,7 @@ def test_block_k(ctx: DeviceContext) raises:
 def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
-    @parameter
+    @__parameter
     def test_warp_k_partitions[
         in_type: DType,
         out_type: DType,
@@ -431,6 +431,98 @@ def test_float32(ctx: DeviceContext) raises:
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
+
+
+def test_partial_tile[
+    dtype: DType, M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
+    """Checks the C store when a warp tile does not fit inside (M, N).
+
+    The trailing block of a row holds fragments past the last column, whose
+    linear offset lands on the next row, and a 4-row store group can run past
+    the last row. Bounding those on the offset alone lets them overwrite live
+    data. `transpose_b=False` keeps the dispatch on the multistage kernel
+    rather than on `AMDMatmul`.
+    """
+    comptime config = MatmulConfig[dtype, dtype, dtype, False](
+        block_tile_shape=Index(64, 64, 32),
+        warp_tile_shape=Index(32, 32, 32),
+    )
+
+    print("=== test_partial_tile", dtype, M, "x", N, "x", K)
+
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](K * N)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](M * N)
+
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
+
+    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
+    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K], Idx[N])))
+    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
+    var c_ref_tensor = TileTensor(
+        c_device_ref, row_major(Coord(Idx[M], Idx[N]))
+    )
+
+    # Small integers keep the accumulation exact in both kernels, so the
+    # comparison below can be exact.
+    for i in range(M * K):
+        a_host_ptr[i] = random_si64(-100, 100).cast[dtype]()
+    for i in range(K * N):
+        b_host_ptr[i] = random_si64(-100, 100).cast[dtype]()
+    for i in range(M * N):
+        c_host_ptr[i] = 0
+
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ptr)
+
+    multistage_gemm[transpose_b=False, config=config](
+        c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx
+    )
+
+    comptime BLOCK_DIM = 16
+    comptime gemm_naive = matmul_kernel_naive[
+        dtype,
+        dtype,
+        dtype,
+        type_of(c_ref_tensor).LayoutType,
+        type_of(a_tensor).LayoutType,
+        type_of(b_tensor).LayoutType,
+        BLOCK_DIM,
+        transpose_b=False,
+    ]
+    ctx.enqueue_function[gemm_naive](
+        c_ref_tensor,
+        a_tensor.as_immut(),
+        b_tensor.as_immut(),
+        Int32(M),
+        Int32(N),
+        Int32(K),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
+
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.synchronize()
+
+    var errors = 0
+    for i in range(M * N):
+        if c_host_ptr[i] != c_host_ref_ptr[i]:
+            errors += 1
+
+    assert_equal(errors, 0)
+
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
 
 
 def _run_fp32_split_k[
@@ -560,7 +652,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     comptime for block_m in block_sizes:
         comptime for block_n in block_sizes:
 
-            @parameter
+            @__parameter
             def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
@@ -600,6 +692,17 @@ def main() raises:
         test_block_k(ctx)
         test_warp_k_partitions(ctx)
         test_float32(ctx)
+
+        # C tiles that run past (M, N): an N below the block tile, an odd N, a
+        # large N with a partial trailing block (GPT-2's lm_head), and an M
+        # that does not fill the 4-row store groups.
+        comptime for out_type in [DType.float32, DType.bfloat16]:
+            test_partial_tile[out_type, M=20, N=17, K=768](ctx)
+            test_partial_tile[out_type, M=20, N=100, K=768](ctx)
+            test_partial_tile[out_type, M=20, N=257, K=768](ctx)
+            test_partial_tile[out_type, M=18, N=128, K=768](ctx)
+            test_partial_tile[out_type, M=20, N=50257, K=768](ctx)
+            test_partial_tile[out_type, M=20, N=50256, K=768](ctx)
 
         # Skinny-deep fp32 split-K (e.g. MiniMax-M3 gate: N=128, K=6144).
         print("=== test_fp32_split_k")

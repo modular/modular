@@ -30,11 +30,11 @@ Sink is handled entirely in `Attention.__init__` (rowmax/rowsum are
 pre-filled from sink_weights); the kernel body needs no sink-specific code.
 """
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
-from std.gpu.sync import s_waitcnt
+from max.gpu.sync import s_waitcnt
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
 from std.memory import bitcast
@@ -116,7 +116,7 @@ __extension Attention:
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
         )
-        comptime _smem_depth = ceildiv(Self.depth, Self.BK) * Self.BK
+        comptime _smem_depth = align_up(Self.depth, Self.BK)
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
             mma_shape=Self.mma_shape,
@@ -189,7 +189,7 @@ __extension Attention:
         # =============================================================
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk():
             """All QK MMAs for the tile, reading K regs from SMEM."""
             self.zero_p_buffer[0]()
@@ -213,7 +213,7 @@ __extension Attention:
                         )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             """All PV MMAs for the tile, reading V regs from SMEM."""
             comptime for strip in range(Self.BN // Self.BK):
@@ -269,7 +269,7 @@ __extension Attention:
         # =============================================================
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             comptime next_slot = 1 - slot
 

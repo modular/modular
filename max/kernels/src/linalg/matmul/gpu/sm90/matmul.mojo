@@ -18,7 +18,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
@@ -63,8 +63,8 @@ def _get_grid_shape[
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
     comptime h100_num_SMs = H100.sm_count
-    num_blocks_n = min(num_tiles_n, h100_num_SMs)
-    adjusted_grid_shape = Index(
+    var num_blocks_n = min(num_tiles_n, h100_num_SMs)
+    var adjusted_grid_shape = Index(
         num_blocks_n,
         h100_num_SMs // num_blocks_n,
     )
@@ -806,20 +806,20 @@ def warp_specialize_gemm_with_multicasting_splitk[
         Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
             BM, BK
         ),
         swizzle_mode=a_swizzle,
     ](ctx, a_device)
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
             BN, BK
         ),
         swizzle_mode=b_swizzle,
     ](ctx, b_device)
 
-    c_tma_op = create_tensor_tile[
+    var c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),

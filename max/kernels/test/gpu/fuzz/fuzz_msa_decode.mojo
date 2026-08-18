@@ -412,7 +412,7 @@ def run_one_case(
             raise Error("MSA decode output NaN/Inf (poison tail attended?)")
 
     # f64 block-restricted softmax, masking the local tail (k_logical > cl).
-    @parameter
+    @__parameter
     def kv_off(b: Int, blk: Int, c: Int) -> Int:
         return (batch_tok_base[b] + blk * BN + c) * head_dim
 

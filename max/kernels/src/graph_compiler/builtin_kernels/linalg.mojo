@@ -50,11 +50,15 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
-from linalg.fp4_quantization import block_scaled_matmul
+from linalg.block_scaled_quantization import block_scaled_matmul
+from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    mxfp6_block_scaled_matmul_amd,
+)
 from linalg.matmul.gpu.amd import (
-    mxfp4_block_scaled_matmul_amd,
-    mxfp4_grouped_matmul_amd,
-    mxfp4_grouped_matmul_amd_preb,
+    block_scaled_matmul_amd,
+    block_scaled_grouped_matmul_amd,
+    block_scaled_grouped_matmul_amd_preb,
 )
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
@@ -244,7 +248,7 @@ struct Matmul:
 
         comptime transposed_a = False
 
-        @parameter
+        @__parameter
         @always_inline
         def epilogue_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -254,7 +258,7 @@ struct Matmul:
                 rebind[SIMD[c.dtype, _width]](val),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def output_compute_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -319,7 +323,7 @@ struct BatchMatmul:
         var b_tile = b.to_tile_tensor[DType.int64]()
         var c_tile = c.to_tile_tensor[DType.int64]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             _type: DType, _width: SIMDLength, _rank: Int, *, alignment: Int = 1
@@ -535,20 +539,30 @@ struct Struct_grouped_matmul_block_scaled:
         """Executes grouped block-scaled matrix multiplication.
 
         Computes C = A @ B^T for multiple expert groups where A and B are
-        block-scaled (e.g. NVFP4: 4-bit floating point packed as uint8).
+        block-scaled. `uint8` operands are nibble-packed 4-bit E2M1, so their
+        rows are `K // 2` wide; `float8_e4m3fn` operands are unpacked. The
+        operand and scale dtypes together select the UMMA kind (see
+        `block_scaled_umma_kind`): NVFP4, MXFP4, MXFP8, or the mixed W4A8 pair.
 
         Parameters:
             c_type: The output tensor data type.
-            a_type: The input A data type. Constraints: Must be `uint8`.
-            b_type: The input B data type. Constraints: Must be `uint8`.
+            a_type: The input A data type.
+                Constraints: Must be `uint8` (NVFP4/MXFP4) or `float8_e4m3fn`
+                (MXFP8/W4A8).
+            b_type: The input B data type.
+                Constraints: Must equal `a_type`, except for W4A8, which pairs
+                a `float8_e4m3fn` A with a `uint8` B.
             scales_type: The scale factor data type.
-                Constraints: Must be `float8_e4m3fn`.
+                Constraints: Must be `float8_e4m3fn` (NVFP4) or
+                `float8_e8m0fnu` (MXFP4/MXFP8/W4A8).
             target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
-            a: The input tensor of shape (total_tokens, K // 2).
-            b: The weight tensor of shape (num_experts, N, K // 2).
+            a: The input tensor of shape (total_tokens, K) for `float8_e4m3fn`
+                or (total_tokens, K // 2) for packed `uint8`.
+            b: The weight tensor of shape (num_experts, N, K) for
+                `float8_e4m3fn` or (num_experts, N, K // 2) for packed `uint8`.
             a_scales: The A scale factors in tcgen05 5D layout.
             b_scales: The B scale factors in tcgen05 6D layout.
             expert_start_indices: The starting token index for each expert.
@@ -774,7 +788,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
             "grouped rowwise dynamic scaled matmul only supports GPUs with"
             " native FP8 support"
         )
-        cuda_ctx = context
+        var cuda_ctx = context
         grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,
@@ -792,33 +806,34 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.mxfp4")
-struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
-    """MOGG wrapper for grouped block-scaled matrix multiplication.
+@extensibility.register("mo.grouped.matmul.block.scaled.mxfp6")
+struct Struct_grouped_matmul_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
+    """MOGG wrapper for the grouped MXFP6 block-scaled matmul.
 
-    Provides graph compiler integration for block-scaled grouped matmul
-    operations used in Mixture of Experts (MoE) layers on AMD GPUs.
+    The FP6 sibling of `mo.grouped.matmul.block.scaled.mxfp4`, and a separate
+    op for the same reason the dense one is: both FP6 encodings put 24 bytes in
+    a lane, so `lane_bytes` cannot choose between them.
+
+    Preshuffled-B only. FP6's 24-byte lane fragment is plane-split (see
+    `Shuffler.b_plane_byte_off`), which the dense row-major
+    `block_scaled_grouped_matmul_amd` kernel has no path for.
 
     Parameters:
-        preshuffled_b: When True, dispatches to `mxfp4_grouped_matmul_amd_preb`
-            which expects B in the 5D preshuffled layout from
-            `Shuffler.preshuffle_b_5d` (typically produced by the model's
-            weight adapter at load time, e.g. Kimi K2.5). When False
-            (default), dispatches to the dense `mxfp4_grouped_matmul_amd`
-            kernel that reads B row-major. The caller is responsible for
-            preparing B in the matching layout.
+        FP6_FORMAT: 0 selects E2M3, 1 selects E3M2, matching `FP6Format`.
     """
 
     @always_inline
     @staticmethod
     def execute[
         c_type: DType,
+        a_type: DType,
+        b_type: DType,
         //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=3, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
         a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
         b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
         expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -827,6 +842,111 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
         num_active_experts: UInt32,
         estimated_total_m: UInt32,
         decode_grid_m_cap: UInt32,
+        decode_grid_m_rows: UInt32,
+        context: DeviceContext,
+    ) raises:
+        """Computes C = A @ B^T over expert groups with MXFP6 operands.
+
+        Parameters:
+            c_type: The output tensor data type.
+            a_type: The packed activation data type; must be one byte wide.
+            b_type: The packed weight data type; must be one byte wide.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The packed activations, (total_tokens, K * 3 // 4).
+            b: The plane-split preshuffled weights, (num_experts, N, K * 3//4).
+            a_scales: The A scale factors, (total_tokens, K // 32).
+            b_scales: The B scale factors, (num_experts, N, K // 32).
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            max_num_tokens_per_expert: The maximum token count for any expert.
+            num_active_experts: The number of active experts.
+            estimated_total_m: Estimated total received tokens for this GPU,
+                used to pick the persistent vs direct kernel path.
+            decode_grid_m_cap: Decode-band gate selecting the direct kernel
+                over the persistent one; 0 disables.
+            decode_grid_m_rows: Rows grid.y must cover per expert on the
+                decode bands.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert (
+            size_of[a_type]() == 1 and size_of[b_type]() == 1
+        ), "MXFP6 operands are packed into uint8; four codes per three bytes"
+        comptime assert Self.FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+        if num_active_experts == 0:
+            return
+
+        block_scaled_grouped_matmul_amd_preb[
+            lane_bytes=24, fp6_format=Self.FP6_FORMAT
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+            b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            context,
+            Int(estimated_total_m),
+            -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
+            Int(decode_grid_m_rows),
+        )
+
+
+@extensibility.register("mo.grouped.matmul.block.scaled.amd")
+struct Struct_grouped_matmul_block_scaled_amd[
+    preshuffled_b: Bool = False, lane_bytes: Int = 16
+]:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
+
+    Provides graph compiler integration for block-scaled grouped matmul
+    operations used in Mixture of Experts (MoE) layers on AMD GPUs.
+
+    Parameters:
+        preshuffled_b: When True, dispatches to `block_scaled_grouped_matmul_amd_preb`
+            which expects B in the 5D preshuffled layout from
+            `Shuffler.preshuffle_b_5d` (typically produced by the model's
+            weight adapter at load time, e.g. Kimi K2.5). When False
+            (default), dispatches to the dense `block_scaled_grouped_matmul_amd`
+            kernel that reads B row-major. The caller is responsible for
+            preparing B in the matching layout.
+        lane_bytes: Element packing of A and B — 16 for MXFP4 (default) or 32
+            for MXFP8. The kernel reads `a`/`b` as raw bytes, so this rather
+            than the operand dtype selects the format, and with it the K extent
+            (`K` at MXFP8, `K // 2` at MXFP4). Preshuffled-B path only.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        estimated_total_m: UInt32,
+        decode_grid_m_cap: UInt32,
+        decode_grid_m_rows: UInt32,
         context: DeviceContext,
     ) raises:
         """Executes grouped block-scaled matrix multiplication.
@@ -852,26 +972,34 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
                 used by the preb dispatcher to pick the persistent vs direct
                 kernel path. Pass 0 to default to persistent. Ignored when
                 `preshuffled_b == False`.
-            decode_grid_m_cap: Per-expert decode cap sizing the direct grid.y
-                on the decode bands. 0 disables (full-stride fallback). Ignored
-                when `preshuffled_b == False`.
+            decode_grid_m_cap: Decode-band gate selecting the direct kernel over
+                the persistent one; 0 disables. Ignored unless `preshuffled_b`.
+            decode_grid_m_rows: Rows grid.y must cover per expert on the
+                decode bands. Ignored unless `preshuffled_b`.
             context: The device context pointer.
         """
         comptime assert is_gpu[
             target
         ](), "grouped block-scaled matmul only supports GPUs"
+        # The kernel takes raw byte operands and derives the format from
+        # `lane_bytes`, so view either dtype as `uint8`: both are one byte
+        # wide, leaving the layout untouched.
+        comptime assert size_of[a_type]() == 1 and size_of[b_type]() == 1, (
+            "grouped block-scaled matmul operands must be one byte wide"
+            " (uint8 for MXFP4, float8_e4m3fn for MXFP8)"
+        )
         if num_active_experts == 0:
             return
         comptime if Self.preshuffled_b:
-            # Preshuffled-B kernel path (mxfp4_grouped_matmul_amd_preb).
+            # Preshuffled-B kernel path (block_scaled_grouped_matmul_amd_preb).
             # Requires B in the 5D layout from `Shuffler.preshuffle_b_5d`,
             # typically produced by the model's weight adapter at load
             # time (e.g. kimik2_5/weight_adapters.py). Correctness
             # requires EP-MoE sharding (axis-0); TP-MoE is unsupported.
-            mxfp4_grouped_matmul_amd_preb(
+            block_scaled_grouped_matmul_amd_preb[lane_bytes=Self.lane_bytes](
                 c.to_tile_tensor[DType.int64](),
-                a.to_tile_tensor[DType.int64](),
-                b.to_tile_tensor[DType.int64](),
+                a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+                b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
                 a_scales.to_tile_tensor[DType.int64](),
                 b_scales.to_tile_tensor[DType.int64](),
                 expert_start_indices.to_tile_tensor[DType.int64](),
@@ -880,15 +1008,21 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
                 Int(num_active_experts),
                 context,
                 Int(estimated_total_m),
-                # 0 = unset -> -1 (full-stride fallback).
                 -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
+                Int(decode_grid_m_rows),
             )
         else:
             # Dense row-major B path. Safe default for arbitrary callers.
-            mxfp4_grouped_matmul_amd(
+            # MXFP8 is wired on the preshuffled-B path only; reject rather
+            # than silently reinterpret the K extent as FP4-packed.
+            comptime assert Self.lane_bytes == 16, (
+                "lane_bytes=32 (MXFP8) requires preshuffled_b=True; the dense"
+                " row-major B path is MXFP4-only"
+            )
+            block_scaled_grouped_matmul_amd(
                 c.to_tile_tensor[DType.int64](),
-                a.to_tile_tensor[DType.int64](),
-                b.to_tile_tensor[DType.int64](),
+                a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+                b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
                 a_scales.to_tile_tensor[DType.int64](),
                 b_scales.to_tile_tensor[DType.int64](),
                 expert_start_indices.to_tile_tensor[DType.int64](),
@@ -987,7 +1121,7 @@ struct Struct_matmul_dynamic_block_scaled:
         # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
         # so the conversion is correct on both the structured Mojo path (f32
         # accumulator) and the vendor path (`_dtype == c.dtype`).
-        @parameter
+        @__parameter
         @always_inline
         def epilogue_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -997,7 +1131,7 @@ struct Struct_matmul_dynamic_block_scaled:
                 val.cast[c.dtype](),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def output_compute_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -1039,21 +1173,29 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled.mxfp4")
-struct Struct_matmul_dynamic_block_scaled_mxfp4:
-    """Registers the `mo.matmul.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
+@extensibility.register("mo.matmul.dynamic.block.scaled.amd")
+struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
+    """Registers the `mo.matmul.dynamic.block.scaled.amd` graph op with the graph compiler.
+
+    Parameters:
+        lane_bytes: Operand bytes per lane per MFMA — 16 for MXFP4 (default) or
+            32 for MXFP8. The kernel reads `a`/`b` as raw bytes, so this rather
+            than the operand dtype selects the format, and with it the K extent
+            (`K` at MXFP8, `K // 2` at MXFP4).
     """
 
     @always_inline
     @staticmethod
     def execute[
         c_type: DType,
+        a_type: DType,
+        b_type: DType,
         //,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
         b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
         context: DeviceContext,
@@ -1062,11 +1204,70 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4:
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
+        # Both dtypes are one byte wide, so the raw-byte view is layout-neutral.
+        comptime assert size_of[a_type]() == 1 and size_of[b_type]() == 1, (
+            "dynamic block-scaled matmul operands must be one byte wide"
+            " (uint8 for MXFP4, float8_e4m3fn for MXFP8)"
+        )
 
-        mxfp4_block_scaled_matmul_amd(
+        block_scaled_matmul_amd[lane_bytes=Self.lane_bytes](
             c.to_tile_tensor[DType.int64](),
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+            b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.matmul.dynamic.block.scaled.mxfp6")
+struct Struct_matmul_dynamic_block_scaled_mxfp6[FP6_FORMAT: Int = 0]:
+    """Registers the `mo.matmul.dynamic.block.scaled.mxfp6` graph op.
+
+    Separate from the MXFP4/MXFP8 op rather than another `lane_bytes` value:
+    both FP6 encodings put 24 bytes in a lane, so the byte count cannot choose
+    between them.
+
+    Parameters:
+        FP6_FORMAT: 0 selects E2M3, 1 selects E3M2, matching `FP6Format`.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=2, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "MXFP6 block-scaled matmul requires a GPU with native block-scaled"
+            " support"
+        )
+        comptime assert (
+            size_of[a_type]() == 1 and size_of[b_type]() == 1
+        ), "MXFP6 operands are packed into uint8; four elements per three bytes"
+        comptime assert Self.FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+        comptime fmt = (
+            CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3 if Self.FP6_FORMAT
+            == 0 else CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2
+        )
+
+        mxfp6_block_scaled_matmul_amd[fmt](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
+            b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
             context,
@@ -1552,7 +1753,7 @@ struct MatmulStaticScaledFloat8:
             # all m>1. The compute lambda returns the value already cast to the
             # output dtype, as required by `_matmul_gpu`'s compute-lambda
             # wrapper (output.dtype must equal c_type).
-            @parameter
+            @__parameter
             @__copy_capture(input_scale, weight_scale)
             @always_inline
             def scaled_compute_fn[
@@ -1582,7 +1783,7 @@ struct MatmulStaticScaledFloat8:
             )
         else:
 
-            @parameter
+            @__parameter
             @__copy_capture(output_tt, input_scale, weight_scale)
             @always_inline
             def scaled_output_fn[
@@ -1687,7 +1888,7 @@ struct Struct_lora_sgmv_ragged:
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), a.dim_size[0]()),
             lora_ids.dim_size[0](),
             context,
         )
@@ -1726,7 +1927,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), a.dim_size[0]()),
             lora_ids.dim_size[0](),
             context,
         )
@@ -1830,7 +2031,7 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
             b.to_tile_tensor[DType.int64](),
             lora_grouped_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), p.dim_size[1]()),
             lora_ids.dim_size[0](),
             context,
         )
@@ -1845,7 +2046,7 @@ struct Struct_router_gate_mixed_gemv:
     decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
-    - tiny `M` (`M <= 16`, decode): the fused mixed GEMV — `a` is loaded as bf16
+    - tiny `M` (`M <= 64`, decode): the fused mixed GEMV — `a` is loaded as bf16
       and widened to fp32 in registers, then dotted against the unchanged fp32
       `b` in a SINGLE launch, fusing away the standalone bf16->fp32 activation
       cast that otherwise precedes the fp32 router GEMV.
@@ -1930,7 +2131,7 @@ struct Struct_router_gate_mixed_gemv:
         var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
         var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(a_bf16_tt, a_f32_tt)
         def _cast_bf16_to_fp32[width: Int, alignment: Int = 1](idx: Coord):

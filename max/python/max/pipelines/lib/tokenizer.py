@@ -117,6 +117,13 @@ logger = logging.getLogger("max.pipelines")
 
 _UINT64_MASK = (1 << 64) - 1
 
+# The only ``dkv_cache_hint`` schema version this parser understands. Version 2
+# moves the source instance from the top level onto each block so one hint can
+# name several source dKV instances, which this shape cannot represent, so a
+# version this parser does not recognize is ignored rather than misread. See
+# ``dkv/docs/cache-hint.md``.
+_SUPPORTED_DKV_HINT_VERSION = 1
+
 
 @dataclass(frozen=True, slots=True)
 class _HintBlock:
@@ -125,13 +132,22 @@ class _HintBlock:
     hash: int
 
 
+# Hint schema versions already warned about, so an orchestrator that emits a
+# newer version than this build understands logs once per process per version
+# rather than once per request. Once the orchestrator adopts version 2 the
+# unrecognized-version path becomes the steady state for every hinted request
+# until this parser catches up, and a per-request warning there is pure noise.
+# Keyed on the observed version so a second, genuinely unexpected version still
+# gets its own line.
+_warned_dkv_hint_versions: set[object] = set()
+
+
 @dataclass(frozen=True, slots=True)
 class _DkvCacheHint:
     """Typed representation of a dkv_cache_hint payload from the Orchestrator."""
 
     instance_name: str
     blocks: list[_HintBlock]
-    version: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,18 +171,41 @@ def _parse_dkv_cache_hint(
     """Convert a ``dkv_cache_hint`` JSON payload into the form the DKVConnector reads.
 
     The Orchestrator injects a ``dkv_cache_hint`` field into the request
-    body (see SERVOPT-1143). Returns ``None`` when no hint is present or
-    the hint carries no blocks.
+    body (see SERVOPT-1143). Returns ``None`` when no hint is present, when
+    the hint carries a schema version this parser does not understand, or
+    when the hint carries no blocks.
 
-    Raises ``TypeError`` or ``KeyError`` if the hint is malformed.
+    An unrecognized version is ignored rather than treated as an error,
+    because dKV is an external cache and proceeding without a hint costs a
+    cache miss, whereas raising would fail a request the cache was only
+    supposed to accelerate. That is what lets the Orchestrator adopt a newer
+    hint schema without waiting for every engine to be redeployed first.
+
+    Raises ``TypeError`` or ``KeyError`` if a hint of a recognized version
+    is malformed.
     """
     if hint is None:
+        return None
+
+    # An absent version means the hint is v1. That is a permanent fact of the
+    # v1 wire format, distinct from which version this build supports, so the
+    # literal stays 1 even when _SUPPORTED_DKV_HINT_VERSION moves.
+    version = hint.get("version", 1)
+    if version != _SUPPORTED_DKV_HINT_VERSION:
+        if version not in _warned_dkv_hint_versions:
+            _warned_dkv_hint_versions.add(version)
+            logger.warning(
+                "Ignoring dkv_cache_hint with unsupported version %s (this "
+                "build understands version %s); serving as though the cache "
+                "missed. Logged once per process per version.",
+                version,
+                _SUPPORTED_DKV_HINT_VERSION,
+            )
         return None
 
     parsed = _DkvCacheHint(
         instance_name=hint["instance_name"],
         blocks=[_HintBlock(**b) for b in hint.get("blocks", [])],
-        version=hint.get("version", 1),
     )
 
     if not parsed.blocks:
@@ -1075,6 +1114,7 @@ class TextAndVisionTokenizer(
                 )
             ],
             vision_token_ids=self.vision_token_ids,
+            cache_salt=request.cache_salt,
         )
 
         return context

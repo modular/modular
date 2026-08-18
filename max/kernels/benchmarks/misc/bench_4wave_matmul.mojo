@@ -29,7 +29,7 @@ from std.benchmark import (
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from max.gpu.host import DeviceContext
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from std.memory import dealloc
 from internal_utils import (
     CacheBustingBuffer,
@@ -224,7 +224,7 @@ def verify_matmul[
     var result_host_alloc = alloc[Scalar[DType.float32]](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
-    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -421,9 +421,8 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -435,7 +434,7 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
@@ -455,7 +454,7 @@ def bench_matmul[
         ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
@@ -473,10 +472,10 @@ def bench_matmul[
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
             structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

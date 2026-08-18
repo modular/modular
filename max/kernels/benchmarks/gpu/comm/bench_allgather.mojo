@@ -42,7 +42,6 @@ from std.testing import assert_true
 
 
 @always_inline
-@parameter
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
@@ -223,14 +222,15 @@ def bench_allgather[
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut tt_in, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
                 tt_in[i] = TileTensor(
@@ -251,7 +251,7 @@ def bench_allgather[
                 max_num_blocks,
             )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

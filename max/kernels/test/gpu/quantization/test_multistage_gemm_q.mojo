@@ -19,13 +19,13 @@ from std.sys import align_of, argv, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -101,7 +101,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -179,7 +179,9 @@ def repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        var q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            warp_x, warp_y
+        )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
@@ -724,7 +726,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config

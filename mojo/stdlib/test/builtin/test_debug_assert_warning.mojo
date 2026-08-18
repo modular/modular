@@ -27,12 +27,12 @@ def main():
     # A no-message assertion must report the caller's location.
     var zero = 0
 
-    def is_positive() capturing -> Bool:
+    def is_positive() {zero} -> Bool:
         return zero > 0
 
     # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: assertion failed
     assert zero > 0
-    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:30: Assert Error: assertion failed
-    debug_assert[is_positive]()
+    # CHECK: test_debug_assert_warning.mojo:[[@LINE+1]]:17: Assert Error: assertion failed
+    debug_assert(is_positive)
     # CHECK: is reached
     print("is reached")

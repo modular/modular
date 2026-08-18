@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -201,7 +201,7 @@ modular_run_binary_test(
 # their own modular_py_binary that pairs the same kbench harness with a
 # different `mojo_deps` set — most notably, a stdlib overlay other than
 # `@mojo//:std`. Carries no mojo_deps itself so the consumer fully
-# controls which `std.mojopkg` lands in runfiles.
+# controls which `std.mojoc` lands in runfiles.
 modular_py_library(
     name = "kbench_lib",
     srcs = [
@@ -301,7 +301,7 @@ modular_py_binary(
         "//:amd_gpu": [
             "//max/kernels/benchmarks/misc/comparison:bench_amd_mha",
             "//max/kernels/benchmarks/misc/comparison:bench_amd_mla",
-            "//max/kernels/benchmarks/misc/comparison:bench_amd_mxfp4_gemm",
+            "//max/kernels/benchmarks/misc/comparison:bench_amd_mx_gemm",
             "//max/kernels/benchmarks/misc/comparison:bench_softmax_lib",
         ],
         "//conditions:default": [],
@@ -448,17 +448,4 @@ modular_py_test(
         requirement("pytest-mock"),
         requirement("rich"),
     ],
-)
-
-# TODO: this probably can be removed safely.
-pkg_files(
-    name = "autotune_files",
-    srcs = [
-        "kbench.py",
-        "kplot.py",
-        "kprofile.py",
-        "pyproject.toml",
-        "utils.py",
-    ],
-    prefix = "kernel-benchmark/autotune",
 )

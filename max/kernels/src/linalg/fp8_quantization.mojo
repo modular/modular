@@ -13,13 +13,13 @@
 
 """Provides FP8 quantization kernels supporting static, dynamic, and blockwise scaling."""
 
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
-import std.gpu.primitives.block as block
+import max.gpu.primitives.block as block
 from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -28,7 +28,7 @@ from std.gpu import (
     global_idx,
     thread_idx,
 )
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
@@ -60,7 +60,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     GEMMKind,
 )
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
 
@@ -110,7 +110,7 @@ def quantize_static_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensor, in_tensor, scale)
     def scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
@@ -203,7 +203,7 @@ def max_reduction_scale_kernel[
         )
 
         if tid == 0:
-            _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
+            _ = Atomic[Float32].max(scale_global.ptr, row_max / fp8_max)
 
 
 @always_inline
@@ -1145,7 +1145,7 @@ def _matmul_dynamic_scaled_fp8_impl[
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
@@ -1173,7 +1173,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
@@ -1212,7 +1212,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             # create a dummy TileTensor to instruct the matmul kernel to
             # output values in the correct dtype.
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn[
@@ -1239,7 +1239,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     scaled_val.cast[c_type](),
                 )
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn_tensor[
@@ -1895,7 +1895,7 @@ def convert_e4m3fn_to_e4m3fnuz(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1

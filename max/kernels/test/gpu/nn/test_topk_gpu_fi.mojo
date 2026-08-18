@@ -41,7 +41,6 @@ comptime PRINT_OUTPUT = False
 comptime NUM_VALIDATION_TRIALS = 50
 
 
-@parameter
 def fill_random_for_test[
     dtype: DType, normalized: Bool
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -103,11 +102,10 @@ def compute_topk_mask[
         for i in range(N):
             values_list.append(values.load[width=1]((b, i)))
 
-        @parameter
         def _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
             return lhs > rhs
 
-        sort[_greater_than](values_list)
+        sort(values_list, _greater_than)
 
         # K-th largest value.
         var kth_value = values_list[K - 1]
@@ -215,13 +213,12 @@ def compute_topp_mask[
             prob_idx.append((probs.load[width=1]((b, i)), i))
 
         # Sort descending by probability.
-        @parameter
         def _greater_than(
             lhs: Tuple[Scalar[dtype], Int], rhs: Tuple[Scalar[dtype], Int]
         ) -> Bool:
             return lhs[0] > rhs[0]
 
-        sort[_greater_than](prob_idx)
+        sort(prob_idx, _greater_than)
 
         # Walk sorted list, include tokens until cumulative prob >= p.
         var cumsum = Float32(0.0)
@@ -670,8 +667,7 @@ def test_topk_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {var}:
             comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
                     ctx,
@@ -694,9 +690,9 @@ def test_topk_sampling[
             ctx.synchronize()
 
         comptime if sampling_from_prob:
-            time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
+            time_kernel(m, ctx, "topk-sampling-from-prob", run_func)
         else:
-            time_kernel[run_func](m, ctx, "topk-softmax-sample")
+            time_kernel(m, ctx, "topk-softmax-sample", run_func)
         m.dump_report()
 
 
@@ -766,11 +762,14 @@ def extract_topk_from_masked[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: def[rank: Int, dtype: DType](
-        TileTensor[mut=True, dtype, ...]
-    ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
-](ctx: DeviceContext, test_case: TestCase) raises:
+](
+    ctx: DeviceContext,
+    test_case: TestCase,
+    fill_fn: Some[
+        def[rank: Int, dtype: DType](TileTensor[mut=True, dtype, ...]) -> None
+    ],
+) raises:
     """Test topk_mask_logits kernel by comparing with CPU reference."""
 
     var m = Bench()
@@ -828,8 +827,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {var}:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
                 in_tensor,
@@ -838,7 +836,7 @@ def test_case_batched[
             )
             ctx.synchronize()
 
-        time_kernel[run_func](m, ctx, "topk-mask-logits")
+        time_kernel(m, ctx, "topk-mask-logits", run_func)
 
     topk_mask_logits[dtype, out_idx_type, block_size](
         ctx,
@@ -898,8 +896,7 @@ def test_case_batched[
                 comptime if DEBUG_BENCH:
 
                     @always_inline
-                    @parameter
-                    def run_func_cpu(ctx: DeviceContext) raises:
+                    def run_func_cpu(ctx: DeviceContext) raises {var}:
                         _top_k_cpu[
                             dtype=dtype,
                             out_idx_type=DType.int64,
@@ -914,7 +911,7 @@ def test_case_batched[
                             True,
                         )
 
-                    time_kernel[run_func_cpu](m, ctx, "topk-cpu")
+                    time_kernel(m, ctx, "topk-cpu", run_func_cpu)
 
                 _top_k_cpu[
                     dtype=dtype, out_idx_type=DType.int64, largest=largest
@@ -962,27 +959,28 @@ def test_case_batched[
         m.dump_report()
 
 
-def time_kernel[
-    func: def(DeviceContext) raises capturing -> None
-](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+def time_kernel(
+    mut m: Bench,
+    ctx: DeviceContext,
+    kernel_name: String,
+    func: Some[def(DeviceContext) raises -> None],
+) raises:
     @always_inline
-    def bench_func(mut m: Bencher):
-        @parameter
+    def bench_func(mut m: Bencher) {imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        bencher_iter_custom[kernel_launch](m, ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             kernel_name
         ),  # ThroughputMeasure(BenchMetric.elements, 2 * size)
     )
 
 
-@parameter
 def fill_random[
     rank: Int, dtype: DType
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -1243,9 +1241,8 @@ def main() raises:
         print_test_case(test_case0)
         test_case_batched[
             float32_dtype,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case0)
+        ](ctx, test_case0, fill_random)
 
         comptime test_case1 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1257,9 +1254,8 @@ def main() raises:
         print_test_case(test_case1)
         test_case_batched[
             float32_dtype,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case1)
+        ](ctx, test_case1, fill_random)
 
         comptime test_case2 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1269,7 +1265,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case2)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case2)
+        test_case_batched[float32_dtype](ctx, test_case2, fill_random)
 
         comptime test_case3 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1279,7 +1275,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case3)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case3)
+        test_case_batched[float32_dtype](ctx, test_case3, fill_random)
 
         comptime test_case4 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1289,7 +1285,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case4)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case4)
+        test_case_batched[float32_dtype](ctx, test_case4, fill_random)
 
         comptime test_case5 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1299,7 +1295,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case5)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case5)
+        test_case_batched[float32_dtype](ctx, test_case5, fill_random)
 
         comptime test_case6 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1309,7 +1305,7 @@ def main() raises:
             batch_size=256,
         )
         print_test_case(test_case6)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case6)
+        test_case_batched[float32_dtype](ctx, test_case6, fill_random)
 
         comptime test_case7 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1321,9 +1317,8 @@ def main() raises:
         print_test_case(test_case7)
         test_case_batched[
             bf16_type,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case7)
+        ](ctx, test_case7, fill_random)
 
         comptime test_case8 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1333,7 +1328,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case8)
-        test_case_batched[bf16_type, fill_random](ctx, test_case8)
+        test_case_batched[bf16_type](ctx, test_case8, fill_random)
 
         comptime test_case9 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1343,7 +1338,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case9)
-        test_case_batched[bf16_type, fill_random](ctx, test_case9)
+        test_case_batched[bf16_type](ctx, test_case9, fill_random)
 
         comptime test_case10 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1353,7 +1348,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case10)
-        test_case_batched[bf16_type, fill_random](ctx, test_case10)
+        test_case_batched[bf16_type](ctx, test_case10, fill_random)
 
         comptime test_case11 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1363,7 +1358,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case11)
-        test_case_batched[bf16_type, fill_random](ctx, test_case11)
+        test_case_batched[bf16_type](ctx, test_case11, fill_random)
 
         comptime test_case12 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1373,7 +1368,7 @@ def main() raises:
             batch_size=2,
         )
         print_test_case(test_case12)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case12)
+        test_case_batched[float32_dtype](ctx, test_case12, fill_random)
 
         comptime test_case13 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1383,7 +1378,7 @@ def main() raises:
             batch_size=2,
         )
         print_test_case(test_case13)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case13)
+        test_case_batched[float32_dtype](ctx, test_case13, fill_random)
 
         comptime test_case14 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1393,7 +1388,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case14)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case14)
+        test_case_batched[float32_dtype](ctx, test_case14, fill_random)
 
         print("\n" + "=" * 80)
         print("All topk_mask_logits tests passed! ✓")

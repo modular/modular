@@ -16,7 +16,7 @@
 Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
@@ -118,7 +118,7 @@ def pack_ptrs_array[
     """Pack the pointers into an inline array.
 
     Reads device addresses from `_ptrs` and produces an `Array` of
-    `UnsafePointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
+    `Pointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
     `local_rank_only` is set, every entry is filled with the address at
     `my_rank` instead of one address per rank.
 
@@ -250,7 +250,7 @@ def ep_dispatch_async_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -401,7 +401,7 @@ def ep_dispatch_wait_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -593,7 +593,7 @@ def ep_fused_dispatch_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -779,7 +779,7 @@ def ep_combine_async_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -939,7 +939,7 @@ def ep_combine_wait_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1132,7 +1132,7 @@ def ep_fused_combine_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(

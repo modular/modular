@@ -53,25 +53,24 @@ from std.gpu import (
     lane_id,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.sync import async_copy_arrive, syncwarp
+from max.gpu.sync import async_copy_arrive, syncwarp
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_st,
@@ -111,6 +110,8 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     SF_ATOM_M,
     SF_MN_GROUP_SIZE,
+    _is_packed_fp4,
+    block_scaled_operands_compatible,
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
 )
@@ -487,7 +488,7 @@ struct RealSwiGLUOutput[
     """Carries the three GMEM destinations (packed output, 5D SF tile,
     per-expert input scales) as raw pointers + comptime shape info.
 
-    Raw `UnsafePointer`s rather than `TileTensor`s sidestep a callsite
+    Raw `Pointer`s rather than `TileTensor`s sidestep a callsite
     type mismatch (TileTensor has many implicit parameters). `set_sf`
     inlines the 5D SF index. Layout is the same for NVFP4 and MXFP8,
     only the SF_VECTOR_SIZE divisor differs.
@@ -613,9 +614,7 @@ struct RealSwiGLUOutput[
         # i3) are contiguous in linear memory, so each (row, i1) pair
         # zeroes 4 bytes via a single uint32 store instead of 4
         # separate `set_sf` byte writes.
-        var pad_end_local = (
-            (tokens_e + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-        ) * SF_MN_GROUP_SIZE
+        var pad_end_local = align_up(tokens_e, SF_MN_GROUP_SIZE)
         var pad_total = pad_end_local - tokens_e
         if pad_total <= 0:
             return
@@ -965,8 +964,22 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
-    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    # TMA transaction sizes count the bytes the copy engine READS from global
+    # memory. An unpacked-FP4 operand occupies BK shared-memory bytes but is
+    # sourced from half as many packed ones, and a barrier told to expect the
+    # shared-memory figure never completes.
+    comptime a_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.a_type, Self.b_type
+    ]() else 1
+    comptime b_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.b_type, Self.a_type
+    ]() else 1
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[
+        Self.a_type
+    ]() // Self.a_gmem_bytes_per_elem_recip
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[
+        Self.b_type
+    ]() // Self.b_gmem_bytes_per_elem_recip
     comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -1101,9 +1114,9 @@ struct Grouped1D1DMatmulKernel[
     @staticmethod
     def validate_config():
         """Compile-time validation of kernel configuration."""
-        comptime assert (
-            Self.a_type == Self.b_type
-        ), "A and B types must match for block-scaled GEMM"
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "A and B types must match for block-scaled GEMM, or be the W4A8 pair"
         comptime assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "SFA and SFB types must match"
@@ -1355,7 +1368,7 @@ struct Grouped1D1DMatmulKernel[
                 grp += 1
                 si = ei
                 continue
-            var mb = (gs + _cta_m - 1) / _cta_m
+            var mb = ceildiv(gs, _cta_m)
             var cum = cumsum + mb
             var bs = cum * _num_n_blks
             if nbi < bs:
@@ -3149,8 +3162,8 @@ struct Grouped1D1DMatmulKernel[
         # body strips entirely. The TMEM load, SMEM scatter, and both
         # WarpGroupBarrier syncs still execute — isolates "structural epi
         # cost" from "cooperative compute cost". OUTPUT IS INVALID.
-        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else (
-            (work_per_stage + total_threads - 1) // total_threads
+        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else ceildiv(
+            work_per_stage, total_threads
         )
 
         # Per-tile pipeline START/END events are recorded by the outer
@@ -3603,7 +3616,7 @@ struct Grouped1D1DMatmulKernel[
         # bf16 SMEM scratchpad is byte-identical to the standalone
         # matmul's BF16 GMEM output (chain reference).
         @always_inline
-        @parameter
+        @__parameter
         def store_scaled_pair(
             smem_idx_a: UInt32,
             smem_idx_b: UInt32,
@@ -3754,7 +3767,7 @@ struct Grouped1D1DMatmulKernel[
                     comptime for ci in range(BF16_LOAD_W):
                         pair_bf[li * BF16_LOAD_W + ci] = chunk[ci]
                 var pair = pair_bf.cast[DType.float32]()
-                gate, up = pair.deinterleave()
+                var gate, up = pair.deinterleave()
 
                 # silu(g) and the final SF reciprocal use `recip()`
                 # (`rcp.approx.ftz.f32`) rather than fp32 `/`: with only

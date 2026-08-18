@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.algorithm import parallelize
-from std.runtime import initialize_runtime
-from std.runtime.asyncrt import parallelism_level
+from std.runtime import initialize_runtime, parallelism_level
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -28,7 +27,7 @@ def test_initialize_runtime_idempotent() raises:
     comptime N = 64
     var results = List[Int](length=N, fill=0)
 
-    @parameter
+    @__parameter
     def fill(i: Int):
         results[i] = i
 

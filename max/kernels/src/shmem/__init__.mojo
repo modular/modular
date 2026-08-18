@@ -26,7 +26,7 @@ from std.testing import assert_equal
 from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 
-def simple_shift_kernel(destination: UnsafePointer[Int32, _]):
+def simple_shift_kernel(destination: Pointer[Int32, _]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -43,7 +43,7 @@ def main() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 

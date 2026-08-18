@@ -26,8 +26,13 @@ comptime length = 8192
 
 
 def run_elementwise[
-    dtype: DType, math_fn: def(x: SIMD) thin -> type_of(x)
-](ctx: DeviceContext, in_device: DeviceBuffer[dtype],) raises:
+    dtype: DType,
+    math_fn: def[fn_dtype: DType, fn_width: SIMDLength](
+        SIMD[fn_dtype, fn_width]
+    ) thin -> SIMD[fn_dtype, fn_width] where fn_dtype.is_floating_point(),
+](
+    ctx: DeviceContext, in_device: DeviceBuffer[dtype]
+) raises where dtype.is_floating_point():
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
@@ -37,7 +42,7 @@ def run_elementwise[
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)

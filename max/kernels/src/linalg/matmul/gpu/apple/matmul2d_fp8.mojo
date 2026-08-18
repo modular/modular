@@ -277,7 +277,7 @@ struct Matmul2dFp8[
         # does), which the TileTensor-idioms-only rule forbids here. `_write4`
         # reaches the same 2-vector-store result.
         @always_inline
-        @parameter
+        @__parameter
         def _apply_epilogue[bounded: Bool]():
             var c_sub = c.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             # 4 contiguous out cols = one SIMD unit; element alignment only (the
@@ -286,7 +286,7 @@ struct Matmul2dFp8[
             var c_vec = c_sub.vectorize[1, 4]()
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int, lcol: Int, acol: Int, v: SIMD[DType.float32, 4]
             ):

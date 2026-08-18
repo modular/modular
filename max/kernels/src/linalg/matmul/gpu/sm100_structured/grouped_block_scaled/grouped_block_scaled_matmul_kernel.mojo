@@ -40,9 +40,9 @@ from std.memory import UnsafePointer, Pointer
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, block_idx, lane_id
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
-from std.gpu.sync import syncwarp
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from max.gpu.sync import syncwarp
 from max.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
 from layout import (
@@ -231,7 +231,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     3. tensormap_cp_fence_release() - Copy SMEM -> block's GMEM tensormap
     4. syncwarp() - Sync before using updated tensormap
 
-    TMA descriptor arrays are passed by reference (as UnsafePointer from
+    TMA descriptor arrays are passed by reference (as Pointer from
     TMATensorTileArray[blk]) to methods rather than stored by value. This
     ensures PTX tensormap operations receive valid GMEM addresses with correct
     address space semantics.

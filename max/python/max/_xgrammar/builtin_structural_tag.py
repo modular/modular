@@ -1536,6 +1536,18 @@ def get_glm_4_7_structural_tag(
     THINK_TAG_END = "</think>"
     THINK_EXCLUDE_TOKENS = ["<think>", "</think>"]
     XML_STYLE = "glm_xml"
+    # Shared JSONSchemaFormat config for every tool's argument schema: GLM emits
+    # bare (glm_xml) values and compiles fail-closed (an object root, plus
+    # unenforceable JSON Schema keywords rejected rather than silently dropped).
+    # TODO(CENG-813): the per-model enables become redundant once the flags
+    # default on for all models.
+    JSON_CONFIG: dict[str, Any] = {
+        "style": XML_STYLE,
+        "strict_mode": False,
+        "require_object_root": True,
+        "reject_unsupported": True,
+        "max_whitespace_cnt": 1,
+    }
 
     tools = tools or []
     builtin_tools = builtin_tools or []
@@ -1548,7 +1560,7 @@ def get_glm_4_7_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}",
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(json_schema=parameters, **JSON_CONFIG),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1567,7 +1579,7 @@ def get_glm_4_7_structural_tag(
         suffix_tag = TagFormat(
             begin=f"{TOOL_CALL_BEGIN_PREFIX}{function.name}",
             content=JSONSchemaFormat(
-                json_schema=_get_function_parameters(function), style=XML_STYLE
+                json_schema=_get_function_parameters(function), **JSON_CONFIG
             ),
             end=TOOL_CALL_END,
         )
@@ -1580,7 +1592,7 @@ def get_glm_4_7_structural_tag(
             tags.append(
                 TagFormat(
                     begin=f"{TOOL_CALL_BEGIN_PREFIX}{name}",
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(json_schema=parameters, **JSON_CONFIG),
                     end=TOOL_CALL_END,
                 )
             )
@@ -1663,8 +1675,8 @@ def get_gemma_4_structural_tag(
     JSON_CONFIG: dict[str, Any] = {
         "style": "json",
         "string_value_delimiter_token": '<|"|>',
-        "string_value_exclude_tokens": ["<|tool_call>", "<tool_call|>"],
-        "bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+        "string_value_forbidden_tokens": ["<|tool_call>", "<tool_call|>"],
+        "additional_bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
         "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
         "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
         "max_whitespace_cnt": 1,

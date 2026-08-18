@@ -489,6 +489,29 @@ def _get_mxf8f6f4_mma_shape[
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
+@always_inline
+def _mxf8f6f4_operand_format[dtype: DType]() -> UInt32:
+    """Encode one operand's format for the `kind::mxf8f6f4` descriptor.
+
+    The A and B format fields are three bits each and independent, which is
+    what makes mixed-precision operands (W4A8: E4M3 activations against E2M1
+    weights) expressible under this kind. `uint8` stands in for E2M1, matching
+    the placeholder used throughout the block-scaled kernels; under this kind
+    an E2M1 operand is read from shared memory padded to one byte per element
+    (`PACKED_FP4_ALIGN16B`), not from the densely packed layout the FP4-only
+    kinds read.
+    """
+    comptime if dtype == DType.float8_e4m3fn:
+        return 0
+    elif dtype == DType.float8_e5m2:
+        return 1
+    else:
+        comptime assert dtype == DType.uint8, String(
+            "Unsupported operand type for kind::mxf8f6f4: ", dtype
+        )
+        return 5
+
+
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
 ](TrivialRegisterPassable):
@@ -714,22 +737,10 @@ struct UMMAInsDescriptor[
         """
 
         comptime available_d_types = (DType.float32,)
-        comptime available_operand_types = (
-            DType.float8_e4m3fn,
-            DType.float8_e5m2,
-        )
         comptime available_scale_types = (DType.float8_e8m0fnu,)
 
         comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
-        )
-
-        comptime assert (
-            a_type in available_operand_types
-            and b_type in available_operand_types
-        ), String(
-            "Currently only support E4M3 and E5M2 for UMMA kind: ",
-            Self.mma_kind,
         )
 
         comptime assert scale_type in available_scale_types, String(
@@ -737,11 +748,11 @@ struct UMMAInsDescriptor[
         )
 
         comptime a_type_bit = Self._insert_bit[7](
-            0x0, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
+            0x0, _mxf8f6f4_operand_format[a_type]()
         )
 
         comptime b_type_bit = Self._insert_bit[10](
-            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
+            a_type_bit, _mxf8f6f4_operand_format[b_type]()
         )
 
         comptime desc = Self._insert_bit[23](b_type_bit, 1)
@@ -1040,7 +1051,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @parameter
+        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
@@ -1200,7 +1211,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @parameter
+        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0

@@ -29,11 +29,11 @@ from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque
 from .dict import Dict, KeyElement, StringDict
-from .array import Array, InlineArray
+from .array import Array
 from .linked_list import LinkedList
 from .list import List
 from .optional import Optional, OptionalReg
 from .set import Set
-from .span import ImmutSpan, ImmSpan, MutSpan, Span
-from .check_bounds import check_bounds
+from .span import ImmSpan, MutSpan, Span
+from .check_bounds import check_bounds, check_slice_bounds
 from .type_dict import TypeDict

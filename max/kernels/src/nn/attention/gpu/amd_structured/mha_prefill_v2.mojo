@@ -95,15 +95,15 @@ reference attention kernel.
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.compile import CompilationTarget
 from std.math import ceildiv
-from std.gpu.sync import (
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     s_waitcnt,
     schedule_group_barrier,
@@ -1401,7 +1401,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             sink_weights_ptr: Per-q-head attention-sink scalar weights.
                 Read only when the comptime `sink` parameter is True;
                 the non-sink path comptime-elides the load, so callers may
-                pass `UnsafePointer[...].unsafe_dangling()` when
+                pass `Pointer[...].unsafe_dangling()` when
                 `sink=False`. Indexed by `head_idx` once per block at
                 init time, cast to FP32, multiplied by `log2e` to land
                 in the kernel's log2-units rowmax, and seeded into
@@ -1437,9 +1437,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # ragged kernel does) doesn't survive the TileTensor abstraction.
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((_num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(_num_keys, Self.KV_BLOCK)))
         )
         comptime assert Self.NUM_HEADS % Self.NUM_KV_HEADS == 0, (
             "MhaPrefillV2: NUM_HEADS must be a multiple of NUM_KV_HEADS"
@@ -1534,9 +1532,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var max_q_end_pos = (
             max_tile_idx_local + 1
         ) * Self.Q_BLOCK_SIZE + _start_pos
-        var max_num_tiles_calc = (
-            max_q_end_pos + Self.KV_BLOCK - 1
-        ) // Self.KV_BLOCK
+        var max_num_tiles_calc = ceildiv(max_q_end_pos, Self.KV_BLOCK)
         var max_num_tiles_local: Int
         # FULL_MASK skip at the loop boundary for `CausalMask` (the
         # common case). For an arbitrary `MHAMask` we can't statically

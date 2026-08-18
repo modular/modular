@@ -40,7 +40,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast, rebind_var
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple
@@ -90,19 +90,20 @@ struct EmptyOptionalError[T: AnyType](
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.0")
 struct Optional[T: AnyType](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Deinitable where conforms_to(T, Deinitable),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(T, Movable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Movable & Deinitable),
     Movable where conforms_to(T, Movable),
     RegisterPassable where conforms_to(T, RegisterPassable),
     Writable where conforms_to(T, Writable),
@@ -149,7 +150,7 @@ struct Optional[T: AnyType](
     # `Array`); only the unparameterized `IteratorOwnedType` can be gated.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _OptionalIter[downcast[Self.T, Movable & ImplicitlyDeletable]]
+    ]: Iterator = _OptionalIter[downcast[Self.T, Movable & Deinitable]]
     """The iterator type for this optional.
 
     Parameters:
@@ -159,7 +160,7 @@ struct Optional[T: AnyType](
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
+        Self.T, Movable & Deinitable
     ) = _OptionalIter[Self.T]
     """The owned iterator type for this optional."""
 
@@ -176,18 +177,20 @@ struct Optional[T: AnyType](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     def __init__(out self):
         """Construct an empty `Optional`.
 
         Examples:
 
         ```mojo
-        instance = Optional[String]()
+        var instance = Optional[String]()
         print(instance) # Output: None
         ```
         """
         self._value = Self._type(_NoneType())
 
+    @stable(since="1.0")
     @implicit
     def __init__(
         out self, var value: Self.T
@@ -200,7 +203,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String]("Hello")
+        var instance = Optional[String]("Hello")
         print(instance) # Output: 'Hello'
         ```
         """
@@ -238,17 +241,7 @@ struct Optional[T: AnyType](
         print(opt.value().value)  # Output: 7
         ```
         """
-        # MOCO-4408: forwarding the closure into `Variant`'s `init_with=` ctor, which
-        # infers the stored type from the closure return, cannot resolve that
-        # type from an abstract `def() -> Self.T`. `Self.T` is fixed here, so
-        # pass it explicitly to the storage primitives and init_with `init_with()` at the
-        # emplacement site instead.
-        self._value = Self._type(unsafe_uninitialized=())
-        self._value._unsafe_set_active[Self.T]()
-        # TODO(MSTDL-2924): Replace with `Pointer.unsafe_write(init_with=)`.
-        __get_address_as_uninit_lvalue(
-            self._value._unsafe_ptr[Self.T]()._mlir_value
-        ) = init_with()
+        self._value = Self._type(init_with=init_with)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
@@ -264,7 +257,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String](None)
+        var instance = Optional[String](None)
         print(instance) # Output: None
         ```
         """
@@ -280,7 +273,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String](None)
+        var instance = Optional[String](None)
         print(instance) # Output: None
         ```
         """
@@ -384,7 +377,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         for value in instance:
             print(value) # Output: Hello
         instance = None
@@ -393,20 +386,18 @@ struct Optional[T: AnyType](
         ```
         """
         comptime assert conforms_to(
-            Self.T, Movable & ImplicitlyDeletable
+            Self.T, Movable & Deinitable
         ) and conforms_to(
             Self.T, Copyable
         ), "Cannot iterate over a non-copyable or non-movable Optional."
         # Rebind the copy to the `downcast` element type that the borrow-side
         # `IteratorType` alias names.
-        comptime E = downcast[Self.T, Movable & ImplicitlyDeletable]
+        comptime E = downcast[Self.T, Movable & Deinitable]
         return _OptionalIter[E](rebind_var[Optional[E]](self.copy()))
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Movable & Deinitable):
         """Consume the Optional and return an iterator over its value.
 
         Optionals act as a collection of size 0 or 1.
@@ -427,8 +418,8 @@ struct Optional[T: AnyType](
 
         ```mojo
         def bounds():
-            empty_instance = Optional[Int]()
-            populated_instance = Optional[Int](50)
+            var empty_instance = Optional[Int]()
+            var populated_instance = Optional[Int](50)
 
             # Bounds returns a tuple: (`bounds`, `Optional` version of `bounds`)
             # with the length of the `Optional`.
@@ -441,6 +432,7 @@ struct Optional[T: AnyType](
         var len = 1 if self else 0
         return (len, {len})
 
+    @stable(since="1.0")
     @always_inline
     def __bool__(self) -> Bool:
         """Return true if the Optional has a value.
@@ -505,13 +497,14 @@ struct Optional[T: AnyType](
             writer: The object to write to.
         """
 
-        @parameter
-        def fields(mut w: Some[Writer]):
-            self._write_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
 
-        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
-            FieldsFn=fields
-        ]()
+        def fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_to[is_repr=True](w)
+
+        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields(
+            fields
+        )
 
     def __hash__[
         H: Hasher
@@ -576,8 +569,8 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        x = instance.value()
+        var instance = Optional("Hello")
+        var x = instance.value()
         print(x) # Hello
         # instance = Optional[String]() # Uncomment both lines to crash
         # print(instance.value())       # Attempts to take value from `None`
@@ -609,14 +602,14 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        x = instance.unsafe_value()
+        var instance = Optional("Hello")
+        var x = instance.unsafe_value()
         print(x) # Hello
         instance = Optional[String](None)
 
         # Best practice:
         if instance:
-            y = instance.unsafe_value() # Will not reach this line
+            var y = instance.unsafe_value() # Will not reach this line
             print(y)
 
         # In debug builds, this will deterministically abort:
@@ -634,15 +627,14 @@ struct Optional[T: AnyType](
             The contained data of the `Optional` as an owned T value.
 
         Notes:
-            This will abort on empty `Optional`. This leaves the `Optional`
-            empty rather than consuming it; use `into_inner()` to consume it.
+            This will abort on empty `Optional`.
 
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         print(instance.bounds()[0])  # Output: 1
-        x = instance.take() # Moves value from `instance` to `x`
+        var x = instance.take() # Moves value from `instance` to `x`
         print(x)  # Output: Hello
 
         # `instance` is now `Optional(None)`
@@ -651,7 +643,7 @@ struct Optional[T: AnyType](
 
         # Best practice
         if instance:
-            y = instance.take()  # Won't reach this line
+            var y = instance.take()  # Won't reach this line
             print(y)
 
         # Used directly
@@ -680,76 +672,35 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        print(instance.bounds()[0]) # Output: 1
-        x = instance.unsafe_take()  # Moves value from `instance` to `x`
-        print(x)                    # Output: Hello
+        var instance = Optional("Hello")
+        print(instance.bounds()[0])     # Output: 1
+        var x = instance.unsafe_take()  # Moves value from `instance` to `x`
+        print(x)                        # Output: Hello
 
         # `instance` is now `Optional(None)`
-        print(instance.bounds()[0]) # Output: 0
-        print(instance)             # Output: None
+        print(instance.bounds()[0])     # Output: 0
+        print(instance)                 # Output: None
 
         # Best practice:
         if instance:
-            y = instance.unsafe_take() # Won't reach this line
+            var y = instance.unsafe_take() # Won't reach this line
             print(y)
 
         # In debug builds, this will deterministically abort:
-        y = instance.unsafe_take()  # ABORT: `Optional.take()` called on empty `Optional` (via `debug_assert`)
-        print(y)                    # Does not reach this line
+        y = instance.unsafe_take()      # ABORT: `Optional.take()` called on empty `Optional` (via `debug_assert`)
+        print(y)                        # Does not reach this line
         ```
         """
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
-
-    def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
-        """Consume the `Optional` and return the value it contains.
-
-        Unlike `take()`, which needs only a mutable reference and leaves the
-        `Optional` empty, this consumes the `Optional`.
-
-        Returns:
-            The contained data of the `Optional` as an owned T value.
-
-        Notes:
-            This will abort on empty `Optional`.
-
-        Examples:
-
-        ```mojo
-        instance = Optional("Hello")
-        x = instance^.into_inner()  # `instance` is consumed
-        print(x)                    # Output: Hello
-
-        # Best practice
-        instance2 = Optional[String](None)
-        if instance2:
-            y = instance2^.into_inner()  # Won't reach this line
-            print(y)
-
-        # Used directly
-        # y = instance2^.into_inner()  # ABORT: `Optional.into_inner()` called on empty `Optional`
-        # print(y)                     # Does not reach this line
-        ```
-        """
-        if not self.__bool__():
-            abort(
-                "`Optional.into_inner()` called on empty `Optional`. Consider"
-                " using `if optional:` to check whether the `Optional` is empty"
-                " before calling `.into_inner()`, or use `.or_else()` to"
-                " provide a default value."
-            )
-        # SAFETY: The emptiness check above aborts before reaching this point,
-        # so `Self.T` is the active type of the underlying `Variant`.
-        return self._value^.unsafe_unwrap[Self.T]()
 
     def deinit_with[F: def(var Self.T)](deinit self, deinit_func: F, /):
         """Destroy the value contained in this `Optional` in-place using a
         caller-provided deinitializer function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDeletable`. The `__deinit__` on `Optional`
-        requires `T: ImplicitlyDeletable`, so explicit-deinit users must
+        type is not `Deinitable`. The `__deinit__` on `Optional`
+        requires `T: Deinitable`, so explicit-deinit users must
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `deinit_func` is not called. Otherwise
@@ -766,7 +717,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct ExplicitDeinit(Movable, ImplicitlyDeletable where False):
+        struct ExplicitDeinit(Movable, Deinitable where False):
             var data: Int
 
             def explicit_deinit(deinit self):
@@ -790,7 +741,7 @@ struct Optional[T: AnyType](
         """Destroys an empty `Optional`, asserting that it holds no value.
 
         Use this on an `Optional[T]` whose element type is not
-        `ImplicitlyDeletable` when the value is known to be empty. Unlike
+        `Deinitable` when the value is known to be empty. Unlike
         `deinit_with`, it takes no deinitializer function (there is no live
         value to destroy). In safe-assert builds it aborts if the `Optional`
         is non-empty.
@@ -810,7 +761,7 @@ struct Optional[T: AnyType](
 
     def or_else(
         deinit self, var default: Self.T
-    ) -> Self.T where conforms_to(Self.T, Movable & ImplicitlyDeletable):
+    ) -> Self.T where conforms_to(Self.T, Movable & Deinitable):
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
@@ -823,7 +774,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         print(instance)                  # Output: 'Hello'
         print(instance.or_else("Bye"))   # Output: Hello
         instance = None
@@ -833,11 +784,7 @@ struct Optional[T: AnyType](
         """
         if self:
             return self._value^.unsafe_unwrap[Self.T]()
-        # TODO(MOCO-4141): Replace with `return default^`. That transfer is
-        # rejected today because the `where`-clause `Movable` evidence isn't
-        # visible at the return slot, so route it through Variant's
-        # `Movable`-bounded value constructor, which does see the evidence.
-        return Variant[_NoneType, Self.T](default^).unsafe_unwrap[Self.T]()
+        return default^
 
     @__allow_legacy_custom_self_type
     def copied[
@@ -935,7 +882,7 @@ struct Optional[T: AnyType](
             return {mapper(self._value^.unsafe_unwrap[Self.T]())}
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
-            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            # would require `T: Deinitable`, ruling out linear `T`.
             self^.deinit_assert_empty()
             return None
 
@@ -994,7 +941,7 @@ struct Optional[T: AnyType](
             return mapper(self._value^.unsafe_unwrap[Self.T]())
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
-            # would require `T: ImplicitlyDeletable`, ruling out linear `T`.
+            # would require `T: Deinitable`, ruling out linear `T`.
             self^.deinit_assert_empty()
             return None
 
@@ -1005,9 +952,9 @@ struct Optional[T: AnyType](
 
 
 @fieldwise_init
-struct _OptionalIter[T: Movable & ImplicitlyDeletable](
+struct _OptionalIter[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Iterable where conforms_to(T, Copyable),
     IterableOwned,
     Iterator,
@@ -1110,9 +1057,7 @@ struct _NicheableOptionalRegStorage[
     @always_inline
     def __init__(out self):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[
-            UnsafeMaybeUninit[Self.T]
-        ]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
         Self.T.write_niche[index=0](ptr)
 
     @always_inline
@@ -1129,9 +1074,7 @@ struct _NicheableOptionalRegStorage[
 
     @always_inline
     def __bool__(self) -> Bool:
-        var ptr = Pointer(to=self.storage).unsafe_bitcast[
-            UnsafeMaybeUninit[Self.T]
-        ]()
+        var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
 
 
@@ -1193,7 +1136,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Args:
             value: The value.
         """
-        self._value = Self._Storage.__init__(value)
+        self._value = Self._Storage(value)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need

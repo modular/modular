@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.collections.string.format import _FormatUtils
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     CodepointSliceIter,
     CodepointsIter,
     GraphemeSliceIter,
@@ -312,7 +312,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StringSlice(self).count_codepoints()
 
     @always_inline("nodebug")
-    def unsafe_ptr(
+    def ptr(
         self,
     ) -> Pointer[Byte, ImmStaticOrigin]:
         """Get a pointer to the underlying data.
@@ -329,6 +329,19 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   return type.
         return ptr.unsafe_bitcast[Byte]()
 
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=ptr)
+    def unsafe_ptr(
+        self,
+    ) -> Pointer[Byte, ImmStaticOrigin]:
+        """Get a pointer to the underlying data.
+
+        Returns:
+            The pointer to the data.
+        """
+        return self.ptr()
+
     @always_inline
     def as_c_string_slice(
         self,
@@ -339,9 +352,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The `CStringSlice` of the string.
         """
         # Safety: StringLiteral is guaranteed to be nul-terminated.
-        return CStringSlice(
-            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
-        )
+        return CStringSlice(unsafe_from_ptr=self.ptr().unsafe_bitcast[c_char]())
 
     @always_inline("nodebug")
     def as_string_slice(self) -> StaticString:
@@ -356,7 +367,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             unsafe_from_utf8=Span(
-                unsafe_ptr=self.unsafe_ptr(),
+                unsafe_ptr=self.ptr(),
                 length=self.byte_length(),
             )
         )
@@ -371,7 +382,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, ImmStaticOrigin](
-            unsafe_ptr=self.unsafe_ptr(), length=self.byte_length()
+            unsafe_ptr=self.ptr(), length=self.byte_length()
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -614,67 +625,70 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StringSlice(self).islower()
 
     def strip(self) -> StaticString:
-        """Return a copy of the string literal with leading and trailing
+        """Returns a view of the string literal with leading and trailing
         whitespaces removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A string with no leading or trailing whitespaces.
+            A `StaticString` into the literal with no leading or trailing
+            whitespaces.
         """
         return self.lstrip().rstrip()
 
-    def strip(self, chars: StringSlice) -> StaticString:
-        """Return a copy of the string literal with leading and trailing characters
+    def strip(self, chars: ImmStringSlice) -> StaticString:
+        """Returns a view of the string literal with leading and trailing
+        characters removed.
+
+        Args:
+            chars: A set of characters to be removed. Defaults to whitespace.
+
+        Returns:
+            A `StaticString` into the literal with no leading or trailing
+            characters.
+        """
+
+        return self.lstrip(chars).rstrip(chars)
+
+    def rstrip(self, chars: ImmStringSlice) -> StaticString:
+        """Returns a view of the string literal with trailing characters
         removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A string with no leading or trailing characters.
-        """
-
-        return self.lstrip(chars).rstrip(chars)
-
-    def rstrip(self, chars: StringSlice) -> StaticString:
-        """Return a copy of the string literal with trailing characters removed.
-
-        Args:
-            chars: A set of characters to be removed. Defaults to whitespace.
-
-        Returns:
-            A string with no trailing characters.
+            A `StaticString` into the literal with no trailing characters.
         """
         return StringSlice(self).rstrip(chars)
 
     def rstrip(self) -> StaticString:
-        """Return a copy of the string with trailing whitespaces removed. This
-        only takes ASCII whitespace into account:
+        """Returns a view of the string literal with trailing whitespaces
+        removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no trailing whitespaces.
+            A `StaticString` into the literal with no trailing whitespaces.
         """
         return StringSlice(self).rstrip()
 
-    def lstrip(self, chars: StringSlice) -> StaticString:
-        """Return a copy of the string with leading characters removed.
+    def lstrip(self, chars: ImmStringSlice) -> StaticString:
+        """Returns a view of the string literal with leading characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no leading characters.
+            A `StaticString` into the literal with no leading characters.
         """
         return StringSlice(self).lstrip(chars)
 
     def lstrip(self) -> StaticString:
-        """Return a copy of the string with leading whitespaces removed. This
-        only takes ASCII whitespace into account:
+        """Returns a view of the string literal with leading whitespaces
+        removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no leading whitespaces.
+            A `StaticString` into the literal with no leading whitespaces.
         """
         return StringSlice(self).lstrip()
 

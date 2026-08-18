@@ -244,17 +244,20 @@ def test_log_spaced_bucket_ranges() -> None:
 
 
 def test_percent_buckets_tighten_near_saturation() -> None:
-    """Percent buckets step linearly by 5, and by 2 above 90.
+    """Percent buckets step linearly by 5, and by 1 above 90.
 
     Utilization (KV cache usage, occupancy, hit rates) is only actionable near
     saturation, so a geometric ladder would put the resolution at the wrong end
-    and leave 85% and 99% sharing a bucket.
+    and leave 85% and 99% sharing a bucket. The count stays modest because
+    several of these metrics carry a label (batch_type, draft position) that
+    multiplies every boundary into more Prometheus series.
     """
     buckets = common.HISTOGRAM_PERCENT_BUCKETS
     assert (buckets[0], buckets[-1]) == (0.0, 100.0)
+    assert len(buckets) == 29
     pairs = list(itertools.pairwise(buckets))
     assert {hi - lo for lo, hi in pairs if hi <= 90.0} == {5.0}
-    assert {hi - lo for lo, hi in pairs if hi > 90.0} == {2.0}
+    assert {hi - lo for lo, hi in pairs if hi > 90.0} == {1.0}
 
 
 def test_every_histogram_has_an_exponential_shadow() -> None:

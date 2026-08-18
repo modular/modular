@@ -52,7 +52,7 @@ or rtol/atol-bounded fp32 dequant compare (match_bf16=False).
 """
 from std.math import align_up, ceildiv
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_scalar
@@ -775,8 +775,9 @@ def _test_swiglu_dispatch[
                     (ref_hi_dq, test_hi_dq),
                 )
                 comptime for k in range(2):
-                    var r = nibble_pairs[k][0]
-                    var t = nibble_pairs[k][1]
+                    var pair = rebind[type_of(nibble_pairs[0])](nibble_pairs[k])
+                    var r = pair[0]
+                    var t = pair[1]
                     var ad = abs(r - t)
                     if ad > max_abs_diff:
                         max_abs_diff = ad

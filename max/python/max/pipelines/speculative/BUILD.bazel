@@ -12,5 +12,6 @@ modular_py_library(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )

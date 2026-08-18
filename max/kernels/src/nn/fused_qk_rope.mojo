@@ -21,6 +21,7 @@ from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
+from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (
     Coord,
@@ -60,8 +61,8 @@ def rope_value[
     Returns:
         The RoPE-transformed SIMD vector in the original dtype.
     """
-    x_re, x_im = val.cast[freq_dtype]().deinterleave()
-    f_re, f_im = freq.deinterleave()
+    var x_re, x_im = val.cast[freq_dtype]().deinterleave()
+    var f_re, f_im = freq.deinterleave()
     var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
     return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
 
@@ -172,7 +173,9 @@ def rope_q_proj[
 
     comptime if interleaved:
         var val_inter = q_proj.load[width=width, alignment=alignment](coord)
-        var res_inter = rope_value(val_inter, freq_val).cast[output_dtype]()
+        var res_inter = cast_saturating[output_dtype](
+            rope_value(val_inter, freq_val)
+        )
         output.store[alignment=alignment](coord, res_inter)
     else:
         comptime if has_nope_prefix:
@@ -181,7 +184,7 @@ def rope_q_proj[
                     coord
                 )
                 output.store[alignment=alignment](
-                    coord, val_pass.cast[output_dtype]()
+                    coord, cast_saturating[output_dtype](val_pass)
                 )
                 return
 
@@ -208,8 +211,8 @@ def rope_q_proj[
             )
         )
 
-        var res = rope_value(val, freq_val).cast[output_dtype]()
-        output_re, output_im = res.deinterleave()
+        var res = cast_saturating[output_dtype](rope_value(val, freq_val))
+        var output_re, output_im = res.deinterleave()
         output.store[alignment=half_alignment](coord_re, output_re)
         output.store[alignment=half_alignment](coord_im, output_im)
 
@@ -281,7 +284,7 @@ def rope_k_cache[
         else:
             split_size = head_size
 
-        h_re, h_im = get_safetensors_idx(d_idx, split_size)
+        var h_re, h_im = get_safetensors_idx(d_idx, split_size)
 
         var val = rebind[SIMD[accum_type, width]](
             k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re)
@@ -294,7 +297,7 @@ def rope_k_cache[
         )
 
         var res = rope_value(val, freq_val).cast[cache_type]()
-        output_re, output_im = res.deinterleave()
+        var output_re, output_im = res.deinterleave()
         k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
         k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
 
@@ -360,7 +363,7 @@ def fused_qk_rope[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, valid_lengths)
     def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 4, "Invalid rank passed to rope kernel"
@@ -543,7 +546,7 @@ def fused_qk_rope_ragged[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
     def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"

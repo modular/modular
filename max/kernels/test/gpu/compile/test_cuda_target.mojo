@@ -21,7 +21,6 @@ from max.algorithm.functional import elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_dim,
     block_idx,
@@ -29,6 +28,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
@@ -60,11 +60,15 @@ def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
 
     # Now make sure that we have something like this:
     #     st.param.b64 	[func_retval0], 42;
-    instruction_start_loc = asm.find("st.param.b64")
+    # PTX ISA 8.3+ spells the function-param state space explicitly, so newer
+    # targets emit `st.param::func.b64` for the same store.
+    var instruction_start_loc = asm.find("st.param.b64")
+    if instruction_start_loc < 0:
+        instruction_start_loc = asm.find("st.param::func.b64")
     assert_true(instruction_start_loc >= 0)  # Assert it's present
-    instruction_end_loc = asm.find(";", instruction_start_loc)
+    var instruction_end_loc = asm.find(";", instruction_start_loc)
     assert_true(instruction_end_loc >= 0)
-    instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
+    var instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
     # Make sure 42 appears somewhere in the instruction
     assert_true("42" in instruction_str)
 
@@ -275,17 +279,17 @@ def gemm(
 
     # Utilities for accessing flattened matrices.
     @always_inline
-    @parameter
+    @__parameter
     def get_a(row: Int, col: Int) -> Float32:
         return a.load(row + m * col)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_b(row: Int, col: Int) -> Float32:
         return b.load(row * n + col)
 
     @always_inline
-    @parameter
+    @__parameter
     def set_c(row: Int, col: Int, val: Float32):
         c[row + col * m] = val
 

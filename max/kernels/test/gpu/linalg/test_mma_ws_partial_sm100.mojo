@@ -122,12 +122,12 @@ from std.memory import UnsafePointer, alloc, bitcast
 from std.random import randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx, warp_id as get_warp_id
+from std.gpu import thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -731,7 +731,7 @@ def _ss_compare[
     """Compares the GPU output against the host reference within FP8 tol.
 
     Generic over the pointer origins so the caller can pass a LayoutTensor's
-    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutExternalOrigin)
+    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutUntrackedOrigin)
     without an origin mismatch.
 
     When `require_finite` is True (the NaN-safety variant), additionally

@@ -326,14 +326,15 @@ def non_max_suppression[
             # Initialize box indices [0, 1, 2, ..., num_boxes-1]
             iota(box_idxs)
 
-            @parameter
             @always_inline
-            def _greater_than(lhs: Int64, rhs: Int64) -> Bool:
+            def _greater_than(
+                lhs: Int64, rhs: Int64
+            ) {per_class_scores} -> Bool:
                 """Compare boxes by their scores in descending order."""
                 return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
             # Sort box indices by descending score
-            sort[_greater_than](box_idxs)
+            sort(box_idxs, _greater_than)
 
             # Iteratively select boxes and suppress overlapping ones
             var pred_idx = 0
@@ -374,15 +375,16 @@ def non_max_suppression[
                 var box_idxs_ptr: UnsafePointer[
                     box_idxs.T, origin_of(box_idxs)
                 ] = box_idxs.unsafe_ptr()
-                sort[_greater_than](
+                sort(
                     Span[box_idxs.T, origin_of(box_idxs)](
                         unsafe_ptr=box_idxs_ptr + pred_idx,
                         length=num_boxes_curr_pred,
-                    )
+                    ),
+                    _greater_than,
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (

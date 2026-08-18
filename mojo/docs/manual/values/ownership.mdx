@@ -13,11 +13,11 @@ error, or a "leaked memory" error, any one of which can be catastrophic.
 
 Mojo helps avoid these errors by ensuring there is only one variable that owns
 each value at a time, while still allowing you to share references with other
-functions. When the life span of the owner ends, Mojo [destroys the
-value](/docs/manual/lifecycle/death). Programmers are still responsible for
-making sure any type that allocates resources (including memory) also
-deallocates those resources in its destructor. Mojo's ownership system ensures
-that destructors are called promptly.
+functions. When the life span of the owner ends, Mojo
+[destroys the value](/docs/manual/lifecycle/death). Programmers are still
+responsible for making sure any type that allocates resources (including memory)
+also deallocates those resources in its deinitializer. Mojo's ownership system
+ensures that deinitializers are called promptly.
 
 On this page, we'll explain the rules that govern this ownership model, and how
 to specify different argument conventions that define how values are passed into
@@ -89,13 +89,13 @@ keyword at the beginning of an argument declaration:
   [Lifetimes, origins, and references](/docs/manual/values/lifetimes/).
 
 - `out`: A special convention used for the `self` argument in
-  [constructors](/docs/manual/lifecycle/life/#constructor) and for
+  [initializers](/docs/manual/lifecycle/life/#constructor) and for
   [named results](/docs/manual/functions/#named-results). An `out`
   argument is uninitialized at the beginning of the function, and must be
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
 
-- `deinit`: A special convention used in the destructor and consuming-move
+- `deinit`: A special convention used in the deinitializer and consuming-move
   lifecycle methods. A `deinit` argument is initialized at the beginning of the
   function, and uninitialized when the function returns.
 
@@ -143,8 +143,8 @@ mutate it. `list` is a reference to `values` in the `main()` function, not a
 copy.
 
 In general, passing an immutable reference is much more efficient
-when handling large or expensive-to-copy values, because the copy constructor
-and destructor aren't invoked for a default (immutable reference) argument.
+when handling large or expensive-to-copy values, because the copy initializer
+and deinitializer aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
@@ -394,7 +394,7 @@ operation"—these aren't strictly the same thing.
 There are multiple ways that Mojo transfers ownership of a value:
 
 - If a type implements the [move
-  constructor](/docs/manual/lifecycle/life#move-constructor),
+  initializer](/docs/manual/lifecycle/life#move-constructor),
   `__init__(take=)`, Mojo may invoke this method *if* a value of that type is
   transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
@@ -403,7 +403,7 @@ There are multiple ways that Mojo transfers ownership of a value:
 - In some cases, Mojo optimizes away the move operation entirely, leaving the
   value in the same memory location but updating its ownership. In these cases,
   a value transfers without invoking either the copy or move
-  constructors.
+  initializers.
 
 In order for the `var` convention to work *without* the transfer sigil, the
 value type must be copyable (via `__init__(out self, *, copy: Self)`).

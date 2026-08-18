@@ -6,7 +6,7 @@ description: Implement OpenAI-compatible function calling and tool use for agent
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 import InstallOpenAI from '../_includes/install-openai.mdx';
 
 Function calling is a feature available with some large language models (LLMs)
@@ -53,7 +53,7 @@ The `tools` parameter provides information that allows the LLM to understand:
 - How to call each function (the arguments it accepts/requires)
 
 For example, here's a request with the [chat completions
-API](/rest-api/#POST/v1/chat/completions) that declares an available
+API](/rest-api/create-chat-completion/) that declares an available
 function named `get_weather()`:
 
 ```python
@@ -237,7 +237,7 @@ locally-hosted endpoint:
 
 1. Create a virtual environment and install the `max` CLI:
 
-    <InstallModular folder="function-calling" />
+    <InstallMAX folder="function-calling" />
 
 2. Start an endpoint with a model that supports function calling:
 

@@ -115,7 +115,7 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_prod[
@@ -165,7 +165,7 @@ def test_matmul_sm100_epilogue[
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor, a_tensor, b_tensor)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -216,7 +216,7 @@ def test_matmul_sm100_epilogue[
 
         var c_host_copy_lt = c_host_copy.to_layout_tensor()
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c_host_copy_lt)
         def test_lambda_add_coords_prod_local[

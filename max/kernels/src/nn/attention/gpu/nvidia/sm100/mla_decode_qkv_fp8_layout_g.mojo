@@ -36,18 +36,18 @@ from std.math.constants import log2e
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from std.gpu.sync import named_barrier
+from max.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -439,7 +439,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Scale-fold + mask. apply_mask sees a half_load-wide tile
             # (BN_QK/4 instead of Layout E's BN_QK/2).
             var s_row_val_vectorized = s_row.vectorize[2]()
-            comptime vs_count = (half_load + 2 - 1) // 2
+            comptime vs_count = ceildiv(half_load, 2)
             comptime for _vi in range(vs_count):
                 s_row_val_vectorized[_vi] = (
                     s_row_val_vectorized[_vi] * scale_log2e
@@ -788,7 +788,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var out_cons = DecodeOutConsumer[Self.output_type, Self.config](
             out_pipeline, out_smem
         )
-        elect_mask = elect()
+        var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
 
@@ -1082,8 +1082,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
             Self.config,
@@ -1202,7 +1202,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 return
 
         # SMEM allocation: Q FP8, KV stages, P stages, max/li, barriers.
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.fp8_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -1284,7 +1284,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         #   CORR_LI     = 449
         var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
 
         # Init: warp 8 inits barriers, warp 9 allocates TMEM.
         if warp_idx == 8:
@@ -1436,7 +1436,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         if offset_position.num_keys_this_split == 0:
             return
 
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         # Sliding-window early exit + leading-tile skip.
         comptime _sliding_window_mask: Bool = (
@@ -1559,7 +1561,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
 
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         if num_k_tiles == 0:
             return
@@ -1592,7 +1596,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -1638,7 +1642,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         if num_k_tiles == 0:
             return

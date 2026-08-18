@@ -19,12 +19,13 @@ from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of
 
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id, warp_id as get_warp_id
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TensorLayout, TileTensor, coord, row_major
@@ -42,6 +43,8 @@ from std.logger import Logger
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
+
+from internal_utils.fp8_utils import cast_saturating
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
@@ -139,7 +142,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
 
-    a_smem = external_memory[
+    var a_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -207,8 +210,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime a_scales_expected_bytes = a_scales_size * size_of[a_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -229,7 +232,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     # wait for tensor memory to be allocated
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -395,7 +398,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     warp_id = get_warp_id()
 
-    ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
+    var ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         Coord(block_idx.y, block_idx.x)
     )
     comptime c_coord_type = type_of(ctile_coords)
@@ -404,21 +407,25 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
+            var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
                     Coord(4 * m_mma + warp_id, n_mma)
                 )
             )
-            c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
+            var c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
                 _c_gmem_warp_tile_coords
             )
 
-            c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
-                1, 2
-            ]().distribute_with_offset[row_major[8, 4]()](lane_id())
-            new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
+            var c_gmem_frag, _c_gmem_frag_coords, _ = (
+                c_gmem_warp_tile.vectorize[1, 2]().distribute_with_offset[
+                    row_major[8, 4]()
+                ](lane_id())
+            )
+            var new_c_gmem_frag_coords = rebind[c_coord_type](
+                _c_gmem_frag_coords
+            )
             new_c_gmem_frag_coords[1] *= 2
-            c_gmem_frag_coords = (
+            var c_gmem_frag_coords = (
                 c_gmem_warp_tile_coords + new_c_gmem_frag_coords
             )
 
@@ -440,10 +447,15 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
                     if m < UInt32(M) and n < UInt32(N):
-                        var c_mn = SIMD[accum_type, 2](
-                            c_frag[2 * i_vec],
-                            c_frag[2 * i_vec + 1],
-                        ).cast[c_type]()
+                        # Saturating: a plain cast of an out-of-range f32 to
+                        # FP8 yields NaN on NVIDIA (the `cvt` is not
+                        # `satfinite`). No-op for non-FP8 `c_type`.
+                        var c_mn = cast_saturating[c_type](
+                            SIMD[accum_type, 2](
+                                c_frag[2 * i_vec],
+                                c_frag[2 * i_vec + 1],
+                            )
+                        )
 
                         comptime if elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()

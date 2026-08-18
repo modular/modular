@@ -24,6 +24,7 @@ load("//bazel/internal:modular_versioned_expand_template.bzl", _modular_versione
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_overlay_layer.bzl", _mojo_overlay_layer = "mojo_overlay_layer")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_overlay_srcs.bzl", _mojo_overlay_srcs = "mojo_overlay_srcs")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_shared_library.bzl", _mojo_shared_library = "mojo_shared_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
@@ -44,7 +45,7 @@ modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
-mojo_binary = _mojo_binary
+mojo_overlay_layer = _mojo_overlay_layer
 mojo_overlay_srcs = _mojo_overlay_srcs
 mojo_test = _mojo_test
 mojo_filecheck_test = _mojo_filecheck_test
@@ -117,11 +118,28 @@ def _process_cc_deps(data, deps):
 def _process_mojo_deps(deps):
     # TODO: This will break in the presence of select()s
     new_deps = []
+    imports_max = False
+    needs_compiler_rt = False
     for dep in deps:
         if dep in INTERNAL_PACKAGES:
             new_deps.append("@modular_wheel//:" + dep.split("/")[-1])
+            imports_max = True
+        elif dep == "//MLRT:Driver/DeviceContext":
+            new_deps.append("@modular_wheel//:AsyncRTMojoBindings_lib")
+        elif dep == "//KGEN:CompilerRT":
+            needs_compiler_rt = True
         else:
             new_deps.append(dep)
+
+    if imports_max and "//max:max_mojo" not in new_deps:
+        new_deps.append("//max:max_mojo")
+
+    if needs_compiler_rt:
+        new_deps += select({
+            "//:use_prebuilt_mojo_toolchain_disabled": ["//KGEN:CompilerRT"],
+            "//conditions:default": ["@modular_wheel//:CompilerRT_lib"],
+        })
+
     return new_deps
 
 # Ignore internal_deps for public builds
@@ -201,6 +219,12 @@ def mojo_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
 # buildifier: disable=unused-variable
 def mojo_shared_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
     _mojo_shared_library(
+        deps = _process_mojo_deps(deps),
+        **kwargs
+    )
+
+def mojo_binary(deps = [], **kwargs):
+    _mojo_binary(
         deps = _process_mojo_deps(deps),
         **kwargs
     )

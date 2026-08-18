@@ -33,7 +33,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.sync import umma_arrive_leader_cta
+from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
@@ -114,9 +114,9 @@ def depth512_correction[
 
     var correction_smem = smem.correction_smem() + m_row
 
-    pipeline_c = mbars.consumer_c()
-    pipeline_o_lo = mbars.consumer_o_lo()
-    pipeline_o_hi = mbars.consumer_o_hi()
+    var pipeline_c = mbars.consumer_c()
+    var pipeline_o_lo = mbars.consumer_o_lo()
+    var pipeline_o_hi = mbars.consumer_o_hi()
 
     var iter_count: UInt32 = (
         mask.total_iters[PairBM_mask, BN, page_size](
@@ -137,7 +137,7 @@ def depth512_correction[
 
     # ---- Rescale helper (inlined for O_lo and O_hi) --------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
         """Double-buffered TMEM load/scale/store over o_cols columns."""
@@ -249,7 +249,7 @@ def depth512_correction[
         pipeline_c.wait()
         var c_scalar: Scalar[accum_type] = correction_smem[0]
 
-        change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+        var change = _vote_nvidia_helper(c_scalar < 1.0) != 0
 
         comptime if config.split_o:
             # Phase 1: rescale O_lo (all 128 threads, o_cols cols each).

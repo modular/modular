@@ -31,6 +31,7 @@ pycross_wheel_library(
     ],
     wheel = "@aiter_wheel//file",
     deps = [
+        requirement("packaging"),
         requirement("torch"),
     ],
 )
@@ -45,11 +46,9 @@ modular_py_library(
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",
     ],
-    # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
-    # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
-    # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
-    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl-libs-base@4.4.1/site-packages/nvidia_cutlass_dsl/python_packages"],
-    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer, see import above
+    # cutlass reaches sys.path through the :cutlass-imports dep below, whose
+    # `imports` propagates transitively via PyInfo.
+    tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer
     deps = [
         blackwell_bench_wheel("flash-attn"),
         blackwell_bench_wheel("flashinfer"),
@@ -238,17 +237,18 @@ modular_py_binary(
     ],
 )
 
-# AMD MXFP4 dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4 Triton kernel).
-# Run via: bazel run //max/kernels/benchmarks/misc/comparison:bench_amd_mxfp4_gemm
-# Or via kbench: kbench bench_amd_mxfp4_gemm.yaml
+# AMD MX block-scaled dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4
+# Triton kernel; MXFP4 only, see the file docstring).
+# Run via: bazel run //max/kernels/benchmarks/misc/comparison:bench_amd_mx_gemm
+# Or via kbench: kbench bench_amd_mx_gemm.yaml
 modular_py_binary(
-    name = "bench_amd_mxfp4_gemm",
-    srcs = ["bench_amd_mxfp4_gemm.py"],
+    name = "bench_amd_mx_gemm",
+    srcs = ["bench_amd_mx_gemm.py"],
     env = {
         "AITER_JIT_DIR": "$$BUILD_WORKSPACE_DIRECTORY/.derived/aiter_jit_cache",
         "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/rocm/bin",
     },
-    main = "bench_amd_mxfp4_gemm.py",
+    main = "bench_amd_mx_gemm.py",
     tags = [
         "gpu",
         "manual",

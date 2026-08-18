@@ -15,7 +15,7 @@
 from std.bit import log2_floor
 from std.collections import Optional, OptionalReg
 from std.gpu import block_dim, lane_id, thread_idx
-from std.gpu.memory import AddressSpace, CacheEviction, async_copy
+from max.gpu.memory import CacheEviction, async_copy
 from std.math.uutils import umod
 from std.os import abort
 from std.sys import align_of, size_of
@@ -751,14 +751,14 @@ struct GenericToSharedAsyncTileCopier[
                 type_of(src_fragments)
                 .Storage.unsafe_ptr(src_fragments._storage)
                 .address_space_cast[AddressSpace.GLOBAL]()
-                .mut_cast[False]()
+                .unsafe_mut_cast[False]()
                 .unsafe_origin_cast[ImmutAnyOrigin]()
                 .bitcast[Scalar[dtype]]()
             )
             dst_shared_ptr = (
                 type_of(dst_fragments)
                 .Storage.unsafe_ptr(dst_fragments._storage)
-                .mut_cast[True]()
+                .unsafe_mut_cast[True]()
                 .address_space_cast[AddressSpace.SHARED]()
                 .unsafe_origin_cast[MutAnyOrigin]()
                 .bitcast[Scalar[dtype]]()

@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import (
-    UnsafeMaybeUninit,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
-)
+from std.memory import MaybeUninit
 from std.os import abort
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 from std.sys import size_of
 
 from test_utils import (
@@ -63,13 +63,13 @@ struct Poison(ImplicitlyCopyable):
         pass
 
     def __init__(out self, *, copy: Self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
     def __init__(out self, *, deinit move: Self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
     def __deinit__(deinit self):
-        _poison_ptr().unsafe_write(True)
+        _poison_ptr().write(True)
 
 
 comptime TestVariant = Variant[MoveCopyCounter, Poison]
@@ -265,26 +265,26 @@ def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(is_trivially_deletable[Variant[yes]]())
-    assert_false(is_trivially_deletable[Variant[no]]())
-    assert_false(is_trivially_deletable[Variant[yes, no]]())
+    assert_true(IsTriviallyDeinitable[Variant[yes]])
+    assert_false(IsTriviallyDeinitable[Variant[no]])
+    assert_false(IsTriviallyDeinitable[Variant[yes, no]])
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(is_trivially_deletable[Variant[LinearType]]())
+    # assert_false(IsTriviallyDeinitable[Variant[LinearType]])
 
 
 def test_variant_trivial_copyinit() raises:
     comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
     comptime no = ConfigureTrivial[copyinit_is_trivial=False]
 
-    assert_true(is_trivially_copyable[Variant[yes]]())
-    assert_false(is_trivially_copyable[Variant[no]]())
-    assert_false(is_trivially_copyable[Variant[yes, no]]())
+    assert_true(IsTriviallyCopyable[Variant[yes]])
+    assert_false(IsTriviallyCopyable[Variant[no]])
+    assert_false(IsTriviallyCopyable[Variant[yes, no]])
 
     # check variant of move-only type. `Variant[MoveOnly[Int]]` does not
     # conform to `Copyable`, so we read the trivial-flag field directly
-    # rather than calling `is_trivially_copyable`, which constrains its
+    # rather than calling `IsTriviallyCopyable`, which constrains its
     # type parameter to `Copyable`.
     assert_false(Variant[MoveOnly[Int]].__copy_ctor_is_trivial)
 
@@ -293,13 +293,13 @@ def test_variant_trivial_moveinit() raises:
     comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
     comptime no = ConfigureTrivial[moveinit_is_trivial=False]
 
-    assert_true(is_trivially_movable[Variant[yes]]())
-    assert_false(is_trivially_movable[Variant[no]]())
-    assert_false(is_trivially_movable[Variant[yes, no]]())
+    assert_true(IsTriviallyMovable[Variant[yes]])
+    assert_false(IsTriviallyMovable[Variant[no]])
+    assert_false(IsTriviallyMovable[Variant[yes, no]])
 
     # check variant of non-movable type
     # # TODO(MOCO-3383): Compiler issue with folding non-struct types
-    # assert_false(is_trivially_movable[Variant[NonMovable]]())
+    # assert_false(IsTriviallyMovable[Variant[NonMovable]])
 
 
 def test_variant_write_to() raises:
@@ -429,7 +429,7 @@ def test_variant_hash() raises:
 
 @fieldwise_init
 struct _Bare(Movable):
-    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
+    """A `Movable & Deinitable` type that conforms to nothing
     else — used to exercise the negative case of `Variant`'s conditional
     conformances."""
 
@@ -486,7 +486,7 @@ def test_variant_conditional_conformances() raises:
     # Movable: non-Movable (pinned) alternative
     assert_false(conforms_to(Variant[_Pinned, Int], Movable))
 
-    # Movable: linear alternative (Movable, not ImplicitlyDeletable)
+    # Movable: linear alternative (Movable, not Deinitable)
     assert_true(conforms_to(Variant[ExplicitDelOnly, Int], Movable))
 
 

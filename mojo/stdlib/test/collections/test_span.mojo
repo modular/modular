@@ -131,7 +131,7 @@ def test_span_slice() raises:
     var s = Span(l)
     var res = s[1:2]
     assert_equal(res[0], 2)
-    res = s[1:-1]
+    res = s[1 : len(l) - 1]
     assert_equal(res[0], 2)
     assert_equal(res[1], 3)
     assert_equal(res[2], 4)
@@ -156,8 +156,8 @@ def test_bool() raises:
 
 
 def test_contains() raises:
-    items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    span = Span(items)
+    var items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    var span = Span(items)
     assert_true(0 not in span)
     assert_true(16 not in span)
     for item in items:
@@ -184,7 +184,7 @@ def test_equality() raises:
     # different pointer
     assert_true(sp == sp3)
     # different length
-    assert_true(sp != sp3[:-1])
+    assert_true(sp != sp3[0 : len(l2) - 1])
     # empty
     assert_true(sp[0:0] == sp3[0:0])
 
@@ -326,9 +326,9 @@ def test_reverse() raises:
             2,
             1,
         ]
-        s = Span(forward)
+        var s = Span(forward)
         s.reverse()
-        i = 0
+        var i = 0
         for num in s:
             assert_equal(num, backward[i])
             i += 1
@@ -347,16 +347,14 @@ def test_reverse() raises:
 
 
 def test_apply() raises:
-    @parameter
-    def _twice[D: DType, w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:
-        return x * 2
-
-    @parameter
-    def _where[D: DType, w: SIMDLength](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
-        return (x % 2).eq(0)
-
     def _test[D: DType]() raises:
-        items: List[Scalar[D]] = [
+        def _twice[w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:
+            return x * 2
+
+        def _where[w: SIMDLength](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+            return (x % 2).eq(0)
+
+        var items: List[Scalar[D]] = [
             1,
             2,
             3,
@@ -377,16 +375,16 @@ def test_apply() raises:
             18,
             19,
         ]
-        twice = items.copy()
-        span = Span(twice)
-        span.apply[func=_twice[D, ...]]()
+        var twice = items.copy()
+        var span = Span(twice)
+        span.apply(_twice)
         for i, item in enumerate(items):
             assert_true(span[i] == item * 2)
 
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
-        span.apply[func=_twice[D, ...], cond=_where[D, ...]]()
+        span.apply(_twice, cond=_where)
         for i, item in enumerate(items):
             if item % 2 == 0:
                 assert_true(span[i] == item * 2)
@@ -412,7 +410,7 @@ def test_count_func() raises:
 
     var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
     assert_equal(3, Int(data.count(is_2)))
-    assert_equal(2, Int(data[:-1].count(is_2)))
+    assert_equal(2, Int(data[0 : len(data) - 1].count(is_2)))
     assert_equal(1, Int(data[:3].count(is_2)))
 
 
@@ -622,7 +620,7 @@ def test_span_hashable() raises:
 
 
 @fieldwise_init
-struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
+struct HashableOnly(Deinitable, Hashable, Movable):
     var value: Int
 
     def __hash__(self, mut hasher: Some[Hasher]):
@@ -630,23 +628,23 @@ struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
 
 
 def test_span_hashable_non_copyable() raises:
-    var ptr = alloc[HashableOnly](2)
+    var allocation = alloc[HashableOnly]({count = 2}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(HashableOnly(1))
     ptr.unsafe_offset(1).unsafe_write(HashableOnly(2))
     var span = Span(unsafe_ptr=ptr, length=2)
     _ = hash(span)
     ptr.unsafe_offset(1).unsafe_deinit_pointee()
     ptr.unsafe_deinit_pointee()
-    ptr.unsafe_free()
 
 
 def test_span_with_move_only_type() raises:
-    var ptr = alloc[MoveOnly[Int]](1)
+    var allocation = alloc[MoveOnly[Int]]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(MoveOnly(42))
     var span = Span(unsafe_ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
     ptr.unsafe_deinit_pointee()
-    ptr.unsafe_free()
 
 
 struct NonMovable:
@@ -654,9 +652,9 @@ struct NonMovable:
 
 
 def test_span_with_non_movable_type() raises:
-    var ptr = alloc[NonMovable](1)
+    var allocation = alloc[NonMovable]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     var _span = Span(unsafe_ptr=ptr, length=0)
-    ptr.unsafe_free()
 
 
 def test_span_iter_owned() raises:

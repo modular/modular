@@ -21,7 +21,7 @@ print(CompilationTarget.is_x86())
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
@@ -128,7 +128,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             False otherwise.
         """
         return __mlir_attr[
-            `#kgen.param.expr<eq,`,
+            `#kgen.param.identical<`,
             Self.__arch(),
             `, `,
             _get_kgen_string[name](),
@@ -426,16 +426,19 @@ def _accelerator_arch() -> StaticString:
 
 @fieldwise_init
 struct Vendor(Equatable, TrivialRegisterPassable, Writable):
-    """Represents GPU and accelerator vendors.
+    """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
     methods for comparison and string representation.
 
-    The struct defines a constant for each vendor the stdlib knows about, a
-    `NO_GPU` option for systems without an accelerator, and a
-    `PLUGIN_ACCELERATOR` option for hardware contributed by a stdlib plugin. It
-    provides comparison operators and string conversion methods for vendor
-    identification.
+    The struct defines a constant for each vendor the stdlib knows about and a
+    `NO_GPU` option for systems without an accelerator. It provides comparison
+    operators and string conversion methods for vendor identification.
+
+    It classifies the accelerator the compiler is targeting, which is what
+    `has_amd_gpu_accelerator()`, `has_nvidia_gpu_accelerator()` and
+    `has_apple_gpu_accelerator()` report. To identify a specific device, use
+    `GPUInfo.api`.
     """
 
     var _value: Int8
@@ -452,21 +455,6 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
 
     comptime APPLE_GPU = Self(3)
     """Represents Apple GPU vendor."""
-
-    comptime PLUGIN_ACCELERATOR = Self(4)
-    """Represents an accelerator supplied by a stdlib plugin.
-
-    A plugin backend stamps this on the `GPUInfo` records it contributes;
-    keeping one value for every plugin lets a backend describe hardware the
-    stdlib has no built-in knowledge of. `_vendor_from_arch` never returns this
-    value: a plugin's accelerator arch string classifies as `Vendor.NO_GPU`, so
-    `GPUInfo.vendor` is the only place a plugin accelerator is identified as one.
-
-    Because every plugin shares the value, it says what kind of vendor a device
-    has and not which plugin supplied it. Code that dispatches on a specific
-    backend should compare `GPUInfo.api` for a device, or `stdlib_plugin()` for
-    the target being compiled for.
-    """
 
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are equal.
@@ -508,9 +496,6 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
             return
         if self == Vendor.NVIDIA_GPU:
             writer.write("nvidia_gpu")
-            return
-        if self == Vendor.PLUGIN_ACCELERATOR:
-            writer.write("plugin_accelerator")
             return
 
         # Unreachable. Can't use `os.abort` here (`std.os` imports `std.sys`,
@@ -578,7 +563,7 @@ def is_triple[
         True if the triple matches and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         _triple_attr[target](),
         `, `,
         name.value,
@@ -1081,7 +1066,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -1105,7 +1090,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -1443,8 +1428,8 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
-        "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
-        osver.unsafe_ptr(),
+        "kern.osproductversion".as_c_string_slice(),
+        osver.unsafe_as_bytes_mut().unsafe_ptr(),
         Pointer(to=buf_len),
         Optional[Pointer[NoneType, MutAnyOrigin]](),
         Int(0),

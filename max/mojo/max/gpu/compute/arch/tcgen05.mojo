@@ -18,11 +18,12 @@ from std.os import abort
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _has_blackwell_tcgen05
-from std.gpu import external_memory
-from max.gpu.compute.mma import _str_iota  # TODO: move to a string module
-from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 from std.gpu.intrinsics import _get_nvtx_register_constraint
 from std.memory import bitcast
+
+from max.gpu import external_memory
+from max.gpu.compute.mma import _str_iota  # TODO: move to a string module
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 
 
 @always_inline("nodebug")
@@ -221,7 +222,7 @@ def tcgen05_ld[
     ]() + "}"
     comptime addr_str = "[$" + String(width) + "]"
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable

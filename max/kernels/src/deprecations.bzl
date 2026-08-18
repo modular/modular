@@ -10,8 +10,7 @@ other deprecation warnings visible.
 
 IGNORED_POINTER_DEPRECATIONS = [
     "UnsafePointer",
-    "MutUnsafePointer",
-    "ImmUnsafePointer",
+    "alloc",
     "Pointer.__add__",
     "Pointer.__sub__",
     "Pointer.__iadd__",
@@ -19,14 +18,9 @@ IGNORED_POINTER_DEPRECATIONS = [
     "Pointer.__getitem__",
     "Pointer.load",
     "Pointer.store",
-    "Pointer.strided_load",
-    "Pointer.strided_store",
-    "Pointer.gather",
-    "Pointer.scatter",
     "Pointer.free",
     "Pointer.bitcast",
     "Pointer.address_space_cast",
-    "Pointer.take_pointee",
 ]
 
 IGNORED_POINTER_DEPRECATIONS_COPTS = [

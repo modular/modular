@@ -59,10 +59,11 @@ The NVFP4 per-tensor `weight_scale_2` scalar folds in OUTSIDE the kernel (a
 post-matmul multiply by the graph lowering), identically to the committed path.
 """
 
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
+from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from std.math import ceildiv
+from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
@@ -831,7 +832,7 @@ struct Matmul2dFp4[
         var is_m_edge = tg_m_end > M
 
         @always_inline
-        @parameter
+        @__parameter
         def _kloop[bounded: Bool]():
             var k0 = 0
             while k0 < K:
@@ -975,8 +976,8 @@ def enqueue_matmul2d_fp4[
     debug_assert(Int(packed.dim[1]()) == k // 2, "packed must be (N, K//2)")
     debug_assert(Int(scales.dim[0]()) == n, "scales must be (N, ceil(K/16))")
 
-    var grid_m = (m + MM.TG_M - 1) // MM.TG_M
-    var grid_n = (n + MM.TG_N - 1) // MM.TG_N
+    var grid_m = ceildiv(m, MM.TG_M)
+    var grid_n = ceildiv(n, MM.TG_N)
 
     comptime kernel = MM.run[
         type_of(c).LayoutType,
@@ -1098,8 +1099,8 @@ def enqueue_matmul2d_fp4_smem[
     debug_assert(Int(packed.dim[1]()) == k // 2, "packed must be (N, K//2)")
     debug_assert(Int(scales.dim[0]()) == n, "scales must be (N, ceil(K/16))")
 
-    var grid_m = (m + MM.TG_M - 1) // MM.TG_M
-    var grid_n = (n + MM.TG_N - 1) // MM.TG_N
+    var grid_m = ceildiv(m, MM.TG_M)
+    var grid_n = ceildiv(n, MM.TG_N)
 
     comptime kernel = MM.run_smem_decode[
         type_of(c).LayoutType,

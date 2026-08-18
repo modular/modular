@@ -25,7 +25,8 @@ inserted by the NanCheckPass compiler pass. The architecture is:
 """
 
 from max.algorithm import elementwise
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from std.memory import alloc, dealloc, unsafe_stack_allocation
@@ -144,7 +145,7 @@ def nan_check_count[
         var out_nan_ptr = nan_count_out.unsafe_ptr()
         var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-        @parameter
+        @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
@@ -156,6 +157,10 @@ def nan_check_count[
         gpu_ctx.enqueue_function[zero_counts](
             out_nan_ptr, out_inf_ptr, grid_dim=1, block_dim=1
         )
+
+        # `ceildiv(0, BLOCK) == 0`, and a zero-sized grid launch is rejected.
+        if total == 0:
+            return
 
         comptime BLOCK = 256
         var grid = ceildiv(total, BLOCK)

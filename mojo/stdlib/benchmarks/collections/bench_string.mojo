@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 from std.collections.string._utf8 import _is_valid_utf8
-from std.collections.string.string_slice import _split
+from std.collections.string.string_span import _split
 from std.os import abort
 from std.pathlib import _dir_of_current_file
 from std.random import seed
@@ -39,15 +39,19 @@ def make_string[
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length > 0:
             var items = f.read_bytes(length)
-            i = 0
+            var i = 0
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
+            # `length` can truncate mid-codepoint; drop trailing bytes until
+            # the buffer ends on a valid UTF-8 boundary again.
+            while len(items) > 0 and not _is_valid_utf8(Span(items)):
+                _ = items.pop()
             return String(unsafe_from_utf8=items)
         else:
             return String(unsafe_from_utf8=f.read_bytes())
@@ -59,7 +63,7 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_init(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -73,7 +77,7 @@ def bench_string_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_count[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -92,7 +96,7 @@ def bench_string_count[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_split[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -120,8 +124,9 @@ def bench_string_split[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string join
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_join[short: Bool](mut b: Bencher) raises:
+    var count: Int
     comptime if short:
         count = 100
     else:
@@ -145,7 +150,7 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_splitlines[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -163,7 +168,7 @@ def bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string lower
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_lower[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -180,7 +185,7 @@ def bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string upper
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_upper[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -197,7 +202,7 @@ def bench_string_upper[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string replace
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_replace[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -217,7 +222,7 @@ def bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count_codepoints
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -234,7 +239,7 @@ def bench_string_count_codepoints[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find single
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_find_single[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -255,7 +260,7 @@ def bench_string_find_single[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find multiple
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_find_multiple[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -275,7 +280,7 @@ def bench_string_find_multiple[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_is_valid_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -292,7 +297,7 @@ def bench_string_is_valid_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark write_utf8
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_write_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -320,7 +325,7 @@ def bench_write_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string write
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items = make_string[1000]("UN_charter_EN.txt")
     # workaround for "allows writing to mem location ..."
@@ -367,7 +372,7 @@ struct NullWriter(ImplicitlyCopyable, Writer):
         keep(string)
 
 
-@parameter
+@__parameter
 def bench_string_repr[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher):
@@ -435,12 +440,12 @@ def main() raises:
     )
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
-            comptime old = StaticString(old_chars[j])
-            comptime new = new_chars[j]
+            comptime fname = rebind[StaticString](filenames[j])
+            comptime old = rebind[StaticString](old_chars[j])
+            comptime new = rebind[StaticString](new_chars[j])
             comptime suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId(String("bench_string_count", suffix))

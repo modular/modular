@@ -81,9 +81,9 @@ def forward_sequential_layers(
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
     subgraph_layer_groups: list[list[int]] | None = None,
-    name_for_subgraph: Callable[
-        [int], str
-    ] = lambda i: f"transformer_block_{i}",
+    name_for_subgraph: Callable[[int], str] = lambda i: (
+        f"transformer_block_{i}"
+    ),
     weight_prefix_for_layer: Callable[[int], str] | None = None,
 ) -> list[TensorValue]:
     """Forward pass through sequential layers with optional subgraph groups.

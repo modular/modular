@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``FunctionHandle``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
 from _hal.context import (
@@ -24,7 +24,7 @@ from _hal.plugin import FunctionHandle
 
 
 @fieldwise_init
-struct Function(ImplicitlyDeletable, Movable, Writable):
+struct Function(Deinitable, Movable, Writable):
     """Python projection of HAL ``FunctionHandle``."""
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.
@@ -46,7 +46,7 @@ struct Function(ImplicitlyDeletable, Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

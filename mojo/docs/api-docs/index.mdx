@@ -62,18 +62,18 @@ They describe the contract between caller and callee.
 They indicate both ownership (`var`, `ref`, unmarked) and what the function
 may do with an argument (`mut`, `out`, `deinit`):
 
-<!-- markdownlint-disable MD013 -->
+{/* markdownlint-disable MD013 */}
 
 | Convention   | What it means                                                                                            | Example                                                    |
 |--------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| *(unmarked)* | A reference to an existing value with read-only access.                                                  | `def abs[T: Absable](value: T) -> T`                       |
+| *(unmarked)* | A reference to an existing value with read-only `imm` access.                                            | `def abs[T: Absable](value: T) -> T`                       |
 | `mut`        | A reference to an existing value. The function can modify the value if it is mutable.                    | `def append(mut self, codepoint: Codepoint)`               |
 | `ref`        | A reference to an existing value. The function inherits the value's mutability.                          | `def __getitem__(ref self, idx: Int)`                      |
 | `var`        | The function owns its own value. The caller keeps the original unless ownership is transferred.          | `def insert(mut self, var key: Self.K, var value: Self.V)` |
 | `out`        | An uninitialized slot that the function must initialize before it returns. Used for type initialization. | `def __init__(out self, *, capacity: Int)`                 |
-| `deinit`     | The function takes ownership and destroys the value.                                                     | `def __del__(deinit self)`                                 |
+| `deinit`     | The function takes ownership and destroys the value.                                                     | `def __deinit__(deinit self)`                              |
 
-<!-- markdownlint-enable MD013 -->
+{/* markdownlint-enable MD013 */}
 
 ## What are those symbols in parameter and argument lists?
 

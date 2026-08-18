@@ -260,7 +260,7 @@ struct _Accumulator[
         comptime assert is_load or origin.mut, "ahhh"
         comptime column_step = min(column_count, Self.simd_width)
 
-        @parameter
+        @__parameter
         @always_inline
         def body(row: Int, col: Int):
             comptime if is_load:
@@ -443,7 +443,7 @@ struct _Accumulator[
             partial_load: Whether load input partially.
 
         Args:
-            input: UnsafePointer to input buffer.
+            input: Pointer to input buffer.
             input_stride: Stride between input segments of size `num_cols * simd_width`.
             partial_load_size: Size of partial load for input.
         """
@@ -479,7 +479,7 @@ struct _Accumulator[
             partial_store: Whether store output partially.
 
         Args:
-            output: UnsafePointer to output buffer.
+            output: Pointer to output buffer.
             output_stride: Stride between output segments of size `num_cols * simd_width`.
             partial_store_size: Size of partial store to the output.
         """
@@ -857,7 +857,7 @@ struct _Accumulator[
         """Accumulation optimized for NEON."""
         comptime assert CompilationTarget.has_neon()
 
-        @parameter
+        @__parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
@@ -916,7 +916,7 @@ struct _Accumulator[
             a_base_offsets.flat_rank == 1
         ), "a_base_offsets must be rank 1"
 
-        @parameter
+        @__parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](

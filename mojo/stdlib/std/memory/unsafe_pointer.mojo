@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines `UnsafePointer` and related aliases as backward-compatible names
-for `Pointer`.
+"""Defines `UnsafePointer` as a backward-compatible name for `Pointer`.
 
 `UnsafePointer` is a `comptime` alias for `Pointer`, kept for code written
 before the two pointer types were unified. Prefer `Pointer` directly in new
@@ -20,7 +19,8 @@ method surface.
 """
 
 from std.collections import OptionalReg
-from std.memory.pointer import AddressSpace, OptionalPointer, Pointer
+from std.memory.address_space import AddressSpace
+from std.memory.pointer import OptionalPointer, Pointer
 
 # ===----------------------------------------------------------------------=== #
 # unsafe_cast
@@ -82,104 +82,11 @@ def pointer_to_int(pointer: OptionalPointer[...]) -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
-# UnsafePointer aliases
+# UnsafePointer alias
 # ===----------------------------------------------------------------------=== #
 
 
-comptime MutUnsafePointer[
-    T: AnyType,
-    origin: MutOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[mut=True, T, origin, address_space=address_space]
-"""A mutable unsafe pointer.
-
-Parameters:
-    T: The pointee type.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-comptime ImmUnsafePointer[
-    T: AnyType,
-    origin: ImmOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[T, origin, address_space=address_space]
-"""An immutable unsafe pointer.
-
-Parameters:
-    T: The pointee type.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-
-@doc_hidden
-@deprecated(use=ImmUnsafePointer)
-comptime ImmutUnsafePointer = ImmUnsafePointer
-
-comptime OpaquePointer[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[NoneType, origin, address_space=address_space]
-"""An opaque pointer, equivalent to the C `(const) void*` type.
-
-Parameters:
-    mut: Whether the pointer is mutable.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-comptime MutOpaquePointer[
-    origin: MutOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointer[origin, address_space=address_space]
-"""A mutable opaque pointer, equivalent to the C `void*` type.
-
-Parameters:
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-comptime ImmOpaquePointer[
-    origin: ImmOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointer[origin, address_space=address_space]
-"""An immutable opaque pointer, equivalent to the C `const void*` type.
-
-Parameters:
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-
-@doc_hidden
-@deprecated(use=ImmOpaquePointer)
-comptime ImmutOpaquePointer = ImmOpaquePointer
-
-comptime OptionalUnsafePointer[
-    mut: Bool,
-    //,
-    T: AnyType,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = Optional[Pointer[T, origin, address_space=address_space]]
-"""An optional (nullable) `UnsafePointer`.
-
-Parameters:
-    mut: The mutability of the pointer.
-    T: The type of the pointee.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
+@deprecated(use=Pointer)
 comptime UnsafePointer[
     mut: Bool,
     //,

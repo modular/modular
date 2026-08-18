@@ -205,6 +205,22 @@ class Dim:
         """Lists the symbolic dimension names on which this dim depends."""
         raise NotImplementedError
 
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Substituting static values folds the result through the compiler's
+        own attribute evaluation; substituting symbols renames. Unmapped
+        symbols are left intact.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            The dim with substitutions applied.
+        """
+        raise NotImplementedError
+
 
 @dataclass(frozen=True)
 class SymbolicDim(Dim):
@@ -299,6 +315,20 @@ class SymbolicDim(Dim):
         """Lists the symbolic dimension names on which this dim depends."""
         yield self
 
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            ``Dim(mapping[self.name])`` if ``self.name`` is in ``mapping``,
+            otherwise this dim unchanged.
+        """
+        replacement = mapping.get(self.name)
+        return self if replacement is None else Dim(replacement)
+
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
@@ -351,6 +381,34 @@ class AlgebraicDim(Dim):
             op, [Dim(operand).to_mlir() for operand in operands]
         )
         return Dim(attr)
+
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim with named symbols replaced per ``mapping``.
+
+        Substitutes into each operand, then reapplies the operator, so
+        substitution to static values folds through the compiler's own
+        attribute evaluation rather than being recomputed in Python.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value).
+
+        Returns:
+            The dim with substitutions applied, re-folded by the compiler.
+
+        Raises:
+            ZeroDivisionError: If substitution produces a zero divisor.
+        """
+        operands = [
+            Dim(operand).substitute(mapping) for operand in self.attr.operands
+        ]
+        # __floordiv__'s zero guard does not run here, and the compiler
+        # neither folds nor rejects a literal zero divisor.
+        if self.attr.opcode == kgen.POC.div and operands[1] == 0:
+            raise ZeroDivisionError(
+                f"substituting into {self} produced a zero divisor"
+            )
+        return AlgebraicDim.apply(self.attr.opcode, *operands)
 
     def __format__(self, format_spec: str) -> str:
         formatters: Mapping[str, Callable[[Any], str]] = {
@@ -459,6 +517,18 @@ class StaticDim(Dim):
         super().__setattr__("dim", dim)
         if not -(2**63) <= self.dim < 2**63:
             raise ValueError("Dim value must be -2**63 <= dim < 2**63")
+
+    def substitute(self, mapping: Mapping[str, DimLike]) -> Dim:
+        """Returns this dim unchanged: a static dim has no symbols.
+
+        Args:
+            mapping: A mapping from symbolic dimension name to the
+                replacement dim (or dim-like value). Ignored.
+
+        Returns:
+            This dim, unchanged.
+        """
+        return self
 
     def __str__(self) -> str:
         return str(self.dim)

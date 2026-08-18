@@ -19,15 +19,16 @@ from std.ffi import external_call
 from std.sys import stderr
 from std.sys.defines import get_defined_int, is_defined
 
-import std.gpu.host._tracing as gpu_tracing
 import std.logger.logger as logger
+
+import max.gpu.host._tracing as gpu_tracing
 from max.gpu.host import DeviceContext
-from std.gpu.host._tracing import Color
-from std.gpu.host._tracing import _end_range as _end_gpu_range
-from std.gpu.host._tracing import _is_enabled as _gpu_is_enabled
-from std.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
-from std.gpu.host._tracing import _mark as _mark_gpu
-from std.gpu.host._tracing import _start_range as _start_gpu_range
+from max.gpu.host._tracing import Color
+from max.gpu.host._tracing import _end_range as _end_gpu_range
+from max.gpu.host._tracing import _is_enabled as _gpu_is_enabled
+from max.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
+from max.gpu.host._tracing import _mark as _mark_gpu
+from max.gpu.host._tracing import _start_range as _start_gpu_range
 
 from std.utils import IndexList, Variant
 from std.os import abort
@@ -303,12 +304,11 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
         A list of strings naming the tracing systems that are enabled.
         Possible values: "AsyncRT", "GPU", "Tracy", "Op Logging".
     """
-    enabled_systems = List[String]()
+    var enabled_systems = List[String]()
 
     # Check AsyncRT profiling
-    if (asyncrt_level := _build_info_asyncrt_max_profiling_level()) and (
-        asyncrt_level.value() > 0
-    ):
+    var asyncrt_level = _build_info_asyncrt_max_profiling_level()
+    if asyncrt_level and asyncrt_level.value() > 0:
         enabled_systems.append("AsyncRT")
 
     # Check GPU profiling
@@ -438,7 +438,7 @@ struct Trace[
         ), "the AsyncRT profiler only supports `StaticString` names"
 
         # Validate that only one tracing system is enabled
-        enabled_systems = _get_enabled_tracing_systems[Self.level]()
+        var enabled_systems = _get_enabled_tracing_systems[Self.level]()
         debug_assert(
             len(enabled_systems) <= 1,
             "only one tracing system should be enabled at a time, got: ",
@@ -576,11 +576,15 @@ struct Trace[
 
         # Start a Tracy zone if the bridge is available.
         if _is_tracy_enabled():
-            name_str = self.name()
-            color_val = UInt32(Int(self.color.value())) if self.color else 0
+            var name_str = self.name()
+            var color_val = UInt32(Int(self.color.value())) if self.color else 0
             self._tracy_ctx = external_call[
                 "KGEN_CompilerRT_TracyZoneBegin", UInt64
-            ](name_str.unsafe_ptr(), name_str.byte_length(), color_val)
+            ](
+                name_str.as_bytes().unsafe_ptr(),
+                name_str.byte_length(),
+                color_val,
+            )
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -617,7 +621,9 @@ struct Trace[
         # IMPORTANT: since the AsyncRT profiler only supports `StaticString`
         # names, `self._name_value` must be `StaticString` when
         # `is_profiling_enabled()` is set.
-        var name_str_ptr = self._name_value[StaticString].unsafe_ptr()
+        var name_str_ptr = (
+            self._name_value[StaticString].as_bytes().unsafe_ptr()
+        )
         var name_str_len = self._name_value[StaticString].byte_length()
 
         if self.detail:
@@ -632,7 +638,7 @@ struct Trace[
             ](
                 name_str_ptr,
                 name_str_len,
-                self.detail.unsafe_ptr(),
+                self.detail.as_bytes().unsafe_ptr(),
                 self.detail.byte_length(),
                 self.parent_id,
             )

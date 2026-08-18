@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
 from layout import (
     All,

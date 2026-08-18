@@ -17,12 +17,12 @@ from std.random import rand
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
@@ -372,7 +372,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,

@@ -46,10 +46,10 @@ def bool_overload(x: Int):
 
 
 def closure_overload(x: Int):
-    def cond() capturing -> Bool:
+    def cond() {x} -> Bool:
         return x == 0
 
-    debug_assert[cond]()
+    debug_assert(cond)
 
 
 def main():

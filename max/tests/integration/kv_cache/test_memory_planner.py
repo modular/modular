@@ -13,6 +13,8 @@
 
 """Unit tests for MemoryPlanner and PagedMemoryPlanner."""
 
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,6 +31,15 @@ from max.pipelines.kv_cache import (
     ModelConfigWithKVCache,
     PagedMemoryPlanner,
 )
+from max.pipelines.lib.memory_estimation import MemoryEstimator
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.lib.vision_encoder_cache import VisionCachePlan
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.config.model_config import MAXModelConfig
+    from max.pipelines.lib.interfaces import ArchConfig
+    from max.pipelines.lib.registry import SupportedArchitecture
 
 # ---------------------------------------------------------------------------
 # Minimal protocol conformers
@@ -110,6 +121,12 @@ def test_paged_planner_estimate_activation_memory_zero_by_default() -> None:
     assert planner.estimate_activation_memory(MagicMock(), MagicMock()) == 0
 
 
+def test_paged_planner_infer_max_batch_size_none_by_default() -> None:
+    """Default infer_max_batch_size defers to the framework inference."""
+    planner = PagedMemoryPlanner(_KVConfig())
+    assert planner.infer_max_batch_size(MagicMock(), [], 0) is None
+
+
 def test_with_activation_reservation_returns_correct_bytes() -> None:
     """with_activation_reservation should return the configured value."""
     reservation = 15 * 1024**3
@@ -119,3 +136,173 @@ def test_with_activation_reservation_returns_correct_bytes() -> None:
         planner.estimate_activation_memory(MagicMock(), MagicMock())
         == reservation
     )
+
+
+def test_paged_planner_vision_cache_row_spec_none() -> None:
+    """Default hook means no vision cache (text-only architectures)."""
+    planner = PagedMemoryPlanner(_KVConfig())
+    assert planner.get_vision_cache_row_spec(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Block-mode vision cache reservation
+# ---------------------------------------------------------------------------
+
+
+def _block_reserve(
+    utilization: float,
+    row_bytes: int,
+    available_memory: int,
+    n_devices: int = 1,
+) -> tuple[int, VisionCachePlan, "PipelineRuntimeConfig"]:
+    """Run _reserve_vision_cache_blocks against a real runtime config."""
+    runtime = PipelineRuntimeConfig(
+        experimental_vision_cache_utilization=utilization
+    )
+    pipeline_config = SimpleNamespace(runtime=runtime)
+    total, plan = MemoryEstimator._reserve_vision_cache_blocks(
+        cast("PipelineConfig", pipeline_config),
+        (row_bytes, DType.uint8),
+        available_memory,
+        n_devices,
+    )
+    return total, plan, runtime
+
+
+def test_reserve_vision_cache_blocks_rounds_to_whole_blocks() -> None:
+    available = 1024**3
+    total, plan, runtime = _block_reserve(
+        utilization=0.001,
+        row_bytes=10,
+        available_memory=available,
+    )
+    block_bytes = 128 * 10
+    assert total == (int(available * 0.001) // block_bytes) * block_bytes
+    assert 0 < total <= available * 0.001
+    assert plan.bytes_per_device == total
+    assert (plan.hidden_size, plan.dtype) == (10, DType.uint8)
+    # Block mode leaves the legacy entry knob untouched.
+    assert runtime.max_vision_cache_entries == 256
+
+
+def test_reserve_vision_cache_blocks_scales_with_pool() -> None:
+    small, _, runtime_small = _block_reserve(
+        utilization=0.5,
+        row_bytes=8,
+        available_memory=10 * 1024**2,
+    )
+    large, _, runtime_large = _block_reserve(
+        utilization=0.5,
+        row_bytes=8,
+        available_memory=20 * 1024**2,
+    )
+    assert 0 < small <= 5 * 1024**2
+    assert small < large <= 10 * 1024**2
+    assert runtime_small.max_vision_cache_entries == 256
+    assert runtime_large.max_vision_cache_entries == 256
+
+
+def test_reserve_vision_cache_blocks_raises_when_no_block_fits() -> None:
+    with pytest.raises(ValueError, match="too small to fit one"):
+        _block_reserve(
+            utilization=0.001,
+            row_bytes=1024**2,
+            available_memory=10 * 1024**2,
+        )
+
+
+def test_reserve_vision_cache_blocks_splits_budget_across_devices() -> None:
+    available = 1024**3
+    total, plan, _ = _block_reserve(
+        utilization=0.001,
+        row_bytes=10,
+        available_memory=available,
+        n_devices=2,
+    )
+    block_bytes = 128 * 10 * 2
+    assert total == (int(available * 0.001) // block_bytes) * block_bytes
+    assert plan.bytes_per_device == total // 2
+
+
+# ---------------------------------------------------------------------------
+# Entry-count vision cache reservation
+# ---------------------------------------------------------------------------
+
+
+def _entry_reserve(
+    max_entries: int,
+    per_entry_bytes: int,
+    available_memory: int,
+    n_devices: int = 1,
+    row_spec: tuple[int, DType] | None = None,
+    utilization: float = 0.0,
+) -> tuple[int, VisionCachePlan | None, "PipelineRuntimeConfig"]:
+    """Run _reserve_vision_cache_memory against a real runtime config."""
+    runtime = PipelineRuntimeConfig(
+        max_vision_cache_entries=max_entries,
+        experimental_vision_cache_utilization=utilization,
+    )
+    pipeline_config = SimpleNamespace(runtime=runtime)
+    planner = MagicMock()
+    planner.estimate_vision_cache_entry_bytes.return_value = per_entry_bytes
+    planner.get_vision_cache_row_spec.return_value = row_spec
+    arch = SimpleNamespace(memory_planner=MagicMock(return_value=planner))
+    total, plan = MemoryEstimator._reserve_vision_cache_memory(
+        cast("PipelineConfig", pipeline_config),
+        cast("MAXModelConfig", SimpleNamespace(huggingface_config=None)),
+        available_memory,
+        [cast(Device, MagicMock())] * n_devices,
+        cast("ArchConfig", MagicMock()),
+        arch=cast("SupportedArchitecture", arch),
+    )
+    return total, plan, runtime
+
+
+def test_reserve_vision_cache_entries_full_request_fits() -> None:
+    total, plan, runtime = _entry_reserve(
+        max_entries=4,
+        per_entry_bytes=1024,
+        available_memory=1024**3,
+    )
+    assert total == 4 * 1024
+    assert plan is None
+    assert runtime.max_vision_cache_entries == 4
+
+
+def test_reserve_vision_cache_entries_reduced_to_budget() -> None:
+    # 20% of a 100 MiB pool fits only 20 of the 256 requested 1 MiB entries.
+    per_entry = 1024**2
+    total, plan, runtime = _entry_reserve(
+        max_entries=256,
+        per_entry_bytes=per_entry,
+        available_memory=100 * 1024**2,
+    )
+    assert total == 20 * per_entry
+    assert plan is None
+    assert runtime.max_vision_cache_entries == 20
+
+
+def test_reserve_vision_cache_entries_disabled_when_pool_too_small() -> None:
+    per_entry = 1024**2
+    total, plan, runtime = _entry_reserve(
+        max_entries=8,
+        per_entry_bytes=per_entry,
+        available_memory=per_entry,
+    )
+    assert total == 0
+    assert plan is None
+    assert runtime.max_vision_cache_entries == 0
+
+
+def test_reserve_vision_cache_memory_block_mode_returns_plan() -> None:
+    total, plan, runtime = _entry_reserve(
+        max_entries=256,
+        per_entry_bytes=1024,
+        available_memory=1024**3,
+        row_spec=(10, DType.uint8),
+        utilization=0.001,
+    )
+    assert plan is not None
+    assert plan.bytes_per_device == total
+    assert (plan.hidden_size, plan.dtype) == (10, DType.uint8)
+    assert runtime.max_vision_cache_entries == 256

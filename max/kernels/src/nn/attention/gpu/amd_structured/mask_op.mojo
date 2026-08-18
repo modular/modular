@@ -93,8 +93,9 @@ struct MaskTileOp[
         num_heads_per_token: Token-fold geometry; H heads per token mapping a
             folded row to its token and head, where token = row // H and
             head = row % H (defaults to `group`).
-        valid_rows: Number of live query rows M = H * S across all heads and
-            sequence positions (defaults to `group`).
+        valid_rows: Query rows the TILE spans, M = H * S across all heads and
+            sequence positions (defaults to `group`). On a padded fold tile
+            this exceeds the live rows, which are the runtime `H * seq_len`.
         head_base_stride: Query heads spanned by one `grid_y` step, used to base
             a folded row's head index (defaults to 0).
         fold_mode: Whether the token fold applies, for AMD decode only; when
@@ -180,8 +181,8 @@ struct MaskTileOp[
         # `seq_len` is its runtime query length, so the live-row count is
         # `H * seq_len`. The `fold_seq_len > 1` dead-row guards and causal
         # `score_row` use these runtime values; `fold_seq_len == 1` keeps the
-        # comptime path. Uniform batch: `valid_rows_rt == valid_rows`,
-        # `seq_len == fold_seq_len`.
+        # comptime path. The two counts coincide only on a uniform batch whose
+        # tile is UNPADDED, so never substitute one for the other.
         var valid_rows_rt = UInt32(Self.num_heads_per_token) * seq_len
 
         # Decode: skip dead query rows. At num_warps_m == 1 the absolute row ==
@@ -246,10 +247,11 @@ struct MaskTileOp[
                         var _token = mask_frag_row // UInt32(
                             Self.num_heads_per_token
                         )
-                        # Use the runtime query length `seq_len` (not comptime
-                        # `fold_seq_len`): num_keys - seq_len + token ==
-                        # cache_len + token. Byte-equivalent for a uniform batch
-                        # (seq_len == fold_seq_len).
+                        # Runtime `seq_len`, not comptime `fold_seq_len`:
+                        # `num_keys - seq_len + token == cache_len + token`.
+                        # Load-bearing — a padded tile carries more slots than
+                        # tokens, so the constant would walk every causal
+                        # position back by the pad and over-mask newest keys.
                         score_row = num_keys - seq_len + _token
                 else:
                     score_row = mask_block_row + mask_frag_row

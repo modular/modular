@@ -48,7 +48,6 @@ from std.testing import assert_true
 
 
 @always_inline
-@parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
@@ -128,7 +127,7 @@ def bench_broadcast[
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
-        out_multicast_buf = DeviceMulticastBuffer[dtype](
+        var out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
         out_multicast_ptr = (
@@ -227,14 +226,13 @@ def bench_broadcast[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_immut()
@@ -257,9 +255,10 @@ def bench_broadcast[
                     ctx_inner,
                     root,
                     max_num_blocks,
+                    rank=ctx_idx,
                 )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,
@@ -322,6 +321,7 @@ def bench_broadcast[
                 list_of_ctx[i],
                 root,
                 max_num_blocks,
+                rank=i,
             )
 
     # Copy results back and verify - reuse host_buffer for each GPU

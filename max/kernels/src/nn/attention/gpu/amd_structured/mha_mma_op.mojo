@@ -965,7 +965,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                     @always_inline
-                    @parameter
+                    @__parameter
                     def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
                         # Comptime per-cell offset, derived from
                         # B = _row_offset + key_base (multiple of 16):
@@ -1684,7 +1684,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                 @always_inline
-                @parameter
+                @__parameter
                 def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
                     comptime _B = _row_offset + key_base
                     comptime _comptime_cell_offset = (
@@ -1785,7 +1785,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
         @always_inline
-        @parameter
+        @__parameter
         def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
             comptime _B = _row_offset + key_base
             # Reference FULL-v227 V adapter READ cell offset (the `R` of

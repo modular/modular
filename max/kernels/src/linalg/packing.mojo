@@ -21,6 +21,7 @@ from std.sys.intrinsics import PrefetchOptions
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
 from layout import Coord, Idx, TileTensor
+from layout.coord import DynamicCoord
 from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
@@ -86,14 +87,14 @@ struct PackMatrixRows[
         Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix
-    var global_offset: IndexList[2]
+    var global_offset: DynamicCoord[DType.int64, 2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: IndexList[2]
+    var pack_tile_dim: DynamicCoord[DType.int64, 2]
     # valid data bound within the tile.
-    var valid_data_dim: IndexList[2]
+    var valid_data_dim: DynamicCoord[DType.int64, 2]
     # valid multiple-of-simd data bound within the tile.
-    var valid_simd_dim: IndexList[2]
+    var valid_simd_dim: DynamicCoord[DType.int64, 2]
 
     # Interface method:
     #  run the packing and store to the given buffer.
@@ -125,24 +126,26 @@ struct PackMatrixRows[
         var instance = Self(
             packed_matrix,
             original_matrix,
-            global_offset,
-            pack_tile_dim,
-            valid_data_dim,
-            (
-                align_down(
-                    min(
-                        valid_data_dim[0],
-                        pack_tile_dim[0],
+            Coord(global_offset),
+            Coord(pack_tile_dim),
+            Coord(valid_data_dim),
+            Coord(
+                Index(
+                    align_down(
+                        min(
+                            valid_data_dim[0],
+                            pack_tile_dim[0],
+                        ),
+                        Self.simd_size,
                     ),
-                    Self.simd_size,
-                ),
-                align_down(
-                    min(
-                        valid_data_dim[1],
-                        pack_tile_dim[1],
+                    align_down(
+                        min(
+                            valid_data_dim[1],
+                            pack_tile_dim[1],
+                        ),
+                        Self.simd_size,
                     ),
-                    Self.simd_size,
-                ),
+                )
             ),
         )
 
@@ -171,12 +174,21 @@ struct PackMatrixRows[
         """
         # Calculate the remaining bound from the local offset.
         # Boundaries for readable data.
-        var read_bound = self.valid_data_dim - local_off_set
+        var read_bound = Index(
+            Int(self.valid_data_dim[0].value()) - local_off_set[0],
+            Int(self.valid_data_dim[1].value()) - local_off_set[1],
+        )
         # Boundaries for writeable space.
-        var write_bound = self.pack_tile_dim - local_off_set
+        var write_bound = Index(
+            Int(self.pack_tile_dim[0].value()) - local_off_set[0],
+            Int(self.pack_tile_dim[1].value()) - local_off_set[1],
+        )
 
         # Global index the packing is starting from.
-        var start_idx_global = local_off_set + self.global_offset
+        var start_idx_global = Index(
+            local_off_set[0] + Int(self.global_offset[0].value()),
+            local_off_set[1] + Int(self.global_offset[1].value()),
+        )
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
@@ -265,13 +277,17 @@ struct PackMatrixRows[
         )
 
         var valid_tile_simd_dim = Index(
-            min(
-                self.valid_simd_dim[0],
-                self.pack_tile_dim[0],
+            Int(
+                min(
+                    self.valid_simd_dim[0].value(),
+                    self.pack_tile_dim[0].value(),
+                )
             ),
-            min(
-                self.valid_simd_dim[1],
-                self.pack_tile_dim[1],
+            Int(
+                min(
+                    self.valid_simd_dim[1].value(),
+                    self.pack_tile_dim[1].value(),
+                )
             ),
         )
 
@@ -283,7 +299,7 @@ struct PackMatrixRows[
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline
         @__copy_capture(transpose_buffer)
-        @parameter
+        @__parameter
         def transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
@@ -296,9 +312,11 @@ struct PackMatrixRows[
             )
 
         # Pack the whole matrices with the unit helper.
-        while row_idx < self.pack_tile_dim[0]:
+        var pack_tile_rows = Int(self.pack_tile_dim[0].value())
+        var pack_tile_cols = Int(self.pack_tile_dim[1].value())
+        while row_idx < pack_tile_rows:
             col_idx = 0
-            while col_idx < self.pack_tile_dim[1]:
+            while col_idx < pack_tile_cols:
                 unswitch[transpose_pack_unit](
                     row_idx + Self.simd_size <= valid_tile_simd_dim[0],
                     col_idx + Self.simd_size <= valid_tile_simd_dim[1],
@@ -348,12 +366,12 @@ struct PackMatrixCols[
         Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix:
-    var global_offset: IndexList[2]
+    var global_offset: DynamicCoord[DType.int64, 2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: IndexList[2]
+    var pack_tile_dim: DynamicCoord[DType.int64, 2]
     # valid data bound within the tile.
-    var valid_data_dim: IndexList[2]
+    var valid_data_dim: DynamicCoord[DType.int64, 2]
 
     # Interface function:
     @staticmethod
@@ -387,9 +405,9 @@ struct PackMatrixCols[
         var instance = Self(
             packed_matrix,
             original_matrix,
-            global_offset,
-            pack_tile_dim,
-            valid_data_dim,
+            Coord(global_offset),
+            Coord(pack_tile_dim),
+            Coord(valid_data_dim),
         )
 
         instance._pack()
@@ -411,17 +429,19 @@ struct PackMatrixCols[
         comptime unroll_factor = get_packB_unroll_factor()
 
         @always_inline
-        @parameter
+        @__parameter
         def pack_vector(row_idx: Int, col_idx: Int):
-            var global_idx = self.global_offset + Index(row_idx, col_idx)
+            var global_idx = Index(
+                Int(self.global_offset[0].value()) + row_idx,
+                Int(self.global_offset[1].value()) + col_idx,
+            )
+            var valid_cols = Int(self.valid_data_dim[1].value())
             var data = SIMD[Self.dtype, Self.simd_size](0)
-            if skip_col_bound or (
-                col_idx + Self.simd_size <= self.valid_data_dim[1]
-            ):
+            if skip_col_bound or (col_idx + Self.simd_size <= valid_cols):
                 data = self.original_matrix.load_linear[
                     width=Self.simd_size, alignment=1
                 ](global_idx)
-            elif col_idx < self.valid_data_dim[1]:
+            elif col_idx < valid_cols:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
                 data = partial_simd_load[Self.simd_size](
@@ -430,7 +450,7 @@ struct PackMatrixCols[
                         Coord(global_idx[0], global_idx[1])
                     ),
                     0,
-                    self.valid_data_dim[1] - col_idx,
+                    valid_cols - col_idx,
                     0,
                 )
 
@@ -448,17 +468,20 @@ struct PackMatrixCols[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def pack_body[idx: Int]():
             pack_vector(row_start + idx, col_start)
 
         @always_inline
-        @parameter
+        @__parameter
         def prefetch_body[idx: Int]():
             var global_row_idx = (
-                self.global_offset[0] + row_start + unroll_factor + idx
+                Int(self.global_offset[0].value())
+                + row_start
+                + unroll_factor
+                + idx
             )
-            var global_col_idx = self.global_offset[1] + col_start
+            var global_col_idx = Int(self.global_offset[1].value()) + col_start
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](
@@ -486,11 +509,11 @@ struct PackMatrixCols[
 
         comptime vnni_cols = 4
 
-        var kc = self.valid_data_dim[0]
-        var nc = self.valid_data_dim[1]
+        var kc = Int(self.valid_data_dim[0].value())
+        var nc = Int(self.valid_data_dim[1].value())
         var nr = Self.column_inner_size
-        for i in range(0, self.pack_tile_dim[0], vnni_cols):
-            for j in range(self.pack_tile_dim[1] // nr):
+        for i in range(0, Int(self.pack_tile_dim[0].value()), vnni_cols):
+            for j in range(Int(self.pack_tile_dim[1].value()) // nr):
                 for p in range(nr):
                     comptime for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
@@ -498,8 +521,10 @@ struct PackMatrixCols[
                             1
                         ] >= nc else self.original_matrix.load_linear[width=1](
                             Index(
-                                self.global_offset[0] + local_idx[0],
-                                self.global_offset[1] + local_idx[1],
+                                Int(self.global_offset[0].value())
+                                + local_idx[0],
+                                Int(self.global_offset[1].value())
+                                + local_idx[1],
                             )
                         )
                         self.packed_matrix.store_linear[width=1](
@@ -516,11 +541,11 @@ struct PackMatrixCols[
         comptime i8mm_cols = 8
 
         comptime assert Self.use_i8mm
-        var kc = self.valid_data_dim[0]
-        var nc = self.valid_data_dim[1]
+        var kc = Int(self.valid_data_dim[0].value())
+        var nc = Int(self.valid_data_dim[1].value())
         comptime nr = Self.column_inner_size // 2
-        for i in range(0, self.pack_tile_dim[0], i8mm_cols):
-            for j in range(self.pack_tile_dim[1] // nr):
+        for i in range(0, Int(self.pack_tile_dim[0].value()), i8mm_cols):
+            for j in range(Int(self.pack_tile_dim[1].value()) // nr):
                 for p in range(0, nr, i8mm_rows):
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
@@ -531,8 +556,10 @@ struct PackMatrixCols[
                                 width=1
                             ](
                                 Index(
-                                    self.global_offset[0] + local_idx[0],
-                                    self.global_offset[1] + local_idx[1],
+                                    Int(self.global_offset[0].value())
+                                    + local_idx[0],
+                                    Int(self.global_offset[1].value())
+                                    + local_idx[1],
                                 )
                             )
                             self.packed_matrix.store_linear[width=1](
@@ -548,7 +575,9 @@ struct PackMatrixCols[
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         comptime assert not Self.use_vnni and not Self.use_i8mm
-        var valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
+        var valid_row_count = Int(
+            min(self.valid_data_dim[0].value(), self.pack_tile_dim[0].value())
+        )
         comptime unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
@@ -556,18 +585,20 @@ struct PackMatrixCols[
 
         @always_inline
         @__copy_capture(valid_row_count)
-        @parameter
+        @__parameter
         def pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx
             )
 
+        var pack_tile_cols = Int(self.pack_tile_dim[1].value())
+        var valid_cols = Int(self.valid_data_dim[1].value())
         while row_idx < valid_row_count:
             col_idx = 0
-            while col_idx < self.pack_tile_dim[1]:
+            while col_idx < pack_tile_cols:
                 unswitch[pack_unit](
                     row_idx + unroll_factor < valid_row_count,
-                    col_idx + Self.simd_size < self.valid_data_dim[1],
+                    col_idx + Self.simd_size < valid_cols,
                 )
                 col_idx += Self.simd_size
             row_idx += unroll_factor
@@ -1000,7 +1031,7 @@ struct BTileGenerator[
         Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
-    var tile_n_k: IndexList[2]
+    var tile_n_k: DynamicCoord[DType.int64, 2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
@@ -1041,7 +1072,7 @@ struct BTileGenerator[
             Self.b_layout,
             Self.transpose_b,
             Self.b_packed,
-        ](b, b_tile_stack_ptr, tile_n_k)
+        ](b, b_tile_stack_ptr, Coord(tile_n_k))
 
     comptime PackedTileLayout = RowMajorLayout[Int, Int, Int]
 
@@ -1143,13 +1174,11 @@ struct BTileGenerator[
             var factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
             comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
-            var tile_k = self.tile_n_k[1]
-            var tile_k2 = align_up(
-                min(self.tile_n_k[1], valid_data_dim_nk[1]), factor
-            )
+            var tile_k = Int(self.tile_n_k[1].value())
+            var tile_k2 = align_up(min(tile_k, valid_data_dim_nk[1]), factor)
 
             var tile_shape_pack = IndexList[3](
-                self.tile_n_k[0] // inner_size2,
+                Int(self.tile_n_k[0].value()) // inner_size2,
                 tile_k2 // factor,
                 inner_size2 * factor,
             )

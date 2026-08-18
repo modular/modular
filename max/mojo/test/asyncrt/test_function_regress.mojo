@@ -88,14 +88,9 @@ struct NotZeroSized(
 
 def _vec_func_zero(
     zs: ZeroSized,
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[S, MutAnyOrigin],
-    in1: UnsafePointer[S, MutAnyOrigin],
-    output: UnsafePointer[S, MutAnyOrigin],
+    in0: Pointer[S, MutAnyOrigin],
+    in1: Pointer[S, MutAnyOrigin],
+    output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -110,14 +105,9 @@ def _vec_func_zero(
 
 def _vec_func_not_zero(
     zs: NotZeroSized,
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[S, MutAnyOrigin],
-    in1: UnsafePointer[S, MutAnyOrigin],
-    output: UnsafePointer[S, MutAnyOrigin],
+    in0: Pointer[S, MutAnyOrigin],
+    in1: Pointer[S, MutAnyOrigin],
+    output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -134,14 +124,9 @@ def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[S, MutAnyOrigin],
-    in1: UnsafePointer[S, MutAnyOrigin],
-    output: UnsafePointer[S, MutAnyOrigin],
+    in0: Pointer[S, MutAnyOrigin],
+    in1: Pointer[S, MutAnyOrigin],
+    output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.

@@ -36,7 +36,7 @@ from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
-from max.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import B200, is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -76,6 +76,7 @@ from nn.rope_split_store import (
 )
 from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_rel_logits,
     generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
@@ -101,6 +102,8 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk import gumbel_sampling_fused_gpu
+from nn.topk_fi import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
@@ -307,7 +310,7 @@ struct Copy:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         def func[
             width: Int, element_alignment: Int
@@ -967,7 +970,7 @@ def concat_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
@@ -1025,7 +1028,7 @@ def concat_from_list_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
@@ -1632,19 +1635,22 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 # RoPE Ragged
 #
 # Expected kernel name format:
-# mo.rope.ragged
+# mo.composite.rope.ragged
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.rope.ragged")
-struct Struct_rope_ragged_paged[interleaved: Bool]:
-    """Registers the `mo.rope.ragged` graph op with the graph compiler.
+@extensibility.register("mo.composite.rope.ragged")
+struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
+    """Registers the `mo.composite.rope.ragged` graph op with the graph compiler.
 
     Parameters:
         interleaved: Whether RoPE pairs adjacent real and imaginary
             components (real, imag, real, imag, ...) as in GGUF, rather
             than splitting them into halves (real, ..., real, imag, ...,
             imag) as in safetensors.
+        rope_first: Whether a partial RoPE rotates the leading columns of
+            each head, leaving the trailing ones to pass through, rather
+            than the other way around.
     """
 
     @always_inline
@@ -1664,7 +1670,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             return String(";").join(
                 Span(
@@ -1677,6 +1683,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                         trace_arg("start_pos", start_pos.shape()),
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         "interleaved=" + String(Self.interleaved),
+                        "rope_first=" + String(Self.rope_first),
                         "target=" + String(target),
                     ]
                 )
@@ -1702,6 +1709,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
+            rope_first=Self.rope_first,
         ](
             x_tensor,
             row_offsets_tensor,
@@ -1740,7 +1748,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             return String(";").join(
                 Span(
@@ -1888,6 +1896,64 @@ def _execute_mha_ragged_paged_scalar_args[
         )
 
 
+@always_inline
+def _execute_mha_ragged_paged_rel_logits[
+    q_dtype: DType,
+    //,
+    target: StaticString,
+    local_window_size: Int = -1,
+    output_dtype: DType = q_dtype,
+    cache_dtype: DType = q_dtype,
+](
+    output: OutputTensor[dtype=output_dtype, rank=3, ...],
+    q: InputTensor[dtype=q_dtype, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    layer_idx: UInt32,
+    scale: Float32,
+    bias: InputTensor[dtype=q_dtype, rank=3, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    context: DeviceContext,
+) raises:
+    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+        mha_decode_dispatch_metadata
+    )
+    var kv_collection = generic_get_paged_cache(
+        kv_blocks,
+        cache_lengths,
+        kv_lookup_table,
+        max_prompt_length,
+        max_cache_length,
+    )
+    var input_row_offsets_lt = as_dynamic_row_major_1d(
+        input_row_offsets.to_layout_tensor().as_imm()
+    )
+    var cache_lengths_lt = as_dynamic_row_major_1d(
+        cache_lengths.to_layout_tensor().as_imm()
+    )
+
+    generic_flash_attention_kv_cache_ragged_rel_logits[
+        target=target,
+        local_window_size=local_window_size,
+        output_dtype=output_dtype,
+    ](
+        q.to_layout_tensor(),
+        input_row_offsets_lt,
+        kv_collection,
+        layer_idx,
+        scale,
+        bias.to_layout_tensor(),
+        cache_lengths_lt,
+        output.to_layout_tensor(),
+        context,
+        decode_dispatch_metadata,
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # MLA
 #
@@ -1961,7 +2027,7 @@ struct Struct_moe_router_group_limited:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -1980,7 +2046,7 @@ struct Struct_moe_router_group_limited:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2047,7 +2113,7 @@ struct Struct_moe_single_group_router_eplb:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2071,7 +2137,7 @@ struct Struct_moe_single_group_router_eplb:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2112,7 +2178,7 @@ struct Struct_moe_single_group_router:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2129,7 +2195,7 @@ struct Struct_moe_single_group_router:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2162,7 +2228,7 @@ struct Struct_moe_eplb_remap:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         num_log: Int,
         max_replicas: Int,
@@ -2506,6 +2572,143 @@ struct Struct_fused_token_sampling:
             )
 
 
+@extensibility.register("sampler.fused_token_sampling_with_dist")
+struct Struct_fused_token_sampling_with_dist:
+    """Registers the `sampler.fused_token_sampling_with_dist` graph op.
+
+    Samples one token per row under joint top-k/top-p with temperature, and
+    also returns the masked, renormalized distribution it drew from.
+    Speculative decoding subtracts that distribution to build its rejection
+    residual, and reads the sampled token's probability out of it. Op arity
+    is fixed, so this is a second registration over the same kernel as
+    `sampler.fused_token_sampling` rather than an optional output on it.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        dist_dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        max_k: Scalar,
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.fused_token_sampling_with_dist is GPU-only"
+        topk_topp_sampling_from_prob[
+            from_logits=True, emit_dist=True, dist_dtype=dist_dtype
+        ](
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            Int(max_k),
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            rng_seed=seed.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            out_dist=out_dist.to_tile_tensor[
+                DType.int64
+            ]().as_unsafe_any_origin(),
+        )
+
+
+@extensibility.register("sampler.topk_topp_masked_probs")
+struct Struct_topk_topp_masked_probs:
+    """Registers the `sampler.topk_topp_masked_probs` graph op.
+
+    Writes each row's top-k/top-p masked renormalized softmax, without
+    sampling. Speculative decoding verification reads the target's masked
+    probabilities and builds its rejection residual straight from this
+    tensor, so nothing is sorted and no distribution is rebuilt in-graph.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        probs: OutputTensor[dtype=DType.float32, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.topk_topp_masked_probs is GPU-only"
+        topk_topp_masked_probs(
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            probs.to_tile_tensor[DType.int64]().as_unsafe_any_origin(),
+            top_k_val=-1,
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+        )
+
+
+@extensibility.register("sampler.gumbel_argmax_from_probs")
+struct Struct_gumbel_argmax_from_probs:
+    """Registers the `sampler.gumbel_argmax_from_probs` graph op.
+
+    Draws one token per row proportionally to a row of unnormalized
+    probabilities, by Gumbel-max over `ln(p)`. The noise comes from the
+    per-row seed inside the kernel, so the caller passes no noise tensor.
+    Rows with equal seeds draw with equal noise, which is how a request's
+    draft positions share one noise row.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        probs: InputTensor[dtype=DType.float32, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.gumbel_argmax_from_probs is GPU-only"
+        gumbel_sampling_fused_gpu[from_probs=True](
+            ctx,
+            probs.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            seed=seed.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+        )
+
+
 @extensibility.register("min_p_sampling")
 struct Struct_min_p_sampling:
     """Registers the `min_p_sampling` graph op with the graph compiler."""
@@ -2719,7 +2922,7 @@ struct BundledAllReduceSum:
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def output_lambda[
             _dtype: DType,
             _width: SIMDLength,
@@ -3616,7 +3819,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_cpu[DSTATE_VAL: Int]() raises:
             mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE_VAL](
@@ -3651,7 +3854,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 Optional[DeviceContext](ctx),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_gpu[DSTATE_VAL: Int]() raises:
             comptime BLOCK_SIZE = 64
@@ -3893,7 +4096,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_cpu[DSTATE_VAL: Int]() raises:
             # The CPU kernel stores fp32 state only; bf16 state is wired on
@@ -3946,7 +4149,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     " kernel"
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_gpu[DSTATE_VAL: Int]() raises:
             # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
@@ -3969,10 +4172,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             # dstate I/O variant: same one-thread-per-channel mapping/launch as
             # v1, but the scalar dstate load/store loops (mem-pipe-bound on M5)
             # become VEC-wide SIMD chunk loads/stores. Gate on the comptime
-            # device vendor (matching the `== B200` gate rationale above).
-            comptime use_apple_vec = (
-                ctx.default_device_info.vendor == Vendor.APPLE_GPU
-            )
+            # device API, which identifies the vendor (matching the `== B200`
+            # gate rationale above).
+            comptime use_apple_vec = ctx.default_device_info.api == "metal"
             # bf16 SSM state is only wired on the Apple vectorized kernel; the
             # B200 dstate-split and portable v1 kernels are fp32-state. The
             # Python side only allocates a bf16 pool on Apple (nemotron_h
@@ -4398,7 +4600,7 @@ struct CausalConv1DVarlenFwd[
             comptime TILE_SEQ = 128
             var silu_activation_int8 = Int8(silu_activation)
 
-            @parameter
+            @__parameter
             @always_inline
             def launch_gpu[kWidth: Int]() raises:
                 # Prefill/mixed segments (at least one sequence has >1

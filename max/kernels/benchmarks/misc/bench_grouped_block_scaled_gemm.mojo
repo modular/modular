@@ -341,7 +341,7 @@ def bench_grouped_block_scaled_gemm[
     # Total FLOPs for all groups
     var total_flops = 2 * M * Int(n.value()) * Int(k.value()) * num_groups
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -358,9 +358,8 @@ def bench_grouped_block_scaled_gemm[
     )
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -382,7 +381,7 @@ def bench_grouped_block_scaled_gemm[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

@@ -75,10 +75,10 @@ one-TMA-per-multi-atom-row-page is not achievable as designed.
 B200-only (SM100 TMA). Single block / single elected thread, no cluster setup.
 """
 
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )

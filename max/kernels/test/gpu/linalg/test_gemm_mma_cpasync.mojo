@@ -212,7 +212,7 @@ def run_gemm_mma_cpasync_residual[
     var c_lt = c_tensor.to_layout_tensor()
     var residual_lt = residual_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_lt, residual_lt)
     def residual_epilogue[

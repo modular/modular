@@ -157,13 +157,12 @@ def bench_cublas_per_group[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(a_tensor, b_tensor, c_tensor, sfa_tensor, sfb_tensor)
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Call cuBLAS once per group (sequential)
             for _g in range(num_groups):
                 vendor_blas.matmul(
@@ -177,7 +176,7 @@ def bench_cublas_per_group[
                     c_row_major=True,
                 )
 
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
@@ -403,7 +402,7 @@ def bench_structured_kernel[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -420,9 +419,8 @@ def bench_structured_kernel[
     )
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -444,7 +442,7 @@ def bench_structured_kernel[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 

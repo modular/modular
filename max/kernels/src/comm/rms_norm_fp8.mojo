@@ -24,8 +24,8 @@ from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import WARP_SIZE, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -59,7 +59,7 @@ def block_reduce_sum_and_max[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -147,7 +147,7 @@ def rms_norm_fused_fp8[
 
     # Tracing for performance profiling
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return (
             trace_arg("input", shape, in_dtype)
@@ -215,7 +215,7 @@ def _rms_norm_fused_fp8_gpu[
     var cols = last_dim
 
     # Create 2D input function (following rms_norm_fused_residual_add pattern)
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int
@@ -239,7 +239,7 @@ def _rms_norm_fused_fp8_gpu[
     ]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
-    @parameter
+    @__parameter
     def launch[sw: Int, warp_tiling: Bool]() raises:
         _rms_norm_fused_fp8_gpu_launch[
             sw,
@@ -332,7 +332,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     # Helper: Load gamma and apply to value (shared between both kernel variants)
     @always_inline
     @__copy_capture(gamma, _weight_offset)
-    @parameter
+    @__parameter
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
@@ -426,7 +426,7 @@ def _rms_norm_fused_fp8_gpu_launch[
     var block_dim = threads_per_block
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output)
     def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
         """Write output to buffer."""
@@ -552,7 +552,7 @@ def _rms_norm_fused_fp8_kernel_block[
     # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @always_inline
     @__copy_capture(gamma, _weight_offset)
-    @parameter
+    @__parameter
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:

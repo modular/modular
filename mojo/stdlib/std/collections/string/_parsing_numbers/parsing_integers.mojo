@@ -28,7 +28,7 @@ def standardize_string_slice(
     var x_len = x.byte_length()
     unsafe_memcpy(
         dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
-        src=x.unsafe_ptr(),
+        src=x.as_bytes().unsafe_ptr(),
         count=x_len,
     )
     return standardized_x^
@@ -89,13 +89,15 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
-    # We use memcmp to check that the number is not too large.
+    # We use unsafe_memcmp to check that the number is not too large.
     comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
         CONTAINER_SIZE, "0"
     )
     var too_large = (
         unsafe_memcmp(
-            std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
+            std_x_ptr,
+            max_standardized_x.as_bytes().unsafe_ptr(),
+            CONTAINER_SIZE,
         )
         == 1
     )

@@ -1057,7 +1057,7 @@ def selective_scan_update_cpu[
     var has_z = Int(z.dim[0]()) > 0
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, d = divmod(idx, dim)
 
@@ -1216,7 +1216,7 @@ def selective_scan_fwd_cpu[
 ):
     """CPU kernel for selective scan forward pass."""
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, d = divmod(idx, dim)
 
@@ -1573,7 +1573,7 @@ def selective_scan_fwd_cpu_minimal[
         ctx: Device context for parallel execution (defaults to `None`).
     """
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, d = divmod(idx, dim)
 
@@ -2341,7 +2341,7 @@ def ssd_combined_cpu[
     var delta_bias_stride = UInt32(1)
     var gamma_stride = UInt32(1)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, d = divmod(idx, dim)
 
@@ -2838,7 +2838,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     var xBC_start = dim
     var dt_start = 2 * dim + 2 * ngroups * DSTATE
 
-    @parameter
+    @__parameter
     def worker(idx: Int) raises:
         var b, d = divmod(idx, dim)
         var h, p = divmod(d, headdim)

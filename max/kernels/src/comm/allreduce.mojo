@@ -109,13 +109,13 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_dim,
     global_idx,
     grid_dim,
     thread_idx,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -159,7 +159,7 @@ from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
-](Coord, SIMD[dtype, size=width]) capturing -> None
+](Coord, SIMD[dtype, length=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
 
@@ -777,7 +777,7 @@ def _allreduce_2stage_kernel[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tmp_buff)
         def rs_output_lambda[
             _dtype: DType,
@@ -1541,7 +1541,7 @@ def _allreduce_p2p[
         )
 
 
-@parameter
+@__parameter
 def allreduce[
     dtype: DType,
     ngpus: Int,
@@ -1622,7 +1622,7 @@ def allreduce[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,

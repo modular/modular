@@ -17,9 +17,8 @@ transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 """
 
 from std.utils.index import IndexList
-from std.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from layout import (
@@ -54,16 +53,6 @@ struct TMADescriptor[
             tensormap: The TMA tensormap that defines the memory access pattern.
         """
         self.tensormap = tensormap
-
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """
-        Copy initializes this `TMADescriptor` from another instance.
-
-        Args:
-            copy: The other `TMADescriptor` instance to copy from.
-        """
-        self.tensormap = copy.tensormap
 
 
 def create_tma_descriptor[
@@ -376,7 +365,7 @@ def copy[
         )
 
 
-@parameter
+@__parameter
 def to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of, size_of
-from std.memory import UnsafePointer
+from std.memory import alloc, dealloc
 from std.testing import *
 
 
@@ -22,17 +22,20 @@ struct CacheAligned:
 
 
 def demonstrate_array_stride() raises:
-    var arr = alloc[CacheAligned](4)
+    var allocation = alloc[CacheAligned]({count = 4})
+    var _ = allocation.unsafe_ptr()  # `arr`
 
     # print(align_of[CacheAligned]())  # 64
     # print(size_of[CacheAligned]())  # 64
 
-    assert_equal(64, align_of[CacheAligned](), "align should be 64")
-    assert_equal(64, size_of[CacheAligned](), "size_of should be 8")
+    var align = align_of[CacheAligned]()
+    var size = size_of[CacheAligned]()
 
     # All elements of arr are guaranteed to be 64-byte aligned
 
-    arr.unsafe_free()
+    dealloc(allocation^)
+    assert_equal(64, align, "align should be 64")
+    assert_equal(64, size, "size_of should be 64")
 
 
 def main() raises:

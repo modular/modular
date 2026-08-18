@@ -253,7 +253,7 @@ struct TensorCore[
 
     comptime c_reg_tile_type = LayoutTensor[
         Self.out_type,
-        Layout.col_major(1, Self.c_reg_type.size),
+        Layout.col_major(1, Self.c_reg_type.length),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
@@ -837,8 +837,8 @@ struct TensorCore[
         var d_reg = c_reg
         mma(d_reg, a_reg, b_reg, d_reg)
         var d = type_of(res).stack_allocation()
-        d.vectorize[1, Self.c_reg_type.size]()[0, 0] = rebind[
-            type_of(d.vectorize[1, Self.c_reg_type.size]()[0, 0])
+        d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
+            type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
         ](d_reg)
         return d
 
@@ -1360,7 +1360,9 @@ def _load_matrix_frag[
 
     var lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
 
-    return ld_matrix[res.size, transpose=transposed](mma_tile.ptr + lane_offset)
+    return ld_matrix[res.length, transpose=transposed](
+        mma_tile.ptr + lane_offset
+    )
 
 
 @always_inline
@@ -1524,9 +1526,9 @@ struct TiledTensorCore[
         comptime num_m_mmas = a_reg_tile.shape[0]()
         comptime num_n_mmas = b_reg_tile.shape[0]()
 
-        comptime a_frag_size = Self.mma_op.a_reg_type.size
-        comptime b_frag_size = Self.mma_op.b_reg_type.size
-        comptime c_frag_size = Self.mma_op.c_reg_type.size
+        comptime a_frag_size = Self.mma_op.a_reg_type.length
+        comptime b_frag_size = Self.mma_op.b_reg_type.length
+        comptime c_frag_size = Self.mma_op.c_reg_type.length
 
         comptime assert Self.group_size > 0, "group_size must be greater than 0"
 
@@ -1544,7 +1546,7 @@ struct TiledTensorCore[
             num_n_mmas, num_m_mmas
         ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
 
-        @parameter
+        @__parameter
         def _inner_loop(
             a_frag: LayoutTensor,
             b_frag: LayoutTensor,

@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
@@ -26,7 +28,11 @@ from max.benchmark.benchmark_shared.metrics import (
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
-    _compute_confidence_info,
+)
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    compute_confidence_info,
+    finite_or_none,
+    json_safe,
 )
 from pydantic import ValidationError
 
@@ -752,7 +758,7 @@ def test_prefill_only_still_validates_non_decode_metrics() -> None:
 def test_confidence_info_known_data() -> None:
     """CI on 100 identical values should be very narrow (high confidence)."""
     data = [0.05] * 100
-    ci = _compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
+    ci = compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
     assert ci is not None
     assert ci.sample_size == 100
     assert ci.confidence == "high"
@@ -762,7 +768,7 @@ def test_confidence_info_known_data() -> None:
 def test_confidence_info_insufficient_data() -> None:
     """Fewer than 5 samples should be classified as insufficient_data."""
     data = [0.05, 0.06, 0.04]
-    ci = _compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
+    ci = compute_confidence_info(data, scaled_mean=50.0, scale_factor=1000.0)
     assert ci is not None
     assert ci.confidence == "insufficient_data"
     assert ci.sample_size == 3
@@ -770,7 +776,7 @@ def test_confidence_info_insufficient_data() -> None:
 
 def test_confidence_info_single_sample() -> None:
     """A single sample should return None."""
-    ci = _compute_confidence_info([0.05], scaled_mean=50.0, scale_factor=1000.0)
+    ci = compute_confidence_info([0.05], scaled_mean=50.0, scale_factor=1000.0)
     assert ci is None
 
 
@@ -781,14 +787,14 @@ def test_confidence_info_wide_ci() -> None:
     random.seed(42)
     data = [random.uniform(0.01, 1.0) for _ in range(10)]
     mean = sum(data) / len(data) * 1000.0
-    ci = _compute_confidence_info(data, scaled_mean=mean, scale_factor=1000.0)
+    ci = compute_confidence_info(data, scaled_mean=mean, scale_factor=1000.0)
     assert ci is not None
     assert ci.confidence == "low"
 
 
 def test_confidence_info_nan_mean() -> None:
     """NaN mean should return None."""
-    ci = _compute_confidence_info(
+    ci = compute_confidence_info(
         [0.05, 0.06], scaled_mean=float("nan"), scale_factor=1000.0
     )
     assert ci is None
@@ -1028,3 +1034,21 @@ def test_benchmark_result_to_result_dict_omits_diagnostics_when_none() -> None:
     assert "steady_state_detected" not in d
     assert "steady_state_window_count" not in d
     assert "num_outliers_rejected" not in d
+
+
+def test_finite_or_none() -> None:
+    assert finite_or_none(1.5) == 1.5
+    assert finite_or_none(None) is None
+    assert finite_or_none(float("nan")) is None
+    assert finite_or_none(float("inf")) is None
+
+
+def test_json_safe_tree_round_trips_strict_json() -> None:
+    tree = {
+        "ok": 1.0,
+        "bad": float("nan"),
+        "nested": [float("inf"), (2.0, float("-inf"))],
+    }
+    text = json.dumps(json_safe(tree), allow_nan=False)
+    assert "NaN" not in text and "Infinity" not in text
+    assert json.loads(text)["nested"][1] == [2.0, None]

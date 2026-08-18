@@ -30,7 +30,7 @@
 """
 
 from std.hashlib import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.os import abort
 from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
@@ -42,7 +42,7 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 @explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
 @fieldwise_init
-struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
+struct ExplicitDestroy(Deinitable where False, Movable):
     """Test type that is explicitly-destroyed."""
 
     var value: Int
@@ -60,12 +60,57 @@ struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
 
 @explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
 @fieldwise_init
-struct ExplicitDestroyKey(
-    Equatable, Hashable, ImplicitlyDeletable where False, Movable
-):
+struct ExplicitDestroyKey(Deinitable where False, Equatable, Hashable, Movable):
     """Linear key type for testing linear-keyed containers: `Movable`,
     `Hashable`, and `Equatable`, but explicitly-destroyed (not
-    `ImplicitlyDeletable`)."""
+    `Deinitable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# CopyableExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `CopyableExplicitDestroyKey`")
+@fieldwise_init
+struct CopyableExplicitDestroyKey(
+    Copyable, Deinitable where False, Equatable, Hashable
+):
+    """Linear key type that is nonetheless `Copyable`: `Copyable`, `Hashable`,
+    and `Equatable`, but explicitly-destroyed (not `Deinitable`).
+
+    Separates bounds that genuinely need `Deinitable` from those that
+    only need `Copyable`, which `ExplicitDestroyKey` cannot distinguish because
+    it is move-only."""
 
     var value: Int
     """Int data."""
@@ -102,7 +147,7 @@ struct ExplicitDestroyKey(
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDeletable](
+struct MoveOnly[T: Movable & Deinitable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Movable,
@@ -277,13 +322,10 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 
 struct CopyCounter[
-    T: ImplicitlyCopyable
-    & ImplicitlyDeletable
-    & Writable
-    & Defaultable = NoneType,
+    T: ImplicitlyCopyable & Deinitable & Writable & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, ImplicitlyDeletable, Writable):
+](Deinitable, ImplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -342,9 +384,9 @@ struct CopyCounter[
 
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
-struct MoveCounter[
-    T: Copyable & ImplicitlyDeletable, *, trivial_move: Bool = False
-](Copyable):
+struct MoveCounter[T: Copyable & Deinitable, *, trivial_move: Bool = False](
+    Copyable
+):
     """Counts the number of moves performed on a value.
 
     Parameters:
@@ -501,7 +543,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
+struct ExplicitDelOnly(Deinitable where False, Movable):
     """Utility for testing container support for linear types."""
 
     var data: Int
@@ -519,9 +561,7 @@ struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
 
 
 @fieldwise_init
-struct PinnedExplicitDelOnly(
-    ImplicitlyDeletable where False, Movable where False
-):
+struct PinnedExplicitDelOnly(Deinitable where False, Movable where False):
     """Utility for testing container support for linear types that also
     cannot be moved."""
 
@@ -730,7 +770,7 @@ struct Observable[
     def write_niche[
         index: Int
     ](
-        memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: MutPointer[MaybeUninit[Self], _]
     ) where Self.opt_into_unsafe_niche:
         """Writes niche bit pattern `index` into storage.
 
@@ -749,7 +789,7 @@ struct Observable[
 
     @staticmethod
     def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: ImmPointer[MaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.
 

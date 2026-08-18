@@ -53,7 +53,7 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     load_kv_manager,
 )
 from max.pipelines.lib.vision_encoder_cache import (
@@ -127,7 +127,7 @@ class TextGenerationPipelineInterface(
 
     @property
     @abstractmethod
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -180,7 +180,7 @@ class TextGenerationPipeline(
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        self._devices = load_devices(model_config.device_specs)
+        self._devices = load_devices(list(memory_plan.require_device_specs()))
         self._tokenizer = tokenizer
 
         self.batch_info_output_fname = environ.get(
@@ -200,6 +200,7 @@ class TextGenerationPipeline(
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
             pipeline_config.sampling.structured_output_backend,
+            pipeline_config.sampling.structured_output_any_whitespace,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -251,7 +252,8 @@ class TextGenerationPipeline(
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
                 max_entries=pipeline_config.runtime.max_vision_cache_entries,
-                n_devices=len(self._devices),
+                plan=memory_plan.vision_cache_plan,
+                devices=self._devices,
             )
 
         # Device the sampler runs on. ``sample_on_host`` routes sampling to the
@@ -627,7 +629,8 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
 
         return res
 
@@ -670,7 +673,7 @@ class TextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 

@@ -18,7 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 import extensibility
 from comm.sync import is_p2p_enabled
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
@@ -66,14 +66,17 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
-    MXFP4TokenFormat,
+    MXTokenFormat,
     NVBlockScaledTokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
-    fused_silu_mxfp4_kernel,
+    fused_silu_mx_kernel,
+    fused_silu_mxfp6_kernel,
     fused_silu_nvfp4_kernel,
 )
+from linalg.mx_format import MXFormat
+from linalg.fp6_utils import FP6Format
 
 comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
 
@@ -160,13 +163,25 @@ struct Struct_ep_init:
             dispatch_msg_size = token_fmt_type.msg_size()
 
         elif dispatch_fmt_str == "MXFP4":
-            comptime token_fmt_type = MXFP4TokenFormat[
-                fp4_dtype=dispatch_dtype,
+            comptime token_fmt_type = MXTokenFormat[
+                quant_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
                 scales_layout=RT_LAYOUT_2D,
                 hidden_size,
                 top_k,
+            ]
+            dispatch_msg_size = token_fmt_type.msg_size()
+
+        elif dispatch_fmt_str == "MXFP6":
+            comptime token_fmt_type = MXTokenFormat[
+                quant_dtype=dispatch_dtype,
+                scales_dtype=dispatch_scale_dtype,
+                output_layout=RT_LAYOUT_2D,
+                scales_layout=RT_LAYOUT_2D,
+                hidden_size,
+                top_k,
+                mx_format=MXFormat.FP6_E2M3,
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
@@ -416,7 +431,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -479,7 +494,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[DType.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
         def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -532,6 +547,8 @@ struct Struct_ep_dispatch_async_mxfp4:
         n_nodes: Int,
         //,
         target: StaticString,
+        *,
+        MX_FORMAT: StaticString = "auto",
     ](
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
         input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
@@ -563,6 +580,13 @@ struct Struct_ep_dispatch_async_mxfp4:
             n_gpus_per_node: Number of GPUs per node (inferred).
             n_nodes: Number of physical nodes (inferred).
             target: Compile-time device target.
+            MX_FORMAT: Name of the MX element format, or `auto` to take it
+                from the dtype. See `MXFormat.from_name`. Names the MX
+                encoding of the wire payload. It cannot be inferred from
+                `dispatch_dtype`: MXFP4 and MXFP6 both travel as
+                `DType.uint8` and differ only in bits per element. The
+                default `auto` falls back to FP4 for a `uint8` payload and
+                FP8 E4M3 otherwise.
 
         Args:
             atomic_counters: Atomic counters coordinating work across
@@ -578,13 +602,17 @@ struct Struct_ep_dispatch_async_mxfp4:
                 tokens received per expert.
             context: GPU device context for the current device.
         """
-        comptime token_fmt_type = MXFP4TokenFormat[
-            fp4_dtype=dispatch_dtype,
+        comptime mx_fmt = MXFormat.from_dtype[
+            dispatch_dtype
+        ]() if MX_FORMAT == "auto" else (MXFormat.from_name[MX_FORMAT]())
+        comptime token_fmt_type = MXTokenFormat[
+            quant_dtype=dispatch_dtype,
             scales_dtype=dispatch_scale_dtype,
             output_layout=RT_LAYOUT_2D,
             scales_layout=RT_LAYOUT_2D,
             hidden_size,
             top_k,
+            mx_format=mx_fmt,
         ]
         ep_dispatch_async_kernel_api[
             token_fmt_type,
@@ -817,6 +845,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
         *,
         fuse_a_scale_preshuffle: Bool = False,
         max_padded_M: Int = 0,
+        MX_FORMAT: StaticString = "auto",
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -843,12 +872,19 @@ struct Struct_ep_dispatch_wait_mxfp4:
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
 
+        comptime mx_fmt = MXFormat.from_dtype[
+            dispatch_dtype
+        ]() if MX_FORMAT == "auto" else (MXFormat.from_name[MX_FORMAT]())
         comptime assert (
-            output_tokens_tensor.static_shape[1] * 2 == hidden_size
+            output_tokens_tensor.static_shape[1] * 8
+            == hidden_size * mx_fmt.bits_per_element()
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = MXFP4TokenFormat[
-            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        var format_handler = MXTokenFormat[
+            hidden_size,
+            top_k,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            mx_format=mx_fmt,
         ](
             output_tokens_tensor,
             output_scales_tensor,
@@ -1069,7 +1105,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1164,7 +1200,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[DType.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
         def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -1209,7 +1245,7 @@ struct Struct_ep_dispatch_mxfp4:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1228,6 +1264,7 @@ struct Struct_ep_dispatch_mxfp4:
         *,
         fuse_a_scale_preshuffle: Bool = False,
         max_padded_M: Int = 0,
+        MX_FORMAT: StaticString = "auto",
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -1255,8 +1292,14 @@ struct Struct_ep_dispatch_mxfp4:
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
 
-        var format_handler = MXFP4TokenFormat[
-            hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
+        comptime mx_fmt = MXFormat.from_dtype[
+            dispatch_dtype
+        ]() if MX_FORMAT == "auto" else (MXFormat.from_name[MX_FORMAT]())
+        var format_handler = MXTokenFormat[
+            hidden_size,
+            top_k,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            mx_format=mx_fmt,
         ](
             output_tokens_tensor,
             output_scales_tensor,
@@ -1412,7 +1455,7 @@ struct DistributedEPDispatchBlockScaledNV:
             var in_scales = input_scales[index].to_tile_tensor[DType.int64]()
             comptime assert in_scales.flat_rank == 1
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(in_scales)
             def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -1472,6 +1515,8 @@ struct DistributedEPDispatchMXFP4:
         //,
         target: StaticString,
         _trace_name: StaticString,
+        *,
+        mx_format: StaticString = "auto",
     ](
         output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputVariadicTensors[
@@ -1515,6 +1560,11 @@ struct DistributedEPDispatchMXFP4:
                 dispatch kernel (inferred).
             target: Compile-time device target.
             _trace_name: Trace label for this op.
+            mx_format: Name of the MX element format, or `auto` to take it
+                from the dtype. See `MXFormat.from_name`. Names the MX
+                encoding of the wire payload. It cannot be inferred from
+                `dispatch_dtype`: MXFP4 and MXFP6 both travel as
+                `DType.uint8` and differ only in bits per element.
 
         Args:
             output_tokens: Output variadic tensors storing the dispatched
@@ -1566,10 +1616,14 @@ struct DistributedEPDispatchMXFP4:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
 
-            var format_handler = MXFP4TokenFormat[
+            comptime mx_fmt = MXFormat.from_dtype[
+                dispatch_dtype
+            ]() if mx_format == "auto" else (MXFormat.from_name[mx_format]())
+            var format_handler = MXTokenFormat[
                 hidden_size,
                 top_k,
                 fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+                mx_format=mx_fmt,
             ](
                 out_tokens,
                 out_scales,
@@ -1960,7 +2014,7 @@ struct DistributedEPCombine:
         }:
             var rw_tensor = router_weights[index].to_tile_tensor[DType.int64]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(rw_tensor)
             def router_weights_fn[
@@ -1970,7 +2024,7 @@ struct DistributedEPCombine:
                     DType.float32
                 ]()
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
                 dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2094,7 +2148,7 @@ struct Struct_ep_combine_async:
 struct Struct_ep_combine_wait:
     """Registers the `ep.combine_wait` graph op with the graph compiler."""
 
-    @parameter
+    @__parameter
     @always_inline
     @staticmethod
     def execute[
@@ -2159,7 +2213,7 @@ struct Struct_ep_combine_wait:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2169,7 +2223,7 @@ struct Struct_ep_combine_wait:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2214,7 +2268,7 @@ struct Struct_ep_combine:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
@@ -2299,7 +2353,7 @@ struct Struct_ep_combine:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2309,7 +2363,7 @@ struct Struct_ep_combine:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2353,7 +2407,7 @@ struct Struct_ep_combine_skip_a2a:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
@@ -2448,7 +2502,7 @@ struct Struct_ep_combine_skip_a2a:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2458,7 +2512,7 @@ struct Struct_ep_combine_skip_a2a:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2549,7 +2603,7 @@ struct Struct_ep_fused_silu:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
@@ -2632,7 +2686,7 @@ struct Struct_ep_fused_silu_fp8:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
@@ -2666,7 +2720,7 @@ struct Struct_ep_fused_silu_mxfp4:
     @always_inline
     @staticmethod
     def execute[
-        fp4_dtype: DType,
+        quant_dtype: DType,
         scales_dtype: DType,
         input_dtype: DType,
         target: StaticString,
@@ -2674,8 +2728,10 @@ struct Struct_ep_fused_silu_mxfp4:
         fuse_a_scale_preshuffle: Bool = False,
         max_padded_M: Int = 0,
         clamp_activation: Bool = False,
+        # `ep.fused_silu.mxfp8` shares this body and overrides the label.
+        trace_name: StaticString = "ep.fused_silu.mxfp4",
     ](
-        output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
+        output: OutputTensor[dtype=quant_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -2685,16 +2741,22 @@ struct Struct_ep_fused_silu_mxfp4:
         limit: Float32,
         context: DeviceContext,
     ) raises:
-        """Execute the Expert Parallelism fused SILU kernel with MXFP4
+        """Execute the Expert Parallelism fused SILU kernel with MX
         quantization.
 
-        This function launches the fused_silu_mxfp4 kernel to perform the SILU
+        Shared body for `ep.fused_silu.mxfp4` and `ep.fused_silu.mxfp8`:
+        `fused_silu_mx_kernel` takes its element packing from `quant_dtype`.
+        `trace_name` only labels the op in traces; it is defaulted and no
+        caller sets it through MOGG's `parameters` dict, so the mxfp8
+        registration overrides it directly at the Mojo call site.
+
+        This function launches the shared `fused_silu_mx_kernel` to perform the SILU
         operation for all the MLPs in the EP MoE module.
 
         This kernel will read the row offsets to determine the actual number of
         received tokens in the input tensor, and then only perform the SILU
         operation on the received tokens. Once the SILU operation is performed,
-        the output will be quantized to the MXFP4 format.
+        the output will be quantized to the MXFP4 or MXFP8 format.
 
         When `fuse_a_scale_preshuffle=True` (KS64 fusion), the kernel
         writes the E8M0 scale directly into the grouped matmul's per-expert
@@ -2716,8 +2778,8 @@ struct Struct_ep_fused_silu_mxfp4:
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
-        comptime fused_silu_mxfp4 = fused_silu_mxfp4_kernel[
-            fp4_dtype,
+        comptime fused_silu_mx = fused_silu_mx_kernel[
+            quant_dtype,
             scales_dtype,
             input_dtype,
             output_tensor.LayoutType,
@@ -2731,11 +2793,11 @@ struct Struct_ep_fused_silu_mxfp4:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
-                "fp4_dtype=", fp4_dtype,
+                "quant_dtype=", quant_dtype,
                 ";scales_dtype=", scales_dtype,
                 ";input_dtype=", input_dtype,
                 ";fuse_a_scale_preshuffle=", fuse_a_scale_preshuffle,
@@ -2744,16 +2806,157 @@ struct Struct_ep_fused_silu_mxfp4:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.fused_silu.mxfp4",
+            trace_name,
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_mxfp4](
+            gpu_ctx.enqueue_function[fused_silu_mx](
                 output_tensor,
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
                 Int32(max_padded_M),
+                alpha,
+                limit,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
+
+@extensibility.register("ep.fused_silu.mxfp8")
+struct Struct_ep_fused_silu_mxfp8:
+    """Registers the `ep.fused_silu.mxfp8` graph op with the graph compiler."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        fp8_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
+        clamp_activation: Bool = False,
+    ](
+        output: OutputTensor[dtype=fp8_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        alpha: Float32,
+        limit: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Execute the EP fused SILU kernel with MXFP8 quantization.
+
+        Same body as `ep.fused_silu.mxfp4`: `fused_silu_mx_kernel` takes its
+        element packing from the output dtype, so one `fp8_e4m3fn` byte per
+        element here rather than two FP4 nibbles, leaving `output` at the full
+        hidden size along axis 1. With `fuse_a_scale_preshuffle`, `scales` must
+        be shaped `[n_local_experts * max_padded_M, K_SCALES]`.
+        """
+        Struct_ep_fused_silu_mxfp4.execute[
+            target=target,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            max_padded_M=max_padded_M,
+            clamp_activation=clamp_activation,
+            trace_name="ep.fused_silu.mxfp8",
+        ](output, scales, input, row_offsets, alpha, limit, context)
+
+
+@extensibility.register("ep.fused_silu.mxfp6")
+struct Struct_ep_fused_silu_mxfp6:
+    """Registers the `ep.fused_silu.mxfp6` graph op with the graph compiler."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+        *,
+        FP6_FORMAT: Int = 0,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
+        clamp_activation: Bool = False,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        # Clamped-SwiGLU alpha/L (trailing CPU f32 constants); unused when
+        # clamp_activation=False.
+        alpha: Float32,
+        limit: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Execute the EP fused SILU kernel with MXFP6 quantization.
+
+        Unlike `ep.fused_silu.mxfp4` and `.mxfp8`, which share one body that
+        switches on elements-per-byte, FP6 needs its own kernel: four codes per
+        three bytes is a ratio of 4/3, which that integer cannot represent.
+        `output` is packed uint8 at three quarters of the hidden size.
+
+        `FP6_FORMAT` selects the element encoding (0 = E2M3, 1 = E3M2). Both
+        occupy six bits and pack identically, so nothing downstream can recover
+        it from the bytes -- it must match what the checkpoint declares.
+        """
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert not fuse_a_scale_preshuffle, (
+            "MXFP6 has no A-scale slot-layout producer; run the standalone"
+            " preshuffle instead"
+        )
+        comptime assert max_padded_M == 0, (
+            "max_padded_M belongs to the A-scale fold, which MXFP6 does not"
+            " support"
+        )
+
+        var output_tensor = output.to_tile_tensor[DType.int64]()
+        var scales_tensor = scales.to_tile_tensor[DType.int64]()
+        var input_tensor = input.to_tile_tensor[DType.int64]().as_immut()
+        var row_offsets_tensor = row_offsets.to_tile_tensor[
+            DType.int64
+        ]().as_immut()
+
+        var gpu_ctx = context
+        comptime hw_info = gpu_ctx.default_device_info
+
+        comptime fused_silu_fp6 = fused_silu_mxfp6_kernel[
+            scales_dtype,
+            input_dtype,
+            output_tensor.LayoutType,
+            scales_tensor.LayoutType,
+            input_tensor.LayoutType,
+            row_offsets_tensor.LayoutType,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+            fp6_format=FP6Format(FP6_FORMAT),
+            clamp_activation=clamp_activation,
+        ]
+
+        @always_inline
+        @__parameter
+        def description_fn() -> String:
+            # fmt: off
+            return String(
+                "scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+                ";FP6_FORMAT=", FP6_FORMAT,
+                ";clamp_activation=", clamp_activation,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu.mxfp6",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu_fp6](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
                 alpha,
                 limit,
                 grid_dim=hw_info.sm_count,
@@ -2828,7 +3031,7 @@ struct Struct_ep_fused_silu_nvfp4:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(

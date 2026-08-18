@@ -51,11 +51,11 @@ from max.pipelines.lib.interfaces.pipeline_model import (
     ModelOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
-    from max.pipelines.lora import LoRAManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -80,7 +80,7 @@ class BatchProcessorRuntime:
     return_logits: ReturnLogits
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     signal_buffers: Sequence[Buffer] = ()
-    lora_manager: LoRAManager | None = None
+    lora_manager: LoRAManagerV3 | None = None
     pad_token_id: int = 0
     max_batch_size: int | None = None
 
@@ -363,7 +363,11 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
-        """Prepares ragged token inputs for a single-replica ModuleV3 batch."""
+        """Prepares ragged token inputs for a single-replica ModuleV3 batch.
+
+        Appends the per-call ModuleV3 LoRA buffers when the runtime's manager
+        is a :class:`LoRAManagerV3`, reusing the row offsets already built here.
+        """
         context_batch = single_replica_context_batch(
             replica_batches,
             processor_name=type(self).__qualname__,
@@ -373,7 +377,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             cast(Sequence[RaggableContext], context_batch)
         )
         device0 = self.runtime.devices[0]
-        return self._make_inputs(
+        inputs = self._make_inputs(
             tokens=Buffer.from_numpy(tokens_np).to(device0),
             input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
             return_n_logits=Buffer.from_numpy(
@@ -381,6 +385,11 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
+        if isinstance(self.runtime.lora_manager, LoRAManagerV3):
+            inputs.lora_buffers = self.runtime.lora_manager.input_buffers(
+                context_batch, offsets_np, device0
+            )
+        return inputs
 
     def _make_inputs(
         self,
@@ -553,16 +562,17 @@ class UnifiedSpecDecodeBatchProcessor(
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime)
-        device0 = runtime.devices[0]
         assert runtime.max_batch_size is not None
         max_batch_input_tokens = (
             runtime.pipeline_config.runtime.max_batch_input_tokens
         )
-        self._persistent_input_buffers = PersistentInputBuffers.alloc(
-            max_batch_size=runtime.max_batch_size,
-            max_batch_input_tokens=max_batch_input_tokens,
-            device=device0,
-        )
+        self._persistent_input_buffers: PersistentInputBuffers | None = None
+        if not is_virtual_device_mode():
+            self._persistent_input_buffers = PersistentInputBuffers.alloc(
+                max_batch_size=runtime.max_batch_size,
+                max_batch_input_tokens=max_batch_input_tokens,
+                device=runtime.devices[0],
+            )
         self._seed_counter = 0
 
     def _next_seed(self, device0: Device) -> Buffer:
@@ -598,6 +608,7 @@ class UnifiedSpecDecodeBatchProcessor(
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
         batch_size = len(context_batch)
 
+        assert self._persistent_input_buffers is not None
         persistent_tokens = self._persistent_input_buffers.tokens
         persistent_tokens = persistent_tokens[:total_seq_len]
         persistent_input_row_offsets = (

@@ -60,9 +60,6 @@ class TokenGenerationSchedulerConfig:
     If speculative decoding is disabled, this should be 0.
     """
 
-    kvcache_ce_watermark: float = 0.95
-    """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
-
     decode_stall_timeout_s: float | None = None
     """Seconds of no-batch-activity after which the decode worker exits to trigger a pod restart. None disables the watchdog."""
 
@@ -148,13 +145,14 @@ class TokenGenerationSchedulerConfig:
             chunked_prefill_min_chunk_size=pipeline_config.runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
             decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
             dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
             dp_ce_balance_enable_dynamic_chunk_size=pipeline_config.runtime.dp_ce_balance_enable_dynamic_chunk_size,
-            num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            num_speculative_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative is not None
             else 0,
         )

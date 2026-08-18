@@ -47,16 +47,16 @@ from std.sys import size_of, has_nvidia_gpu_accelerator
 
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     lane_id,
     thread_idx,
     warp_id as get_warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu import block_idx
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 
@@ -192,7 +192,7 @@ def pv_mma_kernel[
         ab_type, BN, BK, swizzle_mode=swizzle_mode
     ]()
 
-    p_smem = rebind[
+    var p_smem = rebind[
         UnsafePointer[
             Scalar[ab_type],
             address_space=AddressSpace.SHARED,
@@ -240,8 +240,8 @@ def pv_mma_kernel[
     comptime v_expected_bytes = v_size * size_of[ab_type]()
     comptime expected_bytes = p_expected_bytes + v_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -259,7 +259,7 @@ def pv_mma_kernel[
 
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # ---- MMA operand descriptors ------------------------------------------
     # A (P) is k-major; B (V) is mn-major. SBO/LBO derived exactly as in
@@ -281,10 +281,14 @@ def pv_mma_kernel[
     comptime vSBO = v_s11 * size_of[ab_type]()
     comptime vLBO = v_s01 * size_of[ab_type]()
 
-    pdesc = MMASmemDescriptor.create[pSBO, pLBO, swizzle_mode](p_smem_tile.ptr)
-    vdesc = MMASmemDescriptor.create[vSBO, vLBO, swizzle_mode](v_smem_tile.ptr)
+    var pdesc = MMASmemDescriptor.create[pSBO, pLBO, swizzle_mode](
+        p_smem_tile.ptr
+    )
+    var vdesc = MMASmemDescriptor.create[vSBO, vLBO, swizzle_mode](
+        v_smem_tile.ptr
+    )
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         ab_type,
         ab_type,
@@ -347,14 +351,14 @@ def pv_mma_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+            var c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
@@ -418,7 +422,7 @@ def run_pv_spike[
     arange(v.tensor[update=False](), start=0.0, step=0.001)
 
     # A=P k-major tile (BM,BK); B=V mn-major tile (BK,BN) -> transpose_b=False.
-    p_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
+    var p_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
         ctx, p.device_tensor()
     )
     comptime block_dim = 128

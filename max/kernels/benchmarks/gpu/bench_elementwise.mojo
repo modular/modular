@@ -52,6 +52,18 @@ def simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 
+# `run_elementwise` takes an unconstrained function, so the float-only math
+# functions reach it through this wrapper, which states no obligation of its
+# own.
+def float_fn[
+    func: def[fn_dtype: DType, width: SIMDLength](
+        SIMD[fn_dtype, width]
+    ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point()
+](x: SIMD) -> type_of(x):
+    comptime assert x.dtype.is_floating_point(), "dtype must be floating point"
+    return func(x)
+
+
 @no_inline
 def run_elementwise[
     rank: Int,
@@ -96,43 +108,41 @@ def run_elementwise[
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
-    @parameter
-    @__copy_capture(cb_in, cb_out)
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @__copy_capture(N)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_in, mut cb_out, imm}:
+        var in_tensor = TileTensor(
+            cb_in.offset_ptr(iteration), row_major(Coord(dims))
+        )
+        var out_tensor = TileTensor(
+            cb_out.offset_ptr(iteration), row_major(Coord(dims))
+        )
+
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var in_tensor = TileTensor(
-                cb_in.offset_ptr(iteration), row_major(Coord(dims))
-            )
-            var out_tensor = TileTensor(
-                cb_out.offset_ptr(iteration), row_major(Coord(dims))
-            )
+        def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
+            comptime assert out_tensor.flat_rank >= coord.flat_rank
+            comptime assert in_tensor.flat_rank >= coord.flat_rank
 
-            @always_inline
-            def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
-                comptime assert out_tensor.flat_rank >= coord.flat_rank
-                comptime assert in_tensor.flat_rank >= coord.flat_rank
-
-                out_tensor.store[alignment=align](
-                    coord,
-                    kernel_fn(
-                        in_tensor.load[width=simd_width, alignment=align](coord)
-                    ),
-                )
-
-            elementwise[pack_size, target="gpu"](
-                func,
-                Coord(dims),
-                ctx,
+            out_tensor.store[alignment=align](
+                coord,
+                kernel_fn(
+                    in_tensor.load[width=simd_width, alignment=align](coord)
+                ),
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        elementwise[pack_size, target="gpu"](
+            func,
+            Coord(dims),
+            ctx,
+        )
+
+    @always_inline
+    def bench_func(mut b: Bencher) raises {imm}:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var num_bytes = 2 * N * size_of[dtype]()
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "elementwise",
             input_id=String(
@@ -180,21 +190,29 @@ def main() raises:
                 m, "sqrt", dims, name=dims_str, ctx=ctx
             )
         elif op == "rsqrt":
-            run_elementwise[dtype, rsqrt](
+            run_elementwise[dtype, float_fn[rsqrt]](
                 m, "rsqrt", dims, name=dims_str, ctx=ctx
             )
         elif op == "log":
-            run_elementwise[dtype, log](m, "log", dims, name=dims_str, ctx=ctx)
+            run_elementwise[dtype, float_fn[log]](
+                m, "log", dims, name=dims_str, ctx=ctx
+            )
         elif op == "sin":
-            run_elementwise[dtype, sin](m, "sin", dims, name=dims_str, ctx=ctx)
+            run_elementwise[dtype, float_fn[sin]](
+                m, "sin", dims, name=dims_str, ctx=ctx
+            )
         elif op == "tanh":
-            run_elementwise[dtype, tanh](
+            run_elementwise[dtype, float_fn[tanh]](
                 m, "tanh", dims, name=dims_str, ctx=ctx
             )
         elif op == "exp":
-            run_elementwise[dtype, exp](m, "exp", dims, name=dims_str, ctx=ctx)
+            run_elementwise[dtype, float_fn[exp]](
+                m, "exp", dims, name=dims_str, ctx=ctx
+            )
         elif op == "erf":
-            run_elementwise[dtype, erf](m, "erf", dims, name=dims_str, ctx=ctx)
+            run_elementwise[dtype, float_fn[erf]](
+                m, "erf", dims, name=dims_str, ctx=ctx
+            )
         elif op == "add_const":
             run_elementwise[dtype, add_const_fn](
                 m, "add_const", dims, name=dims_str, ctx=ctx

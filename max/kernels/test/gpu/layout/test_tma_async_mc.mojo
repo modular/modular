@@ -13,11 +13,11 @@
 
 from std.sys import size_of
 
-from std.gpu import barrier
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.host import DeviceContext, Dim
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -61,7 +61,7 @@ def test_tma_mcast_load_kernel[
     var tma_multicast_mask = (1 << CLUSTER_N) - 1
 
     comptime __tile_layout = Layout.row_major(tileM, tileN)
-    tile = (
+    var tile = (
         LayoutTensor[
             dtype,
             __tile_layout,
@@ -75,7 +75,7 @@ def test_tma_mcast_load_kernel[
 
     barrier()
 
-    mbar = unsafe_stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -112,7 +112,7 @@ def test_tma_mcast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    var dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -159,8 +159,8 @@ def test_tma_multicast_load_row_major[
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),
     )
 
-    src_host = src.tensor()
-    dst_host = dst.tensor()
+    var src_host = src.tensor()
+    var dst_host = dst.tensor()
 
     for m in range(dst_M):
         for n in range(dst_N):
@@ -200,7 +200,7 @@ def test_tma_sliced_multicast_load_kernel[
 
     var tma_multicast_mask = (1 << CLUSTER_N) - 1
 
-    tile = (
+    var tile = (
         LayoutTensor[
             dtype,
             tile_layout,
@@ -214,7 +214,7 @@ def test_tma_sliced_multicast_load_kernel[
 
     barrier()
 
-    mbar = unsafe_stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -257,7 +257,7 @@ def test_tma_sliced_multicast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    var dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -304,8 +304,8 @@ def test_tma_sliced_multicast_load_row_major[
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),
     )
 
-    src_host = src.tensor()
-    dst_host = dst.tensor()
+    var src_host = src.tensor()
+    var dst_host = dst.tensor()
 
     for m in range(dst_M):
         for n in range(dst_N):

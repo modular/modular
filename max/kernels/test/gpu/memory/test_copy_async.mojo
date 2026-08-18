@@ -14,8 +14,8 @@
 
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
-from std.gpu.memory import CacheEviction, async_copy
-from std.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
+from max.gpu.memory import CacheEviction, async_copy
+from max.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_true
 
@@ -72,7 +72,7 @@ def test_mbarrier_init(
 
 
 def _verify_mbarrier_init(asm: StringSlice) raises -> None:
-    assert_true("ld.param.b32" in asm)
+    assert_true("ld.param::entry.b32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
 

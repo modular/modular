@@ -18,7 +18,7 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -33,25 +33,24 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
@@ -73,9 +72,9 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_sf_layout_k_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
+    tile_sf_layout_k_major_typed,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -584,17 +583,17 @@ def copy_accum_to_gmem[
                             and global_j + UInt32(simd_size) <= N
                         ):
                             # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
-                            src_ptr = c_smem_split.ptr + (
+                            var src_ptr = c_smem_split.ptr + (
                                 linear_idx if size_of[c_type]()
                                 != 2 else swizzle(linear_idx)
                             )
-                            src = src_ptr.load[
+                            var src = src_ptr.load[
                                 width=simd_size, alignment=alignment
                             ]()
-                            dst_crd = RuntimeTuple[
+                            var dst_crd = RuntimeTuple[
                                 IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
                             ](Int(global_i), Int(global_j))
-                            dst_ptr = c.ptr + c.runtime_layout(dst_crd)
+                            var dst_ptr = c.ptr + c.runtime_layout(dst_crd)
                             dst_ptr.store[width=simd_size, alignment=alignment](
                                 src
                             )
@@ -1119,7 +1118,7 @@ def load_AB[
             var group_scale_offset_vec = group_scale_offsets[
                 Int(scheduler.current_group_idx)
             ]
-            comptime assert group_scale_offset_vec.size == 1
+            comptime assert group_scale_offset_vec.length == 1
             var group_scale_offset = group_scale_offset_vec[0]
             var a_m: Int
             var b_n: Int
@@ -1728,11 +1727,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=config.a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -2063,26 +2062,31 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
 
-    # keep the physical SMEM buffer BM x MMA_N
-    comptime a_smem_layout = tile_layout_k_major[
+    # keep the physical SMEM buffer BM x MMA_N. Use typed layouts as source of
+    # truth; bridge to legacy Layout for LayoutTensor and the MMA descriptor
+    # pipeline.
+    comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    ].to_layout()
+    comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
+    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ]()
+    ].to_layout()
 
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    # The typed form requires whole scale-factor atoms, which keeps it in step
+    # with the `BM // SF_MN_GROUP_SIZE` atom counts `sfa_smem_size` and
+    # `sfb_smem_size` use to size the buffers these layouts describe.
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         BM,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    ].to_layout()
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         MMA_N,
         SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles,
         config.vec_sf_size,
-    ]()
+    ].to_layout()
 
     comptime SmemType = B200BlockScaledMatmulSmem[
         a_type,
@@ -2169,7 +2173,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = tmem_addr_storage.unsafe_ptr()
 
-    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
     # hardcode to float32 for now as we only support FP32 accumulation for block scaled matmul
     # TODO: (KERN-2238) replace with get_accum_type[a_type]() when KERN-2238 is fixed and we can return FP32 for FP4-E2M1
@@ -2352,7 +2356,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             # non blocking, arrives and proceeds
             named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-            tmem_addr = ptr_tmem_addr[0]
+            var tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
                 config.num_accum_pipeline_stages * MMA_N
             )
@@ -2369,7 +2373,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         )
                     continue
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work()
+                var next_work_info = scheduler.fetch_next_work()
                 # DO MMA
                 if elect_one_cta:
                     var mma_output_mma_stage = (
@@ -2447,7 +2451,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         var tile_idx = 0
 
@@ -2500,7 +2504,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 )
                 mma_output_pipeline.consumer_step()
 
-                next_work_info = scheduler.fetch_next_work()
+                var next_work_info = scheduler.fetch_next_work()
                 work_info = next_work_info
                 if not work_info.is_done():
                     expert_id = rebind[Int32](
@@ -2596,7 +2600,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a)
     def description_fn() -> String:
         # fmt: off

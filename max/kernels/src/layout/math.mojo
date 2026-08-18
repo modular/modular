@@ -369,7 +369,7 @@ def mean(src: LayoutTensor) raises -> Scalar[src.dtype]:
 
     assert src.size() != 0, "input must not be empty"
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_1d[
         dtype_: DType, width: Int
@@ -464,7 +464,7 @@ def variance(
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
@@ -495,7 +495,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
@@ -523,7 +523,7 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
 
     assert src.num_elements() != 0, "input must not be empty"
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_1d[
         dtype_: DType, width: Int

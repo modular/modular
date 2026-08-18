@@ -414,7 +414,7 @@ def test_none_implicit_conversion() raises:
 
 
 def test_getitem_raises() raises:
-    custom_indexable = Python.import_module("custom_indexable")
+    var custom_indexable = Python.import_module("custom_indexable")
 
     var a = PythonObject(2)
     with assert_raises(contains="'int' object is not subscriptable"):
@@ -440,7 +440,7 @@ def test_getitem_raises() raises:
     with assert_raises(contains="'NoneType' object is not subscriptable"):
         _ = d[0, 0]
 
-    with_get = custom_indexable.WithGetItem()
+    var with_get = custom_indexable.WithGetItem()
     assert_equal("Key: 0", String(py=with_get[0]))
     assert_equal("Keys: 0, 0", String(py=with_get[0, 0]))
     assert_equal("Keys: 0, 0, 0", String(py=with_get[0, 0, 0]))
@@ -456,7 +456,7 @@ def test_getitem_raises() raises:
     with assert_raises(contains="Custom error"):
         _ = with_get_exception[1]
 
-    with_2d = custom_indexable.With2DGetItem()
+    var with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2, 3]", String(py=with_2d[0]))
     assert_equal(2, Int(py=with_2d[0, 1]))
     assert_equal(6, Int(py=with_2d[1, 2]))
@@ -472,36 +472,36 @@ def test_getitem_raises() raises:
 
 
 def test_setitem_raises() raises:
-    custom_indexable = Python.import_module("custom_indexable")
-    t = Python.evaluate("(1,2,3)")
+    var custom_indexable = Python.import_module("custom_indexable")
+    var t = Python.evaluate("(1,2,3)")
     with assert_raises(
         contains="'tuple' object does not support item assignment"
     ):
         t[0] = 0
 
-    lst = Python.evaluate("[1, 2, 3]")
+    var lst = Python.evaluate("[1, 2, 3]")
     with assert_raises(contains="list assignment index out of range"):
         lst[10] = 4
 
-    s = Python.evaluate('"hello"')
+    var s = Python.evaluate('"hello"')
     with assert_raises(
         contains="'str' object does not support item assignment"
     ):
         s[3] = "xy"
 
-    with_out = custom_indexable.Simple()
+    var with_out = custom_indexable.Simple()
     with assert_raises(
         contains="'Simple' object does not support item assignment"
     ):
         with_out[0] = 0
 
-    d = Python.evaluate("{}")
+    var d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
         d[Python.list(1, 2, 3)] = 5
 
 
 def test_py_slice() raises:
-    custom_indexable = Python.import_module("custom_indexable")
+    var custom_indexable = Python.import_module("custom_indexable")
     var a: PythonObject = [1, 2, 3, 4, 5]
     assert_equal("[2, 3]", String(py=a[1:3]))
     assert_equal("[1, 2, 3, 4, 5]", String(py=a[:]))
@@ -555,7 +555,7 @@ def test_py_slice() raises:
     with assert_raises(contains="'int' object is not subscriptable"):
         _ = i[0:1]
 
-    with_2d = custom_indexable.With2DGetItem()
+    var with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2]", String(py=with_2d[0, PythonObject(Slice(0, 2))]))
     assert_equal("[1, 2]", String(py=with_2d[0][0:2]))
 

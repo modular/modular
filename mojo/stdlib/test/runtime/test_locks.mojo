@@ -14,7 +14,7 @@
 from std.atomic import Atomic
 from std.time import time_function
 
-from std.runtime.asyncrt import TaskGroup
+from std.runtime._asyncrt import TaskGroup
 from std.testing import assert_equal, TestSuite
 
 from std.utils.lock import BlockingScopedLock, BlockingSpinLock
@@ -23,7 +23,7 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 def test_basic_lock() raises:
     var lock = BlockingSpinLock()
     var rawCounter = 0
-    var counter = Atomic[DType.int64](0)
+    var counter = Atomic[Int64](0)
     comptime maxI = 100
     comptime maxJ = 100
 

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
@@ -28,6 +29,36 @@ class TransferDirection(str, Enum):
 
     LOAD = "load"
     OFFLOAD = "offload"
+
+
+@dataclass(frozen=True, slots=True)
+class BlockCount:
+    """A point-in-time snapshot of a block pool's occupancy."""
+
+    free: int
+    total: int
+
+    @property
+    def used(self) -> int:
+        """Returns the number of blocks currently in use."""
+        return self.total - self.free
+
+    @property
+    def used_pct(self) -> float:
+        """Returns the percentage of blocks currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        capacity), rather than dividing by zero.
+        """
+        return 100 * self.used / self.total if self.total else 0.0
+
+    @property
+    def free_pct(self) -> float:
+        """Returns the percentage of blocks not currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0``, rather than dividing by zero.
+        """
+        return 100 * self.free / self.total if self.total else 0.0
 
 
 @runtime_checkable
@@ -43,10 +74,8 @@ class KVConnectorTransfer(Protocol):
 
     Two completion models cross this handle:
 
-    * Synchronous / stream-ordered connectors (the deprecated host
-      :class:`~.connectors.local_connector.LocalConnector` and
-      :class:`~.connectors.tiered_connector.TieredConnector`, and dKV) issue
-      their copies on -- or GPU-ordered ahead of -- the forward stream and return
+    * Synchronous / stream-ordered connectors (dKV) issue their copies on -- or
+      GPU-ordered ahead of -- the forward stream and return
       :class:`CompletedTransfer`. ``is_complete`` is immediately ``True``, so the
       manager commits the reused prefix at once and never holds the request out
       of a batch.
@@ -83,7 +112,7 @@ class KVConnectorTransfer(Protocol):
 class CompletedTransfer:
     """An already-complete :class:`KVConnectorTransfer`.
 
-    Returned by synchronous / stream-ordered connectors (host, tiered, dKV):
+    Returned by synchronous / stream-ordered connectors (dKV):
     their copies ride the forward stream or are GPU-ordered ahead of it, so from
     the manager's perspective the transfer is already done -- no pinning, no
     deferred commit, no cordoning. ``g0_blocks`` still reports the device blocks
@@ -128,9 +157,7 @@ class KVConnector(Protocol):
 
     All block hashes crossing this Protocol are in canonical bytes form:
     8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
-    32 bytes for full SHA-256 digests. ``parent_seq_hash`` is ``None`` to
-    denote the root of the chain; otherwise it is in the same bytes form
-    as each element of ``block_hashes``. The block hasher produces this
+    32 bytes for full SHA-256 digests. The block hasher produces this
     canonical form directly, so callers pass the hashes through unchanged;
     a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)
     validates and converts at its own boundary.
@@ -192,25 +219,18 @@ class KVConnector(Protocol):
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offload the device blocks to the external cache.
 
-        The blocks form one ordered sequence whose first block chains onto
-        ``parent_seq_hash`` (``None`` denotes the root of the chain).
-        Connectors that key blocks purely by hash (host/disk tiers) ignore
-        ``parent_seq_hash``; the dKV connector uses it to chain the
-        sequence server-side.
+        The blocks form one ordered sequence. Every connector keys blocks
+        purely by hash, so the order carries no parentage.
 
         Args:
             block_ids: Device block IDs to offload, in prefix order.
             block_hashes: Hashes for the blocks being offloaded, in prefix
                 order. Canonical bytes form (8 big-endian bytes for
                 ahash64-family, 32 bytes for SHA-256).
-            parent_seq_hash: Hash of the block preceding ``block_hashes[0]``
-                in the prefix in the same bytes form as ``block_hashes``,
-                or ``None`` if this run begins at the root.
             replica_idx: DP replica whose device buffers source the offloaded
                 blocks. The external tier itself is replica-agnostic.
 
@@ -289,8 +309,8 @@ class KVConnector(Protocol):
             Retained only for the dKV connector, which still posts its READs in
             :meth:`load` and orders them here; a no-op for every other connector.
 
-        Called before the forward pass. Connectors whose loads already ride the
-        device stream (host/disk tiers) need no work here. The dKV connector
+        Called before the forward pass. Connectors that report completion
+        through :class:`KVConnectorTransfer` need no work here. The dKV connector
         does one of two things by transport: for a co-located (same-host) load it
         enqueues a cross-stream CUDA event wait so the compute stream is
         GPU-ordered after the H2D copies and returns without a host sync (the
@@ -324,24 +344,14 @@ class KVConnector(Protocol):
 
     # Optional properties with default implementations
     @property
-    def num_host_blocks(self) -> int:
-        """Number of host blocks. Returns 0 if not applicable."""
-        return 0
+    def host_block_count(self) -> BlockCount:
+        """Host block occupancy. Empty (0 of 0) if not applicable."""
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        """Number of used host blocks. Returns 0 if not applicable."""
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        """Number of disk blocks. Returns 0 if not applicable."""
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        """Number of used disk blocks. Returns 0 if not applicable."""
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        """Disk block occupancy. Empty (0 of 0) if not applicable."""
+        return BlockCount(free=0, total=0)
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""

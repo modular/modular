@@ -32,12 +32,64 @@ comptime NVFP4_SF_VECTOR_SIZE = 16
 comptime MXFP4_SF_VECTOR_SIZE = 32
 comptime MXFP8_SF_VECTOR_SIZE = 32
 
+# Reciprocal of E4M3's maxabs. Exact as a literal, so the MXFP8 block-scale
+# derivation carries no `V_RCP_F32` rounding and no reliance on LLVM folding
+# the intrinsic.
+comptime E4M3_MAXABS_RECIP = 1.0 / 448.0
+
 comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
 comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
 comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu
 
 comptime FP4_E2M1_MANTISSA_WIDTH = 1
 comptime FP4_E2M1_MAX_EXPONENT = 2
+
+# W4A8: E4M3 activations against E2M1 weights, both on E8M0 group-32 scales.
+# `kind::mxf8f6f4` encodes the two operand formats independently, so the pair
+# reaches the tensor cores without dequantizing the weights first. Global
+# memory keeps the weights nibble-packed; the FP4 TMA copy pads them on the way
+# in, landing each 16-value group in 16 shared-memory bytes as 8 packed bytes
+# followed by an 8-byte gap, which is the form this UMMA kind reads. The values
+# themselves stay nibble-packed; it is the padding that makes a K extent span
+# one byte per element. The FP4-only kinds are different -- there BOTH operands
+# stay packed and unpadded all the way into shared memory.
+comptime W4A8_A_DTYPE = DType.float8_e4m3fn
+comptime W4A8_B_DTYPE = DType.uint8
+
+
+def is_w4a8_operand_pair[a_type: DType, b_type: DType]() -> Bool:
+    """Reports whether (activations, weights) is the mixed W4A8 pair.
+
+    Directional, for callers that name their operands: activations first,
+    weights second. Once inside the kernel the two can arrive in either slot
+    (see `block_scaled_operands_compatible`).
+    """
+    return a_type == W4A8_A_DTYPE and b_type == W4A8_B_DTYPE
+
+
+def _is_packed_fp4[dtype: DType, other_dtype: DType]() -> Bool:
+    """Reports whether this operand is E2M1 that a TMA copy must unpack.
+
+    True only for the mixed W4A8 pair. When both operands are `uint8` the UMMA
+    kind is one of the FP4-only ones, which reads nibble-packed shared memory
+    directly and must not be unpacked.
+    """
+    return dtype == W4A8_B_DTYPE and other_dtype == W4A8_A_DTYPE
+
+
+def block_scaled_operands_compatible[a_type: DType, b_type: DType]() -> Bool:
+    """Reports whether A and B may be fed to one block-scaled UMMA.
+
+    Every kind but `kind::mxf8f6f4` requires both operands in the same format;
+    that one encodes the two formats independently, so it also admits the W4A8
+    pair -- in either slot, since `AB_swapped` hands the weights to A.
+    """
+    return (
+        a_type == b_type
+        or is_w4a8_operand_pair[a_type, b_type]()
+        or is_w4a8_operand_pair[b_type, a_type]()
+    )
+
 
 comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
     0.0,
@@ -1006,33 +1058,80 @@ def convert_ref_scales_to_mxfp8_format[
             )
 
 
-def get_scaling_kind[
-    a_type: DType,
-    scales_dtype: DType,
-    SF_VECTOR_SIZE: Int,
+def block_scaled_umma_kind[
+    a_type: DType, b_type: DType, scales_dtype: DType
 ]() -> UMMAKind:
     """Selects the SM100 UMMA kind matching the operand and scale-factor types.
 
-    Maps the combination of operand dtype, scale-factor dtype, and scale-factor
-    vector size to the corresponding `UMMAKind` used by SM100 block-scaled
-    matmul instructions.
+    The single mapping from operand dtypes to `UMMAKind`; callers that also know
+    the scale-factor vector size should go through `get_scaling_kind`.
+
+    B's dtype has to be read alongside A's: W4A8 and plain MXFP8 share A's E4M3
+    and the E8M0 scales, and differ only in B. Returning `kind::mxf8f6f4` for
+    the mixed pair only says the tensor cores accept it -- the caller still owes
+    the padded FP4 TMA copy that feeds B (see `_is_packed_fp4`), so a path
+    without one must reject the pair rather than call this.
 
     Parameters:
-        a_type: Operand element type (uint8 for MXFP4/NVFP4, float8_e4m3fn for MXFP8).
+        a_type: A operand element type; `uint8` is nibble-packed E2M1.
+        b_type: B operand element type; `uint8` is nibble-packed E2M1.
         scales_dtype: Scale-factor element type.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
 
     Returns:
         The `UMMAKind` matching the provided type combination.
     """
-    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE:
+    comptime if is_w4a8_operand_pair[a_type, b_type]():
+        comptime assert (
+            scales_dtype == MXFP8_SF_DTYPE
+        ), "W4A8 requires E8M0 scales on both operands"
+        return UMMAKind.KIND_MXF8F6F4
+    elif a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
         return UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE:
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
         return UMMAKind.KIND_MXF4
     else:
         comptime assert (
-            a_type == DType.float8_e4m3fn
-            and scales_dtype == MXFP8_SF_DTYPE
-            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
         ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        comptime assert (
+            a_type == b_type
+        ), "mixed operand dtypes are only supported for the W4A8 pair"
         return UMMAKind.KIND_MXF8F6F4
+
+
+def get_scaling_kind[
+    a_type: DType,
+    scales_dtype: DType,
+    SF_VECTOR_SIZE: Int,
+    b_type: DType,
+]() -> UMMAKind:
+    """Selects the UMMA kind for a same-format block-scaled matmul.
+
+    `block_scaled_umma_kind` plus the scale-factor vector-size check. Rejects
+    the mixed W4A8 pair: only the grouped 1D-1D kernel implements the padded FP4
+    TMA copy that mixed operands need, and it infers its kind directly.
+
+    Parameters:
+        a_type: A operand element type (`uint8` for MXFP4/NVFP4,
+            `float8_e4m3fn` for MXFP8).
+        scales_dtype: Scale-factor element type.
+        SF_VECTOR_SIZE: Number of elements each scale factor covers.
+        b_type: B operand element type; must equal `a_type`.
+
+    Returns:
+        The `UMMAKind` matching the provided type combination.
+    """
+    comptime assert a_type == b_type, (
+        "this path requires both operands in the same format; the mixed W4A8"
+        " pair is only supported by the grouped block-scaled matmul"
+    )
+    # The scale dtype fixes the group size: NVFP4's E4M3 scales cover 16
+    # elements, and MXFP4 and MXFP8 share E8M0 scales over 32.
+    comptime expected_sf_vector_size = (
+        NVFP4_SF_VECTOR_SIZE if scales_dtype
+        == NVFP4_SF_DTYPE else MXFP4_SF_VECTOR_SIZE
+    )
+    comptime assert (
+        SF_VECTOR_SIZE == expected_sf_vector_size
+    ), "SF_VECTOR_SIZE does not match the scale dtype's block-scaled format"
+    return block_scaled_umma_kind[a_type, b_type, scales_dtype]()

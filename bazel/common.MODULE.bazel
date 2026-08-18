@@ -48,10 +48,17 @@ archive_override(
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-feQyfpQxe9TFkuN4xdOzZ1QHr898WiZao6I7IMbApuw=",
-    strip_prefix = "rules_mojo-03c6ac252de49be7e8d1206fe1c2e0cfdda6e275",
+    integrity = "sha256-wciBGAfb+aWWW6XuNiWqLtfiaLIE1evNzhS5q5gt0/w=",
+    patch_strip = 1,
+    patches = [
+        # Left as a patch for now since it may not worth upstreaming.
+        # Also includes a toolchain change which has to be done in lockstep to the current commit
+        # That piece can be removed after the 8/5 nightly.
+        "//bazel/public-patches:rules_mojo_toolchain.patch",
+    ],
+    strip_prefix = "rules_mojo-47643a3b441c20c3a351b8807e37c547338557c8",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/03c6ac252de49be7e8d1206fe1c2e0cfdda6e275.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/47643a3b441c20c3a351b8807e37c547338557c8.tar.gz",
     ],
 )
 
@@ -243,17 +250,17 @@ http_archive(
 http_archive(
     name = "efa_libfabric_prebuilt",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5",
+    sha256 = "a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5/efa-libfabric-prebuilt-cpu.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f/efa-libfabric-prebuilt-cpu.tar.xz",
 )
 
 http_archive(
     name = "efa_libfabric_prebuilt_cuda",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271",
+    sha256 = "0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271/efa-libfabric-prebuilt-cuda.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa/efa-libfabric-prebuilt-cuda.tar.xz",
 )
 
 # CUDA Driver API + runtime headers used by libfabric_plugin_lib (-DHAVE_CUDA).
@@ -289,7 +296,7 @@ http_archive(
     url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-30-2.tar.gz",
 )
 
-RUFF_VERSION = "0.14.0"
+RUFF_VERSION = "0.16.3"
 
 [
     http_archive(
@@ -303,9 +310,9 @@ RUFF_VERSION = "0.14.0"
         ),
     )
     for arch, sha in [
-        ("x86_64-unknown-linux-gnu", "28fe06f700caf99eee235f90e6e349f48b7f9a4b0d42e3ee5b3686f9259649a3"),
-        ("aarch64-unknown-linux-gnu", "60fc3b464a723456ba1bc8cd91d29806753c885f72e26ac67b718cee6b35aaca"),
-        ("aarch64-apple-darwin", "0b7c193d5c45eda02226720eb75239fabeca995d5a0eb3830fd2973caa3030ec"),
+        ("x86_64-unknown-linux-gnu", "7ab3b978d2c0b1c96b2323d4e5c4f35284ae1cdf35d2f7399595c74c805f5fa3"),
+        ("aarch64-unknown-linux-gnu", "b9cc833f5db856484b38718c9da195a6ec990707307bda30530913a09705419a"),
+        ("aarch64-apple-darwin", "136a4db6512d9b16dda56ac8604696ed65c3b1a914a142de029e7f8d5006f1d9"),
     ]
 ]
 

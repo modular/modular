@@ -24,14 +24,15 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -45,8 +46,7 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
@@ -514,7 +514,7 @@ struct HopperMatmulSM90Kernel[
             Tuple of (local_warp_group_idx, c_reg_tile, final_c_reg_tile).
         """
 
-        @parameter
+        @__parameter
         def num_regs() -> Int:
             if Self.num_consumer == 1:
                 return 256
@@ -787,7 +787,7 @@ struct HopperMatmulSM90Kernel[
         b_tiles: Self.SMem.BTileArray,
     ):
         @always_inline
-        @parameter
+        @__parameter
         def producer_loop[
             num_pipeline_stages_to_unroll: Int,
         ](k_iter: Int):
@@ -1457,7 +1457,7 @@ struct HopperMatmulSM90Kernel[
                 row_major(Coord(Int(M), Idx[N])),
             )
 
-            @parameter
+            @__parameter
             def elementwise_epilogue_fn_wrapper[
                 dtype: DType, width: SIMDLength, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
@@ -1535,7 +1535,7 @@ struct HopperMatmulSM90Kernel[
         comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
         @always_inline
-        @parameter
+        @__parameter
         def consumer_loop[
             num_pipeline_stages_to_unroll: Int,
         ]():

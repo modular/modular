@@ -49,7 +49,7 @@ type for most Mojo code. It carries a text message describing what went wrong,
 and it's the right choice for application-level error handling—simple,
 well-supported, and sufficient for the majority of use cases.
 
-You can raise an `Error` with the constructor or a string literal shorthand:
+You can raise an `Error` with the initializer or a string literal shorthand:
 
 ```mojo
 # These are equivalent
@@ -193,7 +193,7 @@ To re-raise a caught error, pass it to `raise`:
 
 ```mojo
 try:
-    result = process_record(-1)
+    var result = process_record(-1)
 except e:
     print("Logging error:", e)
     raise e  # re-raise
@@ -242,7 +242,7 @@ keyword arguments like `ValidationError(field="username", reason="too short")`.
 
 Typed errors work on GPUs and embedded targets as long as you avoid
 heap-allocated types like `String`. For more on GPU programming, see
-[GPU fundamentals](/docs/manual/gpu/fundamentals/).
+[GPU fundamentals](https://max.modular.com/gpu/fundamentals/).
 
 :::
 
@@ -492,7 +492,7 @@ distinguish between conditions without carrying different data per condition.
 
 ## The `Never` type
 
-`Never` is a type with no constructors—it can't be instantiated. This makes
+`Never` is a type with no initializers. It can't be instantiated. This makes
 it useful in error-handling signatures to express two opposite guarantees:
 
 - `raises YourErrorType -> Never` — The function *always* raises and never
@@ -901,8 +901,8 @@ like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
-content = f.read()
+var f = open(input_file, "r")
+var content = f.read()
 # Process the content as needed
 # Close the file handle
 f.close()
@@ -924,10 +924,10 @@ To handle this scenario, you could rewrite the code to use `try` like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
+var f = open(input_file, "r")
 
 try:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 finally:
     # Ensure that the file handle is closed even if read() raises an error
@@ -945,7 +945,7 @@ like this:
 
 ```mojo
 with open(input_file, "r") as f:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 ```
 
@@ -956,8 +956,8 @@ different file:
 
 ```mojo
 with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
-    input_text = f_in.read()
-    output_text = input_text.upper()
+    var input_text = f_in.read()
+    var output_text = input_text.upper()
     f_out.write(output_text)
 ```
 
@@ -1021,8 +1021,8 @@ struct Timer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
             Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
@@ -1096,8 +1096,8 @@ struct ConditionalTimer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
             Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
@@ -1132,7 +1132,7 @@ def main() raises:
                 print("continue executed")
                 continue
 
-            j = flaky_identity(i)
+            var j = flaky_identity(i)
             print("j =", j)
 
             print("Ending execution")

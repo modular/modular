@@ -203,7 +203,7 @@ b[3] = a[4] + a[3]
 This unrolled loop compiles to branchless machine code, unlike a normal `for`
 loop, which includes a bounds test at every iteration. This can be especially
 important on GPU, to avoid
-[thread divergence](/docs/manual/gpu/block-and-warp/#warp-level-synchronization).
+[thread divergence](https://max.modular.com/gpu/block-and-warp/#warp-level-synchronization).
 
 The `comptime for` construct unrolls at the beginning of compilation, which can
 greatly expand both the code size and the compilation time.

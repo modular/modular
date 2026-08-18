@@ -58,7 +58,7 @@ preloaded once and reused across all rows in the loop.
 
 from std.collections import Array, Optional
 from std.collections._conditional import _ComptimeConditional
-from std.math import ceildiv, rsqrt
+from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
@@ -70,13 +70,13 @@ from std.sys import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from layout import (
     Coord,
     Idx,
@@ -151,7 +151,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     weight_offset: Scalar[in_dtype],
     rows: Int32,
     cols: Int32,
-    scale_ub: Scalar[scales_dtype],
+    scale_ub: Float32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[
@@ -343,7 +343,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     weight_offset: Scalar[in_dtype],
     rows: Int32,
     cols: Int32,
-    scale_ub: Scalar[scales_dtype],
+    scale_ub: Float32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
     residual: _ComptimeConditionalTileTensor[
@@ -725,7 +725,7 @@ def _allreduce_rmsnorm_fp8_launch[
     comptime assert output.flat_rank >= 2
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output)
     def output_fn[
         width: SIMDLength
@@ -854,7 +854,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime if quantize:
         var _scale_scratch_raw = _rows_per_rank * size_of[scales_dtype]()
         # Pad scale section to simd_width bytes (matches scale_pad_elements).
-        _scale_scratch = ceildiv(_scale_scratch_raw, simd_width) * simd_width
+        _scale_scratch = align_up(_scale_scratch_raw, simd_width)
     var _min_buf = size_of[Signal]() + _out_scratch + _scale_scratch
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
@@ -884,7 +884,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime assert output.flat_rank >= 2
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output)
     def output_fn[
         width: SIMDLength
@@ -969,7 +969,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
     @__copy_capture(residual_output, _cols)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -1001,13 +1001,13 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Step 1: Allreduce with add epilogue → residual_output.
     @__copy_capture(residual, residual_output, _cols)
     @always_inline
-    @parameter
+    @__parameter
     def add_epilogue[
         _dtype: DType,
         _width: SIMDLength,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+    ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
         var il = coord_to_index_list(coords)
         var flat_idx = il[0] * _cols + il[1]
         var res = residual.raw_load[width=_width, alignment=_alignment](
@@ -1119,14 +1119,14 @@ def _dispatch_fused_kernel[
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
-    @parameter
+    @__parameter
     def _rank_4_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
-    @parameter
+    @__parameter
     def _rank_8_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 80 * 1024 if not has_residual else 96 * 1024
@@ -1144,7 +1144,7 @@ def _dispatch_fused_kernel[
     # 36.3us, a 12% loss). Use a column-aware threshold: 100 KB for wide
     # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
     # validated narrow-column crossover; cols=4096 crosses near 72 KB).
-    @parameter
+    @__parameter
     def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
         comptime if has_amd_gpu_accelerator():
             return _rank_8_per_rank_thresh()
@@ -1166,14 +1166,14 @@ def _dispatch_fused_kernel[
     #          split beats 2-stage for cols > 8192. See dispatch below.
     #   B200 4GPU: 1536 KB per-rank crossover
     #   B200 8GPU: conservative, same as 2-stage threshold
-    @parameter
+    @__parameter
     def _rank_4_split_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return _rank_4_per_rank_thresh()
         else:
             return 1536 * 1024
 
-    @parameter
+    @__parameter
     def _rank_8_split_thresh() -> Int:
         # For 8 GPUs the split threshold equals the 2-stage threshold on
         # both AMD and NVIDIA.  This intentionally means the 2-stage
@@ -1234,7 +1234,7 @@ def _dispatch_fused_kernel[
         else:
             use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
-    @parameter
+    @__parameter
     def launch_1stage[sw: Int]() raises:
         _allreduce_rmsnorm_fp8_launch[
             sw,
@@ -1261,7 +1261,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
-    @parameter
+    @__parameter
     def launch_2stage[sw: Int]() raises:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,

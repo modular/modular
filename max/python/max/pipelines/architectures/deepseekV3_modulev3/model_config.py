@@ -93,8 +93,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     max_position_embeddings: int = 4096
     """Maximum positional embeddings as defined by the original model."""
-    max_seq_len: int = 163840
-    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+    max_seq_len: int
+    """Maximum sequence length as defined by the MAX Engine pipeline
+    configuration. Required so that a subclass ``initialize`` that forgets to
+    resolve it fails at construction instead of inheriting another model's
+    limit."""
 
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
@@ -115,6 +118,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     Set from the state-dict-dependent finalization step in
     :meth:`DeepseekV3Model.load_model`; ``None`` for bf16 checkpoints.
     """
+
+    mla_o_proj_quantized: bool = True
+    """Whether the MLA output projection is quantized."""
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":

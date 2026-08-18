@@ -22,6 +22,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 from max.driver import CPU, Buffer, Device
+from max.dtype import DType
 from max.pipelines.context import (
     GenerationStatus,
     GrammarEnforcementSnapshot,
@@ -39,12 +40,16 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
     VideoEncoderMetrics,
+    VisionCachePlan,
     VisionEncoderCache,
     VisionEncodeResult,
     derive_counts_from_spans,
     validate_vision_encode_counts,
 )
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.lib.vlm_utils import (
+    compute_multimodal_merge_indices,
+    compute_windowed_merge_indices,
+)
 from max.pipelines.request import RequestID
 
 
@@ -328,6 +333,7 @@ def test_insert_and_lookup() -> None:
     entry = cache.lookup(0xABC)
     assert entry is not None
     assert entry.num_tokens == 10
+    assert entry.embeddings is not None
     assert len(entry.embeddings) == 1
 
 
@@ -665,6 +671,8 @@ def test__cache_and_split_stores_per_image() -> None:
     entry_b = cache.lookup(0xB)
     assert entry_a is not None and entry_a.num_tokens == 3
     assert entry_b is not None and entry_b.num_tokens == 5
+    assert entry_a.embeddings is not None
+    assert entry_b.embeddings is not None
     assert entry_a.embeddings[0].to_numpy().shape == (3, hidden)
     assert entry_b.embeddings[0].to_numpy().shape == (5, hidden)
     np.testing.assert_array_equal(
@@ -733,6 +741,8 @@ def test__cache_and_split_skips_zero_hash_keeps_offset() -> None:
     entry_b = cache.lookup(0xB)
     assert entry_a is not None and entry_a.num_tokens == 2
     assert entry_b is not None and entry_b.num_tokens == 4
+    assert entry_a.embeddings is not None
+    assert entry_b.embeddings is not None
     # A takes rows [0:2]; B takes rows [5:9] -- the offset advanced past the
     # 3 skipped zero-hash rows, so B is NOT [2:6].
     np.testing.assert_array_equal(
@@ -757,6 +767,8 @@ def test_assemble_concatenates_in_order() -> None:
             _make_image_meta(0, 3, image_hash=0xA),
             _make_image_meta(3, 8, image_hash=0xB),
         ],
+        image_token_indices=np.arange(8, dtype=np.int32),
+        active_length=8,
     )
     empty = [_make_buffer(0, hidden)]
     result = cache._assemble_embeddings(
@@ -790,10 +802,14 @@ def test_assemble_multi_context_ordering() -> None:
     ctx1 = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 2, image_hash=0xA)],
+        image_token_indices=np.arange(2, dtype=np.int32),
+        active_length=2,
     )
     ctx2 = FakeContext(
         request_id=RequestID("r2"),
         images=[_make_image_meta(0, 3, image_hash=0xB)],
+        image_token_indices=np.arange(3, dtype=np.int32),
+        active_length=3,
     )
     empty = [_make_buffer(0, hidden)]
     result = cache._assemble_embeddings(
@@ -838,6 +854,8 @@ def test_end_to_end_chunked_prefill() -> None:
     ctx = FakeContext(
         request_id=req,
         images=[_make_image_meta(100, 400, image_hash=0xABC)],
+        image_token_indices=np.arange(100, 400, dtype=np.int32),
+        active_length=400,
     )
     misses = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     assert len(misses) == 1
@@ -1176,10 +1194,9 @@ def test_prepare_vision_outputs_returns_embeddings_and_indices() -> None:
 
 
 def test_prepare_vision_outputs_chunked_prefill() -> None:
-    """Indices from prior chunks become OOB in prepare_vision_outputs."""
+    """A straddling image is stored in full but assembled window-bounded."""
     cache = _make_cache()
     hidden = 4
-    oob = np.iinfo(np.int32).min
 
     # 6 image tokens at positions 4-9, processed_length=6 (first 6 done),
     # active window is positions 6-15 (active_length=10).
@@ -1192,7 +1209,7 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
     )
     uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
     vision_embeds = [_make_buffer(6, hidden)]
-    _embeddings, indices = cache.prepare_vision_outputs(
+    embeddings, indices = cache.prepare_vision_outputs(
         context_batch=_as_vlm_batch([ctx]),
         uncached_contexts=uncached,
         uncached_images=_miss_images(cache, uncached),
@@ -1201,9 +1218,14 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
         n_devices=1,
         empty_embeddings=[_make_buffer(0, hidden)],
     )
-    # positions 4,5 < processed_length=6 → OOB
-    # positions 6,7,8,9 → offsets 0,1,2,3
-    np.testing.assert_array_equal(indices, [oob, oob, 0, 1, 2, 3])
+    # Positions 4,5 are already processed: their rows are omitted, not
+    # OOB-masked. Rows pair with indices 0-3 of the active window.
+    np.testing.assert_array_equal(indices, [0, 1, 2, 3])
+    arr = embeddings[0].to_numpy()
+    np.testing.assert_array_equal(arr, vision_embeds[0].to_numpy()[2:6])
+    # The full entry is stored for reuse by later chunks and requests.
+    entry = cache.lookup(0xA)
+    assert entry is not None and entry.num_tokens == 6
 
 
 # ---------------------------------------------------------------------------
@@ -1750,11 +1772,10 @@ def test_prepare_vision_outputs_splits_by_passed_selection() -> None:
     assert int(embeddings[0].shape[0]) == 5  # A(2, cached) + B(3) assembled
 
 
-def test_assemble_tolerates_evicted_prior_image_row_aligned() -> None:
+def test_assemble_skips_evicted_prior_image() -> None:
     """A prefix-hit prior image evicted from the vision cache must not
-    crash assembly. Its tokens are all outside the active window (OOB in the
-    merge indices), so it gets shape-correct placeholder rows and
-    image_embeddings stays row-aligned with those indices."""
+    crash assembly. Its tokens are all outside the active window, so it
+    contributes no rows and no indices."""
     cache = _make_cache()
     hidden = 4
     img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
@@ -1782,19 +1803,374 @@ def test_assemble_tolerates_evicted_prior_image_row_aligned() -> None:
         empty_embeddings=[_make_buffer(0, hidden)],
     )
     arr = embeddings[0].to_numpy()
-    # The invariant that was violated: one embedding row per merge index.
-    assert arr.shape == (5, hidden)
+    # One embedding row per merge index; A contributes neither.
+    assert arr.shape == (3, hidden)
     assert len(indices) == arr.shape[0]
-    # A's placeholder rows are zeros (OOB in indices); B's rows are the encoder
-    # output (its indices are valid).
-    np.testing.assert_array_equal(arr[:2], 0.0)
-    np.testing.assert_allclose(arr[2:], 7.0)
-    oob = np.iinfo(np.int32).min
-    assert (indices[:2] == oob).all()
-    assert (indices[2:] >= 0).all()
+    np.testing.assert_allclose(arr, 7.0)
+    np.testing.assert_array_equal(indices, [0, 1, 2])
     # B is cached; A is never fabricated into the cache.
     assert cache.lookup(0xB) is not None
     assert cache.lookup(0xA) is None
+
+
+# Block mode (MODELS-1605): capacity is a byte budget carved into
+# fixed-size blocks instead of an entry count.
+
+
+def _make_block_cache(
+    num_blocks: int = 8,
+    block_tokens: int = 4,
+    hidden: int = 4,
+    n_devices: int = 1,
+) -> VisionEncoderCache[TextAndVisionContext]:
+    """Block-mode cache whose pool holds exactly ``num_blocks`` blocks.
+
+    Budget is sized for float32 rows of width ``hidden`` (what
+    ``_make_buffer`` produces).
+    """
+    budget = num_blocks * block_tokens * hidden * 4
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=budget,
+            hidden_size=hidden,
+            dtype=DType.float32,
+        ),
+        block_tokens=block_tokens,
+        devices=[CPU() for _ in range(n_devices)],
+    )
+
+
+def test_block_pool_allocates_at_construction() -> None:
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    assert cache.total_num_blocks == 8
+    entry = cache.insert(0xA, [_make_buffer(6)], 6)
+    assert cache.total_num_blocks == 8
+    assert entry.embeddings is None
+    assert entry.block_ids is not None and len(entry.block_ids) == 2
+
+
+def test_block_store_roundtrip_multi_block() -> None:
+    """Values survive the split into blocks and the gather back out."""
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    hidden = 4
+    total = _make_buffer(12, hidden)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[3, 9],
+        image_hashes=[0xA, 0xB],
+        request_ids=[RequestID("r1"), RequestID("r1")],
+    )
+    entry_a = cache.lookup(0xA)
+    entry_b = cache.lookup(0xB)
+    assert entry_a is not None and entry_a.block_ids is not None
+    assert entry_b is not None and len(entry_b.block_ids or []) == 3
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 12, image_hash=0xB),
+        ],
+        image_token_indices=np.arange(12, dtype=np.int32),
+        active_length=12,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), total.to_numpy())
+
+
+def test_block_store_roundtrip_multi_device() -> None:
+    cache = _make_block_cache(num_blocks=4, block_tokens=4, n_devices=2)
+    hidden = 4
+    dev0 = Buffer.from_numpy(np.ones((6, hidden), dtype=np.float32))
+    dev1 = Buffer.from_numpy(np.full((6, hidden), 2.0, dtype=np.float32))
+    cache.insert(0xA, [dev0, dev1], 6)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 6, image_hash=0xA)],
+        image_token_indices=np.arange(6, dtype=np.int32),
+        active_length=6,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=2,
+        empty_embeddings=[_make_buffer(0, hidden), _make_buffer(0, hidden)],
+    )
+    np.testing.assert_allclose(result[0].to_numpy(), 1.0)
+    np.testing.assert_allclose(result[1].to_numpy(), 2.0)
+
+
+def test_block_fragmentation_rounds_up_to_whole_blocks() -> None:
+    cache = _make_block_cache(num_blocks=4, block_tokens=4)
+    cache.insert(0xA, [_make_buffer(5)], 5)  # 5 tokens -> 2 blocks
+    assert cache._pool is not None
+    assert cache._pool.num_free_blocks == 2
+    assert cache.num_free_or_evictable_blocks == 4  # entry is unreferenced
+
+
+def test_block_eviction_frees_blocks_on_demand() -> None:
+    """Inserting past capacity evicts zero-ref LRU entries until it fits."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=4)
+    cache.insert(0xA, [_make_buffer(8)], 8)
+    cache.insert(0xB, [_make_buffer(8)], 8)  # pool now full
+    cache.insert(0xC, [_make_buffer(12)], 12)  # needs 3 -> evicts A then B
+    assert cache.lookup(0xA) is None
+    assert cache.lookup(0xB) is None
+    entry_c = cache.lookup(0xC)
+    assert entry_c is not None and entry_c.block_ids is not None
+
+
+def test_block_eviction_respects_refcounts_owned_fallback() -> None:
+    """When every block is pinned, the new entry falls back to an owned
+    buffer outside the pool rather than evicting a referenced entry."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(8)], 8)
+    cache.acquire(req, 0xA)
+    cache.insert(0xB, [_make_buffer(8)], 8)
+    cache.acquire(req, 0xB)
+    buf_c = _make_buffer(4)
+    entry_c = cache.insert(0xC, [buf_c], 4)
+    assert entry_c.block_ids is None
+    assert entry_c.embeddings is not None
+    entry_a = cache.lookup(0xA)
+    assert entry_a is not None and entry_a.block_ids is not None
+    # The fallback entry is cached and assembles like any other.
+    ctx = FakeContext(
+        request_id=RequestID("r2"),
+        images=[_make_image_meta(0, 4, image_hash=0xC)],
+        image_token_indices=np.arange(4, dtype=np.int32),
+        active_length=4,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]), n_devices=1, empty_embeddings=[_make_buffer(0, 4)]
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), buf_c.to_numpy())
+
+
+def test_block_entry_larger_than_pool_falls_back() -> None:
+    cache = _make_block_cache(num_blocks=2, block_tokens=4)
+    entry = cache.insert(0xA, [_make_buffer(12)], 12)  # 3 blocks > 2 total
+    assert entry.block_ids is None
+    assert entry.embeddings is not None
+    assert cache.lookup(0xA) is not None
+
+
+def test_block_budget_below_one_block_raises() -> None:
+    with pytest.raises(ValueError, match="cannot fit one"):
+        VisionEncoderCache(
+            plan=VisionCachePlan(
+                bytes_per_device=8, hidden_size=4, dtype=DType.float32
+            ),
+            block_tokens=4,
+            devices=[CPU()],
+        )
+
+
+def test_block_single_block_assembly_returns_pool_view() -> None:
+    """A one-image batch whose entry fits in one block assembles zero-copy:
+    the returned buffer aliases the pool."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=8)
+    buf = _make_buffer(5, 4)
+    cache.insert(0xA, [buf], 5)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=0xA)],
+        image_token_indices=np.arange(5, dtype=np.int32),
+        active_length=5,
+    )
+    batch = _as_vlm_batch([ctx])
+    empty = [_make_buffer(0, 4)]
+    result = cache._assemble_embeddings(
+        batch, n_devices=1, empty_embeddings=empty
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), buf.to_numpy())
+    # Prove aliasing: writing through the result is visible on re-assembly.
+    marker = Buffer.from_numpy(np.full((5, 4), 7.0, dtype=np.float32))
+    result[0].inplace_copy_from(marker)
+    again = cache._assemble_embeddings(
+        batch, n_devices=1, empty_embeddings=empty
+    )
+    np.testing.assert_allclose(again[0].to_numpy(), 7.0)
+
+
+def test_block_multi_block_assembly_copies() -> None:
+    """A multi-block entry cannot be a contiguous view, so assembly copies."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=4)
+    buf = _make_buffer(6, 4)
+    cache.insert(0xA, [buf], 6)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 6, image_hash=0xA)],
+        image_token_indices=np.arange(6, dtype=np.int32),
+        active_length=6,
+    )
+    batch = _as_vlm_batch([ctx])
+    empty = [_make_buffer(0, 4)]
+    result = cache._assemble_embeddings(
+        batch, n_devices=1, empty_embeddings=empty
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), buf.to_numpy())
+    zeros = Buffer.from_numpy(np.zeros((6, 4), dtype=np.float32))
+    result[0].inplace_copy_from(zeros)
+    again = cache._assemble_embeddings(
+        batch, n_devices=1, empty_embeddings=empty
+    )
+    np.testing.assert_array_equal(again[0].to_numpy(), buf.to_numpy())
+
+
+def test_block_partial_hit_assembly() -> None:
+    """Second batch mixes a resident block entry with fresh encoder output."""
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    hidden = 4
+    first = Buffer.from_numpy(np.ones((4, hidden), dtype=np.float32))
+    cache._cache_and_split(
+        vision_outputs=[first],
+        per_image_token_counts=[4],
+        image_hashes=[0xA],
+        request_ids=[RequestID("r1")],
+    )
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    img_c = _make_image_meta(4, 8, image_hash=0xC)
+    ctx = FakeContext(
+        request_id=RequestID("r2"),
+        images=[img_a, img_c],
+        next_images=[img_a, img_c],
+        image_token_indices=np.arange(8, dtype=np.int32),
+        active_length=8,
+    )
+    vision_embeds = [
+        Buffer.from_numpy(np.full((4, hidden), 3.0, dtype=np.float32))
+    ]
+    embeddings, indices = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_c]],
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[4],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    arr = embeddings[0].to_numpy()
+    assert arr.shape == (8, hidden)
+    np.testing.assert_allclose(arr[:4], 1.0)  # cached A
+    np.testing.assert_allclose(arr[4:], 3.0)  # freshly encoded C
+    assert len(indices) == 8
+
+
+def test_block_assemble_skips_evicted_prior_image() -> None:
+    """Block-mode variant: the evicted prior image contributes no rows."""
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    hidden = 4
+    img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
+    img_b = _make_image_meta(2, 5, image_hash=0xB)  # encoded this step
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_b],
+        image_token_indices=np.array([0, 1, 2, 3, 4], dtype=np.int32),
+        processed_length=2,
+        active_length=3,
+    )
+    vision_embeds = [
+        Buffer.from_numpy(np.full((3, hidden), 7.0, dtype=np.float32))
+    ]
+    embeddings, indices = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=_as_vlm_batch([ctx]),
+        uncached_images=[[img_b]],
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[3],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    arr = embeddings[0].to_numpy()
+    assert arr.shape == (3, hidden)
+    np.testing.assert_allclose(arr, 7.0)
+    assert len(indices) == arr.shape[0]
+    np.testing.assert_array_equal(indices, [0, 1, 2])
+
+
+def test_blocks_needed_probe_is_pure() -> None:
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    imgs = [
+        _make_image_meta(0, 3, image_hash=0xA),
+        _make_image_meta(3, 12, image_hash=0xB),
+    ]
+    assert cache.blocks_needed(imgs) == 1 + 3
+    cache.insert(0xA, [_make_buffer(3)], 3)
+    assert cache.blocks_needed(imgs) == 3  # A is resident now
+    assert len(cache._request_refs) == 0  # no refs acquired by the probe
+
+
+def test_processed_image_ref_released() -> None:
+    """A fully-processed image's ref drops during the selection walk."""
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.insert(0xB, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    cache.acquire(req, 0xB)
+    assert cache.num_free_or_evictable_blocks == 6
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    img_b = _make_image_meta(4, 8, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=req,
+        images=[img_a, img_b],
+        processed_length=4,
+        active_length=4,
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert _ref_count(cache, 0xA) == 0
+    assert _ref_count(cache, 0xB) == 1
+    assert cache.num_free_or_evictable_blocks == 7
+
+
+def test_released_processed_entry_is_evictable_midrequest() -> None:
+    """Block pressure may reclaim a processed image while its request runs."""
+    cache = _make_block_cache(num_blocks=2, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    ctx = FakeContext(
+        request_id=req,
+        images=[img_a],
+        needs_vision=True,
+        processed_length=4,
+        active_length=1,
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    cache.insert(0xC, [_make_buffer(8)], 8)
+    assert cache.lookup(0xA) is None
+    assert cache.lookup(0xC) is not None
+
+
+def test_release_request_after_processed_release_is_noop() -> None:
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    ctx = FakeContext(
+        request_id=req, images=[img_a], processed_length=4, active_length=1
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    cache.release_request(req)
+    assert _ref_count(cache, 0xA) == 0
+
+
+def test_block_free_or_evictable_through_ref_cycle() -> None:
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(8)], 8)  # 2 blocks
+    assert cache.num_free_or_evictable_blocks == 8
+    cache.acquire(req, 0xA)
+    assert cache.num_free_or_evictable_blocks == 6
+    cache.release_request(req)
+    assert cache.num_free_or_evictable_blocks == 8
 
 
 def test_assemble_missing_active_image_still_raises() -> None:
@@ -1913,3 +2289,189 @@ def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:
 
     assert inputs.vision_embeddings is embeds
     assert tuple(inputs.vision_scatter_indices[0].shape) == (0,)
+
+
+# Window-bounded assembly: rows and indices are bounded by each context's
+# active window instead of covering every image with OOB sentinels.
+
+
+def test_windowed_merge_indices_dense_no_sentinels() -> None:
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(4, 10, image_hash=0xA)],
+        image_token_indices=np.array([4, 5, 6, 7, 8, 9], dtype=np.int32),
+        processed_length=6,
+        active_length=10,
+    )
+    indices = compute_windowed_merge_indices(_as_vlm_batch([ctx]))
+    np.testing.assert_array_equal(indices, [0, 1, 2, 3])
+
+
+def test_windowed_merge_indices_batch_offsets_skip_non_vision() -> None:
+    text = FakeContext(
+        request_id=RequestID("r0"),
+        images=[],
+        needs_vision=False,
+        active_length=3,
+    )
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(1, 3, image_hash=0xB)],
+        image_token_indices=np.array([1, 2], dtype=np.int32),
+        processed_length=0,
+        active_length=4,
+    )
+    indices = compute_windowed_merge_indices(_as_vlm_batch([text, ctx]))
+    np.testing.assert_array_equal(indices, [4, 5])
+
+
+def test_windowed_merge_indices_empty_when_no_window_overlap() -> None:
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 4, image_hash=0xA)],
+        image_token_indices=np.arange(4, dtype=np.int32),
+        processed_length=4,
+        active_length=2,
+    )
+    indices = compute_windowed_merge_indices(_as_vlm_batch([ctx]))
+    assert indices.size == 0
+
+
+def test_assemble_slices_trailing_edge_straddle() -> None:
+    """An image extending past the window contributes only its leading rows."""
+    cache = _make_cache()
+    hidden = 4
+    buf = _make_buffer(6, hidden)
+    cache.insert(0xA, [buf], 6)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 6, image_hash=0xA)],
+        image_token_indices=np.arange(6, dtype=np.int32),
+        processed_length=0,
+        active_length=4,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), buf.to_numpy()[:4])
+
+
+def test_assemble_skips_ahead_of_window_image() -> None:
+    """An image entirely beyond the window contributes nothing, so the
+    in-window image assembles through the single-span zero-copy path."""
+    cache = _make_cache()
+    hidden = 4
+    buf_a = _make_buffer(2, hidden)
+    cache.insert(0xA, [buf_a], 2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 2, image_hash=0xA),
+            _make_image_meta(5, 8, image_hash=0xB),
+        ],
+        image_token_indices=np.array([0, 1, 5, 6, 7], dtype=np.int32),
+        processed_length=0,
+        active_length=3,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    entry_a = cache.lookup(0xA)
+    assert entry_a is not None
+    assert result is entry_a.embeddings
+    np.testing.assert_array_equal(result[0].to_numpy(), buf_a.to_numpy())
+
+
+def test_assemble_multi_context_distinct_windows() -> None:
+    cache = _make_cache()
+    hidden = 4
+    buf_a = Buffer.from_numpy(np.ones((4, hidden), dtype=np.float32))
+    buf_b = Buffer.from_numpy(np.full((4, hidden), 2.0, dtype=np.float32))
+    cache.insert(0xA, [buf_a], 4)
+    cache.insert(0xB, [buf_b], 4)
+    ctx1 = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 4, image_hash=0xA)],
+        image_token_indices=np.arange(4, dtype=np.int32),
+        processed_length=2,
+        active_length=2,
+    )
+    ctx2 = FakeContext(
+        request_id=RequestID("r2"),
+        images=[_make_image_meta(0, 4, image_hash=0xB)],
+        image_token_indices=np.arange(4, dtype=np.int32),
+        processed_length=0,
+        active_length=3,
+    )
+    batch = _as_vlm_batch([ctx1, ctx2])
+    result = cache._assemble_embeddings(
+        batch, n_devices=1, empty_embeddings=[_make_buffer(0, hidden)]
+    )
+    arr = result[0].to_numpy()
+    assert arr.shape == (5, hidden)
+    np.testing.assert_allclose(arr[:2], 1.0)
+    np.testing.assert_allclose(arr[2:], 2.0)
+    indices = compute_windowed_merge_indices(batch)
+    np.testing.assert_array_equal(indices, [0, 1, 2, 3, 4])
+
+
+def test_block_assemble_slices_window_across_blocks() -> None:
+    """A window slice spanning a block boundary takes the ranged copy path."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=4)
+    hidden = 4
+    buf = _make_buffer(8, hidden)
+    cache.insert(0xA, [buf], 8)
+    other = _make_buffer(2, hidden)
+    cache.insert(0xB, [other], 2)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 8, image_hash=0xA),
+            _make_image_meta(8, 10, image_hash=0xB),
+        ],
+        image_token_indices=np.arange(10, dtype=np.int32),
+        processed_length=2,
+        active_length=8,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    arr = result[0].to_numpy()
+    assert arr.shape == (8, hidden)
+    np.testing.assert_array_equal(arr[:6], buf.to_numpy()[2:8])
+    np.testing.assert_array_equal(arr[6:], other.to_numpy())
+
+
+def test_block_assemble_single_block_window_view() -> None:
+    """A sub-block window slice of a one-block entry stays zero-copy."""
+    cache = _make_block_cache(num_blocks=4, block_tokens=8)
+    hidden = 4
+    buf = _make_buffer(5, hidden)
+    cache.insert(0xA, [buf], 5)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=0xA)],
+        image_token_indices=np.arange(5, dtype=np.int32),
+        processed_length=1,
+        active_length=3,
+    )
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(result[0].to_numpy(), buf.to_numpy()[1:4])
+    marker = Buffer.from_numpy(np.full((3, hidden), 9.0, dtype=np.float32))
+    result[0].inplace_copy_from(marker)
+    again = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]),
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_allclose(again[0].to_numpy(), 9.0)

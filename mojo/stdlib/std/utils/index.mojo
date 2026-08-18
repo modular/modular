@@ -654,14 +654,15 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self.write_to(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[].write_to(w)
 
         fmt.FormatStruct(writer, "IndexList").params(
             Self.size,
             Self.element_type,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @always_inline
     def cast[

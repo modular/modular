@@ -352,20 +352,16 @@ def test_tuple_conditional_conformances() raises:
     assert_true(conforms_to(Tuple[Int], Hashable))
     assert_true(conforms_to(Tuple[Int, String], Hashable))
 
-    # ImplicitlyDeletable conformance is conditional on all element types being
-    # ImplicitlyDeletable.
-    assert_true(conforms_to(Tuple[], ImplicitlyDeletable))
-    assert_true(conforms_to(Tuple[Int], ImplicitlyDeletable))
-    assert_true(conforms_to(Tuple[Int, String], ImplicitlyDeletable))
-    assert_true(
-        conforms_to(Tuple[Int, Tuple[Int, Float32]], ImplicitlyDeletable)
-    )
-    assert_false(conforms_to(Tuple[ExplicitDestroy], ImplicitlyDeletable))
-    assert_false(conforms_to(Tuple[Int, ExplicitDestroy], ImplicitlyDeletable))
+    # Deinitable conformance is conditional on all element types being
+    # Deinitable.
+    assert_true(conforms_to(Tuple[], Deinitable))
+    assert_true(conforms_to(Tuple[Int], Deinitable))
+    assert_true(conforms_to(Tuple[Int, String], Deinitable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Deinitable))
+    assert_false(conforms_to(Tuple[ExplicitDestroy], Deinitable))
+    assert_false(conforms_to(Tuple[Int, ExplicitDestroy], Deinitable))
     # A tuple nesting a linear tuple is itself linear.
-    assert_false(
-        conforms_to(Tuple[Tuple[ExplicitDestroy]], ImplicitlyDeletable)
-    )
+    assert_false(conforms_to(Tuple[Tuple[ExplicitDestroy]], Deinitable))
 
     # conforms_to correctly returns False for non-conforming element types.
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
@@ -413,9 +409,10 @@ def test_tuple_consume_elements_move_only() raises:
     var t = (MoveOnly[Int](10), MoveOnly[Int](20), MoveOnly[Int](30))
     var collected = [0, 0, 0]
 
-    @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
-        collected[idx] = elt.data
+    @__parameter
+    def handler[idx: Int](var elt: t.Ts[idx]):
+        var e = rebind_var[MoveOnly[Int]](elt^)
+        collected[idx] = e.data
 
     t^.consume_elements[handler]()
     assert_equal(collected, [10, 20, 30])
@@ -433,10 +430,10 @@ def test_tuple_consume_elements_destroys_once() raises:
     )
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
-    @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    @__parameter
+    def handler[idx: Int](var elt: t.Ts[idx]):
         # Discarding the owned `elt` runs its destructor exactly once.
-        _ = elt^
+        _ = rebind_var[Observed](elt^)
 
     t^.consume_elements[handler]()
     # Each element is destroyed once and `deinit self` disables the tuple's own
@@ -450,8 +447,8 @@ def test_tuple_consume_elements_heterogeneous() raises:
     var got_int = 0
     var got_sum = 0
 
-    @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    @__parameter
+    def handler[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         elif idx == 1:
@@ -471,24 +468,23 @@ def test_tuple_consume_elements_single() raises:
     var t = (MoveOnly[Int](7),)
     var collected = [0]
 
-    @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
-        collected[idx] = elt.data
+    @__parameter
+    def handler[idx: Int](var elt: t.Ts[idx]):
+        var e = rebind_var[MoveOnly[Int]](elt^)
+        collected[idx] = e.data
 
     t^.consume_elements[handler]()
     assert_equal(collected, [7])
 
 
 # Drives `consume_elements` in a generic context, where the element bound stays
-# `Movable & ImplicitlyDeletable`, so an empty tuple compiles (a concrete
+# `Movable & Deinitable`, so an empty tuple compiles (a concrete
 # `Tuple[]()` degrades its element type to a non-deletable `AnyType`).
-def _count_consumed[
-    *Ts: Movable & ImplicitlyDeletable
-](var t: Tuple[*Ts]) -> Int:
+def _count_consumed[*Ts: Movable & Deinitable](var t: Tuple[*Ts]) -> Int:
     var count = 0
 
-    @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    @__parameter
+    def handler[idx: Int](var elt: t.Ts[idx]):
         _ = elt^
         count += 1
 
@@ -502,15 +498,16 @@ def test_tuple_consume_elements_empty() raises:
 
 
 def test_tuple_deinit_with() raises:
-    # A `Tuple` with a linear (non-`ImplicitlyDeletable`) element must be torn
+    # A `Tuple` with a linear (non-`Deinitable`) element must be torn
     # down explicitly with `deinit_with()`.
     var t = (ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2))
     var destroyed = List[Int]()
 
-    @parameter
-    def dispose[idx: Int](var elt: ExplicitDestroy):
-        destroyed.append(elt.value)
-        elt^.destroy()
+    @__parameter
+    def dispose[idx: Int](var elt: t.Ts[idx]):
+        var e = rebind_var[ExplicitDestroy](elt^)
+        destroyed.append(e.value)
+        e^.destroy()
 
     t^.deinit_with[dispose]()
     assert_equal(destroyed, [0, 1, 2])
@@ -523,8 +520,8 @@ def test_tuple_deinit_with_heterogeneous() raises:
     var got_str = String()
     var got_val = 0
 
-    @parameter
-    def dispose[idx: Int](var elt: t.element_types[idx]):
+    @__parameter
+    def dispose[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         else:

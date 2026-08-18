@@ -34,7 +34,7 @@ from std.gpu import (
     global_idx,
     grid_dim,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -115,7 +115,6 @@ def scatter_pull_kernel[
 
 
 @always_inline
-@parameter
 def scatter[
     dtype: DType,
     //,

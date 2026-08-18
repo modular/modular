@@ -16,33 +16,38 @@ from std.bit import log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.primitives import block, warp
-from std.gpu.primitives.grid_controls import (
+from max.gpu.sync import barrier
+from max.gpu.primitives import block
+from std.gpu.primitives import warp
+from max.gpu.primitives.grid_controls import (
     PDL,
+    launch_dependent_grids,
     pdl_launch_attributes,
+    wait_on_dependent_grids,
     PDLLevel,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    PointerStorage,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
 from layout.tile_layout import Layout
-from std.math import ceildiv, gcd, exp
+from std.math import align_up, ceildiv, gcd, exp
 from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
@@ -88,7 +93,7 @@ def _block_minmax[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -126,7 +131,7 @@ def _block_reduce_pivot_bounds[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -411,7 +416,7 @@ def topk_mask_logits[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -443,7 +448,7 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int]() raises:
             comptime kernel = TopKMaskLogitsKernel[
                 block_size,
@@ -945,6 +950,15 @@ def TopKSamplingFromProbKernel[
             var low: Float32 = 0.0
             var high: Float32 = 1.0
 
+            # Seeded once, because the slot deliberately persists across
+            # iterations as the "last index above `low`" fallback. It is
+            # written only when some element qualifies, so without this seed a
+            # row that is degenerate on the FIRST iteration reads whatever the
+            # previous workgroup left in shared memory and uses it as an index.
+            if tx == 0:
+                last_valid_id_sram[0] = -1
+            barrier()
+
             while low < high:
                 if tx == 0:
                     sampled_id_sram[0] = _d
@@ -994,6 +1008,14 @@ def TopKSamplingFromProbKernel[
                     # sum of probabilities is smaller than u. In this case
                     # we use the last valid index as the sampled id.
                     sampled_id = last_valid_id_sram[0]
+
+                if sampled_id < 0:
+                    # Degenerate row: nothing ever exceeded `low`, so there is
+                    # no candidate to sample and the bracket cannot narrow
+                    # (`low` would stay put and this would spin). Emit an
+                    # in-range index and stop.
+                    sampled_id = 0
+                    break
 
                 var pivot_0 = Float32(
                     probs_row.load[width=1]((Idx[0], sampled_id))
@@ -1146,7 +1168,7 @@ def topk_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -1184,7 +1206,7 @@ def topk_sampling_from_prob[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1212,7 +1234,7 @@ def topk_sampling_from_prob[
             )
 
         # Runtime dispatch to compile-time parameter.
-        @parameter
+        @__parameter
         def dispatch_vec_size[deterministic: Bool]() raises:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
@@ -1273,11 +1295,186 @@ def apply_min_p_mask_kernel[
             probs[row_start + i] = Scalar[dtype](0)
 
 
+# The joint top-k/top-p cutoff search is bounded in practice by the value
+# narrowing (min_gt_low == max_le_high); the iteration cap is defensive
+# insurance against fp pathologies (NaN-laced rows), mirroring the Apple
+# search path's fixed bound.
+comptime _CUTOFF_SEARCH_MAX_ITERS = 64
+
+
+@always_inline
+def _block_reduce_cutoff_stats[
+    block_size: Int, broadcast: Bool = True
+](
+    count0: Int32,
+    count1: Int32,
+    mass0: Float32,
+    mass1: Float32,
+    min_gt_low: Float32,
+    max_le_high: Float32,
+) -> Tuple[Int32, Int32, Float32, Float32, Float32, Float32]:
+    """Fused block reduction for the cutoff search: 4 sums + min + max.
+
+    Performs all six reductions in a single 2-barrier pass by casting the
+    Int32 counts to Float32 (exact for counts up to 2^23).
+    """
+
+    @always_inline
+    @__parameter
+    def _reduce_fn[
+        dtype: DType, width: SIMDLength, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        comptime if reduction_idx < 4:
+            return warp.sum(v)
+        elif reduction_idx == 4:
+            return warp.min(v)
+        else:
+            return warp.max(v)
+
+    var results = block._block_reduce[
+        block_size,
+        warp_reduce_fn=_reduce_fn,
+        broadcast=broadcast,
+    ](
+        StaticTuple[Scalar[DType.float32], 6](
+            Float32(count0),
+            Float32(count1),
+            mass0,
+            mass1,
+            min_gt_low,
+            max_le_high,
+        ),
+        initial_vals=StaticTuple[Scalar[DType.float32], 6](
+            0, 0, 0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
+        ),
+    )
+    return (
+        Int32(results[0]),
+        Int32(results[1]),
+        results[2],
+        results[3],
+        results[4],
+        results[5],
+    )
+
+
+@always_inline
+def _topk_topp_cutoff_search[
+    vec_size: Int,
+    block_size: Int,
+    load_dist: def(Int) capturing[_] -> SIMD[DType.float32, vec_size],
+](
+    d: Int,
+    k: Int32,
+    p_eff: Float32,
+    low_init: Float32,
+    high_init: Float32,
+    mass_above_low_init: Float32,
+) -> Tuple[Float32, Float32]:
+    """Finds the exact constraint-set cutoff and kept mass for joint top-k/top-p.
+
+    A token with value ``t`` (in the working distribution domain served by
+    ``load_dist``) survives the joint constraint iff ``count(> t) < k`` and
+    ``mass(> t) <= p_eff`` — the same predicate
+    ``TopKTopPSamplingFromProbKernel`` accepts samples with. That predicate is
+    monotone in ``t``, so the surviving set is exactly ``{v : v > cutoff}``
+    for the returned ``cutoff``, with all ties at the boundary value kept
+    (this differs from an exact-count sorted rule only at exact fp ties).
+
+    Dual-pivot ternary search with the value-narrowing termination from
+    ``TopKMaskLogitsKernel``: bounds snap to actual data values via
+    ``min_gt_low`` / ``max_le_high`` and the search ends when exactly one
+    distinct value remains in ``(low, high]``, giving an exact cutoff with no
+    epsilon reasoning.
+
+    Callers must guarantee the bracket invariants at entry: the predicate
+    fails at ``low_init`` (some constraint violated), holds at ``high_init``,
+    and ``mass_above_low_init == mass(> low_init)``. Rows where nothing fails
+    (constraints disabled, or fewer than ``k`` positive-mass tokens) must be
+    short-circuited by the caller instead of searched.
+
+    Returns:
+        ``(cutoff, kept_mass)`` where ``kept_mass == mass(> cutoff)``. On the
+        (defensive) iteration cap, returns the current bracket state, which
+        keeps a superset of the constraint set but stays self-consistent.
+    """
+    var tx = thread_idx.x
+    var low = low_init
+    var high = high_init
+    var mass_above_low = mass_above_low_init
+
+    for _ in range(_CUTOFF_SEARCH_MAX_ITERS):
+        var pivot_0 = (high + 2 * low) / 3
+        var pivot_1 = (2 * high + low) / 3
+
+        # Accumulate thread-local counts/masses across all chunks.
+        var thread_count_0: Int32 = 0
+        var thread_count_1: Int32 = 0
+        var thread_mass_0 = Float32(0)
+        var thread_mass_1 = Float32(0)
+        var min_gt_low = high
+        var max_le_high = low
+
+        for i in range(ceildiv(d, block_size * vec_size)):
+            var v = SIMD[DType.float32, vec_size](0)
+            if (i * block_size + tx) * vec_size < d:
+                v = load_dist((i * block_size + tx) * vec_size)
+
+            comptime for j in range(vec_size):
+                var idx = (i * block_size + tx) * vec_size + j
+                var valid = idx < d
+                if v[j] > pivot_0 and valid:
+                    thread_count_0 += 1
+                    thread_mass_0 += v[j]
+                if v[j] > pivot_1 and valid:
+                    thread_count_1 += 1
+                    thread_mass_1 += v[j]
+                if v[j] > low and valid:
+                    min_gt_low = min(min_gt_low, v[j])
+                if v[j] <= high and valid:
+                    max_le_high = max(max_le_high, v[j])
+
+        # Single fused block reduction after processing all chunks.
+        var stats = _block_reduce_cutoff_stats[block_size](
+            thread_count_0,
+            thread_count_1,
+            thread_mass_0,
+            thread_mass_1,
+            min_gt_low,
+            max_le_high,
+        )
+        var count_0 = stats[0]
+        var count_1 = stats[1]
+        var mass_0 = stats[2]
+        var mass_1 = stats[3]
+        min_gt_low = stats[4]
+        max_le_high = stats[5]
+
+        # pivot_1 > pivot_0: if the constraint still fails above the higher
+        # pivot it also fails above the lower one, so test high-to-low.
+        if count_1 >= k or mass_1 > p_eff:
+            low = pivot_1
+            mass_above_low = mass_1
+        elif count_0 >= k or mass_0 > p_eff:
+            low = pivot_0
+            mass_above_low = mass_0
+            high = min(pivot_1, max_le_high)
+        else:
+            high = min(pivot_0, max_le_high)
+
+        # Exactly one distinct data value remains in (low, high]: every token
+        # above `low` passes the predicate, every token at or below fails.
+        if min_gt_low == max_le_high or high <= low:
+            break
+
+    return Tuple[Float32, Float32](low, mass_above_low)
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 @__name(
-    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}",
+    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}_{emit_dist}_{dist_dtype}",
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1290,9 +1487,18 @@ def TopKTopPSamplingFromProbKernel[
     out_idx_type: DType,
     deterministic: Bool,
     from_logits: Bool = False,
+    emit_dist: Bool = False,
+    dist_dtype: DType = DType.float32,
+    ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
+    OutputStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
-    output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
+    probs: TileTensor[
+        dtype, ProbsLayoutType, probs_origin, Storage=ProbsStorageType
+    ],
+    output: TileTensor[
+        out_idx_type, OutputLayoutType, output_origin, Storage=OutputStorageType
+    ],
+    out_dist: Optional[UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]],
     indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int32,
@@ -1325,6 +1531,12 @@ def TopKTopPSamplingFromProbKernel[
     simply `min_p`), matching `apply_min_p_mask_kernel` semantics in the
     normalized domain.
 
+    When `emit_dist` is set, the kernel also writes the masked renormalized
+    distribution it drew from to `out_dist`. Speculative decoding builds its
+    rejection residual from that distribution, and reads the sampled token's
+    own probability back out of it. Requires `from_logits`, and a non-Apple
+    GPU because the cutoff search uses block collectives.
+
     Parameters:
         ProbsLayoutType: Memory layout of the input `probs` tile.
         probs_origin: Origin tag for the immutable input `probs` tile.
@@ -1339,10 +1551,17 @@ def TopKTopPSamplingFromProbKernel[
         from_logits: If True, `probs` holds raw logits and softmax with
             per-row temperature scaling and min-p masking is fused into the
             kernel (defaults to False).
+        emit_dist: If True, also write the masked distribution to
+            `out_dist` (defaults to False).
+        dist_dtype: Element type of `out_dist`.
+        ProbsStorageType: Storage type of the input `probs` tile.
+        OutputStorageType: Storage type of the output `output` tile.
 
     Args:
         probs: Input probability distribution [batch_size, _d].
         output: Output sampled indices [batch_size].
+        out_dist: Output masked distribution [batch_size, _d]; required when
+            `emit_dist` is set.
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top_k values [batch_size].
         top_k_val: Default top_k value if top_k_arr is null.
@@ -1357,6 +1576,13 @@ def TopKTopPSamplingFromProbKernel[
         min_p: Optional per-row min-p thresholds [batch_size]. Only used
             when `from_logits` is True.
     """
+    comptime assert (
+        not emit_dist or from_logits
+    ), "out_dist requires from_logits"
+    comptime assert (
+        not emit_dist or not is_apple_gpu()
+    ), "out_dist is not supported on Apple GPUs"
+
     var _top_k_val = Int(top_k_val)
     var _d = Int(d)
     comptime assert output.flat_rank == 1
@@ -1385,6 +1611,8 @@ def TopKTopPSamplingFromProbKernel[
             k = Int(top_k_arr.unsafe_value().load(row_idx))
         if k == -1:
             k = _top_k_val
+        if k <= 0 or k > _d:
+            k = _d
 
         var p = top_p_val
         if top_p_arr:
@@ -1433,7 +1661,7 @@ def TopKTopPSamplingFromProbKernel[
                 thread_sum += exp((v - row_max) * inv_temp).reduce_add()
             z = block.sum[block_size=block_size, broadcast=True](thread_sum)
 
-        @parameter
+        @__parameter
         @always_inline
         def load_dist[width: Int](offset: Int) -> SIMD[DType.float32, width]:
             # Load `width` elements of the sampling distribution at `offset`.
@@ -1563,6 +1791,16 @@ def TopKTopPSamplingFromProbKernel[
             var q: Float32 = z
             var low: Float32 = 0.0
             var high: Float32 = 1.0
+            # Weight of the accepted token, or -1 if the loop exited without
+            # accepting. `emit_dist` warm-starts its cutoff search from
+            # (low, accepted_e], the bracket this loop already narrowed.
+            var accepted_e = Float32(-1)
+
+            # Seeded once; see the top-k kernel above for why the slot cannot
+            # be left to whatever the previous workgroup wrote.
+            if tx == 0:
+                last_valid_id_sram[0] = -1
+            barrier()
 
             while low < high:
                 if tx == 0:
@@ -1609,6 +1847,14 @@ def TopKTopPSamplingFromProbKernel[
                 sampled_id = sampled_id_sram[0]
                 if sampled_id == _d:
                     sampled_id = last_valid_id_sram[0]
+
+                if sampled_id < 0:
+                    # Degenerate row: nothing ever exceeded `low`. From logits,
+                    # one non-finite value does it -- `row_max` goes +inf, so
+                    # every weight is exp(inf-inf)=NaN or exp(-inf)=0 and no
+                    # comparison can be true. Emit an in-range index and stop.
+                    sampled_id = 0
+                    break
 
                 var pivot_0 = Float32(load_dist[1](sampled_id))
                 var pivot_1 = (pivot_0 + high) / 2.0
@@ -1675,6 +1921,7 @@ def TopKTopPSamplingFromProbKernel[
                 ):
                     # Case 1: pivot_0 accepted - count below k AND prob mass below p.
                     # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
+                    accepted_e = pivot_0
                     break
 
                 # Only reduce pivot_1 when pivot_0 is rejected.
@@ -1697,6 +1944,44 @@ def TopKTopPSamplingFromProbKernel[
 
             barrier()
 
+            comptime if emit_dist:
+                # The accept predicate is monotone in the token's own weight,
+                # so the surviving set is {v : v > cutoff} and softmax over it
+                # is v / kept_mass. A row that never accepted (non-finite
+                # logits, or the bracket collapsing) has no constraint set to
+                # report, so it stays zero -- callers read that as "no
+                # distribution for this row".
+                var cutoff = Float32.MAX_FINITE
+                var kept_mass = Float32(1)
+
+                if accepted_e >= 0:
+
+                    @__parameter
+                    @always_inline
+                    def load_dist_vec(
+                        offset: Int,
+                    ) -> SIMD[DType.float32, vec_size]:
+                        return load_dist[vec_size](offset)
+
+                    var refined = _topk_topp_cutoff_search[
+                        vec_size, block_size, load_dist_vec
+                    ](_d, Int32(k), p_eff, low, accepted_e, q)
+                    cutoff = refined[0]
+                    kept_mass = refined[1]
+
+                var dist_row = TileTensor(
+                    out_dist.unsafe_value() + bx * _d,
+                    row_major(Idx[1], _d),
+                )
+                for i in range(tx, _d // vec_size, block_size):
+                    var e = load_dist[vec_size](i * vec_size)
+                    var masked = (e.gt(cutoff)).select(
+                        e / kept_mass, SIMD[DType.float32, vec_size](0)
+                    )
+                    dist_row.store[width=vec_size](
+                        (Idx[0], i * vec_size), masked.cast[dist_dtype]()
+                    )
+
         if tx == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
 
@@ -1706,6 +1991,12 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     from_logits: Bool = False,
+    emit_dist: Bool = False,
+    dist_dtype: DType = DType.float32,
+    DistLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64, Int64].element_types,
+        stride_types=Coord[Int64, ComptimeInt[1]].element_types,
+    ],
     TopKArrLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
@@ -1730,6 +2021,12 @@ def topk_topp_sampling_from_prob[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
+    TopKArrStorageType: TensorStorage = PointerStorage[element_width=1],
+    IndicesStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPArrStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -1738,23 +2035,56 @@ def topk_topp_sampling_from_prob[
     top_p_val: Float32 = 1.0,
     deterministic: Bool = False,
     rng_seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[out_idx_type, IndicesLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            out_idx_type,
+            IndicesLayoutType,
+            ImmutAnyOrigin,
+            Storage=IndicesStorageType,
+        ]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            out_idx_type,
+            TopKArrLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopKArrStorageType,
+        ]
     ] = None,
     top_p_arr: Optional[
-        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPArrLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPArrStorageType,
+        ]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
+    ] = None,
+    out_dist: Optional[
+        TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
     ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
@@ -1762,6 +2092,9 @@ def topk_topp_sampling_from_prob[
     Performs stochastic sampling considering only tokens that satisfy both the
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
     1.0 (default) this behaves identically to topk_sampling_from_prob.
+
+    When `emit_dist` is set, the masked renormalized distribution is written
+    to `out_dist` as well; see the kernel docstring.
 
     When `from_logits` is True, `probs` contains raw logits: softmax with
     per-row temperature scaling and the optional min-p mask are fused into
@@ -1775,6 +2108,10 @@ def topk_topp_sampling_from_prob[
         from_logits: If True, `probs` holds raw logits and softmax with
             per-row temperature scaling and min-p masking is fused into
             the kernel (defaults to False).
+        emit_dist: If True, also write the masked renormalized distribution
+            to `out_dist` (defaults to False).
+        dist_dtype: Element type of `out_dist`.
+        DistLayoutType: Memory layout of the optional `out_dist` tensor.
         TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
         IndicesLayoutType: Memory layout of the optional `indices` tensor.
         TopPArrLayoutType: Memory layout of the optional `top_p_arr` tensor.
@@ -1782,6 +2119,13 @@ def topk_topp_sampling_from_prob[
         TemperatureLayoutType: Memory layout of the optional `temperature`
             tensor.
         MinPLayoutType: Memory layout of the optional `min_p` tensor.
+        TopKArrStorageType: Storage type of the optional `top_k_arr` tensor.
+        IndicesStorageType: Storage type of the optional `indices` tensor.
+        TopPArrStorageType: Storage type of the optional `top_p_arr` tensor.
+        SeedStorageType: Storage type of the optional `rng_seed` tensor.
+        TemperatureStorageType: Storage type of the optional `temperature`
+            tensor.
+        MinPStorageType: Storage type of the optional `min_p` tensor.
 
     Args:
         ctx: Device context for kernel execution.
@@ -1801,6 +2145,8 @@ def topk_topp_sampling_from_prob[
             used when `from_logits` is True; defaults to 1.0 per row.
         min_p: Optional per-row min-p thresholds [batch_size]. Only used
             when `from_logits` is True.
+        out_dist: Output masked distribution [batch_size, d]. Required when
+            `emit_dist` is set.
 
     Raises:
         Error: If tensor ranks or shapes are invalid.
@@ -1813,7 +2159,7 @@ def topk_topp_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -1870,7 +2216,21 @@ def topk_topp_sampling_from_prob[
         if min_p:
             min_p_ptr = min_p.unsafe_value().ptr
 
-        @parameter
+        var dist_ptr: Optional[
+            UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]
+        ] = None
+
+        comptime if emit_dist:
+            if not out_dist:
+                raise Error("out_dist is required when emit_dist is set")
+            var dist_shape = coord_to_index_list(
+                out_dist.unsafe_value().layout.shape_coord()
+            )
+            if dist_shape[0] != batch_size or dist_shape[1] != d:
+                raise Error("out_dist shape must match probs shape")
+            dist_ptr = out_dist.unsafe_value().ptr
+
+        @__parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1883,10 +2243,15 @@ def topk_topp_sampling_from_prob[
                 out_idx_type,
                 deterministic,
                 from_logits,
+                emit_dist,
+                dist_dtype,
+                ProbsStorageType=probs.Storage,
+                OutputStorageType=output.Storage,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
+                dist_ptr,
                 indices_ptr,
                 top_k_ptr,
                 Int32(top_k_val),
@@ -1902,7 +2267,7 @@ def topk_topp_sampling_from_prob[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @parameter
+        @__parameter
         def dispatch_vec_size[deterministic: Bool]() raises:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
@@ -1914,6 +2279,9 @@ def topk_topp_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 @__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
 def topk_softmax_sample_kernel[
     block_size: Int,
@@ -1960,7 +2328,7 @@ def topk_softmax_sample_kernel[
 
     # Allocate shared memory for caching top-k elements.
     # Round up to ensure proper alignment for Int array.
-    var k_rounded = ceildiv(k, WARP_SIZE) * WARP_SIZE
+    var k_rounded = align_up(k, WARP_SIZE)
 
     # On Apple the cache is a static allocation. Reserve headroom below the 32K
     # threadgroup limit for the kernel's auxiliary SMEM (`s_count` + the block
@@ -2219,7 +2587,7 @@ def topk_softmax_sample[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -2247,7 +2615,7 @@ def topk_softmax_sample[
         # per-element idx < d guard handles non-aligned tails correctly.
         var vec_size = gcd(8, d)
 
-        var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
+        var k_rounded = align_up(top_k_val, WARP_SIZE)
         var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
         comptime if has_apple_gpu_accelerator():
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_CACHE_BYTES:
@@ -2276,7 +2644,7 @@ def topk_softmax_sample[
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int]() raises:
             comptime kernel = topk_softmax_sample_kernel[
                 block_size,
@@ -2305,6 +2673,252 @@ def topk_softmax_sample[
             )
 
         # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+@__name(t"topk_topp_masked_probs_{dtype}")
+def TopKTopPMaskedProbsKernel[
+    block_size: Int,
+    vec_size: Int,
+    dtype: DType,
+    LogitsLayoutType: TensorLayout,
+    logits_origin: ImmOrigin,
+](
+    logits: TileTensor[dtype, LogitsLayoutType, logits_origin],
+    probs_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    top_k_arr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    top_k_val: Int32,
+    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_val: Float32,
+    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    d: Int32,
+):
+    """Writes each row's top-k/top-p masked softmax, without sampling.
+
+    Works in the unnormalized domain `e_i = exp((logit_i - row_max) / temp)`:
+    a token survives the joint constraint iff `e > cutoff` (recovered by the
+    same dual-pivot search the sampler uses) and its masked probability is
+    `e / kept_mass`. The output row is that masked renormalized distribution
+    -- the same tensor `TopKTopPSamplingFromProbKernel` emits under
+    `emit_dist`, so a verifier's target-side probabilities and a draft's
+    proposal distribution are described identically.
+    """
+    comptime assert (
+        not is_apple_gpu()
+    ), "TopKTopPMaskedProbsKernel is not supported on Apple GPUs"
+    var _d = Int(d)
+    var bx = block_idx.x
+    var tx = thread_idx.x
+
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+
+    var k = Int(top_k_val)
+    if top_k_arr:
+        k = Int(top_k_arr.unsafe_value().load(bx))
+    if k <= 0 or k > _d:
+        k = _d
+
+    var p = top_p_val
+    if top_p_arr:
+        p = top_p_arr.unsafe_value()[bx]
+    p = p.clamp(Float32(0.0), Float32(1.0))
+
+    var temp_val = Float32(1.0)
+    if temperature:
+        temp_val = temperature.unsafe_value()[bx]
+    # Clamp so a greedy (T=0) row cannot divide by zero.
+    var inv_temp = 1.0 / max(temp_val, Float32(1e-6))
+
+    var logits_row = TileTensor(logits.ptr + bx * _d, row_major(Idx[1], _d))
+
+    var thread_max = Scalar[DType.float32].MIN
+    for i in range(tx, _d // vec_size, block_size):
+        var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
+            DType.float32
+        ]()
+        thread_max = max(thread_max, v.reduce_max())
+    var m = block.max[block_size=block_size, broadcast=True](thread_max)
+
+    @__parameter
+    @always_inline
+    def load_e(offset: Int) -> SIMD[DType.float32, vec_size]:
+        var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
+            DType.float32
+        ]()
+        return exp((v - m) * inv_temp)
+
+    # Total mass, plus how many tokens carry any: a row whose every
+    # positive token already satisfies the constraint has no boundary to
+    # find, and the search's precondition (the predicate fails at 0)
+    # would not hold.
+    var thread_sum = Float32(0)
+    var thread_pos: Int32 = 0
+    for i in range(tx, _d // vec_size, block_size):
+        var e = load_e(i * vec_size)
+        thread_sum += e.reduce_add()
+        comptime for j in range(vec_size):
+            if e[j] > 0:
+                thread_pos += 1
+    var total = _block_reduce_value_count[DType.float32, broadcast=True](
+        ValueCount[DType.float32](thread_sum, thread_pos)
+    )
+    var z = total.value
+    var p_eff = p * z
+
+    var cut = Float32(0)
+    var mass_s = z
+    if total.count >= Int32(k) or z > p_eff:
+        var refined = _topk_topp_cutoff_search[vec_size, block_size, load_e](
+            _d, Int32(k), p_eff, 0.0, 1.0, z
+        )
+        cut = refined[0]
+        mass_s = refined[1]
+
+    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
+    for i in range(tx, _d // vec_size, block_size):
+        var e = load_e(i * vec_size)
+        var masked = (e.gt(cut)).select(
+            e / mass_s, SIMD[DType.float32, vec_size](0)
+        )
+        probs_row.store[width=vec_size]((Idx[0], i * vec_size), masked)
+
+
+def topk_topp_masked_probs[
+    dtype: DType,
+    block_size: Int = 1024,
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TopPArrLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TemperatureLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    ProbsLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64, Int64].element_types,
+        stride_types=Coord[Int64, ComptimeInt[1]].element_types,
+    ],
+](
+    ctx: DeviceContext,
+    logits: TileTensor[mut=False, dtype, ...],
+    probs: TileTensor[DType.float32, ProbsLayoutType, MutAnyOrigin],
+    top_k_val: Int,
+    top_p_val: Float32 = 1.0,
+    top_k_arr: Optional[
+        TileTensor[DType.int64, TopKArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+    top_p_arr: Optional[
+        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """Computes per-row top-k/top-p masked softmax, one block per row.
+
+    See `TopKTopPMaskedProbsKernel` for what the output means.
+
+    Parameters:
+        dtype: Element type of `logits`.
+        block_size: Threads per block.
+        TopKArrLayoutType: Memory layout of `top_k_arr`.
+        TopPArrLayoutType: Memory layout of `top_p_arr`.
+        TemperatureLayoutType: Memory layout of `temperature`.
+        ProbsLayoutType: Memory layout of `probs`.
+
+    Args:
+        ctx: Device context.
+        logits: Input logits [batch_size, d].
+        probs: Output masked renormalized distribution [batch_size, d].
+        top_k_val: Default top-k; `<= 0` or `> d` keeps every token.
+        top_p_val: Default top-p threshold.
+        top_k_arr: Optional per-row top-k [batch_size].
+        top_p_arr: Optional per-row top-p [batch_size].
+        temperature: Optional per-row temperature [batch_size]; 0 is clamped.
+
+    Raises:
+        Error: If the tensor shapes disagree.
+    """
+    comptime assert logits.rank == 2, "logits rank must be 2"
+
+    var shape = coord_to_index_list(logits.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    @__parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k=" + String(top_k_val),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_topp_masked_probs",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var probs_shape = coord_to_index_list(probs.layout.shape_coord())
+        if probs_shape[0] != batch_size or probs_shape[1] != d:
+            raise Error("probs shape must match the logits shape")
+
+        # Speculative decoding runs this with zero rows on every step that has
+        # no drafts to verify, and a grid of 0 is not a legal launch.
+        if batch_size == 0:
+            return
+
+        var vec_size = gcd(8, d)
+
+        var top_k_ptr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]] = None
+        if top_k_arr:
+            top_k_ptr = top_k_arr.unsafe_value().ptr
+
+        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        if top_p_arr:
+            top_p_ptr = top_p_arr.unsafe_value().ptr
+
+        var temperature_ptr: Optional[
+            UnsafePointer[Float32, ImmutAnyOrigin]
+        ] = None
+        if temperature:
+            temperature_ptr = temperature.unsafe_value().ptr
+
+        @__parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = TopKTopPMaskedProbsKernel[
+                block_size,
+                vec_size,
+                dtype,
+                logits.LayoutType,
+                ImmOrigin(logits.origin),
+            ]
+            ctx.enqueue_function[kernel](
+                logits.as_immut(),
+                probs.ptr,
+                top_k_ptr,
+                Int32(top_k_val),
+                top_p_ptr,
+                top_p_val,
+                temperature_ptr,
+                Int32(d),
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
         comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size]()

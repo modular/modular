@@ -53,11 +53,11 @@ def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-@parameter
+@__parameter
 def bench_math[
     math_f1p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size]
-    ) thin -> SIMD[dtype, size]
+    ) thin -> SIMD[dtype, size] where dtype.is_floating_point()
 ](mut b: Bencher) raises:
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
@@ -73,7 +73,7 @@ def bench_math[
 # ===-----------------------------------------------------------------------===#
 # Benchmark fma
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_math3[
     math_f3p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
@@ -93,7 +93,7 @@ def bench_math3[
 # ===-----------------------------------------------------------------------===#
 # Benchmark lcm/gcd
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 

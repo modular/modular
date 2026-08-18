@@ -16,12 +16,11 @@ from std.math import align_up
 from std.math.uutils import udivmod, ufloordiv
 
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
-from std.gpu.primitives.block import broadcast
+from max.gpu.primitives.block import broadcast
 from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     grid_dim,
@@ -29,9 +28,9 @@ from std.gpu import (
     lane_id,
     thread_idx,
     warp_id,
-    AddressSpace,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -80,7 +79,7 @@ def block_reduce[
     comptime num_reductions = 1
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -137,7 +136,7 @@ def block_reduce[
     ), "block size must be a multiple of the warp size"
 
     @always_inline
-    @parameter
+    @__parameter
     def do_warp_reduce(
         val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
     ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
@@ -146,7 +145,7 @@ def block_reduce[
         comptime for i in range(num_reductions):
 
             @always_inline
-            @parameter
+            @__parameter
             def reduce_wrapper[
                 dtype: DType, width: SIMDLength
             ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -245,7 +244,7 @@ def row_reduce[
     comptime num_reductions = 1
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -523,7 +522,7 @@ def small_reduce_kernel[
                 comptime for i in range(num_reductions):
 
                     @always_inline
-                    @parameter
+                    @__parameter
                     def reduce_wrapper[
                         dtype: DType, width: SIMDLength
                     ](
@@ -652,7 +651,7 @@ def twophase_reduce_kernel[
             comptime for i in range(num_reductions):
                 partials[unsafe_offset=base + i] = partial[i]
 
-            var finished = Atomic[DType.int32].fetch_add(
+            var finished = Atomic[Int32].fetch_add(
                 counters.unsafe_offset(row_idx), Int32(1)
             )
             is_last_block = finished == Int32(_bpr - 1)

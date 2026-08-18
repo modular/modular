@@ -60,8 +60,8 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     comptime K = expert_shape[1]
     comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
 
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         var M = num_tokens_by_expert[i]
         total_num_tokens += M
@@ -187,7 +187,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     var c_tensor = c_device_tt
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[

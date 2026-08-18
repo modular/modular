@@ -39,26 +39,25 @@ from std.memory import UnsafePointer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     global_idx,
     grid_dim,
     warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.sync import barrier
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
+from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import _is_sm10x_gpu
 

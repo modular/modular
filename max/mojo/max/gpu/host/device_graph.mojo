@@ -15,11 +15,11 @@
 A device graph captures a sequence of GPU operations (such as kernel launches,
 memory copies, and memsets) as a reusable graph that can be replayed at a lower
 overhead than re-enqueueing each operation individually. The main entry point
-is [`DeviceGraph.create()`](/docs/std/gpu/host/device_graph/DeviceGraph/#create),
-which hands a [`DeviceGraphBuilder`](/docs/std/gpu/host/device_graph/DeviceGraphBuilder/)
+is [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create),
+which hands a [`DeviceGraphBuilder`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/)
 to a scoped callback."""
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     Dim,
     FuncAttribute,
@@ -27,15 +27,17 @@ from std.gpu.host import (
 )
 
 from std.collections.optional import OptionalReg
-from std.ffi import c_size_t, external_call, _CPointer
+from std.ffi import c_size_t, external_call
+from std.logger import Logger
 from std.sys import bit_width_of, size_of
 from std.memory.unsafe import bitcast
 from std.reflection import call_location, SourceLocation
+from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.builtin.device_passable import DevicePassable
 
 from max.runtime.async_value import AnyAsyncValueRef
 
-from std.gpu.host.device_context import (
+from max.gpu.host.device_context import (
     DeviceBuffer,
     DeviceContext,
     DeviceExternalFunction,
@@ -51,6 +53,8 @@ from std.gpu.host.device_context import (
     _FunctionEnqueuer,
 )
 
+comptime _logger = Logger()
+
 
 struct _DeviceGraphBuilderCpp:
     pass
@@ -64,13 +68,13 @@ comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphBuilderCpp, origin]
+] = OptionalPointer[_DeviceGraphBuilderCpp, origin]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphCpp, origin]
+] = OptionalPointer[_DeviceGraphCpp, origin]
 
 
 @fieldwise_init
@@ -141,6 +145,167 @@ def _pack_dep_args[
     )
 
 
+struct DeviceGraphCache(Movable):
+    """Holds the device graphs a model has already built, keyed for reuse.
+
+    A graph is expensive to record and instantiate, so
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create)
+    consults a cache before doing either. The key is derived from the graph's
+    inputs, so a later call with equivalent inputs replays the graph the first
+    call built.
+
+    Each individual operation is safe to call concurrently. A miss is not
+    exclusive, though: callers that miss together will each build a graph and the
+    last one to `add()` wins, so concurrent first use of one key costs duplicated
+    recording rather than a single shared graph.
+    """
+
+    var _cache: Dict[String, DeviceGraph]
+    var _lock: BlockingSpinLock
+
+    def __init__(out self):
+        """Creates an empty cache."""
+        self._cache = {}
+        self._lock = BlockingSpinLock()
+
+    @staticmethod
+    def make_key[
+        *Ts: DeviceGraphInput
+    ](
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        *inputs: *Ts,
+    ) -> String:
+        """Derives the cache key for a graph built from the given inputs.
+
+        Two calls agree on a key exactly when they pass the same work function
+        and their inputs write the same contributions in the same order.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            build: The work function that records the graph. Its type is what
+                identifies the graph independently of its inputs; the function
+                is never called here.
+            inputs: The inputs whose contributions distinguish this graph.
+
+        Returns:
+            The cache key.
+        """
+        return Self._make_key(build, inputs)
+
+    # Takes the pack itself so a variadic caller can forward its own inputs,
+    # which the variadic spelling above cannot express.
+    @staticmethod
+    def _make_key[
+        origin: ImmOrigin, //, *Ts: DeviceGraphInput
+    ](
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        inputs: VariadicPack[
+            origin=origin, element_trait=DeviceGraphInput, False, *Ts
+        ],
+    ) -> String:
+        var key = String(reflect[type_of(build)].name())
+
+        # Every contribution is separated, so no set of inputs can spell the
+        # same key as a different set by running together -- inputs writing
+        # `1` then `23` must not collide with `12` then `3`. Framing the key
+        # here rather than in `write_graph_key` keeps that guarantee
+        # independent of how each input chooses to describe itself.
+        comptime for i in range(len(Ts)):
+            key.write("|")
+            inputs[i].write_graph_key(key)
+
+        return key^
+
+    def lookup(mut self, key: String) -> Optional[DeviceGraph]:
+        """Returns the graph stored under a key, if there is one.
+
+        Args:
+            key: The cache key to look up.
+
+        Returns:
+            The cached graph, or `None` on a miss.
+        """
+        with BlockingScopedLock(self._lock):
+            # A copy, so it stays valid once another thread may replace the
+            # entry.
+            return self._cache.find(key)
+
+    def cache(mut self, var key: String, var graph: DeviceGraph) -> DeviceGraph:
+        """Interns the device graph identified by the given key.
+
+        If there is already a graph identified by the given key, that graph is
+        returned. Otherwise, the supplied graph is inserted into the cache and
+        returned.
+
+        Args:
+            key: The cache key to store the graph under.
+            graph: The graph to store.
+
+        Returns:
+            The canonicalized graph in the cache.
+        """
+        with BlockingScopedLock(self._lock):
+            var result = self._cache.find(key)
+            if result:
+                return result.take()
+
+            self._cache[key^] = graph
+            return graph^
+
+
+trait DeviceGraphInput(ImplicitlyCopyable):
+    """A device graph input that contributes to the graph's cache key."""
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        """Writes this input's contribution to a graph's cache key.
+
+        Write whatever distinguishes graphs that must not be shared: two inputs
+        that write the same bytes are treated as interchangeable. Contributions
+        are separated from each other by
+        [`DeviceGraphCache.make_key()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphCache/#make_key),
+        so there is no need to delimit or tag the output for that purpose.
+
+        Args:
+            writer: The writer accumulating the cache key.
+        """
+        ...
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        """Returns a graph-owned value of this type for the graph to record.
+
+        Allocate through
+        [`DeviceGraphBuilder.create_input_buffer()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#create_input_buffer),
+        which reserves the address for the graph's lifetime and registers it, and
+        describe the result with the same shape and dtype as `self`.
+
+        Read only `self`'s shape. The result must **not** retain `self`'s
+        storage: doing so pins the caller's memory for as long as the graph
+        lives, which is exactly the coupling a stable location exists to remove.
+
+        A *mutable* input the graph writes in place (a KV cache, for example)
+        must instead call
+        [`DeviceGraphBuilder.register_in_place_input()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#register_in_place_input)
+        and return a value aliasing `self`: a private stable copy would
+        silently discard the graph's writes. Such an implementation must
+        include the input's address in `write_graph_key`, so a moved buffer
+        misses the cache and forces a rebuild instead of replaying stale
+        addresses.
+
+        Args:
+            builder: The builder for the graph under construction.
+
+        Returns:
+            A value of the same type backed by the graph's memory pool, or —
+            for a mutable in-place input — a value aliasing `self`.
+
+        Raises:
+            If allocating from the graph's memory pool fails.
+        """
+        ...
+
+
 struct DeviceGraph(ImplicitlyCopyable):
     """Represents an instantiated device graph that can be replayed.
 
@@ -150,7 +315,7 @@ struct DeviceGraph(ImplicitlyCopyable):
     lower overhead than re-enqueueing each operation individually.
 
     To obtain a `DeviceGraph`, use
-    [`DeviceGraph.create()`](/docs/std/gpu/host/device_context/DeviceGraph/#create).
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create).
     """
 
     var _handle: _DeviceGraphPtr[mut=True]
@@ -232,6 +397,80 @@ struct DeviceGraph(ImplicitlyCopyable):
         )
 
     @staticmethod
+    def create[
+        *Ts: DeviceGraphInput,
+    ](
+        ctx: DeviceContext,
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        *inputs: *Ts,
+        cache: Pointer[mut=True, DeviceGraphCache, _],
+    ) raises -> DeviceGraph:
+        """Builds and instantiates a device graph, reusing a cached one if it
+        can.
+
+        Behaves like the uncached overload, except that a graph an earlier call
+        built from equivalent `inputs` is returned as-is and `build` is never
+        called.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            ctx: Device context for the target device.
+            build: Callback that adds nodes to the supplied builder, called only
+                on a cache miss.
+            inputs: The device graph inputs the cache key is derived from.
+            cache: The cache to consult, and to store a newly built graph in.
+
+        Returns:
+            The instantiated device graph, which may be one a previous call
+            built.
+
+        Raises:
+            If graph builder creation, `build`, or instantiation fails.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import (
+            DeviceContext, DeviceGraph, DeviceGraphBuilder, DeviceGraphCache
+        )
+
+        def kernel():
+            print("replaying")
+
+        with DeviceContext() as ctx:
+            var compiled_fn = ctx.compile_function[kernel]()
+            var cache = DeviceGraphCache()
+
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
+                _ = builder.add_function(
+                    compiled_fn, grid_dim=1, block_dim=1, dependencies=[]
+                )
+
+            # The second call reuses the graph the first one built.
+            var graph = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+            var same = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+            ctx.synchronize()
+        ```
+        """
+        # Caching of command buffers can easily exceed the maximum number of
+        # supported command buffers. For now, restrict caching to genuine device
+        # graph implementations.
+        if ctx.api() not in ("cuda", "hip"):
+            return Self.create(ctx, build)
+
+        var key = DeviceGraphCache._make_key(build, inputs)
+
+        var found = cache[].lookup(key)
+        if found:
+            _logger.info("found existing device graph for key", key)
+            return found.take()
+
+        var graph = Self.create(ctx, build)
+        return cache[].cache(key^, graph^)
+
+    @staticmethod
     def create(
         ctx: DeviceContext,
         build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
@@ -244,6 +483,9 @@ struct DeviceGraph(ImplicitlyCopyable):
         duration of `build`: their origin is scoped to this call and cannot
         escape it, so a node handle cannot be stored beyond the callback or
         used with a different graph.
+
+        Pass a `cache` to the overload above to reuse a previously built graph
+        instead of recording one on every call.
 
         Args:
             ctx: Device context for the target device.
@@ -280,6 +522,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         ```
         """
         var result: _DeviceGraphBuilderPtr[mut=True] = {}
+
         # const char *AsyncRT_DeviceContext_createGraphBuilder(
         #     DeviceGraphBuilder **result, DeviceContext *ctx)
         _checked(
@@ -296,6 +539,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         var arena: Int = 0
         var builder = DeviceGraphBuilder[origin_of(arena)](result, ctx)
         build(builder)
+
         return builder^.instantiate()
 
 
@@ -303,7 +547,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """Builder for explicit device graph construction.
 
     A `DeviceGraphBuilder` is handed to the callback passed to
-    [`DeviceGraph.create()`](/docs/std/gpu/host/device_context/DeviceGraph/#create).
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create).
     Callers add kernel nodes via `add_function()` from within that callback,
     which then instantiates a reusable `DeviceGraph`.
 
@@ -416,11 +660,11 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             external_call[
                 "AsyncRT_DeviceGraphBuilder_recordingContext",
                 _CString[],
-                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
                 _DeviceGraphBuilderPtr[mut=True],
                 Int32,
             ](
-                UnsafePointer(to=result),
+                Pointer(to=result),
                 self._handle,
                 seed.id,
             )
@@ -494,7 +738,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             return Self.Node(id.value())
         return None
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         *Ts: DevicePassable
@@ -763,7 +1007,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -794,7 +1038,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         compiles it automatically using the `DeviceContext` that created this
         builder, so no separate `DeviceContext.compile_function()` step is
         needed. It mirrors the parameter-based
-        [`DeviceContext.enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
         overload for the non-graph path.
 
         Parameters:
@@ -897,7 +1141,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             location=location.or_else(call_location()),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -929,7 +1173,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         compiles it automatically using the `DeviceContext` that created this
         builder, so no separate `DeviceContext.compile_function()` step is
         needed. It mirrors the capturing parameter-based
-        [`DeviceContext.enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
         overload for the non-graph path.
 
         Parameters:
@@ -1420,6 +1664,69 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             ](self._handle)
         )
 
+    def add_input[T: DeviceGraphInput](mut self, input: T) raises -> T:
+        """Gives an input a stable location the graph can record against.
+
+        A recorded graph bakes in the addresses it was built with, so it cannot
+        read a caller's buffer directly if it is to be replayed later. This
+        allocates a graph-owned twin of `input` and registers it, so replay can
+        be fed by copying the live input into that fixed location. Record the
+        body against the returned value, not against `input`.
+
+        Inputs must be added in graph-signature order.
+
+        Parameters:
+            T: The device graph input type.
+
+        Args:
+            input: The input to allocate a stable location for. Only its shape
+                is read; its storage is not retained.
+
+        Returns:
+            A graph-owned value of the same type, backed by the graph's memory
+            pool.
+
+        Raises:
+            If allocating the stable buffer fails.
+        """
+        return input.allocate_stable(self)
+
+    def num_inputs(self) -> Int:
+        """Returns the number of stable inputs registered on the device graph.
+
+        Returns:
+            The number of inputs added via `add_input`, including in-place
+            markers registered via `register_in_place_input`.
+        """
+        # int64_t AsyncRT_DeviceGraphBuilder_numInputs(
+        #     DeviceGraphBuilder *builder)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_numInputs",
+                Int64,
+                _DeviceGraphBuilderPtr[mut=True],
+            ](self._handle)
+        )
+
+    def register_in_place_input(mut self):
+        """Registers an in-place input marker at the current input position.
+
+        Used by `DeviceGraphInput.allocate_stable` implementations for mutable
+        inputs the graph writes in place (a KV cache, for example): the graph
+        records the caller's live address directly and replay must not copy
+        into that position, so no stable twin is allocated. Such an input must
+        contribute its address to the graph cache key, so a moved buffer
+        forces a rebuild instead of replaying stale addresses.
+
+        Like `add_input`, markers must be registered in graph-signature order.
+        """
+        # void AsyncRT_DeviceGraphBuilder_addInPlaceInput(
+        #     DeviceGraphBuilder *builder)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addInPlaceInput",
+            NoneType,
+        ](self._handle)
+
     @doc_hidden
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
@@ -1497,6 +1804,41 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
 
         result = {cpp_handle, device_ptr.value()}
+
+    def create_input_buffer[
+        dtype: DType
+    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+        """Allocates a buffer and registers it as a stable graph input.
+
+        Allocation and registration are one step so a `DeviceGraphInput` cannot
+        allocate a stable location without the graph learning about it, which
+        would leave replay with nothing to copy into.
+
+        Parameters:
+            dtype: The element type of the resulting buffer.
+
+        Args:
+            size: The number of elements to allocate for the buffer.
+            is_host: Allocate host-addressable memory instead of device memory.
+
+        Returns:
+            The newly allocated buffer, already registered with the graph.
+
+        Raises:
+            If memory allocation fails.
+        """
+        result = self.create_buffer[dtype](size, is_host=is_host)
+
+        # void AsyncRT_DeviceGraphBuilder_addInput(
+        #     DeviceGraphBuilder *builder, DeviceBuffer *input)
+        #
+        # The handle is borrowed rather than surrendered: the graph retains its
+        # own reference so the pool cannot reissue this address, and the caller
+        # keeps using the buffer as the input it records against.
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addInput",
+            NoneType,
+        ](self._handle, result._handle)
 
 
 @doc_hidden

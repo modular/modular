@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from max.gpu.host import DeviceContext
-from std.gpu.host.func_attribute import Attribute
 from std.testing import assert_equal
+
+from max.gpu.host import DeviceContext
+from max.gpu.host.func_attribute import Attribute
 
 
 def test_function_attributes() raises:

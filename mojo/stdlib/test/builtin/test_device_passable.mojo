@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu.host.device_context import DefaultDeviceTypeEncoder
 from std.testing import assert_equal, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
+
+from max.gpu.host.device_context import DefaultDeviceTypeEncoder
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a
@@ -105,21 +106,22 @@ struct DevicePassableCoordBox(
 # read back through the host struct type.
 def test_encode_fields_dispatches_device_passable_field() raises:
     var box = ScaledIntBox(scaled=ScaledInt(raw=7), tag=99)
-    var buf = alloc[ScaledIntBox](1)
+    var allocation = alloc[ScaledIntBox]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(box, buf.unsafe_bitcast[NoneType]())
     # `scaled` is `DevicePassable`, so `ScaledInt._to_device_type` runs and
     # doubles `raw`; the plain `tag` field is bit-copied unchanged.
     assert_equal(buf[].scaled.raw, 14)
     assert_equal(buf[].tag, 99)
-    buf.unsafe_free()
 
 
 def test_encode_fields_recurses_into_nested_composite() raises:
     var boxbox = ScaledIntBoxBox(
         box=ScaledIntBox(scaled=ScaledInt(raw=3), tag=10), tag2=200
     )
-    var buf = alloc[ScaledIntBoxBox](1)
+    var allocation = alloc[ScaledIntBoxBox]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(boxbox, buf.unsafe_bitcast[NoneType]())
     # `box` is not `DevicePassable` but transitively contains one, so the
@@ -128,48 +130,48 @@ def test_encode_fields_recurses_into_nested_composite() raises:
     assert_equal(buf[].box.scaled.raw, 6)
     assert_equal(buf[].box.tag, 10)
     assert_equal(buf[].tag2, 200)
-    buf.unsafe_free()
 
 
 def test_encode_fields_bit_copies_plain_fields() raises:
     var pair = PlainPair(a=11, b=22)
-    var buf = alloc[PlainPair](1)
+    var allocation = alloc[PlainPair]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(pair, buf.unsafe_bitcast[NoneType]())
     # No field is `DevicePassable`, so every field is bit-copied unchanged.
     assert_equal(buf[].a, 11)
     assert_equal(buf[].b, 22)
-    buf.unsafe_free()
 
 
 # `StaticTuple[ScaledInt, N].device_type` is `StaticTuple[Int32, N]`, so the
 # encoded buffer is read back through that device type.
 def test_encode_static_tuple_dispatches_device_passable_element() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var buf = alloc[StaticTuple[Int32, 2]](1)
+    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_static_tuple(tup, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
     # doubles every `raw`.
     assert_equal(buf[].get[0](), 8)
     assert_equal(buf[].get[1](), 10)
-    buf.unsafe_free()
 
 
 def test_static_tuple_to_device_type_dispatches_elements() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=6), ScaledInt(raw=7))
-    var buf = alloc[StaticTuple[Int32, 2]](1)
+    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
     tup._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].get[0](), 12)
     assert_equal(buf[].get[1](), 14)
-    buf.unsafe_free()
 
 
 def test_encode_static_tuple_identity_scalar() raises:
     var tup = StaticTuple[Int32, 3](10, 20, 30)
-    var buf = alloc[StaticTuple[Int32, 3]](1)
+    var allocation = alloc[StaticTuple[Int32, 3]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `Int32` is `DevicePassable` with an identity `device_type`, so
     # element-wise encoding reproduces the values unchanged.
@@ -177,14 +179,16 @@ def test_encode_static_tuple_identity_scalar() raises:
     assert_equal(buf[].get[0](), 10)
     assert_equal(buf[].get[1](), 20)
     assert_equal(buf[].get[2](), 30)
-    buf.unsafe_free()
 
 
 def test_encode_static_tuple_bit_copies_plain_element() raises:
     var tup = StaticTuple[PlainPair, 2](
         PlainPair(a=1, b=2), PlainPair(a=3, b=4)
     )
-    var buf = alloc[StaticTuple[PlainPair, 2]](1)
+    var allocation = alloc[StaticTuple[PlainPair, 2]](
+        {count = 1}
+    ).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `PlainPair` is register-passable with no `DevicePassable` member, so each
     # element is bit-copied unchanged.
@@ -193,7 +197,6 @@ def test_encode_static_tuple_bit_copies_plain_element() raises:
     assert_equal(buf[].get[0]().b, 2)
     assert_equal(buf[].get[1]().a, 3)
     assert_equal(buf[].get[1]().b, 4)
-    buf.unsafe_free()
 
 
 def test_encode_static_tuple_recurses_into_composite_element() raises:
@@ -201,7 +204,10 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
         ScaledIntBox(scaled=ScaledInt(raw=4), tag=1),
         ScaledIntBox(scaled=ScaledInt(raw=5), tag=2),
     )
-    var buf = alloc[StaticTuple[ScaledIntBox, 2]](1)
+    var allocation = alloc[StaticTuple[ScaledIntBox, 2]](
+        {count = 1}
+    ).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `ScaledIntBox` is not `DevicePassable` but transitively contains one, so
     # each element recurses through `encode_fields`, doubling `scaled.raw`; the
@@ -211,19 +217,18 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
     assert_equal(buf[].get[0]().tag, 1)
     assert_equal(buf[].get[1]().scaled.raw, 10)
     assert_equal(buf[].get[1]().tag, 2)
-    buf.unsafe_free()
 
 
 def test_encode_fields_delegates_static_tuple() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var buf = alloc[StaticTuple[Int32, 2]](1)
+    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `encode_fields` used to `abort` on `StaticTuple`; it now delegates to
     # `_to_device_type`, encoding element-wise.
     encoder.encode_fields(tup, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].get[0](), 8)
     assert_equal(buf[].get[1](), 10)
-    buf.unsafe_free()
 
 
 def test_encode_fields_dispatches_static_tuple_field() raises:
@@ -231,7 +236,8 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
         tup=StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5)),
         tag=42,
     )
-    var buf = alloc[TupleBox](1)
+    var allocation = alloc[TupleBox]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(box, buf.unsafe_bitcast[NoneType]())
     # The `StaticTuple` field is `DevicePassable`, so each element is doubled;
@@ -240,37 +246,37 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
     assert_equal(buf[].tup.get[0]().raw, 8)
     assert_equal(buf[].tup.get[1]().raw, 10)
     assert_equal(buf[].tag, 42)
-    buf.unsafe_free()
 
 
 # `Array[ScaledInt, N].device_type` is `Array[Int32, N]`, so the
 # encoded buffer is read back through that device type.
 def test_encode_array_dispatches_device_passable_element() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
-    var buf = alloc[Array[Int32, 2]](1)
+    var allocation = alloc[Array[Int32, 2]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
     # Each element is `DevicePassable`, so `ScaledInt._to_device_type` runs and
     # doubles every `raw`.
     assert_equal(buf[][0], 8)
     assert_equal(buf[][1], 10)
-    buf.unsafe_free()
 
 
 def test_inline_array_to_device_type_dispatches_elements() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=6), ScaledInt(raw=7)]
-    var buf = alloc[Array[Int32, 2]](1)
+    var allocation = alloc[Array[Int32, 2]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
     arr._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[][0], 12)
     assert_equal(buf[][1], 14)
-    buf.unsafe_free()
 
 
 def test_encode_array_identity_scalar() raises:
     var arr: Array[Int32, 3] = [10, 20, 30]
-    var buf = alloc[Array[Int32, 3]](1)
+    var allocation = alloc[Array[Int32, 3]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `Int32` is `DevicePassable` with an identity `device_type`, so
     # element-wise encoding reproduces the values unchanged.
@@ -278,14 +284,14 @@ def test_encode_array_identity_scalar() raises:
     assert_equal(buf[][0], 10)
     assert_equal(buf[][1], 20)
     assert_equal(buf[][2], 30)
-    buf.unsafe_free()
 
 
 def test_encode_fields_bit_copies_coord_field() raises:
     var box = ScaledIntCoordBox(
         scaled=ScaledInt(raw=7), dims=Coord[Int, Int](Int(3), Int(4))
     )
-    var buf = alloc[ScaledIntCoordBox](1)
+    var allocation = alloc[ScaledIntCoordBox]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # Without the `_RegTuple` guard in `_contains_device_passable_field`,
     # elaborating this call is a compile error (`struct_field_types requires a
@@ -297,14 +303,14 @@ def test_encode_fields_bit_copies_coord_field() raises:
     # values are preserved.
     assert_equal(Int(buf[].dims[0].value()), 3)
     assert_equal(Int(buf[].dims[1].value()), 4)
-    buf.unsafe_free()
 
 
 def test_to_device_type_encodes_fields_with_coord() raises:
     var box = DevicePassableCoordBox(
         scaled=ScaledInt(raw=8), dims=Coord[Int, Int](Int(5), Int(6))
     )
-    var buf = alloc[DevicePassableCoordBox](1)
+    var allocation = alloc[DevicePassableCoordBox]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # Drives the same path through `_to_device_type` -> `encode_fields`, the way
     # a real composite would encode itself to the device.
@@ -312,7 +318,6 @@ def test_to_device_type_encodes_fields_with_coord() raises:
     assert_equal(buf[].scaled.raw, 16)
     assert_equal(Int(buf[].dims[0].value()), 5)
     assert_equal(Int(buf[].dims[1].value()), 6)
-    buf.unsafe_free()
 
 
 def test_coord_is_device_passable() raises:
@@ -324,24 +329,24 @@ def test_coord_is_device_passable() raises:
 
 def test_coord_to_device_type_bit_copies() raises:
     var c = Coord[Int, Int](Int(3), Int(4))
-    var buf = alloc[Coord[Int, Int]](1)
+    var allocation = alloc[Coord[Int, Int]]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(Int(buf[][0].value()), 3)
     assert_equal(Int(buf[][1].value()), 4)
-    buf.unsafe_free()
 
 
 # The static (zero-sized) dim lives entirely in the type, so the bit-copy
 # carries only the runtime leaf yet reads back with both dims intact.
 def test_coord_to_device_type_mixed_static_dynamic() raises:
     var c = Coord[ComptimeInt[7], Int64](Idx[7], Int64(9))
-    var buf = alloc[type_of(c)](1)
+    var allocation = alloc[type_of(c)]({count = 1}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(Int(buf[][0].value()), 7)
     assert_equal(Int(buf[][1].value()), 9)
-    buf.unsafe_free()
 
 
 def test_unsafe_device_type_converts_to_safe_pointer_param() raises:

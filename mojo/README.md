@@ -4,11 +4,11 @@
   [About Mojo] | [Get started] | [API docs] | [Contributing] | [Changelog]
 </div>
 
-[About Mojo]: https://www.modular.com/mojo/
-[Get started]: https://docs.modular.com/mojo/manual/get-started/
-[API docs]: https://docs.modular.com/mojo/lib
+[About Mojo]: https://mojolang.org/
+[Get started]: https://mojolang.org/docs/manual/get-started/
+[API docs]: https://mojolang.org/docs/std/
 [Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://www.mojolang.org/releases
+[Changelog]: https://mojolang.org/releases/
 
 # Mojo language 🔥
 
@@ -25,7 +25,7 @@ This directory includes:
 - Mojo documentation: [/mojo/docs](docs)
 
 To learn more about Mojo, see the
-[Mojo Manual](https://docs.modular.com/mojo/manual/).
+[Mojo Manual](https://mojolang.org/docs/manual/).
 
 ## Get started
 
@@ -35,11 +35,11 @@ You can get Mojo by installing the `modular` package from `pip` or
 `conda` (or with tools like `uv` and `pixi`).
 
 If it's your first time, we recommend you follow our tutorial to
-[get started with Mojo](https://docs.modular.com/mojo/manual/get-started).
+[get started with Mojo](https://mojolang.org/docs/manual/get-started).
 
 If you want to try GPU programming in Mojo, check out our tutorial to
 [get started with GPU
-programming](https://docs.modular.com/mojo/manual/gpu/intro-tutorial).
+programming](https://mojolang.org/docs/manual/gpu/intro-tutorial).
 
 ## Contributing
 

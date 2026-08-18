@@ -46,9 +46,9 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 """
 
 from std.collections import Optional
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of
@@ -247,8 +247,8 @@ struct AppleM5Fp4MatMul[
         var n_i32 = Int32(n)
         var k_i32 = Int32(k)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var tid = Int32(thread_idx.x)
         var sg_id = tid // Int32(WARP_SIZE)
@@ -339,7 +339,7 @@ struct AppleM5Fp4MatMul[
         # the one block scale the run shares (`COLS_PER_THREAD <= 16`). Shared by
         # the interior path and the bounded path's in-bounds run.
         @always_inline
-        @parameter
+        @__parameter
         def _decode_run(
             n_abs: Int,
             k0: Int,
@@ -374,7 +374,7 @@ struct AppleM5Fp4MatMul[
         # and a clean zero elsewhere. `k_valid` is the in-bounds K width of this
         # strip (used only on the bounded path).
         @always_inline
-        @parameter
+        @__parameter
         def _stage_dequant[bounded: Bool](k0: Int32, k_valid: Int32, buf: Int):
             var t = Int(tid)
             var nrow = t // THREADS_PER_ROW
@@ -461,7 +461,7 @@ struct AppleM5Fp4MatMul[
         # scattered 1-byte DRAM load. The caller barriers after this before the
         # decode reads it. Only emitted when `coalesce_scales`.
         @always_inline
-        @parameter
+        @__parameter
         def _stage_scales(k0: Int32, buf: Int):
             comptime NSCALE = BN * NBLK
             var t = Int(tid)
@@ -480,7 +480,7 @@ struct AppleM5Fp4MatMul[
                 )
 
         @always_inline
-        @parameter
+        @__parameter
         def _mma_from_smem[
             bounded: Bool
         ](buf: Int, k_strip_local: Int32, valid_rows: Int32):
@@ -518,7 +518,7 @@ struct AppleM5Fp4MatMul[
         var valid_rows = max(Int32(0), min(SG_M_i32, m_i32 - row_base))
 
         @always_inline
-        @parameter
+        @__parameter
         def _run_strips[bounded: Bool]():
             comptime use_coalesced = Self.coalesce_scales and not bounded
             comptime if use_coalesced:
@@ -575,7 +575,7 @@ struct AppleM5Fp4MatMul[
             var tile_col_base = Int(col_base)
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
@@ -859,8 +859,8 @@ def _launch_apple_fp4_matmul[
         coalesce_scales=coalesce_scales,
     ]
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0

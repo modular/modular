@@ -36,7 +36,7 @@ Key components:
 
   - Mutable and grows dynamically as needed.
 
-- [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/):
+- [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/):
   Non-owning string view
 
   - Performs zero heap allocations: stores only a pointer and length
@@ -45,14 +45,14 @@ Key components:
   - Does not own the data pointed to, so it can't outlive the data it
   references.
 
-- [`StaticString`](/docs/std/collections/string/string_slice/#staticstring):
+- [`StaticString`](/docs/std/collections/string/string_span/#staticstring):
   Compile-time constant (immutable) string reference
 
   - Performs zero heap allocations: stores a pointer and length to a
   compile-time constant or static program memory.
 
   - References data with a static lifetime that exists for the entire program
-  duration, unlike `StringSlice` which can reference temporary data.
+  duration, unlike `StringSpan` which can reference temporary data.
 
 - [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint/):
   Unicode codepoint representation and operations
@@ -78,12 +78,15 @@ fixed as time permits.
 
 from .codepoint import Codepoint
 from .string import String, ascii, atof, atol, chr, ord
-from .string_slice import (
+from .string_span import (
     BytesIter,
     CodepointsIter,
     GraphemeSliceIter,
+    ImmStringSpan,
     ImmStringSlice,
+    MutStringSpan,
     MutStringSlice,
     StaticString,
+    StringSpan,
     StringSlice,
 )

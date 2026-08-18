@@ -41,28 +41,23 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
+from std.sys import is_gpu, size_of
 from std.memory import (
-    UnsafeMaybeUninit,
+    MaybeUninit,
     forget_deinit,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
     unsafe_destroy_n,
     unsafe_uninit_move_n,
+    unsafe_uninit_copy_n,
 )
-from std.memory.unsafe_maybe_uninit import (
-    _is_trivially_copyable,
-    _is_trivially_movable,
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 
 # ===-----------------------------------------------------------------------===#
 # Array
 # ===-----------------------------------------------------------------------===#
-
-comptime InlineArray = Array
-"""
-A comptime alias to `std.collections.Array` to enable migration.
-"""
 
 
 def _array_construction_checks[length: Int]():
@@ -134,7 +129,7 @@ struct _ArrayIter[
         return (iter_len, {iter_len})
 
 
-struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
+struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for Array.
@@ -216,20 +211,21 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy an `Array` of"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
+    Defaultable where conforms_to(T, Defaultable),
+    Deinitable where conforms_to(T, Deinitable),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
-    IterableOwned where conforms_to(T, Movable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Movable & Deinitable),
     Movable where conforms_to(T, Movable),
     Sized,
     Writable where conforms_to(T, Writable),
@@ -259,18 +255,17 @@ struct Array[T: AnyType, length: Int](
     # Create array filled with value
     var filled = Array[Int, 5](fill=42)
 
+    # Create array of defaulted elements
+    var defaulted = Array[Int, 5]()  # [0, 0, 0, 0, 0]
+
     # Access elements
     print(arr[0])  # Prints 1
     ```
     """
 
-    @deprecated("`Array.size` is deprecated, use `Array.length`.")
-    comptime size = Self.length
-    """The number of elements in the array. Deprecated alias for `length`."""
-
-    comptime __del__is_trivial: Bool = is_trivially_deletable[Self.T]()
-    comptime __copy_ctor_is_trivial: Bool = _is_trivially_copyable[Self.T]()
-    comptime __move_ctor_is_trivial: Bool = _is_trivially_movable[Self.T]()
+    comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
+    comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]
 
     # Fields
     comptime type = __mlir_type[
@@ -311,7 +306,7 @@ struct Array[T: AnyType, length: Int](
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
+        Self.T, Movable & Deinitable
     ) = _ArrayIterOwned[Self.T, Self.length]
     """The owned iterator type for this array."""
 
@@ -376,15 +371,13 @@ struct Array[T: AnyType, length: Int](
     def __init__(
         out self,
         *,
-        var unsafe_assume_initialized: Array[
-            UnsafeMaybeUninit[Self.T], Self.length
-        ],
+        var unsafe_assume_initialized: Array[MaybeUninit[Self.T], Self.length],
     ) where conforms_to(Self.T, Movable):
         """Constructs an `Array` from an `Array` of
-        `UnsafeMaybeUninit`.
+        `MaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
+            unsafe_assume_initialized: The array of `MaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:
@@ -402,6 +395,27 @@ struct Array[T: AnyType, length: Int](
         for i in range(Self.length):
             self.unsafe_ptr().unsafe_offset(i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
+            )
+        std.memory.forget_deinit(unsafe_assume_initialized^)
+
+    @always_inline
+    def __init__(
+        out self,
+    ) where conforms_to(Self.T, Defaultable):
+        """Constructs an array with each element set to its default value.
+
+        Examples:
+
+        ```mojo
+        var arr = Array[Int, 5]()  # [0, 0, 0, 0, 0]
+        ```
+        """
+        _array_construction_checks[Self.length]()
+        self = Self(uninitialized=True)
+        var ptr = self.unsafe_ptr()
+        for i in range(Self.length):
+            ptr.unsafe_offset(i).unsafe_write(
+                init_with=lambda () -> Self.T: Self.T()
             )
 
     @always_inline
@@ -449,10 +463,14 @@ struct Array[T: AnyType, length: Int](
         var base = self.unsafe_ptr()
         var ptr = base
 
-        for _ in range(0, unroll_end, batch_size):
-            comptime for _ in range(batch_size):
-                ptr.unsafe_write(copy=fill)
-                ptr = ptr.unsafe_offset(1)
+        # Skip the batched loop entirely when it cannot run. Emitting it for
+        # `unroll_end == 0` leaves the inlined iterator's line-table marker
+        # behind as an irremovable barrier, even though the loop is dead.
+        comptime if unroll_end > 0:
+            for _ in range(0, unroll_end, batch_size):
+                comptime for _ in range(batch_size):
+                    ptr.unsafe_write(copy=fill)
+                    ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
         comptime for _ in range(unroll_end, Self.length):
@@ -524,6 +542,21 @@ struct Array[T: AnyType, length: Int](
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
+    @staticmethod
+    def _byte_size_favors_field_copy() -> Bool:
+        """Returns whether `Self`'s total byte size favors a direct field
+        copy over `unsafe_uninit_{copy,move}_n`.
+
+        A field copy wins below ~1024 bytes. Above that, `unsafe_uninit_*_n`
+        wins by a growing margin, since it scales with bytes while a field
+        copy scales closer to element count once too large for registers.
+
+        Returns:
+            `True` if size alone favors a direct field copy.
+        """
+        comptime TRIVIAL_FAST_PATH_MAX_BYTES = 1024
+        return size_of[Self.T]() * Self.length <= TRIVIAL_FAST_PATH_MAX_BYTES
+
     @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Copy constructs the array from another array.
@@ -538,13 +571,15 @@ struct Array[T: AnyType, length: Int](
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
-        comptime if is_trivially_copyable[Self.T]():
+        comptime if IsTriviallyCopyable[
+            Self.T
+        ] and Self._byte_size_favors_field_copy():
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
-            var base = self.unsafe_ptr()
-            for idx in range(Self.length):
-                base.unsafe_offset(idx).unsafe_write(copy=copy.unsafe_get(idx))
+            unsafe_uninit_copy_n[overlapping=False](
+                dest=self.unsafe_ptr(), src=copy.unsafe_ptr(), count=Self.length
+            )
 
     @stable(since="1.0")
     def __init__(
@@ -558,21 +593,22 @@ struct Array[T: AnyType, length: Int](
         Notes:
             Moves the elements from the source array into this array.
         """
-
-        comptime if is_trivially_movable[Self.T]():
+        comptime if IsTriviallyMovable[
+            Self.T
+        ] and Self._byte_size_favors_field_copy():
             self._array = move._array
         else:
             self = Self(uninitialized=True)
-            for idx in range(Self.length):
-                var other_ptr = move.unsafe_ptr().unsafe_offset(idx)
-                self.unsafe_ptr().unsafe_offset(idx).unsafe_write_move_from(
-                    other_ptr
-                )
+            unsafe_uninit_move_n[overlapping=False](
+                dest=self.unsafe_ptr(),
+                src=move.unsafe_ptr(),
+                count=Self.length,
+            )
 
     @stable(since="1.0")
     def __deinit__(
         deinit self,
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Destroys the array's elements."""
         unsafe_destroy_n(self.unsafe_ptr(), Self.length)
 
@@ -581,7 +617,7 @@ struct Array[T: AnyType, length: Int](
         closure.
 
         This can be used to deinitialize an `Array` of
-        non-`ImplicitlyDeletable` values.
+        non-`Deinitable` values.
 
         Args:
             deinit_func: The deinitializing closure called on each array
@@ -601,8 +637,9 @@ struct Array[T: AnyType, length: Int](
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
-    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+    def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
 
         Args:
@@ -644,9 +681,40 @@ struct Array[T: AnyType, length: Int](
         check_bounds(idx, len(self))
         return self._unchecked_get(idx)
 
+    @stable(since="1.0")
+    @always_inline
+    def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:
+        """Gets a reference to the element at the given index with compile-time
+        bounds checking.
+
+        Parameters:
+            idx: The compile-time constant index to access (0 to len-1).
+
+        Returns:
+            A reference to the element at the specified index.
+
+        Examples:
+
+        ```mojo
+        var arr: Array[Int, 3] = [1, 2, 3]
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
+        ```
+
+        Notes:
+            This overload provides array-style indexing with compile-time bounds
+            checking. The index must be a compile-time constant value.
+        """
+        comptime assert (
+            index(idx) >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert index(idx) < Self.length, "index is out of bounds"
+        return self._unchecked_get(materialize[idx]())
+
     @always_inline
     def __getitem_param__[
-        idx: Some[Indexer & ImplicitlyDeletable]
+        idx: Some[Indexer & Deinitable]
     ](ref self) -> ref[self] Self.T:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
@@ -685,6 +753,43 @@ struct Array[T: AnyType, length: Int](
             index(idx).__mlir_index__(),
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
+
+    @always_inline
+    def __add__(
+        deinit self,
+        deinit rhs: Array[Self.T, _],
+        out result: Array[Self.T, Self.length + rhs.length],
+    ) where conforms_to(Self.T, Movable):
+        """Concatenates this array with another array.
+
+        Both arrays are consumed and their elements are moved into the
+        result.
+
+        Args:
+            rhs: The array whose elements follow this array's elements in
+                the result.
+
+        Returns:
+            An array of length `Self.length + rhs.length` containing the
+            elements of `self` followed by the elements of `rhs`.
+
+        Examples:
+
+        ```mojo
+        var a: Array[Int, 2] = [1, 2]
+        var b: Array[Int, 3] = [3, 4, 5]
+        var c = (a^) + (b^)  # [1, 2, 3, 4, 5]
+        ```
+        """
+        result = {uninitialized = True}
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr(), src=self.unsafe_ptr(), count=Self.length
+        )
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr().unsafe_offset(Self.length),
+            src=rhs.unsafe_ptr(),
+            count=rhs.length,
+        )
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -791,6 +896,7 @@ struct Array[T: AnyType, length: Int](
         return self._unchecked_get(idx)
 
     @always_inline
+    @stable(since="1.0")
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref[origin, address_space] self) -> Pointer[
@@ -874,14 +980,17 @@ struct Array[T: AnyType, length: Int](
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var index = 0
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        var self_ptr = Pointer(to=self)
+
+        def iterate(
+            mut w: Some[Writer],
+        ) raises StopIteration {mut index, self_ptr}:
             if index >= Self.length:
                 raise StopIteration()
-            f(self.unsafe_get(index), w)
+            f(self_ptr[].unsafe_get(index), w)
             index += 1
 
-        fmt.write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to(writer, iterate)
         _ = index
 
     def write_to(
@@ -903,28 +1012,26 @@ struct Array[T: AnyType, length: Int](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "Array").params(
             fmt.TypeNames[Self.T](),
             Self.length,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(
-        Self.T, Movable & ImplicitlyDeletable
-    ):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Movable & Deinitable):
         """Consume the array and return an iterator over its elements.
 
         Returns:
             An iterator that owns the array's elements.
         """
-        # TODO(MOCO-4309): return Self.IteratorOwnedType(self^)
-        return _ArrayIterOwned(self^)
+        return Self.IteratorOwnedType(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.

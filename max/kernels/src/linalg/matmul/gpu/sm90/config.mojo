@@ -19,7 +19,7 @@ from std.collections.set import Set
 from std.math.uutils import ualign_down, ualign_up, ufloordiv, uceildiv
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host.info import H100
 from std.utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
@@ -399,7 +399,7 @@ def build_configs[
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(8, 128, 8):  # [8, 128]
-        config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             m,
             N,
             K,
@@ -414,7 +414,7 @@ def build_configs[
             set.add(config)
 
     for m in range(128, 8193, 64):  # [128, 8192]
-        config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             m,
             N,
             K,

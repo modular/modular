@@ -44,19 +44,17 @@ def small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
 
 
 def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
-    @parameter
     @always_inline
-    def bench_empty_launch(mut b: Bencher) raises:
-        @parameter
+    def bench_empty_launch(mut b: Bencher) raises {imm}:
         @always_inline
-        def launch(ctx: DeviceContext) raises:
+        def launch(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
-        bencher_iter_custom[launch](b, ctx)
+        bencher_iter_custom(b, launch, ctx)
 
-    m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
+    m.bench_function(bench_empty_launch, BenchId("bench_empty_launch"))
 
 
 def bench_empty_launch_many_params_caller(
@@ -74,18 +72,17 @@ def bench_empty_launch_many_params_caller(
         Layout([1, 2], [3, 3]),
     ]
 
-    @parameter
     @always_inline
-    def bench_empty_launch_many_params(mut b: Bencher) raises:
-        @parameter
-        def launch() raises:
+    def bench_empty_launch_many_params(mut b: Bencher) raises {imm}:
+        def launch() raises {imm}:
             ctx.enqueue_function[func_alias](grid_dim=Dim(1), block_dim=Dim(1))
 
-        b.iter[launch]()
+        b.iter(launch)
         ctx.synchronize()
 
-    m.bench_function[bench_empty_launch_many_params](
-        BenchId("bench_empty_launch_many_params")
+    m.bench_function(
+        bench_empty_launch_many_params,
+        BenchId("bench_empty_launch_many_params"),
     )
 
 
@@ -100,21 +97,19 @@ def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
         )
 
     # Benchmark Mojo function
-    @parameter
     @always_inline
-    def bench_gpu_kernel_enqueue(mut b: Bencher) raises:
-        @parameter
-        def launch() raises:
+    def bench_gpu_kernel_enqueue(mut b: Bencher) raises {imm}:
+        def launch() raises {imm}:
             for _ in range(NUM_KERNELS_PER_ITERATION):
                 ctx.enqueue_function[small_kernel](
                     buf, grid_dim=Dim(1), block_dim=Dim(1)
                 )
 
-        b.iter[launch]()
+        b.iter(launch)
         ctx.synchronize()
 
-    m.bench_function[bench_gpu_kernel_enqueue](
-        BenchId("bench_gpu_kernel_enqueue")
+    m.bench_function(
+        bench_gpu_kernel_enqueue, BenchId("bench_gpu_kernel_enqueue")
     )
 
 

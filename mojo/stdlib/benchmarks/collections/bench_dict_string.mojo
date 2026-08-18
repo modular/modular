@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _to_string_list
+from std.collections.string.string_span import _to_string_list
 from std.hashlib import default_comp_time_hasher, default_hasher
 from std.os import abort
 from std.pathlib import _dir_of_current_file
@@ -27,7 +27,12 @@ from std.benchmark import (
     keep,
     run,
 )
-from std.memory import unsafe_memcpy, unsafe_memset_zero
+from std.memory import (
+    Allocation,
+    dealloc,
+    unsafe_memcpy,
+    unsafe_memset_zero,
+)
 from std.testing import assert_equal
 
 
@@ -42,7 +47,7 @@ def make_small_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
         var content = f.read()
         return _to_string_list(content.split())
@@ -62,7 +67,7 @@ def make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
         var content = f.read()
         return _to_string_list(content.split("\n"))
@@ -95,8 +100,10 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
             or Self.KeyEndType == DType.uint64
         ), "KeyEndType needs to be an unsigned integer"
         self.allocated_bytes = capacity << 3
-        self.keys = alloc[UInt8](self.allocated_bytes)
-        self.keys_end = alloc[Scalar[Self.KeyEndType]](capacity)
+        self.keys = alloc[UInt8]({count = self.allocated_bytes}).unsafe_leak()
+        self.keys_end = alloc[Scalar[Self.KeyEndType]](
+            {count = capacity}
+        ).unsafe_leak()
         self.count = 0
         self.capacity = capacity
 
@@ -104,16 +111,27 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.allocated_bytes = copy.allocated_bytes
         self.count = copy.count
         self.capacity = copy.capacity
-        self.keys = alloc[UInt8](self.allocated_bytes)
+        self.keys = alloc[UInt8]({count = self.allocated_bytes}).unsafe_leak()
         unsafe_memcpy(dest=self.keys, src=copy.keys, count=self.allocated_bytes)
-        self.keys_end = alloc[Scalar[Self.KeyEndType]](self.capacity)
+        self.keys_end = alloc[Scalar[Self.KeyEndType]](
+            {count = self.capacity}
+        ).unsafe_leak()
         unsafe_memcpy(
             dest=self.keys_end, src=copy.keys_end, count=self.capacity
         )
 
     def __deinit__(deinit self):
-        self.keys.unsafe_free()
-        self.keys_end.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.keys,
+                layout={count = self.allocated_bytes},
+            )
+        )
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.keys_end, layout={count = self.capacity}
+            )
+        )
 
     @always_inline
     def add(mut self, key: StringSlice):
@@ -124,15 +142,23 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
+        var old_allocated_bytes = self.allocated_bytes
         var needs_realocation = False
         while new_end > Scalar[Self.KeyEndType](self.allocated_bytes):
             self.allocated_bytes += self.allocated_bytes >> 1
             needs_realocation = True
 
         if needs_realocation:
-            var keys = alloc[UInt8](self.allocated_bytes)
+            var keys = alloc[UInt8](
+                {count = self.allocated_bytes}
+            ).unsafe_leak()
             unsafe_memcpy(dest=keys, src=self.keys, count=Int(prev_end))
-            self.keys.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.keys,
+                    layout={count = old_allocated_bytes},
+                )
+            )
             self.keys = keys
 
         unsafe_memcpy(
@@ -143,9 +169,16 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var count = self.count + 1
         if count >= self.capacity:
             var new_capacity = self.capacity + (self.capacity >> 1)
-            var keys_end = alloc[Scalar[Self.KeyEndType]](new_capacity)
+            var keys_end = alloc[Scalar[Self.KeyEndType]](
+                {count = new_capacity}
+            ).unsafe_leak()
             unsafe_memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
-            self.keys_end.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.keys_end,
+                    layout={count = self.capacity},
+                )
+            )
             self.keys_end = keys_end
             self.capacity = new_capacity
 
@@ -198,7 +231,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 
 struct StringDict[
-    V: Copyable & ImplicitlyDeletable,
+    V: Copyable & Deinitable,
     KeyCountType: DType = DType.uint32,
     KeyOffsetType: DType = DType.uint32,
     destructive: Bool = True,
@@ -230,18 +263,26 @@ struct StringDict[
         self.keys = KeysContainer[Self.KeyOffsetType](capacity)
 
         comptime if Self.caching_hashes:
-            self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
+            self.key_hashes = alloc[Scalar[Self.KeyCountType]](
+                {count = self.capacity}
+            ).unsafe_leak()
         else:
-            self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
+            self.key_hashes = alloc[Scalar[Self.KeyCountType]](
+                {count = 0}
+            ).unsafe_leak()
         self.values = List[Self.V](capacity=capacity)
-        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
+        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](
+            {count = self.capacity}
+        ).unsafe_leak()
         unsafe_memset_zero(self.slot_to_index, self.capacity)
 
         comptime if Self.destructive:
-            self.deleted_mask = alloc[UInt8](self.capacity >> 3)
+            self.deleted_mask = alloc[UInt8](
+                {count = self.capacity >> 3}
+            ).unsafe_leak()
             unsafe_memset_zero(self.deleted_mask, self.capacity >> 3)
         else:
-            self.deleted_mask = alloc[UInt8](0)
+            self.deleted_mask = alloc[UInt8]({count = 0}).unsafe_leak()
 
     def __init__(out self, *, copy: Self):
         self.count = copy.count
@@ -249,16 +290,20 @@ struct StringDict[
         self.keys = copy.keys
 
         comptime if Self.caching_hashes:
-            self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
+            self.key_hashes = alloc[Scalar[Self.KeyCountType]](
+                {count = self.capacity}
+            ).unsafe_leak()
             unsafe_memcpy(
                 dest=self.key_hashes,
                 src=copy.key_hashes,
                 count=self.capacity,
             )
         else:
-            self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
+            self.key_hashes = type_of(self.key_hashes).unsafe_dangling()
         self.values = copy.values.copy()
-        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
+        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](
+            {count = self.capacity}
+        ).unsafe_leak()
         unsafe_memcpy(
             dest=self.slot_to_index,
             src=copy.slot_to_index,
@@ -266,19 +311,38 @@ struct StringDict[
         )
 
         comptime if Self.destructive:
-            self.deleted_mask = alloc[UInt8](self.capacity >> 3)
+            self.deleted_mask = alloc[UInt8](
+                {count = self.capacity >> 3}
+            ).unsafe_leak()
             unsafe_memcpy(
                 dest=self.deleted_mask,
                 src=copy.deleted_mask,
                 count=self.capacity >> 3,
             )
         else:
-            self.deleted_mask = alloc[UInt8](0)
+            self.deleted_mask = type_of(self.deleted_mask).unsafe_dangling()
 
     def __deinit__(deinit self):
-        self.slot_to_index.unsafe_free()
-        self.deleted_mask.unsafe_free()
-        self.key_hashes.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.slot_to_index,
+                layout={count = self.capacity},
+            )
+        )
+        comptime if Self.destructive:
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.deleted_mask,
+                    layout={count = self.capacity >> 3},
+                )
+            )
+        comptime if Self.caching_hashes:
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.key_hashes,
+                    layout={count = self.capacity},
+                )
+            )
 
     def __len__(self) -> Int:
         return self.count
@@ -367,23 +431,34 @@ struct StringDict[
         var old_capacity = self.capacity
         self.capacity <<= 1
         var mask_capacity = self.capacity >> 3
-        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
+        self.slot_to_index = alloc[Scalar[Self.KeyCountType]](
+            {count = self.capacity}
+        ).unsafe_leak()
         unsafe_memset_zero(self.slot_to_index, self.capacity)
 
         var key_hashes = self.key_hashes
 
         comptime if Self.caching_hashes:
-            key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
+            key_hashes = alloc[Scalar[Self.KeyCountType]](
+                {count = self.capacity}
+            ).unsafe_leak()
 
         comptime if Self.destructive:
-            var deleted_mask = alloc[UInt8](mask_capacity)
+            var deleted_mask = alloc[UInt8](
+                {count = mask_capacity}
+            ).unsafe_leak()
             unsafe_memset_zero(deleted_mask, mask_capacity)
             unsafe_memcpy(
                 dest=deleted_mask,
                 src=self.deleted_mask,
                 count=old_capacity >> 3,
             )
-            self.deleted_mask.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.deleted_mask,
+                    layout={count = old_capacity >> 3},
+                )
+            )
             self.deleted_mask = deleted_mask
 
         var modulo_mask = self.capacity - 1
@@ -419,9 +494,19 @@ struct StringDict[
                 key_hashes[unsafe_offset=slot] = key_hash
 
         comptime if Self.caching_hashes:
-            self.key_hashes.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.key_hashes,
+                    layout={count = old_capacity},
+                )
+            )
             self.key_hashes = key_hashes
-        old_slot_to_index.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=old_slot_to_index,
+                layout={count = old_capacity},
+            )
+        )
 
     def get(self, key: StringSlice, default: Self.V) -> Self.V:
         var key_index = self._find_key_index(key)
@@ -502,12 +587,12 @@ struct StringDict[
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
@@ -517,12 +602,12 @@ def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
@@ -535,14 +620,14 @@ def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark StringDict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_dict_init_with_short_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = StringDict[Int]()
         for i, key in enumerate(keys):
@@ -552,14 +637,14 @@ def bench_string_dict_init_with_short_keys[
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_string_dict_init_with_long_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = StringDict[Int]()
         for i, key in enumerate(keys):

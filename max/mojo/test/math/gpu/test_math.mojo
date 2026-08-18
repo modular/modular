@@ -19,13 +19,15 @@ from std.testing import TestSuite
 
 def run_func[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: SIMDLength](
-        SIMD[dtype, width]
-    ) thin -> SIMD[dtype, width],
-](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
-    @parameter
+    kernel_fn: def[fn_dtype: DType, width: SIMDLength](
+        SIMD[fn_dtype, width]
+    ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point(),
+](
+    ctx: DeviceContext, val: Scalar[dtype] = 0
+) raises where dtype.is_floating_point():
+    @__parameter
     def kernel(
-        output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
+        output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
         output[unsafe_offset=0] = kernel_fn(input)
 
@@ -91,11 +93,11 @@ def powf_fn(val: SIMD) -> type_of(val):
 def test_math() raises:
     with DeviceContext() as ctx:
 
-        @parameter
+        @__parameter
         def test[
-            *kernel_fns: def[dtype: DType, width: SIMDLength](
-                SIMD[dtype, width]
-            ) thin -> SIMD[dtype, width]
+            *kernel_fns: def[fn_dtype: DType, width: SIMDLength](
+                SIMD[fn_dtype, width]
+            ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point()
         ](ctx: DeviceContext) raises:
             comptime ls = kernel_fns.size
 

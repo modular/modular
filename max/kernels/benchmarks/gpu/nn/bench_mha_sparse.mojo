@@ -61,7 +61,9 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+
+from max.gpu.host import DeviceContext
+
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
@@ -215,13 +217,12 @@ def run_mha_sparse[
 
     if bench:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
                     cb_q.offset_ptr(iteration),
@@ -279,7 +280,7 @@ def run_mha_sparse[
                     num_partitions if num_partitions > 0 else Optional[Int](),
                 )
 
-            bencher_iter_custom[_kernel_launch](b, ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             # Full (non-causal) mask: all tiles participate.

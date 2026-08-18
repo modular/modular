@@ -110,13 +110,13 @@ def test_wrap_stacked_qkv_per_projection_sgmv() -> None:
     # Fused qkv -> two adapter slots (fused A, fused B), not six.
     assert len(list(lora_parameters(model))) == 2
 
-    # The wrapper is name-transparent (LoRA is a TransparentModule): its own
-    # ``qkv`` attribute name drops from the base weight's qualified path, so no
-    # ``.module``-under-``qkv`` infix is introduced. The base weight keeps a
-    # native path and adapters ride in as inputs, not parameters.
+    # The wrapper is invisible to naming: the base weight keeps the exact path
+    # it had unwrapped (``block.qkv.weight``), with neither the wrapper's own
+    # attribute nor its ``module`` holder introduced into the path. Adapters
+    # ride in as inputs, not parameters.
     param_names = set(dict(model.parameters))
-    assert "block.module.weight" in param_names
-    assert not any("qkv" in name for name in param_names)
+    assert "block.qkv.weight" in param_names
+    assert not any(".module" in name for name in param_names)
 
     wrapped = model.block.qkv
     assert isinstance(wrapped, LoRA)

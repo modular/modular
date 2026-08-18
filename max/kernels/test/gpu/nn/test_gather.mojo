@@ -21,7 +21,7 @@ def test_gather(ctx: DeviceContext) raises:
     print("== test_gather")
 
     @no_inline
-    @parameter
+    @__parameter
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4

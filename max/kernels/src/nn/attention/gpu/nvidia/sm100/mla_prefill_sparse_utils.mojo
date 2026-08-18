@@ -30,21 +30,20 @@ from std.gpu import (
     warp_id,
     thread_idx,
     WARP_SIZE,
-    barrier,
 )
+from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
@@ -762,10 +761,10 @@ struct MLAPrefillSparseCommon[
         if k < num_k_blocks:
             # QK^T MMA
             # wait for k load p0
-            cur_buf = k % UInt32(Self.SMemType.num_mbars)
-            cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
-            prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
-            prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
+            var cur_buf = k % UInt32(Self.SMemType.num_mbars)
+            var cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
+            var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+            var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
             comptime if not fp8_active:
                 k_p0_ready[cur_buf].expect_bytes(
@@ -836,8 +835,8 @@ struct MLAPrefillSparseCommon[
             )
         if k > 0:
             # O += S(i-1)V(i-1)
-            curr_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
-            cur_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
+            var curr_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+            var cur_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
             # SV descriptors for the 2 atoms × 2 key-halves = 4 sub-MMAs.
             # Atom1 reads V smem cols 0..127 (cluster depths 0..255), atom2

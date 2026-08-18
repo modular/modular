@@ -209,7 +209,7 @@ def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime assert x.dtype == DType.float32, "must be DType.float32"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn["llvm.nvvm.sqrt.approx.ftz.f"](x[i])
 
 
@@ -271,7 +271,7 @@ def _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[instruction](x[i])
 
 
@@ -328,7 +328,7 @@ def _recip_nvvm(x: SIMD, out res: type_of(x)):
     comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[instruction](x[i])
 
 
@@ -454,7 +454,7 @@ def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
         from_bits=r.to_bits[u32]()
         + (
             m.cast[u32]()
-            << SIMD[DType.uint32, x.size](
+            << SIMD[DType.uint32, x.length](
                 FPUtils[DType.float32].mantissa_width()
             )
         )
@@ -1320,7 +1320,7 @@ def iota[
 def iota[
     dtype: DType, //
 ](
-    buff: Pointer[mut=True, Scalar[dtype], _, address_space=_],
+    buff: MutPointer[Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1345,9 +1345,7 @@ def iota[
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-def iota[
-    dtype: DType, //
-](span: Span[mut=True, Scalar[dtype], _], offset: Int = 0):
+def iota[dtype: DType, //](span: MutSpan[Scalar[dtype], _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Parameters:
@@ -1360,7 +1358,7 @@ def iota[
     iota(span.unsafe_ptr(), len(span), offset)
 
 
-def iota(span: Span[mut=True, Int, _], offset: Int = 0):
+def iota(span: MutSpan[Int, _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Args:
@@ -1720,14 +1718,12 @@ def atan2[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2522,14 +2518,12 @@ def hypot[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2785,7 +2779,6 @@ def remainder[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2794,7 +2787,6 @@ def remainder[
         )
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2947,14 +2939,12 @@ def scalb[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -3055,7 +3045,8 @@ def lcm(m: Int, n: Int, /) -> Int:
     Returns:
         The least common multiple of the two integers.
     """
-    if d := gcd(m, n):
+    var d = gcd(m, n)
+    if d:
         return abs((m // d) * n if m > n else (n // d) * m)
     return 0
 
@@ -3492,7 +3483,7 @@ def _call_ptx_intrinsic[
 def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[intrin](x[i])
 
 
@@ -3851,7 +3842,7 @@ def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def max[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3905,7 +3896,7 @@ def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def min[T: Copyable & Comparable & ImplicitlyDeletable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

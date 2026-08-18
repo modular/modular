@@ -32,7 +32,7 @@ fundamentally need to copy keys (`copy`, `update`, `__or__`, `fromkeys`,
 iteration, ...) are conditionally available via
 `where conforms_to(K, Copyable)` clauses.
 
-Value elements only need to be `Movable & ImplicitlyDeletable`. Methods that
+Value elements only need to be `Movable & Deinitable`. Methods that
 fundamentally need to copy values (`copy`, `find`, `get`, `update`, `__or__`,
 `fromkeys`, iteration, ...) are conditionally available via
 `where conforms_to(V, Copyable)` clauses.
@@ -218,8 +218,8 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement & ImplicitlyDeletable,
-    V: Movable & ImplicitlyDeletable,
+    K: KeyElement & Deinitable,
+    V: Movable & Deinitable,
     H: Hasher,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
@@ -275,8 +275,8 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictEntryIterOwned[
-    K: KeyElement & ImplicitlyDeletable,
-    V: Movable & ImplicitlyDeletable,
+    K: KeyElement & Deinitable,
+    V: Movable & Deinitable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
@@ -329,8 +329,8 @@ struct _DictEntryIterOwned[
 
 @fieldwise_init
 struct _DictKeyIterOwned[
-    K: KeyElement & ImplicitlyDeletable,
-    V: Movable & ImplicitlyDeletable,
+    K: KeyElement & Deinitable,
+    V: Movable & Deinitable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
@@ -466,7 +466,7 @@ struct _DictValueIter[
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `Dict` with"
-    " non-`ImplicitlyDeletable` keys or values"
+    " non-`Deinitable` keys or values"
 )
 struct Dict[
     K: KeyElement,
@@ -476,16 +476,14 @@ struct Dict[
     Boolable,
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Defaultable,
+    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
     Equatable where conforms_to(K, Copyable) and conforms_to(V, Equatable),
     Hashable where conforms_to(K, Copyable) and conforms_to(V, Hashable),
-    ImplicitlyDeletable where conforms_to(
-        K, ImplicitlyDeletable
-    ) and conforms_to(V, ImplicitlyDeletable),
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'KeyElement' and 'Movable' constraints
-    IterableOwned where conforms_to(
-        K, KeyElement & ImplicitlyDeletable
-    ) and conforms_to(V, Movable & ImplicitlyDeletable),
+    IterableOwned where conforms_to(K, KeyElement & Deinitable) and conforms_to(
+        V, Movable & Deinitable
+    ),
     Movable,
     Sized,
     Writable where (
@@ -697,10 +695,8 @@ struct Dict[
 
     # TODO(MOCO-4308): Remove redundant 'KeyElement' and 'Movable' constraints
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.K, KeyElement & ImplicitlyDeletable
-    ) and conforms_to(
-        Self.V, Movable & ImplicitlyDeletable
-    ) = _DictKeyIterOwned[
+        Self.K, KeyElement & Deinitable
+    ) and conforms_to(Self.V, Movable & Deinitable) = _DictKeyIterOwned[
         Self.K,
         Self.V,
         Self.H,
@@ -756,8 +752,8 @@ struct Dict[
         var keys: List[Self.K],
         var values: List[Self.V],
         __dict_literal__: NoneType,
-    ) where conforms_to(Self.K, Copyable & ImplicitlyDeletable) and conforms_to(
-        Self.V, Copyable & ImplicitlyDeletable
+    ) where conforms_to(Self.K, Copyable & Deinitable) and conforms_to(
+        Self.V, Copyable & Deinitable
     ):
         """Constructs a dictionary from the given keys and values.
 
@@ -789,8 +785,8 @@ struct Dict[
         Keys: Iterable
     ](ref keys: Keys, value: Self.V) -> Self where (
         Keys.IteratorType[origin_of(keys)].Element == Self.K
-        and conforms_to(Self.K, ImplicitlyDeletable)
-        and conforms_to(Self.V, Copyable & ImplicitlyDeletable)
+        and conforms_to(Self.K, Deinitable)
+        and conforms_to(Self.V, Copyable & Deinitable)
     ):
         """Create a new dictionary with keys from a borrowed iterable and values
         set to value.
@@ -829,8 +825,8 @@ struct Dict[
         Keys: IterableOwned
     ](var keys: Keys, value: Self.V) -> Self where (
         Keys.IteratorOwnedType.Element == Self.K
-        and conforms_to(Self.K, ImplicitlyDeletable)
-        and conforms_to(Self.V, Copyable & ImplicitlyDeletable)
+        and conforms_to(Self.K, Deinitable)
+        and conforms_to(Self.V, Copyable & Deinitable)
     ):
         """Create a new dictionary with keys from an owned iterable and values
         set to value.
@@ -874,30 +870,13 @@ struct Dict[
         self._table = SwissTable[Self.K, Self.V, Self.H](copy=copy._table)
         self._order = copy._order.copy()
 
-    # TODO(MOCO-4228): remove this __deinit__
-    def __deinit__(
-        deinit self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
-        """Destroy all keys and values in the dictionary and free memory.
-
-        Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
-            the dictionary has no implicit destructor and must be torn down with
-            `deinit_with()`.
-        """
-        # _table.__deinit__ handles destroying occupied slots and freeing memory.
-        # _order is cleaned up by List destructor.
-        pass
-
     def deinit_with(
         deinit self, deinit_func: Some[def(var Self.K, var Self.V)], /
     ):
         """Consume the dictionary, deinitializing each key/value pair with a closure.
 
         Use this to tear down a `Dict` whose keys or values are not
-        `ImplicitlyDeletable`.
+        `Deinitable`.
 
         Args:
             deinit_func: A closure called once per entry to destroy its key and
@@ -930,13 +909,11 @@ struct Dict[
 
     def __setitem__(
         mut self, var key: Self.K, var value: Self.V
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         """Set a value in the dictionary by key.
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`. Assigning to an
+            Both `K` and `V` must be `Deinitable`. Assigning to an
             existing key destroys the displaced entry in place.
 
         Args:
@@ -953,7 +930,7 @@ struct Dict[
 
         Unlike `__setitem__`, the displaced key and value are moved out and
         returned (never destroyed in place), so this works when `K` or `V` is
-        linear (non-`ImplicitlyDeletable`). The caller is responsible for
+        linear (non-`Deinitable`). The caller is responsible for
         disposing of the returned entry.
 
         Args:
@@ -997,8 +974,8 @@ struct Dict[
     def __iter__(
         var self,
     ) -> Self.IteratorOwnedType where conforms_to(
-        Self.K, KeyElement & ImplicitlyDeletable
-    ) and conforms_to(Self.V, Movable & ImplicitlyDeletable):
+        Self.K, KeyElement & Deinitable
+    ) and conforms_to(Self.V, Movable & Deinitable):
         """Consume the dictionary and iterate over its keys.
 
         Returns:
@@ -1059,9 +1036,9 @@ struct Dict[
 
     def __or__(
         self, other: Self
-    ) -> Self where conforms_to(
-        Self.K, Copyable & ImplicitlyDeletable
-    ) and conforms_to(Self.V, Copyable & ImplicitlyDeletable):
+    ) -> Self where conforms_to(Self.K, Copyable & Deinitable) and conforms_to(
+        Self.V, Copyable & Deinitable
+    ):
         """Merge self with other and return the result as a new dict.
 
         Args:
@@ -1076,8 +1053,8 @@ struct Dict[
 
     def __ior__(
         mut self, other: Self
-    ) where conforms_to(Self.K, Copyable & ImplicitlyDeletable) and conforms_to(
-        Self.V, Copyable & ImplicitlyDeletable
+    ) where conforms_to(Self.K, Copyable & Deinitable) and conforms_to(
+        Self.V, Copyable & Deinitable
     ):
         """Merge self with other in place.
 
@@ -1219,16 +1196,17 @@ struct Dict[
             writer: The value to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_dict_body[
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_dict_body[
                 f_key=fmt.write_repr_to[Self.K],
                 f_val=fmt.write_repr_to[Self.V],
             ](w)
 
         fmt.FormatStruct(writer, "Dict").params(
             fmt.TypeNames[Self.K, Self.V](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1302,6 +1280,42 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
+    @__unsafe_nested_origins_read_only
+    def _find_ref_matching(
+        ref self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
+    ) raises DictKeyError[Self.K] -> ref[
+        origin_of(self)._get_owned_interior["value"]
+    ] Self.V:
+        """Find a value by a key predicate and a precomputed hash.
+
+        Like `_find_ref`, but probes with `key_matches` instead of a concrete
+        `Self.K`, so callers can look up a heterogeneous key (such as a
+        `StringSpan` against a `String` key) without building a `Self.K`.
+
+        Args:
+            hash: The hash of the lookup key, from `Self.H`. Any key that
+                `key_matches` accepts must hash to this value.
+            key_matches: Returns `True` when a stored key equals the lookup key.
+
+        Returns:
+            A reference to the value if the key is present.
+
+        Raises:
+            `DictKeyError` if no matching key is present.
+        """
+        var found, slot_idx = self._table.find_slot_matching(hash, key_matches)
+
+        if found:
+            assert is_occupied(self._table._ctrl[unsafe_offset=slot_idx]), (
+                "find_slot_matching returned found=True but ctrl byte is not"
+                " occupied"
+            )
+            return Pointer(
+                to=(self._table._slots.unsafe_offset(slot_idx))[].value
+            )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
+
+        raise DictKeyError[Self.K]()
+
     def get(
         self, key: Self.K
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):
@@ -1334,7 +1348,7 @@ struct Dict[
 
     def get(
         self, key: Self.K, var default: Self.V
-    ) -> Self.V where conforms_to(Self.V, Copyable & ImplicitlyDeletable):
+    ) -> Self.V where conforms_to(Self.V, Copyable & Deinitable):
         """Get a value from the dictionary by key.
 
         Args:
@@ -1364,13 +1378,13 @@ struct Dict[
 
     def pop(
         mut self, key: Self.K, var default: Self.V
-    ) -> Self.V where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
+    ) -> Self.V where conforms_to(Self.K, Deinitable) and conforms_to(
+        Self.V, Deinitable
     ):
         """Remove a value from the dictionary by key.
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`. Removing an entry
+            Both `K` and `V` must be `Deinitable`. Removing an entry
             discards its key and returns only the value; the unused `default` is
             also discarded when the key is found. Use `popitem()` to retrieve
             both key and value.
@@ -1404,12 +1418,12 @@ struct Dict[
     def pop(
         mut self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> Self.V where conforms_to(
-        Self.K, ImplicitlyDeletable
+        Self.K, Deinitable
     ):
         """Remove a value from the dictionary by key.
 
         Constraints:
-            `K` must be `ImplicitlyDeletable`. Removing an entry discards its
+            `K` must be `Deinitable`. Removing an entry discards its
             key and returns only the value. Use `popitem()` to retrieve both.
 
         Args:
@@ -1601,10 +1615,8 @@ struct Dict[
         Self.V,
         Self.H,
         origin_of(self),
-    ] where conforms_to(
-        Self.K, KeyElement & ImplicitlyDeletable
-    ) and conforms_to(
-        Self.V, Movable & ImplicitlyDeletable
+    ] where conforms_to(Self.K, KeyElement & Deinitable) and conforms_to(
+        Self.V, Movable & Deinitable
     ):
         """Iterate over the dict's entries and move them out of the dictionary
         effectively draining the dictionary.
@@ -1632,8 +1644,8 @@ struct Dict[
 
     def update(
         mut self, other: Self, /
-    ) where conforms_to(Self.K, Copyable & ImplicitlyDeletable) and conforms_to(
-        Self.V, Copyable & ImplicitlyDeletable
+    ) where conforms_to(Self.K, Copyable & Deinitable) and conforms_to(
+        Self.V, Copyable & Deinitable
     ):
         """Update the dictionary with the key/value pairs from other,
         overwriting existing keys.
@@ -1662,13 +1674,11 @@ struct Dict[
 
     def clear(
         mut self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         """Remove all elements from the dictionary.
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`, since every entry is
+            Both `K` and `V` must be `Deinitable`, since every entry is
             destroyed in place.
 
         Example:
@@ -1692,7 +1702,7 @@ struct Dict[
 
         The closure counterpart of `clear`: instead of destroying each entry in
         place, it hands the key and value to `destroy_func`. Use this to clear a
-        `Dict` whose keys or values are not `ImplicitlyDeletable`. The
+        `Dict` whose keys or values are not `Deinitable`. The
         dictionary's capacity is retained, so it can be reused without
         reallocating.
 
@@ -1724,8 +1734,8 @@ struct Dict[
         mut self, var key: Self.K, var default: Self.V
     ) -> ref[
         origin_of(self)._get_owned_interior["value"]
-    ] Self.V where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
+    ] Self.V where conforms_to(Self.K, Deinitable) and conforms_to(
+        Self.V, Deinitable
     ):
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
@@ -1811,7 +1821,7 @@ struct Dict[
         The caller must have located `slot_idx` via `find_slot` and confirmed
         the key is absent, so no existing entry is displaced or destroyed. This
         keeps the placement path free of implicit destruction, so it works even
-        when `K` or `V` is linear (non-`ImplicitlyDeletable`).
+        when `K` or `V` is linear (non-`Deinitable`).
 
         Args:
             slot_idx: The empty slot to write into, as returned by `find_slot`.
@@ -1828,16 +1838,14 @@ struct Dict[
 
     def _insert(
         mut self, var key: Self.K, var value: Self.V
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
 
     def _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]) where conforms_to(
-        Self.K, ImplicitlyDeletable
-    ) and conforms_to(Self.V, ImplicitlyDeletable):
+        Self.K, Deinitable
+    ) and conforms_to(Self.V, Deinitable):
         comptime if not safe_context:
             self._ensure_capacity()
         var found, slot_idx = self._table.find_slot(entry._hash, entry.key)
@@ -1917,14 +1925,14 @@ struct Dict[
         ), "order length doesn't match _len after resize"
 
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=slot_map).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
                 {count = old_capacity}
             )
         )
         dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=relocated_set
-            ).unsafe_with_layout({count = old_capacity})
+            ThinAllocation(unsafe_owned_ptr=relocated_set).unsafe_with_layout(
+                {count = old_capacity}
+            )
         )
 
     def _rehash_in_place(mut self):
@@ -1950,7 +1958,7 @@ struct Dict[
         ), "order length doesn't match _len after in-place rehash"
 
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=slot_map).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
                 {count = self._table._capacity}
             )
         )
@@ -1970,16 +1978,17 @@ struct Dict[
 struct StringDict[V: Movable](
     Copyable where conforms_to(V, Copyable),
     Defaultable,
-    ImplicitlyDeletable where conforms_to(V, ImplicitlyDeletable),
+    Deinitable where conforms_to(V, Deinitable),
     Iterable,
     Movable,
     Sized,
+    Writable where conforms_to(V, Writable),
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
     Parameters:
         V: The value type of the dictionary. Must be `Movable`. When `V` is not
-            `ImplicitlyDeletable`, the dictionary has no implicit destructor and
+            `Deinitable`, the dictionary has no implicit destructor and
             must be torn down with `deinit_with()`.
 
     This type mimics the interface of a dictionary with `String` keys, and
@@ -2016,38 +2025,20 @@ struct StringDict[V: Movable](
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, Self.V, default_comp_time_hasher]()
 
-    # TODO(MOCO-4228): remove this __deinit__ once an explicit __deinit__ is synthesized
-    def __deinit__(deinit self) where conforms_to(Self.V, ImplicitlyDeletable):
-        """Destroy all values in the dictionary and free memory.
-
-        Constraints:
-            `V` must be `ImplicitlyDeletable`. When it is not, the dictionary has
-            no implicit destructor and must be torn down with `deinit_with()`.
-        """
-        # `_dict`'s conditional destructor handles the
-        # occupied entries and frees memory.
-        pass
-
     def deinit_with(
         deinit self, deinit_func: Some[def(var String, var Self.V)], /
     ):
         """Consume the dictionary, deinitializing each key/value pair with a closure.
 
         Use this to tear down a keyword dictionary whose values are not
-        `ImplicitlyDeletable`.
+        `Deinitable`.
 
         Args:
             deinit_func: A closure called once per entry to destroy its key and
                 value.
         """
 
-        # TODO(MOCO-4295): forwarding this *existential* (`Some[def(...)]`)
-        # closure straight to `Dict.deinit_with` doesn't compile — its `K`
-        # won't bind to `String`. Drop this wrapper once fixed.
-        def forward(var key: String, var value: Self.V) {imm deinit_func}:
-            deinit_func(key^, value^)
-
-        self._dict^.deinit_with(forward)
+        self._dict^.deinit_with(deinit_func)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -2071,14 +2062,40 @@ struct StringDict[V: Movable](
         """
         return self._dict[key]
 
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __getitem__(
+        ref self, key: ImmStringSpan
+    ) raises DictKeyError[Self.key_type] -> ref[
+        origin_of(self._dict)._get_owned_interior["value"]
+    ] Self.V:
+        """Retrieve a value by string view, without allocating a `String`.
+
+        Args:
+            key: The key to retrieve, as a string view.
+
+        Returns:
+            The value associated with the key, if it's present.
+
+        Raises:
+            `DictKeyError` if the key isn't present.
+        """
+
+        return self._dict._find_ref_matching(
+            hash[default_comp_time_hasher](key),
+            lambda (stored_key: Self.key_type) {imm key} -> Bool: (
+                stored_key == key
+            ),
+        )
+
     @always_inline
     def __setitem__(
         mut self, key: Self.key_type, var value: Self.V
-    ) where conforms_to(Self.V, ImplicitlyDeletable):
+    ) where conforms_to(Self.V, Deinitable):
         """Set a value in the keyword dictionary by key.
 
         Constraints:
-            `V` must be `ImplicitlyDeletable`, since assigning to an existing key
+            `V` must be `Deinitable`, since assigning to an existing key
             destroys the displaced value in place. To populate a keyword
             dictionary with a linear `V`, use `insert()` instead.
 
@@ -2114,6 +2131,39 @@ struct StringDict[V: Movable](
         """
         return len(self._dict)
 
+    @no_inline
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write this `StringDict` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        self._dict.write_to(writer)
+
+    @no_inline
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write this `StringDict`'s representation to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._dict._write_dict_body[
+                f_key=fmt.write_repr_to[Self.key_type],
+                f_val=fmt.write_repr_to[Self.V],
+            ](w)
+
+        fmt.FormatStruct(writer, "StringDict").params(
+            fmt.TypeNames[Self.V](),
+        ).fields(write_fields)
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -2142,7 +2192,7 @@ struct StringDict[V: Movable](
 
         Unlike `__setitem__`, the displaced entry is moved out and returned
         (never destroyed in place), so this works when `V` is linear
-        (non-`ImplicitlyDeletable`). The caller is responsible for disposing of
+        (non-`Deinitable`). The caller is responsible for disposing of
         the returned entry.
 
         Args:
@@ -2178,11 +2228,11 @@ struct StringDict[V: Movable](
     @always_inline
     def pop(
         mut self, key: self.key_type, var default: Self.V
-    ) -> Self.V where conforms_to(Self.V, ImplicitlyDeletable):
+    ) -> Self.V where conforms_to(Self.V, Deinitable):
         """Remove a value from the dictionary by key.
 
         Constraints:
-            `V` must be `ImplicitlyDeletable`, since the unused `default` is
+            `V` must be `Deinitable`, since the unused `default` is
             discarded in place when the key is found. To remove from a keyword
             dictionary with a linear `V`, use `pop(key)` or `popitem()`.
 
@@ -2292,11 +2342,11 @@ struct StringDict[V: Movable](
     @always_inline
     def _insert(
         mut self, var key: Self.key_type, var value: Self.V
-    ) where conforms_to(Self.V, ImplicitlyDeletable):
+    ) where conforms_to(Self.V, Deinitable):
         self._dict._insert(key^, value^)
 
     @always_inline
     def _insert(
         mut self, key: StringLiteral, var value: Self.V
-    ) where conforms_to(Self.V, ImplicitlyDeletable):
+    ) where conforms_to(Self.V, Deinitable):
         self._insert(String(key), value^)

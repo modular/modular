@@ -13,10 +13,10 @@
 
 from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
-from std.memory import (
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import size_of
 
@@ -102,7 +102,7 @@ def test_optional_reg_basic() raises:
 
 
 def test_optional_is() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_false(a is None)
 
     a = Optional[Int](None)
@@ -110,7 +110,7 @@ def test_optional_is() raises:
 
 
 def test_optional_isnot() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_true(a is not None)
 
     a = Optional[Int](None)
@@ -118,7 +118,7 @@ def test_optional_isnot() raises:
 
 
 def test_optional_reg_is() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_false(a is None)
 
     a = OptionalReg[Int](None)
@@ -126,7 +126,7 @@ def test_optional_reg_is() raises:
 
 
 def test_optional_reg_isnot() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_true(a is not None)
 
     a = OptionalReg[Int](None)
@@ -143,15 +143,6 @@ def test_optional_take_mutates() raises:
     assert_equal(value, 5)
     # The optional should now be empty
     assert_false(opt1)
-
-
-def test_optional_into_inner() raises:
-    var opt1 = Optional[Int](5)
-    assert_equal(opt1^.into_inner(), 5)
-
-    # `into_inner()` also works for move-only element types.
-    var opt2 = Optional(MoveOnly[Int](7))
-    assert_equal(opt2^.into_inner().data, 7)
 
 
 def test_optional_explicit_copy() raises:
@@ -174,7 +165,7 @@ def test_optional_conformance() raises:
 
 @fieldwise_init
 struct _NonWritable(Movable):
-    """A `Movable & ImplicitlyDeletable` type that is not `Writable`,
+    """A `Movable & Deinitable` type that is not `Writable`,
     `Copyable`, or `Hashable` — used to exercise the negative case of
     `Optional`'s conditional conformances."""
 
@@ -210,14 +201,14 @@ struct _NonTrivial(Copyable):
 
 def test_optional_triviality() raises:
     comptime trivial = Optional[Int]
-    assert_true(is_trivially_copyable[trivial]())
-    assert_true(is_trivially_movable[trivial]())
-    assert_true(is_trivially_deletable[trivial]())
+    assert_true(IsTriviallyCopyable[trivial])
+    assert_true(IsTriviallyMovable[trivial])
+    assert_true(IsTriviallyDeinitable[trivial])
 
     comptime not_trivial = Optional[_NonTrivial]
-    assert_false(is_trivially_copyable[not_trivial]())
-    assert_false(is_trivially_movable[not_trivial]())
-    assert_false(is_trivially_deletable[not_trivial]())
+    assert_false(IsTriviallyCopyable[not_trivial])
+    assert_false(IsTriviallyMovable[not_trivial])
+    assert_false(IsTriviallyDeinitable[not_trivial])
 
 
 def test_optional_write_to() raises:
@@ -258,8 +249,8 @@ def test_optional_hash() raises:
 
 
 def test_optional_equality() raises:
-    o = Optional(10)
-    n = Optional[Int]()
+    var o = Optional(10)
+    var n = Optional[Int]()
     assert_true(o == 10)
     assert_true(o != 11)
     assert_true(o != n)
@@ -542,9 +533,9 @@ def test_optional_deinit_with_none_does_not_call_destroy() raises:
     assert_equal(counter, 0)
 
 
-# `ImplicitlyDeletable` but explicitly not `Movable`: rejected at the parameter
+# `Deinitable` but explicitly not `Movable`: rejected at the parameter
 # bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
-struct _NotMovable(ImplicitlyDeletable, Movable where False):
+struct _NotMovable(Deinitable, Movable where False):
     var x: Int
 
     def __init__(out self, x: Int):

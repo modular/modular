@@ -272,7 +272,7 @@ def dispatch_amd_4wave_conv3d[
     comptime _shapes_ok = (
         _C_in >= _simd_w and _C_out >= 64 and _Q > 1 and _R > 0 and _S > 0
     )
-    # Gate the entire dispatch body — including the `@parameter` closure
+    # Gate the entire dispatch body — including the `@__parameter` closure
     # definitions below — on `_shapes_ok`. Mojo type-checks closure
     # bodies even past a `comptime if not _shapes_ok: return False`
     # early-return, so a shape that we *intend* to decline (e.g.
@@ -384,7 +384,7 @@ def dispatch_amd_4wave_conv3d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_dhw_static:
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_static[
                 stride_v: Int, pad_d_c: Int, pad_hw_c: Int
@@ -571,7 +571,7 @@ def dispatch_amd_4wave_conv3d[
             # Dynamic-DHW path. Materialize the runtime input dims and
             # output dims, then call the kernel via use_runtime_hw=True.
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_runtime[
                 stride_v: Int, pad_d_c: Int, pad_hw_c: Int

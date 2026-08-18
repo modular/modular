@@ -160,6 +160,7 @@ Both `for` and `while` loops support `else`.
 A `try` statement executes code that may raise errors.
 
 ```mojo
+var result: Bool
 try:
     result = risky()
 except e:
@@ -226,7 +227,7 @@ def fetch() raises NetworkError -> String:
     raise NetworkError("HTCPCP", 418)   # See RFC 2324 *
 
 try:
-    result = fetch()
+    var result = fetch()
 except e:              # e is inferred as `NetworkError`
     print(e.message)   # Known types support direct field access
     print(e.code)      # `.code` and `.message` only work because `e`
@@ -250,7 +251,7 @@ The cleanup always runs when the block exits, even if an error occurs:
 
 ```mojo
 with open("file.txt") as f:
-    content = f.read()
+    var content = f.read()
 # File is closed here, even if an error occurred
 ```
 
@@ -363,7 +364,7 @@ print(x)   # Error: x is not in scope
 
 ```mojo
 with open("file.txt") as f:
-    data = f.read()
+    var data = f.read()
 # f is not accessible here
 ```
 
@@ -372,7 +373,7 @@ enclosing functions with capture lists:
 
 ```mojo
 def outer():
-    count = 0
+    var count = 0
 
     def inner() {mut count}:  # Capture count by mutable reference
         count += 1            # Updates captured count

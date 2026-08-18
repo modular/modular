@@ -29,10 +29,8 @@ def strsv[
     var x_solved_storage = Array[Float32, simd_width * simd_width](
         uninitialized=True
     )
-    var x_solved_ptr: UnsafePointer[
-        Float32, origin_of(x_solved_storage)
-    ] = x_solved_storage.unsafe_ptr()
-    var x_solved = x_solved_ptr.mut_cast[True]()
+    var x_solved_ptr = x_solved_storage.unsafe_ptr()
+    var x_solved = x_solved_ptr
 
     while True:
         for j in range(simd_width):
@@ -105,15 +103,11 @@ def test_strsv() raises:
     var x0_stack = Array[Float32, size](uninitialized=True)
     var x1_stack = Array[Float32, size](uninitialized=True)
 
-    var L = l_stack.unsafe_ptr().mut_cast[True]()
-    var x0_ptr: UnsafePointer[
-        Float32, origin_of(x0_stack)
-    ] = x0_stack.unsafe_ptr()
-    var x0 = x0_ptr.mut_cast[True]()
-    var x1_ptr: UnsafePointer[
-        Float32, origin_of(x1_stack)
-    ] = x1_stack.unsafe_ptr()
-    var x1 = x1_ptr.mut_cast[True]()
+    var L = l_stack.unsafe_ptr()
+    var x0_ptr = x0_stack.unsafe_ptr()
+    var x0 = x0_ptr
+    var x1_ptr = x1_stack.unsafe_ptr()
+    var x1 = x1_ptr
 
     fill_L[size](L)
     fill_x[size](x0)

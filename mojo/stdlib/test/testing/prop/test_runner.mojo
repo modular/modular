@@ -29,7 +29,6 @@ struct SimpleStrategy(Movable, Strategy):
 
 
 def test_prop_test_runner_propagates_error() raises:
-    @parameter
     def properties(_n: Int) raises:
         raise Error("prop test error 123")
 
@@ -50,7 +49,6 @@ struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
 
 
 def test_prop_test_runner_executes_specified_number_of_runs() raises:
-    @parameter
     def properties(_n: Int) raises:
         pass
 
@@ -62,7 +60,6 @@ def test_prop_test_runner_executes_specified_number_of_runs() raises:
 
 
 def test_prop_test_runner_using_same_seed_produces_deterministic_results() raises:
-    @parameter
     def properties(_n: Int) raises:
         pass
 

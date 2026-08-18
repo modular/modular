@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements gather and scatter operations for CPU and GPU, including indexed reductions."""
 
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
@@ -229,7 +229,7 @@ def gather_reduce[
         out_vecs_per_thread,
         gather_axis_size,
     )
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
         comptime prefetch_offset = -1
 
@@ -266,10 +266,10 @@ def gather_reduce[
 
             @always_inline
             @__copy_capture(input, indices, output)
-            @parameter
+            @__parameter
             def gather_k_tile[simd_width: Int](k: Int):
                 @always_inline
-                @parameter
+                @__parameter
                 def reduce_j_tile[
                     unroll_factor: Int
                 ](
@@ -362,7 +362,7 @@ def gather[
 
     var end_indices_ptr = indices.ptr + indices.num_elements()
 
-    @parameter
+    @__parameter
     @__copy_capture(end_indices_ptr)
     @always_inline
     def prefetch_fn[
@@ -1758,9 +1758,9 @@ def gather_nd[
             data_idx[batch_dims + i] = Int(indices.load[width=1](indices_coord))
 
         # fill in the last slices in the input
-        num_tail_elems = data.rank - batch_dims - indices_last_dim
-        output_start = output.rank - num_tail_elems
-        src_start = indices_last_dim + batch_dims
+        var num_tail_elems = data.rank - batch_dims - indices_last_dim
+        var output_start = output.rank - num_tail_elems
+        var src_start = indices_last_dim + batch_dims
         for i in range(0, num_tail_elems):
             data_idx[src_start + i] = output_idx[output_start + i]
 

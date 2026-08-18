@@ -159,7 +159,7 @@ trait DeviceTypeEncoder:
 
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
-            - `ValueType` must conform to `Copyable & ImplicitlyDeletable`.
+            - `ValueType` must conform to `Copyable & Deinitable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -197,6 +197,8 @@ trait DeviceTypeEncoder:
 
     def encode_closure_state[
         StructType: AnyType,
+        //,
+        DeviceStructType: AnyType,
     ](mut self, value: StructType, dst: MutOpaquePointer[_]):
         """Encodes a compiler-synthesized closure-state struct into `dst`.
 
@@ -208,11 +210,13 @@ trait DeviceTypeEncoder:
         that the verifier rejects, so for the single-field case the sole field
         is encoded directly (its offset is 0) using the same per-field dispatch
         `encode_fields` applies. Multi-field state is forwarded to
-        `encode_fields` unchanged.
+        `encode_fields` with the synthesized `device_type`.
 
         Parameters:
             StructType: The closure-state struct type whose captures are being
                 encoded.
+            DeviceStructType: The synthesized device representation of the
+                closure-state struct.
 
         Args:
             value: The closure-state value to encode.
@@ -231,10 +235,12 @@ trait DeviceTypeEncoder:
             else:
                 self.encode(field, dst)
         else:
-            self.encode_fields[StructType](value, dst)
+            self.encode_fields[DeviceStructType](value, dst)
 
     def encode_fields[
         StructType: AnyType,
+        //,
+        DeviceStructType: AnyType = StructType,
     ](mut self, value: StructType, dst: MutOpaquePointer[_]):
         """Encodes each field of `value` into `dst` at its device offset.
 
@@ -247,15 +253,17 @@ trait DeviceTypeEncoder:
         - Otherwise, delegate to `encode` (a bit-copy for a register-passable
           field; any other type is rejected there at compile time).
 
-        This is the building block composite types use to encode their members,
-        including compiler-synthesized unified-closure wrappers whose
-        closure-state type does not itself conform to `DevicePassable`. Field
-        offsets use the encoder's target data layout (`Self.target()`) rather
-        than the host's, so each field lands at the offset the device expects.
+        Source fields are read from `StructType`, while destination offsets are
+        calculated from `DeviceStructType`. `DeviceStructType` defaults to
+        `StructType`, but callers with a distinct device representation can
+        provide it explicitly. Field offsets use the encoder's target data
+        layout (`Self.target()`) rather than the host's.
 
         Parameters:
             StructType: The composite host-side type whose fields are being
                 encoded.
+            DeviceStructType: The destination struct layout. Defaults to
+                `StructType`.
 
         Args:
             value: The composite host-side value to encode.
@@ -267,8 +275,8 @@ trait DeviceTypeEncoder:
               struct type.
             - Every field must either conform to `DevicePassable`, be a
               composite transitively containing a `DevicePassable` member,
-              conform to `ImplicitlyCopyable & ImplicitlyDeletable`, or
-              conform to `Copyable & ImplicitlyDeletable`.
+              conform to `ImplicitlyCopyable & Deinitable`, or
+              conform to `Copyable & Deinitable`.
         """
         # NOTE: The trait system does not enforce viral conformance to
         # DevicePassable if a RegisterPassable struct field is DevicePassable.
@@ -282,8 +290,8 @@ trait DeviceTypeEncoder:
             t"encode_fields: StructType '{reflect[StructType].base_name()}'"
             t" must be struct"
         )
-        comptime r = reflect[StructType]
-        comptime base = r.base_name()
+        comptime host = reflect[StructType]
+        comptime base = host.base_name()
 
         # Field reflection is not functional for StaticTuple so handle it
         # specially to avoid crashing, see MOCO-4018.
@@ -293,25 +301,39 @@ trait DeviceTypeEncoder:
             value._to_device_type(self, dst)
             return
 
-        comptime field_types = r.field_types()
-        comptime for i in range(r.field_count()):
-            comptime FieldType = field_types[i]
-            # Offset in the device data layout, not the host's.
-            comptime offset = r.field_offset[index=i, target=Self.target()]()
-            ref field = r.field_ref[i](value)
+        comptime device = reflect[DeviceStructType]
+        comptime assert device.is_struct()
+        comptime assert host.field_count() == device.field_count()
+        comptime host_field_types = host.field_types()
+        comptime device_field_types = device.field_types()
+        comptime for i in range(host.field_count()):
+            comptime HostFieldType = host_field_types[i]
+            comptime DeviceFieldType = device_field_types[i]
+            comptime offset = device.field_offset[
+                index=i, target=Self.target()
+            ]()
+            ref field = host.field_ref[i](value)
             var sub = (
                 dst.unsafe_bitcast[UInt8]()
                 .unsafe_offset(offset)
                 .unsafe_bitcast[NoneType]()
             )
 
-            comptime if conforms_to(FieldType, DevicePassable):
+            comptime if conforms_to(HostFieldType, DevicePassable):
+                comptime if DeviceStructType != StructType:
+                    comptime assert (
+                        HostFieldType._is_convertible_to_device_type[
+                            DeviceFieldType
+                        ]()
+                    )
                 field._to_device_type(self, sub)
-            elif _contains_device_passable_field[FieldType]():
+            elif _contains_device_passable_field[HostFieldType]():
                 # Recurse so the nested `DevicePassable` member runs its
                 # own `_to_device_type` instead of being byte-copied.
-                self.encode_fields[FieldType](field, sub)
+                self.encode_fields[DeviceFieldType](field, sub)
             else:
+                comptime if DeviceStructType != StructType:
+                    comptime assert HostFieldType == DeviceFieldType
                 # Register-passable field with no `DevicePassable` member:
                 # bit-copy. `encode` rejects any other type at compile time.
                 self.encode(field, sub)

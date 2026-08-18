@@ -31,6 +31,7 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -81,6 +82,8 @@ class DeepseekV3_2Config(DeepseekV3Config):
     index_n_heads: int = 64
     index_topk: int = 2048
     indexer_types: list[str] = field(default_factory=list)
+    # GLM-5.x sets indexer_rope_interleave=true.
+    indexer_rope_interleave: bool = False
 
     @staticmethod
     def construct_kv_params(
@@ -113,7 +116,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         if pipeline_config.speculative:
             speculative_method = pipeline_config.speculative.speculative_method
             num_draft_tokens = (
-                pipeline_config.speculative.num_speculative_tokens
+                pipeline_config.speculative.num_speculative_tokens or 0
             )
 
         indexer_kv_params = kv_cache_config.to_params(
@@ -216,6 +219,10 @@ class DeepseekV3_2Config(DeepseekV3Config):
             hidden_act=config.hidden_act,
             max_position_embeddings=config.max_position_embeddings
             + spec_decode_cache_slack(kv_params),
+            max_seq_len=upper_bounded_default(
+                upper_bound=config.max_position_embeddings,
+                default=model_config.max_length,
+            ),
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
@@ -230,6 +237,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
             index_topk=config.index_topk,
             indexer_types=resolve_indexer_types(
                 config, config.num_hidden_layers
+            ),
+            indexer_rope_interleave=getattr(
+                config, "indexer_rope_interleave", False
             ),
             quantization_encoding=quantization_encoding,
         )

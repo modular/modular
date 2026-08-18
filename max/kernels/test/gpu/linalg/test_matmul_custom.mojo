@@ -87,7 +87,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_bf16() raises:
         comptime kernel = matmul_kernel_naive[
             DType.bfloat16,
@@ -136,7 +136,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_fp32() raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -270,7 +270,7 @@ def run_matmul[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
@@ -553,7 +553,7 @@ def run_matmul_transpose[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
@@ -673,7 +673,7 @@ def run_batched_matmul(
 
     @always_inline
     @__copy_capture(c_tensor)
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn1[
         c_type: DType,
         width: SIMDLength,
@@ -695,7 +695,7 @@ def run_batched_matmul(
 
     @always_inline
     @__copy_capture(c_tensor_n)
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn2[
         c_type: DType,
         width: SIMDLength,

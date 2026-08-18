@@ -95,8 +95,8 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host._amdgpu_hip import HIP
-from std.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host._amdgpu_hip import HIP
+from max.gpu.host._nvidia_cuda import CUDA
 from layout import (
     Coord,
     Idx,
@@ -351,7 +351,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
                         1,
                         1,
                         0,
-                        OptionalUnsafePointer[Int8, MutAnyOrigin](),
+                        OptionalPointer[Int8, MutAnyOrigin](),
                     )
                 )
             else:
@@ -368,7 +368,8 @@ def _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
-    if global_ptr := _get_global_or_null(HANDLE_NAME):
+    var global_ptr = _get_global_or_null(HANDLE_NAME)
+    if global_ptr:
         var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]
@@ -605,7 +606,7 @@ def matmul[
     batch_size: Int = 1,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(
             trace_arg(
@@ -1150,8 +1151,8 @@ def _cublasLt_matmul[
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
-            a_scale_tensor = a_scales.value()
-            b_scale_tensor = b_scales.value()
+            var a_scale_tensor = a_scales.value()
+            var b_scale_tensor = b_scales.value()
 
             comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if scales_type == NVFP4_SF_DTYPE else MXFP8_SF_VECTOR_SIZE
 
@@ -1592,8 +1593,8 @@ def _hipblasLt_matmul[
     if a_scales or b_scales:
         if not (a_scales and b_scales):
             raise Error("a_scales and b_scales must be provided together")
-        a_scale_tensor = a_scales.value()
-        b_scale_tensor = b_scales.value()
+        var a_scale_tensor = a_scales.value()
+        var b_scale_tensor = b_scales.value()
 
         if comptime (scales_type != MXFP8_SF_DTYPE):
             raise Error("Only float8_e8m0fnu(scale type: MXFP8) supported")

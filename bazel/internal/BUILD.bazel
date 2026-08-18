@@ -187,19 +187,11 @@ sh_binary(
 
 mojo_toolchain(
     name = "mojo_toolchain_target",
-    implicit_deps = select({
-        "//conditions:default": [],
-        "//:use_prebuilt_mojo_toolchain_disabled": [
-            # Note: Device Context excluded here.
-            "//AsyncRT:RuntimeGlobals",
-            "//KGEN:CompilerRT",
-            "//Support:Globals",
-        ],
-    }),
+    implicit_deps = [],
     lld = "@llvm-project//lld:lld",
     mojo = select({
         # nonsense just so it resolves. this should never actually run.
-        "//:use_prebuilt_mojo_toolchain_disabled": "//KGEN/tools/mojo:mojo-compiler-only",
+        "//:use_prebuilt_mojo_toolchain_disabled": "//KGEN/tools/mojo",
         "//conditions:default": ":fake_mojo_binary",
     }),
     tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel

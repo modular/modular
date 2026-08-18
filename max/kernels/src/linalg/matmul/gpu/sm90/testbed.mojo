@@ -213,7 +213,7 @@ def test_matmul_sm90[
         String(CLUSTER_N),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[

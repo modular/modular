@@ -232,7 +232,7 @@ type `Associated`:
 
 ```mojo
 trait Boxable:
-    comptime Associated: Writable & Copyable & ImplicitlyDeletable
+    comptime Associated: Writable & Copyable & Deinitable
 
     def unbox(self) -> Self.Associated:
         ...
@@ -249,14 +249,14 @@ def main():
     var box = ConcreteBox(value="Hello")
     var unboxed = box.unbox()  # Known to be Copyable
     print(unboxed)             # Known to be Writable
-    _ = unboxed^               # Known to be ImplicitlyDeletable
+    _ = unboxed^               # Known to be Deinitable
 ```
 
 Associated types can be assigned from call sites. This lets a trait work
 across type families:
 
 ```mojo
-comptime Base = Copyable & ImplicitlyDeletable & Writable
+comptime Base = Copyable & Deinitable & Writable
 
 @fieldwise_init
 struct Box[T: Base](Boxable):
@@ -303,7 +303,7 @@ the `Element` associated type and a named trait composition:
 ```mojo
 from std.sys.info import bit_width_of
 
-comptime BaseElement = Copyable & ImplicitlyDeletable & Writable
+comptime BaseElement = Copyable & Deinitable & Writable
 
 trait Test:
     comptime Element: RegisterPassable
@@ -388,7 +388,7 @@ trait PrettyPrintable(Printable):
         ...
 
 @fieldwise_init
-struct Box[T: Copyable & Writable & ImplicitlyDeletable](PrettyPrintable):
+struct Box[T: Copyable & Writable & Deinitable](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:
@@ -430,6 +430,45 @@ requirements.
 :::note
 Every trait implicitly refines `AnyType`.
 :::
+
+## `Some[]` as constraint sugar
+
+`Some[Trait(s)]` is shorthand for a type parameter constrained to that
+trait or composition. It's syntax sugar, not a new mechanism. It moves
+the constraint onto the argument instead of declaring a parameter in one
+place and using it in another. The compiler infers the concrete type at
+the call site, just as it does for an explicit parameter. If inference
+fails, the compiler asks for an explicit parameter instead.
+
+<!-- markdownlint-disable MD013 -->
+
+| Context             | With a parameter                                 | With `Some`                                   |
+|---------------------|--------------------------------------------------|-----------------------------------------------|
+| Argument            | `def foo[T: Intable, //](x: T)`                  | `def foo(x: Some[Intable])`                   |
+| Function type       | `def f[F: def(Int) -> None](func: F)`            | `def f(func: Some[def(Int) -> None])`         |
+| Variadic            | `def show[*Ts: Writable](*pack: *Ts)`            | `def show(*pack: *SomeTypeList[Writable])`    |
+| Operator overload   | `def __getitem__[I: Indexer, //](self, idx: I)`  | `def __getitem__(self, idx: Some[Indexer])`   |
+
+<!-- markdownlint-enable MD013 -->
+
+### Where `Some` doesn't work
+
+The compiler can't infer a concrete type for a struct field:
+
+```mojo
+@fieldwise_init
+struct Struct(Writable):
+    var x: Some[Copyable & Deinitable & Writable]
+    # Error: a `Some` struct field has no concrete type to infer
+```
+
+Use an explicit type parameter instead:
+
+```mojo
+@fieldwise_init
+struct Struct[T: Copyable & Deinitable & Writable](Writable):
+    var x: Self.T
+```
 
 ## Trait restrictions
 

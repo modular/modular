@@ -19,6 +19,7 @@ from max.gpu.host.compile import _compile_code
 from nn.attention.mha_mask import (
     AndMask,
     CausalMask,
+    MASK_VALUE,
     MaskName,
     MHAMask,
     NullMask,
@@ -33,18 +34,18 @@ from std.utils.index import Index, IndexList
 
 
 def test_causal_mask() raises:
-    comptime type = DType.int32
+    # Kernels instantiate `mask()` at the QK accumulator type, which is always
+    # float32. MASK_VALUE does not fit a narrower dtype.
+    comptime type = DType.float32
 
     print("test_causal_mask")
     var mask = CausalMask()
 
     # Check mask value.
     # TODO(KERN-782): should be -inf but softmax saturates with NaNs.
-    var mask_val = -10000
+    comptime mask_val = Scalar[type](MASK_VALUE)
     var masked_vec = mask.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(
-        masked_vec, SIMD[type, 4](0, 1, Int32(mask_val), Int32(mask_val))
-    )
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, mask_val, mask_val))
 
     masked_vec = mask.mask(Index(0, 0, 4, 0), SIMD[type, 4](0, 1, 2, 3))
     assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
@@ -134,20 +135,22 @@ def test_causal_mask_asm() raises:
 
 
 def test_and_mask() raises:
-    comptime type = DType.int32
+    comptime type = DType.float32
+    comptime mask_val = Scalar[type](MASK_VALUE)
 
     print("test_and_mask")
-    # Or-ing a causal mask with a null mask should result in a causal mask.
+    # A position is masked only where both operands mask it, so and-ing a
+    # causal mask with a null mask leaves every position visible.
     var mask = AndMask[CausalMask(), NullMask()]()
 
     var masked_vec = mask.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(masked_vec, SIMD[type, 4](0, 1, 0, 0))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
 
     masked_vec = mask.mask(Index(0, 0, 4, 0), SIMD[type, 4](0, 1, 2, 3))
     assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
 
     masked_vec = mask.mask(Index(0, 0, 1, 6), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(masked_vec, SIMD[type, 4](0))
+    assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
 
     # Check tile status.
     assert_true(
@@ -164,6 +167,13 @@ def test_and_mask() raises:
     )
 
     var mask2 = AndMask[CausalMask(), CausalMask()]()
+
+    # And-ing a causal mask with itself stays causal.
+    assert_equal(
+        mask2.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3)),
+        SIMD[type, 4](0, 1, mask_val, mask_val),
+    )
+
     assert_true(
         mask2.status(UInt32(0), Index(4, 4), Index(4, 4))
         == TileMaskStatus.PARTIAL_MASK
@@ -267,8 +277,8 @@ def test_sliding_window_causal_mask_asm() raises:
 def test_sliding_window_noncausal_mask() raises:
     print("test_sliding_window_noncausal_mask")
 
-    comptime type = DType.int32
-    var mask_val = -10000
+    comptime type = DType.float32
+    comptime mask_val = Scalar[type](MASK_VALUE)
 
     comptime window = 4
     comptime mask = SlidingWindowNonCausalMask[window]()
@@ -278,10 +288,7 @@ def test_sliding_window_noncausal_mask() raises:
 
     # q=6, lanes k in {0,1,2,3}: only k=3 visible.
     var masked_vec = mask.mask(Index(0, 0, 6, 0), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(
-        masked_vec,
-        SIMD[type, 4](Int32(mask_val), Int32(mask_val), Int32(mask_val), 3),
-    )
+    assert_equal(masked_vec, SIMD[type, 4](mask_val, mask_val, mask_val, 3))
 
     # q=6, lanes k in {3,4,5,6}: all visible (k=6 is the diagonal).
     masked_vec = mask.mask(Index(0, 0, 6, 3), SIMD[type, 4](0, 1, 2, 3))
@@ -331,7 +338,7 @@ def test_sliding_window_noncausal_mask_dispatch() raises:
 
     var dispatched_name = String("")
 
-    @parameter
+    @__parameter
     def capture[mask_t: MHAMask](mask: mask_t) raises:
         dispatched_name = mask_t.get_type_name()
 

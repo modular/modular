@@ -44,7 +44,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     tile_and_unswitch,
     unswitch,
@@ -56,13 +56,13 @@ from max.algorithm.functional import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_idx,
     global_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceContext,
     FuncAttribute,
@@ -71,8 +71,7 @@ from max.gpu.host import (
     Dim as LaunchDim,
 )
 from max.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
     external_memory,
@@ -288,6 +287,9 @@ def flare_mla_decoding[
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -390,6 +392,8 @@ def flare_mla_decoding[
         num_partitions_in: Optional capturable-graph scalar from the
             Python resolver; when set, the SM100 dispatcher uses it
             instead of recomputing `num_partitions` at grid time.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
     comptime assert (
         ragged or rank == 4
@@ -407,7 +411,7 @@ def flare_mla_decoding[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -485,6 +489,7 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -525,6 +530,7 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
 
 
@@ -658,6 +664,9 @@ def flare_mla_decoding_dispatch[
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """Dispatches an MLA decoding request to the platform-specific kernel.
 
@@ -757,6 +766,8 @@ def flare_mla_decoding_dispatch[
         num_partitions_in: Optional capturable-graph scalar from the
             Python resolver; when set, the SM100 dispatcher uses it
             instead of recomputing `num_partitions` at grid time.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -886,6 +897,7 @@ def flare_mla_decoding_dispatch[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -977,7 +989,7 @@ def flare_mla_decoding_dispatch[
         comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
 
         @always_inline
-        @parameter
+        @__parameter
         def launch_with_BM[
             BM: Int,
             q_seq_len: Int = 1,
@@ -1363,7 +1375,7 @@ def flare_mla_decoding_dispatch[
                             # warp-local (M/16, 1): one 16-row MFMA M-tile per
                             # warp over align16(M) rows (W = BM//16 warps),
                             # full N=128 KV, warp-local softmax.
-                            comptime _bm = ceildiv(_m, 16) * 16
+                            comptime _bm = align_up(_m, 16)
                             launch_with_BM[_bm, s, WM=16, WN=128]()
                         return
                 raise Error(
@@ -1824,8 +1836,8 @@ def mla_decoding[
 
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = Int(valid_length[batch_idx])
-        end_of_seq = Int(valid_length[batch_idx + 1])
+        var start_of_seq = Int(valid_length[batch_idx])
+        var end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * depth * num_heads
 
@@ -2192,7 +2204,7 @@ def mla_decoding_single_batch[
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout](q_ptr + q_offset)
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    start, end = get_start_and_end_for_partitions[BN](
+    var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -2226,7 +2238,7 @@ def mla_decoding_single_batch[
         q_gmem_iter._incr()
 
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -2343,7 +2355,7 @@ def mla_decoding_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -2739,7 +2751,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2879,7 +2891,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2999,7 +3011,7 @@ def flare_mla_prefill[
     ), "Only support single and half precision."
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3112,7 +3124,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3257,7 +3269,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3629,8 +3641,8 @@ def mla_prefill[
     var cache_start_pos: UInt32 = 0
 
     # treat valid_lengths as a input_row_offsets
-    start_of_seq = Int(valid_length[batch_idx])
-    end_of_seq = Int(valid_length[batch_idx + 1])
+    var start_of_seq = Int(valid_length[batch_idx])
+    var end_of_seq = Int(valid_length[batch_idx + 1])
     seq_len = end_of_seq - start_of_seq
 
     @always_inline
@@ -3656,8 +3668,8 @@ def mla_prefill[
         var cache_offsets_nd = cache_offsets.value()
         cache_start_pos = cache_offsets_nd[batch_idx][0]
 
-    q_batch_offset = start_of_seq * q_depth * config.num_heads
-    o_batch_offset = start_of_seq * depth * config.num_heads
+    var q_batch_offset = start_of_seq * q_depth * config.num_heads
+    var o_batch_offset = start_of_seq * depth * config.num_heads
 
     comptime if is_nvidia_gpu():
         mla_prefill_single_batch[
@@ -4025,7 +4037,7 @@ def mla_prefill_single_batch[
     # Only the last iteration is doing boundary check.
     @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -4135,7 +4147,7 @@ def mla_prefill_single_batch[
         _ = p_reg_tile.fill(0)
 
         @always_inline
-        @parameter
+        @__parameter
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
@@ -4218,7 +4230,7 @@ def mla_prefill_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -4253,8 +4265,8 @@ def mla_prefill_single_batch[
                         )
                         var score_col = mask_frag_col
 
-                        score_row_with_start_pos = score_row + start_pos
-                        score_col_with_cache_start_pos = (
+                        var score_row_with_start_pos = score_row + start_pos
+                        var score_col_with_cache_start_pos = (
                             score_col + cache_start_pos
                         )
 
@@ -4338,6 +4350,7 @@ def mla_prefill_single_batch[
             v_smem_iter.layout.stride[0].value() // simd_size,
         )
 
+        var v_tensor: type_of(v_gmem_iter[])
         # load V tile into smem
         comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
@@ -4775,7 +4788,7 @@ def mla_prefill_plan_kernel[
     # If this is the last sequence in the batch
     if seq_idx == batch_size - 1:
         var seq_end_pos = seq_start_pos + curr_seq_len
-        var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
+        var end_chunk = ceildiv(seq_end_pos, buffer_size) - 1
 
         # Set buffer lengths for all chunks
         comptime for chunk_idx in range(MAX_CHUNKS):
@@ -4821,7 +4834,7 @@ def _k_cache_to_buffer[
     comptime assert cache_offsets.flat_rank == 1
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
     def copy_fn[
         width: Int, rank: Int, alignment: Int = 1

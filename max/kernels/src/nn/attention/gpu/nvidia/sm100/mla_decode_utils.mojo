@@ -22,21 +22,20 @@ from std.collections import OptionalReg
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-from std.gpu import barrier, thread_idx, block_idx, warp_id
+from std.gpu import thread_idx, block_idx, warp_id
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.memory import fence_async_view_proxy
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
 )
 
-from std.gpu.sync import (
-    named_barrier,
-)
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_ld,
@@ -339,6 +338,11 @@ struct MLA_SM100_Decode_Config:
     comptime TMEM_CORR_LI: Int = Self.TMEM_CORR_SCALE + 1
     var tmem_used: Int
     var num_kv_stages: Int
+    # Depth of the MMA-operand KV ring. Equal to `num_kv_stages` everywhere
+    # except the unified-gather path, whose two KV buffers need not share a
+    # depth: only the one the MMA consumes carries the loop-carried WAR edge
+    # that bounds the steady-state rate.
+    var num_kv_mma_stages: Int
     var smem_used: Int
     var dtype_size: Int
     var num_threads: Int  # bf16: 3 WGs (MMA, softmax, correction); fp8: 4 WGs (+convert)
@@ -446,7 +450,7 @@ struct MLA_SM100_Decode_Config:
         self.dtype_size = dtype_size
         self.swizzle_mode = swizzle_mode
         self.kv_mma_swizzle_mode = kv_mma_swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // dtype_size
+        var swizzle_elems = swizzle_mode.bytes() // dtype_size
         self.padded_depth = align_up(depth, swizzle_elems)
         self.padded_q_depth = align_up(q_depth, swizzle_elems)
 
@@ -550,6 +554,9 @@ struct MLA_SM100_Decode_Config:
         #   P lives in a separate SMEM region (same as native FP8). P stage = BM*BN_QK*1 = 4096 bytes.
         var smem_per_kv: Int
         var smem_for_p: Int
+        # Extra depth given to the MMA-operand KV ring alone; see the
+        # unified-gather branch below. 0 on every other path.
+        var extra_mma_stages: Int = 0
         if per_token_scale_rope_aware:
             # Per-token-scale: KV stage = content FP8 + rope BF16
             smem_per_kv = (
@@ -612,6 +619,28 @@ struct MLA_SM100_Decode_Config:
             if decode_layout_g:
                 self.num_kv_stages = 4
             smem_for_p = self.num_kv_stages * (p_per_stage + gather_per_stage)
+            # Unified gather stages KV twice: the linear gather destination
+            # and the SW64 buffer the MMA reads. Only the second carries the
+            # WAR back-edge that closes the steady-state loop, so the loop's
+            # rate is bounded by (cycle weight) / (that ring's depth) and the
+            # gather ring's depth does not enter it. A symmetric extra stage
+            # costs `smem_per_stage_total` and does not fit; one extra SW64
+            # stage and its barrier pair does. Spend the leftover there only.
+            if native_fp8_unified_gather:
+                var extra_kv_stage = smem_per_kv + 2 * Self.mbar_size
+                # The sparse dispatch adds idx_bars, idx_smem and the TMEM
+                # pointer on top of `smem_used`; reserve them or the deeper
+                # ring overflows the carveout at launch rather than here.
+                var sparse_reserve = (
+                    2 * self.num_kv_stages * Self.mbar_size
+                    + 4
+                    + self.num_kv_stages * self.BN_QK * 4
+                )
+                var leftover = (
+                    available - self.num_kv_stages * smem_per_stage_total
+                )
+                if leftover >= extra_kv_stage + sparse_reserve:
+                    extra_mma_stages = 1
         else:
             smem_per_kv = self.BN_QK * self.padded_q_depth * dtype_size
             smem_for_p = 0  # P lives inside KV stages for BF16/old FP8
@@ -621,8 +650,12 @@ struct MLA_SM100_Decode_Config:
             self.num_kv_stages = (
                 Self.sm100_smem_carveout - smem_use
             ) // smem_per_kv
+        self.num_kv_mma_stages = self.num_kv_stages + extra_mma_stages
         smem_use += smem_for_p
         smem_use += self.num_kv_stages * (smem_per_kv)
+        # The deeper MMA ring's own tile plus the producer/consumer mbar pair
+        # the `fixed_barriers` count below does not cover.
+        smem_use += extra_mma_stages * (smem_per_kv + 2 * Self.mbar_size)
         # Per-token scale SMEM: N stages * 256 bytes each (only for per_token_scale_rope_aware)
         smem_use += self.num_kv_stages * self.per_token_scales_per_stage
         # We have the following resources that need smem barriers:
@@ -754,6 +787,11 @@ struct OffsetPosition[
     var kv_start_row: Int  # Starting KV row for this split
     var num_keys_this_split: Int  # Number of keys this split processes
     var q_token_idx: Int  # Global Q token index for per-token Q scale lookup
+    # Logical (pre-sparse-override) total key count for this batch. `num_keys`
+    # is overridden below (sparse=True) to the slot count (topk + extra_topk),
+    # which only equals the logical count when topk >= actual_tokens; sparse
+    # causal masking uses `cache_len_logical()` off this field instead.
+    var actual_num_keys: Int
 
     @always_inline
     def __init__(
@@ -785,6 +823,7 @@ struct OffsetPosition[
         self.kv_start_row = 0
         self.num_keys_this_split = 0
         self.q_token_idx = 0
+        self.actual_num_keys = 0
 
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
@@ -868,16 +907,18 @@ struct OffsetPosition[
         comptime if not Self.is_cache_length_accurate:
             self.num_keys += self.seq_len
 
+        # Logical total key count, captured before the sparse override
+        # below can replace num_keys with the (smaller) sparse slot count.
+        self.actual_num_keys = self.num_keys
+
         # Compute KV range for this split
         # Each split handles a portion of the KV cache: [kv_start_row, kv_start_row + num_keys_this_split)
         comptime if Self.decoding_warp_split_k:
             # Split-page-aligned strategy: only last CTA handles ragged remainder.
             # All other CTAs process complete split_page_size-element chunks.
             comptime page_size = Self.config.split_page_size
-            var total_pages = (self.num_keys + page_size - 1) // page_size
-            var pages_per_split = (
-                total_pages + num_partitions - 1
-            ) // num_partitions
+            var total_pages = ceildiv(self.num_keys, page_size)
+            var pages_per_split = ceildiv(total_pages, num_partitions)
 
             # Split boundaries are page-aligned
             var start_page = self.split_idx * pages_per_split
@@ -935,10 +976,8 @@ struct OffsetPosition[
             var total_topk = topk + extra_topk
             comptime if Self.decoding_warp_split_k:
                 comptime page_size = Self.config.split_page_size
-                var total_pages_s = (total_topk + page_size - 1) // page_size
-                var pages_per_split_s = (
-                    total_pages_s + num_partitions - 1
-                ) // num_partitions
+                var total_pages_s = ceildiv(total_topk, page_size)
+                var pages_per_split_s = ceildiv(total_pages_s, num_partitions)
                 var start_page_s = self.split_idx * pages_per_split_s
                 var end_page_s = min(
                     (self.split_idx + 1) * pages_per_split_s, total_pages_s
@@ -956,6 +995,15 @@ struct OffsetPosition[
     def cache_len(self) -> Int:
         # num_keys is total keys, seq_len is chunk length
         return max(self.num_keys - self.seq_len, 0)
+
+    @always_inline
+    def cache_len_logical(self) -> Int:
+        # Logical cached-prefix length, unaffected by the sparse num_keys
+        # override. Equal to cache_len() in dense mode, and whenever sparse
+        # topk >= actual_tokens (topk clamps to the full causal set). Must
+        # be used (not cache_len()) for sparse causal masking by LOGICAL
+        # key position once topk < actual context length.
+        return max(self.actual_num_keys - self.seq_len, 0)
 
     @always_inline
     def start_pos(self, cache_start_pos: UInt32) -> UInt32:
@@ -1248,6 +1296,7 @@ struct DecodeKVProducer[
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
     num_consumer: Int = 2,
+    num_stages: Int = config.num_kv_stages,
 ](TrivialRegisterPassable):
     """Producer side of the decode KV pipeline that loads KV tiles via TMA.
 
@@ -1263,10 +1312,13 @@ struct DecodeKVProducer[
             the consumer side is a full warpgroup independently arriving
             (not TMA/MMA-elected), as with a manual SMEM-to-SMEM
             re-staging producer/consumer pair.
+        num_stages: Ring depth (defaults to `config.num_kv_stages`). Set
+            explicitly when a kernel stages KV through two rings of
+            different depths.
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
+        Self.num_stages, 1, Self.num_producer, Self.num_consumer
     ]
 
     # One KV stage = a BN_QK x 576 logical K tile (loaded as
@@ -1347,6 +1399,7 @@ struct DecodeKVConsumer[
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
     num_consumer: Int = 2,
+    num_stages: Int = config.num_kv_stages,
 ](TrivialRegisterPassable):
     """Consumer side of the decode KV pipeline that waits for and releases KV stages.
 
@@ -1359,10 +1412,13 @@ struct DecodeKVConsumer[
         num_consumer: Number of consumer threads arriving on each consumer
             mbarrier (defaults to 2, matching the standard mmaQK+mmaPV
             dual-consumer KV pipeline).
+        num_stages: Ring depth (defaults to `config.num_kv_stages`). Set
+            explicitly when a kernel stages KV through two rings of
+            different depths.
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
+        Self.num_stages, 1, Self.num_producer, Self.num_consumer
     ]
     # Stage element count tracks the producer (BN_QK x q_depth).
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
@@ -3129,7 +3185,7 @@ def hmul2_bf16x8_by_scalar[
     """
     var res = type_of(packed)()
 
-    comptime for i in range(packed.size):
+    comptime for i in range(packed.length):
         res[i] = inlined_assembly[
             "mul.rn.bf16x2 $0, $1, $2;",
             UInt32,
@@ -3389,6 +3445,14 @@ struct MLA_SM100_Decode_Common[
         # the low bits of mask_bits below `causal_limit - SlidingWindowSize`).
         # Implies causal upper bound (CausalMask must be True).
         SlidingWindowSize: Int = 0,
+        # When True, `col_base + i` (the tile-relative gather SLOT) is not a
+        # logical key position -- it indexes a score-sorted sparse top-k
+        # selection. Causality must instead be decided by looking up each
+        # slot's LOGICAL key position via `logical_indices` and comparing it
+        # to `causal_limit`, rather than by counting slots. Requires
+        # CausalMask=True and SlidingWindowSize=0 (checked by the caller).
+        # See Kernels/claude_kb -- sparse-mla-decode-causal-slot-bug.
+        SparseCausalLogical: Bool = False,
     ](
         tiles_done: Int,
         col0: Int,
@@ -3402,6 +3466,19 @@ struct MLA_SM100_Decode_Common[
         start_pos: UInt32,
         cache_start_pos: UInt32,
         kv_start_row: Int = 0,  # Starting KV row for split-K (0 for non-split)
+        # Raw (pre-physical-remap) logical sparse indices, same
+        # [total_q_tokens, indices_stride] layout as the physical `d_indices`
+        # gather buffer, with -1 for invalid/padding slots. Only read when
+        # SparseCausalLogical=True.
+        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices_stride: Int = 0,
+        q_token_idx: Int = 0,
+        # Valid per-q_token length of `logical_indices` (the main sparse topk,
+        # excluding extra_d_indices). The physical gather clamps overflow slots
+        # to a duplicate in-range row, but `logical_indices` has no such row,
+        # so slots >= this bound must be masked without a read or they run off
+        # the end of the q_token's row.
+        logical_indices_len: Int = 0,
     ) -> Scalar[Self.AccumType]:
         # Tile / column base this thread covers in num_keys in global KV cache
         # For split-K: kv_start_row + tiles_done * BN_QK gives global position
@@ -3454,6 +3531,69 @@ struct MLA_SM100_Decode_Common[
         # an all-masked tile produces a finite `current_max` (= MASK_VALUE)
         # instead of true -inf — keeps later softmax math NaN-free.
         var current_max: Scalar[Self.AccumType] = MASK_VALUE
+
+        comptime assert not (
+            SparseCausalLogical and SlidingWindowSize > 0
+        ), "SparseCausalLogical does not support sliding window."
+
+        # Runtime null guard: callers that request the logical-position path
+        # (comptime) but don't actually thread a logical index buffer (e.g.
+        # direct-kernel tests, or sparse kernels not yet wired for it) fall
+        # back to the prior slot-count behavior instead of a null deref.
+        var use_sparse_causal_logical: Bool = False
+        comptime if SparseCausalLogical:
+            use_sparse_causal_logical = Bool(logical_indices)
+            if use_sparse_causal_logical:
+                # Decide visibility for the whole group up front and hand the
+                # element loop the same `mask_bits` word every other mask
+                # produces. Deciding it per element instead put the read
+                # INSIDE the loop's branch, so each of the half_load reads
+                # paid its own memory latency. The slots are contiguous in
+                # `i`; reading them in batches lets a batch share one
+                # latency, and a short batch keeps the live set from growing
+                # by all half_load positions.
+                #
+                # Slots at or past `logical_indices_len` are the gather's
+                # clamped overflow and must be masked WITHOUT a read (see
+                # that argument's docstring). Carrying that bound on the LOOP
+                # rather than per element keeps the set of addresses read
+                # here exactly the set the per-element form read.
+                comptime logical_batch = 8
+                var n_readable = max(
+                    min(logical_indices_len - col_base, half_load), 0
+                )
+                var logical_row = logical_indices.unsafe_value() + (
+                    q_token_idx * logical_indices_stride + col_base
+                )
+                # `pos <= causal_limit - 1` in 32 bits is `pos <
+                # causal_limit` in Int, for every position `logical_indices`
+                # can represent: causal_limit >= 1 here (CausalMask is
+                # required), and saturating the bound keeps a horizon wider
+                # than Int32 admitting every slot, as the Int compare did.
+                var causal_last = SIMD[DType.int32, logical_batch](
+                    Int32(min(causal_limit - 1, Int(Int32.MAX)))
+                )
+                # -1 marks a padding slot, so the low bound rejects it.
+                comptime lowest_pos = SIMD[DType.int32, logical_batch](0)
+                var logical_bits: UInt32 = 0
+                var slot = 0
+                while slot + logical_batch <= n_readable:
+                    var pos = logical_row.load[
+                        width=logical_batch, alignment=4
+                    ](slot)
+                    var visible = pos.ge(lowest_pos) & pos.le(causal_last)
+                    var batch_bits: UInt32 = 0
+                    comptime for j in range(logical_batch):
+                        if visible[j]:
+                            batch_bits |= UInt32(1) << UInt32(j)
+                    logical_bits |= batch_bits << UInt32(slot)
+                    slot += logical_batch
+                while slot < n_readable:
+                    var pos = logical_row[slot]
+                    if pos >= 0 and pos <= causal_last[0]:
+                        logical_bits |= UInt32(1) << UInt32(slot)
+                    slot += 1
+                mask_bits = logical_bits
 
         comptime for i in range(0, half_load):
             # rank1-style mask_r2p: turn bit into predicate and use it to select
@@ -3564,6 +3704,12 @@ struct MLA_SM100_Decode_Common[
         attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
             min_or_neg_inf[DType.float32]()
         ),
+        # Logical sparse indices and their valid per-q_token length, forwarded
+        # to the inner apply_mask (documented there); required non-null when
+        # SparseCausalLogical is derived below.
+        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices_stride: Int = 0,
+        logical_indices_len: Int = 0,
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
@@ -3571,6 +3717,13 @@ struct MLA_SM100_Decode_Common[
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
+        # Sparse gather slots are ordered by indexer SCORE, not by logical
+        # key position, so the fast slot-count causal mask (correct for
+        # dense decode, where col_base IS the logical key index) is wrong
+        # once topk selects a genuine subset of the causal prefix. Gated to
+        # CausalMask only: sliding window is not supported on the sparse
+        # kernels (enforced by their own comptime asserts).
+        comptime SparseCausalLogical: Bool = _op_sparse and CausalMask
         # Sliding window: SlidingWindowCausalMask is causal + lower bound at
         # `causal_limit - window_size`. Detected via get_type_name (since
         # name() embeds the window value, e.g. "SlidingWindowCausalMask[64]").
@@ -3611,7 +3764,12 @@ struct MLA_SM100_Decode_Common[
             offset_position.kv_start_row
         )  # Starting KV position for this split
         var cache_start_pos: UInt32 = 0
-        var cache_len: Int = offset_position.cache_len()
+        # Logical cache length: equals cache_len() in dense mode and
+        # whenever sparse topk >= actual_tokens; diverges only when sparse
+        # topk genuinely subsets the causal prefix, which is exactly when
+        # the causal horizon must be computed against logical (not slot)
+        # positions. See cache_len_logical() docstring.
+        var cache_len: Int = offset_position.cache_len_logical()
         var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
 
         # S consumer / P producer (N-stage wrappers, works for any num_sp_stages)
@@ -3686,6 +3844,7 @@ struct MLA_SM100_Decode_Common[
         # recovering the original `tiles_done > 0` semantics. For sliding
         # window it equals `tiles_done`'s initial value above.
         var first_processed_tile_sw: Int = tiles_done
+        var current_max: Scalar[Self.AccumType]
         while tiles_done < num_k_tiles:
             # Wait for an S slot to become ready
             var slot_idx: UInt32 = s_cons.wait()
@@ -3760,7 +3919,7 @@ struct MLA_SM100_Decode_Common[
                 # Fused with scale_log2e below when per-token scales active.
 
             var s_row_val_vectorized = s_row.vectorize[2]()
-            comptime vs_count = (half_load + 2 - 1) // 2
+            comptime vs_count = ceildiv(half_load, 2)
 
             comptime if has_per_token_scales:
                 # Fused Place 1 + scale_log2e: vectorized multiply of
@@ -3795,6 +3954,7 @@ struct MLA_SM100_Decode_Common[
                     CausalMask=_causal_for_apply,
                     fold_q_num_heads=_fold_q_num_heads,
                     SlidingWindowSize=_sliding_window_size,
+                    SparseCausalLogical=SparseCausalLogical,
                 ](
                     tiles_done,
                     col0,
@@ -3808,6 +3968,10 @@ struct MLA_SM100_Decode_Common[
                     start_pos,
                     cache_start_pos,
                     kv_start_row,  # Pass kv_start_row for split-K global position
+                    logical_indices=logical_indices,
+                    logical_indices_stride=logical_indices_stride,
+                    q_token_idx=offset_position.q_token_idx,
+                    logical_indices_len=logical_indices_len,
                 )
             else:
                 current_max = Self.apply_mask[
@@ -3915,7 +4079,7 @@ struct MLA_SM100_Decode_Common[
                 # Vectorized: use SIMD[Float32, 2] to halve instruction count.
                 var _sigma_kv_vec_p2 = _sigma_kv_regs.vectorize[2]()
                 var _s_row_vec_p2 = s_row.vectorize[2]()
-                comptime _vs_count_p2 = (half_load + 2 - 1) // 2
+                comptime _vs_count_p2 = ceildiv(half_load, 2)
                 comptime for _vi in range(_vs_count_p2):
                     _s_row_vec_p2[_vi] = (
                         _s_row_vec_p2[_vi] * _sigma_kv_vec_p2[_vi]
@@ -4266,7 +4430,7 @@ struct MLA_SM100_Decode_Common[
             tcgen05_load_wait()
             c_cons.release()
             var scale_value = scale_value_tuple[0]
-            change = _vote_nvidia_helper(scale_value < 1.0) != 0
+            var change = _vote_nvidia_helper(scale_value < 1.0) != 0
             comptime num_o_tiles = Self.config.MMA_PV_N // (
                 Self.output_tile_width * 2
             )
@@ -4397,7 +4561,7 @@ struct MLA_SM100_Decode_Common[
         var out_cons = DecodeOutConsumer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
-        elect_mask = elect()
+        var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: Int = offset_position.out_row_offset
 

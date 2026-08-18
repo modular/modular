@@ -706,7 +706,7 @@ def test_bitset_len() raises:
     for i in range(128):
         if i % 3 == 0:
             bs.set(i)
-    expected = 43  # floor(128 / 3) + 1
+    var expected = 43  # floor(128 / 3) + 1
     assert_equal(len(bs), expected, msg="Len: Pattern insertion")
 
 

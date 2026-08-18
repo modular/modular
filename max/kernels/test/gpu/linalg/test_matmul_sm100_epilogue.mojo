@@ -129,7 +129,7 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_summ[
@@ -210,7 +210,7 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_host_lt = c_host_copy.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_host_lt)
     def test_lambda_add_coords_summ_local[
@@ -285,7 +285,7 @@ def main() raises:
 
                 comptime for register_based_epilogue in [True, False]:
                     # Helper to run test with varying cluster/k_group/sizes
-                    @parameter
+                    @__parameter
                     def run[
                         MType: CoordLike,
                         NType: CoordLike,

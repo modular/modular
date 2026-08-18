@@ -294,3 +294,23 @@ except ImportError:
         AutoConfig.register("llama4", _Llama4HFConfig)
     except ValueError:
         pass  # Already registered
+
+
+class _InklingMMHFConfig(PretrainedConfig):
+    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
+    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+
+    model_type = "inkling_mm_model"
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)

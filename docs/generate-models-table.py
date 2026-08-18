@@ -501,7 +501,7 @@ def format_table(archs: list[dict[str, Any]]) -> str:
             all_labels = set()
             for task, input_mods in sorted(
                 arch["modality_input_pairs"],
-                key=lambda p: (p[0] or ""),
+                key=lambda p: p[0] or "",
             ):
                 all_labels.update(derive_modality_labels(task, input_mods))
         modality_cell = (
@@ -628,7 +628,7 @@ def main() -> None:
             "❗  - Should this architecture be listed?\n"
             "❗  - Are the model names correct? Do the Hugging Face links work?\n"
             "❗  - Are the supported modalities correct?\n"
-            "❗ This is the file for docs.modular.com/models.\n"
+            "❗ This is the file for max.modular.com/models.\n"
             "❗ If you have issues or questions, raise them in #ask-docs."
         )
 

@@ -18,12 +18,12 @@ from std.time.time import _CTimeSpec
 from .fstat import stat_result
 
 comptime dev_t = Int32
-comptime mode_t = Int16
-comptime nlink_t = Int16
+comptime mode_t = UInt16
+comptime nlink_t = UInt16
 
-comptime __darwin_ino64_t = Int64
-comptime uid_t = Int32
-comptime gid_t = Int32
+comptime __darwin_ino64_t = UInt64
+comptime uid_t = UInt32
+comptime gid_t = UInt32
 comptime off_t = Int64
 comptime blkcnt_t = Int64
 comptime blksize_t = Int32
@@ -135,7 +135,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
 def _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["stat", Int32](
-        path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
+        path.as_c_string_slice(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to stat '", path, "'")
@@ -146,7 +146,7 @@ def _stat(var path: String) raises -> _c_stat:
 def _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["lstat", Int32](
-        path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
+        path.as_c_string_slice(), Pointer(to=stat)
     )
     if err == -1:
         raise Error("unable to lstat '", path, "'")

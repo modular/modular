@@ -35,10 +35,10 @@ def make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_init(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
@@ -50,7 +50,7 @@ def bench_dict_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_insert[size: Int](mut b: Bencher) raises:
     """Insert 10 new items 100_000 times."""
     var items = make_dict[size]()
@@ -67,7 +67,7 @@ def bench_dict_insert[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_lookup[size: Int](mut b: Bencher) raises:
     """Lookup 10 items 100_000 times."""
     var items = make_dict[size]()
@@ -85,7 +85,7 @@ def bench_dict_lookup[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict contains
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_contains[size: Int](mut b: Bencher) raises:
     """Check if the dict contains 10 keys 100_000 times."""
     var items = make_dict[size]()
@@ -103,7 +103,7 @@ def bench_dict_contains[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup Miss
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
     """Lookup 10 missing keys 100_000 times."""
     var items = make_dict[size]()
@@ -121,7 +121,7 @@ def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert/Delete
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
     """Insert and immediately delete 10_000 times."""
     var items = make_dict[size]()
@@ -140,7 +140,7 @@ def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Iteration
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_iter[size: Int](mut b: Bencher) raises:
     """Iterate over all keys."""
     var items = make_dict[size]()
@@ -180,7 +180,7 @@ def main() raises:
     comptime sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
 
     comptime for i in range(len(sizes)):
-        comptime size = sizes[i]
+        comptime size = rebind[Int](sizes[i])
         m.bench_function[bench_dict_insert[size]](
             BenchId(String("bench_dict_insert[", size, "]"))
         )
@@ -200,11 +200,11 @@ def main() raises:
             BenchId(String("bench_dict_iter[", size, "]"))
         )
 
-    results = Dict[String, Tuple[Float64, Int]]()
+    var results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
-        n = info.name
-        time = info.result.mean("ms")
-        avg, amnt = results.get(n, (Float64(0), 0))
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = (
             (avg * Float64(amnt) + time) / Float64((amnt + 1)),
             amnt + 1,
@@ -214,6 +214,6 @@ def main() raises:
         print(k_v.key, k_v.value[0], sep=",")
 
     comptime for i in range(len(sizes)):
-        comptime size = sizes[i]
+        comptime size = rebind[Int](sizes[i])
         var mem_s = total_bytes_used(make_dict[size]())
         print("dict_memory_size[", size, "]: ", mem_s, sep="")

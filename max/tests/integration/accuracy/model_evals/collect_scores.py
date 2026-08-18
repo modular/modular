@@ -71,8 +71,19 @@ def benchmark_name(
     return group, strip_suffix(score_path.parent.name)
 
 
+# Every headline-metric key any eval writes, ordered most- to least-specific.
+# A benchmark whose headline metric is a composite of raw accuracy has to be
+# named ahead of ``accuracy``, or the raw value wins and the suite table reports
+# a number the benchmark is not scored on: AA-Omniscience writes both, and its
+# real metric is ``50 + (accuracy - hallucination_rate) * 50``, which sits 10-16
+# points above raw accuracy and turns parity into an apparent regression. A
+# benchmark whose key is missing here is worse off still — it reports no score
+# at all, which is what SciCode (``pass_at_1``) did until this list grew.
+SCORE_KEYS = ("omniscience_score", "accuracy", "score", "pass_at_1")
+
+
 def extract_score(summary: dict[str, Any]) -> float | None:
-    for key in ("accuracy", "score"):
+    for key in SCORE_KEYS:
         value = summary.get(key)
         if isinstance(value, (int, float)):
             return float(value)

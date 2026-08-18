@@ -250,7 +250,7 @@ def reducescatter_test[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_bufs)
     def outputs_lambda[
         input_index: Int,
@@ -572,7 +572,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     _ = host_in^
 
 
-@parameter
+@__parameter
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
@@ -586,9 +586,9 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_1d_lengths)),
         range(2),
     ):
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime ngpus = test_gpu_counts[ngpus_idx]
-        comptime length = test_1d_lengths[length_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
+        comptime length = rebind[Int](test_1d_lengths[length_idx])
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:
@@ -622,10 +622,14 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_2d_shapes)),
         range(2),
     ):
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime ngpus = test_gpu_counts[ngpus_idx]
-        comptime M = test_2d_shapes[shape_idx][0]
-        comptime D = test_2d_shapes[shape_idx][1]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
+        comptime M = rebind[type_of(test_2d_shapes[0])](
+            test_2d_shapes[shape_idx]
+        )[0]
+        comptime D = rebind[type_of(test_2d_shapes[0])](
+            test_2d_shapes[shape_idx]
+        )[1]
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:

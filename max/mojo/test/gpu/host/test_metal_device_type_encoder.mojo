@@ -17,20 +17,36 @@
 # buffer's handle in `MetalDeviceTypeEncoder._buffers`. The Metal launch path
 # relies on that list to bind the buffers a kernel touches.
 #
-# A closure cannot capture a `DeviceBuffer` directly: `DeviceBuffer` is
-# memory-only, so the closure would not be `RegisterPassableTrivial` and would
-# never receive the synthesized `DevicePassable` conformance. `DevicePointer`
-# is `TrivialRegisterPassable`, and its `_to_device_type` dispatches to
-# `encode_device_ptr`, which appends the owning buffer's handle.
+# A closure cannot capture a `DeviceBuffer` directly. `DeviceBuffer` is itself
+# `DevicePassable`, but the synthesized closure conformance also requires
+# register-passable capture storage (the MOCO-4045 guard in `ClosureEmitter`)
+# and `DeviceBuffer` is memory-only. `DevicePointer` is the register-passable
+# borrow of one, and its `_to_device_type` dispatches to `encode_device_ptr`,
+# which appends the owning buffer's handle.
 
-from max.gpu.host import DeviceContext, DevicePointer
-from std.gpu.host._device_context_metal import MetalDeviceTypeEncoder
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.testing import assert_equal, assert_true, TestSuite
 
+from max.gpu.host import DeviceContext, DevicePointer
+from max.gpu.host._device_context_metal import MetalDeviceTypeEncoder
 
-# A register-passable aggregate that is NOT itself `DevicePassable` but holds
-# `DevicePassable` `DevicePointer` members. Encoding a closure that captures it
-# must recurse through the struct into each pointer (the behavior under test).
+
+# The device image of `PtrPair`: each member is the bare device pointer that
+# `DevicePointer.device_type` maps to. A struct field cannot spell `AnyOrigin`,
+# so the untracked origin stands in — a device pointer carries no tracked
+# lifetime, and `Pointer._is_convertible_to_device_type` accepts the spelling.
+@fieldwise_init
+struct PtrPairDevice(ImplicitlyCopyable, TrivialRegisterPassable):
+    var first: Pointer[Scalar[DType.float32], MutUntrackedOrigin]
+    var second: Pointer[Scalar[DType.float32], MutUntrackedOrigin]
+
+
+# A register-passable aggregate holding `DevicePassable` `DevicePointer`
+# members. Its own encoding defers to `encode_fields`, which must recurse
+# through the struct into each pointer (the behavior under test). A closure may
+# only capture it because it conforms to `DevicePassable` itself: closure
+# conformance is derived from the conformance of every capture, so an aggregate
+# that merely contains `DevicePassable` members is not device-encodable.
 @fieldwise_init
 struct PtrPair[
     first_mut: Bool,
@@ -38,9 +54,20 @@ struct PtrPair[
     //,
     first_origin: Origin[mut=first_mut],
     second_origin: Origin[mut=second_mut],
-](ImplicitlyCopyable, TrivialRegisterPassable):
+](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     var first: DevicePointer[DType.float32, Self.first_origin]
     var second: DevicePointer[DType.float32, Self.second_origin]
+
+    comptime device_type: AnyType = PtrPairDevice
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self.device_type](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "PtrPair"
 
 
 def test_closure_registers_captured_buffers() raises:
@@ -55,7 +82,7 @@ def test_closure_registers_captured_buffers() raises:
     def k(z: Int) {var pa, var pb} -> Int:
         return pa.offset() + pb.offset()
 
-    var storage = alloc[type_of(k)](1)
+    var storage = alloc[type_of(k)]({count = 1}).unsafe_leak()
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
         encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()
@@ -86,12 +113,12 @@ def test_closure_registers_buffers_via_nested_struct() raises:
     var b = ctx.enqueue_create_buffer[DType.float32](32)
     var pair = PtrPair(a.device_ptr(), b.device_ptr())
 
-    # The closure captures a register-passable struct that only transitively
-    # contains `DevicePassable` members; `encode_fields` must recurse into it.
+    # The closure captures a struct whose `DevicePassable` members are one
+    # level down; `encode_fields` must recurse into it.
     def k(z: Int) {var pair} -> Int:
         return pair.first.offset() + pair.second.offset()
 
-    var storage = alloc[type_of(k)](1)
+    var storage = alloc[type_of(k)]({count = 1}).unsafe_leak()
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
         encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()

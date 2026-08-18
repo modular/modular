@@ -21,7 +21,7 @@ and Python code.
 """
 
 from . import ConvertibleFromPython
-from std.ffi import _Global, _CPointer, c_int, c_char
+from std.ffi import _Global, c_int, c_char
 from std.sys.info import size_of
 from std.collections import StringDict
 
@@ -119,7 +119,8 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   type.
 
     comptime type_name = reflect[T].name[qualified_builtins=True]()
-    if entry := type_dict[].find(type_name):
+    var entry = type_dict[].find(type_name)
+    if entry:
         return entry.take()
 
     raise Error(
@@ -135,9 +136,7 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDeletable](
-    Movable where conforms_to(T, Movable)
-):
+struct PyMojoObject[T: Deinitable](Movable where conforms_to(T, Movable)):
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -173,7 +172,7 @@ struct PyMojoObject[T: ImplicitlyDeletable](
     """Whether the Mojo value has been initialized."""
 
 
-def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
+def _tp_dealloc_wrapper[T: Deinitable](py_self: PyObjectPtr) abi("C"):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -200,7 +199,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
 
 
 def _tp_repr_wrapper[
-    T: ImplicitlyDeletable
+    T: Deinitable
 ](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
@@ -339,7 +338,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     def add_type[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](mut self, type_name: StaticString) -> ref[
         self.type_builders[0]
     ] PythonTypeBuilder:
@@ -565,7 +564,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutUntrackedOrigin]]
+    var _slots: Dict[Int, OptionalPointer[NoneType, MutUntrackedOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -591,9 +590,7 @@ struct PythonTypeBuilder(Copyable):
         self.methods = []
 
     @staticmethod
-    def bind[
-        T: ImplicitlyDeletable
-    ](type_name: StaticString) -> PythonTypeBuilder:
+    def bind[T: Deinitable](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
         Parameters:
@@ -669,7 +666,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().unsafe_bitcast[c_char](),
+            self.type_name.as_c_string_slice(),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -692,7 +689,8 @@ struct PythonTypeBuilder(Copyable):
         # correctness. This check here ensures that the user is not accidentally
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
-        if type_id := self._type_id:
+        var type_id = self._type_id
+        if type_id:
             _register_py_type_object(type_id[], type_obj)
 
         Python.add_object(module, self.type_name, type_obj)
@@ -712,7 +710,7 @@ struct PythonTypeBuilder(Copyable):
         self._slots[Int(slot.slot)] = slot.pfunc
 
     def def_init_defaultable[
-        T: Defaultable & Movable & ImplicitlyDeletable,
+        T: Defaultable & Movable & Deinitable,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
@@ -741,7 +739,7 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     def def_py_init[
-        T: Movable & ImplicitlyDeletable,
+        T: Movable & Deinitable,
         //,
         init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin,
     ](mut self) raises -> ref[self] Self:
@@ -760,7 +758,7 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[_raising_py_init_wrapper[T, init_func]]()
 
     def def_py_init[
-        T: Movable & ImplicitlyDeletable,
+        T: Movable & Deinitable,
         //,
         init_func: def(
             out T, args: PythonObject, kwargs: PythonObject
@@ -1094,7 +1092,7 @@ def _set_python_error(
     var error_type = cpython.get_error_global(exc_type.global_name)
     cpython.PyErr_SetString(
         error_type,
-        error_message.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+        error_message.as_c_string_slice().ptr().as_unsafe_any_origin(),
     )
 
 
@@ -1151,7 +1149,7 @@ def _py_init_function_nonregistered(
         error_type,
         "No initializer registered for this type. Use def_py_init() or"
         " def_init_defaultable() to register an initializer.".as_c_string_slice()
-        .unsafe_ptr()
+        .ptr()
         .as_unsafe_any_origin(),
     )
     return -1
@@ -1169,7 +1167,7 @@ def _py_new_function_wrapper[
 
 
 def _py_init_function_wrapper[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin raises,
 ](py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
     "C"
@@ -1194,7 +1192,7 @@ def _py_init_function_wrapper[
 
 @always_inline
 def _raising_py_init_wrapper[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     init_func: def(args: PythonObject, kwargs: PythonObject) thin -> T,
 ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
     t = init_func(args, kwargs)
@@ -1305,21 +1303,22 @@ def _convert_kwargs(
 @always_inline
 def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDeletable,
+    self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=True` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> GenericPyFunction:
+]() -> GenericPyFunction where (
+    func.has_kwargs,
+    "non-kwargs functions should use _py_function_fastcall_wrapper",
+):
     """Converts a kwargs-accepting PyObjectFunction to a GenericPyFunction.
 
     Wraps the user's function in a `METH_VARARGS | METH_KEYWORDS` dispatch
     shim. Non-kwargs callables go through `_py_function_fastcall_wrapper`
     (METH_FASTCALL) instead.
     """
-    comptime assert (
-        func.has_kwargs
-    ), "non-kwargs functions should use _py_function_fastcall_wrapper"
     comptime FuncT = type_of(func)
 
     @always_inline
@@ -1344,12 +1343,16 @@ def _py_kwargs_function_wrapper[
 @always_inline
 def _py_function_fastcall_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDeletable,
+    self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=False` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> PyCFunctionFast:
+]() -> PyCFunctionFast where (
+    not func.has_kwargs,
+    "fastcall wrapper requires a non-kwargs function",
+):
     """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs
     `PyObjectFunction`.
 
@@ -1375,9 +1378,6 @@ def _py_function_fastcall_wrapper[
         A function value of type `PyCFunctionFast` suitable for passing to
         `PyMethodDef.function` for `METH_FASTCALL` registration.
     """
-    comptime assert (
-        not func.has_kwargs
-    ), "fastcall wrapper requires a non-kwargs function"
     comptime FuncT = type_of(func)
 
     @always_inline
@@ -1548,7 +1548,7 @@ def check_arguments_arity(
 
 
 def check_and_get_arg[
-    T: ImplicitlyDeletable
+    T: Deinitable
 ](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
     T, MutAnyOrigin
 ]:

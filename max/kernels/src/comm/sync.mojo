@@ -21,17 +21,17 @@ consumed by allreduce, scatter, and other collective operations.
 from std.collections import Array
 from std.utils import StaticTuple
 from std.math.uutils import umod
-from std.sys import size_of
+from std.sys import size_of, is_amd_gpu
 
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu import (
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from std.gpu.sync import named_barrier
+from max.gpu.sync import barrier
+from max.gpu.sync import named_barrier
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 
@@ -146,11 +146,17 @@ in-block thread index, not the global device rank. When subgroup collectives
 generation counters desync -- a subsequent full-world barrier then spins
 forever waiting for a generation a peer will never publish.
 
-Giving each collective scope its own counter bank makes the barrier histories
-disjoint so scopes can never poison each other. `MAX_GPUS` banks is the loosest
-sufficient bound: there can be at most one distinct device-group per GPU, so a
-`1 + group_start // group_size` scope mapping never exceeds this. The cost is
-negligible -- the counters are tiny next to the embedded Lamport region.
+Giving each collective domain its own counter bank makes the barrier histories
+disjoint so domains can never poison each other. `MAX_GPUS` banks is the loosest
+sufficient bound: there can be at most one distinct device-group per GPU.
+
+Callers map by group WIDTH (`0 if group_size == num_devices else group_size`),
+so DIFFERENT ops of the same width share a bank. Sharing is sound only while
+every rank in the domain issues the same barrier sequence: every collective must
+pair start with end (a start-only one lets a fast rank overwrite a shard its
+peers are still P2P-reading), and any conditional skip must be group-uniform.
+Sibling groups are safe regardless -- their `rank_sigs` are disjoint. The cost is
+negligible next to the embedded Lamport region.
 """
 
 
@@ -249,7 +255,7 @@ struct Signal:
         """Typed pointer to this `Signal`'s `lamport_state` block.
 
         Index it with the `Lamport.STATE_*` constants. The field is located by
-        its own address (`UnsafePointer(to=...)`), so there is no hand-computed
+        its own address (`Pointer(to=...)`), so there is no hand-computed
         byte offset to keep in sync with the field order.
         """
         return (
@@ -266,7 +272,7 @@ struct Signal:
 
         Parameters:
             dtype: The element type to reinterpret the raw region bytes as.
-                The returned pointer is typed `UnsafePointer[Scalar[dtype], ...]`
+                The returned pointer is typed `Pointer[Scalar[dtype], ...]`
                 so callers can read and write Lamport message packs in this
                 dtype without an extra cast.
         """
@@ -458,13 +464,17 @@ def _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        comptime if need_fence:
+        # TODO(KERN-3443): Investigate why AMD GPUs require this to be a full fence
+        # instead of the lighter weight volatile loop used for nvidia GPUs.
+        comptime if need_fence or is_amd_gpu():
             # broadcast the value to all peers that I reached the barrier
-            Atomic[flag_t].store[ordering=Ordering.RELEASE](
+            Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
                 peer_counter_ptr, val
             )
             while (
-                Atomic[flag_t].load[ordering=Ordering.ACQUIRE](self_counter_ptr)
+                Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
+                    self_counter_ptr
+                )
                 != val
             ):
                 pass

@@ -37,7 +37,7 @@ from std.benchmark import (
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from std.memory import alloc, dealloc
 from internal_utils import (
     CacheBustingBuffer,
@@ -143,7 +143,7 @@ def _check_verification_result[
     var result_host_alloc = alloc[Scalar[DType.float32]](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
-    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -231,9 +231,8 @@ def bench_matmul_1d_tma_epilogue[
     cb_bias.init_on_device(init_type, ctx)
 
     @__copy_capture(cb_a, cb_b, cb_c, cb_bias)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -253,7 +252,7 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c, bias_tile)
             def epilogue_lambda[
@@ -296,10 +295,10 @@ def bench_matmul_1d_tma_epilogue[
                 ctx,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -365,7 +364,7 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(bias_ver_nd)
             def ver_epilogue_lambda[
@@ -410,11 +409,11 @@ def bench_matmul_1d_tma_epilogue[
             var bias_host_alloc = alloc[Scalar[dtype]](
                 {count = N}
             ).into_managed()
-            var bias_host = UnsafePointer(bias_host_alloc.unsafe_ptr())
+            var bias_host = bias_host_alloc.unsafe_ptr()
             var c_ref_host_alloc = alloc[Scalar[dtype]](
                 {count = c_size}
             ).into_managed()
-            var c_ref_host = UnsafePointer(c_ref_host_alloc.unsafe_ptr())
+            var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(bias_host, bias_ver_dev)
             ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()

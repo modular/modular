@@ -37,7 +37,7 @@ import math
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import msgspec
 from max.driver import Buffer, Device
@@ -47,11 +47,17 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVHashAlgo,
     MultiKVCacheParams,
-    ReplicatedKVCacheMemory,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -109,25 +115,13 @@ def _buffer_nbytes(buffer: Buffer) -> int:
 def _group_units_by_shard(
     kv_memory: Sequence[KVCacheMemory],
 ) -> tuple[list[tuple[int, list[tuple[int, int]]]], bool]:
-    """Groups one replica's flat KV memory units into per-shard unit lists.
+    """Groups one replica's KV memory units into per-shard unit lists.
 
-    ``kv_memory`` is the flat ``to_memory()`` output: one unit per logical
-    buffer (target values, FP8 scales, indexer, draft, and so on), where a
-    quantized or multi-cache model contributes several units. The Rust client
-    concatenates each shard's units, in this order, into one dKV block, which
-    makes the stored bytes match the CPU block the local and tiered connectors
-    build from the same units.
-
-    Two layouts exist:
-
-    * Replicated (MLA with TP > 1): every unit is a
-      :class:`ReplicatedKVCacheMemory` whose rank-0 buffer plus peers span the
-      same device topology. Shard ``s`` takes each unit's buffer for rank
-      ``s``, so every shard carries the full unit list and holds identical
-      bytes.
-    * Sharded (everything else): each unit is a plain buffer on one device,
-      and a shard is a device. Units group under their device in flat order,
-      which is the shard-restricted subsequence of the canonical unit order.
+    Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
+    whether the unit is replicated or sharded; the two layouts need no separate
+    handling. The Rust client concatenates each shard's units in this order into
+    one dKV block, matching the CPU block the tiered connector builds from the
+    same units.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
@@ -135,12 +129,12 @@ def _group_units_by_shard(
     Returns:
         A ``(shards, is_mla)`` pair, where ``shards`` has one
         ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order.
+        device order, and ``is_mla`` reports whether every unit is replicated.
 
     Raises:
         NotImplementedError: If replicated and non-replicated units are mixed.
-        ValueError: If unit page counts or per-shard unit counts disagree, or
-            if replicated units span different device topologies.
+        ValueError: If unit page counts disagree, or if units span different
+            device topologies.
     """
     if not kv_memory:
         raise ValueError("kv_memory must contain at least one unit")
@@ -154,65 +148,43 @@ def _group_units_by_shard(
             f"{unique_total_num_pages}"
         )
 
-    replicated = [
-        mem for mem in kv_memory if isinstance(mem, ReplicatedKVCacheMemory)
-    ]
+    # ``is_mla`` lets the Rust client dedup byte-identical shards, which one
+    # sharded unit falsifies for the concatenated block.
+    replicated = [mem for mem in kv_memory if mem.replicated]
     is_mla = bool(replicated)
-
-    if is_mla:
-        if len(replicated) != len(kv_memory):
-            raise NotImplementedError(
-                "the dKV connector cannot mix replicated (MLA) and "
-                "non-replicated KV memory units in one replica; every unit "
-                "must be replicated across the same TP shards"
-            )
-
-        # every replicated unit must span the same device topology so shard s
-        # names the same device in every unit (mirrors BlockOffloadEngine)
-        topologies = {
-            tuple(buffer.device.id for buffer in mem.all_buffers)
-            for mem in kv_memory
-        }
-        if len(topologies) > 1:
-            raise ValueError(
-                "all replicated KVCacheMemory units must share the same TP "
-                f"device topology; got {sorted(topologies)}"
-            )
-
-        topology = next(iter(topologies))
-        shards = [
-            (
-                device_id,
-                [
-                    (
-                        mem.all_buffers[rank]._data_ptr(),
-                        _buffer_nbytes(mem.all_buffers[rank]),
-                    )
-                    for mem in kv_memory
-                ],
-            )
-            for rank, device_id in enumerate(topology)
-        ]
-        return shards, True
-
-    # sharded layout: group the flat units under their device, preserving the
-    # canonical to_memory() order within each shard
-    units_by_device: dict[int, list[tuple[int, int]]] = {}
-    for mem in kv_memory:
-        buffer = mem.buffer
-        units_by_device.setdefault(buffer.device.id, []).append(
-            (buffer._data_ptr(), _buffer_nbytes(buffer))
+    if is_mla and len(replicated) != len(kv_memory):
+        raise NotImplementedError(
+            "the dKV connector cannot mix replicated (MLA) and "
+            "non-replicated KV memory units in one replica; every unit "
+            "must be replicated across the same TP shards"
         )
 
-    unit_counts = {len(units) for units in units_by_device.values()}
-    if len(unit_counts) > 1:
+    # every unit must span the same device topology so shard s names the same
+    # device in every unit (mirrors BlockOffloadEngine)
+    topologies = {
+        tuple(buffer.device.id for buffer in mem.buffers) for mem in kv_memory
+    }
+    if len(topologies) > 1:
         raise ValueError(
-            "every dKV shard must carry the same number of KV memory units; "
-            f"got counts {sorted(unit_counts)} across devices "
-            f"{sorted(units_by_device)}"
+            "all KVCacheMemory units must share the same TP device topology; "
+            f"got {sorted(topologies)}"
         )
 
-    return list(units_by_device.items()), False
+    topology = next(iter(topologies))
+    shards = [
+        (
+            device_id,
+            [
+                (
+                    mem.buffers[rank]._data_ptr(),
+                    _buffer_nbytes(mem.buffers[rank]),
+                )
+                for mem in kv_memory
+            ],
+        )
+        for rank, device_id in enumerate(topology)
+    ]
+    return shards, is_mla
 
 
 def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
@@ -223,9 +195,8 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     the flat per-physical-buffer list. This keeps the folded shape identical
     between replicated (MLA) and sharded layouts, where the flat list would
     otherwise repeat each unit once per shard. Shard 0 stands in for every
-    shard because :func:`_group_units_by_shard` validates a uniform unit
-    count per shard and the Rust config validates that the stride vectors
-    match.
+    shard because each shard carries one entry per unit by construction and
+    the Rust config validates that the stride vectors match.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
@@ -252,6 +223,83 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 _DEFAULT_ADMISSION_TIMEOUT_S = 120.0
 _ADMISSION_INITIAL_BACKOFF_S = 1.0
 _ADMISSION_MAX_BACKOFF_S = 10.0
+
+
+# Env-var overrides for the Rust client's background heartbeat poller, mapped to
+# the constructor keywords they feed. Every one is optional: an unset variable is
+# omitted from the call so the Rust default applies, which keeps the poller on the
+# timings it has always used. A shorter interval detects a dKV restart sooner at
+# the cost of one more probe per interval from every replica.
+_HEARTBEAT_ENV_KWARGS = {
+    "MODULAR_DKV_HEARTBEAT_INTERVAL_MS": "heartbeat_interval_ms",
+    "MODULAR_DKV_HEARTBEAT_REQUEST_TIMEOUT_MS": "heartbeat_request_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_TIMEOUT_MS": "heartbeat_reconnect_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_COOLDOWN_MS": (
+        "heartbeat_reconnect_cooldown_ms"
+    ),
+    "MODULAR_DKV_HEARTBEAT_MAX_FAILURES": "heartbeat_max_failures",
+    "MODULAR_DKV_HEARTBEAT_DEGRADED_WARN_EVERY": (
+        "heartbeat_degraded_warn_every"
+    ),
+}
+
+
+def _heartbeat_overrides() -> dict[str, int]:
+    """Collects the heartbeat-poller overrides set in the environment.
+
+    Returns:
+        The Rust client constructor keywords for the variables in
+        :data:`_HEARTBEAT_ENV_KWARGS` that are set, keyed by keyword name. An
+        unset variable is absent, leaving the Rust default in place.
+
+    Raises:
+        ValueError: If a variable is set to something other than a non-negative
+            integer. Failing model load beats silently polling on an unintended
+            cadence, and a negative value is worth catching here rather than at
+            the extension, whose keywords are unsigned and so reject it with an
+            ``OverflowError`` about converting a negative int that names no
+            variable. Which non-negative values are meaningful is deliberately
+            not checked here, because that is per-field and belongs to
+            ``HeartbeatConfig::validate`` on the Rust side, where the reasons
+            live: a zero cooldown means no spacing between reconnects and is
+            legitimate, while a zero interval would spin the poll loop.
+    """
+    overrides: dict[str, int] = {}
+    for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_var} must be an integer number, got {raw!r}"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{env_var} must not be negative, got {value}")
+
+        overrides[keyword] = value
+
+    return overrides
+
+
+def _nixl_backend_override() -> NixlBackendType | None:
+    """The validated NIXL transfer backend override, or ``None`` when unset.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
+    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
+    ``auto`` mean auto-select (``None`` here) — the dKV server's own
+    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
+    must not crash the MAX pod — and anything else goes through the same
+    validator as the KV transfer engine, so a typo fails model load with the
+    accepted set rather than surfacing as a handshake mismatch. The default
+    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
+    the connector auto-selects.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    return validate_nixl_backend(raw)
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -597,13 +645,22 @@ class DKVConnector:
         # provided dkv_connector extension to be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
+        # The Rust client creates a NIXL agent, which dlopens the transport
+        # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
+        # for the verbs flavors, rdma-core) symbols that must already be
+        # RTLD_GLOBAL in this process or the plugin faults as it loads. The
+        # libfabric flavor links its stack and needs none of this, but the
+        # preload skips absent libraries, so it stays backend-agnostic here
+        # rather than duplicating the backend dispatch.
+        preload_nixl_plugin_deps()
+
         if not replica_kv_memory or not all(replica_kv_memory):
             raise ValueError(
                 "DKVConnector requires at least one KV cache buffer per replica"
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        backend = _nixl_backend_override()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
@@ -674,6 +731,13 @@ class DKVConnector:
             )
         )
 
+        heartbeat_overrides = _heartbeat_overrides()
+        if heartbeat_overrides:
+            _logger.info(
+                "dKV heartbeat poller overridden from the environment: %s",
+                heartbeat_overrides,
+            )
+
         # Each client's connect + handshake ("admission") is retried on transient
         # failures (dKV still starting); model readiness is gated on ALL clients
         # admitting, so a client whose retry budget is exhausted raises here and
@@ -716,6 +780,7 @@ class DKVConnector:
                 replica_id=replica_id,
                 tenant_gpu_count=tenant_gpu_count,
                 tenant_gpu_device_ids=tenant_gpu_device_ids,
+                heartbeat_overrides=heartbeat_overrides,
             )
             self._clients.append(
                 _admit_with_retry(
@@ -776,8 +841,9 @@ class DKVConnector:
         replica_id: int,
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
+        heartbeat_overrides: Mapping[str, int],
     ) -> object:
-        # Group the flat to_memory() units into one (device_id, units) entry
+        # Group the to_memory() units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
@@ -794,9 +860,9 @@ class DKVConnector:
         # CPU stream) maps to 0, which routes that device's transfers over NIXL.
         compute_streams: dict[int, int] = {}
         for mem in kv_memory:
-            for buffer in mem.all_buffers:
+            for buffer in mem.buffers:
                 compute_streams[buffer.device.id] = (
-                    buffer.device.default_stream.native_stream_handle
+                    buffer.device.default_queue.native_stream_handle
                 )
 
         # Bind ``tp_shard_id`` to device identity rather than to registration
@@ -840,6 +906,7 @@ class DKVConnector:
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            **heartbeat_overrides,
         )
 
     @property
@@ -884,7 +951,6 @@ class DKVConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
@@ -893,11 +959,10 @@ class DKVConnector:
         contract as :meth:`load` (truncated to its first 8 bytes at the
         dkv boundary; see :func:`_to_dkv_u64`).
 
-        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
-        chain blocks under a parent, so the Rust client builds the keys
-        (and the NUMA striping plan) from the hashes alone.
+        The dKV store dedups by composite key ``(tp_shard_id, group,
+        seq_hash)`` and does not chain blocks under a parent, so the Rust
+        client builds the keys (and the NUMA striping plan) from the hashes
+        alone.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set).
@@ -988,22 +1053,14 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
+    def host_block_count(self) -> BlockCount:
+        # BlockManager gates the load path on host_block_count.total > 0. dKV
+        # capacity is managed externally by the dKV service.
+        return BlockCount(free=sys.maxsize, total=sys.maxsize)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""

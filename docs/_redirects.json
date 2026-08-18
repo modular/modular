@@ -5,7 +5,12 @@
     "status": 302
   },
   {
-    "source": "/max",
+    "source": "/intro/",
+    "dest": "/",
+    "status": 302
+  },
+  {
+    "source": "/faq/",
     "dest": "/",
     "status": 302
   },
@@ -15,53 +20,18 @@
     "status": 302
   },
   {
-    "source": "/max/tutorials/custom-kernels-pytorch/",
+    "source": "/tutorials/custom-kernels-pytorch/",
     "dest": "/develop/custom-kernels-pytorch/",
     "status": 301
   },
   {
-    "source": "/max/graph/get-started",
+    "source": "/graph/get-started/",
     "dest": "/develop/modules/",
     "status": 301
   },
   {
-    "source": "/mojo/",
-    "dest": "https://mojolang.org",
-    "status": 301
-  },
-  {
-    "source": "/max/changelog",
+    "source": "/changelog/(.*)",
     "dest": "/releases/",
-    "status": 302
-  },
-  {
-    "source": "/max/changelog/",
-    "dest": "/releases/",
-    "status": 302
-  },
-  {
-    "source": "/max/changelog/v0.(.*)",
-    "dest": "/releases/v{0}",
-    "status": 302
-  },
-  {
-    "source": "/changelog/v0.(.*)",
-    "dest": "/releases/v{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/inference/(.*)",
-    "dest": "/serve/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/deploy/(.*)",
-    "dest": "/serve/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/graph/(.*)",
-    "dest": "/develop/{0}",
     "status": 302
   },
   {
@@ -75,53 +45,8 @@
     "status": 302
   },
   {
-    "source": "/graph/(.*)",
-    "dest": "/develop/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/api/kernels/(.*)",
-    "dest": "/api/mojo/{0}",
-    "status": 302
-  },
-  {
     "source": "/llms-kernels.txt",
     "dest": "/llms-accelerator-api.txt",
     "status": 302
-  },
-  {
-    "source": "/max/(.*)",
-    "dest": "/{0}",
-    "status": 302
-  },
-  {
-    "source": "/mojo/changelog/",
-    "dest": "https://mojolang.org/releases/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/manual/install/",
-    "dest": "https://mojolang.org/install/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/lib/",
-    "dest": "https://mojolang.org/docs/std/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/manual/decorators/(.*)",
-    "dest": "https://mojolang.org/docs/reference/decorators/{0}",
-    "status": 301
-  },
-  {
-    "source": "/mojo/reference/(.*)",
-    "dest": "https://mojolang.org/docs/reference/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/(.*)",
-    "dest": "https://mojolang.org/docs/{0}",
-    "status": 301
   }
 ]

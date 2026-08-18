@@ -27,11 +27,11 @@ from std.sys import align_of, simd_width_of, size_of
 from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
-from std.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma import st_matrix
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     umma_arrive_leader_cta,
     mbarrier_arrive,

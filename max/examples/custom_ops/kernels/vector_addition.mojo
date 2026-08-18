@@ -54,7 +54,7 @@ def _vector_addition_gpu(
     var vector_length = output.dim_size(0)
 
     # The function that will be launched and distributed across GPU threads.
-    @parameter
+    @__parameter
     def vector_addition_gpu_kernel(length_dev: Int32):
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x

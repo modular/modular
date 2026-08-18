@@ -109,7 +109,7 @@ from std.gpu import (
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.host import DeviceContext
 from max.gpu.host.compile import CompilationTarget
-from std.gpu.sync import s_waitcnt
+from max.gpu.sync import s_waitcnt
 from std.math import ceildiv
 from std.memory import AddressSpace
 from std.sys import get_defined_bool, get_defined_int, size_of
@@ -626,7 +626,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # cluster-boundary drains.)
         var w_remap = w_id & 3
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_k_into(slot: Int, t: Int):
             var kp = _MlaKDmaPair[Self.config](
@@ -638,7 +638,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             kp.dma(k_slot, w_remap, l_id)
             kp.dma(k_slot, w_remap + 4, l_id)
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_v_into(slot: Int, t: Int):
             var v_slot = v_ring.tile[Self._V_SLOT_ROWS, Self._V_SUB_COLS](
@@ -657,7 +657,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 l_id,
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_kv_split(k_slot_idx: Int, v_slot_idx: Int, t: Int):
             # Reference work-split: phase-lagged upper half (waves 4-7)
@@ -886,7 +886,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # reorder-fenced so the cadence survives codegen at the boundary, and
         # the cluster interior stays free of `lgkmcnt(0)` / `sched_barrier(0)`
         # walls.
-        @parameter
+        @__parameter
         @always_inline
         def _one_tile_exact[is_upper: Bool](t32_arg: Int32):
             # Reference-faithful non-materialized V (the lean band layout):
@@ -1039,7 +1039,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var f3 = _FRAG(0)
 
             # Load fragment `i` from SMEM (the rope sub-view for rope cols).
-            @parameter
+            @__parameter
             @always_inline
             def _load_frag[i: Int]() -> _FRAG:
                 comptime if _is_rope(i):
@@ -1049,7 +1049,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # Write fragment value into ring slot `s` (comptime dispatch to
             # one of the 4 distinct SSA values).
-            @parameter
+            @__parameter
             @always_inline
             def _put[s: Int](var v: _FRAG):
                 comptime if s == 0:
@@ -1062,7 +1062,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     f3 = v
 
             # Read ring slot `s`.
-            @parameter
+            @__parameter
             @always_inline
             def _get[s: Int]() -> _FRAG:
                 comptime if s == 0:
@@ -1111,13 +1111,13 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _PF_K_AT = (2, 4, 6, 8)  # K sub-call -> MFMA iter
             comptime _PF_V_AT = (2, 6)  # V sub-call -> MFMA iter
 
-            @parameter
+            @__parameter
             @always_inline
             def _pf_spread_step[i_mfma: Int]():
                 comptime if is_upper:
                     # V producer: 2 halves at _PF_V_AT.
                     comptime for vj in range(len(_PF_V_AT)):
-                        comptime if _PF_V_AT[vj] == i_mfma:
+                        comptime if rebind[Int](_PF_V_AT[vj]) == i_mfma:
                             _sched_barrier_zero()
                             Self._Core._dma_v[v_full_v227=Self._V_FULL_V227,](
                                 v_ring.tile[
@@ -1135,7 +1135,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     # K producer: dma_nope/dma_rope x 2 warp-halves at
                     # _PF_K_AT (sub-call kj: half = kj // 2, rope = kj & 1).
                     comptime for kj in range(len(_PF_K_AT)):
-                        comptime if _PF_K_AT[kj] == i_mfma:
+                        comptime if rebind[Int](_PF_K_AT[kj]) == i_mfma:
                             _sched_barrier_zero()
                             var _kp = _MlaKDmaPair[Self.config](
                                 k_op, batch_idx_u32, kv_head_idx_u32, _pf_t
@@ -1276,7 +1276,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # `ds_read_b64_tr_b8` = 3 fragments × 4 reads; ref asm QK-tail
             # L2245-2272). Default (`_V_QKTAIL=False`) the prologue stays in
             # C_PV_MFMA below, so the hoist is SSA-neutral (the band vars are
-            # dead until C_PV; the `@parameter @always_inline` helpers emit
+            # dead until C_PV; the `@__parameter @always_inline` helpers emit
             # nothing until called). The hoist is the lean-V design's mirror:
             # lean-V reads ALL 32 V in C_PV; `v_qktail` moves 12 up to match
             # the reference 12/20 placement, at the cost of holding 24 VGPR
@@ -1293,12 +1293,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _VRING = 4  # reference 4-slot rotating V band (v[28:59])
             comptime _VAHEAD = 3  # 3 slots in flight (see C_PV_MFMA notes)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vstrip(i: Int) -> Int:
                 return i // _N_DEPTH
 
-            @parameter
+            @__parameter
             @always_inline
             def _vdepth(i: Int) -> Int:
                 return i % _N_DEPTH
@@ -1306,7 +1306,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # Load V fragment `i` from the per-lane V LDS base (4
             # `ds_read_tr8_b64` joined to one SIMD; `v_lane_base` CSEs to a
             # single base across the unrolled stream — the reference `v227`).
-            @parameter
+            @__parameter
             @always_inline
             def _vload[i: Int]() -> _VFRAG:
                 return rebind[_VFRAG](
@@ -1326,7 +1326,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var vf2 = _VFRAG(0)
             var vf3 = _VFRAG(0)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vput[s: Int](var v: _VFRAG):
                 comptime if s == 0:
@@ -1338,7 +1338,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 else:
                     vf3 = v
 
-            @parameter
+            @__parameter
             @always_inline
             def _vget[s: Int]() -> _VFRAG:
                 comptime if s == 0:
@@ -1874,9 +1874,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(num_keys, Self.KV_BLOCK)))
         )
         comptime assert (
             Self.NUM_HEADS % Self.NUM_KV_HEADS == 0
@@ -1930,7 +1928,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # x 16 head). The static grid and the reference persistent work-loop
         # drive this SAME body; they differ only in how (head_idx,
         # block_tile_idx, batch_idx) are sourced (block_idx vs WorkInfo).
-        @parameter
+        @__parameter
         @always_inline
         def _run_one_work(
             head_idx: Int,
@@ -1961,21 +1959,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var max_q_end_pos_i32 = (
                 max_tile_idx_local_i32 + 1
             ) * _QBS_I32 + Int32(start_pos)
-            var max_num_tiles_calc_i32 = (
-                max_q_end_pos_i32 + _KVB_I32 - 1
-            ) // _KVB_I32
+            var max_num_tiles_calc_i32 = ceildiv(max_q_end_pos_i32, _KVB_I32)
             var max_num_tiles_local: Int
             comptime if mask_t == CausalMask:
-                var capped_i32 = (
-                    max_num_tiles_calc_i32 if max_num_tiles_calc_i32
-                    < num_tiles_i32 else num_tiles_i32
-                )
-                var floor4_i32 = (
-                    Int32(4) if num_tiles_i32 >= 4 else num_tiles_i32
-                )
-                max_num_tiles_local = Int(
-                    floor4_i32 if capped_i32 < floor4_i32 else capped_i32
-                )
+                var capped_i32 = min(max_num_tiles_calc_i32, num_tiles_i32)
+                var floor4_i32 = min(Int32(4), num_tiles_i32)
+                max_num_tiles_local = Int(max(capped_i32, floor4_i32))
             else:
                 max_num_tiles_local = num_tiles
 

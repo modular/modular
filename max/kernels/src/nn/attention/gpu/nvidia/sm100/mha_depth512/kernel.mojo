@@ -37,8 +37,8 @@ from std.gpu import (
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -240,11 +240,11 @@ struct SM100MHADepth512[
             not Self.PartitionType.do_partition
         ), "Partitioning not supported with depth512 pair-CTA"
 
-        mask = pack.mask
-        valid_length = pack.valid_length
-        kv_input_row_offsets = pack.kv_input_row_offsets
-        max_seq_len = pack.max_seq_len
-        partition = pack.partition
+        var mask = pack.mask
+        var valid_length = pack.valid_length
+        var kv_input_row_offsets = pack.kv_input_row_offsets
+        var max_seq_len = pack.max_seq_len
+        var partition = pack.partition
 
         var smem = Self.SmemType()
 
@@ -274,7 +274,7 @@ struct SM100MHADepth512[
                 UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
@@ -331,7 +331,7 @@ struct SM100MHADepth512[
             )
 
             # Compute per-CTA output write parameters.
-            gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
+            var gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
                 seq_info, max_seq_len.as_uint32()
             )
             var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)

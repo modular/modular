@@ -16,11 +16,11 @@ This module provides helper functions for efficiently creating references to
 compile-time constants without materializing entire data structures in memory.
 """
 
-from std.memory import is_trivially_copyable, is_trivially_deletable
+from std.traits import IsTriviallyCopyable, IsTriviallyDeinitable
 
 
 def global_constant[
-    T: Copyable & ImplicitlyDeletable, //, value: T
+    T: Copyable & Deinitable, //, value: T
 ]() -> ref[ImmStaticOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
@@ -38,8 +38,7 @@ def global_constant[
 
     Parameters:
         T: The type of the constant value. Must have trivial copy and destroy
-            semantics (`is_trivially_copyable[T]()` and
-            `is_trivially_deletable[T]()` must be `True`).
+            semantics (`IsTriviallyCopyable[T]` and `IsTriviallyDeinitable[T]` must be `True`).
         value: The compile-time constant value.
 
     Returns:
@@ -63,14 +62,12 @@ def global_constant[
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
-    comptime assert (
-        is_trivially_copyable[T]() and is_trivially_deletable[T]()
-    ), (
+    comptime assert IsTriviallyCopyable[T] and IsTriviallyDeinitable[T], (
         "global_constant requires a type with trivial copy and destroy"
         " semantics. Types with heap allocations like Dict, List, or String"
         " are not supported because their internal pointers would be"
         " invalid at runtime."
     )
-    return Pointer[mut=False, origin=ImmStaticOrigin](
+    return ImmPointer[origin=ImmStaticOrigin](
         _mlir_value=__mlir_op.`pop.global_constant`[value=value]()
     )[]

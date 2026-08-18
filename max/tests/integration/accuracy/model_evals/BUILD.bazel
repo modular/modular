@@ -134,6 +134,32 @@ sh_binary(
     tags = ["manual"],
 )
 
+modular_py_library(
+    name = "omnidocbench_prep",
+    testonly = True,
+    srcs = ["omnidocbench_prep.py"],
+    imports = ["."],
+    deps = [
+        requirement("huggingface-hub"),
+    ],
+)
+
+# One-command local runner: provisions the pinned third-party OmniDocBench
+# harness (checkout + Python 3.11 venv + dataset + LaTeX deps), points it at an
+# endpoint, runs inference and scores. Unlike the other evals this is a shell
+# runner because the scorer is a third-party subprocess with its own interpreter.
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:omnidocbench_eval_local -- \
+#     --limit 4 --workers 4
+sh_binary(
+    name = "omnidocbench_eval_local",
+    testonly = True,
+    srcs = ["run_omnidocbench_local.sh"],
+    # The library target, not the raw source: a file may belong to only one
+    # rule, and omnidocbench_prep.py is already this package's py_library.
+    data = [":omnidocbench_prep"],
+    tags = ["manual"],
+)
+
 modular_py_binary(
     name = "mmmu_pro_eval",
     testonly = True,
@@ -165,5 +191,14 @@ modular_py_test(
     srcs = ["test_collect_scores.py"],
     deps = [
         ":collect_scores",
+    ],
+)
+
+modular_py_test(
+    name = "test_eval_common",
+    size = "small",
+    srcs = ["test_eval_common.py"],
+    deps = [
+        ":eval_common",
     ],
 )

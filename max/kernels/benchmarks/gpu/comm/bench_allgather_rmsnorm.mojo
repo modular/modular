@@ -92,13 +92,13 @@ def _launch_norm_full[
 
     @always_inline
     @__copy_capture(in_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         return in_buf.raw_load[width=width](in_buf.layout(coords))
 
     @always_inline
     @__copy_capture(out_buf)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -458,7 +458,7 @@ def bench_allgather_rmsnorm[
     )
 
     # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
-    @parameter
+    @__parameter
     @always_inline
     def _ag_out_views(ctx_idx: Int) -> Array[FullType, ngpus]:
         var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
@@ -472,7 +472,7 @@ def bench_allgather_rmsnorm[
             )
         return views^
 
-    @parameter
+    @__parameter
     @always_inline
     def _rebuild_shards(cache_iter: Int):
         comptime for _j in range(ngpus):
@@ -484,12 +484,12 @@ def bench_allgather_rmsnorm[
             )
 
     # ===== Variant 1: all-gather only -> t_AG =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_ag_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -506,12 +506,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold full tensor -> t_norm =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             if num_rows > 0:
@@ -535,12 +535,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 3: AG then RMSNorm on the live gathered output -> t_chained =
-    @parameter
+    @__parameter
     @always_inline
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -567,12 +567,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 4: fused all-gather + RMSNorm kernel -> t_fused =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -597,17 +597,17 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 5: shape-gated dispatch =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
 
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 var out_base = rebind[

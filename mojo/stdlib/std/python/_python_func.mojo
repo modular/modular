@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import _CPointer
 from std.os import abort
 
 from std.python import PythonObject as PO  # for brevity of signatures below
@@ -21,7 +20,7 @@ from std.python.bindings import check_arguments_arity
 
 struct PyObjectFunction[
     func_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDeletable = NoneType,
+    self_type: Deinitable = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
     """Wrapper to hide the binding logic for functions taking a variadic number

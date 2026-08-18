@@ -14,7 +14,8 @@
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu import barrier, block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from layout import (
     IntTuple,
@@ -38,7 +39,7 @@ from linalg.arch.sm100._tma import (
     UInt32Indices,
     to_swizzle,
 )
-from std.gpu.host._tensormap import SwizzleMode
+from max.gpu.host._tensormap import SwizzleMode
 from std.gpu import WARP_SIZE
 from std.testing import assert_equal
 from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
@@ -267,9 +268,9 @@ def test_2D_swizzle[
 
             for ii in range(load_shape_m):
                 for jj in range(load_shape_n):
-                    offset = swizzle(ii * load_shape_n + jj)
+                    var offset = swizzle(ii * load_shape_n + jj)
 
-                    m_offset, n_offset = divmod(offset, load_shape_n)
+                    var m_offset, n_offset = divmod(offset, load_shape_n)
 
                     if reference_tile[ii, jj] != rebind[
                         SIMD[
@@ -318,11 +319,14 @@ def test_3D_swizzle[
                                 + (ii * load_shape_n + jj)
                             )
 
+                            var b_offset: Int
                             b_offset, offset = divmod(
                                 offset, load_shape_m * load_shape_n
                             )
 
-                            m_offset, n_offset = divmod(offset, load_shape_n)
+                            var m_offset, n_offset = divmod(
+                                offset, load_shape_n
+                            )
 
                             if reference_tile[bb, ii, jj] != rebind[
                                 SIMD[

@@ -86,8 +86,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     max_position_embeddings: int = 4096
     """Maximum positional embeddings as defined by the original model."""
-    max_seq_len: int = 163840
-    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+    max_seq_len: int
+    """Maximum sequence length as defined by the MAX Engine pipeline
+    configuration. Required so that a subclass ``initialize`` that forgets to
+    resolve it fails at construction instead of inheriting another model's
+    limit."""
 
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
@@ -192,7 +195,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             speculative_method=pipeline_config.speculative.speculative_method
             if pipeline_config.speculative
             else None,
-            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative
             else 0,
         )

@@ -41,7 +41,7 @@ By the end of this tutorial, you'll be able to:
 url="/max/packages#system-requirements" />
 
 To use a GPU, your system must meet the [GPU
-requirements](/faq/#gpu-requirements).
+requirements](/packages/#gpu-compatibility).
 
 ## Run and compare the results
 
@@ -60,7 +60,7 @@ download the code and run the benchmark script:
     curl -fsSL https://pixi.sh/install.sh | sh
     ```
 
-    Then restart your terminal for the changes to take effect.
+   Then restart your terminal for the changes to take effect.
 
 3. Run all the matmul examples:
 
@@ -70,8 +70,8 @@ download the code and run the benchmark script:
     pixi run python matrix_multiplication.py
     ```
 
-    As long as you have a compatible GPU, this will compile, run, and print the
-    results of each matmul implementation that we'll discuss below.
+   As long as you have a compatible GPU, this will compile, run, and print the
+   results of each matmul implementation that we'll discuss below.
 
 4. Run the `matmul` benchmarks to see the impact of each optimization:
 
@@ -269,8 +269,8 @@ be the same.
 ### Layouts, `TileTensor`, and `LayoutTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](https://mojolang.org/docs/layout/layout/) and
-[`TileTensor`](https://mojolang.org/docs/layout/tile_tensor/TileTensor) to
+[layouts](/api/mojo/layout/layout/) and
+[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
 
@@ -279,7 +279,7 @@ one-dimensional coordinate—such as an array index or memory offset. For exampl
 a layout could represent a 2x6, row-major layout:
 
 ```mojo
-my_layout = row_major[2, 6]()
+var my_layout = row_major[2, 6]()
 print_layout(my_layout)
 ```
 
@@ -304,7 +304,7 @@ subset of the original, but points to the same underlying data.
 For example, you can extract a 2x2 tile of the above tensor:
 
 ```mojo
-tile = my_tensor.tile[2, 2](0, 1)
+var tile = my_tensor.tile[2, 2](0, 1)
 ```
 
 The layout of the extracted tile looks like this:
@@ -321,8 +321,8 @@ The layout of the extracted tile looks like this:
 This just scratches the surface of layouts, `TileTensor`, and `LayoutTensor`,
 which provide powerful tools for manipulating data and writing parallel
 algorithms. For more information, see the
-[Introduction to layouts](https://mojolang.org/docs/manual/layout/layouts)
-and [Using `LayoutTensor`](https://mojolang.org/docs/manual/layout/tensors)
+[Introduction to layouts](/layout/layouts)
+and [Using `LayoutTensor`](/layout/tensors)
 sections of the Mojo Manual.
 
 ## Kernel 1: Naive matrix multiplication with no optimizations
@@ -465,7 +465,7 @@ The kernel then iterates across the input matrices, loading tiles into shared
 memory.
 
 The
-[`GenericToSharedAsyncTileCopier`](https://mojolang.org/docs/layout/tile_io/GenericToSharedAsyncTileCopier)
+[`GenericToSharedAsyncTileCopier`](/api/mojo/layout/tile_io/GenericToSharedAsyncTileCopier)
 type deserves special note. This takes the place of the CUDA pattern of
 instructing each thread which value or values to copy to shared memory. The
 `thread_layout` parameter associates individual threads with values, and the
@@ -660,7 +660,7 @@ algorithm.
 As a final optimization to our block-tiling kernel, memory accesses can be
 vectorized to improve memory access bandwidth. The new tool in this kernel is
 the
-[`TileTensor.vectorize()`](https://mojolang.org/docs/layout/tile_tensor/TileTensor#vectorize)
+[`TileTensor.vectorize()`](/api/mojo/layout/tile_tensor/TileTensor#vectorize)
 method, which produces a vectorized view of a tile so that multiple values can
 be loaded or stored as a single SIMD vector. The `B` tile copies straight into
 row-major shared memory, but `a_smem` switches to column-major so the inner loop
@@ -781,26 +781,26 @@ def tensor_core_matrix_multiplication[
 
     var warp_y, warp_x = udivmod(warp_id(), BN // WN)
 
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
-    mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
-    A_sram_tile = LayoutTensor[
+    var A_sram_tile = LayoutTensor[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
-    B_sram_tile = LayoutTensor[
+    var B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    c_reg = (
+    var c_reg = (
         LayoutTensor[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
@@ -814,8 +814,8 @@ def tensor_core_matrix_multiplication[
     for k_i in range(K // BK):
         barrier()
 
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
@@ -827,19 +827,23 @@ def tensor_core_matrix_multiplication[
         async_copy_wait_all()
         barrier()
 
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        var B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
-                    c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
-                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
-                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
+                        mma_m, mma_k
+                    )
+                    var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
+                        mma_k, mma_n
+                    )
 
-                    a_reg = mma_op.load_a(A_mma_tile)
-                    b_reg = mma_op.load_b(B_mma_tile)
+                    var a_reg = mma_op.load_a(A_mma_tile)
+                    var b_reg = mma_op.load_b(B_mma_tile)
 
                     var d_reg_m_n = mma_op.mma_op(
                         a_reg,
@@ -869,12 +873,12 @@ showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 - Follow [our tutorial for building a custom operation from
 scratch](/develop/build-custom-ops).
 
-- See the [GPU programming](https://mojolang.org/docs/manual/gpu/architecture)
+- See the [GPU programming](/gpu/architecture)
   page in the Mojo manual.
 
 - See the [`gpu`](https://mojolang.org/docs/std/gpu/) module for detail on
   Mojo's GPU programming functions and types, and the documentation on
-  [`@extensibility.register`](https://mojolang.org/docs/manual/decorators/extensibility-register/)
+  [`@extensibility.register`](/api/mojo/extensibility/decorators/register/)
   shows how to register custom graph operations.
 
 - Join our [Modular Forum](https://forum.modular.com/) and [Discord

@@ -54,6 +54,7 @@ _ENCODING_TO_KV_CACHE_DTYPE: dict[str, DType] = {
     "float16": DType.float16,
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.bfloat16,
+    "float6_e2m3fn": DType.bfloat16,
     "float4_e2m1fnx2": DType.bfloat16,
     "q4_k": DType.float32,
     "q4_0": DType.float32,
@@ -101,37 +102,57 @@ def cache_dtype_for_encoding(
 
 
 class KVConnectorConfig(ConfigFileModel):
-    """Connector-specific configuration for KV cache connectors.
+    """KV cache connector configuration: the connector type and its settings.
 
-    Common fields are typed. Additional connector-specific fields pass
-    through via ``extra="allow"`` and are accessible via ``model_extra``.
+    The type travels with its settings so the two are configured as one
+    object::
+
+        --kv-connector-config '{"type": "rust_tiered"}'
+
+    Common fields are typed. Additional connector-specific fields pass through
+    via ``extra="allow"`` and are accessible via ``model_extra``.
     """
 
     model_config = ConfigDict(strict=False, extra="allow")
 
-    host_kvcache_swap_space_gb: float = Field(
-        default=50.0,
+    type: KVConnectorType = Field(
+        default=KVConnectorType.null,
         description=(
-            "Host memory (GiB) reserved for KV cache swapping. "
-            "Used by local and tiered connectors."
+            "Type of KV cache connector to use. "
+            "Defaults to ``null`` (no external caching)."
         ),
     )
-    """Host memory in GiB for KV cache swapping."""
+    """Type of KV cache connector to use."""
+
+    host_offload_max_gb: float | None = Field(
+        default=None,
+        description=(
+            "Maximum host memory (GiB) for KV cache offloading, used by the "
+            "tiered connectors. When unset, sized to hold twice the device "
+            "page pool."
+        ),
+    )
+    """Maximum host memory in GiB for KV cache offloading. ``None`` sizes it to
+    twice the device page pool."""
 
     disk_offload_dir: str | None = Field(
         default=None,
         description=(
             "Directory for disk-based KV cache offloading. "
-            "Required when kv_connector is 'tiered'."
+            "Required when the connector type is 'tiered'."
         ),
     )
     """Directory for disk-based KV cache offloading."""
 
-    disk_offload_max_gb: float = Field(
-        default=50.0,
-        description="Maximum disk space (GB) for KV cache offloading.",
+    disk_offload_max_gb: float | None = Field(
+        default=None,
+        description=(
+            "Maximum disk space (GiB) for KV cache offloading. When unset, "
+            "sized to hold three times the device page pool."
+        ),
     )
-    """Maximum disk space in GB for KV cache offloading."""
+    """Maximum disk space in GiB for KV cache offloading. ``None`` sizes it to
+    three times the device page pool."""
 
     num_disk_workers: int = Field(
         default=32,
@@ -149,7 +170,7 @@ class KVConnectorConfig(ConfigFileModel):
         description=(
             "Endpoint for the co-located dKV service. Supports IPC "
             "(ipc:///path) or TCP (tcp://host:port). "
-            "Required when kv_connector is 'dkv'."
+            "Required when the connector type is 'dkv'."
         ),
     )
     """Endpoint for the co-located dKV service.
@@ -193,24 +214,19 @@ class KVCacheConfig(ConfigFileModel):
     """Whether DP cross-replica prefix-cache hits may be served by
     device-to-device copies."""
 
-    kv_connector: KVConnectorType | None = Field(
-        default=None,
+    kv_connector_config: KVConnectorConfig = Field(
+        default_factory=KVConnectorConfig,
         description=(
-            "Type of KV cache connector to use. "
-            "When not set, defaults to ``null`` (no external caching)."
+            "KV cache connector configuration as inline JSON or a path to a "
+            "YAML/JSON file. The connector type is the ``type`` field, e.g. "
+            '``\'{"type": "rust_tiered"}\'``. Defaults to the ``null`` '
+            "connector (no external caching); each type has sensible defaults "
+            "for its remaining fields. Merges field-wise over a config file's "
+            "value, so overriding one field on the command line preserves the "
+            "rest."
         ),
     )
-    """Type of KV cache connector to use."""
-
-    kv_connector_config: KVConnectorConfig | None = Field(
-        default=None,
-        description=(
-            "Connector-specific configuration overrides as inline JSON or "
-            "path to a YAML/JSON file. Each connector type has sensible "
-            "defaults, so this is only needed for customization."
-        ),
-    )
-    """Connector-specific configuration overrides."""
+    """KV cache connector configuration, including the connector ``type``."""
 
     device_memory_utilization: float = Field(
         default=0.9,
@@ -247,11 +263,11 @@ class KVCacheConfig(ConfigFileModel):
         default="ahash64",
         description=(
             "Hash algorithm used for KV-cache block identity. "
-            "``ahash64`` is the legacy 64-bit non-cryptographic hasher. "
-            "``sha256`` is a 256-bit cryptographic hasher with optional "
-            "per-cluster seed and per-request salt. ``sha256_64`` "
-            "truncates the SHA-256 chain to 64 bits for protocol "
-            "compatibility."
+            "``ahash64`` (default) is fast and non-cryptographic; "
+            "``sha256`` is a cryptographic 256-bit hasher; both support "
+            "an optional seed/salt for prefix-cache isolation. "
+            "``sha256_64`` truncates the SHA-256 chain to 64 bits for "
+            "protocol compatibility."
         ),
     )
     """Hash algorithm used for KV-cache block identity."""
@@ -259,14 +275,13 @@ class KVCacheConfig(ConfigFileModel):
     kv_cache_hash_seed: str | None = Field(
         default=None,
         description=(
-            "Optional 64-character hex string (32 bytes) used as a "
-            "cluster-wide seed when ``kv_cache_hash_algo`` is "
-            "``sha256``/``sha256_64``. When omitted, MAX generates a "
-            "random seed at process start; the hex is logged once. "
-            "Ignored for ``ahash64``."
+            "Optional 64-character hex string (32 bytes), a cluster-wide "
+            "seed for kv_cache_hash_algo. If omitted, sha256/sha256_64 "
+            "generate a random seed at startup; ahash64 does not, so "
+            "existing deployments are unaffected unless set explicitly."
         ),
     )
-    """Optional 32-byte hex seed for sha256/sha256_64 hashing."""
+    """Optional 32-byte hex seed for KV-cache hashing."""
 
     _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -287,6 +302,8 @@ class KVCacheConfig(ConfigFileModel):
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
         allow_kv_head_replication: bool | None = None,
+        page_size: int | None = None,
+        window_size: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -314,19 +331,17 @@ class KVCacheConfig(ConfigFileModel):
             allow_kv_head_replication: Replicate KV heads for TP wider than the
                 KV head count. Defaults to ``None`` (falls back to the config's
                 :attr:`allow_kv_head_replication`).
+            page_size: Tokens per KV cache page. Defaults to ``None`` (falls
+                back to the config's :attr:`kv_cache_page_size`). Architectures
+                with a kernel-imposed minimum page size pass their effective
+                value here instead of mutating the shared config.
+            window_size: Window size for the attention layer.
 
         Returns:
             The constructed KV cache parameters.
         """
         if allow_kv_head_replication is None:
             allow_kv_head_replication = self.allow_kv_head_replication
-        # A connector without an explicit config gets defaults (e.g.
-        # `--kv-connector tiered` with no `--kv-connector-config`). Done here
-        # rather than in the pipeline config so the connector config's defaults
-        # are owned by this module.
-        cfg = self.kv_connector_config
-        if cfg is None and self.kv_connector is not None:
-            cfg = KVConnectorConfig()
         kv_hash_seed = resolve_kv_hash_seed(
             self.kv_cache_hash_algo, self.kv_cache_hash_seed
         )
@@ -334,16 +349,14 @@ class KVCacheConfig(ConfigFileModel):
             dtype=dtype,
             head_dim=head_dim,
             num_layers=num_layers,
-            page_size=self.kv_cache_page_size,
+            page_size=(
+                page_size if page_size is not None else self.kv_cache_page_size
+            ),
             enable_prefix_caching=self.enable_prefix_caching,
             enable_dp_cross_replica_prefix_copy=(
                 self.enable_dp_cross_replica_prefix_copy
             ),
-            kv_connector=self.kv_connector,
-            kv_connector_config=cfg,
-            host_kvcache_swap_space_gb=(
-                cfg.host_kvcache_swap_space_gb if cfg else None
-            ),
+            kv_connector_config=self.kv_connector_config,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
@@ -351,6 +364,7 @@ class KVCacheConfig(ConfigFileModel):
             num_draft_tokens=num_draft_tokens,
             kv_hash_algo=self.kv_cache_hash_algo,
             kv_hash_seed=kv_hash_seed,
+            window_size=window_size,
         )
         if is_mla:
             if num_q_heads is None:

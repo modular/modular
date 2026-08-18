@@ -32,7 +32,7 @@ from std.atomic import Atomic, Ordering
 from std.sys._assembly import inlined_assembly
 from std.utils import IndexList, StaticTuple
 
-comptime _workgroup_atomic = Atomic[DType.int32, scope="workgroup"]
+comptime _workgroup_atomic = Atomic[Int32, scope="workgroup"]
 
 
 trait Enum(TrivialRegisterPassable):
@@ -83,7 +83,7 @@ struct ThreadRole(Enum, Writable):
         writer.write(String(self))
 
 
-@parameter
+@__parameter
 @always_inline
 def pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
     """Builds a 2D layout extended with a pipeline-stage dimension.
@@ -347,7 +347,7 @@ struct AmdTileOperator[
     ) // Self.mma_shape[1]
 
     comptime _out_frag_rows = Self.num_m_mmas * Self.num_n_mmas
-    comptime _out_frag_cols = Self.tensor_core.c_reg_type.size
+    comptime _out_frag_cols = Self.tensor_core.c_reg_type.length
 
     comptime _out_layout = Layout.row_major(
         Self._out_frag_rows, Self._out_frag_cols

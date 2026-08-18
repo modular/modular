@@ -15,7 +15,8 @@ from std.math import exp2
 from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import A100
@@ -99,7 +100,7 @@ def test_compile_function_with_path_func() raises:
         var out_file_name = "my_file_2.ptx"
         comptime out_dir = Path("/tmp")
 
-        @parameter
+        @__parameter
         def dummy_fn() capturing -> Path:
             return out_dir / out_file_name
 

@@ -60,8 +60,8 @@ def main() raises:
     # full block for any remainder. This hasn't been tuned for any specific
     # GPU.
     comptime BLOCK_SIZE = 16
-    num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
-    num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
+    var num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
+    var num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
@@ -74,7 +74,7 @@ def main() raises:
     )
 
     with gray_buffer.map_to_host() as host_buffer:
-        host_tensor = TileTensor(host_buffer, gray_layout)
+        var host_tensor = TileTensor(host_buffer, gray_layout)
         print("Resulting grayscale image:")
         print_image(host_tensor)
 
@@ -85,14 +85,14 @@ def color_to_grayscale(
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """
-    row = global_idx.y
-    col = global_idx.x
+    var row = global_idx.y
+    var col = global_idx.x
 
     if col < WIDTH and row < HEIGHT:
-        red = rgb_tensor[row, col, 0].cast[float_dtype]()
-        green = rgb_tensor[row, col, 1].cast[float_dtype]()
-        blue = rgb_tensor[row, col, 2].cast[float_dtype]()
-        gray = 0.21 * red + 0.71 * green + 0.07 * blue
+        var red = rgb_tensor[row, col, 0].cast[float_dtype]()
+        var green = rgb_tensor[row, col, 1].cast[float_dtype]()
+        var blue = rgb_tensor[row, col, 2].cast[float_dtype]()
+        var gray = 0.21 * red + 0.71 * green + 0.07 * blue
 
         gray_tensor[row, col] = gray.cast[int_dtype]()
 

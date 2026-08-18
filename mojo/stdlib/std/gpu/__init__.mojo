@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU programming primitives: thread blocks, async memory, barriers, and sync.
+"""GPU programming primitives.
 
 These low level constructs allow you to write code that runs on the GPU with
 traditional programming style--partitioning work across threads that are mapped
@@ -19,9 +19,9 @@ grouped into a grid of thread blocks.
 
 A _kernel_ is a function that runs on the GPU in parallel across many threads.
 Currently, the
-[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct
+[`DeviceContext`](https://max.modular.com/api/mojo/max/gpu/host/device_context/DeviceContext/) struct
 provides the interface for compiling and launching GPU kernels inside MAX
-[custom operations](https://docs.modular.com/develop/custom-ops/).
+[custom operations](https://max.modular.com/develop/custom-ops/).
 
 The [`gpu.host`](/docs/std/gpu/host/) package includes APIs to manage
 interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU
@@ -42,17 +42,6 @@ in the MAX repo.
 
 # Import from sub-packages which now properly export their symbols
 from .primitives import (
-    block_rank_in_cluster,
-    cluster_arrive,
-    cluster_arrive_relaxed,
-    cluster_sync,
-    cluster_sync_relaxed,
-    cluster_wait,
-    elect_one_sync,
-    PDL,
-    PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     block_dim,
     block_id_in_cluster,
     block_idx,
@@ -66,49 +55,3 @@ from .primitives import (
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
-from .host import DeviceBuffer, DeviceContext, HostBuffer
-from .memory import (
-    AddressSpace,
-    CacheEviction,
-    CacheOperation,
-    Consistency,
-    Fill,
-    ReduceOp,
-    async_copy,
-    async_copy_commit_group,
-    async_copy_wait_all,
-    async_copy_wait_group,
-    cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_global_shared_cta_elect,
-    cp_async_bulk_tensor_reduce_global_shared_cta,
-    cp_async_bulk_tensor_shared_cluster_global,
-    cp_async_bulk_tensor_shared_cluster_global_multicast,
-    external_memory,
-    fence_async_view_proxy,
-    fence_mbarrier_init,
-    fence_proxy_tensormap_generic_sys_acquire,
-    fence_proxy_tensormap_generic_sys_release,
-    load,
-    multimem_ld_reduce,
-    multimem_st,
-)
-from .sync import (
-    NamedBarrierSemaphore,
-    Semaphore,
-    AMDScheduleBarrierMask,
-    async_copy_arrive,
-    barrier,
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
-    mbarrier_arrive,
-    mbarrier_arrive_expect_tx_shared,
-    mbarrier_init,
-    mbarrier_test_wait,
-    mbarrier_try_wait_parity_shared,
-    named_barrier,
-    schedule_barrier,
-    schedule_group_barrier,
-    syncwarp,
-    s_waitcnt,
-    s_waitcnt_barrier,
-)

@@ -30,16 +30,17 @@ correctness is its own `wait_on_dependent_grids`. The signal buffers must be
 sentinel-initialized once (`lamport_init`) before the first call.
 """
 
-from std.math import rsqrt
+from std.math import align_down, rsqrt
 from std.sys import align_of, size_of
 
 from std.atomic import Atomic
 from std.collections import Array
 
-from std.gpu import WARP_SIZE, barrier, block_idx, grid_dim, thread_idx
+from std.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -282,7 +283,7 @@ def lamport_allreduce_rmsnorm[
     ), "lamport_allreduce_rmsnorm requires a floating-point dtype"
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
-    comptime BLOCK_SIZE = (max_tpb // WARP_SIZE) * WARP_SIZE
+    comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
 
     if cols % atomic_width != 0:
         raise Error(

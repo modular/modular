@@ -468,7 +468,7 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             var N_aligned = align_up(N, 16)
@@ -572,14 +572,14 @@ def build_sm100_swiglu_heuristic_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:

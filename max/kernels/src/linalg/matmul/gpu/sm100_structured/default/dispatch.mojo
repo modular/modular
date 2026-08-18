@@ -26,7 +26,7 @@ from std.sys import (
 )
 
 from max.algorithm import elementwise
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
@@ -435,7 +435,7 @@ def matmul_dispatch_sm100[
     comptime if has_precise_f32_gemv:
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
-        @parameter
+        @__parameter
         def _dispatch_split_k[tile_m: Int]() raises:
             gemv_gpu_dispatch[
                 transpose_b=transpose_b,
@@ -655,7 +655,7 @@ def matmul_dispatch_sm100_fp8[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -672,7 +672,7 @@ def matmul_dispatch_sm100_fp8[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _search[
         T: Table[TuningConfigSM100],

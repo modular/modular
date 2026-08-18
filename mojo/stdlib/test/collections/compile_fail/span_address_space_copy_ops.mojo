@@ -13,9 +13,11 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# Element-copying operations (`fill`, iteration, writing) must be rejected on
-# spans viewing a non-default address space; only address-only operations are
-# address-space-generic.
+# Element-copying operations (iteration, writing) must be rejected on spans
+# viewing a non-default address space. `fill` is exempt only for register
+# passable element types, which may cross an address-space boundary as a value;
+# for every other element type it stays restricted to the default address
+# space.
 
 from std.memory import unsafe_stack_allocation
 
@@ -34,11 +36,24 @@ def _shared_tile() -> (
     return {unsafe_ptr = smem, length = 4}
 
 
+# `Array[Int, 4]` is trivially copyable but not register passable, so it cannot
+# cross an address-space boundary.
+def _shared_aggregate_tile() -> (
+    Span[
+        mut=True,
+        Array[Int, 4],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+):
+    var smem = unsafe_stack_allocation[
+        4, Array[Int, 4], address_space=AddressSpace.SHARED
+    ]()
+    return {unsafe_ptr = smem, length = 4}
+
+
 def main():
     var tile = _shared_tile()
-
-    # CHECK: error: invalid call to 'fill'
-    tile.fill(0.0)
 
     # CHECK: error: no matching method in call to '__iter__'
     for x in tile:
@@ -46,3 +61,6 @@ def main():
 
     # CHECK: error: no matching function in initialization
     print(String(tile))
+
+    # CHECK: error: invalid call to 'fill': violated constraint
+    _shared_aggregate_tile().fill(Array[Int, 4](fill=0))

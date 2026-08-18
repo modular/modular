@@ -35,14 +35,14 @@ from std.memory import UnsafePointer, alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx, warp_id as get_warp_id
+from std.gpu import thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import (

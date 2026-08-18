@@ -124,10 +124,13 @@ struct Range(ImplicitlyCopyable):
         if is_enabled():
             # RangeBridge.cpp requires `namePtr` non-null even when the length
             # is 0 (constructing a std::string_view from null is UB under
-            # C++17). `StaticString.unsafe_ptr()` is backed by a real symbol
-            # and is non-null even for `Range("")`, which upholds that.
+            # C++17). `StaticString.as_bytes().unsafe_ptr()` is backed by a
+            # real symbol and is non-null even for `Range("")`, which upholds
+            # that.
             external_call["KGEN_CompilerRT_RangeBegin", NoneType](
-                self._name.unsafe_ptr(), self._name.byte_length(), self._color
+                self._name.as_bytes().unsafe_ptr(),
+                self._name.byte_length(),
+                self._color,
             )
             # Only mark begun after RangeBegin returns successfully — __exit__
             # uses `_began` to decide whether to call RangeEnd, so an unbegun

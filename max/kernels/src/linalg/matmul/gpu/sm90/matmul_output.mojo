@@ -24,7 +24,7 @@ from std.sys import simd_width_of, size_of
 
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_storage import TensorStorage
@@ -245,7 +245,7 @@ struct MatmulTileWriter[
                 var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
                 epilogue[
                     dtype=type_of(shared_value).dtype,
-                    width=type_of(shared_value).size,
+                    width=type_of(shared_value).length,
                 ](IndexList[2](Int(row), Int(col)), shared_value)
                 shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
 

@@ -27,14 +27,14 @@ from std.bit import pop_count, log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     warp_id,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -56,7 +56,7 @@ from std.builtin.dtype import _uint_type_of_width
 from nn.topk import TopK_2
 
 
-from std.gpu.memory import (
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -720,7 +720,7 @@ def moe_create_indices[
 
 # Function to perform warp-level sorting
 @always_inline
-@parameter
+@__parameter
 def _warp_bitonic_sort[
     T: DType,
     num_lanes: Int = WARP_SIZE,

@@ -36,8 +36,8 @@ from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
 from std.gpu import block_idx, grid_dim
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 

@@ -6,14 +6,19 @@ load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
+    # Internal-only kernel packages. Each is imported by a graph-op
+    # registration in //max:builtin_kernels, so its .mojopkg has to be on the
+    # graph compiler's runtime import path -- otherwise the whole
+    # builtin_kernels package body fails to resolve. This list is flat, not
+    # transitive, so adding a //Kernels/... dep to //max:builtin_kernels
+    # requires adding it here too. The open-source build has none of these
+    # packages; the OSS `mef` wrapper in //oss/modular/bazel:api.bzl rewrites
+    # them to their prebuilt @modular_wheel equivalents.
+    "//Kernels/lib/attn_res",
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
-    # Internal-only MegaFFN kernel package: its graph-op registration in
-    # //max:builtin_kernels imports the `mega_ffn` package, so its .mojopkg
-    # must be on the graph compiler's runtime import path (mirrors msa /
-    # matmul_rs). The open-source build has no mega_ffn package, so the OSS
-    # `mef` wrapper in //oss/modular/bazel:api.bzl drops this entry.
     "//Kernels/src/mega_ffn",
+    "//max:algorithm",
     "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",

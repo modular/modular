@@ -12,22 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm with fused residual connection for state space models."""
 
-from std.math import align_down, ceildiv, rsqrt
+from std.math import align_down, align_up, ceildiv, rsqrt
 from std.sys.info import align_of, simd_width_of, size_of
 
 from std.algorithm import vectorize
 from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.host.info import is_gpu
-from std.gpu.memory import external_memory
-from std.gpu.primitives.grid_controls import (
+from max.gpu.memory import external_memory
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -519,7 +519,7 @@ def rms_norm_fused_residual_gpu_block[
         barrier()
 
         # Second stage: apply RMSNorm using shared memory as input
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(shared_mem)
         def shared_mem_input_fn[
@@ -604,7 +604,7 @@ def rms_norm_fused_residual_gpu[
     var rows = shape.flattened_length() // last_dim
     var cols = last_dim
 
-    @parameter
+    @__parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDLength, alignment: Int
@@ -613,7 +613,7 @@ def rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
 
-    @parameter
+    @__parameter
     @always_inline
     def output_residual_fn_2d[
         simd_width: SIMDLength, alignment: Int
@@ -622,7 +622,7 @@ def rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         output_residual_fn[simd_width, alignment](indices.canonicalize(), val)
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int
@@ -631,7 +631,7 @@ def rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    @parameter
+    @__parameter
     @always_inline
     def residual_input_fn_2d[
         simd_width: Int
@@ -645,13 +645,11 @@ def rms_norm_fused_residual_gpu[
 
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        align_up(ceildiv(cols, simd_width), WARP_SIZE),
         WARP_SIZE * max_warps_per_block,
     )
 
-    var shared_mem_size = (
-        ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
-    )
+    var shared_mem_size = align_up(cols, simd_width) * size_of[dtype]()
 
     comptime kernel = rms_norm_fused_residual_gpu_block[
         GammaLayout=type_of(gamma).LayoutType,
@@ -820,21 +818,21 @@ def rms_norm_fused_residual[
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     @always_inline
-    @parameter
+    @__parameter
     def output_fn_wrapper[
         width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_0_fn[width, rank, alignment](idx, val)
 
     @always_inline
-    @parameter
+    @__parameter
     def output_residual_fn_wrapper[
         width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_residual_fn[width, rank, alignment](idx, val)
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 

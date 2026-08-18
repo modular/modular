@@ -41,6 +41,8 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
+    block_scaled_operands_compatible,
+    block_scaled_umma_kind,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
@@ -899,8 +901,8 @@ def choose_config[
                 MMA_N_GRANULARITY,
             ),
         ):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -912,7 +914,7 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             for bm in [64, 128]:
@@ -923,10 +925,10 @@ def choose_config[
                     N_aligned = align_up(N, 32)
                     MMA_N_GRANULARITY = 32
 
-                max_mma_n = min(N_aligned, 256)
+                var max_mma_n = min(N_aligned, 256)
                 # In practice 64x16 mma creates too many ctas and increase L2
                 # load volume, ends up hurting performance.
-                min_mma_n = min(N_aligned, 32)
+                var min_mma_n = min(N_aligned, 32)
 
                 for mma_n in range(
                     max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
@@ -992,7 +994,7 @@ def choose_config[
     # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
-    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+    var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
             mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
         ),
@@ -1007,6 +1009,17 @@ def choose_config[
         use_tma_epilogue_load=has_epilogue_tensor,
         epilogue_is_1d=epilogue_is_1d,
     )
+
+    # At decode M the producer releases its dependents early, so this kernel is
+    # resident while the producer still runs and can spend that window on
+    # weights. It stops paying once M fills the device. The depth is capped by
+    # the ring: a deeper prefetch would fill it before any barrier can fire.
+    if M < 128:
+        config.prefetch_tiles_n = min(
+            4, config.num_pipeline_stages // config.k_group_size
+        )
+
+    return config
 
 
 def build_sm100_matmul_configs[
@@ -1043,7 +1056,7 @@ def build_sm100_matmul_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):  # [8, 256)
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
@@ -1055,7 +1068,7 @@ def build_sm100_matmul_configs[
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):  # [256, 8192]
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
@@ -1097,7 +1110,7 @@ def build_sm100_batched_matmul_configs[
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(8, 256, 8):  # [8, 256)
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -1105,7 +1118,7 @@ def build_sm100_batched_matmul_configs[
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(256, 8192 + 1, 64):  # [256, 8192]
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -1127,7 +1140,8 @@ struct BlockScaledMatmulConfig[
 
     Parameters:
         a_type: `DType` of the A (left) operand elements; `uint8` indicates
-            packed FP4; must equal `b_type`.
+            packed FP4. Must equal `b_type`, except for the W4A8 pair (see
+            `block_scaled_operands_compatible`).
         b_type: `DType` of the B (right) operand elements.
         c_type: `DType` of the output matrix elements.
         sfa_dtype: `DType` of the A operand block scaling factors; selects
@@ -1191,7 +1205,9 @@ struct BlockScaledMatmulConfig[
         gemm_kind: GEMMKind = GEMMKind.GEMM,
         prefetch_tiles_n: Int = 0,
     ):
-        comptime assert Self.a_type == Self.b_type
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "a_type and b_type must be the same, or the W4A8 pair"
 
         self.cta_group = cta_group
         self.is_small_bn = is_small_bn
@@ -1222,6 +1238,10 @@ struct BlockScaledMatmulConfig[
         else:
             self.vec_sf_size = MXFP8_SF_VECTOR_SIZE
         var sf_k_group_size = self.vec_sf_size * SF_ATOM_K
+        # A K-tile spans `block_tile_shape[2]` shared-memory bytes and, under
+        # every kind but the FP4-only ones, one element per byte. The FP4-only
+        # kinds keep both operands nibble-packed, so their tile covers twice
+        # the elements.
         if (
             self.scaling_kind == UMMAKind.KIND_MXF4NVF4
             or self.scaling_kind == UMMAKind.KIND_MXF4
@@ -1468,8 +1488,8 @@ def choose_block_scaled_config[
     # a larger range than mma_m.
     if M < M_pivote:
         for bm, mma_n in product([128], range(64, align_up(M, 64) + 1, 64)):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -1481,14 +1501,14 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            N_alignby64 = align_up(N, 64)
-            max_mma_n = min(N_alignby64, 256)
+            var N_alignby64 = align_up(N, 64)
+            var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2
             # load volume, ends up hurting performance.
-            min_mma_n = min(N_alignby64, 64)
+            var min_mma_n = min(N_alignby64, 64)
             for bm in [128]:
                 for mma_n in range(max_mma_n, min_mma_n - 1, -64):
                     var mma_m = bm * cta_group
@@ -1555,13 +1575,9 @@ def choose_block_scaled_config[
 
     var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1
 
-    var scaling_kind: UMMAKind
-    if a_type == DType.uint8 and sfa_dtype == DType.float8_e4m3fn:
-        scaling_kind = UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and sfa_dtype == DType.float8_e8m0fnu:
-        scaling_kind = UMMAKind.KIND_MXF4
-    else:
-        scaling_kind = UMMAKind.KIND_MXF8F6F4
+    # `a_type == b_type` is asserted above, so this can never see the mixed
+    # W4A8 pair -- it reads B's dtype only to stay on the shared mapping.
+    comptime scaling_kind = block_scaled_umma_kind[a_type, b_type, sfa_dtype]()
 
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
@@ -1625,14 +1641,14 @@ def build_block_scaled_configs[
         return mma_m_ok and cfg.mma_shape[1] in (64, 128, 192, 256)
 
     for m in range(8, 128, 8):  # [8, 128]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
         if _kernel_supported(config) and config not in set:
             set.add(config)
 
     for m in range(128, 8193, 64):  # [128, 8192]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
         if _kernel_supported(config) and config not in set:

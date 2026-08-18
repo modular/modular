@@ -29,9 +29,9 @@ def run_func[
 
     var out = ctx.enqueue_create_buffer[dtype](1)
 
-    @parameter
+    @__parameter
     def kernel(
-        out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
+        out_dev: Pointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = kernel_fn(lhs)
         out_dev[unsafe_offset=0] = result
@@ -47,19 +47,19 @@ def run_func[
 
 
 def test_trig() raises:
-    @parameter
+    @__parameter
     def cos_fn(val: Float16) -> Float16:
         return cos(val)
 
-    @parameter
+    @__parameter
     def cos_fn(val: Float32) -> Float32:
         return cos(val)
 
-    @parameter
+    @__parameter
     def sin_fn(val: Float16) -> Float16:
         return sin(val)
 
-    @parameter
+    @__parameter
     def sin_fn(val: Float32) -> Float32:
         return sin(val)
 

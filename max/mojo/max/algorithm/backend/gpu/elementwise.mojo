@@ -14,15 +14,17 @@
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    PDL,
-    PDLLevel,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+)
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     cluster_sync_acquire,
     cluster_sync_release,
     clusterlaunchcontrol_try_cancel,
@@ -30,12 +32,12 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_query_cancel_get_first_ctaid,
     elect_one_sync_with_mask,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )  # @doc_hidden
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
-from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
+from max.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
@@ -98,6 +100,38 @@ def _advance_indices[
             idx[d - 1] += 1
 
 
+@always_inline("nodebug")
+def _start_indices_of_nth_element[
+    rank: Int, //, shape_types: TypeList[Trait=CoordLike, ...]
+](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
+    """Converts a flat index into row-major ND start indices.
+
+    Divides by a compile-time literal for every dimension whose extent the
+    `Coord` shape knows statically, so those divisions strength-reduce instead
+    of lowering to a runtime `div`.
+
+    Matches `_get_start_indices_of_nth_subvolume[0]` exactly, including
+    leftover-into-dim-0: the outermost coordinate is the undivided remainder,
+    never reduced modulo `shape[0]`. Callers rely on that for indices past the
+    end of the packed region.
+    """
+    comptime IntType = type_of(shape)._int_type
+
+    res = {}
+    var curr_index = IntType(n)
+
+    comptime for i in reversed(range(1, rank)):
+        comptime if shape_types[i].is_static_value:
+            comptime static_extent = shape_types[i].static_value
+            curr_index, res.data[i] = divmod(curr_index, IntType(static_extent))
+        else:
+            curr_index, res.data[i] = divmod(
+                curr_index, IntType(shape.get[i]())
+            )
+
+    res.data[0] = curr_index
+
+
 # ===-----------------------------------------------------------------------===#
 # Work-stealing elementwise (SM100+ CLC)
 # ===-----------------------------------------------------------------------===#
@@ -111,6 +145,7 @@ struct _ClcKernel[
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     //,
+    shape_types: TypeList[Trait=CoordLike, ...],
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
@@ -188,8 +223,8 @@ struct _ClcKernel[
                 comptime for e in range(Self.elems_per_thread):
                     var global_packed_idx = base + e * Self.block_size
                     if global_packed_idx < self.num_packed_elems:
-                        var start_indices = _get_start_indices_of_nth_subvolume[
-                            0
+                        var start_indices = _start_indices_of_nth_element[
+                            Self.shape_types
                         ](global_packed_idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
                             # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
@@ -260,7 +295,7 @@ struct _ClcKernel[
             if block_idx.x == 0 and thread_idx.x < self.unpacked_tail_length:
                 self.func[1](
                     Coord(
-                        _get_start_indices_of_nth_subvolume[0](
+                        _start_indices_of_nth_element[Self.shape_types](
                             self.packed_region_length + thread_idx.x, self.shape
                         ).canonicalize()
                     )
@@ -271,6 +306,7 @@ struct _ClcKernel[
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
+    shape_types: TypeList[Trait=CoordLike, ...],
     simd_width: Int,
     block_size: Int,
     FuncType: ImplicitlyCopyable
@@ -293,6 +329,8 @@ def _elementwise_impl_gpu_clc[
 
     Parameters:
         rank: The rank of the buffer.
+        shape_types: The `Coord` element types of the shape, carrying whichever
+            extents are known at compile time.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         FuncType: The body function type.
@@ -321,10 +359,11 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _ClcKernel[
+            shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
             block_size=block_size,
@@ -360,6 +399,7 @@ struct _GridStrideKernel[
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     //,
+    shape_types: TypeList[Trait=CoordLike, ...],
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
@@ -400,8 +440,8 @@ struct _GridStrideKernel[
                 comptime for e in range(Self.elems_per_thread):
                     var idx = base_idx + e * stride
                     if idx < self.num_packed_elems:
-                        var start_indices = _get_start_indices_of_nth_subvolume[
-                            0
+                        var start_indices = _start_indices_of_nth_element[
+                            Self.shape_types
                         ](idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
                             # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
@@ -434,7 +474,7 @@ struct _GridStrideKernel[
             if tid < self.unpacked_tail_length:
                 self.func[1](
                     Coord(
-                        _get_start_indices_of_nth_subvolume[0](
+                        _start_indices_of_nth_element[Self.shape_types](
                             Int(self.packed_region_length + tid), self.shape
                         ).canonicalize()
                     )
@@ -445,6 +485,7 @@ struct _GridStrideKernel[
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
+    shape_types: TypeList[Trait=CoordLike, ...],
     simd_width: Int,
     block_size: Int,
     num_waves: Int,
@@ -463,6 +504,8 @@ def _elementwise_impl_gpu_grid_stride[
 
     Parameters:
         rank: The rank of the buffer.
+        shape_types: The `Coord` element types of the shape, carrying whichever
+            extents are known at compile time.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         num_waves: The number of waves to saturate SMs.
@@ -502,10 +545,11 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _GridStrideKernel[
+            shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
             block_size=block_size,
@@ -748,7 +792,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
         or Int(shape_1[rank - 1].value()) % simd_width != 0
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _DualGridStrideKernel[
@@ -871,6 +915,7 @@ def _elementwise_impl_gpu[
             # when there is nothing to steal.
             if use_32bit:
                 _elementwise_impl_gpu_grid_stride[
+                    shape_types=type_of(shape).ParamListType,
                     simd_width=simd_width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
@@ -881,6 +926,7 @@ def _elementwise_impl_gpu[
                 ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
+                    shape_types=type_of(shape).ParamListType,
                     simd_width=simd_width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
@@ -892,6 +938,7 @@ def _elementwise_impl_gpu[
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
+                    shape_types=type_of(shape).ParamListType,
                     simd_width=simd_width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
@@ -899,6 +946,7 @@ def _elementwise_impl_gpu[
                 ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
+                    shape_types=type_of(shape).ParamListType,
                     simd_width=simd_width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
@@ -907,6 +955,7 @@ def _elementwise_impl_gpu[
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
+                shape_types=type_of(shape).ParamListType,
                 simd_width=simd_width,
                 block_size=block_size,
                 num_waves=num_waves,
@@ -917,6 +966,7 @@ def _elementwise_impl_gpu[
             ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
+                shape_types=type_of(shape).ParamListType,
                 simd_width=simd_width,
                 block_size=block_size,
                 num_waves=num_waves,

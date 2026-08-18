@@ -22,8 +22,6 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 
-from std.reflection.type_info import _unqualified_type_name
-
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
@@ -34,37 +32,37 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `Tuple` with"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
-struct Tuple[*element_types: Movable](
-    Comparable where element_types.all_conforms_to[Comparable](),
-    Copyable where element_types.all_conforms_to[Copyable](),
-    Defaultable where element_types.all_conforms_to[Defaultable](),
-    Equatable where element_types.all_conforms_to[Equatable](),
-    Hashable where element_types.all_conforms_to[Hashable](),
-    ImplicitlyCopyable where element_types.all_conforms_to[
-        ImplicitlyCopyable
-    ](),
-    ImplicitlyDeletable where element_types.all_conforms_to[
-        ImplicitlyDeletable
-    ](),
+struct Tuple[*Ts: Movable](
+    Comparable where Ts.all_conforms_to[Comparable](),
+    Copyable where Ts.all_conforms_to[Copyable](),
+    Defaultable where Ts.all_conforms_to[Defaultable](),
+    Deinitable where Ts.all_conforms_to[Deinitable](),
+    Equatable where Ts.all_conforms_to[Equatable](),
+    Hashable where Ts.all_conforms_to[Hashable](),
+    ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
     Movable,
-    RegisterPassable where element_types.all_conforms_to[RegisterPassable](),
+    RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Sized,
-    Writable where element_types.all_conforms_to[Writable](),
+    Writable where Ts.all_conforms_to[Writable](),
 ):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
 
     Parameters:
-        element_types: The elements type.
+        Ts: The elements type.
     """
+
+    @deprecated(use=Ts)
+    comptime element_types = Self.Ts
+    """The elements type. Deprecated alias for `Ts`."""
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
-        type_of(Self.element_types.values),
-        Self.element_types.values,
+        type_of(Self.Ts.values),
+        Self.Ts.values,
         ` isParamPack>`,
     ]
 
@@ -72,11 +70,13 @@ struct Tuple[*element_types: Movable](
     """The underlying storage for the tuple."""
 
     @always_inline("nodebug")
-    def __init__(out self):
+    def __init__(
+        out self,
+    ) where Self.Ts.all_conforms_to[Defaultable]():
         """Construct a tuple with default-initialized elements.
 
         Constraints:
-            All `element_types` must conform to `Defaultable`. The constraint
+            All `Ts` must conform to `Defaultable`. The constraint
             is enforced via a per-element `comptime assert` in the body
             instead of an explicit `where` clause so that callers whose
             element types come from a comptime reducer (which the solver
@@ -88,20 +88,11 @@ struct Tuple[*element_types: Movable](
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        # TODO(MOCO-3791): Replace the per-element `comptime assert` below
-        # with `where Self.element_types.all_conforms_to[Defaultable]()`
-        # once the solver can prove reducer-based `where` clauses for
-        # generic callers that forward parameter packs.
         comptime for i in range(Self.__len__()):
-            comptime TUnknown = Self.element_types[i]
-            comptime assert conforms_to(TUnknown, Defaultable), (
-                "Tuple default-construction requires all element types to"
-                " conform to `Defaultable`"
-            )
             Pointer(to=self[i]).unsafe_write({})
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: *Self.element_types):
+    def __init__(out self, var *args: *Self.Ts):
         """Construct the tuple.
 
         Args:
@@ -113,19 +104,19 @@ struct Tuple[*element_types: Movable](
         )
 
         # Move each element into the tuple storage.
-        @parameter
-        def init_elt[idx: Int](var elt: Self.element_types[idx]):
+        @__parameter
+        def init_elt[idx: Int](var elt: Self.Ts[idx]):
             Pointer(to=self[idx]).unsafe_write(elt^)
 
         args^.consume_elements[init_elt]()
 
     def __deinit__(
         deinit self,
-    ) where Self.element_types.all_conforms_to[ImplicitlyDeletable]():
+    ) where Self.Ts.all_conforms_to[Deinitable]():
         """Destructor that destroys all of the elements.
 
         Constraints:
-            All `element_types` must be `ImplicitlyDeletable`. When any element
+            All `Ts` must be `Deinitable`. When any element
             is not, the tuple has no implicit destructor and must be torn down
             with `deinit_with()`.
         """
@@ -135,12 +126,12 @@ struct Tuple[*element_types: Movable](
             Pointer(to=self[i]).unsafe_deinit_pointee()
 
     def deinit_with[
-        deinit_func: def[idx: Int](var elt: Self.element_types[idx]) capturing
+        deinit_func: def[idx: Int](var elt: Self.Ts[idx]) capturing
     ](deinit self):
         """Consume the tuple, deinitializing each element with a closure.
 
         Use this to tear down a `Tuple` whose elements are not
-        `ImplicitlyDeletable`. Elements are visited in index order.
+        `Deinitable`. Elements are visited in index order.
 
         Parameters:
             deinit_func: A closure called once per element, receiving ownership
@@ -149,7 +140,9 @@ struct Tuple[*element_types: Movable](
         self^.consume_elements[deinit_func]()
 
     @always_inline("nodebug")
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where Self.Ts.all_conforms_to[Copyable]():
         """Copy construct the tuple.
 
         Args:
@@ -161,7 +154,6 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(Self.__len__()):
-            comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             Pointer(to=self[i]).unsafe_write(copy=copy[i])
@@ -192,7 +184,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             The tuple length.
         """
-        return Self.element_types.length
+        return Self.Ts.length
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -204,9 +196,7 @@ struct Tuple[*element_types: Movable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    def __getitem_param__[
-        idx: Int
-    ](ref self) -> ref[self] Self.element_types[idx]:
+    def __getitem_param__[idx: Int](ref self) -> ref[self] Self.Ts[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -222,7 +212,7 @@ struct Tuple[*element_types: Movable](
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=Pointer[Self.element_types[idx]]._mlir_type,
+            _type=Pointer[Self.Ts[idx]]._mlir_type,
         ](storage_kgen_ptr)
         return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
@@ -249,7 +239,7 @@ struct Tuple[*element_types: Movable](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if Self.element_types[i] == T:
+            comptime if Self.Ts[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -258,7 +248,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __eq__(
         self, other: Self
-    ) -> Bool where Self.element_types.all_conforms_to[Equatable]():
+    ) -> Bool where Self.Ts.all_conforms_to[Equatable]():
         """Compare this tuple to another tuple using equality comparison.
 
         Args:
@@ -268,14 +258,13 @@ struct Tuple[*element_types: Movable](
             True if this tuple is equal to the other tuple, False otherwise.
         """
         comptime for i in range(type_of(self).__len__()):
-            comptime assert conforms_to(Self.element_types[i], Equatable)
             if self[i] != other[i]:
                 return False
         return True
 
     def __hash__[
         H: Hasher
-    ](self, mut hasher: H) where Self.element_types.all_conforms_to[Hashable]():
+    ](self, mut hasher: H) where Self.Ts.all_conforms_to[Hashable]():
         """Hashes the tuple using the given hasher.
 
         Parameters:
@@ -285,15 +274,12 @@ struct Tuple[*element_types: Movable](
             hasher: The hasher instance.
         """
         comptime for i in range(type_of(self).__len__()):
-            comptime assert conforms_to(Self.element_types[i], Hashable)
             self[i].__hash__(hasher)
 
     @no_inline
     def _write_tuple_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where Self.element_types.all_conforms_to[
-        Writable
-    ]():
+    ](self, mut writer: Some[Writer]) where Self.Ts.all_conforms_to[Writable]():
         """Write this tuple's elements to a writer.
 
         Parameters:
@@ -303,18 +289,17 @@ struct Tuple[*element_types: Movable](
             writer: The writer to write to.
         """
 
-        @parameter
-        def elements[i: Int](mut writer: Some[Writer]):
-            comptime assert conforms_to(Self.element_types[i], Writable)
-            comptime if is_repr:
-                self[i].write_repr_to(writer)
-            else:
-                self[i].write_to(writer)
+        var self_ptr = Pointer(to=self)
 
-        write_sequence_to[
-            size=Self.__len__(),
-            ElementFn=elements,
-        ](writer, open="", close="")
+        def elements[i: Int](mut writer: Some[Writer]) {self_ptr}:
+            comptime if is_repr:
+                self_ptr[][i].write_repr_to(writer)
+            else:
+                self_ptr[][i].write_to(writer)
+
+        write_sequence_to[size=Self.__len__()](
+            writer, elements, open="", close=""
+        )
 
         comptime if Self.__len__() == 1:
             writer.write_string(",")
@@ -322,7 +307,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_to(
         self, mut writer: Some[Writer]
-    ) where Self.element_types.all_conforms_to[Writable]():
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Write this tuple's text representation to a writer.
 
         Elements are formatted using their `write_to()` representation.
@@ -338,7 +323,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where Self.element_types.all_conforms_to[Writable]():
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Write this tuple's debug representation to a writer.
 
         Outputs the type name and parameters followed by elements formatted
@@ -349,20 +334,19 @@ struct Tuple[*element_types: Movable](
             writer: The writer to write to.
         """
 
-        @parameter
-        def fields(mut w: Some[Writer]):
-            self._write_tuple_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
 
-        FormatStruct(writer, "Tuple").params(
-            TypeNames[*Self.element_types]()
-        ).fields[
-            FieldsFn=fields,
-        ]()
+        def fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_tuple_to[is_repr=True](w)
+
+        FormatStruct(writer, "Tuple").params(TypeNames[*Self.Ts]()).fields(
+            fields
+        )
 
     @always_inline
     def _compare(
         self, other: Self
-    ) -> Int where Self.element_types.all_conforms_to[Comparable]():
+    ) -> Int where Self.Ts.all_conforms_to[Comparable]():
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -372,7 +356,6 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            comptime assert conforms_to(Self.element_types[i], Comparable)
             if self[i] < other[i]:
                 return -1
             if other[i] < self[i]:
@@ -388,7 +371,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __lt__(
         self, other: Self
-    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
+    ) -> Bool where Self.Ts.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using less than comparison.
 
         Args:
@@ -402,7 +385,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __le__(
         self, other: Self
-    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
+    ) -> Bool where Self.Ts.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using less than or equal to comparison.
 
         Args:
@@ -416,7 +399,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __gt__(
         self, other: Self
-    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
+    ) -> Bool where Self.Ts.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using greater than comparison.
 
         Args:
@@ -431,7 +414,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __ge__(
         self, other: Self
-    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
+    ) -> Bool where Self.Ts.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
         Args:
@@ -444,7 +427,7 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    def reverse(deinit self, out result: Tuple[*Self.element_types.reverse()]):
+    def reverse(deinit self, out result: Tuple[*Self.Ts.reverse()]):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -466,21 +449,17 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(type_of(result).__len__()):
             Pointer(to=result[i]).unsafe_write_move_from(
                 rebind[Pointer[type_of(result[i]), origin_of(self)]](
-                    Pointer(to=self[Self.element_types.length - 1 - i])
+                    Pointer(to=self[Self.Ts.length - 1 - i])
                 )
             )
 
     @always_inline("nodebug")
     def concat[
-        *other_element_types: Movable
+        *OtherTs: Movable
     ](
         deinit self,
-        deinit other: Tuple[*other_element_types],
-        out result: Tuple[
-            *TypeList._concat[
-                Self.element_types.values, other_element_types.values
-            ]()
-        ],
+        deinit other: Tuple[*OtherTs],
+        out result: Tuple[*TypeList._concat[Self.Ts.values, OtherTs.values]()],
     ):
         """Return a new tuple that concatenates this tuple with another.
 
@@ -488,7 +467,7 @@ struct Tuple[*element_types: Movable](
             other: The other tuple to concatenate.
 
         Parameters:
-            other_element_types: The types of the elements contained in the other Tuple.
+            OtherTs: The types of the elements contained in the other Tuple.
 
         Returns:
             A new tuple with the concatenated elements.
@@ -524,7 +503,7 @@ struct Tuple[*element_types: Movable](
 
     @always_inline("nodebug")
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
     ](deinit self):
         """Consume the tuple by transferring ownership of each element into the
         provided closure one at a time.
@@ -549,8 +528,8 @@ struct Tuple[*element_types: Movable](
         # Each `List` is moved out of the tuple, one at a time.
         var t = ([1, 2, 3], [4, 5, 6])
 
-        @parameter
-        def handler[idx: Int](var elt: t.element_types[idx]):
+        @__parameter
+        def handler[idx: Int](var elt: t.Ts[idx]):
             print(len(elt))  # prints 3, then 3
 
         t^.consume_elements[handler]()

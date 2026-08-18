@@ -42,13 +42,13 @@ from max.pipelines.modeling.types import (
     RequestID,
 )
 from max.pipelines.request.open_responses import (
+    ImageGenerationDetails,
     OutputImageContent,
     OutputVideoContent,
     Usage,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
-from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
@@ -111,7 +111,6 @@ class PixelGenerationPipeline(
         pipeline_model: type[DiffusionPipeline]
         | type[PipelineExecutor[Any, Any, Any]]
         | type[Module[Any, Any]],
-        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -175,10 +174,6 @@ class PixelGenerationPipeline(
             )
             self._module = module_io
         elif issubclass(pipeline_model, PipelineExecutor):
-            # Merge CLI-supplied cache_config into runtime so the executor
-            # receives TaylorSeer / FBCache settings.
-            if cache_config is not None:
-                pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
             self._executor = pipeline_model(
                 manifest=pipeline_config.models,
@@ -193,8 +188,7 @@ class PixelGenerationPipeline(
                 session=session,
                 devices=self._devices,
                 weight_paths=[],
-                cache_config=cache_config
-                or pipeline_config.runtime.denoising_cache,
+                cache_config=pipeline_config.runtime.denoising_cache,
             )
 
     @property
@@ -319,11 +313,17 @@ class PixelGenerationPipeline(
             pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
-            # Usage reports generated pixels as output tokens, counted from
+            # Per the unified usage spec, image generation keeps token counts
+            # at 0; billing-relevant metadata (dimensions, megapixels, steps,
+            # image count) lives under image_generation_details, measured from
             # the actual output arrays rather than the requested dimensions.
-            # Prompt text is not counted, so input_tokens stays 0.
-            output_pixels = int(
-                sum(img.shape[0] * img.shape[1] for img in pixel_data)
+            usage = Usage(
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                image_generation_details=ImageGenerationDetails.from_images(
+                    pixel_data, steps=_context.num_inference_steps
+                ),
             )
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
@@ -332,11 +332,7 @@ class PixelGenerationPipeline(
                     OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
-                usage=Usage(
-                    input_tokens=0,
-                    output_tokens=output_pixels,
-                    total_tokens=output_pixels,
-                ),
+                usage=usage,
             )
 
         return responses

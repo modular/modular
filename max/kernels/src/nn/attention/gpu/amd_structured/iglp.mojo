@@ -31,7 +31,7 @@ each kernel (they're shape-dependent and kernel-specific).
 
 from std.sys import llvm_intrinsic
 
-from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 
 
 @fieldwise_init
@@ -82,7 +82,7 @@ def _iglp_opt[strategy: AMDIGLPStrategy]() -> None:
 
 
 @always_inline
-@parameter
+@__parameter
 def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 MFMA, valu_cnt VALU]`.
 
@@ -117,7 +117,7 @@ def sched_barrier_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
 
 
 @always_inline
-@parameter
+@__parameter
 def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 DS_READ, valu_cnt VALU]`.
 
@@ -147,7 +147,7 @@ def sched_dsread_valu_pairs[pairs: Int, valu_cnt: Int, group: Int]() -> None:
 
 
 @always_inline
-@parameter
+@__parameter
 def sched_barrier_exp_pairs[pairs: Int, exp_cnt: Int, group: Int]() -> None:
     """Emits `pairs` schedule groups of shape `[1 MFMA, exp_cnt TRANS]`.
 

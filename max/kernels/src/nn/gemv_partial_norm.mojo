@@ -44,20 +44,20 @@ from std.atomic import Atomic, Ordering, fence
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
 from std.time import global_perf_counter_ns
 
-import std.gpu.primitives.block as block
+import max.gpu.primitives.block as block
 import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.memory import cp_async_bulk_prefetch
-from std.gpu.primitives.grid_controls import (
+from max.gpu.memory import cp_async_bulk_prefetch
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -236,7 +236,9 @@ def gemv_partial_norm_kernel[
             )
 
     var tile_w = tt_stack_allocation[
-        dtype=b_type, address_space=AddressSpace.LOCAL
+        dtype=b_type,
+        address_space=AddressSpace.LOCAL,
+        alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
@@ -346,7 +348,7 @@ def gemv_partial_norm_kernel[
             # before the counter increment; the acquire half in the
             # global-last arriver's fetch_add makes every peer's
             # writes visible when it reads normed_output back below.
-            var prev_global = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+            var prev_global = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
                 ordering=Ordering.ACQUIRE_RELEASE
             ](finish_counter, Int32(1))
             comptime if enable_trace:
@@ -601,14 +603,14 @@ def _gemv_partial_norm_unfused_with_scratch[
 
     @always_inline
     @__copy_capture(y)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
         var idx = y.layout(coords)
         return y.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(normed_output)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:

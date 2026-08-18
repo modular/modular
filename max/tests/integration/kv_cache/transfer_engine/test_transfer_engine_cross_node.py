@@ -52,7 +52,7 @@ import zmq
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-batches", type=int, default=50)
     p.add_argument("--warmup-batches", type=int, default=5)
     p.add_argument(
-        "--backend", choices=["libfabric", "ucx"], default="libfabric"
+        "--backend", choices=["libfabric", "ucx", "uccl"], default="libfabric"
     )
     p.add_argument(
         "--min-bandwidth-gbps",
@@ -371,7 +371,7 @@ def main() -> None:
         f"engine_{args.role}",
         [
             [
-                KVCacheMemoryGroup(
+                KVCacheMemory(
                     replicated=False,
                     buffers=[_view(b, cfg.num_pages) for b in all_blocks],
                 )

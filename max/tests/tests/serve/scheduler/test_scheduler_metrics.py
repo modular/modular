@@ -14,6 +14,7 @@
 import io
 import json
 import logging
+import re
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -148,14 +149,14 @@ def test_metric_to_string() -> None:
     metrics.max_acceptance_length = 3
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks (accepted drafts/step; 3.50 toks/step incl bonus) | All Preemptions: 14 reqs"
     )
 
     # Test with per-position acceptance rates
     metrics.acceptance_rate_per_position = [0.90, 0.75, 0.50]
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks, Per-Pos: [p0=90%, p1=75%, p2=50%] | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks (accepted drafts/step; 3.50 toks/step incl bonus), Per-Pos: [p0=90%, p1=75%, p2=50%] | All Preemptions: 14 reqs"
     )
 
 
@@ -180,64 +181,147 @@ def test_metric_to_string_with_disk_kv() -> None:
     ) in formatted
 
 
-def test_metric_to_string_overlap_scheduler() -> None:
-    # When the overlap scheduler is active, the measured batch execution
-    # time belongs to the previous batch, not the current one. The log
-    # line reflects that by using "Previous Execution:" instead of
-    # "Execution:"; analyze_batch_logs keys off this label to correctly
-    # attribute timing.
-    metrics = BatchMetrics(
-        batch_type=BatchType.TG,
-        batch_size=1,
-        max_batch_size=2,
-        terminated_reqs=4,
-        num_pending_reqs=5,
-        num_input_tokens=6,
-        max_batch_input_tokens=7,
-        num_context_tokens=8,
-        max_batch_total_tokens=9,
-        batch_creation_time_s=10.0,
-        batch_execution_time_s=11.0,
-        prompt_throughput=12.0,
-        generation_throughput=13.0,
-        total_preemption_count=14,
-        used_kv_pct=0.0,
+def _overlap_metrics_overrides(**overrides: Any) -> dict[str, Any]:
+    """Overrides that clear the state clauses so overlap-format tests can
+    assert full strings without the KV/host-KV sections."""
+    base = dict[str, Any](
+        overlap_active=True,
         total_kv_blocks=0,
+        used_kv_pct=0.0,
+        num_new_admissions=0,
         cache_hit_rate=0.0,
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        used_host_kv_pct=0.0,
         total_host_kv_blocks=0,
+        used_host_kv_pct=0.0,
         h2d_blocks_copied=0,
         d2h_blocks_copied=0,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
-        used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
-        inflight_disk_ops=0,
-        draft_tokens_generated=0,
-        draft_tokens_accepted=0,
-        avg_acceptance_length=0.0,
-        max_acceptance_length=0,
-        acceptance_rate_per_position=[],
-        nixl_read_latency_avg_ms=0.0,
-        nixl_write_latency_avg_ms=0.0,
-        rpc_acquire_latency_avg_ms=0.0,
-        rpc_read_latency_avg_ms=0.0,
-        batch_execution_time_is_previous=True,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_metric_to_string_overlap_scheduler() -> None:
+    # Under the overlap scheduler, the batch enqueued this iteration and the
+    # batch whose outputs were synchronized this iteration are different: the
+    # line renders one coherent clause per batch (Enqueued/Completed) instead
+    # of mixing their fields under a single identity with the old
+    # "Previous Execution:" caveat label.
+    completed = CompletedBatchStats(
+        batch_type=BatchType.CE,
+        batch_size=3,
+        num_input_tokens=4000,
+        num_context_tokens=8000,
+        execution_time_s=0.25,
+    )
+    metrics = _make_metrics(
+        **_overlap_metrics_overrides(
+            batch_type=BatchType.TG, completed=completed
+        )
     )
 
-    formatted = metrics.pretty_format()
-    assert "Previous Execution: 11.00s" in formatted
-    # Must not emit the bare "Execution:" label alongside.
-    assert ", Execution:" not in formatted
+    assert metrics.pretty_format() == (
+        "Enqueued TG batch with 1 reqs | Pending: 5 reqs | "
+        "Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | "
+        "Batch creation: 10.00s | "
+        "Completed CE batch with 3 reqs | Terminated: 4 reqs | "
+        "Completed Input Tokens: 4000 toks | "
+        "Prompt Tput: 16.0K tok/s, Generation Tput: 12.0 tok/s | "
+        "Execution: 250.00ms | "
+        "All Preemptions: 14 reqs"
+    )
+    assert "Previous Execution" not in metrics.pretty_format()
 
-    # Clearing the flag reverts to the default label.
-    metrics.batch_execution_time_is_previous = False
+
+def test_metric_to_string_overlap_token_clauses_are_distinguishable() -> None:
+    """The enqueued and completed clauses each carry their own token count
+    under distinct labels, so a log consumer can correlate the completed
+    batch's duration with its own size rather than the enqueued batch's."""
+    completed = CompletedBatchStats(
+        batch_type=BatchType.CE,
+        batch_size=3,
+        num_input_tokens=4000,
+        num_context_tokens=8000,
+        execution_time_s=0.25,
+    )
+    formatted = _make_metrics(
+        **_overlap_metrics_overrides(
+            batch_type=BatchType.TG, completed=completed
+        )
+    ).pretty_format()
+    # Enqueued batch: 6 of a 7-token budget. Completed batch: its own 4000.
+    assert "Input Tokens: 6/7 toks | " in formatted
+    assert "Completed Input Tokens: 4000 toks | " in formatted
+    # A bare "Input Tokens:" match must not pick up the completed clause.
+    assert re.findall(r"(?<!Completed )Input Tokens:\s+(\S+)", formatted) == [
+        "6/7"
+    ]
+
+
+def test_metric_to_string_overlap_no_completed_batch() -> None:
+    """First overlap iteration: nothing completed yet, so no execution time,
+    throughput, or termination clause may appear under the enqueued batch's
+    identity."""
+    metrics = _make_metrics(**_overlap_metrics_overrides())
     formatted = metrics.pretty_format()
-    assert "Previous Execution:" not in formatted
-    assert ", Execution: 11.00s" in formatted
+    assert formatted == (
+        "Enqueued CE batch with 1 reqs | Pending: 5 reqs | "
+        "Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | "
+        "Batch creation: 10.00s | "
+        "All Preemptions: 14 reqs"
+    )
+
+
+def test_metric_to_string_overlap_drain_iteration() -> None:
+    """Drain iteration (empty inputs flushing the final deferred batch): the
+    line describes only the completed batch instead of a misleading
+    zero-request enqueued batch."""
+    completed = CompletedBatchStats(
+        batch_type=BatchType.CE,
+        batch_size=2,
+        num_input_tokens=1000,
+        num_context_tokens=2000,
+        execution_time_s=0.5,
+    )
+    metrics = _make_metrics(
+        **_overlap_metrics_overrides(
+            batch_type=BatchType.TG, batch_size=0, completed=completed
+        )
+    )
+    formatted = metrics.pretty_format()
+    assert formatted.startswith("Completed CE batch with 2 reqs | ")
+    assert "Enqueued" not in formatted
+
+
+def test_metric_to_string_overlap_completed_spec_decode() -> None:
+    """Spec-decode acceptance stats describe the completed batch and render
+    inside its clause."""
+    completed = CompletedBatchStats(
+        batch_type=BatchType.TG,
+        batch_size=4,
+        num_input_tokens=4,
+        num_context_tokens=100,
+        execution_time_s=0.1,
+        num_output_tokens=12,
+        draft_tokens_generated=10,
+        draft_tokens_accepted=5,
+        avg_acceptance_length=2.5,
+        max_acceptance_length=3,
+    )
+    metrics = _make_metrics(
+        **_overlap_metrics_overrides(
+            batch_type=BatchType.TG, completed=completed
+        )
+    )
+    formatted = metrics.pretty_format()
+    assert (
+        "Draft Tokens: 5/10 (50.00%) accepted, "
+        "Acceptance Len: 2.50 / 3 toks "
+        "(accepted drafts/step; 3.50 toks/step incl bonus) | " in formatted
+    )
+    # Generation throughput uses the completed batch's output tokens.
+    assert "Generation Tput: 120.0 tok/s" in formatted
 
 
 def test_metric_to_string_continuation_only_ce_batch() -> None:
@@ -303,6 +387,8 @@ def test_to_log_extra_required_fields() -> None:
 
     assert extra["batch_size"] == 1
     assert extra["num_input_tokens"] == 6
+    assert extra["max_batch_input_tokens"] == 7
+    assert extra["max_batch_total_tokens"] == 9
     assert extra["batch_execution_time_ms"] == 11000.0
     assert extra["batch_creation_time_ms"] == 10000.0
 
@@ -320,6 +406,56 @@ def test_to_log_extra_required_fields() -> None:
     for k, v in extra.items():
         assert not isinstance(v, (list, dict)), (
             f"{k} is nested ({type(v).__name__})"
+        )
+
+
+def test_to_log_extra_covers_every_pretty_format_number() -> None:
+    """Every number the log line prints must also be a queryable attribute.
+
+    A value that lives only in the message text cannot be faceted or graphed
+    in a log backend, so this pins down the full set for a batch that
+    exercises every clause at once.
+    """
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        disk_blocks_read=24,
+        disk_blocks_written=25,
+        used_disk_kv_pct=0.30,
+        total_disk_kv_blocks=100,
+        inflight_disk_ops=99,
+        draft_tokens_generated=95,
+        draft_tokens_accepted=42,
+        avg_acceptance_length=2.21,
+        max_acceptance_length=5,
+        acceptance_rate_per_position=[0.79, 0.47],
+        dp_active_tokens=8008,
+        dp_step_capacity_tokens=16000,
+        cross_replica_blocks_copied=3,
+        cross_replica_bytes_copied=4096,
+    )
+    extra = metrics.to_log_extra()
+
+    assert extra["inflight_disk_ops"] == 99
+    assert extra["disk_blocks_read"] == 24
+    assert extra["disk_blocks_written"] == 25
+
+    assert extra["max_acceptance_length"] == 5
+    assert extra["draft_token_acceptance_rate"] == 42 / 95
+    # Per-position rates flatten to indexed keys rather than an array.
+    assert extra["acceptance_rate_p0"] == 0.79
+    assert extra["acceptance_rate_p1"] == 0.47
+    assert "acceptance_rate_p2" not in extra
+
+    assert extra["dp_active_tokens"] == 8008
+    assert extra["dp_step_capacity_tokens"] == 16000
+    assert extra["cross_replica_blocks_copied"] == 3
+    assert extra["cross_replica_bytes_copied"] == 4096
+
+    assert extra["device_blocks_served"] == 0
+
+    for key, value in extra.items():
+        assert not isinstance(value, (list, dict)), (
+            f"{key} is nested ({type(value).__name__})"
         )
 
 
@@ -342,14 +478,72 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
     assert "cache_hit_tokens" not in extra
     assert "cache_miss_tokens" not in extra
     assert "num_new_admissions" not in extra
+    assert "device_blocks_served" not in extra
 
     assert "used_host_kv_pct" not in extra
     assert "total_host_kv_blocks" not in extra
     assert "h2d_blocks_copied" not in extra
     assert "d2h_blocks_copied" not in extra
 
+    assert "inflight_disk_ops" not in extra
+
     assert "draft_tokens_generated" not in extra
+    assert "draft_token_acceptance_rate" not in extra
+    assert "max_acceptance_length" not in extra
+    assert "acceptance_rate_p0" not in extra
     assert "nixl_read_latency_avg_ms" not in extra
+
+    assert "dp_active_tokens" not in extra
+    assert "cross_replica_blocks_copied" not in extra
+
+
+def test_to_log_extra_overlap_completed_fields() -> None:
+    """Under overlap, per-iteration execution fields are omitted (they would
+    describe the wrong batch) and the completed batch's fields are emitted
+    under completed_* names with its own identity."""
+    completed = CompletedBatchStats(
+        batch_type=BatchType.CE,
+        batch_size=3,
+        num_input_tokens=4000,
+        num_context_tokens=8000,
+        execution_time_s=0.25,
+    )
+    extra = _make_metrics(
+        batch_type=BatchType.TG, overlap_active=True, completed=completed
+    ).to_log_extra()
+
+    assert extra["overlap_active"] is True
+    assert extra["batch_type"] == "TG"
+    # Misattributed per-iteration values must be absent.
+    assert "batch_execution_time_ms" not in extra
+    assert "prompt_throughput" not in extra
+    assert "generation_throughput" not in extra
+    assert "terminated_reqs" not in extra
+    # Completed-batch fields carry the completed batch's identity.
+    assert extra["completed_batch_type"] == "CE"
+    assert extra["completed_batch_size"] == 3
+    assert extra["completed_execution_time_ms"] == 250.0
+    assert extra["completed_prompt_throughput"] == 16000.0
+    assert extra["completed_generation_throughput"] == 12.0
+    assert extra["completed_terminated_reqs"] == 4
+
+    # Data stays flat for the JSON formatter.
+    for k, v in extra.items():
+        assert not isinstance(v, (list, dict)), (
+            f"{k} is nested ({type(v).__name__})"
+        )
+
+
+def test_to_log_extra_overlap_without_completed_omits_execution() -> None:
+    """Overlap iteration with nothing completed: no execution/throughput
+    fields at all."""
+    extra = _make_metrics(overlap_active=True).to_log_extra()
+    assert extra["overlap_active"] is True
+    assert "batch_execution_time_ms" not in extra
+    assert "prompt_throughput" not in extra
+    assert "generation_throughput" not in extra
+    assert "terminated_reqs" not in extra
+    assert not any(k.startswith("completed_") for k in extra)
 
 
 def test_to_log_extra_serializes_via_jsonlogger() -> None:
@@ -703,17 +897,36 @@ def test_spec_decode_metrics_properties() -> None:
     assert metrics.output_tokens == 20
 
 
+def test_spec_decode_metrics_per_position_empty_when_no_verifications() -> None:
+    # Regression: this returned [0.0] * num_speculative_tokens, injecting an
+    # all-zero row per zero-verification batch into every rate consumer.
+    metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    assert metrics.acceptance_rate_per_position == []
+
+
 # ---------------------------------------------------------------------------
 # BatchMetrics.create spec-decode tests
 # ---------------------------------------------------------------------------
 
 
-def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
-    inputs = MagicMock()
+def _mock_inputs(
+    batch_size: int, batch_type: BatchType
+) -> TextGenerationInputs[Any]:
+    contexts = [MagicMock() for _ in range(batch_size)]
+    for context in contexts:
+        context._is_padding_ctx = False
+        context.tokens.active_length = 0
+        context.tokens.processed_length = 0
+        context.tokens.generated_length = 1
+
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(batches=[contexts])
     inputs.input_tokens = 100
     inputs.batch_type = batch_type
     inputs.context_tokens = 500
-    inputs.flat_batch = [MagicMock()] * batch_size
     return inputs
 
 
@@ -816,16 +1029,90 @@ def test_batch_metrics_create_no_spec_decode() -> None:
     assert metrics.acceptance_rate_per_position == []
 
 
+def test_batch_metrics_create_excludes_padding_contexts() -> None:
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
+    inputs.flat_batch[-1]._is_padding_ctx = True
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[3, 2, 1],
+        num_verifications=3,
+    )
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.batch_size == 3
+    assert metrics.generation_throughput == (6 + 3) / 0.1
+
+
+def test_publish_metrics_zero_verification_batch_skips_per_position_rates() -> (
+    None
+):
+    """A TG batch whose verify step ran zero verifications must contribute
+    nothing to the per-position rate histograms, matching the
+    draft_tokens_generated > 0 gate on the acceptance-length histogram.
+
+    Regression: the zero-verification batch published a full row of 0% rates,
+    diluting every per-position average by the fraction of such batches.
+    """
+    zero = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    real = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[4, 3, 1],
+        num_verifications=4,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        for spec_metrics in (zero, real):
+            BatchMetrics.create(
+                sch_config=_mock_sch_config(),
+                inputs=_mock_inputs(batch_size=4, batch_type=BatchType.TG),
+                kv_cache=None,
+                batch_creation_time_s=0.001,
+                batch_execution_time_s=0.1,
+                num_pending_reqs=0,
+                num_terminated_reqs=0,
+                total_preemption_count=0,
+                batch_spec_decode_metrics=spec_metrics,
+            ).publish_metrics()
+
+    # Both spec-decode histograms must observe the same batch population:
+    # only the batch that actually verified.
+    acc_len_calls = (
+        mock_metrics.spec_decode_avg_acceptance_length.call_args_list
+    )
+    per_pos_calls = (
+        mock_metrics.spec_decode_acceptance_rate_per_position.call_args_list
+    )
+    assert len(acc_len_calls) == 1
+    assert len(per_pos_calls) == 3
+
+    # With matched populations the identity holds: the per-position rates sum
+    # to the average acceptance length (accepted drafts per verification).
+    rate_sum = sum(c.kwargs["acceptance_rate"] / 100 for c in per_pos_calls)
+    assert rate_sum == acc_len_calls[0].args[0] == 2.0
+
+
 # ---------------------------------------------------------------------------
 # Overlap-scheduling execution-metric attribution tests
 # ---------------------------------------------------------------------------
 
 
 def test_publish_metrics_defers_execution_metrics() -> None:
-    """With defer_execution_metrics=True (overlap scheduling), execution-time
-    and throughput metrics are suppressed — they are published separately from
-    CompletedBatchStats — while the current batch's composition metrics are
-    still emitted.
+    """With defer_execution_metrics=True (overlap scheduling), execution-time,
+    throughput and termination metrics are suppressed — they are published
+    separately from CompletedBatchStats — while the current batch's
+    composition metrics are still emitted.
     """
     metrics = _make_metrics()
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
@@ -833,11 +1120,25 @@ def test_publish_metrics_defers_execution_metrics() -> None:
     mock_metrics.batch_execution_time.assert_not_called()
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
+    # Terminations are counted from the synchronized outputs, so they belong
+    # to the completed batch, not the one enqueued this iteration.
+    mock_metrics.batch_terminated_reqs.assert_not_called()
     # Current-batch composition metrics are unaffected.
     mock_metrics.batch_size.assert_called_once_with(1, batch_type="CE")
     mock_metrics.batch_input_tokens.assert_called_once_with(6, batch_type="CE")
     mock_metrics.batch_creation_time.assert_called_once_with(
         10000.0, batch_type="CE"
+    )
+
+
+def test_publish_metrics_reports_terminated_reqs_without_overlap() -> None:
+    """Without overlap the batch completed synchronously, so its terminations
+    are published under its own type."""
+    metrics = _make_metrics()
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.batch_terminated_reqs.assert_called_once_with(
+        4, batch_type="CE"
     )
 
 
@@ -857,7 +1158,7 @@ def test_publish_completed_batch_metrics_ce() -> None:
     """Execution metrics carry the completed batch's label and are computed
     from that batch's own token counts and duration."""
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
-        publish_completed_batch_metrics(_make_completed_stats())
+        publish_completed_batch_metrics(_make_completed_stats(), 3)
     mock_metrics.batch_execution_time.assert_called_once_with(
         250.0, batch_type="CE"
     )
@@ -867,6 +1168,9 @@ def test_publish_completed_batch_metrics_ce() -> None:
     mock_metrics.batch_generation_throughput.assert_called_once_with(
         2 / 0.25, batch_type="CE"
     )
+    mock_metrics.batch_terminated_reqs.assert_called_once_with(
+        3, batch_type="CE"
+    )
 
 
 def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
@@ -874,7 +1178,7 @@ def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
     generation throughput, mirroring BatchMetrics.create."""
     stats = _make_completed_stats(batch_type=BatchType.TG, num_output_tokens=12)
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
-        publish_completed_batch_metrics(stats)
+        publish_completed_batch_metrics(stats, 3)
     mock_metrics.batch_execution_time.assert_called_once_with(
         250.0, batch_type="TG"
     )
@@ -888,7 +1192,7 @@ def test_publish_completed_batch_metrics_ce_ignores_output_tokens() -> None:
     metrics report output tokens, mirroring BatchMetrics.create."""
     stats = _make_completed_stats(num_output_tokens=12)
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
-        publish_completed_batch_metrics(stats)
+        publish_completed_batch_metrics(stats, 3)
     mock_metrics.batch_generation_throughput.assert_called_once_with(
         2 / 0.25, batch_type="CE"
     )
@@ -899,10 +1203,11 @@ def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
     is published."""
     stats = _make_completed_stats(execution_time_s=0.0)
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
-        publish_completed_batch_metrics(stats)
+        publish_completed_batch_metrics(stats, 3)
     mock_metrics.batch_execution_time.assert_not_called()
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
+    mock_metrics.batch_terminated_reqs.assert_not_called()
 
 
 def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
@@ -933,8 +1238,8 @@ def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
         # In the overlap path, batch_execution_time is emitted only by
         # publish_completed_batch_metrics; record the transaction depth when it
         # fires (must be > 0, i.e. inside the coalescing transaction).
-        mock_metrics.batch_execution_time.side_effect = (
-            lambda *args, **kwargs: emit_depths.append(depth)
+        mock_metrics.batch_execution_time.side_effect = lambda *args, **kwargs: (
+            emit_depths.append(depth)
         )
         SchedulerLogger().log_metrics(
             sch_config=_mock_sch_config(),
@@ -945,7 +1250,7 @@ def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
             num_pending_reqs=0,
             num_terminated_reqs=0,
             total_preemption_count=0,
-            batch_execution_time_is_previous=True,
+            overlap_active=True,
             completed_batch_stats=_make_completed_stats(),
         )
     assert emit_depths == [1]
@@ -958,6 +1263,7 @@ class _ExecMetricsRecorder:
         self.execution_calls: list[tuple[float, str]] = []
         self.creation_calls: list[tuple[float, str]] = []
         self.prompt_throughput_calls: list[tuple[float, str]] = []
+        self.terminated_calls: list[tuple[int, str]] = []
 
     def batch_execution_time(self, ms: float, batch_type: str) -> None:
         self.execution_calls.append((ms, batch_type))
@@ -967,6 +1273,9 @@ class _ExecMetricsRecorder:
 
     def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
         self.prompt_throughput_calls.append((tps, batch_type))
+
+    def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
+        self.terminated_calls.append((value, batch_type))
 
     def __getattr__(self, _name: str) -> Any:
         return MagicMock()
@@ -1003,6 +1312,7 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
         scheduler.run_iteration()
         assert recorder.execution_calls == []
         assert recorder.prompt_throughput_calls == []
+        assert recorder.terminated_calls == []
         assert recorder.creation_calls
         assert recorder.creation_calls[-1][1] == "CE"
 
@@ -1015,6 +1325,9 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
         assert recorder.prompt_throughput_calls == [
             (16 / FakeOverlapPipeline.FAKE_EXECUTION_TIME_S, "CE")
         ]
+        # Terminations are derived from the CE batch's outputs, so they carry
+        # the CE label rather than the enqueued TG batch's.
+        assert [bt for _, bt in recorder.terminated_calls] == ["CE"]
         assert recorder.creation_calls[-1][1] == "TG"
 
 

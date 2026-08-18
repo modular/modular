@@ -19,10 +19,10 @@ from max.gpu.compute.mma import mma
 
 
 def mma_sync_16x8x32_E4M3():
-    a = SIMD[DType.float8_e4m3fn, 16](1.0)
-    b = SIMD[DType.float8_e4m3fn, 8](2.0)
-    c = SIMD[DType.float32, 4](0.0)
-    d = SIMD[DType.float32, 4](0.0)
+    var a = SIMD[DType.float8_e4m3fn, 16](1.0)
+    var b = SIMD[DType.float8_e4m3fn, 8](2.0)
+    var c = SIMD[DType.float32, 4](0.0)
+    var d = SIMD[DType.float32, 4](0.0)
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
@@ -45,10 +45,10 @@ def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
 
 
 def mma_sync_16x8x32_E4M2():
-    a = SIMD[DType.float8_e5m2, 16](2.0)
-    b = SIMD[DType.float8_e5m2, 8](3.0)
-    c = SIMD[DType.float32, 4](0.0)
-    d = SIMD[DType.float32, 4](0.0)
+    var a = SIMD[DType.float8_e5m2, 16](2.0)
+    var b = SIMD[DType.float8_e5m2, 8](3.0)
+    var c = SIMD[DType.float32, 4](0.0)
+    var d = SIMD[DType.float32, 4](0.0)
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](

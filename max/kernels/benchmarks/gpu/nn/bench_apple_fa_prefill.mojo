@@ -117,7 +117,7 @@ def _bench_prefill[
     ]
     var sink_opt = SinkOpt(None)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_t, k_t, v_t, o_t, k_op, v_op, vl_t, sink_opt, scale, seq, num_keys

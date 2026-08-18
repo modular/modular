@@ -231,7 +231,6 @@ def test_list_resize() raises:
 
 # TODO: Rework to use property testing framework.
 def test_list_reverse_property_test() raises:
-    @parameter
     def properties(forward: List[Scalar[DType.int]]) raises:
         var rev = forward.copy()
         rev.reverse()
@@ -278,7 +277,7 @@ def test_list_reverse() raises:
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2: List = ["one", "two", "three"]
+    var vec2: List = ["one", "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -361,7 +360,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3] created with insert
     #
 
-    v1 = List[Int]()
+    var v1 = List[Int]()
     v1.insert(len(v1), 1)
     v1.insert(len(v1), 3)
     v1.insert(1, 2)
@@ -375,7 +374,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
-    v2 = List[Int]()
+    var v2 = List[Int]()
     v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
@@ -393,7 +392,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
-    v3 = List[Int]()
+    var v3 = List[Int]()
     v3.insert(0, 4)
     v3.insert(0, 3)
     v3.insert(0, 2)
@@ -409,7 +408,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4, 5, 6, 7, 8] created with insert
     #
 
-    v4 = List[Int]()
+    var v4 = List[Int]()
     for i in range(4):
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
@@ -764,7 +763,7 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
 
 
 def test_list_iter_owned_move_only() raises:
-    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # Consuming iteration only requires `Movable & Deinitable`, not
     # `Copyable`: each element is moved out of the list, not copied.
     var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
 
@@ -785,7 +784,7 @@ def test_list_iter_owned_bounds() raises:
 def _test_list_iter_bounds[
     I: Iterator
 ](var list_iter: I, list_len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = list_iter^
 
@@ -814,7 +813,7 @@ def test_list_span() raises:
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = List(vs[:-1])
+    es = List(vs[0 : len(vs) - 1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -846,21 +845,11 @@ def test_list_span() raises:
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = List(vs[-50::])
-    assert_equal(3, len(es))
-    assert_equal(es[0], 1)
-    assert_equal(es[1], 2)
-    assert_equal(es[2], 3)
     es = vs[:-50:-1]
     assert_equal(3, len(es))
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = List(vs[:50:])
-    assert_equal(3, len(es))
-    assert_equal(es[0], 1)
-    assert_equal(es[1], 2)
-    assert_equal(es[2], 3)
     es = vs[::50]
     assert_equal(1, len(es))
     assert_equal(es[0], 1)
@@ -876,7 +865,7 @@ def test_list_span() raises:
 
 
 def test_list_realloc_trivial_types() raises:
-    a = List[Int]()
+    var a = List[Int]()
     for i in range(100):
         a.append(i)
 
@@ -884,7 +873,7 @@ def test_list_realloc_trivial_types() raises:
     for i in range(100):
         assert_equal(a[i], i)
 
-    b = List[Int8]()
+    var b = List[Int8]()
     for i in range(100):
         b.append(Int8(i))
 
@@ -1028,7 +1017,7 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
-    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # Owned iteration requires `Movable & Deinitable` elements, but
     # not `Copyable`: a consuming iterator moves elements out rather than
     # copying them.
     assert_true(conforms_to(List[Int], IterableOwned))
@@ -1159,11 +1148,11 @@ def _test_copyinit_trivial_types[dt: DType]() raises:
     var test_current_size = 1
 
     comptime for sizes_index in range(len(sizes)):
-        comptime current_size = sizes[sizes_index]
-        x = List[Scalar[dt]]()
+        comptime current_size = rebind[Int](sizes[sizes_index])
+        var x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(Scalar[dt](i))
-        y = x.copy()
+        var y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
         assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))
@@ -1186,7 +1175,7 @@ def test_copyinit_trivial_types_dtypes() raises:
     )
 
     comptime for index_dtype in range(len(dtypes)):
-        _test_copyinit_trivial_types[dtypes[index_dtype]]()
+        _test_copyinit_trivial_types[rebind[DType](dtypes[index_dtype])]()
 
 
 def test_list_comprehension() raises:

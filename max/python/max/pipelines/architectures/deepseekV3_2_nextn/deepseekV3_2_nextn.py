@@ -126,7 +126,7 @@ class DeepseekV3_2NextN(Module):
                     config.qk_rope_head_dim,
                     n_heads=config.num_attention_heads,
                     theta=config.rope_theta,
-                    max_seq_len=config.max_position_embeddings,
+                    max_seq_len=config.max_seq_len,
                     scaling_params=scaling_params,
                 )
             )
@@ -135,7 +135,7 @@ class DeepseekV3_2NextN(Module):
                 dim=config.qk_rope_head_dim,
                 n_heads=config.num_attention_heads,
                 theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
+                max_seq_len=config.max_seq_len,
                 head_dim=config.qk_rope_head_dim,
                 interleaved=config.rope_interleave,
             )
@@ -178,6 +178,11 @@ class DeepseekV3_2NextN(Module):
 
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        # When False, ``deepseek_logits_postprocess`` skips the last-token
+        # lm_head projection and omits ``last_logits`` from the output tuple.
+        # Default True keeps the standalone ragged contract (``last_logits``
+        # at index 0) unchanged.
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -268,6 +273,9 @@ class DeepseekV3_2NextN(Module):
             for i in range(n_devs)
         ]
         h = forward_sharded_layers(self.eh_proj_shards, concat_inputs)
+        h_norm = forward_sharded_layers(
+            self.decoder_layer.input_layernorm_shards, h
+        )
 
         # Create MLA prefill metadata if not in decode mode.
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -296,6 +304,7 @@ class DeepseekV3_2NextN(Module):
         layer_outs = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
+            h_norm,
             signal_buffers,
             mla_kv_collections,
             indexer_kv_collections,
@@ -325,6 +334,7 @@ class DeepseekV3_2NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
         )
 
         # Append the per-device top-k selection so the unified MTP module can

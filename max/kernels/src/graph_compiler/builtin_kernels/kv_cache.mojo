@@ -38,6 +38,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
@@ -84,10 +85,10 @@ struct Struct_kv_cache_store_paged:
     @always_inline
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString, key_or_value: Int
+        dtype: DType, kv_type: DType, target: StaticString, key_or_value: Int
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -111,15 +112,18 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
-            return inputs._lambda_load[
-                width=width, element_alignment=alignment
-            ](
-                idx,
+        ](idx: IndexList[3]) capturing -> SIMD[kv_type, width]:
+            # The value dtype is the producer compute dtype (bf16), which need
+            # not match the cache: an FP8 cache saturates on the store rather
+            # than emitting NaN for out-of-range values.
+            return cast_saturating[kv_type](
+                inputs._lambda_load[width=width, element_alignment=alignment](
+                    idx,
+                )
             )
 
         kv_cache_store_ragged[input_fn=input_fn, target=target](
@@ -152,6 +156,10 @@ struct Struct_kv_cache_store_k_scales_paged:
         max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
+        # the scales share the values' block-id space; pass a distinct table
+        # when they are paged independently.
+        k_scales_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) capturing raises:
@@ -203,6 +211,12 @@ struct Struct_kv_cache_store_k_scales_paged:
                 k_scales_blocks.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_scales_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
         )
@@ -296,7 +310,7 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
@@ -432,13 +446,14 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     def execute[
         dtype: DType,
+        q_out_dtype: DType,
         freq_dtype: DType,
         multiply_before_cast: Bool,
         cache_dtype: DType,
         //,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_output: OutputTensor[dtype=q_out_dtype, rank=3, ...],
         q_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
@@ -469,7 +484,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
@@ -517,6 +532,8 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
     @staticmethod
     def execute[
         dtype: DType,
+        q_main_out_dtype: DType,
+        q_index_out_dtype: DType,
         freq_dtype: DType,
         multiply_before_cast: Bool,
         main_cache_dtype: DType,
@@ -524,8 +541,8 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         //,
         target: StaticString,
     ](
-        q_main_output: OutputTensor[dtype=dtype, rank=3, ...],
-        q_index_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
         q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -571,7 +588,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def main_q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
@@ -580,7 +597,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             ](IndexList[3](token, head, col))
 
         @always_inline
-        @parameter
+        @__parameter
         def index_q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:

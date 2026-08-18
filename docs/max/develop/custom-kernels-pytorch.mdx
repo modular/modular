@@ -7,7 +7,7 @@ show_languages: true
 is_tutorial: true
 ---
 
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -30,11 +30,11 @@ integrating a custom op in Mojo and running it in PyTorch.
 
 Let's start by creating a Python project and installing the necessary tools.
 
-<InstallModular folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
+<InstallMAX folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
 
-This will install the `modular` package along with PyTorch (`torch`), PIL for
+This will install the `max` package along with PyTorch (`torch`), PIL for
 image processing (`pillow`), and NumPy for array operations. When you install
-the `modular` package, you'll get access to the `max` Python APIs and the Mojo
+the `max` package, you'll get access to the MAX Python APIs and the Mojo
 compiler—everything needed to build high-performance custom operations.
 
 ## Build the PyTorch interface
@@ -87,9 +87,9 @@ def grayscale(pic: torch.Tensor):
 ```
 
 The `CustomOpLibrary` loads operations from a precompiled Mojo package file
-(`.mojoc` or `.mojopkg`). Once loaded, you can call these operations just like
-any other PyTorch function. The operations automatically handle data movement
-between PyTorch and MAX, and integrate with PyTorch when needed.
+(`.mojoc`). Once loaded, you can call these operations just like any other
+PyTorch function. The operations automatically handle data movement between
+PyTorch and MAX, and integrate with PyTorch when needed.
 
 The compilation of your Mojo code into a `.mojoc` file is handled when you run
 your Python script. You don't need to manually invoke the Mojo compiler or
@@ -131,12 +131,12 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
         ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
-            @parameter
+            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:

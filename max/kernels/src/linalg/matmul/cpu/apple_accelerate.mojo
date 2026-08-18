@@ -36,7 +36,6 @@ from std.utils.index import Index
 from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from std.gpu.memory import AddressSpace
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
 from ...utils import (
@@ -83,7 +82,7 @@ def _on_error_msg() -> Error:
             "the XCode package is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(Span([LIB_ACC_PATH])),
+        ", ".join([LIB_ACC_PATH]),
         "].",
     )
 
@@ -317,11 +316,9 @@ def apple_gemv[
             {count = b.num_elements()}
         ).into_managed()
         transposed_b = TileTensor(
-            UnsafePointer(
-                transposed_b_alloc.unsafe_value()
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            ),
+            transposed_b_alloc.unsafe_value()
+            .unsafe_ptr()
+            .unsafe_origin_cast[MutUntrackedOrigin](),
             row_major(
                 Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),
@@ -345,7 +342,7 @@ def apple_gemv[
 
     @always_inline
     @__copy_capture(c, a, b, K)
-    @parameter
+    @__parameter
     def process_rows(start_row: Int, end_row: Int):
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.dtype, simd_width]()
@@ -594,7 +591,7 @@ def apple_batched_matmul[
             batch, c_shape_idx
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
             c_type: DType, width: SIMDLength, *, alignment: Int = 1

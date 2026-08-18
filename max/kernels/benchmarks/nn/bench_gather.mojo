@@ -22,7 +22,7 @@ from std.utils.index import Index
 
 
 def bench_gather(mut m: Bench, spec: GatherSpec) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
@@ -32,7 +32,7 @@ def bench_gather(mut m: Bench, spec: GatherSpec) raises:
     )
 
 
-@parameter
+@__parameter
 def bench_gather(mut bencher: Bencher, spec: GatherSpec) raises:
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
@@ -62,7 +62,7 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec) raises:
     var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(data_tensor, indices_tensor, output_tensor)
     def bench_fn() raises:
         gather_elements(

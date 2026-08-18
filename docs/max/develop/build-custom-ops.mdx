@@ -35,7 +35,7 @@ url="/max/packages#system-requirements" />
 
 Although these examples work on both CPUs and GPUs, in order for the GPU code
 paths to run, your system must meet the [GPU
-requirements](/faq/#gpu-requirements).
+requirements](/packages/#gpu-compatibility).
 
 ## Get the examples
 
@@ -159,7 +159,7 @@ struct AddOne:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_add_one[
             width: Int
@@ -215,18 +215,20 @@ device = CPU() if accelerator_count() == 0 else Accelerator()
 
 graph = Graph(
     "addition",
-    forward=lambda x: ops.custom(
-        name="add_one",
-        device=DeviceRef.from_device(device),
-        values=[x],
-        out_types=[
-            TensorType(
-                dtype=x.dtype,
-                shape=x.tensor.shape,
-                device=DeviceRef.from_device(device),
-            )
-        ],
-    )[0].tensor,
+    forward=lambda x: (
+        ops.custom(
+            name="add_one",
+            device=DeviceRef.from_device(device),
+            values=[x],
+            out_types=[
+                TensorType(
+                    dtype=x.dtype,
+                    shape=x.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                )
+            ],
+        )[0].tensor
+    ),
     input_types=[
         TensorType(
             dtype,
@@ -355,7 +357,7 @@ def _vector_addition_gpu(
     alias BLOCK_SIZE = 16
     var vector_length = output.dim_size(0)
 
-    @parameter
+    @__parameter
     def vector_addition_gpu_kernel(length_dev: Int32):
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x

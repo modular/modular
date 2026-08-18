@@ -60,8 +60,7 @@ def bench_vec_add(
     context.enqueue_copy(in1_device, in1_host)
 
     @always_inline
-    @parameter
-    def run_func() raises:
+    def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
         context.enqueue_function[vec_func](
             in0_device,
             in1_device,
@@ -71,15 +70,10 @@ def bench_vec_add(
             block_dim=(block_dim),
         )
 
-    @parameter
+    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        bencher_iter_custom[kernel_launch](b, context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),

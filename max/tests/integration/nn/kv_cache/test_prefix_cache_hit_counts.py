@@ -15,8 +15,8 @@
 
 Covers the two building blocks added for prefix-aware data-parallel routing:
 
-- ``BlockManager.compute_block_hashes``: pure block hashing that neither
-  reads nor writes per-request state and chains onto existing hashes.
+- ``compute_block_hashes``: pure block hashing that neither reads nor writes
+  per-request state and chains onto existing hashes.
 - ``BlockManager.count_cached_prefix_blocks`` and the connectors'
   ``count_cached_prefix``: contiguous, tier-ordered (device -> host -> disk)
   hit counting with no side effects on pools, LRUs, or request state.
@@ -31,12 +31,12 @@ from typing import cast
 import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
+    compute_block_hashes,
 )
-from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
 from max.pipelines.modeling.types import RequestID
 from test_common.context_utils import create_text_context
 
@@ -75,6 +75,19 @@ def _make_block_manager(
     )
 
 
+def _compute_block_hashes(
+    bm: BlockManager, ctx: TextContext, existing_hashes: Sequence[bytes]
+) -> list[bytes]:
+    """Hashes with the manager's own settings, without touching its state."""
+    return compute_block_hashes(
+        ctx,
+        existing_hashes,
+        bm.block_size,
+        bm.kv_hash_algo,
+        bm.kv_hash_seed,
+    )
+
+
 def _seed_device_prefix_cache(
     bm: BlockManager, hashes: Sequence[bytes]
 ) -> None:
@@ -106,8 +119,8 @@ class _TierStubConnector:
         return "TierStubConnector"
 
     @property
-    def num_host_blocks(self) -> int:
-        return 4
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=4, total=4)
 
     @property
     def supported_hash_algos(self) -> frozenset[str]:
@@ -140,7 +153,6 @@ class _TierStubConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
 
@@ -155,7 +167,7 @@ def test_compute_block_hashes_is_side_effect_free() -> None:
     # 33 tokens => 32 hashable (last reserved) => 4 full blocks of 8.
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
 
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     assert len(hashes) == 4
     assert ctx.request_id not in bm.req_to_hashes
@@ -167,7 +179,7 @@ def test_compute_block_hashes_matches_stateful_path() -> None:
     tokens = np.arange(33, dtype=np.int32)
 
     bm = _make_block_manager()
-    pure = bm.compute_block_hashes(_make_ctx(tokens, RequestID("req-A")), [])
+    pure = _compute_block_hashes(bm, _make_ctx(tokens, RequestID("req-A")), [])
 
     bm.compute_hashes_for_request(_make_ctx(tokens, RequestID("req-B")))
     stateful = bm.req_to_hashes[RequestID("req-B")]
@@ -181,8 +193,8 @@ def test_compute_block_hashes_chains_onto_existing() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(tokens)
 
-    full = bm.compute_block_hashes(ctx, [])
-    continuation = bm.compute_block_hashes(ctx, full[:2])
+    full = _compute_block_hashes(bm, ctx, [])
+    continuation = _compute_block_hashes(bm, ctx, full[:2])
 
     assert continuation == full[2:]
 
@@ -192,7 +204,7 @@ def test_compute_block_hashes_partial_block_returns_empty() -> None:
     # 8 tokens => 7 hashable => no full block of 8.
     ctx = _make_ctx(np.arange(8, dtype=np.int32))
 
-    assert bm.compute_block_hashes(ctx, []) == []
+    assert _compute_block_hashes(bm, ctx, []) == []
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +215,7 @@ def test_compute_block_hashes_partial_block_returns_empty() -> None:
 def test_count_device_hits_contiguous_prefix() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     _seed_device_prefix_cache(bm, hashes[:3])
 
@@ -215,7 +227,7 @@ def test_count_device_hits_contiguous_prefix() -> None:
 def test_count_stops_at_device_gap() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     # Seed blocks 0 and 2, leaving a gap at block 1. With a NullConnector
     # (no external tiers) the walk must stop at the gap: block 2 is cached
@@ -229,7 +241,7 @@ def test_count_stops_at_device_gap() -> None:
 def test_count_with_no_hits_is_zero() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     assert bm.count_cached_prefix_blocks(hashes) == PrefixCacheHits()
 
@@ -237,7 +249,7 @@ def test_count_with_no_hits_is_zero() -> None:
 def test_count_respects_prefix_caching_disabled() -> None:
     bm = _make_block_manager(enable_prefix_caching=False)
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     assert bm.count_cached_prefix_blocks(hashes) == PrefixCacheHits()
 
@@ -261,13 +273,14 @@ def test_device_hit_increments_device_blocks_served() -> None:
 
     num_prompt_tokens = 2 * BLOCK_SIZE + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
+    bm.claim(ctx)
     bm.compute_hashes_for_request(ctx)
     hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
 
     _seed_device_prefix_cache(bm, hashes)
 
-    skip_amount, event = bm.reuse_blocks_from_prefix_cache(ctx, replica_idx=0)
+    skip_amount, event = bm.reuse_blocks_from_prefix_cache(ctx)
 
     assert skip_amount == 2 * BLOCK_SIZE
     assert event.is_complete()
@@ -279,7 +292,7 @@ def test_device_hit_increments_device_blocks_served() -> None:
 def test_count_is_read_only() -> None:
     bm = _make_block_manager()
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
     _seed_device_prefix_cache(bm, hashes[:2])
 
     num_free_before = bm.device_block_pool.num_free_blocks
@@ -303,7 +316,7 @@ def test_count_continues_into_host_and_disk_tiers() -> None:
     connector = _TierStubConnector()
     bm = _make_block_manager(connector=connector)
     ctx = _make_ctx(np.arange(41, dtype=np.int32))  # 5 full blocks
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
 
     # Block 0 on device, block 1 on host, block 2 on disk, block 3 missing,
     # block 4 on host (unreachable past the gap).
@@ -325,7 +338,7 @@ def test_count_all_device_hits_skips_connector() -> None:
     connector = _TierStubConnector()
     bm = _make_block_manager(connector=connector)
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
-    hashes = bm.compute_block_hashes(ctx, [])
+    hashes = _compute_block_hashes(bm, ctx, [])
     _seed_device_prefix_cache(bm, hashes)
 
     hits = bm.count_cached_prefix_blocks(hashes)
@@ -343,66 +356,6 @@ def test_null_connector_counts_nothing() -> None:
     assert NullConnector().count_cached_prefix([b"\x00" * 8]) == (0, 0)
 
 
-def _make_tiered_connector_stub(
-    host_hashes: Sequence[bytes],
-    disk_hashes: Sequence[bytes],
-    *,
-    only_last_level: bool = False,
-) -> TieredConnector:
-    """Build a TieredConnector without device buffers.
-
-    ``count_cached_prefix`` only touches the host block pool, the disk
-    tier's ``contains``, and the last-level-cache flag, so the test wires
-    exactly those three attributes onto an uninitialized instance.
-    """
-    connector = TieredConnector.__new__(TieredConnector)
-    host_pool = BlockPool(
-        total_num_blocks=8,
-        enable_runtime_checks=False,
-    )
-    for h in host_hashes:
-        block, _ = host_pool.alloc_block()
-        host_pool.commit_into_prefix_cache(h, block)
-    connector._host_block_pool = host_pool
-    disk_set = set(disk_hashes)
-    connector._disk_tier = SimpleNamespace(contains=disk_set.__contains__)  # type: ignore[assignment]
-    connector._only_use_kv_connector_last_level_cache = only_last_level
-    return connector
-
-
-def test_tiered_connector_walks_host_then_disk() -> None:
-    h = [bytes([i]) * 8 for i in range(4)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0]], disk_hashes=[h[1]]
-    )
-
-    # host, disk, miss, (unreached) => (1, 1)
-    assert connector.count_cached_prefix(h) == (1, 1)
-
-
-def test_tiered_connector_prefers_host_over_disk() -> None:
-    h = [bytes([i]) * 8 for i in range(2)]
-    connector = _make_tiered_connector_stub(host_hashes=h, disk_hashes=h)
-
-    assert connector.count_cached_prefix(h) == (2, 0)
-
-
-def test_tiered_connector_stops_at_gap() -> None:
-    h = [bytes([i]) * 8 for i in range(3)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0], h[2]], disk_hashes=[]
-    )
-
-    assert connector.count_cached_prefix(h) == (1, 0)
-
-
-def test_tiered_connector_last_level_only_skips_host() -> None:
-    h = [bytes([i]) * 8 for i in range(2)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0], h[1]],
-        disk_hashes=[h[0]],
-        only_last_level=True,
-    )
-
-    # Host is ignored: block 0 counts from disk, block 1 is a miss.
-    assert connector.count_cached_prefix(h) == (0, 1)
+# The host/disk tier's own host-then-disk walk lives in Rust now; it is covered
+# by the kv-tier-connector crate's unit tests and
+# ``internal/dkv/test_rust_tiered_connector_gpu.py``.

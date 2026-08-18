@@ -33,7 +33,7 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
     get_static_string,
 )
@@ -99,7 +99,7 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
 
     comptime if messages.__len__() == 0:
         _debug_assert_msg(
-            _NO_MESSAGE.unsafe_ptr(), _NO_MESSAGE.byte_length() + 1, location
+            _NO_MESSAGE.ptr(), _NO_MESSAGE.byte_length() + 1, location
         )
     else:
         var message = _WriteBufferHeap()
@@ -116,11 +116,11 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
 
 @always_inline
 def debug_assert[
-    cond: def() capturing[_] -> Bool,
+    Cond: def() -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts, location: Optional[SourceLocation] = None):
+](cond: Cond, *messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -170,19 +170,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -193,17 +192,17 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
     For compile-time assertions, see [`comptime
     assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
-        cond: The function to invoke to check if the assertion holds.
+        Cond: The type of the closure to invoke to check if the assertion holds.
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
@@ -211,6 +210,7 @@ def debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
+        cond: The closure to invoke to check if the assertion holds.
         messages: A set of [`Writable`](/docs/std/format/Writable/)
             arguments to convert to a `String` message.
         location: Source location to report on assertion failure.
@@ -287,19 +287,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -310,10 +309,10 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
     For compile-time assertions, see [`comptime
@@ -356,10 +355,10 @@ def debug_assert[
 # slow compilation down.
 @always_inline
 def debug_assert[
-    cond: def() capturing[_] -> Bool,
+    Cond: def() -> Bool,
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
-]():
+](cond: Cond):
     """Asserts that the condition is true at run time, with no message.
 
     On failure this reports `assertion failed` at the call site. Use the
@@ -369,16 +368,19 @@ def debug_assert[
     def main():
         var x = 1
 
-        def check() capturing -> Bool:
+        def check() {x} -> Bool:
             return x > 0
 
-        debug_assert[check]()
+        debug_assert(check)
     ```
 
     Parameters:
-        cond: The function to invoke to check if the assertion holds.
+        Cond: The type of the closure to invoke to check if the assertion holds.
         assert_mode: Determines when the assert is turned on.
         cpu_only: If true, only run the assert on CPU.
+
+    Args:
+        cond: The closure to invoke to check if the assertion holds.
     """
 
     comptime if _assert_enabled[assert_mode, cpu_only]():
@@ -478,19 +480,18 @@ def debug_assert[
     ```
 
     This will have a run-time penalty due to allocating a `String` in the
-    condition expression, even when assertions are disabled. To avoid this, put
-    the condition inside a closure so it runs only when the assertion is turned
-    on:
+    condition expression, even when assertions are disabled. To avoid this, pass
+    the condition as a closure so it runs only when the assertion is turned on:
 
     ```mojo
     def main():
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name]("unexpected name")
+        debug_assert(check_name, "unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
@@ -501,10 +502,10 @@ def debug_assert[
         var person = "name: john, age: 50"
         var name = "john"
 
-        def check_name() capturing -> Bool:
+        def check_name() {name, person} -> Bool:
             return String("name: ", name) in person
 
-        debug_assert[check_name, cpu_only=True]("unexpected name")
+        debug_assert[cpu_only=True](check_name, "unexpected name")
     ```
 
     For compile-time assertions, see [`comptime
@@ -528,7 +529,7 @@ def debug_assert[
             return
 
         _debug_assert_msg(
-            message.unsafe_ptr(),
+            message.ptr(),
             # include StringLiteral null terminator for printf statements
             message.byte_length() + 1,
             call_location(),
@@ -539,7 +540,7 @@ def debug_assert[
 
 @no_inline
 def _debug_assert_msg(
-    message: Pointer[mut=False, Byte, _], length: Int, loc: SourceLocation
+    message: ImmPointer[Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -577,7 +578,7 @@ def _debug_assert_msg(
             from std.gpu.primitives.id import block_idx, thread_idx
 
             _printf[fmt](
-                loc.file_name().unsafe_ptr(),
+                loc.file_name().as_c_string_slice(),
                 loc.line(),
                 loc.column(),
                 UInt(block_idx.x),
@@ -602,7 +603,7 @@ def _debug_assert_msg(
             _ = printf_append_string_n(
                 fd,
                 Span(
-                    unsafe_ptr=fmt_str.unsafe_ptr(),
+                    unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
                     length=fmt_str.byte_length() + 1,
                 ),
                 False,
@@ -615,7 +616,7 @@ def _debug_assert_msg(
             _ = printf_append_string_n(
                 fd,
                 Span(
-                    unsafe_ptr=file_name.unsafe_ptr(),
+                    unsafe_ptr=file_name.as_bytes().unsafe_ptr(),
                     length=file_name.byte_length() + 1,
                 ),
                 False,
@@ -643,7 +644,7 @@ def _debug_assert_msg(
             )
         else:
             _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-                loc.file_name().unsafe_ptr(),
+                loc.file_name().as_c_string_slice(),
                 loc.line(),
                 loc.column(),
                 message,

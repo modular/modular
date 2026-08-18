@@ -39,7 +39,7 @@ struct ImplT(BaseT):
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @parameter
+    @__parameter
     @__copy_capture(thing)
     def kernel_fn():
         var idx = thread_idx.x

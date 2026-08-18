@@ -35,10 +35,9 @@ Two kernels:
 The host launcher `naive_fa_decode_apple` allocates the partials and enqueues
 both kernels; `flash_attention_dispatch` selects it for Apple decode by default
 (set `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` to opt out). The launcher
-dispatches the runtime `depth` to a compile-time `Depth` specialization over the
-multiples of `WARP_SIZE` up to `NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`; the
-dispatcher only routes here when `depth % WARP_SIZE == 0` and
-`depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`, otherwise `mha_gpu_naive` runs.
+dispatches the runtime `depth` to a compile-time `Depth` specialization;
+`naive_fa_decode_apple_supports_depth` is the single definition of which head
+dims those are, and the dispatcher sends the rest to `mha_gpu_naive`.
 
 Partial-buffer layout (partition-last / contiguous):
   * `ml_idx(b, head, split) = (b*num_heads + head)*num_partitions + split`
@@ -49,7 +48,6 @@ Partial-buffer layout (partition-last / contiguous):
 from std.collections import OptionalReg
 from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.math import ceildiv, exp
 from std.sys import llvm_intrinsic
 from std.utils.index import Index
@@ -71,6 +69,30 @@ comptime NEG_INF = Float32(-3.0e38)
 # Dispatcher gate: larger dims (and non-multiples of WARP_SIZE) fall back to
 # mha_gpu_naive.
 comptime NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM = 256
+
+
+@always_inline
+def naive_fa_decode_apple_supports_depth(depth: Int) -> Bool:
+    """Whether this kernel has a `Depth` specialization for `depth`.
+
+    Splitting the head dim across lanes needs `depth % WARP_SIZE == 0`, but a
+    lane's fragment is an `EPL = depth // WARP_SIZE` wide SIMD and a SIMD length
+    must be a power of two — so `EPL` is constrained too, which rules out head
+    dims like 96 and 160. The launcher specializes exactly this set, and
+    `flash_attention_dispatch` sends everything else to `mha_gpu_naive`; both
+    ask here so the two cannot disagree and drop a launch on the floor.
+
+    Args:
+        depth: The head dimension to check.
+
+    Returns:
+        Whether `depth` is dispatchable to this kernel.
+    """
+    return (
+        depth % WARP_SIZE == 0
+        and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+        and Bool((depth // WARP_SIZE).is_power_of_two())
+    )
 
 
 @always_inline
@@ -617,11 +639,11 @@ def naive_fa_decode_apple[
         return
 
     debug_assert(
-        depth % WARP_SIZE == 0 and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
+        naive_fa_decode_apple_supports_depth(depth),
         (
-            "naive_fa_decode_apple requires depth %% WARP_SIZE == 0 and depth"
-            " <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM; the dispatcher must gate"
-            " unsupported head dims to mha_gpu_naive"
+            "naive_fa_decode_apple requires a depth that"
+            " naive_fa_decode_apple_supports_depth accepts; the dispatcher must"
+            " gate unsupported head dims to mha_gpu_naive"
         ),
     )
 
@@ -712,46 +734,48 @@ def naive_fa_decode_apple[
     comptime MAX_D_STEPS = NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM // WARP_SIZE
     comptime for di in range(1, MAX_D_STEPS + 1):
         comptime D = di * WARP_SIZE
-        if depth == D:
-            comptime core_kernel = naive_fa_decode_apple_core[
-                q_type,
-                output_type,
-                p_type,
-                k_t,
-                v_t,
-                mask_t,
-                type_of(o_partial_t).LayoutType,
-                type_of(q_flat).LayoutType,
-                type_of(valid_length_flat).LayoutType,
-                type_of(sink_layout_val),
-                ragged=ragged,
-                sink=sink,
-                _use_valid_length=_use_valid_length,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-                Depth=D,
-                SplitSize=SplitSize,
-            ]
-            ctx.enqueue_function[core_kernel](
-                o_partial_t,
-                m_partial_t,
-                l_partial_t,
-                q_flat,
-                k,
-                v,
-                mask_functor,
-                valid_length_flat,
-                sink_tile,
-                scale,
-                Int32(batch_size),
-                Int32(max_prompt_len),
-                Int32(max_cache_size),
-                Int32(num_heads),
-                Int32(depth),
-                Int32(group),
-                Int32(num_partitions),
-                grid_dim=(num_partitions, batch_size, num_heads),
-                block_dim=WARP_SIZE,
-            )
+        # gate non-power-of-two `di` instantiating an invalid vec type
+        comptime if naive_fa_decode_apple_supports_depth(D):
+            if depth == D:
+                comptime core_kernel = naive_fa_decode_apple_core[
+                    q_type,
+                    output_type,
+                    p_type,
+                    k_t,
+                    v_t,
+                    mask_t,
+                    type_of(o_partial_t).LayoutType,
+                    type_of(q_flat).LayoutType,
+                    type_of(valid_length_flat).LayoutType,
+                    type_of(sink_layout_val),
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    Depth=D,
+                    SplitSize=SplitSize,
+                ]
+                ctx.enqueue_function[core_kernel](
+                    o_partial_t,
+                    m_partial_t,
+                    l_partial_t,
+                    q_flat,
+                    k,
+                    v,
+                    mask_functor,
+                    valid_length_flat,
+                    sink_tile,
+                    scale,
+                    Int32(batch_size),
+                    Int32(max_prompt_len),
+                    Int32(max_cache_size),
+                    Int32(num_heads),
+                    Int32(depth),
+                    Int32(group),
+                    Int32(num_partitions),
+                    grid_dim=(num_partitions, batch_size, num_heads),
+                    block_dim=WARP_SIZE,
+                )
 
     comptime stitch_kernel = naive_fa_decode_apple_stitch[
         output_type,

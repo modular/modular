@@ -11,7 +11,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../requirements';
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 
 In this tutorial, you'll deploy a MAX inference endpoint with Llama 3 from
 local testing to production on AWS, GCP, or Azure. You'll learn to serve models
@@ -46,14 +46,14 @@ url="/max/packages#system-requirements" />
 In this section, you will set up and run Llama 3 locally to understand its
 capabilities and validate functionality before moving to the cloud. This part
 doesn't require a GPU because MAX can also run Llama 3 on CPUs, but we
-recommend using a [compatible GPU](/faq/#gpu-requirements) for the best
+recommend using a [compatible GPU](/packages/#gpu-compatibility) for the best
 performance.
 
 ### 1. Set up your environment
 
 Create a Python project to install our APIs and CLI tools:
 
-<InstallModular folder="llama3-tutorial" />
+<InstallMAX folder="llama3-tutorial" />
 
 ### 2. Serve Llama 3 locally
 
@@ -124,7 +124,7 @@ The Los Angeles Dodgers won the 2020 World Series. They defeated the Tampa Bay R
 ```
 
 To learn more about the supported REST body parameters, see our [API reference
-for chat completion](/rest-api/#POST/v1/chat/completions).
+for chat completion](/rest-api/create-chat-completion/).
 
 Now that the model works locally, we'll transition to cloud deployment.
 

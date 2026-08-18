@@ -16,12 +16,12 @@ from std.testing import *
 
 
 def test_init() raises:
-    re1 = -1.2
-    im1 = 6.5
-    c1 = Complex(re1, im1)
-    re2 = 3.14159
-    im2 = 0.0
-    c2 = Complex(re2)
+    var re1 = -1.2
+    var im1 = 6.5
+    var c1 = Complex(re1, im1)
+    var re2 = 3.14159
+    var im2 = 0.0
+    var c2 = Complex(re2)
 
     assert_equal(re1, c1.re)
     assert_equal(im1, c1.im)
@@ -30,10 +30,10 @@ def test_init() raises:
 
 
 def test_bool() raises:
-    c1 = Complex(0.0, 0.0)
-    c2 = Complex(1.0, 0.0)
-    c3 = Complex(0.0, 1.0)
-    c4 = Complex(-1.2, 6.5)
+    var c1 = Complex(0.0, 0.0)
+    var c2 = Complex(1.0, 0.0)
+    var c3 = Complex(0.0, 1.0)
+    var c4 = Complex(-1.2, 6.5)
 
     assert_false(c1)
     assert_true(c2)
@@ -42,21 +42,21 @@ def test_bool() raises:
 
 
 def test_str() raises:
-    re1 = 3.3
-    im1 = 5.1
-    str1 = "({} + {}i)".format(re1, im1)
-    out_str1 = String()
-    c1 = Complex(re1, im1)
+    var re1 = 3.3
+    var im1 = 5.1
+    var str1 = "({} + {}i)".format(re1, im1)
+    var out_str1 = String()
+    var c1 = Complex(re1, im1)
     assert_equal(str1, String(c1))
 
     c1.write_to(out_str1)
     assert_equal(str1, out_str1)
 
-    re2 = -1.2
-    im2 = -3.4
-    str2 = "({} - {}i)".format(re2, abs(im2))
-    out_str2 = String()
-    c2 = Complex(re2, im2)
+    var re2 = -1.2
+    var im2 = -3.4
+    var str2 = "({} - {}i)".format(re2, abs(im2))
+    var out_str2 = String()
+    var c2 = Complex(re2, im2)
     assert_equal(str2, String(c2))
 
     c2.write_to(out_str2)
@@ -64,14 +64,14 @@ def test_str() raises:
 
 
 def test_indexing() raises:
-    re1 = -1.2
-    im1 = 6.5
-    c1 = Complex(re1, im1)
+    var re1 = -1.2
+    var im1 = 6.5
+    var c1 = Complex(re1, im1)
     assert_equal(re1, c1[0])
     assert_equal(im1, c1[1])
 
-    re2 = 4.5
-    im2 = 7.8
+    var re2 = 4.5
+    var im2 = 7.8
     c1[0] = re2
     c1[1] = im2
     assert_equal(re2, c1[0])
@@ -79,47 +79,47 @@ def test_indexing() raises:
 
 
 def test_unary() raises:
-    re1 = -1.2
-    im1 = 6.5
-    c1 = Complex(re1, im1)
-    re2 = 4.5
-    im2 = -7.8
-    c2 = Complex(re2, im2)
+    var re1 = -1.2
+    var im1 = 6.5
+    var c1 = Complex(re1, im1)
+    var re2 = 4.5
+    var im2 = -7.8
+    var c2 = Complex(re2, im2)
 
-    c1_pos = +c1
+    var c1_pos = +c1
     assert_equal(c1.re, c1_pos.re)
     assert_equal(c1.im, c1_pos.im)
 
-    c2_pos = +c2
+    var c2_pos = +c2
     assert_equal(c2.re, c2_pos.re)
     assert_equal(c2.im, c2_pos.im)
 
-    c1_neg = -c1
+    var c1_neg = -c1
     assert_equal(-c1.re, c1_neg.re)
     assert_equal(-c1.im, c1_neg.im)
 
-    c2_neg = -c2
+    var c2_neg = -c2
     assert_equal(-c2.re, c2_neg.re)
     assert_equal(-c2.im, c2_neg.im)
 
 
 def test_binary_complex() raises:
-    c1 = Complex(-1.2, 6.5)
-    c2 = Complex(3.14159, -2.71828)
+    var c1 = Complex(-1.2, 6.5)
+    var c2 = Complex(3.14159, -2.71828)
 
-    sum = c1 + c2
-    diff = c1 - c2
-    prod = c1 * c2
-    quot = c1 / c2
+    var sum = c1 + c2
+    var diff = c1 - c2
+    var prod = c1 * c2
+    var quot = c1 / c2
 
-    sum_re = 1.94159
-    sum_im = 3.78172
-    diff_re = -4.34159
-    diff_im = 9.21828
-    prod_re = 13.898912
-    prod_im = 23.682271
-    quot_re = -1.242203
-    quot_im = 0.994192
+    var sum_re = 1.94159
+    var sum_im = 3.78172
+    var diff_re = -4.34159
+    var diff_im = 9.21828
+    var prod_re = 13.898912
+    var prod_im = 23.682271
+    var quot_re = -1.242203
+    var quot_im = 0.994192
 
     assert_almost_equal(sum_re, sum.re, atol=0.00001)
     assert_almost_equal(sum_im, sum.im, atol=0.00001)
@@ -132,22 +132,22 @@ def test_binary_complex() raises:
 
 
 def test_binary_float() raises:
-    c1 = Complex(-1.2, 6.5)
-    f1 = 2.5
+    var c1 = Complex(-1.2, 6.5)
+    var f1 = 2.5
 
-    sum = c1 + f1
-    diff = c1 - f1
-    prod = c1 * f1
-    quot = c1 / f1
+    var sum = c1 + f1
+    var diff = c1 - f1
+    var prod = c1 * f1
+    var quot = c1 / f1
 
-    sum_re = 1.3
-    sum_im = 6.5
-    diff_re = -3.7
-    diff_im = 6.5
-    prod_re = -3.0
-    prod_im = 16.25
-    quot_re = -0.48
-    quot_im = 2.6
+    var sum_re = 1.3
+    var sum_im = 6.5
+    var diff_re = -3.7
+    var diff_im = 6.5
+    var prod_re = -3.0
+    var prod_im = 16.25
+    var quot_re = -0.48
+    var quot_im = 2.6
 
     assert_almost_equal(sum_re, sum.re, atol=0.00001)
     assert_almost_equal(sum_im, sum.im, atol=0.00001)
@@ -160,22 +160,22 @@ def test_binary_float() raises:
 
 
 def test_binary_rfloat() raises:
-    c1 = Complex(-1.2, 6.5)
-    f1 = 2.5
+    var c1 = Complex(-1.2, 6.5)
+    var f1 = 2.5
 
-    sum = f1 + c1
-    diff = f1 - c1
-    prod = f1 * c1
-    quot = f1 / c1
+    var sum = f1 + c1
+    var diff = f1 - c1
+    var prod = f1 * c1
+    var quot = f1 / c1
 
-    sum_re = 1.3
-    sum_im = 6.5
-    diff_re = 3.7
-    diff_im = -6.5
-    prod_re = -3.0
-    prod_im = 16.25
-    quot_re = -0.068666
-    quot_im = -0.371939
+    var sum_re = 1.3
+    var sum_im = 6.5
+    var diff_re = 3.7
+    var diff_im = -6.5
+    var prod_re = -3.0
+    var prod_im = 16.25
+    var quot_re = -0.068666
+    var quot_im = -0.371939
 
     assert_almost_equal(sum_re, sum.re, atol=0.00001)
     assert_almost_equal(sum_im, sum.im, atol=0.00001)
@@ -188,7 +188,7 @@ def test_binary_rfloat() raises:
 
 
 def test_complex_inplace() raises:
-    c1 = Complex(-1, -1)
+    var c1 = Complex(-1, -1)
     c1 += Complex(0.5, -0.5)
     assert_almost_equal(-0.5, c1.re, atol=0.000001)
     assert_almost_equal(-1.5, c1.im, atol=0.000001)
@@ -230,9 +230,9 @@ def test_complex_inplace() raises:
 
 
 def test_equality() raises:
-    c1 = Complex(-1.2, 6.5)
-    c2 = Complex(-1.2, 0.0)
-    c3 = Complex(0.0, 6.5)
+    var c1 = Complex(-1.2, 6.5)
+    var c2 = Complex(-1.2, 0.0)
+    var c3 = Complex(0.0, 6.5)
 
     assert_true(c1 == c1)
     assert_false(c1 != c1)

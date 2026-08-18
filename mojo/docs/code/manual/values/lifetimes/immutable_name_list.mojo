@@ -33,5 +33,5 @@ def pass_immutable_list(list: NameList) raises:
 
 
 def main() raises:
-    list = NameList("Sophie", "Jack", "Diana")
+    var list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)

@@ -48,7 +48,7 @@ from std.testing import assert_almost_equal, assert_true
 
 
 @always_inline
-@parameter
+@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -221,12 +221,13 @@ def bench_reducescatter_2d[
             )
         list_of_ctx[i].synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter_2d(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
@@ -246,7 +247,7 @@ def bench_reducescatter_2d[
                 max_num_blocks,
             )
 
-        bencher_iter_custom[call_fn](b, ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
     bench_multicontext[bench_iter_2d](
         b,
@@ -455,12 +456,13 @@ def bench_reducescatter[
         )
         list_of_ctx[i].synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
@@ -475,7 +477,7 @@ def bench_reducescatter[
                 max_num_blocks,
             )
 
-        bencher_iter_custom[call_fn](b, ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

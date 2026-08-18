@@ -55,7 +55,7 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    # The "glm45" tool parser only emits Lark tool-call grammars, which the
-    # xgrammar backend cannot compile. Pin to llguidance (matches gemma4).
-    default_structured_output_backend="llguidance",
+    default_structured_output_backend="xgrammar",
+    # Matches the base GlmMoeDsaForCausalLM arch; see the rationale there.
+    default_structured_output_any_whitespace=True,
 )

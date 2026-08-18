@@ -180,12 +180,10 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
-            stride_ptr.unsafe_write(
-                rebind[StrideType](Idx[StrideType.static_value])
-            )
+            stride_ptr.write(rebind[StrideType](Idx[StrideType.static_value]))
         else:
             var stride_val = tensor.layout.stride[idx]().value()
-            stride_ptr.unsafe_write(
+            stride_ptr.write(
                 rebind[StrideType](Scalar[StrideType.DTYPE](stride_val))
             )
 
@@ -194,9 +192,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
-            shape_ptr.unsafe_write(
-                rebind[ShapeType](Idx[ShapeType.static_value])
-            )
+            shape_ptr.write(rebind[ShapeType](Idx[ShapeType.static_value]))
         else:
             var shape_val = Int(tensor.layout.shape[idx]().value())
 
@@ -205,9 +201,9 @@ def _reshape_tile_tensor_with_batch_to_3d(
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
             comptime if ShapeType == Int:
-                shape_ptr.unsafe_write(rebind[ShapeType](shape_val))
+                shape_ptr.write(rebind[ShapeType](shape_val))
             else:
-                shape_ptr.unsafe_write(
+                shape_ptr.write(
                     rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
                 )
 
@@ -346,7 +342,7 @@ def _batched_matmul_cpu[
 
     @always_inline
     @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
         var a_stride_between_batches = a.num_elements() // Int(a.dim[0]())
         var b_stride_between_batches = b.num_elements() // Int(b.dim[0]())
@@ -392,7 +388,7 @@ def _batched_matmul_cpu[
                 batch, c_shape
             )
 
-            @parameter
+            @__parameter
             def elementwise_lambda_2d[
                 c_type: DType, width: SIMDLength, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
@@ -416,7 +412,7 @@ def _batched_matmul_cpu[
                 return
 
             comptime if use_i8mm:
-                a_packed_alloc = alloc(
+                var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type]](
                         count=mh * kh, alignment=alignment
                     )
@@ -634,7 +630,7 @@ def batched_matmul_kernel_gpu[
         ),
     )
 
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
@@ -737,7 +733,7 @@ def _batched_matmul_gpu[
             comptime if elementwise_epilogue_fn:
                 comptime elementwise_epilogue = elementwise_epilogue_fn.value()
 
-                @parameter
+                @__parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
                     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -852,7 +848,7 @@ def _batched_matmul_gpu[
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
 
         @always_inline
-        @parameter
+        @__parameter
         def kernel_helper[block_m: Int, block_n: Int]() raises:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -896,7 +892,7 @@ def _batched_matmul_gpu[
 
     else:
         logger.info("Dispatching Batched Matmul via Naive Kernels")
-        c_shape = coord_to_index_list(c_buf.layout.shape_coord())
+        var c_shape = coord_to_index_list(c_buf.layout.shape_coord())
 
         comptime BLOCK_DIM = 16
         comptime bmm = naive_batched_matmul_kernel[
@@ -991,7 +987,7 @@ def batched_matmul[
 
     @always_inline
     @__copy_capture(a_shape, b_shape, c_shape)
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1162,7 +1158,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         ),
     )
 
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:

@@ -6,20 +6,20 @@ description: Generate images from text prompts or transform existing images usin
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../requirements';
 
 With MAX, you can run open-source image generation models locally and access
 them through a REST API. This page explains how to use the
-[`v1/responses`](/rest-api/#POST/v1/responses) endpoint to generate
+[`v1/responses`](/rest-api/create-response/) endpoint to generate
 images from text prompts or transform existing images, with examples for each
 input type.
 
 ## Endpoint
 
-The MAX [`v1/responses`](/rest-api/#POST/v1/responses) endpoint
+The MAX [`v1/responses`](/rest-api/create-response/) endpoint
 provides a unified interface for diverse AI tasks including image generation,
 with structured input and output handling. It's built on [Open
 Responses](https://huggingface.co/blog/open-responses), an open-source
@@ -212,7 +212,7 @@ denoising steps.
 
 The following are some commonly used parameters under `provider_options.image`.
 This is not an exhaustive list. For the complete reference, see
-[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/create-response/#POST/v1/responses.body.provider_options).
 
 | Parameter         | Type    | Default       | Description                                                                                                                                    |
 |-------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -232,7 +232,7 @@ Some parameters apply only to specific model families:
 
 For the full parameter list including `strength`, `response_format`,
 dual-encoder prompts, and CFG controls, see
-[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/create-response/#POST/v1/responses.body.provider_options).
 
 **Height and width**: You can generate images at different aspect ratios. Image
 dimensions must be a multiple of 8 and at least 128 pixels in each dimension.
@@ -324,7 +324,7 @@ url="/max/packages#system-requirements" />
 
 Create a Python project to install our APIs and CLI tools:
 
-<InstallModular folder="image-generation-quickstart" />
+<InstallMAX folder="image-generation-quickstart" />
 
 ### Serve your model
 

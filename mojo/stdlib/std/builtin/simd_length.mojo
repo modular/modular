@@ -18,7 +18,7 @@ from std.utils._select import _select_register_value as select
 struct SIMDLength(
     Comparable, Equatable, ImplicitlyCopyable, Indexer, TrivialRegisterPassable
 ):
-    """Represents a type appropriate for the size of a simd vector.
+    """Represents a type appropriate for the length of a simd vector.
 
     Note: Typically you should use Int instead."""
 
@@ -320,8 +320,3 @@ struct SIMDLength(
             True if the integer is a power of two, False otherwise.
         """
         return (self & (self - 1) == 0) & (self > 0)
-
-
-@deprecated("`SIMDSize` is deprecated, use `SIMDLength`.")
-comptime SIMDSize = SIMDLength
-"""The type of the `size` parameter of `SIMD`. Deprecated alias for `SIMDLength`."""

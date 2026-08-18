@@ -58,21 +58,20 @@ from std.gpu import (
     warp_id,
     thread_idx,
     WARP_SIZE,
-    barrier,
 )
+from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
@@ -1607,7 +1606,7 @@ def mla_prefill_sparse_qkv_fp8[
     var num_q_rows = q_num_matrix_view_rows(q)
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    q_tma_op = create_tensor_tile[
+    var q_tma_op = create_tensor_tile[
         Index(1, config.num_q_heads // config.cta_group, q_depth),
         swizzle_mode=SW64,
     ](ctx, q)
@@ -1615,7 +1614,7 @@ def mla_prefill_sparse_qkv_fp8[
     # k-major SW64 FP8 gather (box_width 64, 9 col-groups over qk_depth).  The
     # K producer gathers this CTA's B_TOPK/cta_group rows; the cg2 V producer
     # reuses this SAME descriptor to gather all B_TOPK keys' per-CTA depth slice.
-    kv_tma_op = kv_operand.create_gather4_tma_tile[
+    var kv_tma_op = kv_operand.create_gather4_tma_tile[
         tile_width=config.qk_depth,
         tile_stride=config.qk_depth,
         swizzle_mode=SW64,
@@ -1627,7 +1626,7 @@ def mla_prefill_sparse_qkv_fp8[
         output.ptr,
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
-    o_tma_op = create_tensor_tile[
+    var o_tma_op = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),

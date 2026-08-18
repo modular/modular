@@ -17,7 +17,7 @@ topk, expert skew, optional shared experts) instead of a hand-built
 per-slot token list. The bench builds the routing tables (a_offsets,
 expert_ids) so we can sweep one knob at a time.
 
-Runs the MXFP4 preshuffled-B grouped matmul (mxfp4_grouped_matmul_amd_preb:
+Runs the MXFP4 preshuffled-B grouped matmul (block_scaled_grouped_matmul_amd_preb:
 preshuffled B, direct VGPR loads).
 """
 
@@ -41,7 +41,7 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
 from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.matmul.gpu.amd import mxfp4_grouped_matmul_amd_preb
+from linalg.matmul.gpu.amd import block_scaled_grouped_matmul_amd_preb
 
 
 # ===----------------------------------------------------------------------=== #
@@ -102,7 +102,7 @@ def _run_name(
 
 
 # ===----------------------------------------------------------------------=== #
-# Preshuffled-B path (mxfp4_grouped_matmul_amd_preb)
+# Preshuffled-B path (block_scaled_grouped_matmul_amd_preb)
 # ===----------------------------------------------------------------------=== #
 
 
@@ -224,9 +224,8 @@ def bench_preb[
     )
     var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
 
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var a_tt = TileTensor[mut=False](
             cb_a.offset_ptr(iteration),
             row_major(Coord(total_routes, Idx[packed_K])),
@@ -252,7 +251,7 @@ def bench_preb[
         var c_tt = TileTensor[mut=True](
             cb_c.offset_ptr(iteration), row_major(Coord(total_routes, Idx[N]))
         )
-        mxfp4_grouped_matmul_amd_preb(
+        block_scaled_grouped_matmul_amd_preb(
             c_tt,
             a_tt,
             b_pre_tt,
@@ -266,10 +265,10 @@ def bench_preb[
             estimated_total_m,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher):
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

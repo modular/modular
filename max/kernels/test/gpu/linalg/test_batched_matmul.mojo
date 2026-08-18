@@ -31,7 +31,7 @@ comptime epilogue_func_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -106,7 +106,7 @@ def run_bmm_and_check_result[
     ctx.enqueue_copy(b_device_buffer, b_host._storage)
 
     # Run BMM
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device)
     def epilogue_fn[

@@ -34,7 +34,6 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.lora import LoRAInputs
 from max.support.algorithm import flatten2d
 
 if TYPE_CHECKING:
@@ -133,8 +132,8 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         context_batch = flatten2d(replica_batches)
         device0 = self.runtime.devices[0]
 
-        device_tokens, device_row_offsets, host_row_offsets = (
-            self._stage_ragged_token_inputs(context_batch, device0)
+        device_tokens, device_row_offsets, _ = self._stage_ragged_token_inputs(
+            context_batch, device0
         )
 
         return_n_logits_tensor = Buffer.from_numpy(
@@ -148,7 +147,7 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         else:
             data_parallel_splits = None
 
-        inputs = Llama3Inputs(
+        return Llama3Inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
             return_n_logits=return_n_logits_tensor,
@@ -156,16 +155,6 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
             kv_cache_inputs=kv_cache_inputs,
             data_parallel_splits=data_parallel_splits,
         )
-
-        lora_manager = self.runtime.lora_manager
-        if lora_manager is not None:
-            inputs.lora = LoRAInputs(
-                *lora_manager.get_lora_graph_inputs(
-                    context_batch, host_row_offsets.to_numpy(), device0
-                )
-            )
-
-        return inputs
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]

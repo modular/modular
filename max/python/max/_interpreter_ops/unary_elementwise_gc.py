@@ -259,8 +259,9 @@ def unary_model(
 
     Raises:
         KeyError: If the (op, device, dtype) is outside the supported set (e.g.
-            a transcendental op on an int dtype); or, with
-            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
+            a transcendental op on an int dtype).
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(op_type, device, dtype)
     # Cache-check before building the closures below: this runs on every

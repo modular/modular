@@ -7,7 +7,7 @@ description: Use the MAX chat completions endpoint with image or video input to 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import SmallCards from '@site/src/components/SmallCards';
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../requirements';
@@ -24,7 +24,7 @@ use case.
 ## Endpoint
 
 You can interact with a multimodal LLM through the
-[`v1/chat/completions`](/rest-api/#POST/v1/chat/completions) endpoint
+[`v1/chat/completions`](/rest-api/create-chat-completion/) endpoint
 by including image or video inputs alongside text in the request. This allows
 you to provide an image URL, video URL, or base64-encoded data as part of the
 conversation.
@@ -212,7 +212,7 @@ url="/max/packages#system-requirements" />
 
 Create a Python project to install our APIs and CLI tools:
 
-<InstallModular folder="vision-quickstart" />
+<InstallMAX folder="vision-quickstart" />
 
 ### Serve your model
 

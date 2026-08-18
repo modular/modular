@@ -25,96 +25,119 @@ from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+    from max.nn.kv_cache.cache_params import KVCacheMemory
 
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
-from .cache_manager import PagedKVCacheManager
+from ._ucx_env import configure_ucx_env
+from .cache_manager import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
-NixlBackendType = Literal["ucx", "libfabric"]
 
-_NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
-_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
+def _plugin_load_error(upstream_backend_type: str) -> str | None:
+    """Returns the dynamic-loader error behind an unloadable NIXL plugin.
 
-# GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, in
-# its per-vendor flavors) references but does not itself dlopen. The upstream
-# plugin manager loads plugins with ``dlopen(..., RTLD_NOW | RTLD_LOCAL)``;
-# ``RTLD_NOW`` requires every undefined symbol (CUDA driver, NVML, HSA,
-# optionally RDMA verbs) to be resolvable at load time, and ``RTLD_LOCAL``
-# means the plugin cannot see symbols unless they were already loaded
-# ``RTLD_GLOBAL`` into the process.
-_NIXL_PLUGIN_DEP_LIBS: tuple[str, ...] = (
-    # RDMA verbs (only needed by the *-verbs UCX flavors); harmless if absent.
-    "libibverbs.so.1",
-    "libmlx5.so.1",
-    # CUDA driver + NVML: required by the CUDA-flavor UCX plugin.
-    "libcuda.so.1",
-    "libnvidia-ml.so.1",
-    # HSA runtime: required by the ROCm-flavor UCX plugins.
-    "libhsa-runtime64.so.1",
-)
+    Upstream NIXL reports a plugin whose ``dlopen`` failed exactly as it reports
+    one that does not exist -- ``NIXL_ERR_NOT_FOUND`` -- and logs the loader
+    error at INFO, below its default WARN level. Retrying the load here recovers
+    that message, which is what distinguishes a broken runtime dependency (a
+    conflicting SONAME already in the process, a missing driver library) from a
+    packaging gap.
 
-_nixl_plugin_deps_preloaded = False
-
-
-def _preload_nixl_plugin_deps() -> None:
-    """Pre-loads the UCX plugin's runtime dependencies with ``RTLD_GLOBAL``.
-
-    The upstream NIXL plugin manager ``dlopen``s ``libplugin_UCX.so`` with
-    ``RTLD_NOW | RTLD_LOCAL``. The vendored plugin flavor (selected per host
-    GPU vendor via ``NIXL_PLUGIN_DIR``) references CUDA/NVML, HSA, or RDMA
-    verbs symbols; ``RTLD_LOCAL`` prevents the plugin from resolving them
-    against the process unless they were previously loaded with
-    ``RTLD_GLOBAL``. Without this, ``get_plugin_params("UCX")`` returns
-    ``NIXL_ERR_NOT_FOUND`` because the plugin fails to load.
-
-    The Modular NIXL fork performed this preload inside its plugin-manager
-    constructor; upstream does not, so we restore it here. It runs in every
-    process that constructs a transfer engine — including ``spawn``-ed
-    multiprocessing children, which do NOT inherit the parent's ``RTLD_GLOBAL``
-    handles. Libraries that are absent on the host (e.g. CUDA on an AMD/CPU
-    box) are skipped; the plugin simply cannot load there, which is reported by
-    the existing availability checks rather than masked.
+    Returns ``None`` when the plugin loads here, so the failure lies elsewhere,
+    or when no plugin directory is set.
     """
-    global _nixl_plugin_deps_preloaded
-    if _nixl_plugin_deps_preloaded:
-        return
-    for lib_name in _NIXL_PLUGIN_DEP_LIBS:
-        try:
-            ctypes.CDLL(lib_name, mode=ctypes.RTLD_GLOBAL)
-        except OSError:
-            # Not present on this host; the corresponding UCX flavor cannot be
-            # used here. This is not an error to swallow — it is a genuine
-            # "this transport is unavailable on this machine" signal that
-            # surfaces downstream via get_available_plugins / get_plugin_params.
-            logger.debug(
-                "NIXL plugin dependency %s not found; skipping preload",
-                lib_name,
-            )
-    _nixl_plugin_deps_preloaded = True
+    plugin_dir = os.environ.get("NIXL_PLUGIN_DIR")
+    if not plugin_dir:
+        return None
+    path = os.path.join(plugin_dir, f"libplugin_{upstream_backend_type}.so")
+    try:
+        ctypes.CDLL(path, mode=ctypes.RTLD_LOCAL)
+    except OSError as e:
+        return str(e)
+    return None
 
 
 def _get_nixl_backend_type() -> NixlBackendType:
     """Returns the NIXL backend type from the environment.
 
-    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``).
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``). The default
+    is this engine's, not the validator's: the dKV connector reads the same
+    variable through the same validator but auto-selects when it is unset.
     """
-    raw = os.environ.get(_NIXL_BACKEND_ENV_VAR, "ucx").strip().lower()
-    if raw not in _SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unsupported NIXL transfer backend {raw!r} "
-            f"(set via {_NIXL_BACKEND_ENV_VAR}). "
-            f"Supported backends: {sorted(_SUPPORTED_BACKENDS)}"
-        )
-    return raw  # type: ignore[return-value]
+    return validate_nixl_backend(os.environ.get(NIXL_BACKEND_ENV_VAR, "ucx"))
+
+
+def _default_uccl_socket_ifname_if_unset() -> None:
+    """Pins UCCL's out-of-band bootstrap to the host's default-route NIC.
+
+    UCCL derives the IP it advertises for its TCP bootstrap from the socket
+    interface it selects (``UCCL_SOCKET_IFNAME``, then ``NCCL_SOCKET_IFNAME``);
+    when neither is set, its auto-pick can land on a RoCE rail. On a fabric
+    that carries RoCE only -- filtering rail TCP at the switch -- the peer's
+    bootstrap dial then hangs forever even though the RDMA data plane is
+    healthy. Default the interface to the host's default-route NIC (the
+    control network, which peers can reach) when the operator has not chosen
+    one; RDMA HCA selection is independent, so KV data still rides the rails.
+    An explicitly set ``UCCL_SOCKET_IFNAME``/``NCCL_SOCKET_IFNAME`` always wins.
+    """
+    if os.environ.get("UCCL_SOCKET_IFNAME") or os.environ.get(
+        "NCCL_SOCKET_IFNAME"
+    ):
+        return
+    # Field 0 (interface) of the /proc/net/route row whose destination is
+    # 0.0.0.0 and whose flags have RTF_GATEWAY set (0x2) is the default route.
+    try:
+        with open("/proc/net/route") as route_table:
+            next(route_table, None)  # header row
+            for line in route_table:
+                cols = line.split()
+                if (
+                    len(cols) > 3
+                    and cols[1] == "00000000"
+                    and int(cols[3], 16) & 0x2
+                ):
+                    os.environ["UCCL_SOCKET_IFNAME"] = cols[0]
+                    logger.info(
+                        "Defaulting UCCL_SOCKET_IFNAME to %s so UCCL's "
+                        "bootstrap does not ride the RDMA rails; set "
+                        "UCCL_SOCKET_IFNAME explicitly to override.",
+                        cols[0],
+                    )
+                    return
+    except OSError:
+        pass
+
+
+def _default_uccl_p2p_env_if_unset() -> None:
+    """Forces UCCL's RDMA transport to avoid its broken same-host IPC path.
+
+    UCCL's cross-process peer-to-peer IPC path is broken upstream, so a
+    same-host (intranode) sender/receiver pair deadlocks unless UCCL uses its
+    RDMA transport instead. ``UCCL_P2P_TRANSPORT=rdma`` and
+    ``UCCL_P2P_DISABLE_IPC=1`` force that; both are no-ops internode, where
+    RDMA is already the only path. An explicitly set value always wins.
+    """
+    for name, value in (
+        ("UCCL_P2P_TRANSPORT", "rdma"),
+        ("UCCL_P2P_DISABLE_IPC", "1"),
+    ):
+        if not os.environ.get(name):
+            os.environ[name] = value
+            logger.info("Defaulting %s=%s for UCCL.", name, value)
 
 
 def available_port(
@@ -326,12 +349,17 @@ class TensorAgent:
                 draft_scales]``). All must share the same device. Must be
                 non-empty.
             memory_type: NIXL memory segment type (DRAM or VRAM).
-            backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
+            backend_type: NIXL transport backend
+                (``"ucx"``, ``"libfabric"``, or ``"uccl"``).
         """
         # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
         # before the NIXL plugin manager dlopens the plugin. Must run in this
         # process (e.g. spawn-ed children do not inherit RTLD_GLOBAL handles).
-        _preload_nixl_plugin_deps()
+        preload_nixl_plugin_deps()
+
+        if backend_type == "uccl":
+            _default_uccl_socket_ifname_if_unset()
+            _default_uccl_p2p_env_if_unset()
 
         # Create NIXL agent
         agent = nixl.Agent(
@@ -360,9 +388,26 @@ class TensorAgent:
 
         # All groups for one shard live on the same device.
         device = tensors[0].device
-        backend_params = agent.get_plugin_params(upstream_backend_type)[0]
+        try:
+            plugin_params = agent.get_plugin_params(upstream_backend_type)
+        except Exception as e:
+            reason = _plugin_load_error(upstream_backend_type)
+            detail = f": {reason}" if reason else ""
+            raise RuntimeError(
+                f"NIXL backend {backend_type!r} is present in "
+                f"{os.environ.get('NIXL_PLUGIN_DIR')} but could not be "
+                f"loaded{detail}. Set NIXL_LOG_LEVEL=INFO for the full NIXL "
+                "plugin log."
+            ) from e
+        backend_params = plugin_params[0]
         if not device.is_host:
             backend_params["gpu_device_id"] = str(device.id)
+
+        # Fill in UCX transport defaults (TLS + the GPU-local IB device) before
+        # the backend — and thus the UCX worker that reads them — is created.
+        # A no-op for non-CUDA devices (ROCm UCX configures itself).
+        if backend_type == "ucx":
+            configure_ucx_env(device)
 
         backend = agent.create_backend(
             type=upstream_backend_type,
@@ -938,8 +983,11 @@ class TransferEngine:
                 "UCX_NET_DEVICES" in os.environ and "UCX_TLS" in os.environ
             ):
                 raise ValueError(
-                    f"Attempted to connect to a TransferEngine on a different node but UCX transports are not configured ({hostname} <-> {remote.hostname}). "
-                    "Please re-run and specify both the UCX_TLS and UCX_NET_DEVICES env vars."
+                    "Inter-node UCX transfer is not configured "
+                    f"({hostname} <-> {remote.hostname}): MAX could not "
+                    "auto-derive the GPU-local InfiniBand device. Set "
+                    "UCX_NET_DEVICES (e.g. mlx5_0:1) and UCX_TLS (e.g. "
+                    "cuda_ipc,cuda_copy,rc,sm,self) explicitly."
                 )
             if backend_type == "libfabric" and not os.environ.get(
                 "FI_EFA_USE_DEVICE_RDMA"
@@ -1705,9 +1753,9 @@ class KVTransferEngine(TransferEngine):
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
     The engine accepts per-replica producer-authored NIXL groups
-    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup`).  The outer list
-    is indexed by DP replica; the inner list is that replica's group list — one
-    group per logical ``(child, kind)`` tensor, from ``to_memory_groups()``.
+    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
+    indexed by DP replica; the inner list is that replica's group list — one
+    group per logical ``(child, kind)`` tensor, from ``to_memory()``.
 
     ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
 
@@ -1727,7 +1775,7 @@ class KVTransferEngine(TransferEngine):
     def __init__(
         self,
         name: str,
-        memory: Sequence[Sequence[KVCacheMemoryGroup]],
+        memory: Sequence[Sequence[KVCacheMemory]],
     ) -> None:
         """Initialize the transfer engine from producer-authored NIXL groups.
 
@@ -1735,9 +1783,9 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup` — one
+                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one
                 logical ``(child, kind)`` tensor carrying every TP-shard view,
-                as returned by ``KVCacheBuffer.to_memory_groups()``.  All
+                as returned by ``KVCacheBuffer.to_memory()``.  All
                 replicas must have the same group count and consistent
                 replication kind.  The page count (including the null block) is
                 read from the groups themselves, so every group must agree on
@@ -1911,11 +1959,11 @@ class KVTransferEngine(TransferEngine):
 
     @classmethod
     def from_paged_kv_cache(
-        cls, name: str, kv_cache: PagedKVCacheManager
+        cls, name: str, kv_cache: PagedKVCacheManagerInterface
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Calls ``KVCacheBuffer.to_memory_groups()`` on each replica's device
+        Calls ``KVCacheBuffer.to_memory()`` on each replica's device
         buffer to obtain the producer-authored NIXL groups, then passes them to
         the constructor, which carries each group's ``replicated`` field as
         ``replicated_per_group``.
@@ -1925,7 +1973,7 @@ class KVTransferEngine(TransferEngine):
         group(s) so that heterogeneous buffer shapes (e.g., 61-layer MLA target
         vs. 1-layer Eagle draft) are registered as independent NIXL groups.
 
-        Quantized caches (values + scales): ``to_memory_groups()`` authors a
+        Quantized caches (values + scales): ``to_memory()`` authors a
         separate group for values and for scales (one group per child x kind).
         For non-quantized caches this collapses to one group per child, which is
         byte-identical to the previous ``all_buffers`` path.
@@ -1935,5 +1983,5 @@ class KVTransferEngine(TransferEngine):
 
         return cls(
             name=name,
-            memory=[buf.to_memory_groups() for buf in device_buffers],
+            memory=[buf.to_memory() for buf in device_buffers],
         )

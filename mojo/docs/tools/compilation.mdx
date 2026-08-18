@@ -7,8 +7,8 @@ description: >
 ---
 
 <!-- This page must be hand-tested; it cannot be verified in CI.
-     Test plan: mojo/docs/code/tools/README-Cross-Compile-Testing.md
-     Test script: mojo/docs/code/tools/test_cross_compile.sh -->
+     Test plan: mojo/docs/code/tools/README-Compilation-Targets.md
+     Test script: mojo/docs/code/tools/test_compilation_targets.sh -->
 
 Mojo compiles code for a range of targets, from your local machine to
 other CPUs, operating systems, and GPUs. You can inspect what the
@@ -450,17 +450,16 @@ follows the C calling convention.
 ### Initialize the Mojo runtime
 
 When a Mojo program starts from its own `main()` function, compiler-generated
-startup code initializes the Mojo runtime — the thread pool that
-parallel and asynchronous APIs such as
-[`parallelize()`](/docs/std/algorithm/backend/cpu/parallelize/parallelize/) and
-[`TaskGroup`](/docs/std/runtime/asyncrt/TaskGroup/) depend on. When the
-process `main()` belongs to a C or C++ host instead, that startup code
-never runs, so the runtime is never initialized. An exported function
-that then uses a runtime-dependent API crashes with a segmentation
+startup code initializes the Mojo runtime — the thread pool that parallel APIs
+such as
+[`parallelize()`](https://max.modular.com/api/mojo/max/algorithm/backend/cpu/parallelize/parallelize/)
+depend on. When the process `main()` belongs to a C or C++ host instead, that
+startup code never runs, so the runtime is never initialized. An exported
+function that then uses a runtime-dependent API crashes with a segmentation
 fault.
 
 To fix this, call
-[`initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/)
+[`initialize_runtime()`](/docs/std/runtime/initialize_runtime/)
 before any runtime-dependent Mojo code executes. The call is idempotent
 and inexpensive when the runtime is already initialized, and one
 initialization covers all threads in the process. There are two common
@@ -498,7 +497,7 @@ def parallel_sum(n: Int64) abi("C") -> Int64:
     var count = Int(n)
     var results = List[Int64](length=count, fill=0)
 
-    @parameter
+    @__parameter
     def fill(i: Int):
         results[i] = Int64(i)
 

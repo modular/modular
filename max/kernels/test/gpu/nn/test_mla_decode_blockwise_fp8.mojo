@@ -927,7 +927,7 @@ def run_bench_blockwise_fp8[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         out_tt,

@@ -323,11 +323,11 @@ def bench_conv2d[
 
     comptime if resolved == "im2col":
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_rscf_tt, output_tt)
         def im2col_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 _ = dispatch_im2col_matmul_conv2d(
@@ -353,11 +353,11 @@ def bench_conv2d[
             " accelerator (e.g. cuda:b200) or pick a different impl."
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_fcrs_tt, output_tt)
         def cudnn_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 conv_cudnn[dtype, dtype, dtype](
@@ -492,11 +492,11 @@ def bench_conv2d[
             output_amd_dev.unsafe_ptr(), output_2d_layout
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_nhwc_amd, filter_frsc_tt, output_2d_tt)
         def amd_4wave_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 amd_4wave_conv[
@@ -536,11 +536,11 @@ def bench_conv2d[
         var grid_dim_x = ceildiv(w_out * h_out, block_size)
         var grid_dim_y = batch
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_buf, filter_rscf_buf, output_buf)
         def naive_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 ctx.enqueue_function[naive_kernel](

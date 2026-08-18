@@ -9,22 +9,17 @@ import ModelDropdownTabs from "@site/src/components/ModelDropdownTabs";
 import ContactSection from "@site/src/components/ContactSection";
 import Requirements from "@site/src/components/Requirements";
 import { requirementsNoMacWithGPU } from "./requirements";
-import InstallModular from "./_includes/install-modular.mdx";
+import InstallMAX from "./_includes/install-modular.mdx";
 import {
   ModelSelector,
   DynamicCode,
   ConditionalContent,
 } from "@site/src/components/ModelSelector";
 
-A major component of the Modular Platform is MAX, our developer framework that
-abstracts away the complexity of building and serving high-performance GenAI
-models on a wide range of hardware, including NVIDIA and AMD GPUs.
-
-Modular supports self-hosted endpoints with MAX on your own hardware or in
-your own cloud environment. This quickstart shows you how to self-host.
-
-In this quickstart, you'll create an endpoint for an open-source LLM using MAX,
-run an inference from a Python client, and then benchmark the endpoint.
+MAX abstracts away the complexity of building and serving high-performance
+GenAI models on a wide range of hardware, including NVIDIA and AMD GPUs. In
+this quickstart, you'll create an endpoint for an LLM using MAX, run inference,
+and then benchmark the endpoint.
 
 If you'd rather create a self-hosted endpoint with Docker, see our
 [tutorial to benchmark MAX](/serve/benchmark).
@@ -48,8 +43,8 @@ System requirements:
 
 ## Set up your project
 
-First, install the `modular` package, which includes the `max` CLI you'll
-use to start the model endpoint.
+First, create a project and install the `max` package to get the CLI you'll
+use to create an endpoint and benchmark it.
 
 :::tip
 
@@ -57,7 +52,7 @@ For the most reliable experience, we recommend installing with `pixi`.
 
 :::
 
-<InstallModular folder="quickstart" />
+<InstallMAX folder="quickstart" />
 
 ## Start a model endpoint
 

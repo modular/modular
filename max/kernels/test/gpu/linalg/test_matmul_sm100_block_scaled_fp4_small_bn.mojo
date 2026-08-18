@@ -236,7 +236,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         comptime small_bn_block_tile = Index(128, 8, BK)
         comptime small_bn_umma = Index(128, 8, MMA_K)
 
-        @parameter
+        @__parameter
         def test_small_bn[N: Int, K: Int]() raises:
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,

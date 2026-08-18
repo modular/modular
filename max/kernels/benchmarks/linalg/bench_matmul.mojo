@@ -128,7 +128,7 @@ def bench_matmul[
 
     @always_inline
     @__copy_capture(a, b, c, bp)
-    @parameter
+    @__parameter
     def bench_fn() raises:
         comptime bench_matmul = matmul[
             transpose_b=False, b_packed=b_packed, saturated_vnni=False

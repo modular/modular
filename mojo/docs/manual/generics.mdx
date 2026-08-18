@@ -25,7 +25,7 @@ know what the compiler specializes and what gets passed at runtime.
 # T is a type parameter, threshold is a value parameter.
 # Both are compile-time. values is a runtime argument.
 def count_above[
-    T: Comparable & ImplicitlyCopyable & ImplicitlyDeletable, threshold: T
+    T: Comparable & ImplicitlyCopyable & Deinitable, threshold: T
 ](values: List[T]) -> Int:
     var count = 0
     for v in values:
@@ -56,7 +56,7 @@ what operations are valid.
   [`AnyType`](/docs/std/builtin/anytype/AnyType/). It places no behavioral
   requirements on a type.
 
-- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/)
+- [`Deinitable`](/docs/std/builtin/anytype/Deinitable/)
   is a common baseline for types with lifetimes. Parameterized code that stores
   or owns values often requires it.
 
@@ -100,7 +100,7 @@ comparison, be copyable, and be implicitly destructible (so the tuples
 
 ```mojo
 def all_equal[
-    T: Equatable & Copyable & ImplicitlyDeletable
+    T: Equatable & Copyable & Deinitable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs): return False
 
@@ -142,14 +142,14 @@ In type theory, the parametric `all_equal()` function is
 Keep requirements minimal:
 
 ```mojo
-T: Equatable & Copyable & ImplicitlyDeletable
+T: Equatable & Copyable & Deinitable
 ```
 
 The ampersand (`&`) composes traits. Use the fewest constraints your code
 needs. This keeps your function usable with more types. If you remove
 `Equatable` from `all_equal()`, the code won't compile because the
 compiler can't guarantee that `!=` exists for all `T`. Dropping
-`ImplicitlyDeletable` fails for a subtler reason: `zip()` yields each pair
+`Deinitable` fails for a subtler reason: `zip()` yields each pair
 as a tuple, and the loop can only destroy that temporary tuple if `T` is
 implicitly destructible.
 
@@ -184,7 +184,7 @@ def my_parameterized_fn[T: AnyType](value: T):
 
 This function accepts any type because its only limit is `AnyType`, the
 root of the trait hierarchy that all types conform to. Using `AnyType`
-means the value has no guaranteed destructor or lifetime management.
+means the value has no guaranteed deinitializer or lifetime management.
 Outside of [reflection](/docs/manual/metaprogramming/reflection/), this
 function can't do anything meaningful with `value`.
 
@@ -246,7 +246,7 @@ on, you write one `Pair[T]` and let the compiler generate specialized
 versions for each concrete `T` you use.
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 
 @fieldwise_init
 struct Pair[T: ComparableValue](ComparableValue):
@@ -267,7 +267,7 @@ to copy and clean up values in common operations, so it applies a trait
 composition on `T`:
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 ```
 
 The `Pair` definition applies this conformance in two places:
@@ -402,7 +402,7 @@ missing parameters:
 @fieldwise_init
 struct Struct(Writable):
     # Error: a `Some` struct field has no concrete type to infer
-    var x: Some[Copyable & ImplicitlyDeletable & Writable]
+    var x: Some[Copyable & Deinitable & Writable]
 
 def main():
     var s = Struct(1)
@@ -413,7 +413,7 @@ Move the conformances back to a parameterized type parameter to fix this:
 
 ```mojo
 @fieldwise_init
-struct Struct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+struct Struct[T: Copyable & Deinitable & Writable](Writable):
     var x: Self.T
 
 def main():
@@ -489,7 +489,7 @@ constants, and optimize aggressively with no runtime cost.
 This function creates a fixed-size list initialized with a default value:
 
 ```mojo
-comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
+comptime MyCollectionElement = ImplicitlyCopyable & Deinitable
 
 def make_filled[T: MyCollectionElement, size: Int](
     splat_value: T
@@ -533,7 +533,7 @@ def dynamic(size: Int):
 
 Explicitly destroyed types don't always work with parameterized code. The issue
 isn't parameterization; it's lifetime management. Explicit destruction gives you
-control over teardown: you can define destructors that take arguments,
+control over teardown: you can define deinitializers that take arguments,
 follow different paths, or raise errors.
 
 Parameterized code that copies or moves values can't see or honor that logic.
@@ -552,7 +552,7 @@ Safe cases are parameterized operations that don't affect lifetimes, such as
 comparisons and predicates.
 
 If your parameterized code needs to own, copy, or control when a value dies,
-avoid explicitly destroyed types. Add an `ImplicitlyDeletable` constraint
+avoid explicitly destroyed types. Add a `Deinitable` constraint
 to keep things working.
 
 ## Conditional trait conformance
@@ -574,7 +574,7 @@ In the following declaration, Mojo conforms `Wrapper` to `Writable` when
 its parameter `T` is also `Writable`:
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDeletable & Writable
+comptime BaseTraits = Copyable & Deinitable & Writable
 @fieldwise_init
 struct Wrapper[T: BaseTraits](
     Writable where conforms_to(T, Writable)
@@ -621,7 +621,7 @@ naturally. `Result[T, E]`, `Pair[L, R]`, `Dict[K, V]`, and similar
 types say: "This type can do X if each of its parts can do X":
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDeletable
+comptime BaseTraits = Copyable & Deinitable
 
 @fieldwise_init
 struct Pair[L: BaseTraits, R: BaseTraits](
@@ -717,7 +717,7 @@ Mojo supports flexible condition composition:
 - **Unconditional** — no special clauses:
 
   ```mojo
-  struct Foo(Copyable, ImplicitlyDeletable):
+  struct Foo(Copyable, Deinitable):
   ```
 
 - **Simple condition** — as shown in `Wrapper`:
@@ -764,7 +764,7 @@ has capacity and its elements are writable. The `Sized` conformance is
 unconditional:
 
 ```mojo
-comptime ElementTraits = Writable & Copyable & ImplicitlyDeletable
+comptime ElementTraits = Writable & Copyable & Deinitable
 struct SizedListWrapper[capacity: Int, T: ElementTraits](
     Sized, Writable where conforms_to(T, Writable) and capacity > 0
 ):

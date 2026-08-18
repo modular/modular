@@ -19,7 +19,7 @@ from std.memory import ThinAllocation, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.random import random_float64
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
-from nn.softmax import softmax
+from nn.softmax import softmax_inline
 
 from std.utils import IndexList
 
@@ -180,7 +180,7 @@ def _topp_minp_sampling[
                 batch_offset + i, input_logits.raw_load(batch_offset + i)
             )
 
-    @parameter
+    @__parameter
     @__copy_capture(input_logits)
     def apply_temperature[
         _simd_width: Int
@@ -188,7 +188,9 @@ def _topp_minp_sampling[
         var val = input_logits.load[width=_simd_width](coords)
         return val / temperature
 
-    softmax[simd_width=1, rank=input_logits.rank, input_fn=apply_temperature](
+    softmax_inline[
+        simd_width=1, rank=input_logits.rank, input_fn=apply_temperature
+    ](
         input_logits.layout.shape_coord(),
         sorted_probs,
         axis=input_logits.rank - 1,
@@ -211,7 +213,7 @@ def _topp_minp_sampling[
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
         else:
@@ -235,7 +237,7 @@ def _topp_minp_sampling[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
 

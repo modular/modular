@@ -139,7 +139,7 @@ trait TensorStorage:
     ]:
         """Returns a raw scalar pointer to the borrowed storage.
 
-        Reinterprets the storage handle as an `UnsafePointer` to the scalar
+        Reinterprets the storage handle as a `Pointer` to the scalar
         base of the referenced storage; no conversion of the stored elements
         takes place. The returned pointer borrows the same externally owned
         memory that the handle refers to; the trait still does not own it.
@@ -154,7 +154,7 @@ trait TensorStorage:
             storage: The storage to reinterpret as a raw scalar pointer.
 
         Returns:
-            An `UnsafePointer` to `Scalar[dtype]` referring to the base of the
+            A `Pointer` to `Scalar[dtype]` referring to the base of the
             borrowed storage.
 
         Raises:
@@ -1970,10 +1970,10 @@ trait TensorOps(TensorStorage):
 
 
 struct PointerStorage[*, element_width: Int = 1](TensorOps):
-    """Implements `TensorOps` backed by a raw `UnsafePointer`.
+    """Implements `TensorOps` backed by a raw `Pointer`.
 
     `PointerStorage` is the default storage policy for `TileTensor`. Its
-    `StorageType` handle is a plain `UnsafePointer`, and every operation is
+    `StorageType` handle is a plain `Pointer`, and every operation is
     expressed directly in terms of the underlying pointer.
 
     Parameters:
@@ -1997,7 +1997,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
     ]: TrivialRegisterPassable = UnsafePointer[
         SIMD[dtype, Self.element_width], origin, address_space=address_space
     ]
-    """A raw `UnsafePointer` to `Scalar[dtype]` borrowing the storage.
+    """A raw `Pointer` to `Scalar[dtype]` borrowing the storage.
 
     Parameters:
         mut: The mutability of the borrowed storage, inferred from `origin`.
@@ -2041,7 +2041,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             storage: The storage to reinterpret as a raw scalar pointer.
 
         Returns:
-            An `UnsafePointer` to `Scalar[dtype]` referring to the base of the
+            A `Pointer` to `Scalar[dtype]` referring to the base of the
             borrowed storage.
         """
         # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Bitcast
@@ -3614,7 +3614,7 @@ def _device_leaf_ptr[
 ]:
     """Returns the encoded device-leaf pointer held in `storage`'s first bytes.
 
-    A `DevicePointer` encodes to a bare `UnsafePointer` at the kernel boundary
+    A `DevicePointer` encodes to a bare `Pointer` at the kernel boundary
     (see `DevicePointer.device_type`), written into the first bytes of the
     handle's storage slot. On device those bytes are a real device address, so
     this reinterprets them. Aborts on host, where a `DevicePointer` cannot in
@@ -3638,7 +3638,7 @@ def _device_leaf_ptr[
         storage: The device-pointer handle to reinterpret.
 
     Returns:
-        A bare `UnsafePointer`, in the `GLOBAL` address space, to the
+        A bare `Pointer`, in the `GLOBAL` address space, to the
         referenced device storage.
     """
     comptime if is_gpu():
@@ -3661,7 +3661,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
     `PointerStorage`, accepting the same `element_width` parameter. Its
     `StorageType` handle is a `DevicePointer`, which on the host carries the
     buffer's owning reference plus an element offset and size, and which
-    substitutes to a bare device `UnsafePointer` at the kernel boundary
+    substitutes to a bare device `Pointer` at the kernel boundary
     (`DevicePointer.device_type`).
 
     Because the handle conforms to `DevicePassable`, a host-side
@@ -3750,7 +3750,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             storage: The storage to recover the base pointer from.
 
         Returns:
-            A bare `UnsafePointer` to the first scalar element of the storage.
+            A bare `Pointer` to the first scalar element of the storage.
         """
         comptime ResultPtr = UnsafePointer[
             Scalar[dtype], origin, address_space=address_space
@@ -5408,7 +5408,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
     ]: TrivialRegisterPassable = UnsafePointer[
         SIMD[dtype, Self.element_width], origin, address_space=address_space
     ]
-    """A raw `UnsafePointer` borrowing the storage, `static_offset` scalar
+    """A raw `Pointer` borrowing the storage, `static_offset` scalar
     elements before the viewed region.
 
     Parameters:
@@ -5444,7 +5444,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
             storage: The storage to reinterpret as a raw scalar pointer.
 
         Returns:
-            An `UnsafePointer` to `Scalar[dtype]` referring to the first
+            A `Pointer` to `Scalar[dtype]` referring to the first
             element the policy exposes, i.e. `static_offset` scalar elements
             past the handle.
         """

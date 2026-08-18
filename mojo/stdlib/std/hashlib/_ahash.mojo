@@ -36,14 +36,14 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
         A value which is similar in its bitpattern to result of a folded multiply.
     """
     # Extend to 128 bits and multiply.
-    m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
+    var m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
     # Extract the high and low 64 bits.
-    res = bitcast[DType.uint64, 2](m)
+    var res = bitcast[DType.uint64, 2](m)
     return res[0] ^ res[1]
 
 
 @always_inline
-def _read_small(data: Pointer[mut=False, UInt8, _], length: Int) -> U128:
+def _read_small(data: ImmPointer[UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -106,6 +106,30 @@ struct AHasher[key: U256](Defaultable, Hasher):
             0x1319_8A2E_0370_7344,
             0xA409_3822_299F_31D0,
             0x082E_FA98_EC4E_6C89,
+        )
+        self.buffer = pi_key[0]
+        self.pad = pi_key[1]
+        self.extra_keys = U128(pi_key[2], pi_key[3])
+
+    def __init__(out self, seed: U256):
+        """Initializes the hasher with a runtime seed mixed into its keyed state.
+
+        Same derivation as the zero-argument initializer, but XORs in
+        `seed` first. An all-zero `seed` reproduces that output exactly.
+
+        Args:
+            seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+                per-tenant or per-request salt.
+        """
+        var pi_key = (
+            Self.key
+            ^ U256(
+                0x243F_6A88_85A3_08D3,
+                0x1319_8A2E_0370_7344,
+                0xA409_3822_299F_31D0,
+                0x082E_FA98_EC4E_6C89,
+            )
+            ^ seed
         )
         self.buffer = pi_key[0]
         self.pad = pi_key[1]
@@ -186,14 +210,14 @@ struct AHasher[key: U256](Defaultable, Hasher):
             # vector values are not bigger than 8 bytes each
             var u64 = new_data.to_bits[DType.uint64]()
 
-            comptime if u64.size == 1:
+            comptime if u64.length == 1:
                 self._update(u64[0])
             else:
-                comptime for i in range(0, u64.size, 2):
+                comptime for i in range(0, u64.length, 2):
                     self._large_update(U128(u64[i], u64[i + 1]))
         else:
             # vector values will contribute to hash in multiple rounds
-            comptime for i in range(new_data.size):
+            comptime for i in range(new_data.length):
                 var v = new_data[i]
                 comptime assert size_of[v.dtype]() > 8 and v.dtype.is_integral()
 
@@ -224,3 +248,47 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var rot = self.buffer & 63
         var folded = _folded_multiply(self.buffer, self.pad)
         return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))
+
+
+def hash_seeded_bytes(data: ImmPointer[UInt8, _], n: Int, seed: U256) -> UInt64:
+    """Hashes a sequence of bytes with a runtime seed mixed into AHash's keyed state.
+
+    Seeded analogue of `hash(bytes, n)`. An all-zero `seed` reproduces
+    `hash(data, n)` exactly.
+
+    Args:
+        data: Pointer to the byte sequence to hash.
+        n: The number of bytes to hash.
+        seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = AHasher[U256(0)](seed)
+    hasher._update_with_bytes(Span(unsafe_ptr=data, length=n))
+    var value = hasher^.finish()
+    return value
+
+
+def hash_seeded[T: Hashable](value: T, seed: U256) -> UInt64:
+    """Hashes a `Hashable` value with a runtime seed mixed into AHash's keyed state.
+
+    Seeded analogue of `hash(hashable)`. An all-zero `seed` reproduces
+    `hash(value)` exactly.
+
+    Parameters:
+        T: Any Hashable type.
+
+    Args:
+        value: The input data to hash.
+        seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = AHasher[U256(0)](seed)
+    hasher.update(value)
+    var result = hasher^.finish()
+    return result

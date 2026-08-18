@@ -13,7 +13,8 @@
 
 from std.math import ceildiv
 
-from std.gpu import barrier, global_idx, thread_idx
+from std.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from layout import TileTensor, Coord, Idx, row_major

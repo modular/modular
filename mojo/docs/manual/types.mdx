@@ -20,7 +20,7 @@ There are some types that aren't defined as structs:
 Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
-[`Int`](/docs/std/builtin/int/Int/) and
+[`Int`](/docs/std/builtin/simd/#int) and
 [`String`](/docs/std/collections/string/string/String/). But these standard
 library types are the building blocks you'll use for most Mojo programs.
 
@@ -391,7 +391,7 @@ types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
 aliases for scalar values:
 
 ```mojo
-comptime Scalar = SIMD[size=1]
+comptime Scalar = SIMD[length=1]
 comptime Int = Scalar[DType.int]
 comptime Int8 = Scalar[DType.int8]
 comptime Float32 = Scalar[DType.float32]
@@ -449,14 +449,16 @@ operands to the desired type.
 
 You can explicitly convert a `SIMD` value to a different `SIMD` type either by
 invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
-it as an argument to the constructor of the target type. For example:
+it as an argument to the initializer of the target type. For example:
 
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
+var simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+var simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+var simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
 print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
+var simd4 = simd2 + SIMD[DType.int16, 4](
+    simd1
+)  # Convert with SIMD initializer
 print("simd4:", simd4)
 ```
 
@@ -465,13 +467,13 @@ simd3: [-2.2, 6.6, -13.200001, 22.0]
 simd4: [1, 5, 1, 9]
 ```
 
-You can convert a `Scalar` value by passing it as an argument to the constructor
+You can convert a `Scalar` value by passing it as an argument to the initializer
 of the target type. For example:
 
 ```mojo
-var my_int: Int16 = 12                 # SIMD[DType.int16, 1]
-var my_float: Float32 = 0.75           # SIMD[DType.float32, 1]
-result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
+var my_int: Int16 = 12                     # SIMD[DType.int16, 1]
+var my_float: Float32 = 0.75               # SIMD[DType.float32, 1]
+var result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
 print("Result:", result)
 ```
 
@@ -480,11 +482,11 @@ Result: 9.0
 ```
 
 You can convert a scalar value of any numeric type to `Int` by passing the value
-to the [`Int()`](/docs/std/builtin/int/Int/#__init__) constructor method.
+to the [`Int()`](/docs/std/builtin/simd/SIMD/#__init__) initializer method.
 Additionally, you can pass an instance of any struct that implements the
 [`Intable`](/docs/std/builtin/int/Intable/) trait or
 [`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait to the `Int()`
-constructor to convert that instance to an `Int`.
+initializer to convert that instance to an `Int`.
 
 ## Strings
 
@@ -505,7 +507,7 @@ print(s) # Testing Mojo strings
 Many standard library types conform to the
 [`Writable`](/docs/std/format/Writable/) trait, which indicates
 that a value can be converted into a `String` using the `String(...)`
-constructor.
+initializer.
 
 The built-in [`print()`](/docs/std/io/io/print/) function accepts values
 that conform to the `Writable` trait.
@@ -517,7 +519,7 @@ var s = "Items in list: " + String(5)
 print(s) # Items in list: 5
 ```
 
-Or, use the string constructor with variadic `Writable` types,
+Or, use the string initializer with variadic `Writable` types,
 so you don't have to call `String()` on each value:
 
 ```mojo
@@ -743,14 +745,14 @@ several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types
-example_tuple = Tuple[Int, String](1, "Example")
+var example_tuple = Tuple[Int, String](1, "Example")
 
 # Assign multiple variables at once
-x, y = example_tuple
+var x, y = example_tuple
 print(x, y)
 
 # Get individual values with an index
-s = example_tuple[1]
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -762,8 +764,8 @@ Example
 You can also create a tuple without explicit typing.
 
 ```mojo
-example_tuple = (1, "Example")
-s = example_tuple[1]
+var example_tuple = (1, "Example")
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -924,7 +926,7 @@ var empty_dict: Dict[String, Float64] = {}
 var values: Dict[String, Float64] = {"pi": 3.14159, "e": 2.71828}
 ```
 
-You can also use the constructor syntax:
+You can also use the initializer syntax:
 
 ```mojo
 var values = Dict[String, Float64]()
@@ -974,9 +976,9 @@ dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
 
 ```mojo
-i_like = {"sushi", "ice cream", "tacos", "pho"}
-you_like = {"burgers", "tacos", "salad", "ice cream"}
-we_like = i_like.intersection(you_like)
+var i_like = {"sushi", "ice cream", "tacos", "pho"}
+var you_like = {"burgers", "tacos", "salad", "ice cream"}
+var we_like = i_like.intersection(you_like)
 
 print("We both like:")
 for item in we_like:

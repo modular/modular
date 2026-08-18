@@ -20,7 +20,6 @@ from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
-from max.graph.weights import WeightsFormat
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -64,13 +63,7 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def validate_and_resolve_with_resolved_quantization_encoding(
-        self,
-        resolved_encoding: SupportedEncoding,
-        applied_dtype_cast_from: SupportedEncoding | None,
-        supported_encodings: set[SupportedEncoding],
-        default_weights_format: WeightsFormat,
-    ) -> None:
+    def _validate_final_architecture_model_path_weight_path(self) -> None:
         pass
 
 
@@ -371,9 +364,12 @@ def patched_hf_construction() -> Iterator[None]:
         # Keep the eager config-existence probe offline for online fake repos
         # (local paths already resolve via os.path.exists).
         patch("huggingface_hub.file_exists", return_value=False),
+        # architectures=None keeps the architecture name undeterminable, so
+        # construction-time resolution skips instead of rejecting the fake
+        # repo as an unknown architecture.
         patch(
             "max.pipelines.lib.config.model_config.load_huggingface_config",
-            return_value=MagicMock(),
+            return_value=MagicMock(architectures=None),
         ),
     ):
         yield
@@ -396,9 +392,9 @@ def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
-# This is a helper decorator to mock the PipelineConfig.resolve() method.
-# In practice, it is used to skip all the other validation and resolution steps.
-# We're just testing if the config fields are set correctly.
+# Helper decorator that mocks the registry's resolution phase (memory
+# planning) and HF repo access, so tests can exercise config construction
+# and field wiring without touching the network or estimating memory.
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
@@ -406,12 +402,12 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
         with (
             patch(
-                "max.pipelines.lib.config.PipelineConfig.resolve",
-                return_value=None,
-            ),
-            patch(
                 "max.pipelines.lib.registry._run_memory_planning",
-                return_value=_MemoryPlan(max_batch_size=1, footprint=0),
+                side_effect=lambda config, *a, **kw: _MemoryPlan(
+                    max_batch_size=1,
+                    footprint=0,
+                    device_specs=tuple(config.model.device_specs),
+                ),
             ),
             patched_hf_construction(),
         ):

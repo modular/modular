@@ -5,7 +5,7 @@ description: Generate videos from text prompts or animate existing images using 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 import InstallOpenAI from '../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../requirements';
@@ -13,12 +13,12 @@ import { requirementsWithGPU } from '../requirements';
 With MAX, you can deploy open-source video generation models on your local
 system or in the cloud and send inference requests with our REST API.
 This page explains how to use the
-[`v1/responses`](/rest-api/#POST/v1/responses) endpoint to generate
+[`v1/responses`](/rest-api/create-response/) endpoint to generate
 videos from text prompts or animate existing images.
 
 ## Endpoint
 
-The MAX [`v1/responses`](/rest-api/#POST/v1/responses) endpoint provides a
+The MAX [`v1/responses`](/rest-api/create-response/) endpoint provides a
 unified interface for diverse AI tasks including video generation. It's built on
 [Open Responses](https://huggingface.co/blog/open-responses), an open-source
 initiative to create a standardized, provider-agnostic API specification. The
@@ -110,7 +110,7 @@ count, and denoising steps.
 
 The following are some commonly used parameters under `provider_options.video`.
 This is not an exhaustive list. For the complete reference, see
-[`provider_options`](/rest-api/#POST/v1/responses.body.provider_options).
+[`provider_options`](/rest-api/create-response/#POST/v1/responses.body.provider_options).
 
 | Parameter           | Type    | Default       | Description                                                                                                                                  |
 |---------------------|---------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------|
@@ -140,7 +140,7 @@ frames:
 
 For advanced parameters including `guidance_scale_2`, `true_cfg_scale`,
 `cfg_normalization`, `cfg_truncation`, and `residual_threshold`, see the
-[`/v1/responses` API reference](/rest-api/#POST/v1/responses).
+[`/v1/responses` API reference](/rest-api/create-response/).
 
 ## Quickstart
 
@@ -165,7 +165,7 @@ url="/max/packages#system-requirements" />
 
 Create a Python project to install our APIs and CLI tools:
 
-<InstallModular folder="video-generation-quickstart" />
+<InstallMAX folder="video-generation-quickstart" />
 
 ### Serve your model
 

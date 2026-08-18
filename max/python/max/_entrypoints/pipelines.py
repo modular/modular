@@ -14,18 +14,23 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 import os
 import sys
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Callable, Iterator, Sequence
+from datetime import timedelta
 from typing import Any, TypeVar
 
 import click
 from click import shell_completion
+from max import _eager_policy
 from typing_extensions import ParamSpec
 
 # Please keep all max imports inside their respective functions.
-# This is best practice to keep the CLI invocation fast
+# This is best practice to keep the CLI invocation fast.
+# Exception: max._eager_policy is a stdlib-only leaf, so it costs nothing here.
 
 
 logger = logging.getLogger("max._entrypoints")
@@ -34,7 +39,11 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 # Subcommands that should not configure/emit telemetry.
-_TELEMETRY_OPT_OUT_COMMANDS = {"benchmark", "list"}
+_TELEMETRY_OPT_OUT_COMMANDS = {
+    "benchmark",
+    "list",
+    "warm-interpreter-cache",
+}
 
 
 def check_model_flag_conflict(args: list[str]) -> None:
@@ -201,7 +210,10 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 def configure_telemetry(subcommand: str) -> None:
     try:
         from max.serve.config import Settings
-        from max.serve.telemetry.common import configure_metrics
+        from max.serve.telemetry.common import (
+            configure_metrics,
+            configure_tracing,
+        )
     except ImportError as e:
         # Note: most commands import main(), and thus run this, so this catches most subcommands.
         _handle_import_error(
@@ -213,6 +225,7 @@ def configure_telemetry(subcommand: str) -> None:
 
     settings = Settings()
     configure_metrics(settings)
+    configure_tracing(settings)
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -272,6 +285,22 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
+def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
+    """Publishes the eager cold-cache policy to this process and its workers.
+
+    Travels through the environment because the model workers that dispatch
+    eager ops are subprocesses (see ``start_workers``).
+
+    Args:
+        allow_cold: Whether ``--allow-cold-interpreter-cache`` was passed. The
+            flag wins over an exported value; serve's default does not.
+    """
+    if allow_cold:
+        os.environ[_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR] = "1"
+    else:
+        os.environ.setdefault(_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, "0")
+
+
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
 @click.option(
@@ -286,6 +315,15 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     default=False,
     help="Pretty Print Entire Config",
 )
+@click.option(
+    "--allow-cold-interpreter-cache",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Permit compiling eager interpreter ops on demand, instead of "
+    "refusing on a machine that `max warm-interpreter-cache` has not warmed. "
+    "Equivalent to setting MAX_EAGER_ALLOW_LAZY_COMPILE=1.",
+)
 def cli_serve(
     port: int,
     headless: bool,
@@ -295,6 +333,7 @@ def cli_serve(
     max_pending_requests: int | None,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
+    allow_cold_interpreter_cache: bool,
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -302,6 +341,8 @@ def cli_serve(
     Loads a model from a Hugging Face model ID or local path and
     exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
+    _apply_interpreter_cache_policy(allow_cold_interpreter_cache)
+
     from max._entrypoints.cli.serve import serve_api_server_and_model_worker
     from max._entrypoints.workers import start_workers
     from max.pipelines import PipelineArgs
@@ -531,8 +572,8 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     default=None,
     help=(
         "Target API and architecture to compile for (e.g., cuda, cuda:sm_90, "
-        "hip:gfx942). When specified, uses virtual devices for compilation "
-        "without requiring physical hardware."
+        "hip:gfx942, metal). When specified, uses virtual devices for "
+        "compilation without requiring physical hardware."
     ),
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
@@ -552,37 +593,172 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
 
 
+def _render_warm_progress(
+    events: Iterator[tuple[str, int]], family_names: Sequence[str]
+) -> int:
+    """Renders warm progress, one spinner row per op family still compiling.
+
+    Each completion retires its row into a permanent check-mark line above
+    the live display, so the live region shrinks to what is still in flight.
+    On a non-terminal stdout rich suppresses the live region, so the output
+    degrades to the same per-completion lines plus a final summary row.
+    Returns the total op count.
+    """
+    # Lazy import to keep it off the startup path of every other CLI command.
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
+    total_ops = 0
+    with Progress(
+        SpinnerColumn(finished_text="[green]✓[/green]"),
+        TextColumn("{task.description}"),
+        TimeElapsedColumn(),
+    ) as progress:
+        began = progress.get_time()
+        overall = progress.add_task(
+            f"0/{len(family_names)} op families", total=len(family_names)
+        )
+        rows = {name: progress.add_task(name, total=1) for name in family_names}
+        for done, (name, op_count) in enumerate(events, start=1):
+            total_ops += op_count
+            plural = "" if op_count == 1 else "s"
+            finished_at = timedelta(seconds=int(progress.get_time() - began))
+            progress.remove_task(rows[name])
+            progress.console.print(
+                f"[green]✓[/green] {name} ({op_count} op{plural})"
+                f" [yellow]{finished_at}[/yellow]",
+                highlight=False,
+            )
+            progress.update(
+                overall,
+                advance=1,
+                description=f"{done}/{len(family_names)} op families",
+            )
+    return total_ops
+
+
 @main.command(name="warm-interpreter-cache")
-def cli_warm_interpreter_cache() -> None:
+@click.option(
+    "--check",
+    "check_only",
+    is_flag=True,
+    default=False,
+    help="Report whether this machine is already warmed, compiling nothing "
+    "(exit 0 if so, 1 if not).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Re-warm even if this machine is already warmed, e.g. after a "
+    "toolchain change.",
+)
+@click.option(
+    "--jobs",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Concurrent compile worker processes. Defaults to one per op "
+    "family, capped at the CPU count; 1 compiles in-process, serially.",
+)
+def cli_warm_interpreter_cache(
+    check_only: bool, force: bool, jobs: int | None
+) -> None:
     """Compile the eager interpreter's graph-compiler models to prepare caches.
 
-    Batch-compiles the full matmul, unary-elementwise, binary-elementwise,
-    reduce-axis, and shape-rearrange matrix for this machine's devices into
-    the on-disk cache, then drops a stamp. A later lazy
-    eager process on the same device set adopts the warm (one batched cache
-    load) instead of compiling each target on first use. Run it as a
-    provisioning step on the target hardware. Pure optimization: if skipped, or
-    on a different device set, dispatch compiles each target lazily.
+    Batch-compiles every registered op family and stamps this machine as
+    provisioned, so a later eager process adopts the warm in one batched load
+    instead of compiling per target. Families compile concurrently in worker
+    processes (see ``--jobs``); the artifacts land in the shared on-disk
+    model cache, which is what a later process reads. Does nothing on an
+    already-warmed machine unless ``--force``.
     """
-    import importlib
+    # Reject conflicting values, not the variables merely being set.
+    if _eager_policy.should_precompile():
+        var = _eager_policy.OP_PRECOMPILE_ENV_VAR
+        detail = (
+            "would compile the whole matrix at import, defeating --check's"
+            " promise of compiling nothing"
+            if check_only
+            else "moves the compile sweep into the import instead of this"
+            " command's tracked loop, losing the progress display and summary"
+        )
+        raise click.ClickException(
+            f"{var}=1 {detail}. Unset it:"
+            f" `env -u {var} max warm-interpreter-cache`."
+        )
+
+    if not check_only and not _eager_policy.allow_lazy_compile():
+        var = _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR
+        raise click.ClickException(
+            f"{var}=0 forbids compiling, which is what this command does."
+            f" Unset it: `env -u {var} max warm-interpreter-cache`."
+        )
 
     # Dynamic import: a static ``from`` import fails mypy on Linux (Mojo-backed
     # package with no stub) and pulls the package's heavy import into every CLI
     # command. importlib keeps it lazy and invisible to static analysis.
-    # GC_FAMILIES is shared with the import-time precompile and build-time warm.
-    interpreter_ops = importlib.import_module("max._interpreter_ops")
+    # Importing the package (even unused) is what registers its GC families.
+    importlib.import_module("max._interpreter_ops")
     gc_compile = importlib.import_module("max._interpreter_ops.gc_compile")
 
-    logger.info("Warming eager interpreter graph-compiler model cache...")
-    interpreter_ops.compile_all_families()
+    signature = gc_compile._context_signature()
+
+    if check_only:
+        if gc_compile.provisioned():
+            click.echo(f"provisioned for {signature}")
+            return
+        click.echo(f"not provisioned: no warm cache for {signature}")
+        raise SystemExit(1)
+
+    cache_dir = gc_compile._cache_dir()
+    if cache_dir is None:
+        raise click.ClickException(
+            "Cannot locate the model cache directory, so a warm here could"
+            " not be recorded and nothing would adopt it. Set"
+            " MODULAR_DERIVED_PATH to a writable location and retry."
+        )
+
+    if gc_compile.provisioned() and not force:
+        click.echo(
+            f"Already warmed for {signature}"
+            " (nothing to do; pass --force to re-warm)"
+        )
+        return
+
+    devices = gc_compile.DISCOVERED_DEVICES
+    click.echo(
+        f"Compiling interpreter ops for {len(devices)} device(s):"
+        f" {', '.join(gc_compile.device_class_of(d) for d in devices)}"
+    )
+
+    warm = importlib.import_module("max._interpreter_ops.warm")
+
+    families = gc_compile.registered_families()
+    if jobs is None:
+        jobs = min(len(families), os.cpu_count() or 1)
+    start = time.perf_counter()
+    try:
+        total_ops = _render_warm_progress(
+            warm.warm_families(jobs), [f.name for f in families]
+        )
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    elapsed = time.perf_counter() - start
+
     if gc_compile.write_warm_stamp():
-        logger.info("Done. Compiled models cached for this machine's devices.")
+        click.echo(
+            f"Compiled {total_ops} ops in {elapsed:.1f}s\n"
+            f"Stamp: {cache_dir / gc_compile._WARM_STAMP_NAME}"
+        )
     else:
-        logger.warning(
-            "Compiled models into the cache, but MODULAR_DERIVED_PATH is unset, "
-            "so the warm wasn't pinned to a shared location and later lazy "
-            "processes won't adopt it. Set MODULAR_DERIVED_PATH (to the same "
-            "value the consumers use) when warming."
+        click.echo(
+            f"Compiled {total_ops} ops in {elapsed:.1f}s, but the stamp"
+            " could not be written, so later processes will not adopt this"
+            " warm."
         )
 
 

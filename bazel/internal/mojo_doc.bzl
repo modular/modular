@@ -1,5 +1,6 @@
 """Generate documentation for Mojo source files."""
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo")
 load("@rules_mojo//mojo/private:utils.bzl", "MOJO_EXTENSIONS", "collect_mojoinfo", "format_import")  # buildifier: disable=bzl-visibility
 
@@ -16,7 +17,7 @@ def _root_directory(file):
 def _mojo_doc_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
 
-    import_paths, transitive_mojodeps = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
+    import_paths, transitive_mojodeps, _ = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
     root_directory = ctx.files.srcs[0].dirname
 
     file_args = ctx.actions.args()
@@ -57,6 +58,8 @@ def _mojo_doc_implementation(ctx):
     markdown_args.add(mojodoc_output.path)
     if ctx.attr.docs_title:
         markdown_args.add("--docs-title", ctx.attr.docs_title)
+    if ctx.attr.stability_doc_url:
+        markdown_args.add("--stability-doc-url", ctx.attr.stability_doc_url)
     if ctx.attr.docs_hosted_on_mojolang:
         markdown_args.add("--hosted-on-mojolang")
 
@@ -81,7 +84,9 @@ mojo_doc = rule(
             allow_files = MOJO_EXTENSIONS,
         ),
         "deps": attr.label_list(
-            providers = [MojoInfo],
+            # Matches mojo_library, whose deps this mirrors: cc deps are
+            # ignored when generating docs but must not be rejected.
+            providers = [[MojoInfo], [CcInfo]],
         ),
         "validate_missing_docs": attr.bool(
             default = False,
@@ -107,6 +112,10 @@ mojo_doc = rule(
             default = "none",
             values = ["all", "stable", "none"],
             doc = "Show stability markers in generated docs",
+        ),
+        "stability_doc_url": attr.string(
+            default = "",
+            doc = "URL that stability markers link to. Markers are plain text when unset.",
         ),
         "copts": attr.string_list(
             default = [],

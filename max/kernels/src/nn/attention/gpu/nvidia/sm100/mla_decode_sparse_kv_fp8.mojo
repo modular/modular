@@ -17,24 +17,21 @@ from std.math.constants import log2e
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     thread_idx,
     block_idx,
     warp_id,
     lane_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     CacheEviction,
     external_memory,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
-    named_barrier,
-)
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -410,8 +407,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         var batch_size = Int(scalar_args.ptr[0])
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = mla_decode_pack.num_partitions
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         # OffsetPosition.__init__ handles sparse overrides (topk loading,
         # clamping to actual_tokens, extra_topk, and split-K recomputation)
@@ -483,7 +480,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # owns (block_idx.y). @always_inline + comptime pruning => when
         # fold_shared_index=False this is byte-identical to the prior inline
         # call (verified kernel-scoped in Phase 6).
-        @parameter
+        @__parameter
         @always_inline
         def _pdl_early_exit_all_q():
             comptime if Self.fold_shared_index:
@@ -538,7 +535,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     _pdl_early_exit_all_q()
 
                 return  # This query position doesn't exist for this batch
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.q_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -715,7 +712,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         comptime idx_smem_stride = Self.config.BN_QK  # 64 Int32 values per stage
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
         if warp_idx == 8:
             if is_leader:
                 mbar_q[].init(1)
@@ -1839,7 +1836,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
         # Use num_keys_this_split for loop bounds (each split processes its portion)
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -1870,7 +1867,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             # Per-block gating: each 64-col K block issues as soon as the
             # convert WG publishes it on cvt_blk_bars, rather than waiting
             # for the whole stage on kv_cons.
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
             var b_desc = k_descriptor + k_slot_index * UInt32(
                 stage_stride_in_bytes
             )
@@ -1937,7 +1934,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 

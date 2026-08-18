@@ -42,9 +42,10 @@ chunk-inner ordering observable. B200-only (SM100), single CTA.
 
 from std.sys import size_of, has_nvidia_gpu_accelerator
 
-from std.gpu import WARP_SIZE, barrier, thread_idx, warp_id as get_warp_id
+from std.gpu import WARP_SIZE, thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
 from max.gpu.compute.arch.tcgen05 import (
@@ -140,7 +141,7 @@ def qk_consumer_kernel[
         ab_type, BN, BK, swizzle_mode=swizzle_mode, page_dense=use_pagedense
     ]()
 
-    q_smem = rebind[
+    var q_smem = rebind[
         UnsafePointer[
             Scalar[ab_type],
             address_space=AddressSpace.SHARED,
@@ -181,8 +182,8 @@ def qk_consumer_kernel[
     comptime q_expected_bytes = q_size * size_of[ab_type]()
     comptime k_expected_bytes = k_size * size_of[ab_type]()
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -316,7 +317,7 @@ def run_qk_consumer[
     arange(k.tensor[update=False](), start=0.0, step=0.001)
 
     # A=Q k-major tile (M,K), default (chunk-outer) box.
-    q_tma_op = create_tensor_tile[Index(M, K), swizzle_mode=swizzle_mode](
+    var q_tma_op = create_tensor_tile[Index(M, K), swizzle_mode=swizzle_mode](
         ctx, q.device_tensor()
     )
     comptime smem_use = (M + N) * size_of[ab_type]() * K + 64

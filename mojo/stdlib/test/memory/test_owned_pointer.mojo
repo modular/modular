@@ -36,7 +36,7 @@ def test_basic_ref() raises:
 
 def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
-    var unsafe_ptr = alloc[ObservableDel[]](1)
+    var unsafe_ptr = alloc[ObservableDel[]]({count = 1}).unsafe_leak()
     unsafe_ptr.unsafe_write(
         ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     )
@@ -54,7 +54,7 @@ def test_owned_pointer_copy_constructor() raises:
     assert_equal(1, b[])
     assert_equal(1, b2[])
 
-    assert_false(b.unsafe_ptr() == b2.unsafe_ptr())
+    assert_false(b.ptr() == b2.ptr())
 
 
 def test_copying_constructor() raises:
@@ -118,10 +118,10 @@ def test_into_inner() raises:
 def test_moveinit() raises:
     var deleted = False
     var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
-    var p1 = Int(b.unsafe_ptr())
+    var p1 = Int(b.ptr())
 
     var b2 = b^
-    var p2 = Int(b2.unsafe_ptr())
+    var p2 = Int(b2.ptr())
 
     assert_false(deleted)
 
@@ -145,7 +145,7 @@ def test_unsafe_take_allocation() raises:
 
 
 def test_owned_pointer_linear_type() raises:
-    # An `OwnedPointer` holding a linear (non-`ImplicitlyDeletable`) element
+    # An `OwnedPointer` holding a linear (non-`Deinitable`) element
     # has no implicit destructor, so it is consumed explicitly with
     # `into_inner()`.
     # The linear value is destroyed before any raising assert runs (the

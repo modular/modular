@@ -271,8 +271,9 @@ def resize_model(
 
     Raises:
         KeyError: If the target is outside the supported set (non-CPU device,
-            unsupported dtype, or rank > 5); or, with
-            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
+            unsupported dtype, or rank > 5).
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(op_type, device, dtype, rank, variant)
     model = _FAMILY.cache.get(key)

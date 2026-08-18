@@ -27,12 +27,11 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
@@ -203,7 +202,7 @@ def test_tma_block_reduce[
     ctx.enqueue_memset(d_out, 0)
 
     # Define the kernel launch function for benchmarking
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext) raises -> None:
         comptime if use_tma:
@@ -234,7 +233,7 @@ def test_tma_block_reduce[
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
             @always_inline
-            @parameter
+            @__parameter
             def input_fn_2d[
                 width: Int, _rank: Int
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:

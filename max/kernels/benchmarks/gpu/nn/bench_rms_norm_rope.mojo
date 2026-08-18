@@ -19,7 +19,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope_gpu
+from nn.normalization import rms_norm_rope
 
 from std.utils.index import Index, IndexList
 
@@ -56,7 +56,7 @@ def bench_rms_norm_rope_gpu[
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
-    var epsilon = Float32(0.001)
+    var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -64,62 +64,72 @@ def bench_rms_norm_rope_gpu[
     ctx.enqueue_copy(cos_d, cos_h)
     ctx.enqueue_copy(sin_d, sin_h)
 
-    @__copy_capture(data_buf)
     @always_inline
-    @parameter
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
-    @__copy_capture(cos_vals)
     @always_inline
-    @parameter
     def cos_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var cos_vals} -> SIMD[dtype, width]:
         var idx = cos_vals.layout(Coord(coords))
         return cos_vals.raw_load[width=width, alignment=alignment](idx)
 
-    @__copy_capture(sin_vals)
     @always_inline
-    @parameter
     def sin_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var sin_vals} -> SIMD[dtype, width]:
         var idx = sin_vals.layout(Coord(coords))
         return sin_vals.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
-    @__copy_capture(output_buf)
-    @parameter
     def output_fn[
-        width: Int, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        width: SIMDLength, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {
+        var output_buf
+    } -> None:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
-    @__copy_capture(shape, gamma, epsilon, weight_offset, cos_vals, sin_vals)
-    @parameter
+    @__copy_capture(
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        input_fn,
+        cos_fn,
+        sin_fn,
+        output_fn,
+    )
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            rms_norm_rope_gpu[
-                input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=False
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
+            rms_norm_rope[
+                dtype,
+                dtype,
+                dtype,
+                rank,
+                target="gpu",
+                multiply_before_cast=False,
             ](
-                shape,
+                input_fn,
+                cos_fn,
+                sin_fn,
+                output_fn,
+                Coord(shape),
+                Scalar[DType.int](cols),
                 gamma,
                 epsilon,
                 weight_offset,
-                cos_vals,
-                sin_vals,
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

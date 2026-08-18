@@ -18,6 +18,10 @@
 # input boundary: per 32-element K block, compute one `float8_e8m0fnu` scale and
 # cast the scaled values to `float8_e4m3fn`.
 #
+# On AMD CDNA4/MI355X, the same op runs via `quantize_mx_amd` instead, with
+# rank-2 row-major scales rather than SM100's rank-5 interleaved layout (see
+# run_one_case).
+#
 # The headline accuracy hazard is the FP8 cast itself: a finite-but-large input
 # (e.g. > 448, the e4m3 max) cast to e4m3 WITHOUT clamping produces NaN -- the
 # SERVOPT-1420 class. The production kernel clamps to +-max_finite before the
@@ -26,6 +30,9 @@
 #
 # M is the runtime fuzz axis; N is compile-time (`-D N=..`, multiple of 32) so
 # the kernel's static-shape K is set. SM100/B200 only.
+#
+# Also runs on AMD CDNA4/MI355X; the B200 branch below is untouched by that
+# support.
 #
 # Oracles:
 #   contract (default, --contract 1): for every 32-block whose inputs are all
@@ -46,8 +53,10 @@ from std.sys.defines import get_defined_int
 from std.utils.numerics import isfinite
 
 from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
+from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4fp8
+from linalg.block_scaled_quantization import quantize_mx_amd
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -123,9 +132,15 @@ def _check_contract(
                     break
             if not finite_block:
                 continue
-            var sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                scales, r, c0
-            ).cast[DType.float32]()
+            var sf: Float32
+            comptime if scales.rank == 5:
+                sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    scales, r, c0
+                ).cast[DType.float32]()
+            else:
+                sf = rebind[Scalar[scales_dtype]](
+                    scales[Coord(r, c0 // SF_VECTOR_SIZE)]
+                ).cast[DType.float32]()
             if not isfinite(sf):
                 print("FUZZ_CONTRACT_FAIL kind=scale row=", r, "block=", b)
                 return False
@@ -158,9 +173,15 @@ def _check_roundtrip(
             var x = inp[r * N + c].cast[DType.float32]()
             if not isfinite(x):
                 continue
-            var sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                scales, r, c
-            ).cast[DType.float32]()
+            var sf: Float32
+            comptime if scales.rank == 5:
+                sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    scales, r, c
+                ).cast[DType.float32]()
+            else:
+                sf = rebind[Scalar[scales_dtype]](
+                    scales[Coord(r, c // SF_VECTOR_SIZE)]
+                ).cast[DType.float32]()
             var deq = outp[r * N + c].cast[DType.float32]() * sf
             total += 1
             if abs(deq - x) > 1.0 + 0.15 * abs(x):
@@ -195,59 +216,108 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[out_dtype](m * N)
     ctx.enqueue_copy(in_dev, in_host)
 
-    var scales_shape = row_major(
-        Coord(
-            ceildiv(m, SF_MN_GROUP_SIZE),
-            Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
-    )
-    var scales_total = scales_shape.product()
-    var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
-
     var input_tt = TileTensor(in_dev, row_major(Coord(m, Idx[N])))
     var output_tt = TileTensor(out_dev, row_major(Coord(m, Idx[N])))
-    var scales_tt = TileTensor(scales_dev, scales_shape)
 
-    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-        ctx,
-        output_tt.as_unsafe_any_origin(),
-        scales_tt.as_unsafe_any_origin(),
-        input_tt.as_unsafe_any_origin(),
-        num_cols=N,
-        num_cols_padded=N,
-    )
-    ctx.synchronize()
+    # Scale-factor layout is vendor-specific: SM100 (B200) needs the 5D
+    # TCGEN-interleaved atom layout; AMD CDNA4 (MI355X) uses plain rank-2
+    # row-major scales.
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
+        var scales_shape = row_major(
+            Coord(
+                ceildiv(m, SF_MN_GROUP_SIZE),
+                Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
+            )
+        )
+        var scales_total = scales_shape.product()
+        var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
+        var scales_tt = TileTensor(scales_dev, scales_shape)
 
-    if not (check or contract):
+        quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            ctx,
+            output_tt.as_unsafe_any_origin(),
+            scales_tt.as_unsafe_any_origin(),
+            input_tt.as_unsafe_any_origin(),
+            num_cols=N,
+            num_cols_padded=N,
+        )
+        ctx.synchronize()
+
+        if not (check or contract):
+            _ = in_dev
+            _ = out_dev
+            _ = scales_dev
+            return
+
+        var out_host = ctx.enqueue_create_host_buffer[out_dtype](m * N)
+        var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+            scales_total
+        )
+        ctx.enqueue_copy(out_host, out_dev)
+        ctx.enqueue_copy(scales_host, scales_dev)
+        ctx.synchronize()
+        var scales_host_tt = TileTensor(scales_host, scales_shape)
+
+        if contract:
+            if not _check_contract(
+                in_host.as_span(), out_host.as_span(), scales_host_tt, m
+            ):
+                raise Error("MXFP8 quantize finiteness contract violated")
+        elif check:
+            if not _check_roundtrip(
+                in_host.as_span(), out_host.as_span(), scales_host_tt, m
+            ):
+                raise Error("MXFP8 quantize round-trip mismatch")
+
         _ = in_dev
         _ = out_dev
         _ = scales_dev
-        return
+    else:
+        var scales_shape = row_major(Coord(m, Idx[N // SF_VECTOR_SIZE]))
+        var scales_total = scales_shape.product()
+        var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
+        var scales_tt = TileTensor(scales_dev, scales_shape)
 
-    var out_host = ctx.enqueue_create_host_buffer[out_dtype](m * N)
-    var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](scales_total)
-    ctx.enqueue_copy(out_host, out_dev)
-    ctx.enqueue_copy(scales_host, scales_dev)
-    ctx.synchronize()
-    var scales_host_tt = TileTensor(scales_host, scales_shape)
+        quantize_mx_amd(
+            ctx,
+            output_tt.as_unsafe_any_origin(),
+            scales_tt.as_unsafe_any_origin(),
+            input_tt.as_unsafe_any_origin(),
+        )
+        ctx.synchronize()
 
-    if contract:
-        if not _check_contract(
-            in_host.as_span(), out_host.as_span(), scales_host_tt, m
-        ):
-            raise Error("MXFP8 quantize finiteness contract violated")
-    elif check:
-        if not _check_roundtrip(
-            in_host.as_span(), out_host.as_span(), scales_host_tt, m
-        ):
-            raise Error("MXFP8 quantize round-trip mismatch")
+        if not (check or contract):
+            _ = in_dev
+            _ = out_dev
+            _ = scales_dev
+            return
 
-    _ = in_dev
-    _ = out_dev
-    _ = scales_dev
+        var out_host = ctx.enqueue_create_host_buffer[out_dtype](m * N)
+        var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+            scales_total
+        )
+        ctx.enqueue_copy(out_host, out_dev)
+        ctx.enqueue_copy(scales_host, scales_dev)
+        ctx.synchronize()
+        var scales_host_tt = TileTensor(scales_host, scales_shape)
+
+        if contract:
+            if not _check_contract(
+                in_host.as_span(), out_host.as_span(), scales_host_tt, m
+            ):
+                raise Error("MXFP8 quantize finiteness contract violated")
+        elif check:
+            if not _check_roundtrip(
+                in_host.as_span(), out_host.as_span(), scales_host_tt, m
+            ):
+                raise Error("MXFP8 quantize round-trip mismatch")
+
+        _ = in_dev
+        _ = out_dev
+        _ = scales_dev
 
 
 def main() raises:

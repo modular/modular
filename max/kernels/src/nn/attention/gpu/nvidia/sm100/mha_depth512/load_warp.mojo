@@ -327,9 +327,9 @@ def depth512_load[
     else:
         kv_head_idx = seq_info.head_idx // UInt32(group)
 
-    e = elect()
+    var e = elect()
 
-    @parameter
+    @__parameter
     @always_inline
     def _kv_num_valid_pages(current_kv_row: UInt32) -> UInt32:
         """Valid paged entries in a BK1-row range starting at `current_kv_row`.
@@ -405,7 +405,7 @@ def depth512_load[
 
     # ---- V load helper (peeled + loop share this) ----------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def _load_v_stage[
         pv_stage: Int
@@ -448,7 +448,7 @@ def depth512_load[
 
     # ---- K load helper (peeled-first, main, peeled-last share this) ---------
 
-    @parameter
+    @__parameter
     @always_inline
     def _produce_k[
         partial: Bool,

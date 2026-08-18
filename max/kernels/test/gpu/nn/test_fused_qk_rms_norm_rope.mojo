@@ -353,7 +353,7 @@ def run_fused_qk_rms_norm_rope[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_in_tt)
     def q_input_fn[
         width: Int, alignment: Int
@@ -864,7 +864,7 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_main_in_tt)
     def main_q_input_fn[
         width: Int, alignment: Int
@@ -872,7 +872,7 @@ def run_fused_dual_qk_rms_norm_rope[
         return q_main_in_tt.load[width=width](Coord(Index(token, head, col)))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_index_in_tt)
     def index_q_input_fn[
         width: Int, alignment: Int
@@ -1052,6 +1052,111 @@ def run_fused_dual_qk_rms_norm_rope[
     _ = UnsafePointer(to=index_kv_ref_out).as_unsafe_any_origin()[]
     _ = UnsafePointer(to=index_kv_fused_out).as_unsafe_any_origin()[]
 
+    # Re-run both ops with an FP8 main-Q output and compare byte for byte; the
+    # bf16 equality above misses that threading. Must stay last: these launches
+    # re-rope the shared K caches in place -- Q reproduces exactly, K does not.
+    print("comparing Q (main) at an FP8 output dtype: dual vs single")
+    comptime q_out_dtype = DType.float8_e4m3fn
+    var q_main_single_fp8_device = ctx.enqueue_create_buffer[q_out_dtype](
+        q_main_shape.flattened_length()
+    )
+    var q_main_dual_fp8_device = ctx.enqueue_create_buffer[q_out_dtype](
+        q_main_shape.flattened_length()
+    )
+    var q_main_single_fp8_tt = TileTensor(
+        q_main_single_fp8_device,
+        row_major((total_length, Idx[main_q_heads], Idx[head_size])),
+    )
+    var q_main_dual_fp8_tt = TileTensor(
+        q_main_dual_fp8_device,
+        row_major((total_length, Idx[main_q_heads], Idx[head_size])),
+    )
+
+    fused_qk_rms_norm_rope_ragged_paged[
+        target="gpu",
+        multiply_before_cast=True,
+        interleaved=interleaved,
+        q_input_fn=main_q_input_fn,
+    ](
+        main_ref_collection,
+        gamma_main_q_tt,
+        gamma_main_k_tt,
+        freqs_tt,
+        main_epsilon,
+        Scalar[dtype](weight_offset),
+        UInt32(layer_idx),
+        row_offsets_tt,
+        q_main_single_fp8_tt,
+        ctx,
+    )
+    fused_dual_qk_rms_norm_rope_ragged_paged[
+        target="gpu",
+        multiply_before_cast=True,
+        interleaved=interleaved,
+        main_q_input_fn=main_q_input_fn,
+        index_q_input_fn=index_q_input_fn,
+    ](
+        main_fused_collection,
+        index_fused_collection,
+        gamma_main_q_tt,
+        gamma_main_k_tt,
+        gamma_index_q_tt,
+        gamma_index_k_tt,
+        freqs_tt,
+        main_epsilon,
+        index_epsilon,
+        Scalar[dtype](weight_offset),
+        UInt32(layer_idx),
+        row_offsets_tt,
+        q_main_dual_fp8_tt,
+        q_index_fused_tt,
+        ctx,
+    )
+    ctx.synchronize()
+
+    var q_main_numel = q_main_shape.flattened_length()
+    with q_main_single_fp8_device.map_to_host() as single_host:
+        with q_main_dual_fp8_device.map_to_host() as dual_host:
+            # Raw bytes: an FP8 NaN never compares equal to itself.
+            var single_u8 = single_host.unsafe_ptr().bitcast[UInt8]()
+            var dual_u8 = dual_host.unsafe_ptr().bitcast[UInt8]()
+            var live = 0
+            for i in range(q_main_numel):
+                assert_equal(dual_u8[i], single_u8[i])
+                # Both arms share the cast, so an out-of-range Q gives the same
+                # byte on both sides -- the compare above is blind to it. A
+                # finite out-of-range value saturates on both vendors (NVPTX
+                # lowers to `cvt.rn.satfinite`, AMDGPU clamps before
+                # `cvt.pk.fp8.f32`), so the tell is a value pinned at the
+                # limit. Testing `>= 0x7E` catches NaN (0x7F) too.
+                if (single_u8[i] & 0x7F) >= 0x7E:
+                    raise Error(
+                        String(
+                            "FP8 Q sits at the e4m3 limit at element ",
+                            i,
+                            (
+                                ": a value left the representable range and"
+                                " both arms round it the same way"
+                            ),
+                        )
+                    )
+                # 0x00/0x80 are +/-0; two all-zero buffers would compare equal
+                # while proving nothing.
+                if (single_u8[i] & 0x7F) != 0:
+                    live += 1
+            if live * 2 < q_main_numel:
+                raise Error(
+                    String(
+                        "FP8 Q comparison is near-vacuous: only ",
+                        live,
+                        " of ",
+                        q_main_numel,
+                        " bytes are nonzero",
+                    )
+                )
+
+    _ = q_main_single_fp8_device^
+    _ = q_main_dual_fp8_device^
     _ = row_offsets_device^
     _ = cache_lengths_device^
     _ = paged_lut_device^

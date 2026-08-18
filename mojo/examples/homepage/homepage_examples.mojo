@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -131,10 +131,10 @@ def mojo_square_array(array_obj: PythonObject) raises:
 
 
 def run_python_interop_example() raises:
-    np = Python.import_module("numpy")
+    var np = Python.import_module("numpy")
     # values: List[Int64] = [1, 3, 5, 7, 11]
-    pylist = Python.list(1, 3, 5, 7, 11)
-    nparray = np.array(pylist, np.int64)
+    var pylist = Python.list(1, 3, 5, 7, 11)
+    var nparray = np.array(pylist, np.int64)
     mojo_square_array(nparray)
     print(nparray)
 
@@ -142,7 +142,7 @@ def run_python_interop_example() raises:
 # Metaprogramming example
 
 
-trait FauxEquatable(ImplicitlyDeletable):
+trait FauxEquatable(Deinitable):
     # Generic implementation using reflection: compare all fields
     def __eq__(self, other: Self) -> Bool:
         comptime r = reflect[Self]
@@ -161,9 +161,9 @@ struct EqTest(Copyable, FauxEquatable):
 
 
 def run_metaprogramming_example():
-    v1 = EqTest(1, "Lucy")
-    v2 = EqTest(1, "Lucy")
-    v3 = EqTest(2, "Linus")
+    var v1 = EqTest(1, "Lucy")
+    var v2 = EqTest(1, "Lucy")
+    var v3 = EqTest(2, "Linus")
     print(v1 == v2)
     print(v1 == v3)
 

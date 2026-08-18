@@ -18,7 +18,7 @@ process creation, output capture, and resource cleanup automatically.
 """
 
 import std.sys._libc as libc
-from std.ffi import external_call, _CPointer
+from std.ffi import external_call
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
@@ -43,8 +43,8 @@ struct _POpenHandle:
             raise Error("the mode specified `", mode, "` is not valid")
 
         self._handle = popen(
-            cmd.as_c_string_slice().unsafe_ptr(),
-            mode.as_c_string_slice().unsafe_ptr(),
+            cmd.as_c_string_slice(),
+            mode.as_c_string_slice(),
         )
 
         if not self._handle:
@@ -66,7 +66,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = _CPointer[c_char, MutUntrackedOrigin]()
+        var line = OptionalPointer[c_char, MutUntrackedOrigin]()
         var res = String()
 
         while True:

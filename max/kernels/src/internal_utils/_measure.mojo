@@ -118,7 +118,7 @@ def correlation[
     len: Int,
     ctx: DeviceContext,
     *,
-    w: OptionalUnsafePointer[mut=True, u.T, _] = Optional[
+    w: OptionalPointer[mut=True, u.T, _] = Optional[
         UnsafePointer[u.T, MutUntrackedOrigin]
     ](),
     centered: Bool = True,
@@ -161,7 +161,7 @@ def correlation[
 
     var w_val: UnsafePointer[w_list.T, origin_of(w_list)] = w_list.unsafe_ptr()
 
-    @parameter
+    @__parameter
     def accumulate[weighted: Bool]():
         def apply_wfn[simd_width: Int](idx: Int) {u, v, mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu

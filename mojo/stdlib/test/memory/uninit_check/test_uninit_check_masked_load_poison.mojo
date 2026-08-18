@@ -18,8 +18,8 @@ from std.sys.intrinsics import masked_load
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
-    var ptr = alloc[Float32](4)
-
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     # Initialize elements.
     ptr.unsafe_store(0, Float32(1.0))
     ptr.unsafe_store(1, Float32(2.0))
@@ -38,4 +38,3 @@ def main():
     _ = masked_load(ptr, mask, passthrough)
 
     # Should not reach here.
-    ptr.unsafe_free()

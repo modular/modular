@@ -26,7 +26,7 @@ comptime epilogue_func_type = def[
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
-@parameter
+@__parameter
 @always_inline
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1

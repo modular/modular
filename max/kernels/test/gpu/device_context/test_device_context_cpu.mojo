@@ -13,11 +13,11 @@
 
 from max.gpu.host import DeviceContext, DeviceContextArray
 from std.memory import alloc
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 
 
 def test_empty_func(ctx: DeviceContext) raises:
-    @parameter
+    @__parameter
     def empty() -> None:
         pass
 
@@ -29,7 +29,7 @@ def test_func_writes_to_memory(ctx: DeviceContext) raises:
     var ptr = alloc[Int](1)
     ptr[] = 0
 
-    @parameter
+    @__parameter
     def write_42() -> None:
         ptr[] = 42
 
@@ -57,15 +57,15 @@ def test_multiple_funcs_execute_in_order(ctx: DeviceContext) raises:
     var ptr = alloc[Int](1)
     ptr[] = 0
 
-    @parameter
+    @__parameter
     def write_1() -> None:
         ptr[] = 1
 
-    @parameter
+    @__parameter
     def write_2() -> None:
         ptr[] = 2
 
-    @parameter
+    @__parameter
     def write_3() -> None:
         ptr[] = 3
 
@@ -82,7 +82,7 @@ def test_func_accumulates(ctx: DeviceContext) raises:
     var ptr = alloc[Int](1)
     ptr[] = 0
 
-    @parameter
+    @__parameter
     def increment() -> None:
         ptr[] += 1
 
@@ -132,7 +132,7 @@ def test_func_then_range(ctx: DeviceContext) raises:
     for i in range(count):
         ptr[i] = 0
 
-    @parameter
+    @__parameter
     def set_all_to_one() -> None:
         for j in range(count):
             ptr[j] = 1
@@ -187,6 +187,24 @@ def test_device_context_array(ctx: DeviceContext) raises:
     assert_equal(direct[0].api(), ctx.api())
 
 
+def test_context_equality(ctx: DeviceContext) raises:
+    # A copy of the same context refers to the same underlying runtime
+    # context, so it compares equal.
+    var copy = ctx
+    assert_true(copy == ctx)
+    assert_false(copy != ctx)
+
+    # A separately constructed context on the same device is a different
+    # runtime context, even though the device ID is identical.
+    var fresh = DeviceContext(api="cpu")
+    assert_false(fresh == ctx)
+    assert_true(fresh != ctx)
+
+    # Copies of the same fresh context are equal to each other.
+    var fresh_copy = fresh
+    assert_true(fresh_copy == fresh)
+
+
 def main() raises:
     with DeviceContext(api="cpu") as ctx:
         test_empty_func(ctx)
@@ -199,3 +217,4 @@ def main() raises:
         test_func_then_range(ctx)
         test_two_ranges_sequential(ctx)
         test_device_context_array(ctx)
+        test_context_equality(ctx)

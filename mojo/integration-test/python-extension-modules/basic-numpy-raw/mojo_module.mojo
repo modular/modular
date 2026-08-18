@@ -42,12 +42,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var data: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var nd: Int
 
-    var dimensions: UnsafePointer[Int, MutUntrackedOrigin]
+    var dimensions: Pointer[Int, MutUntrackedOrigin]
 
-    var strides: UnsafePointer[Int, MutUntrackedOrigin]
+    var strides: Pointer[Int, MutUntrackedOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -64,7 +64,7 @@ def mojo_incr_np_array(
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], ...](
+    var py_array_object_ptr = Pointer[PyArrayObject[dtype], ...](
         unchecked_downcast_value=py_array_object
     )
 
@@ -94,7 +94,7 @@ def mojo_incr_np_array(
 
     var num_elts = 1
     for i in range(nd):
-        dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
+        var dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
         num_elts *= dim
 
     for i in range(num_elts):

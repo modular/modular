@@ -420,7 +420,7 @@ struct TiledMmaLoader[
         comptime simd_w = simd_width_of[Self.in_type]()
 
         @always_inline
-        @parameter
+        @__parameter
         def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_base + rel_key + hw_key_shift
             var byte_offset = key * BK + d_in_blk + depth_base
@@ -543,7 +543,7 @@ struct TiledMmaLoader[
         var depth_base = d_in_blk + is_odd * 8
 
         @always_inline
-        @parameter
+        @__parameter
         def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_group * 32 + key_base + pair_idx
             var byte_offset = key * block_width + depth_base
@@ -1302,7 +1302,9 @@ struct TileLoaderLDS[
     # `warp_id < active_warps_this_iter` (computed per-iter from
     # `total_warp_rows`) so warps mapped past the sub-tile boundary
     # skip the load (vmcnt unaffected for them — s_waitcnt is a no-op).
-    comptime num_iterations = ceildiv(Self.tile_rows, Self.rows_per_iteration)
+    comptime num_iterations = ceildiv(
+        Self.total_warp_rows, Self.num_loading_warps
+    )
     # Total warp-rows of work across all iterations; clamped against
     # `num_iterations * num_loading_warps` from above. The per-iter
     # `active_warps_this_iter` derives from this.
@@ -1398,8 +1400,8 @@ struct TileLoaderLDS[
             " 4-wave coverage."
         )
         comptime assert Self.num_iterations >= 1, (
-            "num_iterations = ceildiv(tile_rows, rows_per_iteration) == 0"
-            " — tile_rows must be >= 1."
+            "num_iterations = ceildiv(total_warp_rows, num_loading_warps)"
+            " == 0 — tile_rows must be >= 1."
         )
         comptime assert Self.total_warp_rows >= 1, (
             "total_warp_rows = ceildiv(tile_rows, rows_per_warp) == 0"
@@ -1455,6 +1457,21 @@ struct TileLoaderLDS[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ]
+
+        comptime if not Self._needs_per_iter_swizzle:
+            comptime assert (
+                Self.rows_per_iteration
+                == Self.num_loading_warps * Self.rows_per_warp
+            ), (
+                "rows_per_iteration must equal num_loading_warps *"
+                " rows_per_warp on the non-swizzled path; a mismatch means the"
+                " iteration stride and the rows actually issued disagree,"
+                " silently under-covering the tile."
+            )
+        comptime assert Self.tile_rows % Self.rows_per_warp == 0, (
+            "rows_per_warp must divide tile_rows, else the last warp-tile runs"
+            " past the destination."
+        )
 
         var m_eff = self.m_anchor + m_offset
         var k_eff = self.k_anchor + k_offset
@@ -2267,9 +2284,12 @@ struct RegTileLoader[
         var off = (Int(gmem_tile.ptr) - Int(bounds_from.ptr)) // size_of[
             Self.dtype
         ]()
+        # A tile based entirely past `bounds_from` makes the remaining extent
+        # negative, which `AMDBufferResource` narrows to a UInt32 byte count —
+        # wrapping to ~4 GiB and clamping nothing. Saturate so it reads as zero.
         self.bc = AMDBufferResource(
             readfirstlane(gmem_tile.ptr),
-            readfirstlane(_get_bounds(bounds_from) - off),
+            readfirstlane(max(0, _get_bounds(bounds_from) - off)),
         )
         self.base_ptr_as_int = Int(gmem_tile.ptr)
 
@@ -2511,7 +2531,7 @@ struct RegTileEpilogue[
 
     var c_ptr_as_int: Int
     """Integer address of the destination's base pointer. Stored as
-    Int rather than `UnsafePointer` because the dst tile's origin
+    Int rather than `Pointer` because the dst tile's origin
     may be any mutable origin and the writer is reused across
     kernels with different origin types."""
 

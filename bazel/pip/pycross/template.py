@@ -121,6 +121,15 @@ def targets():
     )
 
     native.alias(
+        name = "fastapi@multiple",
+        actual = select({{
+            # vllm 0.24.0 caps fastapi below what the default group resolves to
+            "@@//:use_vllm_setting": ":fastapi@0.136.3",
+            "//conditions:default": ":fastapi@0.139.2",
+        }}),
+    )
+
+    native.alias(
         name = "tilelang@multiple",
         testonly = True,
         actual = select({{
@@ -150,6 +159,16 @@ def targets():
             # Uses torch 2.9.1, which uses this version
             "@@//:use_sglang_setting": ":nvidia-cudnn-cu12@9.10.2.21",
             "//conditions:default": ":nvidia-cudnn-cu12@9.19.0.56",
+        }}),
+    )
+
+    native.alias(
+        name = "nvidia-cudnn-frontend@multiple",
+        testonly = True,
+        actual = select({{
+            # vllm 0.24.0 pins a newer version than the default group
+            "@@//:use_vllm_setting": ":nvidia-cudnn-frontend@1.26.0",
+            "//conditions:default": ":nvidia-cudnn-frontend@1.16.0",
         }}),
     )
 
@@ -209,7 +228,7 @@ def targets():
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.22.1",
+        actual = ":vllm@0.24.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 

@@ -29,7 +29,13 @@ from kv_cache.types import (
     padded_depth,
     swizzle_granularity,
 )
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    PointerStorage,
+    TensorStorage,
+    UNKNOWN_VALUE,
+)
 from layout.tile_layout import (
     Layout as MixedLayout,
     RowMajorLayout,
@@ -187,7 +193,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         single SIMD load from the underlying lookup table.
         """
 
-        @parameter
+        @__parameter
         def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
             return self.row_idx(batch_idx, start_tok_idx)
 
@@ -1023,6 +1029,8 @@ struct LayoutTensorMHAOperand[
         shape_types=Coord[].element_types,
         stride_types=Coord[].element_types,
     ],
+    buffer_storage: TensorStorage = PointerStorage[element_width=1],
+    scale_buffer_storage: TensorStorage = PointerStorage[element_width=1],
 ](MHAOperand, TrivialRegisterPassable):
     """An implementation for contiguous tensor arguments to MHA kernels.
 
@@ -1037,6 +1045,10 @@ struct LayoutTensorMHAOperand[
         scale_buffer_layout: `TensorLayout` of the `scale_buffer`. A
             rank-0 layout disables quantization (defaults to a rank-0
             `MixedLayout`).
+        buffer_storage: `TensorStorage` of the K/V `buffer` (defaults to
+            `PointerStorage`).
+        scale_buffer_storage: `TensorStorage` of the `scale_buffer`
+            (defaults to `PointerStorage`).
     """
 
     comptime dtype = Self.dtype_
@@ -1058,9 +1070,14 @@ struct LayoutTensorMHAOperand[
     )
     comptime quantization_enabled: Bool = Self.scale_buffer_layout.rank != 0
 
-    var buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin]
+    var buffer: TileTensor[
+        Self.dtype, Self.buffer_layout, Self.origin, Storage=Self.buffer_storage
+    ]
     var scale_buffer: TileTensor[
-        Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+        Self.scale_dtype,
+        Self.scale_buffer_layout,
+        Self.scale_origin,
+        Storage=Self.scale_buffer_storage,
     ]
     comptime device_type: AnyType = Self
 
@@ -1075,9 +1092,17 @@ struct LayoutTensorMHAOperand[
 
     def __init__(
         out self,
-        buffer: TileTensor[Self.dtype, Self.buffer_layout, Self.origin],
+        buffer: TileTensor[
+            Self.dtype,
+            Self.buffer_layout,
+            Self.origin,
+            Storage=Self.buffer_storage,
+        ],
         scale_buffer: TileTensor[
-            Self.scale_dtype, Self.scale_buffer_layout, Self.scale_origin
+            Self.scale_dtype,
+            Self.scale_buffer_layout,
+            Self.scale_origin,
+            Storage=Self.scale_buffer_storage,
         ] = _null_scale_tile_tensor[
             Self.scale_dtype, Self.scale_buffer_layout
         ](),
@@ -1491,7 +1516,7 @@ struct RaggedMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        global_token_idx = Int(
+        var global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer.ptr + self.buffer.layout[

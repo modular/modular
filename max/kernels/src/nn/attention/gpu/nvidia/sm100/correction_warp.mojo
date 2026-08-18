@@ -14,7 +14,6 @@
 
 from std.sys import size_of
 from std.gpu import thread_idx
-from std.gpu.primitives.id import cluster_dim
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
@@ -23,7 +22,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.sync import umma_arrive_leader_cta
+from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
@@ -32,6 +31,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     mul_ftz,
     splitk_window,
     splitk_partition_idx,
+    splitk_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
 from .smem import SM100AttentionSMem
@@ -48,6 +48,10 @@ def fa4_correction[
         qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
     ],
     page_size: Int,
+    # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME
+    # partition count even at `config.splitk_partitions == 1`. Defaulted so
+    # every non-workspace caller (incl. MLA) is byte-identical.
+    workspace_split: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -55,6 +59,7 @@ def fa4_correction[
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
+    ws_num_partitions: UInt32 = 1,
 ):
     comptime accum_type = DType.float32
     comptime assert size_of[accum_type]() == 4
@@ -74,12 +79,12 @@ def fa4_correction[
 
     # `tmem_addr` passed in by register (read once post-barrier in the kernel
     # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
-    o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
-    o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
+    var o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
+    var o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
     var correction_smem_arg = smem.correction_smem()
 
-    pipeline_c0 = mbars.consumer_c0()
-    pipeline_c1 = mbars.consumer_c1()
+    var pipeline_c0 = mbars.consumer_c0()
+    var pipeline_c1 = mbars.consumer_c1()
 
     comptime BM_mask: Int = config.PairBM_eff()
     comptime num_q: Int = config.num_q
@@ -91,7 +96,7 @@ def fa4_correction[
     # `_correction_step` closure further down. `@always_inline` => inlining
     # it back into either caller reproduces the identical instruction stream
     # (2-O / DeepSeek / MHA codegen is unchanged).
-    @parameter
+    @__parameter
     @always_inline
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
         comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
@@ -185,6 +190,8 @@ def fa4_correction[
         tcgen05_store_wait()
         tcgen05_fence_before()
 
+    var change: Bool
+
     # ---- single-O correction (1Q wide-V) ----
     # Wide V forces single-O (aliased O0), so only WG0 runs: it folds EVERY
     # K-tile serially into the single O0 (WG1 no-op). The correction thus
@@ -227,7 +234,7 @@ def fa4_correction[
         return
 
     # Two-WG (2Q and standard 1Q) O consumer — unchanged.
-    pipeline_o = mbars.consumer_o()
+    var pipeline_o = mbars.consumer_o()
 
     # Per-WG main-loop commit counts (= softmax's main-loop iters after
     # peel, = MMA's post-peel P@V commits per side).
@@ -242,12 +249,10 @@ def fa4_correction[
     # Split-K (1Q): slice the combined tile count to this partition's window
     # before the per-WG c0/c1 split. Identical window to the other warps
     # (total_iters == last_masked_set_end for check_mask==False masks).
-    comptime if config.num_q == 1 and config.splitk_partitions > 1:
-        var _np: UInt32
-        comptime if config.dynamic_cluster_dim:
-            _np = UInt32(cluster_dim.x)
-        else:
-            _np = UInt32(config.splitk_partitions)
+    comptime if config.num_q == 1 and (
+        config.splitk_partitions > 1 or workspace_split
+    ):
+        var _np = splitk_num_partitions[config](ws_num_partitions)
         var _w = splitk_window(
             total_iters_runtime,
             _np,
@@ -289,7 +294,7 @@ def fa4_correction[
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
-    @parameter
+    @__parameter
     @always_inline
     def _correction_step[i: Int]():
         # correct

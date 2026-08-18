@@ -23,7 +23,7 @@ from std.math.uutils import umod, ualign_up
 from std.atomic import Atomic
 from std.sys import size_of
 
-from std.gpu import NamedBarrierSemaphore
+from max.gpu.sync import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.info import H100
 from std.gpu import block_idx, grid_dim, thread_idx
@@ -246,18 +246,14 @@ struct SplitKTileScheduler[
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> IndexList[2]:
-        var num_blocks_m = (
-            problem_shape[0] + dyn_tile_shape[0] - 1
-        ) // dyn_tile_shape[0]
-        var num_blocks_n = (
-            problem_shape[1] + dyn_tile_shape[1] - 1
-        ) // dyn_tile_shape[1]
+        var num_blocks_m = ceildiv(problem_shape[0], dyn_tile_shape[0])
+        var num_blocks_n = ceildiv(problem_shape[1], dyn_tile_shape[1])
 
         var problem_blocks_m = (
-            (num_blocks_m + dyn_cluster_shape[0] - 1) // dyn_cluster_shape[0]
+            ceildiv(num_blocks_m, dyn_cluster_shape[0])
         ) * dyn_cluster_shape[0]
         var problem_blocks_n = (
-            (num_blocks_n + dyn_cluster_shape[1] - 1) // dyn_cluster_shape[1]
+            ceildiv(num_blocks_n, dyn_cluster_shape[1])
         ) * dyn_cluster_shape[1]
 
         return IndexList[2](

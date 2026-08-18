@@ -17,7 +17,7 @@ from gridv1_step5 import Grid
 
 def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(rows):
@@ -33,9 +33,9 @@ def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
 
 
 def main():
-    num_rows = 8
-    num_cols = 8
-    glider: List[List[Int]] = [
+    var num_rows = 8
+    var num_cols = 8
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -45,5 +45,5 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    result = grid_str(num_rows, num_cols, glider)
+    var result = grid_str(num_rows, num_cols, glider)
     print(result)

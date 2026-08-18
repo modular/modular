@@ -13,15 +13,7 @@
 
 """Graph-compiler group_norm model cache for the MO interpreter.
 
-Covers ``ReduceGroupNormOp`` only, GPU targets only.
-``nn.normalization.group_norm`` -- the kernel this op lowers to -- has a hard
-compile-time assert requiring a GPU target (``comptime assert
-is_gpu[target](), "group_norm only supports GPU targets at this point"``,
-``max/kernels/src/nn/normalization.mojo`` around line 5225), so this family's
-sweep never builds a CPU graph. Eager CPU calls to group_norm raise
-``NotImplementedError`` (see ``_handle_group_norm`` in ``handlers.py``); a
-CPU compute path is tracked separately.
-
+Covers ``ReduceGroupNormOp`` only.
 ``epsilon`` and ``num_groups`` are runtime host (CPU) tensor operands on the
 MO op (``MO_SingleDeviceWithHostOperands<["epsilon", "numGroups"]>``,
 confirmed in ``MOOps.td``), so neither enters the cache key -- the family key
@@ -41,8 +33,9 @@ Built directly against ``mo.ReduceGroupNormOp`` (not the ``ops.group_norm``
 graph-construction wrapper) for the same reason as ``layer_norm_gc``: that
 wrapper bakes ``epsilon``/``num_groups`` in as Python constants at trace time.
 
-Supported dtypes mirror the shared GPU float set (see
-:func:`gc_compile.float_dtypes`).
+Supported dtypes mirror the shared float set (see
+:func:`gc_compile.float_dtypes`): CPU float32/float64, GPU float16/float32/
+bfloat16.
 
 Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`). Must not import from ``handlers.py``.
@@ -68,10 +61,6 @@ def canonical_shape(shape: Sequence[int]) -> tuple[int, int, int, int]:
     """
     n, c, *spatial = shape
     return (n, c, prod(spatial), 1)
-
-
-def _is_gpu(device: Device) -> bool:
-    return device.label != "cpu"
 
 
 def _graph_name(device: Device, dtype: DType) -> str:
@@ -112,13 +101,6 @@ def _group_norm_graph(module: Module, device: Device, dtype: DType) -> None:
 class _GroupNormFamily(gc_compile.GCFamilySpec):
     name = "group_norm"
 
-    def sweep_devices(self) -> list[Device]:
-        # Excludes CPU (see KERN-3267: no CPU kernel yet): this family never
-        # builds a CPU graph, and _adopt_from_manifest requires a manifest
-        # entry for every device this returns, so listing CPU here would
-        # fail adoption for the whole family, not just the CPU slot.
-        return [d for d in gc_compile.DISCOVERED_DEVICES if _is_gpu(d)]
-
     def build_module(self) -> Module:
         module = Module()
         for device in self.sweep_devices():
@@ -130,9 +112,6 @@ class _GroupNormFamily(gc_compile.GCFamilySpec):
     ) -> Module:
         if module is None:
             module = Module()
-        # See KERN-3267: no CPU kernel yet.
-        if not _is_gpu(device):
-            return module
         for dtype in gc_compile.float_dtypes(device):
             _group_norm_graph(module, device, dtype)
         return module
@@ -145,8 +124,6 @@ gc_compile.register_family(_FAMILY)
 def group_norm_model(device: Device, dtype: DType) -> engine.Model:
     """Returns the group_norm Model for the given (device, dtype).
 
-    GPU only -- see the module docstring for the CPU kernel gap.
-
     Args:
         device: The realized input's device.
         dtype: The realized input's dtype.
@@ -155,9 +132,9 @@ def group_norm_model(device: Device, dtype: DType) -> engine.Model:
         The compiled :class:`~max.engine.Model`.
 
     Raises:
-        KeyError: If (device, dtype) is outside the supported set (including
-            any CPU device); or, with ``MAX_EAGER_OP_PRECOMPILE=1``, if a
-            supported target was not swept.
+        KeyError: If (device, dtype) is outside the supported set; or, with
+            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not
+            swept.
     """
     key = _graph_name(device, dtype)
     model = _FAMILY.cache.get(key)
@@ -165,12 +142,12 @@ def group_norm_model(device: Device, dtype: DType) -> engine.Model:
         return model
 
     def check_supported() -> str | None:
-        if _is_gpu(device) and dtype in gc_compile.float_dtypes(device):
+        supported = gc_compile.float_dtypes(device)
+        if dtype in supported:
             return None
         return (
             f"Unsupported group_norm device/dtype for key {key!r}."
-            "  group_norm eager CPU support is not implemented"
-            f" yet; supported dtypes on GPU: {gc_compile.float_dtypes(device)}"
+            f"  Supported dtypes for this device: {supported}"
         )
 
     def build(module: Module) -> None:

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
+from std.gpu import block_dim, grid_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
 from std.math import iota
 from std.os import abort
 from shmem import *
@@ -31,10 +32,10 @@ comptime chunk_size = 1024 * 256
 
 
 def ring_reduce(
-    dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
-    src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
+    dst_ptr: Pointer[c_int, MutAnyOrigin],
+    src_ptr: Pointer[c_int, ImmutAnyOrigin],
     nreduce_dev: Int32,
-    signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
+    signal_ptr: Pointer[UInt64, MutAnyOrigin],
     chunk_size_dev: Int32,
 ):
     """Perform Allreduce using ring algorithm.
@@ -166,7 +167,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        @parameter
+        @__parameter
         def benchmark() raises:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,

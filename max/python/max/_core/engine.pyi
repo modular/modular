@@ -18,6 +18,7 @@
 import enum
 import inspect
 import os
+import pathlib
 import types
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
@@ -114,6 +115,16 @@ def set_global_value(key: str, value: str) -> None:
 
 def unset_global_value(key: str) -> None:
     """Removes an override set by :func:`set_global_value`."""
+
+def max_cache_dir() -> pathlib.Path | None:
+    """
+    Returns the directory the engine caches compiled models (``.mef``) in.
+
+    Resolved by the compiler itself.
+
+    Returns:
+        pathlib.Path | None: the cache directory, or None if unresolvable.
+    """
 
 @overload
 def read(path: str | os.PathLike) -> CompiledModels:
@@ -359,6 +370,16 @@ class Model:
         """
 
     def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def release_weights(self) -> None:
+        """
+        Drops the host-side weight references held by this model.
+
+        Releases the weights registry and the owning references, so the host
+        weight memory can be freed once the caller drops its own references.
+        Safe only when every weight was copied to its execution device during
+        model init: reading a host weight after this call is undefined
+        behavior. ``reload`` remains usable afterwards.
+        """
 
 class DebugConfig:
     """

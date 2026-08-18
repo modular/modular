@@ -170,6 +170,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
             quant_config=config.quant_config,
+            quantize_o_proj=config.mla_o_proj_quantized,
         )
         tensor_parallel_latent_attention_with_rope(self.self_attn)
         self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)

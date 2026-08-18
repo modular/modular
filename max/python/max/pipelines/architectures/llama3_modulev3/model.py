@@ -31,9 +31,11 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lora import LoRATargetModule
 
 from .batch_processor import Llama3ModuleV3BatchProcessor
 from .llama3 import Llama3
+from .lora import LLAMA3_LORA_TARGETS
 from .model_config import Llama3Config
 
 logger = logging.getLogger("max.pipelines")
@@ -64,6 +66,7 @@ class Llama3Inputs(ModelInputs):
                 if self.kv_cache_inputs is not None
                 else ()
             ),
+            *self.lora_buffers,
         )
 
 
@@ -81,6 +84,12 @@ class Llama3Model(
     config_class: type[Any] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
+
+    #: Serve LoRA via the ModuleV3 adapters-as-inputs path (LoRAManagerV3).
+    lora_modulev3: ClassVar[bool] = True
+    #: The projections ModuleV3 LoRA wraps: the fused qkv (one adapter per
+    #: q/k/v) and o_proj.
+    lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = LLAMA3_LORA_TARGETS
 
     def __init__(
         self,

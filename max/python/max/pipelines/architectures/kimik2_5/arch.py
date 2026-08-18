@@ -31,6 +31,7 @@ kimik2_5_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
         "nvidia/Kimi-K2.6-NVFP4",
+        "amd/Kimi-K2.7-Code-MXFP4",
     ],
     default_encoding=KimiK2_5Config.DEFAULT_ENCODING,
     supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,

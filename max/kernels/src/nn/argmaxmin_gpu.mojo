@@ -15,12 +15,12 @@
 
 from std.bit import next_power_of_two
 from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.math import ceildiv, iota
+from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -94,7 +94,7 @@ def _argmaxmin_scan[
     var lane_stride = block_size * simd_width
     var trip = lane_stride * unroll
     var num_trips = num_elements // trip
-    var vec_end = (num_elements // simd_width) * simd_width
+    var vec_end = align_down(num_elements, simd_width)
 
     for t in range(num_trips):
         var offset = t * trip + tid * simd_width
@@ -168,7 +168,7 @@ def _argmaxmin_block_partial[
 
     # Ragged tail: fewer than `simd_width` elements, all at higher indices
     # than anything scanned above, so a strict insert keeps first-index.
-    var vec_end = (count // simd_width) * simd_width
+    var vec_end = align_down(count, simd_width)
     if tid < count - vec_end:
         partial.insert(chunk[vec_end + tid], vec_end + tid)
 
@@ -195,7 +195,7 @@ def _argmaxmin_scan_kernel[
     """Streams one contiguous slice of one row and emits its local winner.
 
     Target families: NVIDIA (SM90/SM100), AMD CDNA, Apple silicon. Grid is
-    `(num_splits, rows)`; each block reads its slice exactly once with
+    `(rows, num_splits)`; each block reads its slice exactly once with
     vector loads and keeps a per-lane running `(extremum, index)` in
     registers. There is no input copy and no re-scan.
 
@@ -216,8 +216,10 @@ def _argmaxmin_scan_kernel[
         aligned_arg: Non-zero when vector loads may assume vector alignment.
     """
     var num_elements = Int(num_elements_arg)
-    var split = Int(block_idx.x)
-    var row_id = Int(block_idx.y)
+    # Rows ride the x dimension: it is the only one whose extent is not
+    # capped at 65535, and a batch can have millions of rows.
+    var row_id = Int(block_idx.x)
+    var split = Int(block_idx.y)
     var tid = Int(thread_idx.x)
 
     var begin = min(split * Int(split_len_arg), num_elements)
@@ -323,7 +325,7 @@ def argmaxmin_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -409,7 +411,7 @@ def argmaxmin_gpu[
             Int32(split_len),
             Int32(num_splits),
             Int32(1) if aligned else Int32(0),
-            grid_dim=(num_splits, num_rows),
+            grid_dim=(num_rows, num_splits),
             block_dim=block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )

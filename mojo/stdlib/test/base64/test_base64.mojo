@@ -77,12 +77,18 @@ def test_b64decode() raises:
     with assert_raises(
         contains="ValueError: Input length '21' must be divisible by 4"
     ):
-        _ = b64decode[validate=True]("invalid base64 string")
+        _ = b64decode("invalid base64 string")
+
+    # A truncated input must raise instead of reading out of bounds.
+    with assert_raises(
+        contains="ValueError: Input length '3' must be divisible by 4"
+    ):
+        _ = b64decode("abc")
 
     with assert_raises(
         contains="ValueError: Unexpected character ' ' encountered"
     ):
-        _ = b64decode[validate=True]("invalid base64 string!!!")
+        _ = b64decode("invalid base64 string!!!")
 
 
 def test_b16encode() raises:

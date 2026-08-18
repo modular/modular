@@ -14,7 +14,7 @@ import StarIcon from '@site/static/img/star.svg';
 import WrenchIcon from '@site/static/img/wrench.svg';
 import InfoIcon from '@site/static/img/info.svg';
 
-import { AIChip } from '@site/src/shared/Svgs';
+import { PuzzleIcon } from '@site/src/shared/Svgs';
 
 export const getStartedCards = [
   {
@@ -30,10 +30,10 @@ export const getStartedCards = [
     description: 'Start building with Mojo agent skills',
   },
   {
-    icon: <AIChip />,
-    title: 'GPU programming',
-    url: '/docs/manual/gpu/intro-tutorial/',
-    description: 'Start programming GPUs with Mojo',
+    icon: <PuzzleIcon />,
+    title: 'Mojo Quest',
+    url: 'https://quest.mojolang.org/',
+    description: 'Learn Mojo by fixing bugs, right in the browser',
   },
 ];
 
@@ -50,11 +50,6 @@ export const guidesReferencesCards = [
     description: 'The complete reference for the Mojo standard library',
   },
   {
-    title: 'Layout library',
-    url: 'https://docs.modular.com/api/mojo/layout/',
-    description: 'A Mojo library for working with multidimensional data',
-  },
-  {
     title: 'Language reference',
     url: '/docs/reference/',
     description: 'Reference for Mojo\'s syntax, keywords, decorators, and more',
@@ -63,6 +58,11 @@ export const guidesReferencesCards = [
     title: 'Mojo CLI',
     url: '/docs/cli/',
     description: 'The complete reference for the `mojo` command line tool',
+  },
+  {
+    title: 'GPU programming',
+    url: 'https://max.modular.com/gpu/intro-tutorial/',
+    description: 'Learn to program GPUs with Mojo and MAX',
   },
   {
     title: 'GPU Puzzles',
@@ -78,10 +78,10 @@ export const shortcutColumns = [
     title: 'Popular topics',
     links: [
       { to: '/docs/manual/basics/', label: 'Language basics' },
-      { to: '/docs/manual/gpu/architecture/', label: 'GPU programming' },
       { to: '/docs/manual/python/', label: 'Python interop' },
       { to: '/docs/manual/values/ownership/', label: 'Ownership' },
-      { to: '/docs/manual/values/lifetimes/', label: 'Lifetimes, origins, and references' },
+      { to: '/docs/manual/values/lifetimes/', label: 'Origins and references' },
+      { to: '/docs/manual/metaprogramming/', label: 'Metaprogramming' },
     ],
   },
   {
@@ -90,7 +90,7 @@ export const shortcutColumns = [
     links: [
       { to: '/docs/tools/skills/', label: 'Agent skills' },
       { to: '/docs/tools/debugging/', label: 'Debugging' },
-      { to: '/docs/tools/gpu-debugging/', label: 'GPU debugging' },
+      { to: '/docs/tools/compilation/', label: 'Compilation targets' },
       { to: '/docs/tools/testing/', label: 'Testing' },
       { to: '/docs/tools/notebooks/', label: 'Jupyter notebooks' },
     ],
@@ -101,7 +101,8 @@ export const shortcutColumns = [
     links: [
       { to: '/docs/vision/', label: 'Mojo vision' },
       { to: '/docs/roadmap/', label: 'Mojo roadmap' },
-      { to: '/releases/', label: 'Releases' },
+      { to: '/docs/faq/', label: 'FAQ' },
+      { to: '/docs/api-docs/stability/', label: 'Stability policy' },
       { to: 'https://github.com/modular/modular', label: 'Open source' },
     ],
   },

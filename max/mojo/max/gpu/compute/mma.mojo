@@ -13,7 +13,7 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from std.sys._assembly import inlined_assembly
 from std.sys.info import (
@@ -85,10 +85,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        Int(a.size), "x",  a.dtype,
-        ", b=",  Int(b.size), "x",  b.dtype,
-        ", c=",  Int(c.size), "x",  c.dtype,
-        ", and d=", Int(d.size), "x", d.dtype,
+        Int(a.length), "x",  a.dtype,
+        ", b=",  Int(b.length), "x",  b.dtype,
+        ", c=",  Int(c.length), "x",  c.dtype,
+        ", and d=", Int(d.length), "x", d.dtype,
     )
     # fmt: on
 
@@ -298,7 +298,7 @@ def ld_matrix[
     # Full intrinsic is base + suffix
     comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
-    @parameter
+    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".b16.p3"
         if transpose:
@@ -404,7 +404,7 @@ def st_matrix[
 
     comptime base = "stmatrix.sync.aligned"
 
-    @parameter
+    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".m8n8"
         if transpose:
@@ -539,7 +539,7 @@ struct WGMMADescriptor[dtype: DType](
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @parameter
+        @__parameter
         def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
                 return mode.cast[DType.int64]()

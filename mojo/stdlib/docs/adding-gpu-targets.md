@@ -409,8 +409,7 @@ Define the GPU characteristics using the appropriate architecture family:
 comptime YourGPU = GPUInfo.from_family(
     family=NvidiaHopperFamily,  # Choose the appropriate family
     name="Your GPU",
-    vendor=Vendor.NVIDIA_GPU,
-    api="cuda",
+    api="cuda",  # Identifies the vendor: "cuda", "hip", or "metal"
     arch_name="hopper",
     compute=9.0,  # Must match arch (9.0 -> sm_90, 12.1 -> sm_121)
     version="sm_90a",

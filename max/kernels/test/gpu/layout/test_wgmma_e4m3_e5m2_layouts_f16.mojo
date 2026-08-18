@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, warp_id, lane_id
 from std.gpu.intrinsics import threadfence
@@ -95,7 +95,7 @@ def wgmma_f16_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    c0 = bitcast[DType.float16, 4](c_reg)
+    var c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()

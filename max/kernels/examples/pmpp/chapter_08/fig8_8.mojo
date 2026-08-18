@@ -14,9 +14,9 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import barrier, block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 
 # ========================== TILING CONFIGURATION ==========================

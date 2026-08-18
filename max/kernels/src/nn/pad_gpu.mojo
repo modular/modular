@@ -19,12 +19,13 @@ from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import Layout
 from std.math import align_down, ceildiv
 from std.sys.info import align_of
+from std.collections import Array
 from std.utils.index import IndexList
 
 
 def _fill_strides_indexlist[
     rank: Int,
-](input_shape: IndexList[rank], mut strides: IndexList[rank],):
+](input_shape: IndexList[rank], mut strides: Array[Int, rank],):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -248,8 +249,8 @@ def pad_constant[
         ```
     """
 
-    var input_strides = IndexList[rank]()
-    var output_strides = IndexList[rank]()
+    var input_strides = Array[Int, rank]()
+    var output_strides = Array[Int, rank]()
 
     var output_size: Int = 1
 

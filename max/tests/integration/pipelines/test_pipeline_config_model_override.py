@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineArgs, PipelineConfig
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 
@@ -63,12 +63,14 @@ def test_main_override_revision_used_for_offline_cache_lookup() -> None:
         # from the fake path; what we care about is which revisions were
         # asked for during HuggingFaceRepo construction.
         try:
-            PipelineConfig.from_flat_kwargs(
-                model_path="some/repo",
-                model_override=[
-                    f"main.huggingface_model_revision={PINNED_SHA}",
-                    f"main.huggingface_weight_revision={PINNED_SHA}",
-                ],
+            PipelineConfig.from_args(
+                PipelineArgs.from_flat_kwargs(
+                    model_path="some/repo",
+                    model_override=[
+                        f"main.huggingface_model_revision={PINNED_SHA}",
+                        f"main.huggingface_weight_revision={PINNED_SHA}",
+                    ],
+                )
             )
         except Exception:
             pass
@@ -94,12 +96,14 @@ def test_config_file_model_override_revision_reaches_construction() -> None:
 
     with patch(HF_OFFLINE, True), patch(GENERATE_LOCAL_PATH, side_effect=stub):
         try:
-            PipelineConfig.from_flat_kwargs(
-                model={"model_path": "some/repo"},
-                model_override=[
-                    f"main.huggingface_model_revision={PINNED_SHA}",
-                    f"main.huggingface_weight_revision={PINNED_SHA}",
-                ],
+            PipelineConfig.from_args(
+                PipelineArgs.from_flat_kwargs(
+                    model={"model_path": "some/repo"},
+                    model_override=[
+                        f"main.huggingface_model_revision={PINNED_SHA}",
+                        f"main.huggingface_weight_revision={PINNED_SHA}",
+                    ],
+                )
             )
         except Exception:
             pass
@@ -121,9 +125,11 @@ def test_data_parallel_degree_cli_flag_reaches_config() -> None:
             return_value="/fake/cache/some/repo",
         ),
     ):
-        config = PipelineConfig.from_flat_kwargs(
-            model_path="some/repo",
-            data_parallel_degree=4,
+        config = PipelineConfig.from_args(
+            PipelineArgs.from_flat_kwargs(
+                model_path="some/repo",
+                data_parallel_degree=4,
+            )
         )
 
     assert config.model is not None
@@ -141,9 +147,12 @@ def test_data_parallel_degree_cli_override_of_default_value_applied() -> None:
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
         patch("huggingface_hub.file_exists", return_value=False),
+        # architectures=None keeps the architecture name undeterminable, so
+        # construction-time resolution skips instead of rejecting the
+        # placeholder repo as an unknown architecture.
         patch(
             "max.pipelines.lib.config.model_config.load_huggingface_config",
-            return_value=MagicMock(),
+            return_value=MagicMock(architectures=None),
         ),
     ):
         manifest = ModelManifest(
@@ -154,8 +163,10 @@ def test_data_parallel_degree_cli_override_of_default_value_applied() -> None:
             }
         )
 
-        config = PipelineConfig.from_flat_kwargs(
-            models=manifest, data_parallel_degree=1
+        config = PipelineConfig.from_args(
+            PipelineArgs.from_flat_kwargs(
+                models=manifest, data_parallel_degree=1
+            )
         )
 
     assert config.model is not None

@@ -106,13 +106,12 @@ def bench_decode[
     ](batch_size, num_keys, 1, ctx)
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_k, cb_o, scalar_args_buf_lt)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -164,7 +163,7 @@ def bench_decode[
                 num_partitions=num_partitions,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -240,12 +239,12 @@ def bench_prefill[
     )
 
     # input row offsets and cache row offsets
-    var input_row_offsets = UnsafePointer(
-        alloc[UInt32]({count = batch_size + 1}).unsafe_leak()
-    )
-    var cache_row_offsets = UnsafePointer(
-        alloc[UInt32]({count = batch_size + 1}).unsafe_leak()
-    )
+    var input_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
+    var cache_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -280,7 +279,7 @@ def bench_prefill[
         row_major(Coord(batch_size + 1)),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         cb_q,
@@ -292,9 +291,8 @@ def bench_prefill[
         cache_row_offsets_device,
     )
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -361,7 +359,7 @@ def bench_prefill[
                 q_max_seq_len=seq_len,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -445,7 +443,7 @@ def bench_prefill_sparse[
 
     # Sequential LUT: page i → physical block i (batch_size=1).
     var lut_host_alloc = alloc[UInt32]({count = num_pages}).into_managed()
-    var lut_host = UnsafePointer(lut_host_alloc.unsafe_ptr())
+    var lut_host = lut_host_alloc.unsafe_ptr()
     for i in range(num_pages):
         lut_host[i] = UInt32(i)
     var lut_device = ctx.enqueue_create_buffer[DType.uint32](num_pages)
@@ -454,9 +452,7 @@ def bench_prefill_sparse[
     var cache_lengths_host_alloc = alloc[UInt32](
         {count = batch_size}
     ).into_managed()
-    var cache_lengths_host = UnsafePointer(
-        cache_lengths_host_alloc.unsafe_ptr()
-    )
+    var cache_lengths_host = cache_lengths_host_alloc.unsafe_ptr()
     cache_lengths_host[0] = UInt32(num_kv_tokens)
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
@@ -467,7 +463,7 @@ def bench_prefill_sparse[
     var indices_host_alloc = alloc[UInt32](
         {count = total_indices}
     ).into_managed()
-    var indices_host = UnsafePointer(indices_host_alloc.unsafe_ptr())
+    var indices_host = indices_host_alloc.unsafe_ptr()
     for i in range(total_indices):
         var page_id = i % num_pages
         var tok_in_page = i % page_size
@@ -476,7 +472,7 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(indices_device, indices_host)
 
     var topk_lengths_host_alloc = alloc[UInt32]({count = s_q}).into_managed()
-    var topk_lengths_host = UnsafePointer(topk_lengths_host_alloc.unsafe_ptr())
+    var topk_lengths_host = topk_lengths_host_alloc.unsafe_ptr()
     for i in range(s_q):
         topk_lengths_host[i] = UInt32(topk)
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](s_q)
@@ -544,13 +540,12 @@ def bench_prefill_sparse[
         group=num_heads,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_o, kv_cache, indices_tt, topk_lengths_tt, scale)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_tt = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major((s_q, Idx[num_heads], Idx[qk_depth])),
@@ -575,7 +570,7 @@ def bench_prefill_sparse[
                 ctx,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 2 * s_q * topk * num_heads * (qk_depth + v_depth)

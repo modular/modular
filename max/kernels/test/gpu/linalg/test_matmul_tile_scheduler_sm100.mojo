@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
 from max.gpu.host import DeviceContext
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import fence_mbarrier_init
-from std.gpu.sync import syncwarp
+from max.gpu.memory import fence_mbarrier_init
+from max.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 from std.memory import unsafe_stack_allocation
@@ -164,7 +164,7 @@ def test_kernel[
                     clc_pipe_producer_state
                 )
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -182,7 +182,7 @@ def test_kernel[
         while work_info.is_valid():
             # DO MMA
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -194,7 +194,7 @@ def test_kernel[
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
 
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             work_info = next_work_info

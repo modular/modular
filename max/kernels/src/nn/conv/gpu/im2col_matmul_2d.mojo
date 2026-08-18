@@ -337,7 +337,7 @@ def dispatch_im2col_matmul_conv2d[
     var m_offset = 0
     while m_offset < full_M:
         var remaining = full_M - m_offset
-        var m_count = m_tile if remaining > m_tile else remaining
+        var m_count = min(m_tile, remaining)
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
         comptime im2col_block = 256
@@ -371,7 +371,7 @@ def dispatch_im2col_matmul_conv2d[
         comptime if maybe_epilogue_func:
             comptime epilogue_4d = maybe_epilogue_func.value()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(HW_out, _W_out, m_offset)
             def _gemm_epilogue[
@@ -594,7 +594,7 @@ def dispatch_fused_im2col_conv2d_apple[
         comptime epilogue_4d = maybe_epilogue_func.value()
         var HW_out = _H_out * _W_out
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(HW_out, _W_out)
         def _gemm_epilogue[

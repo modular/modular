@@ -263,9 +263,9 @@ class TestArchConfigWithAttentionKVCache:
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
             enable_prefix_caching=True,
-            kv_connector=KVConnectorType.local,
             kv_connector_config=KVConnectorConfig(
-                host_kvcache_swap_space_gb=100.0,
+                type=KVConnectorType.tiered,
+                host_offload_max_gb=100.0,
             ),
         )
 
@@ -285,8 +285,12 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
         assert kv_params.enable_prefix_caching is True
-        assert kv_params.kv_connector == KVConnectorType.local
-        assert kv_params.host_kvcache_swap_space_gb == 100.0
+        cfg = kv_params.kv_connector_config
+        # The params interface types this as the protocol, which carries only
+        # the connector type; narrow to read the concrete config's sizing.
+        assert isinstance(cfg, KVConnectorConfig)
+        assert cfg.type == KVConnectorType.tiered
+        assert cfg.host_offload_max_gb == 100.0
         assert kv_params.data_parallel_degree == 2
 
         # Test that kv params are cached.

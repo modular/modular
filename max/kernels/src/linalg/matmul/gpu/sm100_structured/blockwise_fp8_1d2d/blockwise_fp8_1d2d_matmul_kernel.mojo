@@ -31,14 +31,14 @@ from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import (
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.sync import named_barrier, syncwarp
+from max.gpu.sync import named_barrier, syncwarp
 from layout import TensorLayout, TileTensor
 from structured_kernels.tile_types import (
     TmaOpType,

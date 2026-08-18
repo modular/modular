@@ -114,7 +114,7 @@ class TestMAXConfigFileLoading:
             "version": "1.0",
             "kv_cache_config": {
                 "kv_cache_page_size": 256,
-                "kv_connector": "local",
+                "kv_connector_config": {"type": "tiered"},
             },
             "profiling_config": {
                 "gpu_profiling": "on",
@@ -133,7 +133,7 @@ class TestMAXConfigFileLoading:
                 config_file=f.name, section_name="kv_cache_config"
             )
             assert kv_config.kv_cache_page_size == 256
-            assert kv_config.kv_connector == KVConnectorType.local
+            assert kv_config.kv_connector_config.type == KVConnectorType.tiered
 
             # Test ProfilingConfig enum loading.
             profiling_config = ProfilingConfig(

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``Buffer`` and ``BufferView``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
 from _hal.buffer import Buffer as HALBuffer
@@ -35,7 +35,7 @@ struct BufferView(Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
@@ -61,7 +61,7 @@ struct BufferView(Movable, Writable):
 
 
 @fieldwise_init
-struct Buffer(ImplicitlyDeletable, Movable, Writable):
+struct Buffer(Deinitable, Movable, Writable):
     """Python projection of HAL ``Buffer``.
 
     Owns a device (or host-pinned) memory allocation plus a strong
@@ -95,7 +95,7 @@ struct Buffer(ImplicitlyDeletable, Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

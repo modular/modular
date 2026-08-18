@@ -67,8 +67,8 @@ def test_near_poison_float():
 def test_masked_load_poison_in_masked_off_lane() raises:
     """Poison in a masked-off lane (passthrough) should not trigger abort."""
     # masked_load requires a contiguous buffer, so alloc is needed here.
-    var ptr = alloc[Float32](4)
-
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr.unsafe_store(0, Float32(1.0))
     ptr.unsafe_store(1, Float32(2.0))
     ptr.unsafe_store(2, Float32(3.0))
@@ -90,8 +90,6 @@ def test_masked_load_poison_in_masked_off_lane() raises:
 
     assert_true(val[0] == 1.0)
     assert_true(val[1] == 2.0)
-
-    ptr.unsafe_free()
 
 
 def test_normal_float64() raises:

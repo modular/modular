@@ -178,20 +178,7 @@ class LlamaModelBase(
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
         assert model_inputs.kv_cache_inputs is not None
-        if self.pipeline_config.model.data_parallel_degree > 1:
-            model_outputs = self.model.execute(*model_inputs.buffers)
-        elif self._lora_manager:
-            assert model_inputs.lora is not None
-            model_outputs = self.model.execute(
-                model_inputs.tokens,
-                model_inputs.input_row_offsets,
-                model_inputs.return_n_logits,
-                *model_inputs.lora.buffers(),
-                *model_inputs.signal_buffers,
-                *model_inputs.kv_cache_inputs.flatten(),
-            )
-        else:
-            model_outputs = self.model.execute(*model_inputs.buffers)
+        model_outputs = self.model.execute(*model_inputs.buffers)
 
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
@@ -280,9 +267,6 @@ class LlamaModelBase(
         assert isinstance(model_config, Llama3Config)
         single_model: Llama3 = Llama3(model_config)
 
-        if self._lora_manager:
-            self._lora_manager.init_weights(single_model, state_dict)
-
         single_model.load_state_dict(
             state_dict,
             override_quantization_encoding=True,
@@ -293,9 +277,7 @@ class LlamaModelBase(
 
         with Graph(
             "llama3",
-            input_types=single_model.input_types(
-                self.kv_params, self._lora_manager
-            ),
+            input_types=single_model.input_types(self.kv_params),
         ) as graph:
             (
                 tokens,
@@ -303,8 +285,6 @@ class LlamaModelBase(
                 return_n_logits,
                 *rest,
             ) = graph.inputs
-            if self._lora_manager:
-                rest = self._lora_manager.bind_graph_inputs(rest)
             kv_collections = self._unflatten_kv_inputs(rest)
             outputs = single_model(
                 tokens.tensor,

@@ -32,11 +32,13 @@ paths — either by passing it to `dealloc` or by taking the raw pointer with
 
 For automatic cleanup, an `Allocation` can be converted into a
 `ManagedAllocation[T]` with `into_managed()`. Unlike the two explicitly
-destroyed handles, a `ManagedAllocation` implements `ImplicitlyDeletable`: it
+destroyed handles, a `ManagedAllocation` implements `Deinitable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
-elements written into it.
+elements written into it. Because of that, `into_managed()` requires `T` to be
+`IsTriviallyDeinitable`: for any other `T`, the skipped destructor call could
+silently leak resources owned by elements left in the storage.
 
 Examples:
 
@@ -77,7 +79,7 @@ dealloc(thin^.unsafe_with_layout(layout))
 
 Memory safety:
 
-Because `Allocation` and `ThinAllocation` are non-`ImplicitlyDeletable types,
+Because `Allocation` and `ThinAllocation` are non-`Deinitable types,
 the compiler catches the three classic allocation bugs at compile time, instead
 of leaving them as runtime hazards.
 
@@ -126,6 +128,7 @@ from std.memory.memory import _free, _malloc
 from std.os import abort
 from std.sys import align_of, size_of
 from std.sys.intrinsics import unlikely
+from std.traits import IsTriviallyDeinitable
 
 
 @explicit_destroy(
@@ -134,7 +137,7 @@ from std.sys.intrinsics import unlikely
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct Allocation[T: AnyType](
-    ImplicitlyDeletable where False, RegisterPassable, Writable
+    Deinitable where False, RegisterPassable, Writable
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -195,6 +198,31 @@ struct Allocation[T: AnyType](
         """
         self = managed^._into_allocation()
 
+    def __init__(
+        out self,
+        *,
+        unsafe_owned_ptr: Pointer[Self.T, MutUntrackedOrigin],
+        layout: Layout[Self.T],
+    ):
+        """Initializes a `Allocation` that takes ownership of a raw pointer.
+
+        Args:
+            unsafe_owned_ptr: The raw pointer to take ownership of. The
+                new `Allocation` assumes responsibility for deallocating
+                this storage.
+            layout: The associated layout.
+
+        Safety:
+
+        - The pointer must own storage that was previously created though
+        `alloc`, and no other value may own it.
+        - The provided `layout` must also exactly match the layout initially
+        passed to `alloc` which created this `Allocation`.
+
+        """
+        self._alloc = ThinAllocation(unsafe_owned_ptr=unsafe_owned_ptr)
+        self._layout = layout
+
     def unsafe_leak(
         deinit self,
     ) -> Pointer[Self.T, MutUntrackedOrigin]:
@@ -232,7 +260,7 @@ struct Allocation[T: AnyType](
 
         `alloc` returns uninitialized storage, so the returned pointer may point
         to uninitialized memory. Initialize an element (for example with
-        `init_pointee_move`) before reading it.
+        `unsafe_write`) before reading it.
         """
         return self._alloc.unsafe_ptr()
 
@@ -274,7 +302,14 @@ struct Allocation[T: AnyType](
         """
         return self._alloc^
 
-    def into_managed(deinit self) -> ManagedAllocation[Self.T]:
+    def into_managed(
+        deinit self,
+    ) -> ManagedAllocation[Self.T] where (
+        IsTriviallyDeinitable[Self.T],
+        "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
+        " its storage without ever running T's `__deinit__`, which would"
+        " leak resources owned by any initialized elements",
+    ):
         """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
         This converts the explicitly destroyed handle into a self-freeing
@@ -290,6 +325,12 @@ struct Allocation[T: AnyType](
         destroyed. If the elements need their destructors run, destroy them
         yourself (for example with `unsafe_destroy_n`) before the
         `ManagedAllocation` is destroyed.
+
+        Constraints:
+            `T` must be `IsTriviallyDeinitable`. Because a `ManagedAllocation`
+            never runs `T`'s `__deinit__`, allowing a non-trivial `T` here would
+            let its deinitializer be silently skipped, potentially leaking
+            resources.
 
         Returns:
             A `ManagedAllocation` owning this storage.
@@ -338,7 +379,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
 
     A `ManagedAllocation` wraps an `Allocation` and deallocates the storage in
     its destructor. It is the self-freeing counterpart to `Allocation`: where
-    `Allocation` is non-`ImplicitlyDeletable` and must be passed to `dealloc` on
+    `Allocation` is non-`Deinitable` and must be passed to `dealloc` on
     every path, a `ManagedAllocation` deallocates its storage automatically.
     Mojo runs the destructor after the value's last use, following its "as soon
     as possible" (ASAP) destruction policy — including on error paths, where the
@@ -354,7 +395,10 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     Like `dealloc`, the destructor frees the storage but does not run the
     destructors of any elements written into it. If the elements need their
     destructors run, destroy them yourself (for example with
-    `unsafe_destroy_n`) before the `ManagedAllocation` is destroyed.
+    `unsafe_destroy_n`) before the `ManagedAllocation` is destroyed. Because of
+    that, constructing a `ManagedAllocation` requires `T` to be
+    `IsTriviallyDeinitable`: for any other `T`, the skipped destructor call
+    could silently leak resources owned by elements left in the storage.
 
     Parameters:
         T: The type of the elements stored in the allocation.
@@ -367,7 +411,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     var managed = alloc(Layout[Int32](count=4)).into_managed()
     var ptr = managed.unsafe_ptr()
     for i in range(4):
-        ptr.unsafe_offset(i).unsafe_write(i)
+        ptr.unsafe_offset(i).write(i)
     # `managed` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -375,13 +419,26 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     var _alloc: Allocation[Self.T]
     """The wrapped `Allocation` that owns the storage."""
 
-    def __init__(out self, var allocation: Allocation[Self.T], /):
+    def __init__(
+        out self, var allocation: Allocation[Self.T], /
+    ) where (
+        IsTriviallyDeinitable[Self.T],
+        "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
+        " its storage without ever running T's `__deinit__`, which would"
+        " leak resources owned by any initialized elements",
+    ):
         """Initializes a `ManagedAllocation` that owns `allocation`.
 
         This is the constructor form of `Allocation.into_managed()`. The new
         `ManagedAllocation` assumes responsibility for deallocating the
         storage and frees it automatically when it is destroyed, after its last
         use.
+
+        Constraints:
+            `T` must be `IsTriviallyDeinitable`. Because a `ManagedAllocation`
+            never runs `T`'s deinitializer, allowing a non-trivial `T` here would
+            let its deinitializer be silently skipped, leaking any resources
+            (heap memory, file handles, and so on) `T`'s elements own.
 
         Args:
             allocation: The `Allocation` to take ownership of. It is consumed by
@@ -419,7 +476,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
 
         `alloc` returns uninitialized storage, so the returned pointer may point
         to uninitialized memory. Initialize an element (for example with
-        `init_pointee_move`) before reading it.
+        `unsafe_write`) before reading it.
         """
         return self._alloc.unsafe_ptr().unsafe_origin_cast[origin_of(self)]()
 
@@ -459,7 +516,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     " call `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct ThinAllocation[T: AnyType](
-    ImplicitlyDeletable where False, RegisterPassable, Writable
+    Deinitable where False, RegisterPassable, Writable
 ):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
@@ -488,12 +545,12 @@ struct ThinAllocation[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_assume_ownership: Pointer[Self.T, MutUntrackedOrigin],
+        unsafe_owned_ptr: Pointer[Self.T, MutUntrackedOrigin],
     ):
         """Initializes a `ThinAllocation` that takes ownership of a raw pointer.
 
         Args:
-            unsafe_assume_ownership: The raw pointer to take ownership of. The
+            unsafe_owned_ptr: The raw pointer to take ownership of. The
                 new `ThinAllocation` assumes responsibility for deallocating
                 this storage.
 
@@ -503,7 +560,7 @@ struct ThinAllocation[T: AnyType](
         (typically obtained from `alloc`), and no other value may own it.
         Otherwise, destroying the `ThinAllocation` causes a double-free.
         """
-        self._ptr = unsafe_assume_ownership
+        self._ptr = unsafe_owned_ptr
 
     def unsafe_with_layout(
         var self, layout: Layout[Self.T]
@@ -603,8 +660,34 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
+@deprecated(
+    "`alloc` without a `Layout` is deprecated, use the `Layout`-based `alloc`"
+    " instead; as a temporary migration step, use `unsafe_alloc`"
+)
 @always_inline
 def alloc[
+    type: AnyType, /
+](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
+    type, MutUntrackedOrigin
+]:
+    """Allocates contiguous storage for `count` elements of `type` with
+    alignment `alignment`.
+
+    Parameters:
+        type: The type of the elements to allocate storage for.
+
+    Args:
+        count: Number of elements to allocate.
+        alignment: The alignment of the allocation.
+
+    Returns:
+        A pointer to the newly allocated uninitialized array.
+    """
+    return unsafe_alloc[type](count, alignment=alignment)
+
+
+@always_inline
+def unsafe_alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> Pointer[
     type, MutUntrackedOrigin
@@ -634,7 +717,7 @@ def alloc[
     Example:
 
     ```mojo
-    var ptr = alloc[Int32](4)
+    var ptr = unsafe_alloc[Int32](4)
     ptr.store(0, Int32(42))
     ptr.store(1, Int32(7))
     ptr.store(2, Int32(9))
@@ -680,7 +763,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
 
     Constraints:
         `size_of[T]()` must be greater than zero. `layout.count()` must be
-        greater than zero.
+        `>= 0`.
 
     Example:
 
@@ -690,24 +773,22 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        ptr.unsafe_offset(i).unsafe_write(i)
+        ptr.unsafe_offset(i).write(i)
     dealloc(allocation^)
     ```
     """
     comptime size_of_t = size_of[T]()
 
-    # TODO: Cannot use t-string as is causes a recursive reference to `alloc`
-    debug_assert(layout.count() > 0, "alloc(", layout, "): count must be > 0")
+    if unlikely(layout.count() < 0):
+        abort("alloc: `Layout.count()` must be > 0")
 
     comptime if size_of_t == 0:
         return ThinAllocation(
-            unsafe_assume_ownership=Pointer[
-                T, MutUntrackedOrigin
-            ].unsafe_dangling()
+            unsafe_owned_ptr=Pointer[T, MutUntrackedOrigin].unsafe_dangling()
         ).unsafe_with_layout(layout)
     else:
         return ThinAllocation(
-            unsafe_assume_ownership=_alloc_bytes(
+            unsafe_owned_ptr=_alloc_bytes(
                 layout.as_byte_layout()
             ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)
@@ -847,7 +928,7 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
 
         var layout = Layout[Int64].single()
         var allocation = alloc(layout)
-        allocation.unsafe_ptr().unsafe_write(0)
+        allocation.unsafe_ptr().write(0)
         dealloc(allocation^)
         ```
         """

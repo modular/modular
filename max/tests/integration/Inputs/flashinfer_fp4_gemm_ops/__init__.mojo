@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,8 +14,6 @@
 
 import extensibility
 import std.format
-from max.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUstream
 from std.memory import stack_allocation
 from std.collections import Span
 from std.os import abort
@@ -23,6 +21,9 @@ from std.os import abort
 from std.ffi import OwnedDLHandle
 from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
 from std.utils import IndexList
+
+from max.gpu.host import DeviceContext
+from max.gpu.host._nvidia_cuda import CUstream
 
 from .dlpack import DLTensor
 from .tvm_ffi import SafeFunction, TVMFFIAny, take_latest_error
@@ -47,7 +48,7 @@ struct Module:
         # `get_function` directly. That's safe here because `self.lib`
         # is a long-lived member that outlives the call, so the looked-up
         # symbol can't be `dlclose`d out from under us.
-        safe_call = self.lib.borrow().get_function[SafeFunction](
+        var safe_call = self.lib.borrow().get_function[SafeFunction](
             "__tvm_ffi_fp4_gemm"
         )
 
@@ -55,30 +56,28 @@ struct Module:
         # `DLTensor.__copyinit__` (used at the call site) already fixed
         # up self-referential pointers + nulled strides for contiguous
         # tensors.  So we can take their addresses directly.
-        args: Array[TVMFFIAny, 8] = [
-            TVMFFIAny(UnsafePointer(to=mat1)),
-            TVMFFIAny(UnsafePointer(to=mat2)),
-            TVMFFIAny(UnsafePointer(to=mat1_scale)),
-            TVMFFIAny(UnsafePointer(to=mat2_scale)),
-            TVMFFIAny(UnsafePointer(to=global_scale)),
-            TVMFFIAny(UnsafePointer(to=out_tensor)),
-            TVMFFIAny(UnsafePointer(to=workspace)),
+        var args: Array[TVMFFIAny, 8] = [
+            TVMFFIAny(Pointer(to=mat1)),
+            TVMFFIAny(Pointer(to=mat2)),
+            TVMFFIAny(Pointer(to=mat1_scale)),
+            TVMFFIAny(Pointer(to=mat2_scale)),
+            TVMFFIAny(Pointer(to=global_scale)),
+            TVMFFIAny(Pointer(to=out_tensor)),
+            TVMFFIAny(Pointer(to=workspace)),
             TVMFFIAny(tactic),
         ]
 
-        result = TVMFFIAny(0)
+        var result = TVMFFIAny(0)
 
-        errno = safe_call(
-            Optional[
-                UnsafePointer[NoneType, MutAnyOrigin]
-            ](),  # null unused module
+        var errno = safe_call(
+            Optional[Pointer[NoneType, MutAnyOrigin]](),  # null unused module
             Pointer[TVMFFIAny, MutAnyOrigin](to=args[0]),
             8,  # num_args
             Pointer[TVMFFIAny, MutAnyOrigin](to=result),
         )
 
         if errno != 0:
-            error = take_latest_error()
+            var error = take_latest_error()
             raise Error("FlashInfer fp4_gemm failed: {}".format(error))
 
 
@@ -120,7 +119,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
         comptime assert target == "gpu"
 
-        mod = Module(OwnedDLHandle(path=Self.lib_path))
+        var mod = Module(OwnedDLHandle(path=Self.lib_path))
 
         mod.fp4_gemm(
             DLTensor(mat1),

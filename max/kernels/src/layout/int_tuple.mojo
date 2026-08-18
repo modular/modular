@@ -177,7 +177,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         if self.owning() and self._data:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=self._data.unsafe_value()
+                    unsafe_owned_ptr=self._data.unsafe_value()
                 ).unsafe_with_layout(AllocLayout[Int](count=self.size()))
             )
 
@@ -1728,7 +1728,7 @@ def sum(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a + (
             Int(b) if is_int(b) else sum(b)
@@ -1753,7 +1753,7 @@ def product(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a * (
             Int(b) if is_int(b) else product(b)
@@ -1779,7 +1779,7 @@ def tuple_max(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
@@ -2011,7 +2011,7 @@ def abs(t: IntTuple) -> IntTuple:
         A new `IntTuple` with the same structure but with absolute values.
     """
 
-    @parameter
+    @__parameter
     def int_abs(x: Int) -> Int:
         return x.__abs__()
 
@@ -2469,7 +2469,7 @@ def idx2crd2(
                 len(stride),
             )
 
-            @parameter
+            @__parameter
             def idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
                 return idx2crd(idx, shape, stride)
 
@@ -2969,8 +2969,10 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
         comptime T = element_types[i]
 
         comptime if T.is_tuple:
-            # Recursively convert nested tuples
-            result.append(coord_to_int_tuple[element_types[i]]())
+            # Splat the nested `Coord`'s own element types. Passing `T` itself
+            # as the whole pack would re-enter with an identical pack, so the
+            # recursion would never shrink.
+            result.append(coord_to_int_tuple[*T.ParamListType]())
         else:
             comptime if T.is_static_value:
                 result.append(IntTuple(T.static_value))

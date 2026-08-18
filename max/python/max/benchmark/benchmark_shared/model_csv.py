@@ -70,7 +70,7 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict, TypeIs
 
 if TYPE_CHECKING:
-    from _csv import _writer as _CsvWriter
+    from _csv import Writer as _CsvWriter
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +156,7 @@ _SERVING_SUMMARY_COLUMNS: tuple[str, ...] = (
     "p99_tpot_ms",
     "mean_step_tpot_ms",
     "median_step_tpot_ms",
+    "p99_step_tpot_ms",
     "mean_itl_ms",
     "median_itl_ms",
     "p99_itl_ms",

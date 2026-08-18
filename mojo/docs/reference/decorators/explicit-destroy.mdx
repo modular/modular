@@ -1,13 +1,29 @@
 ---
-title: '@explicit_destroy'
-description: Prevents automatic destruction by a `__del__()` method and requires explicit cleanup through named destructor methods.
-codeTitle: true
+title: 'Explicit destruction'
+description: >
+  Prevents automatic destruction by a `__deinit__()` method and requires
+  explicit cleanup through named deinitializer methods.
 ---
 
-The `@explicit_destroy` decorator disables automatic destruction via the
-`__del__()` method and requires explicit cleanup through named destructor
-methods. When applying this decorator, you must call a named destructor
-method to consume the value. If you don't, the compiler emits an error.
+:::caution
+This page was previously about the `@explicit_destroy` decorator, which is
+no longer how a type opts out of implicit destruction.
+:::
+
+Explicit destruction prevents ASAP destruction from destroying a value at
+its last use. To opt-in, conform the type to an unsatisfiable `Deinitable`
+constraint:
+
+```mojo
+struct Example(Deinitable where False):
+    def cleanup(deinit self):
+        pass
+```
+
+This disables automatic destruction via the `__deinit__()` method
+and requires explicit cleanup through named deinitializer methods. When using
+this pattern, you must call a named deinitializer method to consume the value.
+If you don't, the compiler emits an error.
 
 Use explicit destruction when cleanup must be performed deliberately, may
 fail and require error handling, or your type offers multiple valid ways to end
@@ -21,15 +37,16 @@ lifetime analysis, while some types opt into explicit control for stronger
 cleanup guarantees.
 
 _Implicit destruction_ (the default): The compiler automatically calls
-`__del__()` when a value has no further uses. Cleanup is triggered by Mojo's
+`__deinit__()` when a value has no further uses. Cleanup is triggered by Mojo's
 lifetime analysis and requires no manual intervention. You may override
-`__del__()` in your type, but the compiler does not verify that cleanup is
+`__deinit__()` in your type, but the compiler does not verify that cleanup is
 performed intentionally.
 
-_Explicit destruction_: You intentionally call named destructor methods
-(such as `cleanup()` or `save_and_close()`). The compiler disables automatic
-destruction and enforces explicit consumption. Failing to call a destructor
-before a value leaves scope results in a compile-time error.
+_Explicit destruction_: You intentionally call named deinitializer methods
+(such as `cleanup()` or `save_and_close()`). The conformance disables
+automatic destruction and the compiler enforces explicit consumption.
+Failing to call a deinitializer before a value leaves scope results in a
+compile-time error.
 
 Most types use implicit destruction. Explicit destruction adds a layer of
 safety when cleanup may fail, requires error handling, or benefits from
@@ -38,12 +55,13 @@ deliberate control over how a value's lifetime ends.
 ## Basic usage
 
 To opt into explicit, compiler-enforced destruction, mark types with
-`@explicit_destroy` and provide named destructor methods that use the
-`deinit self` argument convention:
+`Deinitable where False`.
+
+Provide named deinitializer methods that use the `deinit self` argument
+convention:
 
 ```mojo
-@explicit_destroy
-struct FileBuffer:
+struct FileBuffer(Deinitable where False):
     var path: String
     var data: String
 
@@ -58,8 +76,10 @@ struct FileBuffer:
         write_to_disk(self.path, self.data)
 ```
 
-Declaring `@explicit_destroy` requires you to add intentional calls to
-type-specific destructors before the end of scope:
+Declaring types with `Deinitable where False` requires you to add
+intentional calls to type-specific deinitializer methods before the end of
+scope or to transfer the value out of scope so it can be consumed at a
+later time:
 
 ```mojo
 def write_log(path: String, message: String) raises:
@@ -73,13 +93,17 @@ If you omit this call, the compiler emits an error.
 ## Custom error messages
 
 To improve compiler diagnostics for explicit destruction, include a
-custom error message with the decorator:
+custom error message with `where` constraint:
 
 ```mojo
-@explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct CustomFileHandle(
+    Deinitable where(False, "Must call save_and_close() or discard()")
+):
+    # ... other implementation details ...
+
     def save_and_close(deinit self) raises:
-        write_to_disk(self.path, self.data) # Store data
+        write_to_disk(self.path, self.data) # Store data, then end
+        self.close_descriptor()
 
     def discard(deinit self):
         pass  # Abandon without writing
@@ -87,8 +111,8 @@ struct FileBuffer:
 
 ## Related
 
-- [Death of a value](/docs/manual/lifecycle/death/) - Complete coverage of value
-  destruction and lifetime management
+- [Death of a value](/docs/manual/lifecycle/death/) - Complete coverage of
+  value destruction and lifetime management
 - [`AnyType`](/docs/std/builtin/anytype/AnyType/) - Base trait for all types
-- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/)
-  - Trait for automatically destructible types
+- [`Deinitable`](/docs/std/builtin/anytype/Deinitable/) - Trait for
+  automatically deinitializable types

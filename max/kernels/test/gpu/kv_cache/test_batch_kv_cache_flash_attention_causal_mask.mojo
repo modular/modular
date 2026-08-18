@@ -57,8 +57,8 @@ def execute_flash_attention[
         ")",
     )
 
-    max_prompt_len = 0
-    max_context_len = 0
+    var max_prompt_len = 0
+    var max_context_len = 0
 
     for i in range(batch_size):
         max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
@@ -244,7 +244,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
 
     comptime for dtype_idx in range(len(dtypes)):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64

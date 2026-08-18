@@ -109,7 +109,7 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def in_bounds_compute_lambda[
@@ -174,7 +174,7 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_host_copy_lt = c_host_copy.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_host_copy_lt)
     def in_bounds_compute_lambda_local[

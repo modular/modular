@@ -229,8 +229,8 @@ def execute_fused_qkv_matmul[
         UInt32(0 if is_context_encoding else max_seq_len),
     )
 
-    k_cache_host = kv_collection_host.get_key_cache(layer_idx)
-    v_cache_host = kv_collection_host.get_value_cache(layer_idx)
+    var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
+    var v_cache_host = kv_collection_host.get_value_cache(layer_idx)
     for bs in range(batch_size):
         for s in range(prompt_len):
             for q_dim in range(hidden_size):
@@ -240,7 +240,7 @@ def execute_fused_qkv_matmul[
                 )
 
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
+                var head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * prompt_len + s, hidden_size + k_dim],
                     k_cache_host.load[width=1](
@@ -252,7 +252,7 @@ def execute_fused_qkv_matmul[
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
+                var head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * prompt_len + s,
@@ -271,10 +271,10 @@ def execute_fused_matmul_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
 
     comptime for dtype_idx in range(2):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
         for bs in [1, 16]:
-            ce_cache_sizes = List[Int]()
-            tg_cache_sizes = List[Int]()
+            var ce_cache_sizes = List[Int]()
+            var tg_cache_sizes = List[Int]()
             for _ in range(bs):
                 tg_cache_sizes.append(Int(random_ui64(0, 100)))
                 ce_cache_sizes.append(0)

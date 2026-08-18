@@ -56,7 +56,7 @@ from std.utils.index import StaticTuple
 
 
 @always_inline
-@parameter
+@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -173,7 +173,7 @@ def bench_reduce[
     var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
-        multicast_buf = DeviceMulticastBuffer[dtype](
+        var multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), cb_template.alloc_size()
         )
 
@@ -227,12 +227,13 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
                     in_tensors[i] = TileTensor(
@@ -274,7 +275,7 @@ def bench_reduce[
                     max_num_blocks,
                 )
 
-        bencher_iter_custom[call_fn](b, ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

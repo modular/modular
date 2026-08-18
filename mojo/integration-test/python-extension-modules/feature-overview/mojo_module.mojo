@@ -88,9 +88,7 @@ def case_raise_string_error() -> PythonObject:
 
     cpython.PyErr_SetString(
         error_type,
-        "sample value error".as_c_string_slice()
-        .unsafe_ptr()
-        .as_unsafe_any_origin(),
+        "sample value error".as_c_string_slice().ptr().as_unsafe_any_origin(),
     )
 
     return PythonObject(from_owned=PyObjectPtr())

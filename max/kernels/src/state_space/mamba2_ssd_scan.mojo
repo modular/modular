@@ -1464,7 +1464,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     var has_init_tensor = Int(has_initial_state.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, remaining = divmod(idx, nheads * head_dim)
         var h, p = divmod(remaining, head_dim)
@@ -1624,7 +1624,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
     var has_init_tensor = Int(has_initial_state.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, remaining = divmod(idx, nheads * head_dim)
         var h, p = divmod(remaining, head_dim)

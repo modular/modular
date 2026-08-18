@@ -84,11 +84,11 @@ def bench_unary[
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
-        input_ptr.unsafe_offset(i).unsafe_write(f)
+        input_ptr.unsafe_offset(i).write(f)
 
-    @parameter
+    @__parameter
     def bench(mut b: Bencher, size: Int) raises:
-        @parameter
+        @__parameter
         def iter_fn():
             apply[func](
                 TileTensor(input_ptr, row_major(Coord(_ri(size)))),
@@ -169,6 +169,16 @@ def ldexp2kf[
     #     y=y+1
     result = bitcast[dtype, simd_width](y)
     return result
+
+
+# `bench_unary` takes an unconstrained function, so the stdlib `exp` reaches it
+# through a wrapper that states no obligation of its own.
+@always_inline
+def exp_mojo[
+    dtype: DType, simd_width: SIMDLength
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
+    return exp(x)
 
 
 @always_inline
@@ -436,7 +446,7 @@ def main() raises:
 
     var m = Bench()
     var problem_size = range(1 << 24, 1 << 26, 1 << 25)
-    bench_unary[exp, DType.float32](m, problem_size, "mojo")
+    bench_unary[exp_mojo, DType.float32](m, problem_size, "mojo")
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
     bench_unary[exp_mojo_opt2, DType.float32](m, problem_size, "mojo_opt2")
     bench_unary[exp_mojo_opt3, DType.float32](m, problem_size, "mojo_opt3")

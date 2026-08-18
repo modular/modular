@@ -24,8 +24,11 @@ from std.utils.coord import Coord
 
 
 def run_elementwise[
-    dtype: DType, log_fn: def(x: SIMD) thin -> type_of(x)
-](ctx: DeviceContext) raises:
+    dtype: DType,
+    log_fn: def[fn_dtype: DType, fn_width: SIMDLength](
+        SIMD[fn_dtype, fn_width]
+    ) thin -> SIMD[fn_dtype, fn_width] where fn_dtype.is_floating_point(),
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 8192
 
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
@@ -43,7 +46,7 @@ def run_elementwise[
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)

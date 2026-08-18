@@ -48,7 +48,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )
@@ -124,11 +124,10 @@ def bench_1d1d_quantization[
 
     @always_inline
     @__copy_capture(input_tensor, output_tensor, scales_tensor)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             # Run the quantization kernel
             comptime if use_async:
                 quantize_dynamic_scaled_fp4_async[
@@ -149,7 +148,7 @@ def bench_1d1d_quantization[
                     num_cols_padded=cols,
                 )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var bytes = ThroughputMeasure(
         BenchMetric.bytes,

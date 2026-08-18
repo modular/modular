@@ -56,20 +56,18 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
         self.p_threshold = p_threshold
 
 
-def time_kernel[
-    func: def() raises capturing -> None
-](mut m: Bench, kernel_name: String) raises:
-    @parameter
+def time_kernel(
+    mut m: Bench, kernel_name: String, func: Some[def() raises -> None]
+) raises:
     @always_inline
-    def bench_func(mut m: Bencher) raises:
-        @parameter
+    def bench_func(mut m: Bencher) raises {imm}:
         @always_inline
-        def kernel_launch() raises:
+        def kernel_launch() raises {imm}:
             func()
 
-        m.iter[kernel_launch]()
+        m.iter(kernel_launch)
 
-    m.bench_function[bench_func](BenchId(kernel_name))
+    m.bench_function(bench_func, BenchId(kernel_name))
 
 
 def fill_random[
@@ -102,10 +100,10 @@ def test_is_sorted_descending[
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
-    var sorted_flag = List(length=batch_size, fill=True)
+    var _sorted_flag = List(length=batch_size, fill=True)
+    var sorted_flag = Span(_sorted_flag)
 
-    @parameter
-    def process_rows(start_batch: Int, end_batch: Int):
+    def process_rows(start_batch: Int, end_batch: Int) {var}:
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
@@ -129,7 +127,7 @@ def test_is_sorted_descending[
     var shape = IndexList[1](
         batch_size,
     )
-    parallelize_over_rows[process_rows](shape, 0, parallelism_grain_size)
+    parallelize_over_rows(process_rows, shape, 0, parallelism_grain_size)
 
     # Check if all batches are sorted by AND-ing all flags
     var all_sorted = True
@@ -202,8 +200,7 @@ def test_case_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func() raises:
+        def run_func() raises {var}:
             if is_top_p:
                 top_p_sampling(
                     p_thresholds,
@@ -219,8 +216,8 @@ def test_case_sampling[
                     temperature=temperature,
                 )
 
-        time_kernel[run_func](
-            m, "top-p-sampling" if is_top_p else "min-p-sampling"
+        time_kernel(
+            m, "top-p-sampling" if is_top_p else "min-p-sampling", run_func
         )
 
     # Run sampling

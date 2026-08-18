@@ -20,7 +20,7 @@ from std.utils import Index, IndexList
 from std.utils.coord import Coord
 
 
-@parameter
+@__parameter
 def run_exp_approx_test[
     simd_width: Int
 ](ctx: DeviceContext, *, half_range: Float32, rtol: Float64) raises:
@@ -42,7 +42,7 @@ def run_exp_approx_test[
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
         var v = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)

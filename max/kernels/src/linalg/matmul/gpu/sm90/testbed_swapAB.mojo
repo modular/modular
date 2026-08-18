@@ -680,7 +680,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     # =========================================================================
     # Set up epilogue functions if requested
     # =========================================================================
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
@@ -693,7 +693,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[

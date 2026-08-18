@@ -466,7 +466,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         exist.
         """
         if repo.repo_type == "local":
-            index_path = os.path.join(repo.repo_id, "model_index.json")
+            index_path = os.path.join(repo.local_path, "model_index.json")
             if not os.path.isfile(index_path):
                 return None
             with open(index_path) as f:

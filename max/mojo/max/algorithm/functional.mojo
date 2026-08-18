@@ -19,8 +19,8 @@ from max.algorithm import elementwise
 ```
 """
 
-from std._plugin import CurrentPlugin, PluginForTarget
-from std.collections.string.string_slice import get_static_string
+from max._plugin import MaxPluginForTarget
+from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
@@ -284,7 +284,7 @@ struct _CoordToIndexListAdapter[
 
     Bridges the `Coord`-based elementwise body convention to the
     `IndexList`-based plugin entry points required by
-    `CurrentPlugin.elementwise_fn`.
+    `MaxPluginForTarget.elementwise_fn`.
 
     TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
     `lit.closure.init` with parametric witnesses in the MOGG package that the
@@ -317,11 +317,11 @@ def _elementwise_impl[
     trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
-        return ";".join(Span([shape_str^, vector_width_str^]))
+        return ";".join([shape_str^, vector_width_str^])
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = trace_description
@@ -335,7 +335,8 @@ def _elementwise_impl[
     ):
         # Check the host (CPU) path first: a CPU-targeted op must run on the
         # host even in an accelerator build. Only after ruling out CPU do we
-        # consult the accelerator plugin, so host ops never touch `PluginForTarget`.
+        # consult the accelerator plugin, so host ops never touch
+        # `MaxPluginForTarget`.
         # TODO(DRIV-186): GPUInfo should handle CPU device,
         # Should not need to additionally check accelerator arch here
         comptime if is_cpu[target]():
@@ -350,10 +351,10 @@ def _elementwise_impl[
                 simd_width=simd_width,
                 trace_description=trace_description,
             ](func_wrap_cpu, shape=shape, ctx=Optional(context))
-        elif _accelerator_arch() != "" and PluginForTarget[
+        elif _accelerator_arch() != "" and MaxPluginForTarget[
             context.default_device_info.target()
         ]._handles_elementwise:
-            comptime plugin = PluginForTarget[
+            comptime plugin = MaxPluginForTarget[
                 context.default_device_info.target()
             ]
             return plugin.elementwise_fn[shape.rank, simd_width](
@@ -444,12 +445,12 @@ def _dual_elementwise_impl[
     context: DeviceContext,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
         var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
-        return ";".join(Span([s0^, s1^, vw^]))
+        return ";".join([s0^, s1^, vw^])
 
     comptime d = trace_description
     comptime desc = String(t"({d})") if d else ""

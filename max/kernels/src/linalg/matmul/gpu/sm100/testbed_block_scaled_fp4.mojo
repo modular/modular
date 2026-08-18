@@ -52,7 +52,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from linalg.fp4_quantization import naive_block_scaled_matmul
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -347,7 +347,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Epilogue multiplies output by 2 so we can verify the lambda is actually
     # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
     # and the comparison against 2x reference will fail.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[

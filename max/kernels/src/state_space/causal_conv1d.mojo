@@ -134,7 +134,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @parameter
+    @__parameter
     def process_bc(bc_idx: Int):
         var b, c = divmod(bc_idx, dim)
 
@@ -142,7 +142,7 @@ def causal_conv1d_channel_first_fwd_cpu[
         if b >= batch or c >= dim:
             return
 
-        # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @parameter fn)
+        # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @__parameter fn)
         assert (
             Int(bias.dim[0]()) > 0
         ), "Bias tensor must have at least one element"
@@ -275,7 +275,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @parameter
+    @__parameter
     def process_bc(bc_idx: Int):
         var b, c = divmod(bc_idx, dim)
 

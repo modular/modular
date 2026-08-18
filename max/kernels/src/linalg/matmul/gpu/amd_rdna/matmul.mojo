@@ -30,12 +30,12 @@ from std.sys.info import _is_amd_rdna2_or_earlier
 
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.memory import unsafe_stack_allocation
@@ -288,9 +288,7 @@ def _load_tile_to_smem[
             BLOCK_K % VECTOR_WIDTH == 0
         ), "BLOCK_K must be divisible by VECTOR_WIDTH"
         comptime total_vectors = BLOCK_ROWS * BLOCK_K // VECTOR_WIDTH
-        comptime vecs_per_thread = (
-            total_vectors + NUM_THREADS - 1
-        ) // NUM_THREADS
+        comptime vecs_per_thread = ceildiv(total_vectors, NUM_THREADS)
 
         # Coalesced vectorized loads: adjacent threads load adjacent vectors
         comptime for i in range(vecs_per_thread):
@@ -564,12 +562,8 @@ def _wmma_matmul_kernel[
 
         # Per-thread 128-bit vector counts for the register-staged loads.
         comptime VW = min(BLOCK_K, 8)
-        comptime A_VECS = (
-            BLOCK_M * BLOCK_K // VW + NUM_THREADS - 1
-        ) // NUM_THREADS
-        comptime B_VECS = (
-            BLOCK_N * BLOCK_K // VW + NUM_THREADS - 1
-        ) // NUM_THREADS
+        comptime A_VECS = ceildiv(BLOCK_M * BLOCK_K // VW, NUM_THREADS)
+        comptime B_VECS = ceildiv(BLOCK_N * BLOCK_K // VW, NUM_THREADS)
 
         # Prologue: stage tile 0 into LDS via registers.
         var a_regs = _load_tile_regs[

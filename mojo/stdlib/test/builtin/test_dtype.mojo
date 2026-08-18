@@ -109,5 +109,43 @@ def test_from_str() raises:
         assert_equal(DType._from_str(String(dt)), dt)
 
 
+def test_mantissa_width() raises:
+    """Mantissa widths must match each format's specification.
+
+    Sub-byte dtypes are the interesting case: `bit_width_of` rounds them up to
+    a whole byte, so a width derived from it reports a mantissa several bits
+    too wide.
+    """
+    assert_equal(DType.mantissa_width[DType.float4_e2m1fn](), 1)
+    assert_equal(DType.mantissa_width[DType.float6_e2m3fn](), 3)
+    assert_equal(DType.mantissa_width[DType.float6_e3m2fn](), 2)
+    assert_equal(DType.mantissa_width[DType.float8_e4m3fn](), 3)
+    assert_equal(DType.mantissa_width[DType.float8_e5m2](), 2)
+    assert_equal(DType.mantissa_width[DType.float16](), 10)
+    assert_equal(DType.mantissa_width[DType.bfloat16](), 7)
+    assert_equal(DType.mantissa_width[DType.float32](), 23)
+    assert_equal(DType.mantissa_width[DType.float64](), 52)
+
+
+def test_float6() raises:
+    """The OCP MX FP6 encodings, per the microscaling specification."""
+    assert_equal(DType.exponent_width[DType.float6_e2m3fn](), 2)
+    assert_equal(DType.exponent_width[DType.float6_e3m2fn](), 3)
+
+    assert_equal(DType.max_exponent[DType.float6_e2m3fn](), 2)
+    assert_equal(DType.max_exponent[DType.float6_e3m2fn](), 4)
+
+    # Storage formats with no native arithmetic, like float4_e2m1fn.
+    assert_false(DType.float6_e2m3fn.is_numeric())
+    assert_false(DType.float6_e3m2fn.is_numeric())
+    assert_true(DType.float6_e2m3fn.is_floating_point())
+    assert_true(DType.float6_e3m2fn.is_floating_point())
+
+    assert_equal(String(DType.float6_e2m3fn), "float6_e2m3fn")
+    assert_equal(String(DType.float6_e3m2fn), "float6_e3m2fn")
+    assert_equal(DType._from_str("float6_e2m3fn"), DType.float6_e2m3fn)
+    assert_equal(DType._from_str("float6_e3m2fn"), DType.float6_e3m2fn)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

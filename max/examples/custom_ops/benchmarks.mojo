@@ -127,7 +127,7 @@ def top_k() raises:
     var elements = ThroughputMeasure(BenchMetric.elements, els)
     var metrics: List = [flops, elements]
 
-    @parameter
+    @__parameter
     def top_k_cpu() raises:
         TopK.execute[K=K, target="cpu"](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
@@ -142,7 +142,7 @@ def top_k() raises:
         var out_idxs_dev = Tensor[IOSpec.Output, idx_spec](gpu_ctx).rand()
         var in_vals_dev = Tensor[IOSpec.Input, val_spec](gpu_ctx).rand()
 
-        @parameter
+        @__parameter
         def top_k_gpu() raises:
             TopK.execute[K=K, target="gpu"](
                 out_vals_dev.slice,
@@ -182,7 +182,7 @@ def matmul() raises:
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
     var metrics: List = [flops, elements]
 
-    @parameter
+    @__parameter
     def matmul_cpu() raises:
         MatrixMultiplication["naive"].execute[target="cpu"](
             c.slice, a.slice, b.slice, cpu_ctx
@@ -200,9 +200,9 @@ def matmul() raises:
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
         var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
-        @parameter
+        @__parameter
         def bench_matmul_kernel[impl: StaticString]() raises:
-            @parameter
+            @__parameter
             def bench_gpu() raises:
                 MatrixMultiplication[impl].execute[target="gpu"](
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
@@ -268,9 +268,9 @@ def tensor_core_mma() raises:
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
         var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
-        @parameter
+        @__parameter
         def bench_matmul_kernel[impl: StaticString]() raises:
-            @parameter
+            @__parameter
             def bench_gpu() raises:
                 TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
                     c_dev.slice,

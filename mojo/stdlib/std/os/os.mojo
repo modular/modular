@@ -22,10 +22,10 @@ from std.os import listdir
 
 from std._plugin import CurrentPlugin
 from std.collections import Array, List
-from std.collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
-from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
+from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std.gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu, is_apple_gpu
@@ -101,8 +101,8 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", _CPointer[NoneType, UntrackedOrigin[mut=True]]
-        ](path.as_c_string_slice().unsafe_ptr())
+            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        ](path.as_c_string_slice())
 
         if not handle:
             var err = get_errno()
@@ -142,7 +142,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_linux, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -172,7 +172,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_macos, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -364,9 +364,7 @@ def remove[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](
-        fspath.as_c_string_slice().unsafe_ptr()
-    )
+    var error = external_call["unlink", Int32](fspath.as_c_string_slice())
 
     if error != 0:
         var err = get_errno()
@@ -420,8 +418,8 @@ def symlink[
     var linkpath_fspath = linkpath.__fspath__()
 
     var error = external_call["symlink", c_int](
-        target_fspath.as_c_string_slice().unsafe_ptr(),
-        linkpath_fspath.as_c_string_slice().unsafe_ptr(),
+        target_fspath.as_c_string_slice(),
+        linkpath_fspath.as_c_string_slice(),
     )
 
     if error != 0:
@@ -461,8 +459,8 @@ def link[
     var newpath_fspath = newpath.__fspath__()
 
     var error = external_call["link", Int32](
-        oldpath_fspath.as_c_string_slice().unsafe_ptr(),
-        newpath_fspath.as_c_string_slice().unsafe_ptr(),
+        oldpath_fspath.as_c_string_slice(),
+        newpath_fspath.as_c_string_slice(),
     )
 
     if error != 0:
@@ -500,9 +498,7 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](
-        fspath.as_c_string_slice().unsafe_ptr(), mode
-    )
+    var error = external_call["mkdir", Int32](fspath.as_c_string_slice(), mode)
     if error != 0:
         var err = get_errno()
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))
@@ -565,9 +561,7 @@ def rmdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](
-        fspath.as_c_string_slice().unsafe_ptr()
-    )
+    var error = external_call["rmdir", Int32](fspath.as_c_string_slice())
     if error != 0:
         var err = get_errno()
         raise Error("Can not remove directory: ", fspath, " Err: ", String(err))

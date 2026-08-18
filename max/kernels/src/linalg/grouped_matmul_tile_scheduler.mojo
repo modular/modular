@@ -197,16 +197,17 @@ struct TileScheduler[
             self.group_offsets[Int(self.current_group_idx)]
         )
 
+        var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            end_idx = rebind[Scalar[DType.uint32]](
+            var end_idx = rebind[Scalar[DType.uint32]](
                 self.group_offsets[Int(self.current_group_idx + 1)]
             )
-            current_dynamic_dim = end_idx - start_idx
+            var current_dynamic_dim = end_idx - start_idx
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](
                     current_dynamic_dim

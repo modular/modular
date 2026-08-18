@@ -6,17 +6,30 @@ load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load(":cc_transition.bzl", "asan_to_production_config_select", "cc_transition")
 load(":mojo_doc.bzl", "mojo_doc")
 
-# A self-transitioning variant of the upstream mojo_library that, under
-# `--config=asan`, builds with the production (non-instrumented) compiler via
-# cc_transition -- fast, while producing the same config-invariant `.mojopkg`.
-# See cc_transition.bzl for the asan-only gating (`new_config`).
+# A variant of the upstream mojo_library that, under `--config=asan`, runs the
+# production (non-instrumented) compiler -- fast -- while the target itself and
+# its dependencies stay in the incoming asan configuration.
+#
+# The transition sits on the compiler attribute rather than on the rule. A
+# rule-level `cfg` reconfigures the whole subgraph, which forks every cc library
+# under it; a shared library then reaches a depending binary in two
+# configurations at once (once through here, once through an ordinary cc dep)
+# and the link fails outright. Only the compiler needs reconfiguring, so only
+# the compiler is transitioned. See cc_transition.bzl for the asan-only gating
+# (`new_config`).
 _transitioned_mojo_library = rule(
     implementation = lambda ctx: ctx.super(),
     parent = _upstream_mojo_library,
     attrs = {
         "new_config": attr.string(mandatory = True),
+        # Must stay in sync with the toolchain's `mojo`; this is the same
+        # compiler, only reconfigured.
+        "_mojo_override": attr.label(
+            default = Label("//KGEN/tools/mojo"),
+            executable = True,
+            cfg = cc_transition,
+        ),
     },
-    cfg = cc_transition,
 )
 
 def mojo_library(
@@ -29,6 +42,7 @@ def mojo_library(
         docs_title = "",
         docs_hosted_on_mojolang = False,
         show_stability_markers = "none",
+        stability_doc_url = "",
         testonly = False,
         visibility = None,
         additional_compiler_inputs = [],
@@ -50,6 +64,7 @@ def mojo_library(
         docs_title: Forwarded to `mojo_docs`
         docs_hosted_on_mojolang: Forwarded to `mojo_docs`
         show_stability_markers: Forwarded to `mojo_docs`
+        stability_doc_url: Forwarded to `mojo_docs`
         testonly: Forwarded to `mojo_library`
         visibility: Forwarded to all subtargets
         additional_compiler_inputs: Forwarded to `mojo_library`
@@ -95,6 +110,7 @@ def mojo_library(
             docs_title = docs_title,
             docs_hosted_on_mojolang = docs_hosted_on_mojolang,
             show_stability_markers = show_stability_markers,
+            stability_doc_url = stability_doc_url,
             copts = ignore_deprecated_copts,
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,

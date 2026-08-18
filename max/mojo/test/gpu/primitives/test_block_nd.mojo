@@ -20,10 +20,11 @@ thread IDs in the block.
 """
 
 from std.gpu import thread_idx
-from max.gpu.host import DeviceContext
-from std.gpu.primitives import block
 from std.gpu.globals import WARP_SIZE
 from std.testing import assert_equal, TestSuite
+
+from max.gpu.host import DeviceContext
+from max.gpu.primitives import block
 
 # ===-----------------------------------------------------------------------===#
 # 1D block sum
@@ -32,7 +33,7 @@ from std.testing import assert_equal, TestSuite
 
 def block_sum_1d_kernel[
     block_size: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     output[unsafe_offset=thread_idx.x] = block.sum[block_size=block_size](
         Float32(thread_idx.x)
     )
@@ -62,7 +63,7 @@ def test_block_sum_1d() raises:
 
 def block_max_1d_kernel[
     block_size: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     output[unsafe_offset=thread_idx.x] = block.max[block_size=block_size](
         Float32(thread_idx.x)
     )
@@ -92,7 +93,7 @@ def test_block_max_1d() raises:
 
 def block_min_1d_kernel[
     block_size: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     # Offset by 1 so the minimum is 1, avoiding confusion with the neutral 0.
     output[unsafe_offset=thread_idx.x] = block.min[block_size=block_size](
         Float32(thread_idx.x + 1)
@@ -123,7 +124,7 @@ def test_block_min_1d() raises:
 def block_broadcast_1d_kernel[
     block_size: Int,
     src_thread: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     output[unsafe_offset=thread_idx.x] = block.broadcast[block_size=block_size](
         Float32(thread_idx.x), src_thread
     )
@@ -154,7 +155,7 @@ def test_block_broadcast_1d() raises:
 
 def block_prefix_sum_1d_kernel[
     block_size: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     # All threads contribute 1, so the inclusive prefix sum at position k
     # equals k+1.
     output[unsafe_offset=thread_idx.x] = block.prefix_sum[
@@ -186,7 +187,7 @@ def test_block_prefix_sum_1d() raises:
 def block_sum_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     """Each thread holds its linearized ID; the block sum is broadcast back."""
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[unsafe_offset=linear_tid] = block.sum[
@@ -222,7 +223,7 @@ def block_sum_3d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
     block_dim_z: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     var linear_tid = (
         thread_idx.x
         + thread_idx.y * block_dim_x
@@ -263,7 +264,7 @@ def test_block_sum_3d() raises:
 def block_max_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[unsafe_offset=linear_tid] = block.max[
         block_dim_x=block_dim_x, block_dim_y=block_dim_y
@@ -297,7 +298,7 @@ def test_block_max_2d() raises:
 def block_min_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     # Offset by 1 so the minimum is 1, avoiding confusion with the neutral 0.
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     output[unsafe_offset=linear_tid] = block.min[
@@ -332,7 +333,7 @@ def block_broadcast_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
     src_thread: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     # Each thread offers its own linearized ID; only src_thread's value
     # should be broadcast to everyone.
@@ -369,7 +370,7 @@ def test_block_broadcast_2d() raises:
 def block_prefix_sum_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
-](output: UnsafePointer[Float32, MutAnyOrigin]):
+](output: Pointer[Float32, MutAnyOrigin]):
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     # All threads contribute 1, so the inclusive prefix sum at linearized
     # position k equals k+1.

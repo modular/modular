@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, warp_id, lane_id
+from std.gpu import thread_idx, warp_id, lane_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import (
     WGMMADescriptor,
@@ -40,7 +41,7 @@ def _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
     var size = layout.size()
 
     for i in range(size):
-        idx = layout(i)
+        var idx = layout(i)
         t.ptr[idx] = Scalar[t.dtype](i)
 
 
@@ -988,7 +989,7 @@ def wgmma_f16_f16_f16_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    c0 = bitcast[DType.float16, 4](c_reg)
+    var c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()

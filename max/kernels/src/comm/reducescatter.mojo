@@ -24,13 +24,13 @@ from std.gpu import (
     global_idx,
     grid_dim,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
+from max.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -60,7 +60,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
-](Coord, SIMD[dtype, size=width]) capturing -> None
+](Coord, SIMD[dtype, length=width]) capturing -> None
 
 
 @always_inline
@@ -487,7 +487,7 @@ def _reducescatter_p2p[
     )
 
 
-@parameter
+@__parameter
 def reducescatter[
     dtype: DType,
     ngpus: Int,
@@ -652,7 +652,7 @@ def reducescatter[
 
     # Default epilogue: store directly to output buffer
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output_buffer)
     def default_output_lambda[
         _dtype: DType,

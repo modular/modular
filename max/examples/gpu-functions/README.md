@@ -10,7 +10,7 @@ ops](../custom_ops/) that run on both CPUs and GPUs.
 
 > [!IMPORTANT]
 > These examples require a [compatible
-> GPU](https://docs.modular.com/faq/#gpu-requirements).
+> GPU](https://max.modular.com/faq/#gpu-requirements).
 
 The examples include the following:
 
@@ -36,7 +36,7 @@ The examples include the following:
 ## Setup
 
 1. Make sure your system includes a [compatible
-GPU](https://docs.modular.com/faq/#gpu-requirements).
+GPU](https://max.modular.com/faq/#gpu-requirements).
 
 2. If you don't have [`pixi`](https://pixi.sh/latest/), install it:
 
@@ -82,7 +82,7 @@ mojo reduction.mojo
 ## Example walkthroughs
 
 Writing individual thread-based functions in Mojo is powered by the [`gpu`
-module](https://docs.modular.com/mojo/std/gpu/), which handles all the
+module](https://mojolang.org/docs/std/gpu/), which handles all the
 hardware-specific details of allocating and transferring memory between host
 and accelerator, as well as compilation and execution of accelerator-targeted
 functions.
@@ -394,7 +394,7 @@ grids, or look into different areas in the complex number space.
 ## Next Steps
 
 - See our [tutorial to get started with GPU
-programming](https://docs.modular.com/mojo/manual/gpu/intro-tutorial).
+programming](https://mojolang.org/docs/manual/gpu/intro-tutorial).
 
 - Learn GPU programming by solving increasingly challenging [GPU
 puzzles](https://builds.modular.com/puzzles/introduction.html).

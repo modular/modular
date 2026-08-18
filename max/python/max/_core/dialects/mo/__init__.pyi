@@ -421,6 +421,14 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
     raw gathered residual (`outResidual`); a gathered row is a verbatim copy, so
     the residual is bit-identical to a standalone all-gather (no f32 peer-sum).
     `multiply_before_cast=true`, bf16 in/out only (no quantization).
+
+    `group_size` matches `mo.distributed.allgather`: the devices split into
+    contiguous groups of that many, each gathering independently, so the op
+    works under TP-within-DP topologies and every output is the group's gathered
+    tensor rather than the whole world's. It must be at least 2 and must divide
+    the device count; `group_size == num_devices` is a full-world collective.
+    The builder always sets it -- the `0` attribute default is not a usable
+    value.
     """
 
     def __init__(
@@ -436,6 +444,7 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
         epsilon: Sequence[max._core.Value[max._core.Type]],
         weight_offset: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -449,6 +458,59 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
     def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+
+class CompositeDistributedAllgatherRmsNormQuantMxfp8Op(max._core.Operation):
+    """
+    `mo.composite.distributed.allgather_rms_norm` plus an MXFP8 copy of the
+    normed `output`: `outQuant` (float8_e4m3fn, same shape) and `outScale`
+    (float8_e8m0fnu, `[rows, cols / 32]`, plain rank-2 row-major -- what
+    `block_scaled_matmul_amd` takes as `a_scales`, NOT the SM100 SF-atom
+    interleave and NOT the preshuffled atom order `block_scaled_matmul_amd_preb`
+    requires). Quantized from the bf16 written to `output`, so byte-identical
+    to a standalone quantize. Same `group_size` contract.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: Sequence[max._core.Type],
+        out_quant: Sequence[max._core.Type],
+        out_scale: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
     """
@@ -519,6 +581,23 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     reduce-scatter sum shard (`outResidual`, the residual stream). The norm is
     inherently `multiply_before_cast=true`: gamma is folded in f32 and the value
     is cast to the input dtype once, last. bf16 in/out only (no quantization).
+
+    When `has_residual` is true, `residuals` is added to the sum in f32 before
+    the pre-norm round, each device adding only its own row shard. It must be
+    REPLICATED -- bit-identical on every rank of a group -- which is what lets
+    a per-rank add reproduce the leader-side pre-add it replaces.
+
+    When false it is ignored and the op is a plain reduce-scatter + norm. The
+    operands stay present and group-sized (the variadic groups must all match
+    in size), filled with the inputs and never indexed -- the same convention
+    as `has_residual` on `mo.composite.distributed.matmul_reduce_scatter.sum`.
+
+    `group_size` matches `mo.distributed.reducescatter.sum`: the devices split
+    into contiguous groups of that many, each reducing independently, so the op
+    works under TP-within-DP topologies. It must be at least 2 and must divide
+    the device count; `group_size == num_devices` is a full-world collective.
+    The builder always sets it -- the `0` attribute default is not a usable
+    value.
     """
 
     def __init__(
@@ -533,7 +612,10 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
         gamma: Sequence[max._core.Value[max._core.Type]],
         epsilon: Sequence[max._core.Value[max._core.Type]],
         weight_offset: Sequence[max._core.Value[max._core.Type]],
+        residuals: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
+        has_residual: max._core.dialects.builtin.BoolAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -546,7 +628,21 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     @property
     def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
+    def residuals(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def has_residual(self) -> bool: ...
+    @has_residual.setter
+    def has_residual(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
 
 class CompositeConcatSliceOp(max._core.Operation):
     """
@@ -764,6 +860,78 @@ class CompositeGroupedMatmulSwigluNvfp4Op(max._core.Operation):
     @clamp_activation.setter
     def clamp_activation(
         self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+
+class CompositeLayerNormRopeRaggedOp(max._core.Operation):
+    """
+    Fused operation computing LayerNorm followed by ragged RoPE applied to a
+    leading slice of the normalized output, with the remaining columns passed
+    through unrotated:
+
+      normed = layer_norm(input, gamma, beta, epsilon)
+      roped, passthrough = split(normed, axis=-1)
+      roped = rope.ragged(roped, input_row_offsets, start_pos, freqs_cis)
+      result = concat(roped, passthrough, axis=-1)
+
+    The RoPE width is taken from `freqsCis`'s last dimension.
+
+    Example:
+
+    ```mlir
+      %result = mo.composite.layer_norm_rope_ragged(%input, %gamma, %beta,
+                                                     %epsilon, %row_offsets,
+                                                     %start_pos, %freqs_cis)
+        {interleaved = false} :
+        (!mo.tensor<[8, 128], bf16, gpu:0>, !mo.tensor<[128], f32, gpu:0>,
+         !mo.tensor<[128], f32, gpu:0>, !mo.tensor<[], f32>,
+         !mo.tensor<[batch_plus_one], ui32, gpu:0>, !mo.tensor<[batch], ui32, gpu:0>,
+         !mo.tensor<[1024, 64], f32, gpu:0>)
+        -> !mo.tensor<[8, 128], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        beta: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        input_row_offsets: max._core.Value[TensorType],
+        start_pos: max._core.Value[TensorType],
+        freqs_cis: max._core.Value[TensorType],
+        interleaved: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def beta(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_row_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def start_pos(self) -> max._core.Value[TensorType]: ...
+    @property
+    def freqs_cis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def interleaved(self) -> bool: ...
+    @interleaved.setter
+    def interleaved(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
 class CompositeMaskedFlashAttentionCpuOp(max._core.Operation):
@@ -1196,6 +1364,74 @@ class CompositeRmsNormRopeOp(max._core.Operation):
     def multiply_before_cast(self) -> bool: ...
     @multiply_before_cast.setter
     def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class CompositeRopeRaggedOp(max._core.Operation):
+    """
+    Applies Rotary Position Embedding (RoPE) to `input`, a ragged batch of
+    tokens. Per-token absolute positions are derived from `inputRowOffsets`
+    (the ragged batch boundaries) and `startPos` (each sequence's current
+    cache length) and used to index `freqsCis`. When `freqsCis`'s last
+    dimension is smaller than `input`'s, RoPE is applied to only
+    `freqsCis`-many columns of each head and the rest pass through
+    unrotated: the trailing columns are rotated by default (the MLA
+    layout), or the leading ones when `rope_first` is set (the
+    DeepSeekV3.2/GLM Indexer layout, where Q and K are chunked as
+    `pe, nope`). `rope_first` is meaningless -- and must be false -- when
+    `freqsCis` is as wide as `input`, since then no column passes through.
+
+    Example:
+
+    ```mlir
+      %result = mo.composite.rope.ragged(%input, %row_offsets, %start_pos,
+                                          %freqs_cis)
+        {interleaved = false, rope_first = false} :
+        (!mo.tensor<[8, 1, 64], bf16, gpu:0>, !mo.tensor<[batch_plus_one], ui32, gpu:0>,
+         !mo.tensor<[batch], ui32, gpu:0>, !mo.tensor<[1024, 64], f32, gpu:0>)
+        -> !mo.tensor<[8, 1, 64], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        input_row_offsets: max._core.Value[TensorType],
+        start_pos: max._core.Value[TensorType],
+        freqs_cis: max._core.Value[TensorType],
+        interleaved: max._core.dialects.builtin.BoolAttr,
+        rope_first: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_row_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def start_pos(self) -> max._core.Value[TensorType]: ...
+    @property
+    def freqs_cis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def interleaved(self) -> bool: ...
+    @interleaved.setter
+    def interleaved(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def rope_first(self) -> bool: ...
+    @rope_first.setter
+    def rope_first(
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
     @property
@@ -4156,6 +4392,7 @@ class DistributedEpDispatchMxfp4Op(max._core.Operation):
         fused_shared_expert: max._core.dialects.builtin.BoolAttr,
         fuse_a_scale_preshuffle: max._core.dialects.builtin.BoolAttr,
         max_padded_m: max._core.dialects.builtin.IntegerAttr,
+        mx_format: max._core.dialects.builtin.StringAttr,
     ) -> None: ...
     @property
     def input_tokens(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -4222,6 +4459,12 @@ class DistributedEpDispatchMxfp4Op(max._core.Operation):
     @max_padded_m.setter
     def max_padded_m(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def mx_format(self) -> str: ...
+    @mx_format.setter
+    def mx_format(
+        self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
 
 class DistributedEpDispatchOp(max._core.Operation):

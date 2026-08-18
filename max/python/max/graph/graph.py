@@ -425,8 +425,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
     )
     names = [parameter.name for parameter in result_parameters]
-    # Track any newly declared parameters.
-    if new_params := dict.fromkeys(names - params.keys()):
+    # Track newly declared parameters. Not `names - params.keys()`: set order
+    # is per-process hash order and lands in the MEF cache key (MXF-584).
+    if new_params := dict.fromkeys(n for n in names if n not in params):
         params.update(new_params)
         si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         # We can't overload the setter yet, so the interface annotation is wrong
@@ -647,7 +648,7 @@ class Graph:
             include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
-            to ``.mojoc``/``.mojopkg`` or ``.mojo`` sources with custom ops.
+            to ``.mojoc`` or ``.mojo`` sources with custom ops.
         kernel_library: Optional pre-built kernel library to use. Defaults to
             ``None`` (a new library is created from ``custom_extensions`` if
             needed).
@@ -883,7 +884,7 @@ class Graph:
                 type is added automatically for operation sequencing.
             path: An optional path to a saved subgraph definition to load
                 from disk.
-            custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
+            custom_extensions: Paths to custom op libraries (``.mojoc``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
             is_device_graph: Should the subgraph be synthesized to a device graph

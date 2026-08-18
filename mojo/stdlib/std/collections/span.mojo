@@ -24,15 +24,14 @@ from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import (
-    is_trivially_copyable,
-    is_trivially_deletable,
     pack_bits,
     unsafe_uninit_copy_n,
 )
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
 from std.sys.info import simd_width_of
+from std.traits import IsTriviallyCopyable, IsTriviallyDeinitable
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
@@ -72,11 +71,6 @@ Parameters:
     origin: The origin of the span.
     address_space: The address space of the span.
 """
-
-
-@doc_hidden
-@deprecated(use=ImmSpan)
-comptime ImmutSpan = ImmSpan
 
 
 @fieldwise_init
@@ -226,9 +220,11 @@ struct Span[
     comptime _is_generic_as = Self.address_space == AddressSpace.GENERIC
     """Whether this `Span` views the default (generic) address space.
 
-    Element-copying operations are only available on generic-address-space
-    spans: the compiler rejects copying a non-trivially-copyable value into or
-    out of a non-default address space.
+    Most element-copying operations are only available on
+    generic-address-space spans: the compiler rejects copying a value that is
+    not register passable into or out of a non-default address space. `fill()`
+    is the exception, accepting any address space when the element type
+    conforms to `TrivialRegisterPassable`.
     """
 
     # Fields
@@ -308,63 +304,39 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] list: List[downcast[Self.T, Movable]],
-    ):
+        out self,
+        ref[Self.origin] list: List[Self.T],
+    ) where conforms_to(Self.T, Movable):
         """Construct a `Span` from a `List`.
 
         Args:
             list: The list to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](list.unsafe_ptr())
-        self._len = list._len
+        self._data = rebind[type_of(self._data)](list.unsafe_ptr())
+        self._len = len(list)
 
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] array: Array[downcast[Self.T, Movable], _],
+        out self,
+        ref[Self.origin, Self.address_space] array: Array[Self.T, _],
     ):
         """Construct a `Span` from an `Array`.
 
         Args:
             array: The array to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](array.unsafe_ptr())
-        self._len = array.length
-
-    @always_inline
-    @implicit
-    def __init__[
-        array_origin: Origin[mut=Self.mut],
-        U: Copyable,
-        size: Int,
-        //,
-    ](
-        out self: Span[U, array_origin],
-        ref[array_origin] array: Array[U, size],
-    ):
-        """Construct a `Span` from an `Array`.
-
-        Parameters:
-            array_origin: The origin of the array.
-            U: The type of the elements in the `Array`.
-            size: The size of the `Array`.
-
-        Args:
-            array: The array to which the span refers.
-        """
-
         self._data = array.unsafe_ptr()
-        self._len = size
+        self._len = array.length
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
     def __getitem__(
-        self, idx: Int
+        self, idx: Int, /
     ) -> ref[Self.origin, Self.address_space] Self.T:
         """Gets the span element at the given index.
 
@@ -415,18 +387,17 @@ struct Span[
     def __getitem__(self, slc: ContiguousSlice) -> Self:
         """Get a new span from a slice of the current span.
 
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive), or if start is greater than end.
+        Negative indices are not supported and always abort.
+
         Args:
             slc: The slice specifying the range of the new subslice.
 
         Returns:
             A new span that points to the same data as the current span.
-
-        Allocation:
-            This function allocates when the step is negative, to avoid a memory
-            leak, take ownership of the value.
         """
-        var start, end = slc.indices(len(self))
-
+        var start, end = check_slice_bounds(slc, len(self))
         return Self(
             unsafe_ptr=self._data.unsafe_offset(start), length=end - start
         )
@@ -562,11 +533,10 @@ struct Span[
     ](self, mut writer: Some[Writer]) where Self._is_generic_as:
         var iterator = self.__iter__()
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration {mut iterator}:
             f(iterator.__next__(), w)
 
-        fmt.write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to(writer, iterate)
         _ = iterator^
 
     @no_inline
@@ -590,14 +560,15 @@ struct Span[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "Span").params(
             fmt.Named("mut", Self.mut),
             fmt.TypeNames[Self.T](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     def __hash__[
         H: Hasher
@@ -631,12 +602,6 @@ struct Span[
             An immutable version of the same `Span`.
         """
         return rebind[Self.Immutable](self)
-
-    @doc_hidden
-    @always_inline
-    @deprecated(use=as_imm)
-    def get_immutable(self) -> Self.Immutable:
-        return self.as_imm()
 
     @always_inline
     def unsafe_get(
@@ -690,8 +655,8 @@ struct Span[
     @always_inline
     @__allow_legacy_custom_self_type
     def copy_from(
-        self: Span[mut=True, Self.T, _], other: Span[Self.T, _]
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+        self: MutSpan[Self.T, _], other: Span[Self.T, _]
+    ) where conforms_to(Self.T, Copyable & Deinitable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
@@ -703,9 +668,9 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than unsafe_destroy_n + unsafe_uninit_copy_n, which would
         # be two passes over memory with worse cache locality.
-        comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
+        comptime if IsTriviallyCopyable[Self.T] and IsTriviallyDeinitable[
             Self.T
-        ]():
+        ]:
             unsafe_uninit_copy_n[overlapping=False](
                 # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
                 dest=self.unsafe_ptr().unsafe_mut_cast[True](),
@@ -772,26 +737,42 @@ struct Span[
         """
         return not self == rhs
 
-    @__allow_legacy_custom_self_type
     def fill(
-        self: Span[mut=True, Self.T, _], value: Self.T
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+        self, value: Self.T
+    ) where Self.mut and (
+        (Self._is_generic_as and conforms_to(Self.T, Copyable & Deinitable))
+        or conforms_to(Self.T, TrivialRegisterPassable)
+    ):
         """
         Fill the memory that a span references with a given value.
 
         Args:
             value: The value to assign to each element.
+
+        Constraints:
+            The span must be mutable. A register-passable element type works in
+            any address space. All other element types require the span
+            to view the default (generic) address space.
         """
-        for ref element in self:
-            # TODO(MOCO-4220) once fixed update body to:
-            # element = value.copy()
-            var p = Pointer(to=element).unsafe_mut_cast[True]()
-            p[] = value.copy()
+        comptime if conforms_to(Self.T, TrivialRegisterPassable):
+            for i in range(len(self)):
+                # TODO(MOCO-4220) once fixed update body to:
+                # self._data[unsafe_offset=i]= value
+                var p = self._data.unsafe_offset(i).unsafe_mut_cast[True]()
+                p[] = value
+        else:
+            comptime assert Self._is_generic_as
+            comptime assert conforms_to(Self.T, Copyable & Deinitable)
+            for ref element in self:
+                # TODO(MOCO-4220) once fixed update body to:
+                # element = value.copy()
+                var p = Pointer(to=element).unsafe_mut_cast[True]()
+                p[] = value.copy()
 
     @always_inline
     @__allow_legacy_custom_self_type
     def unsafe_swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) where conforms_to(Self.T, Movable):
         """Swap the values at indices `a` and `b` without performing bounds checking.
 
@@ -823,7 +804,7 @@ struct Span[
 
     @__allow_legacy_custom_self_type
     def swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) raises where conforms_to(Self.T, Movable):
         """
         Swap the values at indices `a` and `b`.
@@ -876,7 +857,7 @@ struct Span[
         }
 
     @__allow_legacy_custom_self_type
-    def reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
+    def reverse[dtype: DType, //](self: MutSpan[Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -891,7 +872,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = widths[i]
+            comptime w = rebind[Int](widths[i])
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
@@ -916,12 +897,16 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
-    ](self: Span[mut=True, Scalar[dtype], _]):
+    ](
+        self: MutSpan[Scalar[dtype], _],
+        func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
+    ):
         """Apply the function to the `Span` inplace.
 
         Parameters:
             dtype: The DType.
+
+        Args:
             func: The function to evaluate.
         """
 
@@ -931,7 +916,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = widths[i]
+            comptime w = rebind[Int](widths[i])
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
@@ -948,17 +933,19 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+    ](
+        self: MutSpan[Scalar[dtype], _],
+        func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
-        cond: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[
-            DType.bool, w
-        ],
-    ](self: Span[mut=True, Scalar[dtype], _]):
+        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],
+    ):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
 
         Parameters:
             dtype: The DType.
+
+        Args:
             func: The function to evaluate.
             cond: The condition to apply the function.
         """
@@ -969,7 +956,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = widths[i]
+            comptime w = rebind[Int](widths[i])
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
@@ -1029,12 +1016,9 @@ struct Span[
             This function does not do bounds checking and assumes the current
             span contains the specified subspan.
         """
-        debug_assert(
-            0 <= offset < len(self),
-            "offset out of bounds: ",
-            offset,
-        )
-        assert 0 <= offset + length <= len(self), "subspan out of bounds."
+        assert (
+            0 <= offset and 0 <= length and offset + length <= len(self)
+        ), "subspan out of bounds."
         return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
     @__allow_legacy_custom_self_type
