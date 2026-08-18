@@ -880,6 +880,55 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 }
 
 //===----------------------------------------------------------------------===//
+// ImplicitOriginRefAttrReplacer
+//===----------------------------------------------------------------------===//
+
+Attribute NameRefToImplicitOriginRefAttrReplacer::tryReplace(Attribute attr,
+                                                             size_t depth) {
+  auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
+  if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
+    return nullptr;
+
+  auto it = implicitOriginToNewParamRef.find(implicitOriginRef);
+  if (it != implicitOriginToNewParamRef.end())
+    return it->second;
+
+  auto newOriginName = StringAttr::get(
+      ctx, llvm::utostr(newOriginParamDecls.size()) + "_unnamed`");
+  newOriginParamDecls.push_back(
+      ParamDeclAttr::get(newOriginName, implicitOriginRef.getType()));
+  auto originParamRef =
+      ParamDeclRefAttr::get(newOriginName, implicitOriginRef.getType());
+  implicitOriginToNewParamRef.insert({implicitOriginRef, originParamRef});
+  return originParamRef;
+}
+
+//===----------------------------------------------------------------------===//
+// OriginDeclRemapper
+//===----------------------------------------------------------------------===//
+
+ImplicitOriginRefToNameRefRemapper::ImplicitOriginRefToNameRefRemapper(
+    ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
+    : depthOffset(depthOffset) {
+  for (auto [index, decl] : llvm::enumerate(originDecls))
+    mapping.try_emplace(decl.getName(), index);
+}
+
+Attribute ImplicitOriginRefToNameRefRemapper::tryReplace(Attribute attr,
+                                                         size_t depth) {
+  auto ref = dyn_cast<ParamDeclRefAttr>(attr);
+  if (!ref)
+    return nullptr;
+  // If it's in the mapping, then we know it's an *origin* param ref, so no
+  // need to check its type.
+  auto it = mapping.find(ref.getName());
+  if (it == mapping.end())
+    return nullptr;
+  return ImplicitOriginRefAttr::get(depth - depthOffset, it->second,
+                                    ref.getType());
+}
+
+//===----------------------------------------------------------------------===//
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 

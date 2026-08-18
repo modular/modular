@@ -28,6 +28,7 @@
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/Support/SMLoc.h"
 
 namespace mlir {
@@ -267,6 +268,62 @@ private:
   friend class IndexParameterReplacer<IndexToDeclRefRemapper>;
 
   PogListAttr paramListAttr;
+};
+
+//===----------------------------------------------------------------------===//
+// ImplicitOriginRefAttrReplacer
+//===----------------------------------------------------------------------===//
+
+/// Utility class for replacing implicit origin references that point all the
+/// way up to the root scope of the walked value (see PSTIAIRAID) with
+/// references to explicitly *named* parameter-decls, creating one decl per
+/// distinct origin.
+class NameRefToImplicitOriginRefAttrReplacer
+    : public IndexParameterReplacer<NameRefToImplicitOriginRefAttrReplacer> {
+public:
+  /// Both containers stay owned by the caller: newly created decls are
+  /// appended to `newOriginParamDecls`, and `implicitOriginToNewParamRef`
+  /// records the origins that were already given a name.
+  NameRefToImplicitOriginRefAttrReplacer(MLIRContext *ctx) : ctx(ctx) {}
+
+  std::vector<ParamDeclAttr> &getNewOriginParamDecls() {
+    return newOriginParamDecls;
+  }
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<NameRefToImplicitOriginRefAttrReplacer>;
+
+  MLIRContext *ctx;
+  std::vector<ParamDeclAttr> newOriginParamDecls;
+  llvm::MapVector<ImplicitOriginRefAttr, ParamDeclRefAttr>
+      implicitOriginToNewParamRef;
+};
+
+//===----------------------------------------------------------------------===//
+// OriginDeclRemapper
+//===----------------------------------------------------------------------===//
+
+/// The inverse of `ImplicitOriginRefAttrReplacer`: replaces references to the
+/// *named* implicit origin decls it was constructed with by index-based
+/// `ImplicitOriginRefAttr` references.
+class ImplicitOriginRefToNameRefRemapper
+    : public IndexParameterReplacer<ImplicitOriginRefToNameRefRemapper> {
+public:
+  ImplicitOriginRefToNameRefRemapper(ArrayRef<ParamDeclAttr> originDecls,
+                                     size_t depthOffset);
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<ImplicitOriginRefToNameRefRemapper>;
+
+  /// Subtracted from the depth of the created references, because we may be
+  /// replacing the signature directly. Theories on what that means:
+  /// https://github.com/modularml/modular/pull/62096#discussion_r2114820289
+  size_t depthOffset;
+  DenseMap<StringAttr, size_t> mapping;
 };
 
 //===----------------------------------------------------------------------===//

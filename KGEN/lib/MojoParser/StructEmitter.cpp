@@ -26,7 +26,6 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -88,50 +87,9 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   MLIRContext *ctx = parent.getContext();
   SharedState &shared = parent.getShared();
 
-  // Figure out the implicit origins we'll need to add.
-  std::vector<ParamDeclAttr> newOriginParamDecls;
-  llvm::MapVector<ImplicitOriginRefAttr, ParamDeclRefAttr>
-      implicitOriginToNewParamRef;
-
   // Replace all `ImplicitOriginRefAttr` with `ParamRefDeclAttr`s that point to
   // explicitly *named* parameter-decls.
-  struct ImplicitOriginRefAttrReplacer
-      : IndexParameterReplacer<ImplicitOriginRefAttrReplacer> {
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      // Check if we found an ImplicitOriginRefAttr that's pointing all the way
-      // up the original function's root scope, see PSTIAIRAID.
-      if (auto implicitOriginRef = ::dyn_cast<ImplicitOriginRefAttr>(attr);
-          implicitOriginRef && implicitOriginRef.getDepth() == depth) {
-
-        auto iter = implicitOriginToNewParamRef->find(implicitOriginRef);
-        if (iter != implicitOriginToNewParamRef->end()) {
-          return iter->second;
-        }
-        auto newOriginNum = newOriginParamDecls->size();
-        auto newOriginNameStr = llvm::utostr(newOriginNum) + "_unnamed" + "`";
-        auto newOriginName = StringAttr::get(ctx, newOriginNameStr);
-        auto newOriginDecl =
-            ParamDeclAttr::get(newOriginName, implicitOriginRef.getType());
-        newOriginParamDecls->push_back(newOriginDecl);
-        // Replace the implicit origin ref with a named param decl ref.
-        auto originParamRef =
-            ParamDeclRefAttr::get(newOriginName, implicitOriginRef.getType());
-        implicitOriginToNewParamRef->insert(
-            {implicitOriginRef, originParamRef});
-        return originParamRef;
-      }
-      return nullptr;
-    }
-
-    MLIRContext *ctx;
-    std::vector<ParamDeclAttr> *newOriginParamDecls;
-    llvm::MapVector<ImplicitOriginRefAttr, ParamDeclRefAttr>
-        *implicitOriginToNewParamRef;
-  } indexReplacer;
-  indexReplacer.ctx = ctx;
-  indexReplacer.newOriginParamDecls = &newOriginParamDecls;
-  indexReplacer.implicitOriginToNewParamRef = &implicitOriginToNewParamRef;
+  NameRefToImplicitOriginRefAttrReplacer indexReplacer(ctx);
 
   // The caller specifies all the input types, which means that all the input
   // reference types that carry implicit origins will already have them
@@ -168,16 +126,16 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
         foundExisting = true;
       }
     }
-    for (auto &existingParam : newOriginParamDecls) {
+    for (auto &existingParam : indexReplacer.getNewOriginParamDecls()) {
       if (existingParam.getName() == decl.getName() &&
           existingParam.getType() == decl.getType()) {
         foundExisting = true;
       }
     }
     if (!foundExisting)
-      newOriginParamDecls.push_back(decl);
+      indexReplacer.getNewOriginParamDecls().push_back(decl);
   }
-  size_t numImplicitOriginDecls = newOriginParamDecls.size();
+  size_t numImplicitOriginDecls = indexReplacer.getNewOriginParamDecls().size();
 
   auto metadata = FnMetaOriginDataAttr::get(
       argListAttrs.getContext(), numImplicitOriginDecls,
@@ -193,7 +151,8 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FnOp and
   // in the BBArgs.
-  sigGen = sigGen.replaceImplicitOriginsWithIndexes(newOriginParamDecls);
+  sigGen = sigGen.replaceImplicitOriginsWithIndexes(
+      indexReplacer.getNewOriginParamDecls());
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
@@ -218,7 +177,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   // parameter declarations + implicit origins.
   SmallVector<ParamDeclAttr> fullParams;
   llvm::append_range(fullParams, params);
-  llvm::append_range(fullParams, newOriginParamDecls);
+  llvm::append_range(fullParams, indexReplacer.getNewOriginParamDecls());
   if (!fullParams.empty()) {
     attrs.set(fnOp.getParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullParams));
