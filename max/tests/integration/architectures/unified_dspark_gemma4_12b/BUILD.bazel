@@ -112,7 +112,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         "//max/python/max/pipelines/kv_cache",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:context_utils",
         requirement("huggingface-hub"),
         requirement("numpy"),

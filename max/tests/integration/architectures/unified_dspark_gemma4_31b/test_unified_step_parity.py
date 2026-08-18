@@ -41,7 +41,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -93,10 +92,7 @@ from torch.utils.dlpack import from_dlpack
 from transformers import AutoTokenizer
 
 TARGET_REPO_ID = "google/gemma-4-31B-it"
-TARGET_REVISION = hf_repo_lock.revision_for_hf_repo(TARGET_REPO_ID)
 DRAFT_REPO_ID = "RedHatAI/gemma-4-31B-it-speculator.dspark"
-DRAFT_REVISION = hf_repo_lock.revision_for_hf_repo(DRAFT_REPO_ID)
-
 MAX_DTYPE = DType.bfloat16
 TORCH_DTYPE = torch.bfloat16
 MAX_SEQ_LEN = 4096
@@ -290,9 +286,7 @@ class _StepHarness:
         self.device = device
         device_ref = DeviceRef.GPU()
 
-        draft_config_path = hf_hub_download(
-            DRAFT_REPO_ID, "config.json", revision=DRAFT_REVISION
-        )
+        draft_config_path = hf_hub_download(DRAFT_REPO_ID, "config.json")
         with open(draft_config_path) as f:
             draft_config_json = json.load(f)
         self.ref_config = DraftCheckpointConfig.from_config_json(
@@ -305,7 +299,6 @@ class _StepHarness:
         snapshot_dir = Path(
             snapshot_download(
                 TARGET_REPO_ID,
-                revision=TARGET_REVISION,
                 allow_patterns=["*.safetensors", "*.json"],
             )
         )
@@ -345,9 +338,7 @@ class _StepHarness:
         target_state_dict = convert_safetensor_language_state_dict(
             dict(target_weights.items())
         )
-        draft_path = hf_hub_download(
-            DRAFT_REPO_ID, "model.safetensors", revision=DRAFT_REVISION
-        )
+        draft_path = hf_hub_download(DRAFT_REPO_ID, "model.safetensors")
         self.checkpoint_weights = load_file(draft_path)
         unified_state_dict = merge_unified_state_dict(
             target_state_dict,
@@ -468,9 +459,6 @@ def session(device: Device) -> InferenceSession:
 def harness(session: InferenceSession, device: Device) -> _StepHarness:
     if os.environ.get("HF_HUB_OFFLINE", "0") == "1":
         pytest.skip("HF Hub offline mode is enabled")
-    assert TARGET_REVISION is not None and DRAFT_REVISION is not None, (
-        "both repos must be present in hf-repo-lock.tsv"
-    )
     return _StepHarness(session, device)
 
 
@@ -599,9 +587,7 @@ def test_unified_single_step_parity(
     torch_reference: RefDSparkSpeculatorsBackbone,
     torch_markov: RefMarkovD2T,
 ) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(
-        TARGET_REPO_ID, revision=TARGET_REVISION
-    )
+    tokenizer = AutoTokenizer.from_pretrained(TARGET_REPO_ID)
     prompt_ids = np.asarray(tokenizer(PROMPT).input_ids, dtype=np.int64)
     prompt_len = len(prompt_ids)
     embed_weight = harness.checkpoint_weights["embed_tokens.weight"]

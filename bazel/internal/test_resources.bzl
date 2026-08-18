@@ -503,12 +503,6 @@ TEST_RESOURCES = {
             "memory": 743,
         },
     },
-    "//max/tests/integration:test_hf_repo_lock": {
-        "default": {
-            "cpu": 2,
-            "memory": 894,
-        },
-    },
     "//max/tests/integration/cli:test_pipelines_cli_help": {
         "default": {
             "cpu": 2,

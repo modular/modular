@@ -33,7 +33,6 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from huggingface_hub import hf_hub_download
@@ -54,8 +53,6 @@ from max.pipelines.architectures.speculators_common import (
 from safetensors import safe_open
 
 DRAFT_REPO_ID = "RedHatAI/gemma-4-31B-it-speculator.dspark"
-DRAFT_REVISION = hf_repo_lock.revision_for_hf_repo(DRAFT_REPO_ID)
-
 _CONFIG_PATH = (
     pathlib.Path(__file__).parent / "testdata" / "redhat_speculator_config.json"
 )
@@ -80,12 +77,7 @@ def header() -> tuple[dict[str, tuple[int, ...]], np.ndarray]:
     """Tensor name -> shape from the real snapshot's header, plus d2t."""
     if os.environ.get("HF_HUB_OFFLINE", "0") == "1":
         pytest.skip("HF Hub offline mode is enabled")
-    assert DRAFT_REVISION is not None, (
-        "the draft repo must be present in hf-repo-lock.tsv"
-    )
-    path = hf_hub_download(
-        DRAFT_REPO_ID, "model.safetensors", revision=DRAFT_REVISION
-    )
+    path = hf_hub_download(DRAFT_REPO_ID, "model.safetensors")
     shapes: dict[str, tuple[int, ...]] = {}
     with safe_open(path, framework="np") as f:
         for name in f.keys():  # noqa: SIM118

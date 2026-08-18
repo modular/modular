@@ -14,7 +14,6 @@
 import logging
 import os
 
-import hf_repo_lock
 import pytest
 from _cli_pipeline_flags import pipeline_flags
 from max._entrypoints import pipelines
@@ -26,9 +25,6 @@ from test_common.lora_utils import (
 
 # Keep original constants for non-LoRA tests
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-
-
 logger = logging.getLogger("max.pipelines")
 
 
@@ -87,10 +83,6 @@ def test_pipelines_cli__smollm_with_lora(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "-max-num-loras=2",
                 "--max-lora-rank=16",
@@ -140,10 +132,6 @@ def test_pipelines_cli__smollm_with_multiple_loras(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "--max-num-loras=3",
                 "--max-lora-rank=16",

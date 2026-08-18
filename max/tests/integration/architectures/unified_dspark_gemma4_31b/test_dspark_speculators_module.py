@@ -37,7 +37,6 @@ import os
 from dataclasses import replace
 from typing import NamedTuple
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -63,8 +62,6 @@ from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
 HF_REPO_ID = "RedHatAI/gemma-4-31B-it-speculator.dspark"
-HF_REVISION = hf_repo_lock.revision_for_hf_repo(HF_REPO_ID)
-
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
 
@@ -112,12 +109,7 @@ def session(device: Device) -> InferenceSession:
 def draft_config() -> DraftCheckpointConfig:
     if os.environ.get("HF_HUB_OFFLINE", "0") == "1":
         pytest.skip("HF Hub offline mode is enabled")
-    assert HF_REVISION is not None, (
-        f"{HF_REPO_ID} must be present in hf-repo-lock.tsv"
-    )
-    config_path = hf_hub_download(
-        HF_REPO_ID, "config.json", revision=HF_REVISION
-    )
+    config_path = hf_hub_download(HF_REPO_ID, "config.json")
     with open(config_path) as f:
         config_json = json.load(f)
     return DraftCheckpointConfig.from_config_json(config_json)
@@ -125,10 +117,7 @@ def draft_config() -> DraftCheckpointConfig:
 
 @pytest.fixture(scope="module")
 def checkpoint_weights() -> dict[str, torch.Tensor]:
-    assert HF_REVISION is not None
-    path = hf_hub_download(
-        HF_REPO_ID, "model.safetensors", revision=HF_REVISION
-    )
+    path = hf_hub_download(HF_REPO_ID, "model.safetensors")
     return load_file(path)
 
 

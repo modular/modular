@@ -60,7 +60,6 @@ modular_py_test(
     deps = [
         ":cli_pipeline_flags",
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:lora_utils",
     ],
@@ -73,7 +72,6 @@ modular_py_library(
     testonly = True,
     srcs = ["_cli_pipeline_flags.py"],
     imports = ["."],
-    deps = ["//max/tests/integration:hf_repo_lock"],
 )
 
 # Compiles under virtual devices, so it needs no GPU. Run only as a build action
@@ -222,7 +220,6 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
         requirement("gguf"),
         requirement("safetensors"),

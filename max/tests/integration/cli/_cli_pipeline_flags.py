@@ -21,8 +21,6 @@ the precompiled artifacts unusable.
 
 from __future__ import annotations
 
-import hf_repo_lock
-
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 # Flags that distinguish each configuration from the shared base below. Adding a
@@ -49,7 +47,7 @@ def pipeline_flags(flag_set: str) -> list[str]:
         flag_set: One of :data:`FLAG_SETS`.
 
     Returns:
-        The CLI flags, with the locked HuggingFace revision filled in.
+        The CLI flags for the requested configuration.
 
     Raises:
         ValueError: If ``flag_set`` is not a known configuration.
@@ -59,10 +57,6 @@ def pipeline_flags(flag_set: str) -> list[str]:
             f"unknown flag set {flag_set!r}; expected one of {FLAG_SETS}"
         )
 
-    revision = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-    assert isinstance(revision, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     return [
         "--model-path",
         REPO_ID,
@@ -70,9 +64,5 @@ def pipeline_flags(flag_set: str) -> list[str]:
         "--device-memory-utilization=0.1",
         "--quantization-encoding=bfloat16",
         "--devices=gpu",
-        "--huggingface-model-revision",
-        revision,
-        "--huggingface-weight-revision",
-        revision,
         *_EXTRA_FLAGS[flag_set],
     ]

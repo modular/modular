@@ -391,7 +391,6 @@ modular_py_test(
     deps = [
         ":pipelines-lm-eval",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("click"),
     ],
 )

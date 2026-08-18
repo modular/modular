@@ -188,7 +188,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/kimik2_5",
-        "//max/tests/integration:hf_repo_lock",
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("numpy"),

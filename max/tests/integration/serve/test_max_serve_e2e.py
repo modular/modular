@@ -26,7 +26,6 @@ import time
 from collections.abc import Generator
 from multiprocessing.context import SpawnProcess
 
-import hf_repo_lock
 import httpx
 import pytest
 import pytest_asyncio
@@ -36,8 +35,6 @@ logger = logging.getLogger(__name__)
 PORT = 8000
 METRICS_PORT = 8001
 MODEL = "modularai/SmolLM-135M-Instruct-FP32"
-MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL)
-assert MODEL_REVISION is not None
 BASE_URL = f"http://127.0.0.1:{PORT}"
 HEALTH_URL = f"{BASE_URL}/health"
 CHAT_COMPLETIONS_URL = f"{BASE_URL}/v1/chat/completions"
@@ -70,12 +67,9 @@ def serve_main() -> None:
         metrics_port=METRICS_PORT,
         graceful_shutdown_timeout_s=DRAIN_TIMEOUT_S,
     )
-    assert MODEL_REVISION is not None
     # Configure pipeline with GGUF model for fast loading on CPU
     pipeline_config = PipelineArgs(
         model_path=MODEL,
-        huggingface_model_revision=MODEL_REVISION,
-        huggingface_weight_revision=MODEL_REVISION,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding="float32",
     )

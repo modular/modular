@@ -17,7 +17,6 @@ import json
 import pickle
 from unittest.mock import MagicMock, NonCallableMock
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import requests
@@ -71,7 +70,6 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
 
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
-LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
 
 def convert_image_url_to_base64(image_url: str) -> bytes | None:

@@ -833,7 +833,7 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
         return False
 
 
-def generate_local_model_path(repo_id: str, revision: str) -> str:
+def generate_local_model_path(repo_id: str, revision: str = "main") -> str:
     """Generates the local filesystem path where a Hugging Face model repo is cached.
 
     This function resolves the model from the local Hugging Face cache only.
@@ -843,7 +843,9 @@ def generate_local_model_path(repo_id: str, revision: str) -> str:
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
                 (e.g. "HuggingFaceTB/SmolLM2-135M")
-        revision: The specific model revision hash to use, typically from a repo lock file
+        revision: The model revision to resolve. Defaults to ``main``, which on
+            CI runners resolves through the cache populator's ``refs/main`` to
+            the revision pinned in ``hf-repo-lock.tsv``.
 
     Returns:
         str: The absolute path to the cached model files for the specified revision.
