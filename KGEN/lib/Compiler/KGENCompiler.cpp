@@ -282,20 +282,17 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   if (!targetDataLayout.empty())
     compilationOptions.targetDataLayout = targetDataLayout;
 
-  // Pull `nvptx-short-ptr` out of the emission options: short pointers are
-  // the "shortptr" target ABI, not a global llvm cl option, so it must be
-  // applied to the compilation options before the target machine is created
-  // and kept out of the cl-parsed list.
+  // Pull `target-abi` out of the emission options and apply it directly to
+  // `compilationOptions` before the target machine is created: `createTarget-
+  // Machine` reads `targetABI` as a struct field, not by re-querying LLVM's
+  // registered `-target-abi` cl option, so letting it flow through the
+  // generic cl-parsed list below would only mutate global state unseen here.
   compilationOptions.targetABI.clear();
-  if (std::optional<std::string> badItem = applyShortPtrEmissionOptions(
-          emissionOptions, compilationOptions.targetABI))
-    return Error(llvm::formatv("invalid value in emission option '{0}', "
-                               "expected 'nvptx-short-ptr=true' or "
-                               "'nvptx-short-ptr=false'",
-                               *badItem));
+  applyTargetABIEmissionOptions(emissionOptions, compilationOptions.targetABI);
   SmallVector<StringRef> clEmissionOptions;
-  llvm::copy_if(emissionOptions, std::back_inserter(clEmissionOptions),
-                [](StringRef item) { return !isShortPtrEmissionOption(item); });
+  llvm::copy_if(
+      emissionOptions, std::back_inserter(clEmissionOptions),
+      [](StringRef item) { return !isTargetABIEmissionOption(item); });
 
   // Initialize the object compiler.
   PassManagerConfigOptions pmOptions;
@@ -515,21 +512,16 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                                    *badItem));
       offloadInfo.emissionOptions = filteredEmissionOptions;
 
-      // Likewise pull `nvptx-short-ptr` (the "shortptr" target ABI, not a cl
-      // option) into the compilation options. It stays in the emission-option
-      // string, which identifies the offload in debug output and cache keys,
-      // and is skipped when the remaining options are applied as cl options.
+      // Likewise pull `target-abi` into the compilation options. It stays in
+      // the emission-option string, which identifies the offload in debug
+      // output and cache keys, and is skipped when the remaining options are
+      // applied as cl options.
       compilationOptions.targetABI.clear();
       {
         SmallVector<StringRef> items;
         StringRef(offloadInfo.emissionOptions)
             .split(items, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-        if (std::optional<std::string> badItem = applyShortPtrEmissionOptions(
-                items, compilationOptions.targetABI))
-          return Error(llvm::formatv("invalid value in emission option '{0}', "
-                                     "expected 'nvptx-short-ptr=true' or "
-                                     "'nvptx-short-ptr=false'",
-                                     *badItem));
+        applyTargetABIEmissionOptions(items, compilationOptions.targetABI);
       }
 
       compilationOptions.emissionOptions = offloadInfo.emissionOptions;
@@ -713,9 +705,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef(offloadInfo.emissionOptions)
           .split(emissionOptions, /*Separator=*/",",
                  /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-      // `nvptx-short-ptr` was already applied via the target ABI; it is not a
-      // registered cl option, so keep it out of the parse/reset lists.
-      llvm::erase_if(emissionOptions, isShortPtrEmissionOption);
+      // `target-abi` was already applied to `compilationOptions.targetABI`
+      // above; keep it out of the parse/reset lists so it doesn't also mutate
+      // LLVM's shared, registered `-target-abi` cl option as a side effect.
+      llvm::erase_if(emissionOptions, isTargetABIEmissionOption);
 
       KGEN_DEBUG(0, {
         llvm::dbgs() << "Emit offloads with options: "
