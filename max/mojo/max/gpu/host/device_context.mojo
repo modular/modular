@@ -1970,6 +1970,56 @@ struct DeviceBuffer[dtype: DType](
             origin
         ]()
 
+    @always_inline
+    def unsafe_host_ptr[
+        mut: Bool,
+        //,
+        origin: Origin[mut=mut],
+    ](ref[origin] self) raises -> Pointer[Scalar[Self.dtype], origin]:
+        """Returns a CPU-addressable pointer to this buffer's contents.
+
+        Only devices whose allocations are CPU-addressable support this: a
+        unified-memory GPU such as an Apple GPU, and the CPU device, whose
+        allocations are host memory to begin with. On every other device this
+        method raises, and the bytes must be staged with `enqueue_copy`
+        instead.
+
+        Reading through the returned pointer is valid only after the device work
+        that wrote the buffer has completed. Call `DeviceContext.synchronize()`
+        or wait on an event first. Host writes must not race device work that
+        touches the same buffer; a host write that completes before a later
+        `enqueue_function` is visible to that kernel.
+
+        Device allocations use write-combined CPU caching, so host reads through
+        the returned pointer are uncached and cost far more per byte than reads
+        of ordinary host memory. Use this for small control records, and use
+        `enqueue_copy` for bulk transfers.
+
+        Parameters:
+            mut: The mutability of this `DeviceBuffer`.
+            origin: The origin of this `DeviceBuffer`.
+
+        Returns:
+            A host pointer to the first element of this buffer.
+
+        Raises:
+            If this buffer's device does not expose device memory to the CPU, or
+            if the device context does not recognize this buffer's pointer.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        var host_ptr: Optional[Self._DevicePtr] = {}
+        # const char *AsyncRT_DeviceBuffer_hostPtr(
+        #     void **result, const DeviceBuffer *buffer)
+        _checked(
+            external_call["AsyncRT_DeviceBuffer_hostPtr", _CString[]](
+                Pointer(to=host_ptr), self._handle
+            ),
+            location=call_location(),
+        )
+        return (
+            host_ptr.value().unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
+        )
+
     def device_ptr(
         ref self,
     ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
