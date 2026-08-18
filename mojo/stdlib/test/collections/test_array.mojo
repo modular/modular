@@ -409,6 +409,32 @@ def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
         return arr^
 
 
+def _return_batched_array[copy: Bool = False]() -> Array[Int32, 64]:
+    var arr = Array[Int32, 64](fill=0)
+
+    comptime if copy:
+        return arr.copy()
+    else:
+        return arr^
+
+
+def test_array_batched_copy_and_move_llvm_ir() raises:
+    # 64 elements reaches `fill=`'s batched runtime loop, unlike the 4-element
+    # case above which unrolls at compile time. A callsite marker is expected
+    # for the live loop, so this checks only the range attribute.
+    def _test(ir: StringSlice) raises:
+        assert_true("initializes((0, 256))" in ir)
+
+    var move_info = compile_info[
+        _return_batched_array[copy=False], emission_kind="llvm-opt"
+    ]()
+    _test(move_info.asm)
+    var copy_info = compile_info[
+        _return_batched_array[copy=True], emission_kind="llvm-opt"
+    ]()
+    _test(copy_info.asm)
+
+
 def test_array_copy_and_move_llvm_ir() raises:
     def _test(ir: StringSlice) raises:
         assert_true("initializes((0, 16))" in ir)
