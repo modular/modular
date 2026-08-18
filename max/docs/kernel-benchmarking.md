@@ -34,9 +34,9 @@ performance of Mojo kernels in MAX.
 ## Prerequisites
 
 MAX supports both CPUs and GPUs. Be sure you meet the MAX
-[system requirements](https://docs.modular.com/packages#system-requirements) for
+[system requirements](https://max.modular.com/packages#system-requirements) for
 your specific environment. For GPU support, see
-[GPU compatibility and software requirements](https://docs.modular.com/packages/#gpu-compatibility).
+[GPU compatibility and software requirements](https://max.modular.com/packages/#gpu-compatibility).
 
 If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
 later. You may need to run `xcodebuild -downloadComponent MetalToolchain`,
@@ -136,7 +136,7 @@ See [`sample.mojo`](../kernels/benchmarks/autotune/sample.mojo) for a complete
 example template.
 
 Within the Mojo file, you'll need to import the Mojo
-[`benchmark`](https://docs.modular.com/mojo/std/benchmark/) package.
+[`benchmark`](https://mojolang.org/docs/std/benchmark/) package.
 
 ```mojo
 from std.sys import get_defined_dtype, get_defined_int, get_defined_string
@@ -473,7 +473,7 @@ results. However, you can also use `uv` if you have Mojo installed via the
 `modular` package.
 
 For `uv` setup instructions, see the
-[MAX quickstart](https://docs.modular.com/get-started#set-up-your-project).
+[MAX quickstart](https://max.modular.com/get-started#set-up-your-project).
 
 After setup, verify your environment:
 
