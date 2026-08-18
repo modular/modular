@@ -161,7 +161,7 @@ def bencher_iter_custom[
 
 def bencher_iter_custom[
     FuncType: def(DeviceContext) raises -> None,
-](mut self_: Bencher, ref func: FuncType, ctx: DeviceContext):
+](mut self_: Bencher, func: FuncType, ctx: DeviceContext):
     """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
 
     Parameters:
@@ -212,7 +212,7 @@ def bencher_iter_custom[
 
 def bencher_iter_custom[
     FuncType: def(DeviceContext, Int) raises -> None,
-](mut self_: Bencher, ref func: FuncType, ctx: DeviceContext):
+](mut self_: Bencher, func: FuncType, ctx: DeviceContext):
     """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
 
     Parameters:
