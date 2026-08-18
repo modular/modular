@@ -1,6 +1,6 @@
 # Using bazel
 
-This repository uses the
+Some parts of this repository are setup to build and test with the
 [`bazel`](https://bazel.build) build system. This document describes the
 common workflows.
 
@@ -8,36 +8,19 @@ common workflows.
 
 - On macOS make sure you have a relatively recent version of Xcode or
   the Xcode Command Line Tools installed.
+- `bazel` automatically downloads the current nightly version of `mojo`
+  (defined in the
+  [`MODULE.bazel`](https://github.com/modular/modular/blob/main/MODULE.bazel)),
+  meaning it does not pick up the current globally installed version.
 - For convenience there is a
   [`bazelw`](https://github.com/modular/modular/blob/main/bazelw) script
   in the root of the repository that automatically downloads the
   currently supported version of `bazel`.
 
-The `bazel` build operates in one of two modes, specified
-with the `--config=<mode>` flag:
-
-- `prebuilt-mojo`. Uses a prebuilt `mojo` package.
-  - Use `--config=prebuilt-mojo` when testing changes to the Mojo
-    standard library or MAX accelerator library.
-  - `bazel` automatically downloads the current nightly version of `mojo`. It
-    does not pick up the current globally installed version.
-
-- `build-mojo`. Builds the Mojo compiler from source when needed.
-  - Use `--config=build-mojo` when testing changes to the Mojo compiler.
-  - Building the compiler from source takes a significant amount of time. Using
-    the prebuilt `mojo` package is much faster.
-
-You can specify the `--config` option on the command line, or add the following
-to a `local.bazelrc` file in the root of the repository:
-
-```text
-build --config=prebuilt-mojo
-```
-
 ## Examples
 
-`bazel` has three primary subcommands you will interact with: `build`, `test`,
-and `run`. For example to build all the code in the repository you can run:
+`bazel` has 2 primary subcommands you will interact with `build` and
+`test`. For example to build all the code in the repository you can run:
 
 ```sh
 ./bazelw build //...
@@ -74,13 +57,6 @@ Some tests in the repository only support specific hardware. In that
 case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
-
-When building the Mojo compiler, you can run arbitrary Mojo code using the
-following command:
-
-```sh
-./bazelw run --config=build-mojo //KGEN:mojo -- run my_file.mojo
-```
 
 ## Testing one-off scripts
 

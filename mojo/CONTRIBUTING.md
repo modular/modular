@@ -8,11 +8,6 @@ There are many ways to contribute to the project, from joining the
 [Discord community](https://www.discord.gg/modular), to filing bugs, to
 contributing documentation, examples, or code.
 
-## Contributing to the Mojo compiler
-
-The Mojo compiler is open source, but we have not defined a contribution process
-yet. Please bear with us while we set up the necessary tools and workflows.
-
 ## Contributing to the standard library
 
 To ensure a streamlined process, contributors are encouraged to focus on

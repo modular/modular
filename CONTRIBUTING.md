@@ -193,12 +193,12 @@ pull request:
     git checkout -b my-fix
     ```
 
-   Now start your work on the repo! If you're contributing to the Mojo
-   standard library, see the [Mojo standard library developer
-   guide](mojo/stdlib/docs/development.md).
+    Now start your work on the repo! If you're contributing to the Mojo
+    standard library, see the [Mojo standard library developer
+    guide](mojo/stdlib/docs/development.md).
 
-   Although not necessary right now, you should periodically make sure you have
-   the latest code, especially right before you create the pull request:
+    Although not necessary right now, you should periodically make sure you have
+    the latest code, especially right before you create the pull request:
 
     ```bash
     git fetch upstream
