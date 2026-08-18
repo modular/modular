@@ -510,7 +510,7 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr argTypes, TypedAttr resultType,
                                        TypedAttr metadata) {
-  auto cstParamDecls = dyn_cast<ParamDeclArrayAttr>(paramDecls);
+  auto cstParamDecls = dyn_cast<FnGenBuilderParamDeclArrayAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
 
@@ -520,7 +520,7 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
 
   // We are going to introduce a new scope, adjust the depth of the existing
   // index ref by one. Don't adjust implicit origin reference depth (those are
-  // not remapped to a named reference for the builder, should we?).
+  // not remapped to a named reference for the builder, but should we?).
   IndexDepthAdjuster adjuster(1, /*onlyAdjustIndexRef=*/true);
   cstParamDecls = adjuster.replace(cstParamDecls);
   cstArgTypes = adjuster.replace(cstArgTypes);
@@ -528,8 +528,8 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
   resultType = adjuster.replace(resultType);
 
   SmallVector<Type> inputParamTypes;
-  IndexRefRemapper remapper(ArrayRef<ParamDeclAttr>{});
-  for (ParamDeclAttr decl : cstParamDecls) {
+  FnGenIndexRefRemapper remapper;
+  for (FnGenBuilderParamDeclAttr decl : cstParamDecls) {
     auto remapped = remapper.replace(decl);
     remapper.appendParamDecl(remapped);
     // record the parameter type.

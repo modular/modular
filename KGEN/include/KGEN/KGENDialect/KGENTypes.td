@@ -279,10 +279,10 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
   let description = [{
     The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
     from its components: the parameters declared by the generator (an array of
-    `param.decl`s), the argument types (a `param_list` of `kgen.type`), the
-    result type (a `kgen.type`), and the function metadata (a `fn_metadata`).
-    It folds into the generator type itself once all of its components are
-    constant.
+    `fn_gen_builder.param.decl`s), the argument types (a `param_list` of
+    `kgen.type`), the result type (a `kgen.type`), and the function metadata (a
+    `fn_metadata`). It folds into the generator type itself once all of its
+    components are constant.
 
     Every component is a parameter expression, so a still-symbolic piece (e.g.
     an argument pack referenced by name) can be represented before elaboration.
@@ -294,9 +294,9 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
 
     ```mlir
     !kgen.func_gen_type_builder<
-      #kgen<param.decls[T : !kgen.type]>,
+      #kgen<fn_gen_builder.param.decls[T : type]>,
       #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
-      #kgen.param.decl.ref<"T"> : !kgen.type,
+      #kgen.fn_gen_builder.param.decl.ref<"T", type>,
       #kgen.fn_metadata<[read], "none">>
     ```
   }];

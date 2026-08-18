@@ -35,26 +35,41 @@ namespace M::KGEN {
 
 /// Utility class for remapping named parameter references to index references,
 /// see DCRTODS.
-class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
+template <typename NameDeclT, typename NameRefT>
+class NameToIndexRefRemapper
+    : public IndexParameterReplacer<
+          NameToIndexRefRemapper<NameDeclT, NameRefT>> {
+
 public:
+  NameToIndexRefRemapper() = default;
+
   /// Populate the remapper with named input and result parameters.
-  IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams, size_t offset = 0);
-  IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams, size_t offset = 0);
+  NameToIndexRefRemapper(ArrayRef<NameDeclT> inputParams, size_t offset = 0);
+  NameToIndexRefRemapper(ArrayRef<NameRefT> inputParams, size_t offset = 0);
 
   /// Append a parameter declaration to the remapper.
-  void appendParamDecl(ParamDeclAttr paramDecl);
+  void appendParamDecl(NameDeclT paramDecl);
 
 private:
+  using Base =
+      IndexParameterReplacer<NameToIndexRefRemapper<NameDeclT, NameRefT>>;
+
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }
-  friend class IndexParameterReplacer<IndexRefRemapper>;
+  friend class IndexParameterReplacer<NameToIndexRefRemapper>;
 
   /// Mapping from parameter reference to an index.
   DenseMap<StringAttr, size_t> mapping;
   /// The index offset of references to root input parameters.
   size_t offset;
 };
+
+using IndexRefRemapper =
+    NameToIndexRefRemapper<ParamDeclAttr, ParamDeclRefAttr>;
+using FnGenIndexRefRemapper =
+    NameToIndexRefRemapper<FnGenBuilderParamDeclAttr,
+                           FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // ParamRefRemapper

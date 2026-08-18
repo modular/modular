@@ -95,9 +95,74 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
 def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
-    "param.decls", "ParamDeclAttr", [DeclareAttrInterfaceMethods<TypedAttrInterface>]> {
+    "param.decls", "ParamDeclAttr"> {
   let builders = [
     AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$paramDecl), [{
+      return get(paramDecl.getContext(), paramDecl);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// FnGenBuilder-related
+//===----------------------------------------------------------------------===//
+
+/// Declaration of a named parameter of a function generator type builder.
+def KGEN_FnGenBuilderParamDeclAttr
+    : KGENAttr<"FnGenBuilderParamDecl", "fn_gen_builder.param.decl"> {
+  let summary = "Parameter declaration of a function generator type builder";
+  let description = [{
+    This is the parameter-expression dual of `#kgen.param.decl`: it is a
+    placeholder for a parameter of that is going to be built by a function
+    generator type builder.
+  }];
+  let parameters = (ins "StringAttr":$name, "Type":$type);
+  let assemblyFormat = "custom<ParamName>($name) `:` $type";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "Type":$type), [{
+      return $_get(name.getContext(), name, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "StringRef":$name,
+                                        "Type":$type), [{
+      return get(StringAttr::get(type.getContext(), name), type);
+    }]>
+  ];
+}
+
+def KGEN_FnGenBuilderParamDeclRefAttr
+    : KGEN_ExprAttr<"FnGenBuilderParamDeclRef", "fn_gen_builder.param.decl.ref"> {
+  let summary = "A reference to a function generator type builder parameter.";
+  let description = [{
+    A reference to a parameter declared by a function generator type builder in
+    the `fn_gen_builder.param.decl`.
+  }];
+  let parameters = (ins "StringAttr":$name, "Type":$type);
+  let assemblyFormat = "`<` $name `,` $type `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "Type":$type), [{
+      return $_get(name.getContext(), name, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "StringRef":$name,
+                                        "Type":$type), [{
+      return get(StringAttr::get(type.getContext(), name), type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "FnGenBuilderParamDeclAttr":$decl), [{
+      return get(decl.getName(), decl.getType());
+    }]>
+  ];
+}
+
+def KGEN_FnGenBuilderParamDeclArrayAttr : ArrayOfAttr<KGENDialect,
+    "FnGenBuilderParamDeclArray", "fn_gen_builder.param.decls",
+    "FnGenBuilderParamDeclAttr",
+    [DeclareAttrInterfaceMethods<TypedAttrInterface>]> {
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "FnGenBuilderParamDeclAttr":$paramDecl),
+                                   [{
       return get(paramDecl.getContext(), paramDecl);
     }]>
   ];

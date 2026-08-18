@@ -147,15 +147,15 @@ EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
 EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 
 //===----------------------------------------------------------------------===//
-// ParamDeclArrayAttr
+// FnGenBuilder-related attr
 //===----------------------------------------------------------------------===//
 
-Type ParamDeclArrayAttr::getType() const {
-  // TODO: `non_struct_type` is not accurate, but we only need a type in order
-  // to use the attribute in a parameter expression. A dedicated type would make
-  // more sense here.
+Type FnGenBuilderParamDeclArrayAttr::getType() const {
+  // See the TODO on `ParamDeclArrayAttr::getType`.
   return NonStructTypeType::get(getContext());
 }
+
+bool FnGenBuilderParamDeclRefAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // ParamListAttr

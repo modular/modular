@@ -798,6 +798,59 @@ class ExtensionAttr(max._core.Attribute):
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
+class FnGenBuilderParamDeclArrayAttr(max._core.Attribute):
+    @overload
+    def __init__(self, param_decl: FnGenBuilderParamDeclAttr) -> None: ...
+    @overload
+    def __init__(self, value: Sequence[FnGenBuilderParamDeclAttr]) -> None: ...
+    @property
+    def value(self) -> Sequence[FnGenBuilderParamDeclAttr]: ...
+
+class FnGenBuilderParamDeclAttr(max._core.Attribute):
+    """
+    This is the parameter-expression dual of `#kgen.param.decl`: it is a
+    placeholder for a parameter of that is going to be built by a function
+    generator type builder.
+    """
+
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+    ) -> None: ...
+    @overload
+    def __init__(self, name: str, type: max._core.Type) -> None: ...
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class FnGenBuilderParamDeclRefAttr(max._core.Attribute):
+    """
+    A reference to a parameter declared by a function generator type builder in
+    the `fn_gen_builder.param.decl`.
+    """
+
+    @overload
+    def __init__(self, decl: FnGenBuilderParamDeclAttr) -> None: ...
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+    ) -> None: ...
+    @overload
+    def __init__(self, name: str, type: max._core.Type) -> None: ...
+    @overload
+    def __init__(
+        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class FnMetadataAttr(max._core.Attribute):
     """
     The `#kgen.fn_metadata` attribute aggregates everything a `!kgen.func` type
@@ -4648,10 +4701,10 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
     """
     The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
     from its components: the parameters declared by the generator (an array of
-    `param.decl`s), the argument types (a `param_list` of `kgen.type`), the
-    result type (a `kgen.type`), and the function metadata (a `fn_metadata`).
-    It folds into the generator type itself once all of its components are
-    constant.
+    `fn_gen_builder.param.decl`s), the argument types (a `param_list` of
+    `kgen.type`), the result type (a `kgen.type`), and the function metadata (a
+    `fn_metadata`). It folds into the generator type itself once all of its
+    components are constant.
 
     Every component is a parameter expression, so a still-symbolic piece (e.g.
     an argument pack referenced by name) can be represented before elaboration.
@@ -4663,9 +4716,9 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
 
     ```mlir
     !kgen.func_gen_type_builder<
-      #kgen<param.decls[T : !kgen.type]>,
+      #kgen<fn_gen_builder.param.decls[T : type]>,
       #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
-      #kgen.param.decl.ref<"T"> : !kgen.type,
+      #kgen.fn_gen_builder.param.decl.ref<"T", type>,
       #kgen.fn_metadata<[read], "none">>
     ```
     """
