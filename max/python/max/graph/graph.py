@@ -637,7 +637,7 @@ class Graph:
     These examples only use the :obj:`max.graph` package, but most models also
     use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
     To learn more, see `Build a model graph with Module
-    </max/develop/modules>`_.
+    </develop/modules>`_.
 
     Args:
         name: A name for the graph.

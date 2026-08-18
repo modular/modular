@@ -10,7 +10,7 @@
     deployment, and `max list` to discover the architectures MAX supports.
 
     To install the `max` CLI, install the `modular` package as shown
-    in the [install guide](/max/packages#install).
+    in the [install guide](/packages#install).
 
 
 .. click:: max._entrypoints.pipelines:main

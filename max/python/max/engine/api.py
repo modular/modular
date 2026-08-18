@@ -1286,7 +1286,7 @@ class InferenceSession:
         Be aware that :meth:`gpu_profiling` overrides the
         ``MODULAR_ENABLE_PROFILING`` environment variable if also used.
 
-        Learn more in `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_.
+        Learn more in `GPU profiling with Nsight Systems </gpu-system-profiling>`_.
 
         .. note::
 

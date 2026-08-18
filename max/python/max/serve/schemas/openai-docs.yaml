@@ -26,8 +26,8 @@ paths:
         ```
 
         For detailed usage examples, see the
-        [image generation guide](/max/inference/image-generation) and the
-        [video generation guide](/max/inference/video-generation).
+        [image generation guide](/serve/image-generation) and the
+        [video generation guide](/serve/video-generation).
       requestBody:
         required: true
         content:
