@@ -463,10 +463,14 @@ struct Array[T: AnyType, length: Int](
         var base = self.unsafe_ptr()
         var ptr = base
 
-        for _ in range(0, unroll_end, batch_size):
-            comptime for _ in range(batch_size):
-                ptr.unsafe_write(copy=fill)
-                ptr = ptr.unsafe_offset(1)
+        # Skip the batched loop entirely when it cannot run. Emitting it for
+        # `unroll_end == 0` leaves the inlined iterator's line-table marker
+        # behind as an irremovable barrier, even though the loop is dead.
+        comptime if unroll_end > 0:
+            for _ in range(0, unroll_end, batch_size):
+                comptime for _ in range(batch_size):
+                    ptr.unsafe_write(copy=fill)
+                    ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
         comptime for _ in range(unroll_end, Self.length):

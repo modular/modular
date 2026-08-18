@@ -801,6 +801,4 @@ def test_array_add_explicit_destroy_type() raises:
 
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
-    # TODO: skipped to work around MOCO-3749
-    suite.skip[test_array_copy_and_move_llvm_ir]()
     suite^.run()
