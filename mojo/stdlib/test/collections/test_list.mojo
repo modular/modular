@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import size_of
+from std.memory import forget_deinit
 
 from test_utils import (
     CopyCountedStruct,
@@ -1027,6 +1028,9 @@ def test_list_conditional_conformances() raises:
     # cannot destroy any unconsumed elements.
     assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
 
+    # List is still Movable despite its element type not being Movable
+    assert_true(conforms_to(List[Pinned], Movable))
+
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
@@ -1300,6 +1304,15 @@ def test_overaligned_struct_realloc() raises:
         l.append(Overaligned(Float32(i)))
     for i in range(17):
         assert_equal(l[i].x, Float32(i))
+
+
+struct Pinned(Movable where False):
+    pass
+
+
+def test_list_non_movable() raises:
+    var empty = List[Pinned]()
+    assert_equal(len(empty), 0)
 
 
 # ===-------------------------------------------------------------------===#
