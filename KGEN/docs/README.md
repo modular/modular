@@ -73,7 +73,6 @@ Mojo compiler.
 ## High-Level Walkthrough
 
 - [Walkthrough Doc](MojoCompilerWalkthrough.md)
-- [Dec 2025 Onsite Walkthrough Live](https://drive.google.com/file/d/1NAh7RpJDXbWMlapHPZce8CAVSgv8D_oX/view?usp=drive_link)
 
 ## Compiler Manual
 
