@@ -1,7 +1,7 @@
 # Mojo documentation
 
 This directory includes most of the documentation at
-[docs.modular.com/mojo](https://docs.modular.com/mojo).
+[mojolang.org/docs](https://mojolang.org/docs).
 
 The only things not here are the `mojo` CLI pages and the Mojo Standard Library
 reference. The reference docs are generated from source files, which are located

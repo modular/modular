@@ -1,7 +1,7 @@
 # Introduction to Mojo tutorial solution
 
 This directory contains a complete solution for the
-[Get started with Mojo](https://docs.modular.com/mojo/manual/get-started)
+[Get started with Mojo](https://mojolang.org/docs/manual/get-started)
 tutorial project, which is an implementation of [Conway's Game of
 Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life) cellular
 automation.
@@ -23,7 +23,7 @@ This directory contains the following files:
   1,024 x 1,024 grid.
 
 - The `test` directory contains unit tests for each `Grid` implementation using
-  the [Mojo testing framework](https://docs.modular.com/mojo/tools/testing).
+  the [Mojo testing framework](https://mojolang.org/docs/tools/testing).
 
 - The `pixi.toml` file is a [Pixi](https://pixi.sh)
   project file containing the project dependencies and task definitions.

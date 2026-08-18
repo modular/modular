@@ -113,7 +113,7 @@ and the static initializer is never emitted.
 ### Syntactic Compatibility and `@dynamic`
 
 A primary goal of Mojo is to
-[minimize the syntactic differences](https://docs.modular.com/mojo/why-mojo.html#intentional-differences-from-python)
+[minimize the syntactic differences](https://mojolang.org/docs/why-mojo.html#intentional-differences-from-python)
 with Python. We also have to balance that need with what the right default for
 Mojo is, and this affects the bias on whether this decorator is "opt-in" or
 "opt-out".

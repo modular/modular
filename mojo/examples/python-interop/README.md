@@ -15,7 +15,7 @@ including current
 These examples show how to perform basic to more advanced use of Mojo code from
 Python in order to progressively replace hotspots in Python code with fast
 Mojo. This includes using Mojo to drive calculations on
-[MAX-compatible GPUs](https://docs.modular.com/packages/#gpu-compatibility).
+[MAX-compatible GPUs](https://max.modular.com/packages/#gpu-compatibility).
 
 The two examples of Mojo functions being called from Python consist of:
 

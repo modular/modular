@@ -6,11 +6,11 @@ struct named `Complex`, which represents a single complex number. The
 program that imports the module and shows examples of applying the operators to
 instances of the `Complex` struct. The `test_my_complex.mojo` file is a set of
 unit tests using the [Mojo testing
-framework](https://docs.modular.com/mojo/tools/testing).
+framework](https://mojolang.org/docs/tools/testing).
 
 Refer to
-[Add operator support to custom types](https://docs.modular.com/mojo/manual/structs/operator-support)
-in the [Mojo manual](https://docs.modular.com/mojo/manual/) for a complete
+[Add operator support to custom types](https://mojolang.org/docs/manual/structs/operator-support)
+in the [Mojo manual](https://mojolang.org/docs/manual/) for a complete
 explanation of the implementation of the `Complex` type.
 
 If you have [Pixi](https://pixi.sh/latest/) installed, you can

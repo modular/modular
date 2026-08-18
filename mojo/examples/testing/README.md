@@ -1,8 +1,8 @@
 # Modular testing framework examples
 
 This directory contains examples of using the Mojo testing framework for unit
-testing. See the [Testing](https://docs.modular.com/mojo/tools/testing) section
-of the [Mojo manual](https://docs.modular.com/mojo/manual/) for a complete
+testing. See the [Testing](https://mojolang.org/docs/tools/testing) section
+of the [Mojo manual](https://mojolang.org/docs/manual/) for a complete
 discussion of how to use the Mojo testing framework.
 
 ## Files
