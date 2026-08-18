@@ -239,7 +239,7 @@ class RustTierConnector:
                     peers.extend([] for _ in mem.buffers)
 
             compute_streams = {
-                b.device.id: b.device.default_stream.native_stream_handle
+                b.device.id: b.device.default_queue.native_stream_handle
                 for mem in memories
                 for b in mem.buffers
             }

@@ -13,7 +13,7 @@
 """Integration test for the async host-func dispatch path.
 
 Exercises ``Device.__unsafe_enqueue_async_py_host_func`` paired with
-``DeviceStream.wait_for_host_value`` against a real Python callable, end
+``DeviceQueue.wait_for_host_value`` against a real Python callable, end
 to end. Confirms:
 
   1. The kickoff host function returns promptly and the Python callable
@@ -75,7 +75,7 @@ def test_async_host_func_signals_flag(
     getattr(accelerator, "__unsafe_enqueue_async_py_host_func")(
         cb, flag, 1, cpu
     )
-    accelerator.default_stream.wait_for_host_value(flag, 1)
+    accelerator.default_queue.wait_for_host_value(flag, 1)
 
     # Synchronize so the host can observe the flag store.
     accelerator.synchronize()
@@ -107,7 +107,7 @@ def test_async_host_func_replays_clear_flag(
         getattr(accelerator, "__unsafe_enqueue_async_py_host_func")(
             cb, flag, 1, cpu
         )
-        accelerator.default_stream.wait_for_host_value(flag, 1)
+        accelerator.default_queue.wait_for_host_value(flag, 1)
         accelerator.synchronize()
         assert flag.load() == 1
 
@@ -137,6 +137,6 @@ def test_async_host_func_callback_exception_does_not_deadlock(
     getattr(accelerator, "__unsafe_enqueue_async_py_host_func")(
         cb, flag, 1, cpu
     )
-    accelerator.default_stream.wait_for_host_value(flag, 1)
+    accelerator.default_queue.wait_for_host_value(flag, 1)
     # Should not hang; the trampoline's except clause sets the flag.
     accelerator.synchronize()

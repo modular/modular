@@ -13,7 +13,7 @@
 """Smoke tests for the ``CompletionFlag`` nanobind class.
 
 Exercises the host-side API in isolation (allocation, reset, signal,
-load). The producer/consumer methods (``DeviceStream.wait_for_host_value``,
+load). The producer/consumer methods (``DeviceQueue.wait_for_host_value``,
 ``mo.wait_host_value``) that actually use the flag's device pointer land
 in follow-on PRs in the same stack and have their own GPU tests.
 """

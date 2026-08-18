@@ -23,7 +23,7 @@ from max._core.driver import (  # noqa: F401
     NPU,
     Accelerator,
     Device,
-    DeviceStream,
+    DeviceQueue,
     accelerator_count,
 )
 

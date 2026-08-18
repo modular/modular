@@ -3158,7 +3158,7 @@ class OverlapTextGenerationPipeline(
             # Record an event to track the completion of the copy. This ensures
             # the subsequent synchronize() call blocks until the copy is
             # complete, and no more.
-            copy_event = device0.default_stream.record_event()
+            copy_event = device0.default_queue.record_event()
 
         # Make a deep copy of the input object in case the caller modifies it!
         cloned_inputs = TextGenerationInputs(
@@ -3756,7 +3756,7 @@ class OverlapTextGenerationPipeline(
             # Record an event to track the completion of the d2h copies.
             # This will ensure that the subsequent synchronize() call will
             # block until the d2h copy is complete, and no more.
-            copy_event = device0.default_stream.record_event()
+            copy_event = device0.default_queue.record_event()
 
             # The FSM-advance + in-order bitmask callback for THIS batch is not
             # enqueued here. It is enqueued at the head of the NEXT execute()

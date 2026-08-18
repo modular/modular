@@ -2307,7 +2307,7 @@ class TestAssignBitmaskInputs:
 
         structured_output.compute_speculative_bitmasks.assert_not_called()
         overlap_state.prime.assert_not_called()
-        mock_device.default_stream.synchronize.assert_not_called()
+        mock_device.default_queue.synchronize.assert_not_called()
         assert spec_state.has_precomputed_bitmask is False
         # Views from get_input_views are wired to model_inputs.
         overlap_state.get_input_views.assert_called_once_with(2, self._NUM_POS)
@@ -2342,7 +2342,7 @@ class TestAssignBitmaskInputs:
             num_draft_tokens_to_verify=self._K,
         )
 
-        mock_device.default_stream.synchronize.assert_not_called()
+        mock_device.default_queue.synchronize.assert_not_called()
         structured_output.compute_speculative_bitmasks.assert_called_once()
         overlap_state.prime.assert_called_once()
         assert spec_state.has_precomputed_bitmask is False

@@ -78,7 +78,7 @@ def _run_gated_read(
     for a read that synchronized; ``value`` is the released read's result.
     """
     flag = CompletionFlag(gpu)
-    gate_stream = gpu.default_stream
+    gate_stream = gpu.default_queue
     done = threading.Event()
     box: dict[str, object] = {}
 

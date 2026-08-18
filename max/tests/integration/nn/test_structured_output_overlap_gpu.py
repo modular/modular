@@ -47,7 +47,7 @@ def _spin_until_signaled(state: StructuredOutputOverlapState) -> None:
     before spinning so the trampoline fires; the worker then runs
     asynchronously and the spin sees the release-store.
     """
-    state.device.default_stream.synchronize()
+    state.device.default_queue.synchronize()
     deadline = time.monotonic() + 5.0
     while state.bitmask_flag.load() == 0:
         if time.monotonic() > deadline:
@@ -331,7 +331,7 @@ def test_callback_writes_propagate_to_device(
     )
 
 
-def test_stale_flag_no_race_with_default_stream_callback(
+def test_stale_flag_no_race_with_default_queue_callback(
     accelerator: Accelerator, state: StructuredOutputOverlapState
 ) -> None:
     """Mirrors the production pattern: callback on the device default

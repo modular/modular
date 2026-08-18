@@ -331,7 +331,7 @@ class FusedSamplingProcessor:
         self._pinned_new_tokens.inplace_copy_from(self.new_tokens)
 
         # Record event after copy so we can wait for it specifically
-        self._d2h_copy_event = self.device.default_stream.record_event()
+        self._d2h_copy_event = self.device.default_queue.record_event()
 
     def get_new_tokens_numpy(self) -> npt.NDArray[np.int64]:
         """Wait for D2H copy and return the new tokens as numpy array.

@@ -995,7 +995,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         # is visible before we slice or cache it.
         for buf in vision_embeds:
             if not buf.is_host:
-                buf.device.default_stream.record_event().synchronize()
+                buf.device.default_queue.record_event().synchronize()
 
         hashes: list[int] = []
         req_ids: list[RequestID] = []

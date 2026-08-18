@@ -24,8 +24,8 @@ Devices
    CPU
    Device
    DeviceEvent
+   DeviceQueue
    DeviceSpec
-   DeviceStream
    NPU
 
 Buffers
