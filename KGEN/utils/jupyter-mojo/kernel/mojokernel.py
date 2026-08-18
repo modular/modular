@@ -1,4 +1,3 @@
-#!/usr/bin/python
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
