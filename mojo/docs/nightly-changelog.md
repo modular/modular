@@ -80,6 +80,11 @@ This version is still a work in progress.
 
 ## Library stabilizations
 
+- String
+  - `def __init__(out self):`
+  - `def __init__(out self, *, capacity_bytes: Int):`
+  - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
+
 ## Library changes
 
 - `Bencher.bench_function()` now takes a raising closure.

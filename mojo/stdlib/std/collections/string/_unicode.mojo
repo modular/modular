@@ -186,7 +186,7 @@ def to_lowercase(s: StringSlice[mut=False, _]) -> String:
         A new string where cased letters have been converted to lowercase.
     """
     var input = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(input)))
+    var result = String(capacity_bytes=_estimate_needed_size(len(input)))
     var input_offset = 0
     while input_offset < len(input):
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
@@ -208,7 +208,7 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
         A new string where cased letters have been converted to uppercase.
     """
     var input = s.as_bytes()
-    var result = String(capacity=_estimate_needed_size(len(input)))
+    var result = String(capacity_bytes=_estimate_needed_size(len(input)))
     var input_offset = 0
     while input_offset < len(input):
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(

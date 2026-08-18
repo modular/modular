@@ -185,7 +185,7 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 
     var data = str.as_bytes()
     var length = str.byte_length()
-    var result = String(capacity=length * 2)
+    var result = String(capacity_bytes=length * 2)
 
     for i in range(length):
         var str_byte = data[i]

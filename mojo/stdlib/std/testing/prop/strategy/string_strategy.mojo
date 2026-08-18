@@ -127,7 +127,7 @@ struct _StringStrategy(Strategy):
     def value(mut self, mut rng: Rng, out s: Self.Value) raises:
         var size = rng.rand_int(min=self.min_len, max=self.max_len)
 
-        s = String(capacity=size)
+        s = String(capacity_bytes=size)
 
         var char_strategy = _CodepointStrategy(
             self.unicode, self.only_printable
