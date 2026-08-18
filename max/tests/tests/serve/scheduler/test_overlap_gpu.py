@@ -156,14 +156,14 @@ def test_overlap(enable_overlap: bool, expected_elapsed_time: int) -> None:
         )
         c_pinned.inplace_copy_from(c)
         # Record event after batch 1 completes
-        event1 = device.default_stream.record_event()
+        event1 = device.default_queue.record_event()
 
         # Run batch 2 (can overlap with CPU work)
         expensive_cpu_preprocessing()
         (d,) = model.execute(c, c, sleep_duration)
         d_pinned.inplace_copy_from(d)
         # Record event after batch 2 completes
-        event2 = device.default_stream.record_event()
+        event2 = device.default_queue.record_event()
 
         # Postprocess results of batch 1 (wait for batch 1 to complete)
         event1.synchronize()

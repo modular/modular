@@ -862,7 +862,7 @@ class DKVConnector:
         for mem in kv_memory:
             for buffer in mem.buffers:
                 compute_streams[buffer.device.id] = (
-                    buffer.device.default_stream.native_stream_handle
+                    buffer.device.default_queue.native_stream_handle
                 )
 
         # Bind ``tp_shard_id`` to device identity rather than to registration

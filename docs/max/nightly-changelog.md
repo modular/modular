@@ -641,6 +641,13 @@ This version is still a work in progress.
   previously a partial override reset the connector type and silently disabled
   offloading.
 
+- Renamed `max.driver.DeviceStream` to `DeviceQueue` and
+  `Device.default_stream` to `Device.default_queue`; the old names were
+  removed. The driver models work submission as a command queue; a stream
+  is one backend's implementation of that queue. Method, property, and
+  argument names (`Buffer.stream`, `stream=`, `native_stream_handle`) are
+  unchanged.
+
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction
   around a single path and a single (nested) shape:
   - `PipelineArgs` now nests its runtime, sampling, and profiling fields in

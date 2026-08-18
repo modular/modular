@@ -173,7 +173,7 @@ def test_device_pinned_buffer_cpu_zeros() -> None:
 def test_device_pinned_buffer_with_events() -> None:
     """Test DevicePinnedBuffer with DeviceEvent for explicit synchronization."""
     gpu = Accelerator()
-    stream = gpu.default_stream
+    stream = gpu.default_queue
 
     # Create a pinned buffer for efficient host-device transfers
     host_buffer = DevicePinnedBuffer(
@@ -228,7 +228,7 @@ def test_device_pinned_buffer_to_numpy_does_not_synchronize() -> None:
     pinned.to_numpy()[:] = sentinel
 
     flag = CompletionFlag(gpu)
-    gate_stream = gpu.default_stream
+    gate_stream = gpu.default_queue
     pinned_done = threading.Event()
     control_done = threading.Event()
     pinned_box: dict[str, object] = {}

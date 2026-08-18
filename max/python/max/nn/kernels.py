@@ -9989,7 +9989,7 @@ def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
     """Stalls the device stream until a host-visible flag reaches a value.
 
     Wraps the ``mo.wait_host_value`` custom op, which lowers to CUDA's
-    ``cuStreamWaitValue64`` via ``DeviceStream.wait_for_host_value``.
+    ``cuStreamWaitValue64`` via ``DeviceQueue.wait_for_host_value``.
     Captures cleanly into a CUDA graph as a wait-value (batch-mem-op)
     node, so it can sit inside a captured forward graph to gate a
     downstream consumer kernel on CPU-produced data while the rest of
