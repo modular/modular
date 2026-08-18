@@ -39,6 +39,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     SpeculativeMethod,
 )
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
@@ -56,6 +57,7 @@ def make_leaf(
     page_size: int = 1,
     speculative_method: SpeculativeMethod | None = None,
     num_draft_tokens: int = 0,
+    data_parallel_degree: int = 1,
 ) -> MHAKVCacheParams:
     return MHAKVCacheParams(
         dtype=DType.float32,
@@ -63,8 +65,8 @@ def make_leaf(
         n_kv_heads=n_kv_heads,
         head_dim=1,
         page_size=page_size,
-        devices=[DeviceRef.CPU()],
-        data_parallel_degree=1,
+        devices=[DeviceRef.CPU()] * data_parallel_degree,
+        data_parallel_degree=data_parallel_degree,
         window_size=window_size,
         speculative_method=speculative_method,
         num_draft_tokens=num_draft_tokens,
@@ -107,11 +109,15 @@ def make_single_leaf_manager(
     *,
     speculative_method: SpeculativeMethod | None = None,
     num_draft_tokens: int = 0,
+    data_parallel_degree: int = 1,
+    page_size: int = 1,
 ) -> JengaKVCacheManager:
     params = make_leaf(
         n_kv_heads=1,
         speculative_method=speculative_method,
         num_draft_tokens=num_draft_tokens,
+        data_parallel_degree=data_parallel_degree,
+        page_size=page_size,
     )
     return create_manager(params, num_huge_blocks, max_batch_size)
 
@@ -126,13 +132,18 @@ def make_ctx(num_tokens: int) -> TextContext:
 
 def get_lut(
     kv_inputs: KVCacheInputsInterface[Buffer, Buffer],
+    device_idx: int = 0,
 ) -> list[list[int]]:
     """Returns the assigned block ids in the runtime LUT, trimming the
     tail padding. Unlike the legacy manager (sentinel = total_num_pages),
     Jenga's null block is index 0 -- real block ids start at 1 -- so
-    padding columns fill with 0 and get trimmed the same way here."""
+    padding columns fill with 0 and get trimmed the same way here.
+
+    ``device_idx`` indexes the ``(replica, TP shard)`` devices in
+    replica-major order, so with one shard per replica it is the replica.
+    """
     assert isinstance(kv_inputs, KVCacheInputs)
-    raw = kv_inputs.inputs[0].lookup_table.to_numpy().tolist()
+    raw = kv_inputs.inputs[device_idx].lookup_table.to_numpy().tolist()
     return [[b for b in row if b != 0] for row in raw]
 
 
@@ -240,3 +251,118 @@ def test_num_draft_tokens_per_step_threaded_from_params() -> None:
     )
     assert mgr.params.num_draft_tokens_per_step == 3
     assert mgr._num_draft_tokens_per_step == 3
+
+
+def test_each_replica_gets_its_own_runtime_inputs() -> None:
+    """Every replica prepares its own LUT from its own pool, so a page id in
+    one replica's row says nothing about the other's."""
+    mgr = make_single_leaf_manager(num_huge_blocks=10, data_parallel_degree=2)
+    ctx_a = make_ctx(num_tokens=3)
+    ctx_b = make_ctx(num_tokens=2)
+    mgr.claim(ctx_a, replica_idx=0)
+    mgr.claim(ctx_b, replica_idx=1)
+    mgr.alloc(ctx_a)
+    mgr.alloc(ctx_b)
+
+    kv_inputs = mgr.runtime_inputs([[ctx_a], [ctx_b]])
+
+    (leaf_id,) = mgr._leaf_infos
+    assert get_lut(kv_inputs, device_idx=0) == [
+        mgr.get_req_blocks_per_leaf(ctx_a)[leaf_id]
+    ]
+    assert get_lut(kv_inputs, device_idx=1) == [
+        mgr.get_req_blocks_per_leaf(ctx_b)[leaf_id]
+    ]
+    # Both replicas started from an untouched pool, so both handed out page 1.
+    assert get_lut(kv_inputs, device_idx=0)[0][0] == 1
+    assert get_lut(kv_inputs, device_idx=1)[0][0] == 1
+
+
+def test_runtime_inputs_rejects_a_batch_per_replica_mismatch() -> None:
+    mgr = make_single_leaf_manager(num_huge_blocks=10, data_parallel_degree=2)
+    ctx = make_ctx(num_tokens=3)
+    mgr.claim(ctx)
+    mgr.alloc(ctx)
+
+    with pytest.raises(ValueError, match="must match number of replicas"):
+        mgr.runtime_inputs([[ctx]])
+
+
+def test_block_count_is_reported_per_replica() -> None:
+    mgr = make_single_leaf_manager(num_huge_blocks=10, data_parallel_degree=2)
+    ctx = make_ctx(num_tokens=3)
+    mgr.claim(ctx, replica_idx=1)
+    mgr.alloc(ctx)
+
+    assert mgr.block_count(0).free == 9
+    assert mgr.block_count(1).free == 6
+    assert mgr.block_count(0).total == mgr.block_count(1).total == 9
+
+
+def test_a_padding_dummy_runs_on_the_null_page() -> None:
+    """DP padding equalizes replica batch sizes under graph capture. The
+    dummy has to reach the graph like any other request, pointed at a page
+    whose contents nobody reads.
+
+    Uses a production-sized page: a dummy's two tokens fit in its single null
+    page, which is what lets it pass the same sufficiency check as everything
+    else in the batch rather than needing an exemption from it.
+    """
+    mgr = make_single_leaf_manager(
+        num_huge_blocks=10, data_parallel_degree=2, page_size=128
+    )
+    real = make_ctx(num_tokens=3)
+    mgr.claim(real, replica_idx=0)
+    mgr.alloc(real)
+
+    # Built the way DPBatchPadder builds them, so the manager sees a real
+    # padding context rather than an ordinary one-token request.
+    dummy = TextContext.new_padding_context(max_length=4096, model_name="test")
+    dummy.update(0)
+    mgr.alloc_dummy(dummy, replica_idx=1)
+
+    kv_inputs = mgr.runtime_inputs([[real], [dummy]])
+
+    assert isinstance(kv_inputs, KVCacheInputs)
+    # Trimmed of its zeros the dummy's row is empty: every column is the null
+    # page, which is exactly page 0.
+    assert get_lut(kv_inputs, device_idx=1) == [[]]
+    assert mgr.block_count(1).free == mgr.block_count(1).total
+
+    mgr.release(dummy)
+
+    assert mgr.block_count(1).free == mgr.block_count(1).total
+
+
+def test_metrics_are_reported_and_reset() -> None:
+    mgr = make_single_leaf_manager(num_huge_blocks=10)
+    ctx = make_ctx(num_tokens=3)
+    mgr.claim(ctx)
+    mgr.alloc(ctx)
+
+    assert mgr.get_metrics_aggregated().input_tokens == 3
+
+    mgr.reset_metrics()
+
+    assert mgr.get_metrics_aggregated() == KVCacheMetrics()
+
+
+def test_alloc_reserves_the_draft_positions_runtime_inputs_will_ask_for() -> (
+    None
+):
+    """Allocation and the runtime_inputs boundary check both size the request
+    from ``params.num_draft_tokens``. When only the latter did, a speculative
+    request was refused for pages the former never drew.
+    """
+    mgr = make_single_leaf_manager(
+        num_huge_blocks=40,
+        speculative_method="eagle",
+        num_draft_tokens=3,
+    )
+    ctx = make_ctx(num_tokens=3)
+    mgr.claim(ctx)
+    mgr.alloc(ctx)
+
+    # Not raising is the assertion: the boundary check reads the live
+    # ``num_draft_tokens`` and must find the pages alloc already drew.
+    mgr.runtime_inputs([[ctx]])
