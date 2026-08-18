@@ -61,6 +61,9 @@ from linalg.matmul.gpu.amd import (
     block_scaled_grouped_matmul_amd_preb,
 )
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
+from linalg.matmul.gpu.amd.smallm_streaming_matmul import (
+    smallm_streaming_matmul,
+)
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
 from linalg.matmul.gpu.apple.fp8_gemv import enqueue_apple_fp8_matmul
@@ -2150,3 +2153,107 @@ struct Struct_router_gate_mixed_gemv:
             c_tt, a_f32_tt.as_immut(), b_tt.as_immut(), context
         )
         _ = a_f32^
+
+
+@extensibility.register("mo.smallm.streaming.matmul")
+struct Struct_smallm_streaming_matmul:
+    """MOGG wrapper for the MI355X small-M streaming matmul.
+
+    Computes ``c = a @ b^T`` where ``b`` is a bf16 weight ALREADY permuted
+    into the fragment-major layout of ``smallm_preshuffle_b`` (done on the
+    CPU at weight-load time). The layout is private to this op: reading a
+    row-major weight here is silently wrong, so nothing routes here through
+    generic dispatch — MiniMax-M3's MTP draft emits this op explicitly on
+    MI355X for its decode-band vocab projections.
+
+    ``N``/``K`` come from the weight's static ``[N, K]`` layout. The
+    streaming kernel wins up to ``M == 32`` (measured on the MiniMax-M3
+    vocab-head shapes); larger runtime ``M`` falls back to generic matmul
+    dispatch over ``b``, the row-major twin of the same weight, so a
+    batch-config change can never turn into a regression or a failure.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a_scratch: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b_shuffled: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        """Executes the streaming matmul over a preshuffled weight.
+
+        Constraints:
+            ``b_shuffled`` must have a static ``[N, K]`` shape with
+            ``N % 16 == 0`` and ``K % 256 == 0``; ``b`` is the same weight
+            in row-major ``[N, K]``.
+
+        Args:
+            c: Output ``[M, N]`` bf16 tensor.
+            a_scratch: Graph-managed ``[32, K]`` bf16 workspace for the
+                activation shuffle. Graph memory keeps the captured launches'
+                pointers valid across device-graph replays; a transient
+                buffer here is silently wrong under capture.
+            a: Activation ``[M, K]`` bf16 tensor (row-major).
+            b_shuffled: Weight in ``smallm_preshuffle_b`` layout.
+            b: The same weight, row-major (the above-band fallback operand).
+            context: The device context.
+        """
+        comptime assert is_gpu[target](), "smallm streaming matmul is GPU-only"
+
+        var M = c.dim_size[0]()
+        if M == 0:
+            return
+
+        var b_tt = b_shuffled.to_tile_tensor()
+        comptime N = type_of(b_tt).static_shape[0]
+        comptime K = type_of(b_tt).static_shape[1]
+        comptime assert (
+            N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
+        ), "smallm streaming matmul requires a static [N, K] weight shape"
+
+        if M <= 32:
+            var b_ptr = UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+                unsafe_from_address=Int(b_shuffled.unsafe_ptr())
+            )
+            var c_ptr = UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin](
+                unsafe_from_address=Int(c.unsafe_ptr())
+            )
+            var c_tt = TileTensor[
+                DType.bfloat16,
+                type_of(row_major(Coord(1, Idx[N]))),
+                MutAnyOrigin,
+            ](c_ptr, row_major(Coord(M, Idx[N])))
+            var a_ptr = UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+                unsafe_from_address=Int(a.unsafe_ptr())
+            )
+            var a_tt = TileTensor[
+                DType.bfloat16,
+                type_of(row_major(Coord(1, Idx[K]))),
+                ImmutAnyOrigin,
+            ](a_ptr, row_major(Coord(M, Idx[K])))
+            var scratch_ptr = UnsafePointer[
+                Scalar[DType.bfloat16], MutAnyOrigin
+            ](unsafe_from_address=Int(a_scratch.unsafe_ptr()))
+            smallm_streaming_matmul[k_static=K](
+                c_tt, a_tt, b_ptr, scratch_ptr, M, N, context
+            )
+            return
+
+        matmul[
+            False,
+            True,
+            False,
+            None,
+            None,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            context,
+        )

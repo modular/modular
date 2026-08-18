@@ -5199,6 +5199,73 @@ def _router_gate_mixed_gemv(
     )[0].tensor
 
 
+def smallm_streaming_matmul(
+    a: TensorValue,
+    b_shuffled: TensorValue,
+    b: TensorValue,
+) -> TensorValue:
+    """Computes bf16 ``a @ b^T`` over a smallm-preshuffled weight.
+
+    ``b_shuffled`` must already be in the fragment-major layout produced by
+    :func:`max.pipelines.weights.smallm_preshuffle.preshuffle_smallm_b` (a
+    one-time CPU permutation at weight-load time); the layout is private to
+    this op pair and a row-major weight here computes garbage. ``b`` is the
+    same weight row-major: the streaming kernel serves ``M <= 32`` (its
+    measured win band) and larger batches fall back to generic matmul
+    dispatch over ``b`` at execute time, so the op is never worse than the
+    dispatch it replaces. MiniMax-M3's MTP draft emits this op explicitly on
+    MI355X for its decode-band vocab projections; nothing routes here through
+    generic matmul dispatch.
+    """
+    _check_rank(2, a=a, b_shuffled=b_shuffled, b=b)
+    _check_dtype(DType.bfloat16, a=a, b_shuffled=b_shuffled, b=b)
+    _check_same_device(a=a, b_shuffled=b_shuffled, b=b)
+
+    n_dim = b_shuffled.shape[0]
+    k_dim = b_shuffled.shape[1]
+    if not isinstance(n_dim, StaticDim) or not isinstance(k_dim, StaticDim):
+        raise ValueError(
+            "smallm_streaming_matmul requires a static weight shape, got"
+            f" {b_shuffled.shape}"
+        )
+    if int(n_dim) % 16 != 0 or int(k_dim) % 256 != 0:
+        raise ValueError(
+            "smallm_streaming_matmul requires N % 16 == 0 and K % 256 == 0,"
+            f" got [{n_dim}, {k_dim}]"
+        )
+    if a.shape[1] != k_dim:
+        raise ValueError(
+            f"activation K must match weight K, got {a.shape[1]} and {k_dim}"
+        )
+    if b.shape != b_shuffled.shape:
+        raise ValueError(
+            "the row-major weight must match the shuffled weight shape, got"
+            f" {b.shape} and {b_shuffled.shape}"
+        )
+
+    # The second output is a graph-managed workspace for the op's activation
+    # shuffle (32 rows covers every streaming band; m > 32 falls back and
+    # ignores it). Graph memory keeps captured launch pointers valid across
+    # device-graph replays, unlike an execute-time transient allocation.
+    return ops.custom(
+        "mo.smallm.streaming.matmul",
+        device=a.device,
+        values=[a, b_shuffled, b],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[a.shape[0], n_dim],
+                device=a.device,
+            ),
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[32, k_dim],
+                device=a.device,
+            ),
+        ],
+    )[0].tensor
+
+
 def moe_eplb_remap(
     router_idx: TensorValue,
     logcnt: TensorValue,

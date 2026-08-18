@@ -119,6 +119,7 @@ modular_py_test(
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
             "test_router_gate_mixed_gemv_gpu.py",
             "test_sgmv_kernels_gpu.py",
+            "test_smallm_streaming_matmul_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
     ) + ["conftest.py"],
@@ -398,6 +399,33 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "smallm_streaming_matmul_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_smallm_streaming_matmul_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    # The op JIT-compiles CDNA4 mfma; MI355X-only, unlike the router op.
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/weights",
+        requirement("hypothesis"),
         requirement("torch"),
     ],
 )
