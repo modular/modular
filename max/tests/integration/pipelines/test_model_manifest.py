@@ -13,6 +13,7 @@
 
 """Tests for ModelManifest."""
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -39,6 +40,7 @@ VALIDATE_HF_ACCESS_HFUTILS_TARGET = (
     "max.pipelines.weights.hf_utils.validate_hf_repo_access"
 )
 HF_OFFLINE_TARGET = "huggingface_hub.constants.HF_HUB_OFFLINE"
+FILE_EXISTS_TARGET = "huggingface_hub.file_exists"
 
 
 def _make_config(
@@ -53,6 +55,28 @@ def _make_config(
     if quantization_encoding is not None:
         kwargs["quantization_encoding"] = quantization_encoding
     return MAXModelConfig.model_construct(**kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally so real-repo tests keep
+    working; uncached/placeholder repos get a fake path.
+    """
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+        # Some tests force HF_HUB_OFFLINE=False (online path); keep the eager
+        # config-existence probe offline so it doesn't hit the network.
+        patch("huggingface_hub.file_exists", return_value=False),
+    ):
+        yield
 
 
 @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
@@ -310,6 +334,18 @@ class TestRevisionPropagation:
 class TestWithOverride:
     """Tests for with_override."""
 
+    @pytest.fixture(autouse=True)
+    def _offline_hf_probe(self) -> Any:
+        """Keep with_override's weight-path identity re-resolution offline.
+
+        Overriding ``weight_path`` re-runs the identity parse, which probes
+        HF for ``org/repo/file`` paths. Default the probe to False so paths
+        pass through unchanged; tests that exercise external-repo extraction
+        re-patch it to True.
+        """
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            yield
+
     @staticmethod
     def _flux2_manifest() -> ModelManifest:
         base = "black-forest-labs/FLUX.2-dev"
@@ -456,8 +492,60 @@ class TestWithOverride:
         assert updated["draft"].quantization_encoding == "q4_0"
         assert updated["main"] is main_model  # main unchanged
 
+    def test_weight_path_override_extracts_external_weights_repo(self) -> None:
+        """An ``org/repo/file`` weight_path override resolves to that repo.
 
-DEVICES_EXIST_TARGET = "max.pipelines.lib.config.model_config.devices_exist"
+        Regression test for the FLUX.2/Wan quantized serving configs:
+        ``--model-override transformer.weight_path=["org/quant-repo/f.st"]``
+        must split the external repo id off the path (as construction-time
+        parsing does) instead of treating the whole string as a file inside
+        the base repo, which 404s at weight download.
+        """
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            )
+        cfg = updated["transformer"]
+        assert cfg.weight_path == [Path("flux2-dev-nvfp4.safetensors")]
+        assert (
+            cfg.huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev-NVFP4"
+        )
+        # The original manifest's component is untouched.
+        assert (
+            manifest["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
+
+    def test_weight_path_override_resets_stale_weights_repo(self) -> None:
+        """Re-overriding weight_path drops a previously extracted repo id."""
+        manifest = self._flux2_manifest()
+        with patch(FILE_EXISTS_TARGET, return_value=True):
+            updated = manifest.with_override(
+                "transformer",
+                weight_path=[Path("org/quant-repo/weights.safetensors")],
+            )
+        assert (
+            updated["transformer"].huggingface_weight_repo_id
+            == "org/quant-repo"
+        )
+
+        reverted = updated.with_override(
+            "transformer", weight_path=[Path("weights.safetensors")]
+        )
+        assert (
+            reverted["transformer"].huggingface_weight_repo_id
+            == "black-forest-labs/FLUX.2-dev"
+        )
+
+
 WEIGHT_PARSE_TARGET = (
     "max.pipelines.lib.config.model_config.WeightPathParser.parse"
 )
@@ -466,16 +554,24 @@ WEIGHT_PARSE_TARGET = (
 class TestResolve:
     """Tests for ModelManifest.resolve()."""
 
-    def test_resolve_calls_each_config(self) -> None:
-        """resolve() delegates to MAXModelConfig.resolve() for every component."""
-        vae = _make_config("vae-model")
-        unet = _make_config("unet-model")
-        manifest = ModelManifest({"vae": vae, "unet": unet})
+    def test_resolve_does_not_validate_repo_access(self) -> None:
+        """resolve() freezes the manifest without validating repo access.
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
+        Repo-access validation happens at ``PipelineConfig`` construction.
+        """
+        manifest = ModelManifest(
+            {
+                "vae": _make_config("vae-model"),
+                "unet": _make_config("unet-model"),
+            }
+        )
+
+        with patch.object(
+            MAXModelConfig, "validate_repo_access"
+        ) as mock_validate:
             manifest.resolve()
 
-        assert mock_resolve.call_count == 2
+        mock_validate.assert_not_called()
 
     def test_resolve_empty_manifest(self) -> None:
         """resolve() on an empty manifest is a no-op."""
@@ -483,20 +579,17 @@ class TestResolve:
         manifest.resolve()  # should not raise
 
     def test_resolve_single_main(self) -> None:
-        """resolve() works for a single-model manifest."""
-        cfg = _make_config("org/llm-model")
-        manifest = ModelManifest({"main": cfg})
+        """resolve() freezes a single-model manifest."""
+        manifest = ModelManifest({"main": _make_config("org/llm-model")})
+        manifest.resolve()
 
-        with patch.object(MAXModelConfig, "resolve") as mock_resolve:
-            manifest.resolve()
-
-        mock_resolve.assert_called_once()
+        with pytest.raises(TypeError, match="frozen after resolve"):
+            manifest["draft"] = _make_config("org/draft")
 
     @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_flux2_with_overrides(
-        self, _mock_validate: Any, _mock_devices: Any, _mock_validate_hf: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
 
@@ -526,20 +619,26 @@ class TestResolve:
             }
         )
 
-        # Apply overrides: NVFP4 transformer weights + tiny VAE.
-        manifest = manifest.with_override(
-            "transformer",
-            weight_path=[
-                Path("black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors")
-            ],
-            quantization_encoding="float4_e2m1fnx2",
-        ).with_override(
-            "vae",
-            config=_make_config(
-                "fal/FLUX.2-Tiny-AutoEncoder",
-                quantization_encoding="bfloat16",
-            ),
-        )
+        # Apply overrides: NVFP4 transformer weights + tiny VAE. The
+        # weight_path override re-resolves identity, which probes HF for
+        # ``org/repo/file`` paths — force the probe offline so the path
+        # passes through unchanged.
+        with patch(FILE_EXISTS_TARGET, return_value=False):
+            manifest = manifest.with_override(
+                "transformer",
+                weight_path=[
+                    Path(
+                        "black-forest-labs/FLUX.2-dev-NVFP4/weights.safetensors"
+                    )
+                ],
+                quantization_encoding="float4_e2m1fnx2",
+            ).with_override(
+                "vae",
+                config=_make_config(
+                    "fal/FLUX.2-Tiny-AutoEncoder",
+                    quantization_encoding="bfloat16",
+                ),
+            )
 
         # Verify pre-resolve state.
         assert (
@@ -586,7 +685,7 @@ class TestFrozenAfterResolve:
     @staticmethod
     def _resolved_manifest() -> ModelManifest:
         manifest = ModelManifest({"main": _make_config("org/model")})
-        with patch.object(MAXModelConfig, "resolve"):
+        with patch.object(MAXModelConfig, "validate_repo_access"):
             manifest.resolve()
         return manifest
 
@@ -640,7 +739,7 @@ class TestTotalWeightsSize:
             }
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
@@ -658,7 +757,7 @@ class TestTotalWeightsSize:
             {"scheduler": scheduler, "transformer": transformer}
         )
         with (
-            patch.object(MAXModelConfig, "resolve"),
+            patch.object(MAXModelConfig, "validate_repo_access"),
             patch.object(
                 MAXModelConfig,
                 "weights_size",
@@ -966,7 +1065,6 @@ _COMPUTED_FIELDS = {
     "huggingface_model_repo",
     "huggingface_config",
     "model_name",
-    "graph_quantization_encoding",
     "generation_config",
     "sampling_params_defaults",
 }
@@ -1038,12 +1136,10 @@ class TestCrossRepoSubfolder:
         repo = cfg.huggingface_weight_repo
         assert repo.subfolder == "transformer"
 
-    @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_skips_subfolder_prepend_for_cross_repo_weights(
         self,
         _mock_cfg_validate: Any,
-        _mock_devices: Any,
         _mock_validate: Any,
         _mock_validate_hf: Any,
     ) -> None:

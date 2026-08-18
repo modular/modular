@@ -29,7 +29,11 @@ from max.nn.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
@@ -40,6 +44,11 @@ from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 class Gemma4Attention(Module, Shardable):
     """Implementation of the attention layer for the Gemma3 text model."""
+
+    # Flash-attention mask override for subclasses (e.g. the DSpark draft's
+    # non-causal block attention). ``None`` selects the standard causal /
+    # sliding-window-causal mask by layer type.
+    mask_variant: MHAMaskVariant | None = None
 
     def __init__(
         self,
@@ -63,6 +72,7 @@ class Gemma4Attention(Module, Shardable):
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
         quant_config: QuantConfig | None = None,
+        fused_qkv: bool = False,
     ) -> None:
         """Initializes the attention layer.
 
@@ -89,6 +99,10 @@ class Gemma4Attention(Module, Shardable):
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
             quant_config: Scaled quantization configuration. Defaults to None.
+            fused_qkv: When True, the qkv/qk projection uses a single stacked
+                weight (``StackedLinear(stacked=True)``) loaded pre-fused from
+                the checkpoint instead of concatenating per-projection weights
+                in-graph (DISTINF-194). Defaults to False.
         """
 
         super().__init__()
@@ -148,7 +162,7 @@ class Gemma4Attention(Module, Shardable):
                 names=["q_proj", "k_proj", "v_proj"],
                 dtype=dtype,
                 device=devices[0],
-                stacked=False,
+                stacked=fused_qkv,
                 has_bias=has_bias,
                 linear_cls=linear_cls,
                 quant_config=quant_config,
@@ -160,7 +174,7 @@ class Gemma4Attention(Module, Shardable):
                 names=["q_proj", "k_proj"],
                 dtype=dtype,
                 device=devices[0],
-                stacked=False,
+                stacked=fused_qkv,
                 has_bias=has_bias,
                 linear_cls=linear_cls,
                 quant_config=quant_config,
@@ -232,11 +246,13 @@ class Gemma4Attention(Module, Shardable):
         xq = xq.reshape((-1, self.n_heads, self.head_dim))
 
         # Calculate Flash Attention.
-        mask_variant = (
-            MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if self.use_local
-            else MHAMaskVariant.CAUSAL_MASK
-        )
+        mask_variant = self.mask_variant
+        if mask_variant is None:
+            mask_variant = (
+                MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+                if self.use_local
+                else MHAMaskVariant.CAUSAL_MASK
+            )
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -335,6 +351,7 @@ class Gemma4Attention(Module, Shardable):
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )
+            assert isinstance(self.kv_params, MHAKVCacheParams)
             sharded_num_kv_heads = num_heads_for_device(
                 num_heads=self.kv_params.n_kv_heads,
                 device_idx=shard_idx,

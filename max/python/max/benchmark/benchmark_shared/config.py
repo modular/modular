@@ -16,11 +16,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
+import yaml
+from cyclopts import Parameter
 from max.config import ConfigFileModel
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from .backend_names import Backend
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
@@ -29,26 +33,6 @@ from .utils import int_or_none, parse_comma_separated
 # under test rather than workload-draw variance. Pass ``--seed none`` (or
 # ``seed: null`` in YAML) to draw a fresh random seed instead.
 DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
-
-BaseBackend = Literal[
-    "mcloud",
-    "modular",
-    "sglang",
-    "trtllm",
-    "vllm",
-]
-
-Backend = Literal[
-    "mcloud",
-    "modular",
-    "modular-chat",
-    "sglang",
-    "sglang-chat",
-    "trtllm",
-    "trtllm-chat",
-    "vllm",
-    "vllm-chat",
-]
 
 Endpoint = Literal[
     "/v1/completions",
@@ -61,6 +45,9 @@ Endpoint = Literal[
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "atom": "/reset_prefix_cache",
+    "atom-chat": "/reset_prefix_cache",
+    "mach": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
@@ -134,13 +121,6 @@ def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
     )
 
 
-class HardwareConfig(ConfigFileModel):
-    """Configuration class for hardware options."""
-
-    devices: str | None = Field(default=None)
-    """Hardware device on which model will be executed. Valid values: 'cpu', 'gpu', 'gpu:0,1,2'."""
-
-
 class SamplingConfig(ConfigFileModel):
     """Configuration class for sampling options."""
 
@@ -157,41 +137,6 @@ class SamplingConfig(ConfigFileModel):
 
     top_k: int | None = Field(default=None)
     """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
-
-
-class BenchmarkCommonConfig(ConfigFileModel):
-    tokenizer: str | None = None
-    """Name or path of the tokenizer, if not using the default tokenizer."""
-
-    model_max_length: int | None = None
-    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
-
-    trust_remote_code: bool = False
-    """Trust remote code from huggingface."""
-
-    # Dataset configuration (common across all benchmark types)
-    dataset_name: str | None = None
-    """Name of the dataset to benchmark on."""
-
-    dataset_path: str | None = None
-    """Path to the dataset."""
-
-    dataset_mode: DatasetMode = "huggingface"
-    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
-
-    # Basic workload parameters
-    num_prompts: int | None = None
-    """Number of prompts to process."""
-
-    seed: int | None = None
-    """Random seed for reproducibility."""
-
-    # Control flags
-    disable_tqdm: bool = False
-    """Specify to disable tqdm progress bar."""
-
-    print_inputs_and_outputs: bool = False
-    """Print all input and outputs to console."""
 
 
 class BaseBenchmarkConfig(ConfigFileModel):
@@ -221,6 +166,26 @@ class BaseBenchmarkConfig(ConfigFileModel):
     tokenizer: str | None = Field(
         default=None,
         description="Name or path of the tokenizer, if not using the default tokenizer.",
+    )
+
+    tokenizer_local_files_only: bool = Field(
+        default=False,
+        description=(
+            "Load the tokenizer from the local HF cache only. Set this for a"
+            " checkpoint the Hub will not serve this caller, where the remote"
+            " chat-template probe fails instead of degrading."
+        ),
+    )
+
+    tokenizer_revision: str | None = Field(
+        default=None,
+        description=(
+            "Commit revision to load the tokenizer at. Set this for a"
+            " checkpoint whose revision cannot be looked up on the Hub (a"
+            " private repo, or one staged into the cache with no branch ref),"
+            " where the default lookup returns nothing and the load falls back"
+            " to ``main``."
+        ),
     )
 
     model_max_length: int | None = Field(
@@ -372,7 +337,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
-        description="Backend to use for benchmarking. Choices: modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
         json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
@@ -548,6 +513,32 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    # cyclopts wants scalar key=value pairs by default and can't take a single
+    # nested-JSON object or file path as one value. accepts_keys=False passes
+    # the raw token through for the validator to parse.
+    extra_body: Annotated[dict[str, Any], Parameter(accepts_keys=False)] = (
+        Field(
+            default_factory=dict,
+            description=(
+                "Extra top-level fields to add to every text-generation request "
+                "body, for fields without a dedicated flag (e.g. stop, "
+                "chat_template_kwargs). On the CLI, pass an inline JSON object "
+                '(e.g. \'{"stop": ["}"], "chat_template_kwargs": '
+                '{"reasoning_effort": "low"}}\') or a path to a YAML/JSON file; '
+                "it can also be set as a field in a --config-file YAML. Nested "
+                "objects and "
+                "arrays are kept verbatim. Applied after the dedicated flags "
+                "(--temperature, --max-output-len, --response-format, etc.), so a "
+                "key that collides with one overrides it (last-writer-wins, and "
+                "the collision is logged). Currently applied only to "
+                "text-generation requests (the chat/completions, completions, "
+                "and TensorRT-LLM generate_stream endpoints); ignored for "
+                "image/video generation tasks."
+            ),
+            json_schema_extra={"group": "Output Control"},
+        )
+    )
+
     # Image generation options (serving-specific)
     image_width: int | None = Field(
         default=None,
@@ -625,6 +616,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     ignore_first_turn_stats: bool = Field(
         default=False,
         description="Ignore the first turn statistics in multiturn chat sessions.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    use_session_id_as_cache_salt: bool = Field(
+        default=False,
+        description="Send each multi-turn chat session's id as the X-Cache-Salt header on every request in that session, so MAX Serve's per-session KV-cache isolation can be measured. Same salt across a session's turns; distinct salt per session. No-op against servers that ignore the header.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -710,7 +707,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_input_len: DistributionParameter = Field(
         default=1024,
-        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_max_num_unique_sys_prompt: int = Field(
@@ -725,7 +722,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_output_len: DistributionParameter = Field(
         default=128,
-        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of output tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_sys_prompt_ratio: float = Field(
@@ -969,6 +966,62 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if isinstance(value, str):
             return parse_comma_separated(value, float)
         return value
+
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> dict[str, Any]:
+        """Parse ``extra_body`` into a dict from one of three inputs:
+
+        - a mapping (e.g. from a ``--config-file`` YAML), used directly;
+        - an inline JSON object string (leading ``{``), parsed with ``yaml.safe_load``;
+        - any other non-empty string, treated as a YAML/JSON file path.
+
+        Raises:
+            ValueError: If the string is neither an inline object nor a readable
+                file, the content fails to parse, or it does not resolve to an
+                object.
+        """
+        if value is None:
+            return {}
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return {}
+            if text.startswith("{"):
+                source, origin = text, "inline JSON"
+            else:
+                path = Path(text)
+                if not path.is_file():
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path; "
+                        "an inline value must be a JSON object starting "
+                        "with '{'."
+                    )
+                try:
+                    source = path.read_text()
+                except OSError as e:
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path: {e}"
+                    ) from e
+                origin = f"file {text!r}"
+            try:
+                parsed = yaml.safe_load(source)
+            except yaml.YAMLError as e:
+                raise ValueError(
+                    f"Failed to parse extra_body ({origin}): {e}"
+                ) from e
+            if not isinstance(parsed, Mapping):
+                raise ValueError(
+                    f"extra_body ({origin}) must be a mapping/object, got "
+                    f"{type(parsed).__name__}."
+                )
+            return dict(parsed)
+        raise ValueError(
+            "extra_body must be a mapping, an inline JSON string, or a path "
+            f"to a YAML/JSON file; got {type(value).__name__}."
+        )
 
     @model_validator(mode="after")
     def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:

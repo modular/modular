@@ -18,6 +18,7 @@
 import enum
 import inspect
 import os
+import pathlib
 import types
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
@@ -83,6 +84,75 @@ class CompiledModels:
         Args:
             path: Filesystem path to write the MEF to.
         """
+
+def get_config_value(key: str) -> str:
+    """
+    Reads a config value.
+
+    Global overrides take priority, then the ``MODULAR_<KEY>``
+    environment variable, then ``modular.cfg``.
+
+    Raises:
+        KeyError: If the key is not set in any source.
+        RuntimeError: If the config fails to open.
+    """
+
+def get_global_value(key: str) -> str | None:
+    """
+    Returns the process-wide override for ``key``, or ``None`` if unset.
+
+    Ignores environment variables and ``modular.cfg``.
+    """
+
+def set_global_value(key: str, value: str) -> None:
+    """
+    Sets a process-wide config override.
+
+    Overrides take priority over environment variables and
+    ``modular.cfg`` for every consumer in the process. They are not
+    inherited by subprocesses.
+    """
+
+def unset_global_value(key: str) -> None:
+    """Removes an override set by :func:`set_global_value`."""
+
+def max_cache_dir() -> pathlib.Path | None:
+    """
+    Returns the directory the engine caches compiled models (``.mef``) in.
+
+    Resolved by the compiler itself.
+
+    Returns:
+        pathlib.Path | None: the cache directory, or None if unresolvable.
+    """
+
+@overload
+def read(path: str | os.PathLike) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from a file path.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the file is missing or is not a valid MEF
+        for this engine build.
+    """
+
+@overload
+def read(data: bytes) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from bytes.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the bytes are not a valid MEF for this
+        engine build.
+    """
 
 class Model:
     """
@@ -300,6 +370,16 @@ class Model:
         """
 
     def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def release_weights(self) -> None:
+        """
+        Drops the host-side weight references held by this model.
+
+        Releases the weights registry and the owning references, so the host
+        weight memory can be freed once the caller drops its own references.
+        Safe only when every weight was copied to its execution device during
+        model init: reading a host weight after this call is undefined
+        behavior. ``reload`` remains usable afterwards.
+        """
 
 class DebugConfig:
     """
@@ -479,6 +559,7 @@ class InferenceSession:
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
+        tile_based_fusion: bool = False,
     ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
@@ -487,10 +568,22 @@ class InferenceSession:
             model: A capsule containing the compiled model object.
             custom_extensions: Paths to custom Mojo extension libraries.
             pipeline_name: Name identifier for the compiled pipeline.
+            tile_based_fusion: When ``True``, compile the graph under the
+                tile-based programming model. Defaults to ``False``.
 
         Returns:
             CompiledModels: The compiled artifact, ready to be initialized
             with weights via :meth:`_load_all`.
+        """
+
+    def _wrap_compiled(
+        self, models: CompiledModels
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Wraps an already-read ``CompiledModels`` in a resolved async handle.
+
+        Consumes ``models``. The handle is allocated on this session's
+        runtime and can be passed to :meth:`_load_all`.
         """
 
     def set_debug_print_options(

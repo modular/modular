@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``FunctionHandle``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import (
+from _hal.context import (
     Context as HALContext,
     RuntimeBundle as HALRuntimeBundle,
 )
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.plugin import FunctionHandle
+from _hal.device import get_device_spec
+from _hal.plugin import FunctionHandle
 
 
 @fieldwise_init
-struct Function(ImplicitlyDeletable, Movable, Writable):
+struct Function(Deinitable, Movable, Writable):
     """Python projection of HAL ``FunctionHandle``."""
 
     # TODO: generalize to multi-device — currently hardcoded to device 0.
@@ -34,7 +34,7 @@ struct Function(ImplicitlyDeletable, Movable, Writable):
     var _bundle: ArcPointer[HALRuntimeBundle]
     var _ctx: ArcPointer[HALContext[Self.device_spec]]
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Mojo destructors must be non-raising; aborting on an unload
         # failure is too aggressive (the resource is leaked but
         # nothing else has gone wrong).
@@ -46,7 +46,7 @@ struct Function(ImplicitlyDeletable, Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

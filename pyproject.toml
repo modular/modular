@@ -14,12 +14,11 @@ force-exclude = '''
 (
   /(
       third-party/llvm-project
-    | third-party/vllm-benchmarks
     | \.derived
     | venv
-    | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-tool/format
+    | KGEN/tools/mblack
     | max/python/max/serve/schemas
     | utils/packaging/tests
     | Faux/mojo_llm_from_scratch
@@ -34,14 +33,23 @@ line-length = 80  # Must match above
 force-exclude = true
 src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
 extend-exclude = [
+  ".git",
+  # Machine-authored agent state (skills, agent scripts). Already excluded from
+  # rumdl and typos; these helper scripts are not shipped product code.
+  ".claude",
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
   "*_pb2.py", # Generated protobuf stubs
   "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
+  # Vendored verbatim from xgrammar v0.2.2 (hack-to-own); kept unformatted so a
+  # future re-vendor diffs cleanly against upstream.
+  "*max/python/max/_xgrammar/structural_tag.py",
+  "*max/python/max/_xgrammar/builtin_structural_tag.py",
+  "*max/python/max/_xgrammar/openai_tool_call_schema.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
-  "utils/mblack/tests",
+  "KGEN/tools/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
 ]
 
@@ -76,11 +84,100 @@ ignore = [
   "SIM117", # Merge with statements
   "SIM300", # YODA conditions
   "SIM905", # Use a list literal instead of str.split
+  "TRY002", # TODO: Suggests to use more specific errors than "Exception"
+  "TRY004", # TODO: Suggests TypeError for invalid types
+
+  # TODO: Temporary exclusions - bumping to 0.16.3 is a large jump
+  "ASYNC210",
+  "ASYNC230",
+  "ASYNC251",
+  "BLE001",
+  "C400",
+  "C401",
+  "C403",
+  "C405",
+  "C408",
+  "C409",
+  "C410",
+  "C414",
+  "C417",
+  "C418",
+  "C419",
+  "DTZ001",
+  "DTZ005",
+  "DTZ006",
+  "DTZ007",
+  "DTZ011",
+  "E501",
+  "EXE001",
+  "EXE002",
+  "EXE005",
+  "FLY002",
+  "FURB110",
+  "FURB171",
+  "FURB188",
+  "FURB192",
+  "G201",
+  "ISC004",
+  "LOG015",
+  "N999",
+  "PERF102",
+  "PERF402",
+  "PIE790",
+  "PIE794",
+  "PIE796",
+  "PIE807",
+  "PIE808",
+  "PIE810",
+  "PLC0105",
+  "PLC0206",
+  "PLC0414",
+  "PLE1206",
+  "PLR0124",
+  "PLR0402",
+  "PLR1704",
+  "PLR1711",
+  "PLR1716",
+  "PLR1722",
+  "PLR1730",
+  "PLR1736",
+  "PLR2044",
+  "PLW0120",
+  "PLW0127",
+  "PLW0128",
+  "PLW0602",
+  "PLW1508",
+  "PLW1509",
+  "PLW1510",
+  "PYI001",
+  "PYI009",
+  "PYI013",
+  "PYI015",
+  "PYI019",
+  "PYI025",
+  "PYI026",
+  "PYI029",
+  "PYI030",
+  "PYI032",
+  "PYI034",
+  "PYI036",
+  "PYI041",
+  "PYI055",
+  "PYI059",
+  "PYI063",
+  "RET501",
+  "RUF036",
+  "RUF059",
+  "S102",
+  "S110",
+  "S112",
+  "SIM910",
 ]
 extend-select = [
   "ANN", # Require function type annotations
   "B", # Bugbear lints
   "D", # Pydocstyle lints
+  "E", # Pydocstyle lints
   "FURB", # Refurb lints for modernization
   "I", # Import sorting lints
   "RUF", # Ruff specific lints
@@ -100,7 +197,6 @@ convention = "google"
 # With exceptions for these packages:
 "max/python/max/benchmark/**/*" = ["D"]
 "max/python/max/config/**/*" = ["D"]
-"max/python/max/entrypoints/**/*" = ["D"]
 "max/python/max/pipelines/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
 "max/python/max/nn/**/*" = ["D"]
@@ -111,14 +207,16 @@ convention = "google"
 # Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
 "max/python/max/_core_mojo/**/*" = ["D"]
 "max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_entrypoints/**/*" = ["D"]
 "max/python/max/_interpreter_ops/**/*" = ["D"]
 "max/python/max/_mlir/**/*" = ["D"]
 "max/python/max/_core/dialects/**/*" = ["D"]
 "max/python/max/_core/internal/**/*" = ["D"]
 "max/python/max/**/_*.py" = ["D"]
-# Ignore ANN001 (function argument missing type annotation) for auto-generated
-# stubfiles
-"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Disable most annotations for third-party stubfiles
+"*/_mlir/*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Be a little less strict with docs in first-party stubfiles
+"*/_core/*.pyi" = ["D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Ignore type annotations, intentional math unicode (×), and common tutorial code patterns
@@ -158,6 +256,16 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "cyclopts.*"
 ignore_missing_imports = true
+
+# Private MiniMax-M3 graph hooks diverge from the shared load_model template
+# signatures; suppress only the files that inherit those hooks.
+[[tool.mypy.overrides]]
+module = "minimax_m3.model"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "minimax_m3.eagle3_model"
+disable_error_code = ["override"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

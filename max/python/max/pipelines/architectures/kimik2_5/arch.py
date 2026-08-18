@@ -16,6 +16,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
+from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
 from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
@@ -30,16 +31,14 @@ kimik2_5_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
         "nvidia/Kimi-K2.6-NVFP4",
+        "amd/Kimi-K2.7-Code-MXFP4",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=KimiK2_5Config.DEFAULT_ENCODING,
+    supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
+    batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -60,15 +59,12 @@ kimivl_arch = SupportedArchitecture(
     example_repo_ids=[
         "moonshotai/Kimi-VL-A3B-Instruct",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=KimiK2_5Config.DEFAULT_ENCODING,
+    supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
+    batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -81,18 +77,16 @@ kimivl_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
     name="Eagle3DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=KimiK2_5TextConfig.DEFAULT_ENCODING,
+    supported_encodings=KimiK2_5TextConfig.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=Eagle3KimiK25Model,
     tokenizer=KimiK2_5VLTokenizer,
@@ -113,12 +107,8 @@ eagle3_mha_kimik25_arch = SupportedArchitecture(
     name="Eagle3MHAKimiK25ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=KimiK2_5TextConfig.DEFAULT_ENCODING,
+    supported_encodings=KimiK2_5TextConfig.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=Eagle3MHAKimiK25Model,
     tokenizer=KimiK2_5VLTokenizer,

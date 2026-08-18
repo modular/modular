@@ -19,11 +19,11 @@ Q output and KV cache contents against the unfused reference path.
 
 from internal_utils.fp8_utils import cast_saturating
 from std.collections import Set
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -295,7 +295,7 @@ def execute_test[
         ),
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
@@ -303,7 +303,7 @@ def execute_test[
         var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
         return (k_ptr + flat).load[width=width]()
 
-    @parameter
+    @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
@@ -331,7 +331,7 @@ def execute_test[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,
@@ -718,7 +718,7 @@ def execute_test_with_position_ids[
         ),
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
@@ -726,7 +726,7 @@ def execute_test_with_position_ids[
         var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
         return (k_ptr + flat).load[width=width]()
 
-    @parameter
+    @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
@@ -751,7 +751,7 @@ def execute_test_with_position_ids[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,
@@ -770,7 +770,7 @@ def execute_test_with_position_ids[
     )
 
     var pos_ids_immut = TileTensor(
-        pos_ids_tile.ptr.mut_cast[True]().as_unsafe_any_origin(),
+        pos_ids_tile._storage.as_unsafe_any_origin(),
         pos_ids_tile.layout,
     ).as_immut()
     fused_qk_rope_ragged[

@@ -13,7 +13,7 @@
 """Tests for structured output support with TikToken-based tokenizers.
 
 Verifies that the _TikTokenAdapter correctly wraps TikToken tokenizers
-(like Kimi K2.5's TikTokenTokenizer) for use with llguidance structured
+(like Kimi K2.7's TikTokenTokenizer) for use with llguidance structured
 output / grammar-guided decoding.
 """
 
@@ -25,22 +25,24 @@ import llguidance.numpy
 import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.pipelines.lib.pipeline_variants.utils import _TikTokenAdapter
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    _TikTokenAdapter,
+)
 from transformers import (
     AutoTokenizer,
     PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
 )
 
-KIMI_K25_HF_REPO_ID = "nvidia/Kimi-K2.5-NVFP4"
+KIMI_K27_HF_REPO_ID = "nvidia/Kimi-K2.7-Code-NVFP4"
 
 
 @pytest.fixture(scope="module")
 def kimi_tokenizer() -> PreTrainedTokenizerBase:
-    """Load Kimi K2.5 tokenizer (TikTokenTokenizer)."""
-    revision = hf_repo_lock.revision_for_hf_repo(KIMI_K25_HF_REPO_ID)
+    """Load Kimi K2.7 tokenizer (TikTokenTokenizer)."""
+    revision = hf_repo_lock.revision_for_hf_repo(KIMI_K27_HF_REPO_ID)
     return AutoTokenizer.from_pretrained(
-        KIMI_K25_HF_REPO_ID,
+        KIMI_K27_HF_REPO_ID,
         revision=revision,
         trust_remote_code=True,
     )
@@ -51,7 +53,7 @@ def test_tiktoken_adapter_accepts_kimi_tokenizer(
 ) -> None:
     """Verify _TikTokenAdapter successfully wraps Kimi's tokenizer."""
 
-    # First, verify Kimi K2.5 uses TikTokenTokenizer, not PreTrainedTokenizerFast.
+    # First, verify Kimi K2.7 uses TikTokenTokenizer, not PreTrainedTokenizerFast.
     assert "TikToken" in type(kimi_tokenizer).__name__
     assert not isinstance(kimi_tokenizer, PreTrainedTokenizerFast)
 

@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
@@ -119,7 +119,7 @@ def generate_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=text_config.num_key_value_heads,
         head_dim=text_config.head_dim,
@@ -199,8 +199,8 @@ def generate_max_outputs(
 
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
     kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     output = compiled.execute(

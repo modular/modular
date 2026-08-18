@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from internal_utils import correlation, kl_div
 from internal_utils._testing import assert_with_measure
@@ -82,8 +82,8 @@ def test_kl_div() raises:
     comptime out_dtype = DType.float64
     comptime len = 10
 
-    var a = InlineArray[Scalar[dtype], len](uninitialized=True)
-    var b = InlineArray[Scalar[dtype], len](uninitialized=True)
+    var a = Array[Scalar[dtype], len](uninitialized=True)
+    var b = Array[Scalar[dtype], len](uninitialized=True)
     for i in range(len):
         a[i] = Scalar[dtype](1 / Float64(len))
         b[i] = Scalar[dtype](2 * Float64(i + 1) / (len * (len + 1)))

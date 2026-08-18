@@ -29,13 +29,19 @@ from _cufft.cufft import (
 from _cufft.types import Type
 from _cufft.utils import check_error
 from std.complex import ComplexFloat32
-from std.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host import DeviceContext
+from max.gpu.host._nvidia_cuda import CUDA
 from layout import TileTensor, coord_to_index_list
 
 
 @always_inline
 def global_cache_insert(key: String, value: OpaquePointer):
+    """Inserts a key-value pair into the global compiler runtime cache.
+
+    Args:
+        key: Cache key string.
+        value: Opaque pointer value to store under the key.
+    """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
@@ -50,7 +56,8 @@ def _get_fft_workarea(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
     )
 
-    if lookup := _get_global_or_null(fft_buffer_key):
+    var lookup = _get_global_or_null(fft_buffer_key)
+    if lookup:
         # we found the allocated device buffer
         return lookup.unsafe_value()
 
@@ -82,7 +89,8 @@ def _get_fft_plan[
         "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
     )
 
-    if lookup := _get_global_or_null(cached_plan_key):
+    var lookup = _get_global_or_null(cached_plan_key)
+    if lookup:
         # We found the plan in the cache, so just return it
         return cufftHandle(Int(lookup.unsafe_value()))
 
@@ -106,7 +114,7 @@ def _get_fft_plan[
     var work_size: Int = 0
     # Get the precise size of the plan, assert that it is less than the allocated size
     check_error(cufftGetSize(plan, UnsafePointer(to=work_size)))
-    work_space_ptr = _get_fft_workarea(workspace_size, ctx)
+    var work_space_ptr = _get_fft_workarea(workspace_size, ctx)
 
     if work_size > workspace_size:
         raise Error(
@@ -161,21 +169,21 @@ def _irfft[
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
-    EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
-    ALLOCATED_WORKSPACE_SIZE = (buffer_size_mb + 64) * 1024 * 1024
+    var EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
+    var ALLOCATED_WORKSPACE_SIZE = (buffer_size_mb + 64) * 1024 * 1024
 
-    axis = input.rank - 1
-    cuda_stream = CUDA(ctx.stream())
+    var axis = input.rank - 1
+    var cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = coord_to_index_list(input.layout.shape_coord())
+    var input_shape = coord_to_index_list(input.layout.shape_coord())
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
-    input_size = input_shape[axis] // 2
-    output_size = n if n > 0 else 2 * (input_size - 1)
+    var input_size = input_shape[axis] // 2
+    var output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = coord_to_index_list(output.layout.shape_coord())
+    var output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "
@@ -191,9 +199,10 @@ def _irfft[
 
     # skip size estimations if the plan is already cached, as
     # the function call is expensive
-    if plan := _get_fft_plan[create_if_not_found=False](
+    var plan = _get_fft_plan[create_if_not_found=False](
         output_size, batch_size, ALLOCATED_WORKSPACE_SIZE, ctx
-    ):
+    )
+    if plan:
         check_error(cufftSetStream(plan, cuda_stream))
         var input_ptr = input.ptr.bitcast[ComplexFloat32]()
         var output_ptr = output.ptr.bitcast[Float32]()
@@ -321,6 +330,12 @@ def irfft[
     """Compute the inverse real FFT of the input tensor.
 
     Currently, only applies it to the last dimension.
+
+    Parameters:
+        input_type: Element `DType` of the input tensor; must be
+            `float32`.
+        output_type: Element `DType` of the output tensor; must be
+            `float32`.
 
     Args:
         input: Complex input tensor (TileTensor).

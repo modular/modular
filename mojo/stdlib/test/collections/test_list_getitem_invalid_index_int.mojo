@@ -18,7 +18,7 @@ from std.testing import TestSuite
 def test_fail_list_index() raises:
     print("== test_fail_list_index")
     # CHECK: index 4 is out of bounds, valid range is 0 to 2
-    nums = [1, 2, 3]
+    var nums: List = [1, 2, 3]
     print(nums[4])
 
     # CHECK-NOT: is never reached

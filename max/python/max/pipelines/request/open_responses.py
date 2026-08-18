@@ -60,6 +60,7 @@ __all__ = [
     "FunctionToolChoice",
     "FunctionToolParam",
     "ImageDetail",
+    "ImageGenerationDetails",
     "IncludeEnum",
     "IncompleteDetails",
     "InputContent",
@@ -721,7 +722,7 @@ class FunctionToolParam(BaseModel):
     name: str = Field(
         ...,
         description="The name of the function to be called. Must be a-z, A-Z, 0-9, "
-        "or contain underscores and dashes, with a maximum length of 64.",
+        "or contain underscores and dashes, with a maximum length of 1024.",
     )
     description: str | None = Field(
         None,
@@ -1083,8 +1084,74 @@ class OutputTokensDetails(BaseModel):
     )
 
 
+class ImageGenerationDetails(BaseModel):
+    """Image generation usage metadata.
+
+    Exposes the generated image dimensions, step count, and image count under
+    ``usage`` so downstream consumers can attribute usage from the response
+    instead of re-deriving it from request inputs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    width: int = Field(
+        ..., description="The width of each generated image in pixels."
+    )
+    height: int = Field(
+        ..., description="The height of each generated image in pixels."
+    )
+    megapixels: float = Field(
+        ...,
+        description="The number of megapixels per image (width * height / 1e6).",
+    )
+    steps: int = Field(
+        ..., description="The number of denoising steps used to generate."
+    )
+    image_count: int = Field(
+        ..., description="The number of images generated for the request."
+    )
+
+    @classmethod
+    def from_images(
+        cls,
+        pixel_data: npt.NDArray[np.uint8],
+        *,
+        steps: int,
+    ) -> ImageGenerationDetails:
+        """Build image generation details from generated image data.
+
+        Args:
+            pixel_data: Generated images as a non-empty uint8 array of shape
+                ``(image_count, H, W, C)``.
+            steps: The number of denoising steps used to generate.
+
+        Returns:
+            An :obj:`ImageGenerationDetails` describing the generated images.
+
+        Raises:
+            ValueError: If ``pixel_data`` contains no images.
+        """
+        if len(pixel_data) == 0:
+            raise ValueError(
+                "Cannot build ImageGenerationDetails from empty pixel data."
+            )
+        height, width = int(pixel_data[0].shape[0]), int(pixel_data[0].shape[1])
+        return cls(
+            width=width,
+            height=height,
+            megapixels=round(width * height / 1e6, 6),
+            steps=steps,
+            image_count=len(pixel_data),
+        )
+
+
 class Usage(BaseModel):
-    """Token usage statistics."""
+    """Token usage statistics.
+
+    Image generation responses keep ``input_tokens``, ``output_tokens``, and
+    ``total_tokens`` at 0 and report billing-relevant metadata in
+    ``image_generation_details``.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -1104,6 +1171,11 @@ class Usage(BaseModel):
     output_tokens_details: OutputTokensDetails | None = Field(
         None,
         description="Detailed breakdown of output token counts.",
+    )
+    image_generation_details: ImageGenerationDetails | None = Field(
+        None,
+        description="Image generation usage metadata, when the response "
+        "contains generated images.",
     )
 
 
@@ -1611,7 +1683,7 @@ class ResponseResource(BaseModel):
             status="completed",
             model=model,
             output=[message],
-            usage=None,  # TODO: Populate token usage if available from generation_output
+            usage=generation_output.usage,
         )
 
 

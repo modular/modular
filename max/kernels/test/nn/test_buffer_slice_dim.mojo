@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_dim_as_view
 
@@ -27,21 +27,20 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     print("New strides:", stride)
 
     @always_inline
-    @parameter
     def print_elements_lambda[
         simd_width: Int, alignment: Int = 1
-    ](coords: Coord):
+    ](coords: Coord) {var}:
         var idx = tensor.layout(coords)
         print(tensor.raw_load(idx))
 
-    elementwise[print_elements_lambda, 1](shape, DeviceContext(api="cpu"))
+    elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
 
 
 # slice_dim
 def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
 ](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int) raises:
-    var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
+    var memory1 = Array[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
         memory1,
         row_major(Coord(dims)),

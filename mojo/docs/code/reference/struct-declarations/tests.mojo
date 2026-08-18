@@ -15,11 +15,11 @@
 # Skip: nested struct error, field without type error, dynamic
 #        trait field error, fieldwise_init synthesis failure
 #        (Alpha/Color), Incomplete(Sized) missing method,
-#        Box without ImplicitlyDeletable abandoned error,
+#        Box without Deinitable abandoned error,
 #        Unsound(Copyable) with SomeMoveOnlyType, default
 #        method conflicts (struct S(A & B) constructed to fail),
 #        missing self error, __init__ without out self error,
-#        recursive Node error, __del__ snippet (no standalone
+#        recursive Node error, __deinit__ snippet (no standalone
 #        example), @staticmethod snippet (error pair only),
 #        NotWritable example (constructed to fail), conditional
 #        conformance struct snippets (hypothetical trait names
@@ -44,7 +44,7 @@ struct Point_1:
 
 
 def test_point_distance() raises:
-    p = Point_1(3, 4)
+    var p = Point_1(3, 4)
     assert_equal(p.distance(), 5.0)
 
 
@@ -83,7 +83,7 @@ def test_color_manual() raises:
 
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
+struct Sound[T: Writable & Copyable & Deinitable]:
     var item: Self.T
 
 
@@ -103,22 +103,22 @@ struct Color_2:
 
 
 def test_color_fieldwise() raises:
-    color = Color_2(255, 0, 0)
+    var color = Color_2(255, 0, 0)
     assert_equal(color.r, 255)
     assert_equal(color.g, 0)
     assert_equal(color.b, 0)
 
 
-# --- Generic Pair ---
+# --- Parameterized Pair ---
 
 
 @fieldwise_init
-struct Pair_1[T: Copyable & ImplicitlyDeletable]:
+struct Pair_1[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 
 
-def test_generic_pair() raises:
+def test_parameterized_pair() raises:
     var p = Pair_1[Int](first=1, second=2)
     assert_equal(p.first, 1)
     assert_equal(p.second, 2)
@@ -128,7 +128,7 @@ def test_generic_pair() raises:
 
 
 struct SplatList[
-    T: ImplicitlyCopyable & ImplicitlyDeletable,
+    T: ImplicitlyCopyable & Deinitable,
     *,
     fill: T,
     length: Int = 5,
@@ -158,7 +158,7 @@ struct MyInt(Copyable, Writable):
 
 
 def test_trait_conformance() raises:
-    my_int = MyInt(42)
+    var my_int = MyInt(42)
     assert_equal(String(my_int), "42")
 
 
@@ -166,7 +166,7 @@ def test_trait_conformance() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDeletable](
+struct Pair_2[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -185,7 +185,7 @@ def test_conformance_where() raises:
 
 
 @fieldwise_init
-struct Pair_Mixed[T: Copyable & ImplicitlyDeletable](
+struct Pair_Mixed[T: Copyable & Deinitable](
     Copyable,
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
@@ -204,13 +204,11 @@ def test_mixed_trait_list() raises:
     _ = pair4
 
 
-# --- Box with ImplicitlyDeletable ---
+# --- Box with Deinitable ---
 
 
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDeletable](
-    Equatable where conforms_to(T, Equatable)
-):
+struct Box[T: Copyable & Deinitable](Equatable where conforms_to(T, Equatable)):
     var item: Self.T
 
 
@@ -231,7 +229,7 @@ struct Point_2:
 
 
 def test_point_float() raises:
-    p = Point_2(3.0, 4.0)
+    var p = Point_2(3.0, 4.0)
     assert_equal(p.x, 3.0)
     assert_equal(p.y, 4.0)
 
@@ -273,7 +271,7 @@ def main() raises:
     test_color_manual()
     test_field_type_parameter()
     test_color_fieldwise()
-    test_generic_pair()
+    test_parameterized_pair()
     test_defaulted_parameters()
     test_trait_conformance()
     test_conformance_where()

@@ -13,7 +13,7 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TileTensor,
@@ -158,11 +158,12 @@ def test_dynamic[
         # Gamma values between 0.5 and 1.5 to create variety after normalization
         gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
 
-    # Cast epsilon and weight_offset to in_dtype (matching kernel signature),
-    # then back to Float32 so reference and kernel see the same values.
-    var epsilon_id = Scalar[in_dtype](1e-5)
+    # epsilon is Float32 (the kernel signature), so the reference and kernel
+    # both consume it directly. weight_offset is cast to in_dtype (matching its
+    # kernel signature) and back to Float32 so reference and kernel see the
+    # same value.
+    var epsilon = Float32(1e-5)
     var weight_offset_id = Scalar[in_dtype](weight_offset)
-    var epsilon_f32 = epsilon_id.cast[DType.float32]()
     var weight_offset_f32 = weight_offset_id.cast[DType.float32]()
 
     # Compute reference
@@ -173,7 +174,7 @@ def test_dynamic[
         expected_scales_host.unsafe_ptr(),
         rows,
         cols,
-        epsilon_f32,
+        epsilon,
         weight_offset_f32,
         scale_ub,
     )
@@ -197,7 +198,7 @@ def test_dynamic[
 
     @__copy_capture(in_ptr)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -222,7 +223,7 @@ def test_dynamic[
         shape,
         out_tile,
         gamma_tensor,
-        epsilon_id,
+        epsilon,
         weight_offset_id,
         ctx,
         scale_ub,
@@ -233,6 +234,15 @@ def test_dynamic[
     ctx.enqueue_copy(out_host, out_device)
     ctx.enqueue_copy(scales_host, scales_device)
     ctx.synchronize()
+
+    # `input_fn` captures only the raw `in_ptr`, not `in_device`, so without an
+    # explicit keep-alive Mojo's ASAP destruction frees `in_device` right after
+    # its last use (`unsafe_ptr()`) — before the kernel that reads it runs. The
+    # caching allocator masks the resulting use-after-free, but the sanitizer's
+    # 1:1 allocator (`--//:gpu_disable_memory_manager`) reports it as an OOB read
+    # of the input. Keep the buffer alive through the launch (mirrors the
+    # `_ = data_d` guard in test_rms_norm.mojo).
+    _ = in_device
 
     var num_mismatches = 0
     for i in range(input_size):

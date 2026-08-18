@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.simd import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import bitcast
 
 
@@ -36,3 +36,4 @@ def test():
 def main() raises:
     with DeviceContext() as ctx:
         ctx.enqueue_function[test](grid_dim=1, block_dim=1)
+        ctx.synchronize()

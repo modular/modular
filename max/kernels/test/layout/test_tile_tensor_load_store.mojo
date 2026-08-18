@@ -16,9 +16,8 @@ Verifies PTX instruction selection for global memory, shared memory, invariant,
 and vectorized load/store operations when compiled for NVIDIA GPUs.
 """
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import AddressSpace
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.testing import assert_true, TestSuite
 
 from layout import (
@@ -53,8 +52,8 @@ def global_load_store_kernel(
     ],
 ):
     """Load and store through a TileTensor backed by global memory."""
-    var val = tensor.load(coord[0, 0]())
-    tensor.store(coord[1, 0](), val)
+    var val = tensor.load(coord[0, 0])
+    tensor.store(coord[1, 0], val)
 
 
 def shared_load_kernel(
@@ -73,8 +72,8 @@ def shared_load_kernel(
     ],
 ):
     """Load from a shared-memory TileTensor, store to global."""
-    var val = src.load(coord[0, 0]())
-    dst.store(coord[0, 0](), val)
+    var val = src.load(coord[0, 0])
+    dst.store(coord[0, 0], val)
 
 
 def shared_store_kernel(
@@ -93,8 +92,8 @@ def shared_store_kernel(
     ],
 ):
     """Load from global, store to a shared-memory TileTensor."""
-    var val = src.load(coord[0, 0]())
-    dst.store(coord[0, 0](), val)
+    var val = src.load(coord[0, 0])
+    dst.store(coord[0, 0], val)
 
 
 def invariant_load_kernel(
@@ -114,8 +113,8 @@ def invariant_load_kernel(
 ):
     """Invariant load should produce a non-coherent (ld.global.nc) instruction.
     """
-    var val = src.load[invariant=True](coord[0, 0]())
-    dst.store(coord[0, 0](), val)
+    var val = src.load[invariant=True](coord[0, 0])
+    dst.store(coord[0, 0], val)
 
 
 def vectorized_load_store_kernel(
@@ -128,8 +127,8 @@ def vectorized_load_store_kernel(
     ],
 ):
     """Width-4 load/store should produce vectorized (v4) instructions."""
-    var val = tensor.load[width=4](coord[0, 0]())
-    tensor.store[width=4](coord[1, 0](), val)
+    var val = tensor.load[width=4](coord[0, 0])
+    tensor.store[width=4](coord[1, 0], val)
 
 
 # ===-----------------------------------------------------------------------===#

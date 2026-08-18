@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MambaBatchProcessor
 from .model import MambaModel
 from .model_config import MambaConfig
 from .tokenizer import MambaTokenizer
@@ -29,15 +30,12 @@ mamba_arch = SupportedArchitecture(
     example_repo_ids=[
         "state-spaces/mamba-130m-hf",
     ],
-    default_encoding="float32",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=MambaConfig.DEFAULT_ENCODING,
+    supported_encodings=MambaConfig.SUPPORTED_ENCODINGS,
     pipeline_model=MambaModel,
+    batching=MambaBatchProcessor,
     tokenizer=MambaTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -46,4 +44,6 @@ mamba_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=MambaConfig,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

@@ -20,8 +20,9 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -43,6 +44,7 @@ from nn.attention.mha_utils import (
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
+    o_store_tma_blocks_per_op,
 )
 from .config import Depth512SM100Config
 from .kernel import SM100MHADepth512
@@ -80,6 +82,52 @@ def mha_sm100_depth512_dispatch[
     partition: PartitionType,
     ctx: DeviceContext,
 ) raises:
+    """Dispatches the pair-CTA SM100 depth=256/512 MHA prefill kernel.
+
+    Builds the `Depth512SM100Config`, constructs TMA tile descriptors for the
+    Q, K, V, and output operands, creates a `TransientScheduler` with
+    `pair_cta=True`, and enqueues the `SM100MHADepth512` kernel with
+    `cluster_dim=(2, 1, 1)` so both CTAs in a cluster derive the same tile
+    index from `block_idx.x >> 1`. Only prefill is supported; decoding is
+    rejected at compile time.
+
+    Parameters:
+        q_type: The query tensor element type (inferred).
+        KVType: The paged KV cache operand type providing the tile factory
+            and page size (inferred).
+        MaskType: The attention mask type applied to the scores (inferred).
+        output_type: The output buffer element type (inferred).
+        MaxPromptLenType: The maximum prompt length as a static or runtime
+            value (inferred).
+        PartitionType: The KV cache partition scheme (inferred).
+        config: The MHA configuration with head count, depth, and swizzle
+            mode used to build the `Depth512SM100Config`.
+        group: Number of query heads per KV head for grouped-query attention.
+        ragged: Whether the batch uses ragged sequence lengths with a
+            non-null `valid_length` pointer.
+        _is_cache_length_accurate: Whether the per-batch cache length values
+            are exact.
+
+    Args:
+        output: Device buffer that receives the attention output.
+        q_arg: Pointer to the query tensor data.
+        k: Key operand providing the paged KV cache tile factory.
+        v: Value operand providing the paged KV cache tile factory.
+        num_rows_q: Number of query rows to process.
+        mask: Causal or padding mask applied to the attention scores.
+        valid_length: Per-batch pointer to valid cache lengths (used when
+            `ragged` is true).
+        max_prompt_len_arg: Maximum prompt length, static or runtime.
+        max_cache_valid_length_arg: Maximum valid cache length across the
+            batch.
+        scale: Scaling factor applied to the QK dot product.
+        kv_input_row_offsets: Optional ragged row-offset tensor for KV
+            input rows.
+        batch_size_arg: Number of sequences in the batch.
+        partition: Partition scheme for the KV cache.
+        ctx: Device context used to create TMA descriptors and enqueue the
+            kernel.
+    """
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match."
@@ -96,33 +144,48 @@ def mha_sm100_depth512_dispatch[
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
+    # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+    # Q/K/V/S/P buffers governed by `swizzle_mode`).
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
     comptime fuse_gqa = d512_config.fuse_gqa
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
-    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
+    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+        q_arg.origin
+    ]()
+
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM per CTA, full ov_depth.
+    # Output store: BM per CTA, full ov_depth. Single issuer, no combine
+    # (depth_splits=1) -> one batched rank-5 TMA over the full depth (group==1).
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_type,
+        output_swizzle_mode,
+        d512_config.ov_depth,
+        d512_config.group if fuse_gqa else 1,
+        depth_splits=1,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
-        swizzle_mode,
+        output_swizzle_mode,
         BM=d512_config.BM,
         BN=d512_config.ov_depth,
+        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
         group=d512_config.group if fuse_gqa else 1,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
     )
 
     # Q: BM per CTA (not halved like 2Q).
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
         depth=d512_config.qk_depth,
@@ -149,7 +212,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BN // 2,
         page_size=KVType.page_size,
     ]()
-    k_tma_op = k.create_tma_tile[
+    var k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
         BN=k_sub_BN,
         depth=d512_config.qk_depth,
@@ -174,7 +237,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BK1,
         page_size=KVType.page_size,
     ]()
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=v_sub_BN,
         depth=d512_config.ov_depth,
@@ -196,12 +259,12 @@ def mha_sm100_depth512_dispatch[
 
     # ---- Nested closure dispatch (no sink) -----------------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def with_kv_offsets[
         KVRowOffsetsType: OptionalPointer
     ](kv_row_offsets: KVRowOffsetsType) raises:
-        @parameter
+        @__parameter
         @always_inline
         def with_valid_length[
             ValidLengthType: OptionalPointer
@@ -284,7 +347,7 @@ def mha_sm100_depth512_dispatch[
         # --- ragged dispatch ---
         comptime if ragged:
             with_valid_length[NonNullPointer[DType.uint32]](
-                {valid_length.as_immutable().as_unsafe_any_origin()}
+                {valid_length.as_imm().as_unsafe_any_origin()}
             )
         else:
             with_valid_length[NullPointer[DType.uint32]]({})

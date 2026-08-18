@@ -16,13 +16,12 @@ from std.random import rand, seed
 from std.sys import argv
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import has_amd_gpu_accelerator
-from std.gpu.host.info import (
+from max.gpu.host.info import (
     A100,
     H100,
     GPUInfo,
-    Vendor,
     _is_sm10x_gpu,
 )
 from layout import (
@@ -52,11 +51,7 @@ def is_benchmark() -> Bool:
 
 
 def is_sm8(info: GPUInfo) -> Bool:
-    return (
-        info.vendor == Vendor.NVIDIA_GPU
-        and info.compute >= 8
-        and info.compute < 9
-    )
+    return info.api == "cuda" and info.compute >= 8 and info.compute < 9
 
 
 def test[
@@ -167,7 +162,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -228,7 +223,7 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     def get_rtol() -> Float64:
         return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
 
@@ -258,7 +253,7 @@ def test[
 
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
-    var depths = [64, 128, 512]
+    var depths: List = [64, 128, 512]
 
     if info == materialize[H100]() or _is_sm10x_gpu(info):
         depths.append(80)
@@ -574,7 +569,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     )
 
     @always_inline
-    def launch(ctx: DeviceContext) raises {read}:
+    def launch(ctx: DeviceContext) raises {imm}:
         flash_attention[sink=True](
             out_device,
             q_device,
@@ -584,7 +579,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable().as_unsafe_any_origin(),
+            sink_weights=sinks_device.as_imm().as_unsafe_any_origin(),
         )
 
     launch(ctx)
@@ -606,6 +601,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             var got1 = out_host[0, s, 1, d].cast[DType.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    # Keep every device buffer alive until the kernel and the readback have both
+    # completed. `sinks_device` wraps `sinks_dev.unsafe_ptr()` (a raw pointer,
+    # no ownership), so without this keepalive `sinks_dev` can be freed before
+    # the async attention kernel reads it; the allocator then reuses that memory
+    # and the kernel reads a garbage sink weight (intermittently 0 -> output
+    # num_keys/(num_keys+1), or a large value -> output ~0). Mirrors the
+    # `_ = sink_d^` keepalive in `test_apple_fa_prefill.mojo`.
+    _ = q_dev^
+    _ = k_dev^
+    _ = v_dev^
+    _ = out_dev^
+    _ = sinks_dev^
 
 
 def main() raises:

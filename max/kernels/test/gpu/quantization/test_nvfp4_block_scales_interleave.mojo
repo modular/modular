@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from linalg.fp4_quantization import (
+from max.gpu.host import DeviceContext
+from linalg.block_scaled_quantization import (
     block_scales_interleave_fp4,
 )
 from std.testing import assert_equal
