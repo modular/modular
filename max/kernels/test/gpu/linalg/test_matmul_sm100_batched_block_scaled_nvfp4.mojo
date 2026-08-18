@@ -14,8 +14,8 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 
 from internal_utils import assert_almost_equal
@@ -42,7 +42,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -85,8 +85,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value // 2]()))
-    var b_shape = row_major(Coord(batch, n, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value // 2]))
+    var b_shape = row_major(Coord(batch, n, Idx[KType.static_value // 2]))
     var c_shape = row_major(Coord(batch, m, n))
 
     var a_size = Int(batch.value()) * Int(m.value()) * (KType.static_value // 2)
@@ -113,22 +113,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(batch.value())),
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(batch.value()),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(Int(batch.value())),
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(batch.value()),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -158,19 +158,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         for b in range(Int(batch.value())):
             for m in range(Int(m.value())):
                 for k in range(Int(k.value()) // 2):
-                    comptime assert a_host.flat_rank >= 3
-                    a_host[(Idx(b), Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                    comptime assert a_host.flat_rank == 3
+                    a_host[b, m, k] = UInt8(m).cast[a_type]()
         for b in range(Int(batch.value())):
             for n in range(Int(n.value())):
                 for k in range(Int(k.value()) // 2):
-                    comptime assert b_host.flat_rank >= 3
-                    b_host[(Idx(b), Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                    comptime assert b_host.flat_rank == 3
+                    b_host[b, n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for batch_idx in range(Int(batch.value())):
         for row_idx in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
@@ -240,25 +240,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
-    var b_2d_shape = row_major(Coord(n, Idx[KType.static_value // 2]()))
+    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var b_2d_shape = row_major(Coord(n, Idx[KType.static_value // 2]))
     var c_2d_shape = row_major(Coord(m, n))
     var a_scales_5d_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_5d_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -269,17 +269,21 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_scales_batch_stride = b_scales_5d_shape.product()
 
     for b in range(Int(batch.value())):
-        var a_2d = TileTensor(a_tensor.ptr + b * a_batch_stride, a_2d_shape)
-        var b_2d = TileTensor(b_tensor.ptr + b * b_batch_stride, b_2d_shape)
+        var a_2d = TileTensor(
+            a_tensor._storage + b * a_batch_stride, a_2d_shape
+        )
+        var b_2d = TileTensor(
+            b_tensor._storage + b * b_batch_stride, b_2d_shape
+        )
         var c_ref_2d = TileTensor(
-            c_ref_tensor.ptr + b * c_batch_stride, c_2d_shape
+            c_ref_tensor._storage + b * c_batch_stride, c_2d_shape
         )
         var a_scales_5d = TileTensor(
-            a_scales_tensor.ptr + b * a_scales_batch_stride,
+            a_scales_tensor._storage + b * a_scales_batch_stride,
             a_scales_5d_shape,
         )
         var b_scales_5d = TileTensor(
-            b_scales_tensor.ptr + b * b_scales_batch_stride,
+            b_scales_tensor._storage + b * b_scales_batch_stride,
             b_scales_5d_shape,
         )
 
@@ -300,8 +304,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -353,10 +357,10 @@ def main() raises:
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(2)),
-                        Idx(Int(1000)),
-                        Idx(1024),
-                        Idx[1024 + 32](),
+                        Int(2),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -375,10 +379,10 @@ def main() raises:
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(3)),
-                        Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Int(3),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     # swapAB tests
@@ -399,10 +403,10 @@ def main() raises:
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(2)),
-                        Idx(Int(16)),
-                        Idx(1024),
-                        Idx(1024 + 32),
+                        Int(2),
+                        Int(16),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -421,8 +425,8 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(17)),
-                        Idx(Int(100)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(17),
+                        Int(100),
+                        Idx[2560],
+                        Idx[8192],
                     )

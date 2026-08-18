@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,11 +27,11 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights
-from max.pipelines.dataprocessing.causal_attention_mask import (
+from max.pipelines.lib import SupportedEncoding
+from max.pipelines.modeling.base.component_model import ComponentModel
+from max.pipelines.modeling.dataprocessing.causal_attention_mask import (
     causal_attention_mask_with_token_mask,
 )
-from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -25,12 +25,16 @@ from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import (
-    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
 )
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchVLConfigWithTextSubconfig,
+)
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -144,8 +148,15 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Qwen2_5VLConfig(ArchConfigWithKVCache):
+class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Qwen2.5VL models."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
+    }
 
     devices: list[DeviceRef]
     """Devices that the Qwen2.5VL model is parallelized over."""
@@ -177,33 +188,11 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
     llm_config: Llama3Config
     """Language model configuration using Llama3 architecture."""
 
+    quantization_encoding: SupportedEncoding | None = None
+
     def get_kv_params(self) -> KVCacheParams:
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
-
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded LLM config."""
-        return self.llm_config.get_max_seq_len()
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.construct_kv_params(
-            huggingface_config=llm_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
@@ -212,20 +201,6 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.get_num_layers(llm_config)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length for Qwen2.5VL."""
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=llm_config,
-        )
 
     @override
     @classmethod
@@ -289,6 +264,10 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             pipeline_config, text_config
         )
 
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
+
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -305,6 +284,7 @@ class Qwen2_5VLConfig(ArchConfigWithKVCache):
             vision_config=vision_config,
             # Composed language model configuration
             llm_config=llm_config,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

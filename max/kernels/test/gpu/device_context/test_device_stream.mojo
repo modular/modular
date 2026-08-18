@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
 from std.testing import assert_equal, assert_true
 
 
@@ -21,10 +21,12 @@ from std.testing import assert_equal, assert_true
 def simple_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
     multiplier: Float32,
 ):
     """Simple kernel that multiplies input by a multiplier."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -77,12 +79,12 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
 
     # Test with lowest priority stream
     var low_priority_stream = ctx.create_stream(priority=priority_range.least)
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
     low_priority_stream.enqueue_function(
         func,
         input_device,
         output_device_low,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -97,7 +99,7 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
         func,
         input_device,
         output_device_high,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -124,7 +126,7 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
             func,
             input_device,
             output_device_mid,
-            length,
+            Int32(length),
             multiplier,
             grid_dim=ceildiv(length, 32),
             block_dim=32,
@@ -181,7 +183,7 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
@@ -189,7 +191,7 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
             func,
             input_device,
             output_devices[i],
-            length,
+            Int32(length),
             multipliers[i],
             grid_dim=ceildiv(length, 32),
             block_dim=32,
@@ -243,7 +245,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function_experimental[simple_kernel]()
+    var func = ctx.compile_function[simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first
@@ -251,7 +253,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
             func,
             input_device,
             low_output_device,
-            length,
+            Int32(length),
             Float32(1.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
@@ -262,7 +264,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
             func,
             input_device,
             high_output_device,
-            length,
+            Int32(length),
             Float32(2.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,

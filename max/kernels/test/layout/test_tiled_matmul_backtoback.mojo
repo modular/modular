@@ -21,7 +21,7 @@ from std.algorithm.functional import vectorize
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.int_tuple import size
 from layout.layout import expand_modes_alike, flatten
-from std.memory import alloc, stack_allocation
+from std.memory import alloc, unsafe_stack_allocation
 from std.testing import assert_false
 
 from std.utils import StaticTuple
@@ -293,9 +293,9 @@ def matmul[
 
 def alloc_tensor[
     elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+]() -> LayoutTensor[elt, layout, MutUntrackedOrigin]:
     comptime size: Int = layout.size()
-    return LayoutTensor[elt, layout, MutAnyOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](size, alignment=64)
     )
 
@@ -303,9 +303,9 @@ def alloc_tensor[
 def alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
-    elt, layout, MutAnyOrigin
+    elt, layout, MutUntrackedOrigin
 ]:
-    return LayoutTensor[elt, layout, MutAnyOrigin](
+    return LayoutTensor[elt, layout, MutUntrackedOrigin](
         alloc[Scalar[elt]](rtlayout.size(), alignment=64),
         rtlayout,
     )
@@ -343,7 +343,7 @@ def strided_load[
     comptime if X == 1:
         return p.load[width=W](i)
     else:
-        return (p + i * X).strided_load[width=W](X)
+        return (p + i * X).unsafe_strided_load[width=W](X)
 
 
 @always_inline
@@ -353,7 +353,7 @@ def strided_store[
     comptime if X == 1:
         p.store(i, x)
     else:
-        (p + i * X).strided_store(x, X)
+        (p + i * X).unsafe_strided_store(x, X)
 
 
 @always_inline
@@ -461,7 +461,7 @@ def copy_to[
     src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ):
     @always_inline
-    @parameter
+    @__parameter
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
@@ -495,7 +495,7 @@ def check_approx_equal[
     var fail: Bool = False
 
     @always_inline
-    @parameter
+    @__parameter
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
@@ -628,7 +628,7 @@ def matmulb2b[
     var pa = A.ptr
     var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB = stack_allocation[Mc * Nc, elt, alignment=64]()
+    var AB = unsafe_stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the
@@ -892,15 +892,14 @@ def bench_b2b[
     matmul_naive(Drm64, ABrm64, Crm64)
 
     @always_inline
-    @parameter
-    def test_tile_fn():
+    def test_tile_fn() {var}:
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
 
     var flops = 2e-9 * Float64(M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = std.benchmark.run[func3=test_tile_fn](
-            max_runtime_secs=1.0
+        var secs_tile = std.benchmark.run(
+            test_tile_fn, max_runtime_secs=1.0
         ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
     else:
@@ -909,15 +908,14 @@ def bench_b2b[
     check_approx_equal[DType.float32](Dtile, Drm64)
 
     @always_inline
-    @parameter
-    def test_tile_b2b_fn():
+    def test_tile_b2b_fn() {var}:
         matmulb2b[elt, M, N, K, L, W, Mc, Nc, Mr, Nr, Kr](
             Dtile, Atile, Btile, Ctileb2b
         )
 
     if do_benchmark:
-        var secs_tile_b2b = std.benchmark.run[func3=test_tile_b2b_fn](
-            max_runtime_secs=1.0
+        var secs_tile_b2b = std.benchmark.run(
+            test_tile_b2b_fn, max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)
     else:

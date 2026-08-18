@@ -17,27 +17,24 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
-    PixelGenerationContext,
-    RequestID,
-    SamplingParams,
-    TextGenerationContext,
-    TokenBuffer,
-    VLMTextGenerationContext,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
-)
-from max.pipelines.core import (
+    LogProbabilities,
     PixelContext,
+    SamplingParams,
     SpecDecodingState,
     TextAndVisionContext,
     TextContext,
-    TTSContext,
+    TokenBuffer,
 )
-from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.modeling.types import (
+    RequestID,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
+)
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -605,65 +602,6 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
 
 
-def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
-    """Tests that TTSContext can be serialized/deserialized with msgpack and that _speech_tokens can be written to after deserialization."""
-    # Create a TTSContext with some audio prompt tokens
-    audio_prompt_tokens = np.array([100, 101, 102, 103], dtype=np.int32)
-    original_context = TTSContext(
-        max_length=50,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        audio_prompt_tokens=audio_prompt_tokens,
-        sampling_params=SamplingParams(temperature=0.8),
-    )
-
-    # Add some initial speech tokens to the context
-    initial_speech_tokens = np.array([200, 201, 202], dtype=np.int32)
-    original_context.update_speech_tokens(initial_speech_tokens)
-
-    # Verify initial state
-    assert np.array_equal(
-        original_context.audio_prompt_tokens, audio_prompt_tokens
-    )
-    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
-    assert original_context._speech_token_end_idx == 3
-    assert original_context.block_counter == 1
-
-    # Test that we can encode TTSContext with MsgPack
-    serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TTSContext)
-    msgpack_encoded = serialize(original_context)
-    msgpack_decoded = deserialize(msgpack_encoded)
-
-    # Verify the deserialized context matches the original
-    assert isinstance(msgpack_decoded, TTSContext)
-    assert dataclass_equal(msgpack_decoded, original_context)
-    assert np.array_equal(
-        msgpack_decoded.audio_prompt_tokens, audio_prompt_tokens
-    )
-    assert np.array_equal(msgpack_decoded.speech_tokens, initial_speech_tokens)
-    assert msgpack_decoded._speech_token_end_idx == 3
-    assert msgpack_decoded.block_counter == 1
-
-    # Test writing to the _speech_tokens array after deserialization
-    new_speech_tokens = np.array([300, 301, 302, 303], dtype=np.int32)
-    msgpack_decoded.update_speech_tokens(new_speech_tokens)
-
-    # Verify that the new speech tokens were added correctly
-    expected_combined_tokens = np.concatenate(
-        [initial_speech_tokens, new_speech_tokens]
-    )
-    assert np.array_equal(
-        msgpack_decoded.speech_tokens, expected_combined_tokens
-    )
-    assert msgpack_decoded._speech_token_end_idx == 7
-    assert msgpack_decoded.block_counter == 2
-
-    # Verify that the original context was not affected
-    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
-    assert original_context._speech_token_end_idx == 3
-    assert original_context.block_counter == 1
-
-
 def test_text_context_update_with_future_token() -> None:
     context = TextContext(
         max_length=50,
@@ -694,15 +632,397 @@ def test_text_context_update_with_future_token() -> None:
 
     assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, FUTURE_TOKEN]
     assert context.status == GenerationStatus.ACTIVE
-    with pytest.raises(
-        ValueError,
-        match=r"Attempted to create generation output while future token is not yet realized",
-    ):
-        context.to_generation_output()
+    # The unrealized placeholder is held back from the output; only the
+    # realized prefix streams. (Previously this raised; the consumed window
+    # is now clamped to the realized prefix so an in-flight forward's
+    # placeholder can never leak into a response.)
+    output = context.to_generation_output()
+    assert output.tokens == [5]
+    assert FUTURE_TOKEN not in output.tokens
 
     context.realize_future_token(42)
     assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, 42]
     assert context.status == GenerationStatus.END_OF_SEQUENCE
+    assert context.to_generation_output().tokens == [42]
+
+
+def test_text_context_pending_future_count_depth_one_invariant() -> None:
+    """The counted pending-future model preserves the depth-1 invariant.
+
+    With ``max_pending_futures == 1`` (the default), a second pending future
+    token must still raise, and the counted realize path must target the same
+    position as the classic last-token overwrite.
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+    assert context.pending_future_count == 0
+
+    context.update_with_future_token()
+    assert context.pending_future_count == 1
+
+    # A second pending future raises, via the default and explicitly.
+    with pytest.raises(ValueError, match=r"Cannot have multiple future tokens"):
+        context.update_with_future_token()
+    with pytest.raises(ValueError, match=r"Cannot have multiple future tokens"):
+        context.update_with_future_token(max_pending_futures=1)
+
+    # Real-token appends are forbidden while a placeholder is live.
+    with pytest.raises(
+        ValueError, match=r"Cannot append a token after a future token"
+    ):
+        context.advance_token_buffer(7)
+
+    # At count=1 the realize path computes the identical position to the
+    # classic trailing overwrite: the placeholder slot itself.
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+    context.realize_future_token(5)
+    assert context.pending_future_count == 0
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5]
+    assert context.status == GenerationStatus.ACTIVE
+
+    # Realizing with no pending future still raises.
+    with pytest.raises(
+        ValueError, match=r"Attempted to realize a non-future token"
+    ):
+        context.realize_future_token(6)
+
+    # Reset with a pending placeholder deletes exactly the placeholder and
+    # clears the count.
+    context.update_with_future_token()
+    assert context.pending_future_count == 1
+    context.reset()
+    assert context.pending_future_count == 0
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5]
+    context.update_with_future_token()
+    context.realize_future_token(42)
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+
+
+def test_text_context_future_token_skipped_during_chunked_prefill() -> None:
+    """Chunked-prefill continuations must not accumulate a pending-future count.
+
+    The overlap pipeline calls ``update_with_future_token`` on every context in
+    the batch each step, including requests still in (chunked) prefill. For an
+    actively-chunked context, ``advance_token_buffer`` advances the chunk and
+    early-returns WITHOUT writing a ``FUTURE_TOKEN``, so no placeholder becomes
+    pending. The counted model must not increment ``_pending_future_count`` in
+    that case; otherwise a request whose prefill spans two or more chunks trips
+    "Cannot have multiple future tokens." on its second chunked step. That is
+    the saturation-only worker crash this test guards against (it fails with an
+    unhandled ValueError on the second chunked ``update_with_future_token``
+    before the fix).
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    # Prefill chunk 1: chunk the prompt, then the overlap pipeline appends a
+    # future to every batched context. The append is swallowed by the
+    # actively-chunked early-return, so nothing is written.
+    context.tokens.chunk(4)
+    assert context.tokens.actively_chunked
+    context.update_with_future_token()
+    assert context.pending_future_count == 0
+    assert context.tokens.generated_length == 0
+    assert FUTURE_TOKEN not in context.tokens.all.tolist()
+
+    # Prefill chunk 2: pre-fix this second call raised "Cannot have multiple
+    # future tokens." because the count was stuck at 1 from chunk 1.
+    context.tokens.chunk(2)
+    assert context.tokens.actively_chunked
+    context.update_with_future_token()
+    assert context.pending_future_count == 0
+    assert context.tokens.generated_length == 0
+    assert FUTURE_TOKEN not in context.tokens.all.tolist()
+
+    # Final (non-chunked) step: prefill is complete, so a real placeholder is
+    # appended and the count reaches exactly 1, as in the non-chunked path.
+    assert not context.tokens.actively_chunked
+    context.update_with_future_token()
+    assert context.pending_future_count == 1
+    assert context.tokens.all.tolist()[-1] == FUTURE_TOKEN
+
+    # It realizes cleanly back to 0.
+    context.realize_future_token(9)
+    assert context.pending_future_count == 0
+    assert context.tokens.all.tolist()[-1] == 9
+
+
+def test_text_context_two_pending_futures_fifo_realize() -> None:
+    """Depth 2: two placeholders may be outstanding and realize oldest-first.
+
+    This is the schedule-ahead lifecycle: forward n and forward n+1 are both
+    enqueued (one placeholder each) before step n's token is realized.
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 2
+    assert context.tokens.all.tolist() == [
+        0,
+        1,
+        2,
+        3,
+        4,
+        FUTURE_TOKEN,
+        FUTURE_TOKEN,
+    ]
+
+    # A third placeholder exceeds the configured depth.
+    with pytest.raises(ValueError, match=r"Cannot have multiple future tokens"):
+        context.update_with_future_token(max_pending_futures=2)
+
+    # Real-token appends stay forbidden while placeholders are live.
+    with pytest.raises(
+        ValueError, match=r"Cannot append a token after a future token"
+    ):
+        context.advance_token_buffer(7)
+
+    # Realization is FIFO: the first realize targets the OLDER placeholder
+    # (two positions from the end), not the newest one.
+    context.realize_future_token(10)
+    assert context.pending_future_count == 1
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 10, FUTURE_TOKEN]
+
+    context.realize_future_token(11)
+    assert context.pending_future_count == 0
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 10, 11]
+    assert context.status == GenerationStatus.ACTIVE
+
+    # Steady state: append the next placeholder and keep decoding.
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 1
+    context.realize_future_token(12)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 10, 11, 12]
+
+
+def test_text_context_depth2_generation_output_excludes_unrealized_tail() -> (
+    None
+):
+    """Depth 2: the consumed output slice excludes the unrealized tail.
+
+    With two forwards in flight, each sync realizes only the OLDEST
+    placeholder; the newer one is still pending when the response is built.
+    ``to_generation_output`` must stream the realized prefix and hold back the
+    placeholder (streaming -999 to a user is the bug this guards against).
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+
+    # Nothing realized yet: the output must be empty and consume nothing.
+    output = context.to_generation_output()
+    assert output.tokens == []
+    assert context.tokens.has_outstanding_generated_tokens
+
+    # Realize the older step; the newer placeholder must not be consumed.
+    context.realize_future_token(10)
+    output = context.to_generation_output()
+    assert output.tokens == [10]
+
+    # Realizing the second placeholder streams it on the next consumption.
+    context.realize_future_token(11)
+    output = context.to_generation_output()
+    assert output.tokens == [11]
+    assert not context.tokens.has_outstanding_generated_tokens
+
+
+def test_text_context_depth2_eos_realized_with_pending_placeholder() -> None:
+    """Depth 2: EOS realized on the older step terminates at the right token.
+
+    The speculative step n+1 already ran past the EOS, so a second placeholder
+    is live when the EOS token is realized. The context must (a) go
+    END_OF_SEQUENCE immediately, evaluated on the realized prefix only, and
+    (b) stream the EOS token without the trailing placeholder. The extra
+    speculative token is realized by the NEXT sync into an already-done
+    context; the serving scheduler drops that response because the request
+    was already released (text_generation_scheduler filters responses for
+    requests no longer in the batch constructor) -- no buffer rollback is
+    performed, matching the depth-1 extra-token-after-EOS quirk.
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+
+    # Step n realizes EOS while step n+1's placeholder is still live.
+    context.realize_future_token(42)
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+    assert context.is_done
+    assert context.pending_future_count == 1
+
+    output = context.to_generation_output()
+    assert output.tokens == [42]
+    assert output.final_status == GenerationStatus.END_OF_SEQUENCE
+
+    # The speculative step's token still gets realized (the forward already
+    # ran); it must not resurrect the context or corrupt its status.
+    context.realize_future_token(7)
+    assert context.pending_future_count == 0
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+    # The post-EOS extra token surfaces here, exactly like the depth-1
+    # extra-token quirk; the scheduler layer is responsible for dropping it.
+    output = context.to_generation_output()
+    assert output.tokens == [7]
+
+
+def test_text_context_depth2_stop_sequence_realized_with_pending() -> None:
+    """Depth 2: a multi-token stop sequence completed by the realized token
+    must match on the realized prefix, unaffected by the trailing placeholder.
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_sequences=[[10, 11]]),
+    )
+
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+
+    # First realized token: only [10] realized so far -- no stop match (the
+    # placeholder after it must not be read as part of the suffix).
+    context.realize_future_token(10)
+    assert context.status == GenerationStatus.ACTIVE
+
+    # Enqueue the next step, then realize 11: realized suffix is [10, 11].
+    context.update_with_future_token(max_pending_futures=2)
+    context.realize_future_token(11)
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+    # The stop match excludes the still-pending newest placeholder.
+    assert context.pending_future_count == 1
+
+
+def test_text_context_depth2_reset_deletes_both_placeholders() -> None:
+    """Depth 2 preemption: reset deletes BOTH trailing placeholders."""
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    # One realized token, then two in-flight placeholders.
+    context.update(5)
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 2
+
+    context.reset()
+    assert context.pending_future_count == 0
+    # The realized token survives as prompt; both placeholders are gone.
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5]
+    assert context.tokens.generated_length == 0
+    assert context.tokens.prompt_length == 6
+
+    # The reset context restarts the lifecycle cleanly at depth 2.
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+    context.realize_future_token(6)
+    context.realize_future_token(42)
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+
+
+def test_text_context_depth2_chunked_prefill_swallows_placeholders() -> None:
+    """Depth 2: chunked-prefill continuations still swallow placeholder
+    appends (the slice-1 crash class): the count must stay 0 across multiple
+    chunked steps at depth 2, then reach exactly 2 once prefill completes.
+    """
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    # Two prefill chunks: both placeholder appends are swallowed, the count
+    # stays 0 at depth 2 exactly as at depth 1.
+    context.tokens.chunk(4)
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 0
+    context.tokens.chunk(2)
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 0
+    assert FUTURE_TOKEN not in context.tokens.all.tolist()
+
+    # Prefill complete: the schedule-ahead steps append two real placeholders.
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.pending_future_count == 2
+    context.realize_future_token(8)
+    context.realize_future_token(9)
+    assert context.tokens.all.tolist()[-2:] == [8, 9]
+
+
+def test_text_context_depth2_log_probabilities_lag() -> None:
+    """Depth 2: log probs realized one step late attach to the right index."""
+    lp_a = LogProbabilities(
+        token_log_probabilities=[-0.1], top_log_probabilities=[{10: -0.1}]
+    )
+    lp_b = LogProbabilities(
+        token_log_probabilities=[-0.2], top_log_probabilities=[{11: -0.2}]
+    )
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+
+    context.update_with_future_token(max_pending_futures=2)
+    context.update_with_future_token(max_pending_futures=2)
+
+    # Realize the older placeholder with its log probs; consume immediately.
+    context.realize_future_token(10, log_probabilities=lp_a)
+    output = context.to_generation_output()
+    assert output.tokens == [10]
+    assert output.log_probabilities == [lp_a]
+
+    context.realize_future_token(11, log_probabilities=lp_b)
+    output = context.to_generation_output()
+    assert output.tokens == [11]
+    assert output.log_probabilities == [lp_b]
+
+
+def test_text_context_last_realized_token() -> None:
+    """last_realized_token skips the unrealized placeholder tail."""
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+    assert context.last_realized_token == 4
+
+    context.update(5)
+    assert context.last_realized_token == 5
+
+    # tokens[-1] is now a placeholder; the property must not read it.
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.tokens.all.tolist()[-1] == FUTURE_TOKEN
+    assert context.last_realized_token == 5
+
+    context.update_with_future_token(max_pending_futures=2)
+    assert context.last_realized_token == 5
+
+    context.realize_future_token(6)
+    assert context.last_realized_token == 6
+    context.realize_future_token(7)
+    assert context.last_realized_token == 7
 
 
 def test_text_context_update_with_preemption_and_future_token() -> None:
@@ -721,6 +1041,61 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     context.reset()
     assert context.tokens.all.tolist() == [0, 1, 2, 3, 4]
     assert context.tokens.generated_length == 0
+
+
+def test_text_context_to_generation_output_validates_vocab_size() -> None:
+    """Generated tokens must be non-negative and within vocab when vocab_size is set."""
+    request_id = RequestID()
+
+    context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    context.update(42)
+    output = context.to_generation_output()
+    assert output.tokens == [42]
+    assert output.request_id == request_id
+
+    negative_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    negative_context.update(-1)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated negative token_id=-1",
+    ):
+        negative_context.to_generation_output()
+
+    oob_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=10,
+    )
+    oob_context.update(10)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated out-of-vocabulary token_id=10.*\(valid range: \[0, 10\)\)",
+    ):
+        oob_context.to_generation_output()
+
+    unset_vocab_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+    )
+    unset_vocab_context.update(999)
+    output = unset_vocab_context.to_generation_output()
+    assert output.tokens == [999]
 
 
 def test_vision_context_reset() -> None:
@@ -969,6 +1344,37 @@ def test_text_and_vision_context_happy_case() -> None:
     assert len(ctx.next_images) == 0
 
 
+def test_text_and_vision_context_adjacent_images_allowed() -> None:
+    # Image ranges are half-open [start_idx, end_idx), so two images whose
+    # token runs touch (next.start_idx == prev.end_idx) do not overlap. Chat
+    # templates that emit no separator token between consecutive images
+    # produce exactly such touching ranges, and they must be accepted.
+    # fmt: off
+    #                                  |<-img0->|<-img1->|
+    #                   0   1   2   3   4   5   6   7   8   9
+    tokens = np.array([51, 52, 53, 54, 98, 98, 98, 98, 59, 60])
+    # fmt: on
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=TokenBuffer(tokens),
+        images=[
+            ImageMetadata(
+                start_idx=4,
+                end_idx=6,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=6,
+                end_idx=8,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    assert len(ctx.images) == 2
+    assert ctx.needs_vision_encoding is True
+
+
 def test_text_and_vision_context_sad_case() -> None:
     # fmt: off
     #                                      |<-- img0 --->|                         |<--- img1 -->|
@@ -986,9 +1392,9 @@ def test_text_and_vision_context_sad_case() -> None:
                     end_idx=9,
                     pixel_values=np.array([99]),
                 ),
-                # This overlaps with img0
+                # This overlaps with img0 (starts at 8, before img0 ends at 9).
                 ImageMetadata(
-                    start_idx=9,
+                    start_idx=8,
                     end_idx=19,
                     pixel_values=np.array([99]),
                 ),
@@ -1079,19 +1485,17 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     exception.
     """
 
-    ctx = TTSContext(
+    ctx = TextContext(
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
     )
 
-    # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext, and PixelGenerationContext are Protocols)
-    _ = isinstance(ctx, TextGenerationContext)
-    # The original bug report indicated that MAX threw a ValueError in call to
-    # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
-    # See GENAI-318 for details.
-    _ = isinstance(ctx, VLMTextGenerationContext)
-    _ = isinstance(ctx, PixelGenerationContext)
+    # isinstance checks against concrete context classes should not raise.
+    # The original bug report (GENAI-318) indicated that isinstance on VLM
+    # contexts threw a ValueError; validate the concrete-class equivalents.
+    assert isinstance(ctx, TextContext)
+    _ = isinstance(ctx, TextAndVisionContext)
+    _ = isinstance(ctx, PixelContext)
 
 
 def test_context__spec_decoding_state_lazy_init() -> None:
@@ -1208,3 +1612,61 @@ def test_pixel_context_tuple_serializable() -> None:
 
     assert msgpack_decoded[0] == original_tuple[0]
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
+
+
+_VISION_TOKEN_ID = 98
+
+
+def _windowed_vision_context(
+    image_spans: list[tuple[int, int]],
+    seq_len: int,
+) -> TextAndVisionContext:
+    """Build a TextAndVisionContext with ``(start, end)`` images."""
+    tokens = np.ones(seq_len, dtype=np.int64)
+    images = []
+    for start, end in image_spans:
+        tokens[start:end] = _VISION_TOKEN_ID
+        images.append(
+            ImageMetadata(
+                start_idx=start,
+                end_idx=end,
+                pixel_values=np.zeros((2, 3), dtype=np.float32),
+            )
+        )
+    return TextAndVisionContext(
+        tokens=TokenBuffer(tokens),
+        max_length=4096,
+        vision_token_ids=[_VISION_TOKEN_ID],
+        images=images,
+    )
+
+
+def test_next_images_in_window_drops_images_ahead_of_window() -> None:
+    context = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    # Nothing processed yet, full window: all three images unencoded.
+    assert len(context.next_images_in_window) == 3
+
+    # Chunk the active window to [0, 16): the third image (start_idx=20) is
+    # ahead of the window and must be dropped from the tail.
+    context.tokens.chunk(16)
+    windowed = context.next_images_in_window
+    assert [img.start_idx for img in windowed] == [4, 12]
+
+    # next_images_in_window is a prefix of next_images (drops only the tail).
+    assert [img.start_idx for img in windowed] == [
+        img.start_idx for img in context.next_images[: len(windowed)]
+    ]
+
+
+def test_next_images_in_window_includes_bisected_images_whole() -> None:
+    context = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    # The chunk boundary bisects the second image (12..16): it overlaps the
+    # window, so it is included whole (the encoder cannot split an image).
+    context.tokens.chunk(14)
+    assert [img.start_idx for img in context.next_images_in_window] == [4, 12]
+
+    # A processed prefix that bisects the second image: it still overlaps the
+    # window [14, 30), so it stays; the fully-behind first image is dropped.
+    behind = _windowed_vision_context([(4, 8), (12, 16), (20, 24)], seq_len=30)
+    behind.tokens.skip_processing(14)
+    assert [img.start_idx for img in behind.next_images_in_window] == [12, 20]

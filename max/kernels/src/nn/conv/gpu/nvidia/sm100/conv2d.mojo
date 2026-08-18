@@ -44,8 +44,8 @@ from std.math import align_up, ceildiv
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout.tma_async import create_tensor_tile_im2col
 
 from structured_kernels.tile_types import (
@@ -84,7 +84,9 @@ def conv2d_fprop[
     register_based_epilogue: Bool = True,
 ](
     output: TileTensor[mut=True, out_type, ...],  # NHWC
-    activation: TileTensor[act_type, ...],  # NHWC
+    activation: TileTensor[
+        mut=True, act_type, address_space=AddressSpace.GENERIC, ...
+    ],  # NHWC
     filter: TileTensor[filter_type, ...],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
@@ -155,6 +157,16 @@ def conv2d_fprop[
     var N = problem.gemm_n()  # out_channels
     var K = problem.gemm_k()  # in_channels * filter_h * filter_w
 
+    # Zero-sized GEMM (e.g. zero output spatial from a ``(B, 0, 0, C)``
+    # input flowing through a diffusion VAE encoder): nothing to
+    # compute. The output buffer is pre-allocated zero-element by the
+    # caller, and a TMA im2col descriptor built with a zero ``M`` or
+    # ``N`` extent is undefined behavior (the descriptor format has a
+    # 128-element alignment requirement on the spatial axes). Early
+    # return defends every downstream descriptor builder + kernel launch.
+    if M == 0 or N == 0:
+        return
+
     # Im2col corner offsets for stride=1, dilation=1
     # CUTLASS formula from detail.hpp (compute_upper_corner_whd):
     #   lower_corner = -lower_padding  (negative for padding region)
@@ -220,7 +232,7 @@ def conv2d_fprop[
     comptime KernelType = type_of(conv_kernel)
 
     # Create TMA descriptors using kernel-derived layout types
-    act_tma_op = create_tensor_tile_im2col[
+    var act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
@@ -244,7 +256,7 @@ def conv2d_fprop[
         filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
 
-    filter_tma_op = create_tma_tile[
+    var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
         KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
@@ -261,7 +273,7 @@ def conv2d_fprop[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tma_tile[
+    var out_tma_op = create_tma_tile[
         KernelType.OutTileLayout,
         KernelType.OutDescLayout,
         c_tma_tile_shape,
@@ -287,7 +299,7 @@ def conv2d_fprop[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with im2col TMA
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         act_tma_op,
         filter_tma_op,
         out_tma_op,
@@ -325,7 +337,9 @@ def conv2d_fprop_with_residual[
     output: TileTensor[
         mut=True, out_type, ...
     ],  # NHWC - D = Conv(A,B) + beta*C
-    activation: TileTensor[act_type, ...],  # NHWC - A
+    activation: TileTensor[
+        mut=True, act_type, address_space=AddressSpace.GENERIC, ...
+    ],  # NHWC - A
     filter: TileTensor[filter_type, ...],  # KRSC - B
     source: TileTensor[out_type, ...],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor
@@ -448,7 +462,7 @@ def conv2d_fprop_with_residual[
     comptime KernelType = type_of(conv_kernel)
 
     # Create TMA descriptors using kernel-derived layout types
-    act_tma_op = create_tensor_tile_im2col[
+    var act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
@@ -471,7 +485,7 @@ def conv2d_fprop_with_residual[
     var filter_tensor = TileTensor(
         filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
-    filter_tma_op = create_tma_tile[
+    var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
         KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
@@ -487,7 +501,7 @@ def conv2d_fprop_with_residual[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tma_tile[
+    var out_tma_op = create_tma_tile[
         KernelType.OutTileLayout,
         KernelType.OutDescLayout,
         c_tma_tile_shape,
@@ -498,7 +512,7 @@ def conv2d_fprop_with_residual[
     var src_tensor = TileTensor(
         source.ptr, row_major(Coord(IndexList[2](M, N)))
     )
-    src_tma_op = create_tma_tile[
+    var src_tma_op = create_tma_tile[
         KernelType.SrcTileLayout,
         KernelType.SrcDescLayout,
         c_tma_tile_shape,
@@ -523,7 +537,7 @@ def conv2d_fprop_with_residual[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with residual
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         act_tma_op,
         filter_tma_op,
         out_tma_op,
@@ -559,6 +573,9 @@ def im2col[
 
     M = batch * out_h * out_w
     K = in_channels * filter_h * filter_w
+
+    Parameters:
+        dtype: Element data type of the activation and output tensors.
 
     Args:
         output: Output 2D buffer [M, K].

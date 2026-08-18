@@ -1,7 +1,7 @@
-# InstallModular component
+# InstallMAX component
 
-The `InstallModular` component is a reusable MDX component that generates
-installation instructions for the Modular package across multiple package
+The `InstallMAX` component is a reusable MDX component that generates
+installation instructions for the MAX package across multiple package
 managers (pixi, uv, pip, and conda).
 
 ## Usage
@@ -9,9 +9,9 @@ managers (pixi, uv, pip, and conda).
 Import and use the component in your MDX files:
 
 ```python
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 
-<InstallModular folder="my-project" extraLibraries={["torch", "transformers"]} />
+<InstallMAX folder="my-project" extraLibraries={["torch", "transformers"]} />
 ```
 
 > [!CAUTION]
@@ -27,28 +27,28 @@ import InstallModular from '../_includes/install-modular.mdx';
   - Default: `"example-project"`
 
 - `extraLibraries` (optional): Additional libraries to install alongside
-  `modular`.
+  `max`.
   - Type: `string[]`
-  - Default: `[]` | `modular`
+  - Default: `[]` | `max`
 
 ## Examples
 
-Basic usage (modular only):
+Basic usage (MAX only):
 
 ```markdown
-<InstallModular />
+<InstallMAX />
 ```
 
  Custom project folder:
 
 ```markdown
-<InstallModular folder="llama-tutorial" />
+<InstallMAX folder="llama-tutorial" />
 ```
 
 With additional libraries:
 
 ```markdown
-<InstallModular folder="ml-project" extraLibraries={["torch", "numpy", "pandas"]} />
+<InstallMAX folder="ml-project" extraLibraries={["torch", "numpy", "pandas"]} />
 ```
 
 ## Generated output
@@ -56,6 +56,6 @@ With additional libraries:
 The component generates tabbed installation instructions for:
 
 - **pixi**: Uses conda channels with `pixi add`
-- **uv**: Uses pip with custom index URLs via `uv pip install`
+- **uv**: Uses custom index URLs via `uv add`
 - **pip**: Standard pip installation with extra index URLs
 - **conda**: Uses conda-forge and Modular's conda channels

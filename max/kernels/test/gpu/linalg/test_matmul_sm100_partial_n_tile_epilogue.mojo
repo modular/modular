@@ -24,8 +24,8 @@ Both ``transpose_c`` branches of ``apply_to_fragment`` are exercised
 
 from std.collections import Optional
 from std.sys import align_of, size_of
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
@@ -72,14 +72,14 @@ def test_partial_n_tile_compute_epilogue[
         " a multiple of 88"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -109,12 +109,12 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def in_bounds_compute_lambda[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -123,13 +123,13 @@ def test_partial_n_tile_compute_epilogue[
         return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
     seed(1234)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     for i in range(M):
         for j in range(N):
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](0)
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](0)
+            c_host_copy[i, j] = c_host[i, j]
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -174,12 +174,12 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_host_copy_lt = c_host_copy.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_host_copy_lt)
     def in_bounds_compute_lambda_local[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -189,15 +189,15 @@ def test_partial_n_tile_compute_epilogue[
 
     for i in range(M):
         for j in range(N):
-            comptime assert c_host_ref.flat_rank >= 2
-            c_host_ref[(Idx(i), Idx(j))] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[(Idx(i), Idx(j))]
+            comptime assert c_host_ref.flat_rank == 2
+            c_host_ref[i, j] = in_bounds_compute_lambda_local(
+                IndexList[2](i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -235,7 +235,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
             swapAB=False,
-        ](ctx, Idx(Int(64)), Idx[128](), Idx[128]())
+        ](ctx, Int(64), Idx[128], Idx[128])
 
         # transpose_c=True: `if top_row >= self.N or bot_row >= self.N: return` branch.
         test_partial_n_tile_compute_epilogue[
@@ -247,4 +247,4 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
             swapAB=True,
-        ](ctx, Idx(Int(64)), Idx[128](), Idx[128]())
+        ](ctx, Int(64), Idx[128], Idx[128])

@@ -53,7 +53,17 @@ def _make_max_model_config_with_hf_config(
     checkers (guarded by ``if not TYPE_CHECKING``), so we set the private
     attribute directly after construction to keep mypy happy.
     """
-    cfg = MAXModelConfig(model_path=model_path)
+    # ``__init__`` eagerly builds the HuggingFace repo handles; keep that
+    # offline for the placeholder repo (CI runs under HF_HUB_OFFLINE).
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
+        cfg = MAXModelConfig(model_path=model_path)
     cfg._huggingface_config = hf_config
     return cfg
 

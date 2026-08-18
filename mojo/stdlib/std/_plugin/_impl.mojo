@@ -12,15 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Selects the active `PluginHooks` used by the stdlib.
 
-This file is intentionally tiny. A vendor plugin overlay ships its own
-`std/_plugin/_impl.mojo` that re-points `CurrentPlugin` at a vendor-specific
-struct, so the stdlib call sites that look up `CurrentPlugin` transparently
-pick up the plugin implementation.
-
-Do not define new logic here — put it on `PluginHooks` in `std._plugin`.
+`CurrentPlugin` is resolved from the registered `STD_PLUGINS`, keyed on the
+target's `stdlib_plugin` field.
+The default build, whose field is `"default"`, resolves to `DefaultPlugin` and
+leaves every hook at its default value.
 """
 
-from ._trait import PluginHooks, DefaultPlugin
+from ._trait import PluginHooks
+from ._overlay import STD_PLUGINS
+from std.sys.info import _TargetType
 
-comptime CurrentPlugin: PluginHooks = DefaultPlugin
+comptime CurrentPlugin: PluginHooks = STD_PLUGINS.current
 """The active `PluginHooks`."""
+
+comptime PluginForTarget[Target: _TargetType] = STD_PLUGINS.for_target[Target]
+"""The `PluginHooks` to use for the specified kgen.target."""

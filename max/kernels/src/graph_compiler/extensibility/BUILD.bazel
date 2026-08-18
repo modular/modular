@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "mojo_library")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
+
+package(default_visibility = ["//max:consumers"])
+
+exports_files(["__init__.mojo"])
+
+mojo_library(
+    name = "extensibility",
+    srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
+    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
+    use_production_compiler_for_asan = True,
+    validate_missing_docs = False,
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

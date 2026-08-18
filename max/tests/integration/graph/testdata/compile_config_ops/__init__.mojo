@@ -13,17 +13,19 @@
 
 from std.sys import get_defined_int
 
-import compiler
+import extensibility
+from max.gpu.host import DeviceContext
 from std.logger import Logger
-from tensor import foreach, OutputTensor, InputTensor
-from std.runtime.asyncrt import DeviceContextPtr
+from extensibility import foreach, OutputTensor, InputTensor
 
+
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 comptime logger = Logger()
 
 
-@compiler.register("use_splitk_reduction_scheme")
+@extensibility.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
     @staticmethod
     def execute(
@@ -35,7 +37,7 @@ struct UseSplitkReductionScheme:
         output[0] = Int32(split_k_reduction_scheme)
 
 
-@compiler.register("use_logger")
+@extensibility.register("use_logger")
 struct UseLogger:
     @staticmethod
     def execute(
@@ -45,7 +47,7 @@ struct UseLogger:
         output[0] = Int32(logger.level._value)
 
 
-@compiler.register("add_one_custom")
+@extensibility.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
     def execute[
@@ -53,16 +55,17 @@ struct AddOneCustom:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
-        @parameter
-        def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        @__parameter
+        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@extensibility.register_shape_function("add_one_custom")
+def add_one_custom_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"

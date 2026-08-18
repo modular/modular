@@ -14,11 +14,11 @@ from std.python import Python
 
 
 def main() raises:
-    states = [String("California"), "Hawaii", "Oregon"]
+    var states = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)
 
-    numbers = {42, 0}
+    var numbers = {42, 0}
     for number in numbers:
         print(number)
 
@@ -29,10 +29,10 @@ def main() raises:
     }
 
     for var state in capitals:
-        print(capitals[state] + ", " + state)
+        print(t"{capitals[state]}, {state}")
 
     for item in capitals.items():
-        print(item.value + ", " + item.key)
+        print(t"{item.value}, {item.key}")
 
     for i in range(5):
         print(i, end=", ")
@@ -61,13 +61,13 @@ def main() raises:
 
     print()
 
-    empty = List[Int]()
+    var empty = List[Int]()
     for i in empty:
         print(i)
     else:
         print("Finished executing 'for' loop")
 
-    animals = ["cat", "aardvark", "hippopotamus", "dog"]
+    var animals = ["cat", "aardvark", "hippopotamus", "dog"]
     for animal in animals:
         if animal == "dog":
             print("Found a dog")
@@ -85,7 +85,7 @@ def main() raises:
     # from python import Python
 
     # Iterate over a mixed-type Python dictionary
-    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    var py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_key in py_dict:  # Each key is of type "PythonObject"
         print(py_key, py_dict[py_key])
 

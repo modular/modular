@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
@@ -41,6 +41,71 @@ def test_tensor() -> None:
     tensor2 = Buffer(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
+
+
+def test_repr() -> None:
+    # repr shows metadata only, not the element values.
+    tensor = Buffer(DType.float32, (3, 4))
+    text = repr(tensor)
+    assert text.startswith("max.driver.Buffer(")
+    assert "DType.float32" in text
+    assert "(3, 4)" in text
+
+
+def test_str_scalar() -> None:
+    tensor = Buffer.scalar(5, DType.int32)
+    text = str(tensor)
+    assert text.startswith("Buffer(")
+    assert "5" in text
+    assert "dtype=DType.int32" in text
+    assert "shape=()" in text
+    assert "device=" in text
+
+
+def test_str_shows_data() -> None:
+    # str should include the actual data values.
+    arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    tensor = Buffer.from_numpy(arr)
+    text = str(tensor)
+    assert text.startswith("Buffer(")
+    for value in range(1, 7):
+        assert str(value) in text
+    assert "dtype=DType.int32" in text
+    assert "shape=(2, 3)" in text
+    # The formatted data should match numpy's own rendering.
+    assert np.array2string(arr, prefix="Buffer(") in text
+
+
+def test_str_1d_float() -> None:
+    tensor = Buffer.from_numpy(np.array([1.5, 2.5, 3.5], dtype=np.float32))
+    text = str(tensor)
+    assert "1.5" in text
+    assert "2.5" in text
+    assert "3.5" in text
+    assert "dtype=DType.float32" in text
+
+
+def test_str_summarizes_large_buffer() -> None:
+    # Large buffers should be summarized with an ellipsis rather than dumping
+    # every element.
+    tensor = Buffer.from_numpy(np.arange(100_000, dtype=np.int32))
+    text = str(tensor)
+    assert "..." in text
+    assert "shape=(100000,)" in text
+
+
+def test_str_bfloat16() -> None:
+    # bfloat16 is not natively representable in numpy, so values must be read
+    # element-wise and shown as decoded numbers (not raw bytes).
+    torch_value = torch.tensor([1.0, 2.0, 3.0]).type(torch.bfloat16)
+    tensor = Buffer.from_dlpack(torch_value)
+    assert tensor.dtype == DType.bfloat16
+    text = str(tensor)
+    assert "1" in text
+    assert "2" in text
+    assert "3" in text
+    assert "dtype=DType.bfloat16" in text
+    assert "shape=(3,)" in text
 
 
 @pytest.mark.parametrize("dtype", list(DType))
@@ -443,6 +508,10 @@ def test_torch_tensor_conversion() -> None:
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
 
 
+# Whichever of these runs first pays torch's one-time lazy init inside its
+# first example -- ~1.5s against hypothesis' 200ms per-example deadline on a
+# contended CI worker. Neither asserts anything about speed.
+@settings(deadline=None)
 @given(st.floats())
 def test_setitem_bfloat16(value: float) -> None:
     tensor = Buffer(DType.bfloat16, (1,))
@@ -462,6 +531,7 @@ def test_setitem_bfloat16(value: float) -> None:
         torch.testing.assert_close(expected, result, equal_nan=True)
 
 
+@settings(deadline=None)
 @given(st.floats())
 def test_getitem_bfloat16(value: float) -> None:
     torch_value = torch.tensor([value]).type(torch.bfloat16)
@@ -800,6 +870,48 @@ def test_inplace_copy_from_tensor_view() -> None:
         ]
     )
     assert np.array_equal(dst.to_numpy(), expected)
+
+
+def test_inplace_copy_from_cross_dtype_view() -> None:
+    """Regression test: inplace_copy_from on slices of a view'd buffer.
+
+    When a buffer is view'd from one dtype to another (e.g. int16 -> uint8),
+    the underlying storage retains the original dtype. Slicing the view'd
+    buffer and calling inplace_copy_from must correctly compute byte offsets
+    using the view's dtype, not the storage's dtype.
+    """
+    num_rows = 4
+    cols_i16 = 3
+    cols_u8 = cols_i16 * 2
+
+    # Create source data as int16, fill with a known pattern
+    src_data = np.zeros((num_rows, cols_i16), dtype=np.int16)
+    for i in range(num_rows):
+        for j in range(cols_i16):
+            src_data[i, j] = i * 10 + j
+    src_buf = Buffer.from_numpy(src_data)
+
+    # View as uint8 (same total bytes, different element count)
+    src_u8 = src_buf.view(DType.uint8, [num_rows, cols_u8])
+
+    # Create a destination buffer of the same uint8 shape, filled with 0xFF
+    dst_data = np.full((num_rows, cols_u8), 0xFF, dtype=np.uint8)
+    dst_buf = Buffer.from_numpy(dst_data)
+
+    # Copy slices from the LAST row of source to the FIRST row of destination.
+    # This exercises a large startOffset that would fail if byte offset
+    # computation used the wrong dtype.
+    dst_buf[0, :].inplace_copy_from(src_u8[num_rows - 1, :])
+
+    result = dst_buf.to_numpy()
+    expected_row = src_u8.to_numpy()[num_rows - 1]
+    np.testing.assert_array_equal(result[0], expected_row)
+
+    # Other rows should be unchanged
+    for i in range(1, num_rows):
+        np.testing.assert_array_equal(
+            result[i], np.full(cols_u8, 0xFF, dtype=np.uint8)
+        )
 
 
 def test_GEX_2088() -> None:

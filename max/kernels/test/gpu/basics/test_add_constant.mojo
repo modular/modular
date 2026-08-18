@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import *
 
 
@@ -20,8 +20,9 @@ def add_constant_fn(
     output: UnsafePointer[Float32, MutAnyOrigin],
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,
-    len: Int,
+    len_dev: Int32,
 ):
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -42,11 +43,11 @@ def run_add_constant(ctx: DeviceContext) raises:
     comptime constant = Float32(33)
 
     comptime kernel = add_constant_fn
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         out_device,
         in_device,
         constant,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

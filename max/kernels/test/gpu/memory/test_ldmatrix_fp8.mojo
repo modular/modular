@@ -14,10 +14,11 @@
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, barrier, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import ld_matrix, mma
-from std.gpu.compute.mma_util import store_matrix_d
+from std.gpu import WARP_SIZE, lane_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import ld_matrix, mma
+from max.gpu.compute.mma_util import store_matrix_d
 from layout import (
     Coord,
     Idx,
@@ -26,7 +27,7 @@ from layout import (
 )
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.numerics import get_accum_type
@@ -51,10 +52,10 @@ def test_ldmatrix_fp8[
 
     var d = SIMD[accum_type, c_frag_size](0)
 
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
@@ -123,7 +124,7 @@ def check_ldmatrix_fp8[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_func = test_ldmatrix_fp8[input_type]
-    ctx.enqueue_function_experimental[kernel_func](
+    ctx.enqueue_function[kernel_func](
         c_device,
         a_device,
         b_device,
@@ -138,25 +139,25 @@ def check_ldmatrix_fp8[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )  # N x K for transpose_b=True
 
     comptime kernel = matmul_kernel_naive[
@@ -169,13 +170,13 @@ def check_ldmatrix_fp8[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

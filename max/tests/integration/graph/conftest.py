@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+from collections.abc import Generator
 from pathlib import Path
 
 import max.driver as md
@@ -26,6 +27,23 @@ from max.engine import InferenceSession
 # We have reasonable test suite timeouts. Use those instead of hypothesis deadlines.
 settings.register_profile("graph_tests", deadline=None)
 settings.load_profile("graph_tests")
+
+
+@pytest.fixture(autouse=True)
+def clean_up_gpus() -> Generator[None, None, None]:
+    """Call synchronize after each test on all accelerators.
+
+    GPU failures for a particular device can spill over to later tests,
+    incorrectly reporting the source of the error. This fixture synchronizes
+    all accelerators after each test, which will propagate any pending errors
+    up to the Python level.
+    """
+
+    yield
+
+    for i in range(md.accelerator_count()):
+        accelerator = md.Accelerator(i)
+        accelerator.synchronize()
 
 
 @pytest.fixture(scope="module")
@@ -48,14 +66,14 @@ def graph_testdata() -> Path:
 
 
 @pytest.fixture
-def counter_mojopkg() -> Path:
+def counter_mojoc() -> Path:
     path = os.getenv("MODULAR_COUNTER_OPS_PATH")
     assert path is not None, "Test couldn't find `MODULAR_COUNTER_OPS_PATH` env"
     return Path(path)
 
 
 @pytest.fixture
-def custom_ops_mojopkg() -> Path:
+def custom_ops_mojoc() -> Path:
     path = os.getenv("CUSTOM_OPS_PATH")
     assert path is not None, "Test couldn't find `CUSTOM_OPS_PATH` env"
     return Path(path)

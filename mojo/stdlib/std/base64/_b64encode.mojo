@@ -24,10 +24,12 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
+from std.bit import rotate_bits_right
 from std.math import iota, ceildiv
-from std.sys import llvm_intrinsic
+from std.sys import llvm_intrinsic, simd_byte_width
 
-from std.memory import Span, bitcast, memcpy
+from std.memory import bitcast, unsafe_memcpy
+from std.collections import Span
 
 from std.utils import IndexList
 
@@ -53,7 +55,7 @@ def _base64_simd_mask[
 # |                                                                   |
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
-def _6bit_to_byte[width: SIMDSize](input: Bytes[width]) -> Bytes[width]:
+def _6bit_to_byte[width: SIMDLength](input: Bytes[width]) -> Bytes[width]:
     comptime assert width in [
         4,
         8,
@@ -115,7 +117,7 @@ comptime END_SECOND_RANGE = 51
 # fmt: on
 
 
-def _to_b64_ascii[width: SIMDSize, //](input: Bytes[width]) -> Bytes[width]:
+def _to_b64_ascii[width: SIMDLength, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
     var offset_indices = abcd.gt(END_FIRST_RANGE).select(target_indices, 13)
@@ -193,18 +195,20 @@ def _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sig
 
 def load_incomplete_simd[
     width: Int
-](
-    pointer: UnsafePointer[mut=False, UInt8, _], nb_of_elements_to_load: Int
-) -> SIMD[DType.uint8, width]:
+](pointer: ImmPointer[UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
+    DType.uint8, width
+]:
     var result = SIMD[DType.uint8, width](0)
-    var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
-    memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
+    var tmp_buffer_pointer = Pointer(to=result).unsafe_bitcast[UInt8]()
+    unsafe_memcpy(
+        dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
+    )
     return result
 
 
 @no_inline
-def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
-    comptime simd_width = sys.simd_byte_width()
+def _b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
+    comptime simd_width = simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
@@ -212,23 +216,27 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
-    var res_ptr = result.unsafe_ptr_mut()
+    var res_ptr = result.unsafe_as_bytes_mut().unsafe_ptr()
     var res_offset = 0
 
     # Main loop
     while input_index + simd_width <= input_bytes_len:
-        var start_of_input_chunk = input_bytes.unsafe_ptr() + input_index
+        var start_of_input_chunk = input_bytes.unsafe_ptr().unsafe_offset(
+            input_index
+        )
 
-        var input_vector = start_of_input_chunk.load[width=simd_width]()
+        var input_vector = start_of_input_chunk.unsafe_load[width=simd_width]()
 
         var result_vector = _to_b64_ascii(input_vector)
-        (res_ptr + res_offset).store(result_vector)
-        res_offset += result_vector.size
+        res_ptr.unsafe_offset(res_offset).unsafe_store(result_vector)
+        res_offset += result_vector.length
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
     while input_index < input_bytes_len:
-        var start_of_input_chunk = input_bytes.unsafe_ptr() + input_index
+        var start_of_input_chunk = input_bytes.unsafe_ptr().unsafe_offset(
+            input_index
+        )
         var nb_of_elements_to_load = min(
             input_simd_width, input_bytes_len - input_index
         )
@@ -259,9 +267,11 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
             ](nb_of_elements_to_load)
         )
 
-        var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(
-            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
+        var v_ptr = Pointer(to=result_vector_with_equals).unsafe_bitcast[Byte]()
+        unsafe_memcpy(
+            dest=res_ptr.unsafe_offset(res_offset),
+            src=v_ptr,
+            count=nb_of_elements_to_store,
         )
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width
@@ -273,22 +283,22 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
 
 def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
-    comptime assert width >= v.size, "width must be at least v.size"
+    comptime assert width >= v.length, "width must be at least v.length"
 
-    comptime if width == v.size:
+    comptime if width == v.length:
         return v._refine[new_size=width]()
     return _repeat_until[width](v.join(v))
 
 
 def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
-    var u16 = bitcast[DType.uint16, input.size // 2](input)
-    var res = bit.rotate_bits_right[shift](u16)
-    return bitcast[DType.uint8, input.size](res)
+    var u16 = bitcast[DType.uint16, input.length // 2](input)
+    var res = rotate_bits_right[shift](u16)
+    return bitcast[DType.uint8, input.length](res)
 
 
 @always_inline
 def _sub_with_saturation[
-    width: SIMDSize, //
+    width: SIMDLength, //
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:

@@ -21,7 +21,7 @@ core path) and K=8 (TMA with OOB zero-fill).
 """
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -66,8 +66,8 @@ def test[
         num_active_experts,
     )
 
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -86,15 +86,15 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
 
     var b_size = num_experts * N * K
@@ -131,15 +131,15 @@ def test[
 
     var a_dev = TileTensor[a_type](
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var c_dev = TileTensor[c_type](
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
     var c_ref_dev = TileTensor[c_type](
         c_ref_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
     var b_dev = TileTensor[b_type](
         b_dev_buffer,
@@ -147,11 +147,11 @@ def test[
     )
     var a_offsets_dev = TileTensor[DType.uint32](
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_experts + 1))),
+        row_major(Coord(num_experts + 1)),
     )
     var expert_ids_dev = TileTensor[DType.int32](
         expert_ids_dev_buffer,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
 
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)

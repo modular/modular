@@ -51,8 +51,8 @@ from std.collections import Optional
 from std.math import align_up
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout import TileTensor
 
 from structured_kernels.tile_types import create_tma_tile
@@ -95,6 +95,16 @@ def validate_grouped_gemm_constraints[
     - Cluster M/N: Power of 2, <=4 per axis (for SF multicast)
     - Total cluster size: <=16
     - 16-byte alignment on contiguous dimensions
+
+    Parameters:
+        a_type: Element type of the A operand matrices.
+        b_type: Element type of the B operand matrices.
+        c_type: Element type of the C output matrices.
+        sfa_dtype: Element type of the A scaling factors.
+        sfb_dtype: Element type of the B scaling factors.
+        transpose_b: Whether B operands are stored transposed (must be True).
+        config: Block-scaled matmul configuration carrying tile, cluster, and
+            pipeline parameters.
     """
     # MMA tiler constraints
     comptime assert config.mma_shape[0] in (
@@ -405,7 +415,7 @@ def grouped_block_scaled_matmul[
 
     comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
-        ctx.enqueue_function[matmul_kernel.run_2sm, matmul_kernel.run_2sm](
+        ctx.enqueue_function[matmul_kernel.run_2sm](
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -426,7 +436,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -436,7 +446,7 @@ def grouped_block_scaled_matmul[
         )
     else:
         # 1SM mode: use linear iteration run()
-        ctx.enqueue_function[matmul_kernel.run, matmul_kernel.run](
+        ctx.enqueue_function[matmul_kernel.run](
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -457,7 +467,7 @@ def grouped_block_scaled_matmul[
             sfb_ptrs,
             # Problem sizes and group count
             problem_sizes,
-            num_groups,
+            Int32(num_groups),
             grid_dim=grid_dim,
             block_dim=num_threads,
             shared_mem_bytes=smem_size,
@@ -484,6 +494,16 @@ def grouped_smem_size[
     ],
 ]() -> Int:
     """Calculate shared memory size for grouped block-scaled kernel.
+
+    Parameters:
+        a_type: Element type of the A operand matrices.
+        b_type: Element type of the B operand matrices.
+        c_type: Element type of the C output matrices.
+        sfa_dtype: Element type of the A scaling factors.
+        sfb_dtype: Element type of the B scaling factors.
+        transpose_b: Whether B operands are stored transposed (must be True).
+        config: Block-scaled matmul configuration carrying tile, cluster, and
+            pipeline parameters.
 
     Returns:
         SMEM size in bytes, including tensormap descriptor storage.

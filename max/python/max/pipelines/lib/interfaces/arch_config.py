@@ -29,23 +29,33 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, cast, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+)
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
+from transformers import AutoConfig
 from typing_extensions import Self, override
-
-from ..config.config_enums import supported_encoding_dtype
-from ..config.kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
-    from transformers import AutoConfig
 
 
 @runtime_checkable
@@ -84,26 +94,201 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
         """KV cache parameters to use when running the model."""
 
 
-@runtime_checkable
-class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
-    """Config for a VLM architecture that uses a vision encoder cache.
+class ArchConfigWithBoundedMaxSeqLen:
+    """Mixin for configs that store a bounded ``max_seq_len`` computed at init."""
 
-    Architectures implementing this protocol provide a per-entry memory
-    estimate so the pipeline can reserve GPU memory for the cache before
-    allocating KV cache pages.
+    max_seq_len: int
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length computed during initialization."""
+        return self.max_seq_len
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Bounds ``max_length`` by ``max_position_embeddings``."""
+        model_config = model_config or pipeline_config.model
+        try:
+            return upper_bounded_default(
+                upper_bound=huggingface_config.max_position_embeddings,
+                default=model_config.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Unable to infer max_length"
+                + (
+                    f" for {cls.__name__}"
+                    if cls.__name__ != "ArchConfigWithBoundedMaxSeqLen"
+                    else ""
+                )
+                + ", the provided "
+                f"max_length ({model_config.max_length}) exceeds the "
+                f"model's max_position_embeddings "
+                f"({huggingface_config.max_position_embeddings})."
+            ) from e
+
+
+class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
+    """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
+
+    Architecture dataclasses that precompute :class:`~max.nn.kv_cache.KVCacheParams`
+    (or another :class:`KVCacheParamInterface`) during ``initialize`` can inherit
+    this mixin together with :class:`ArchConfigWithKVCache` to avoid duplicating
+    the trivial accessor.
+
+    Also provides a default :meth:`construct_kv_params` for the common grouped
+    attention case. Speculative decoding defaults to ``None`` via
+    :meth:`KVCacheConfig.to_params` unless a subclass (e.g. Llama3) passes a
+    nonzero ``num_draft_tokens``. Configs that need a different head/layer
+    mapping or MLA should override ``construct_kv_params``.
     """
 
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate bytes for one vision encoder cache entry.
+    kv_params: KVCacheParams
 
-        Returns the worst-case memory for a single max-resolution image
-        after the vision encoder's spatial merge / patch merge step.
-        The result is ``max_tokens * hidden_size * dtype_bytes``.
-        """
-        ...
+    def get_kv_params(self) -> KVCacheParams:
+        """Returns the KV cache parameters computed for this config."""
+        return self.kv_params
+
+    @staticmethod
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        """Attention head size from ``head_dim`` or ``hidden_size // num_attention_heads``."""
+        head_dim = getattr(huggingface_config, "head_dim", None)
+        if head_dim is not None:
+            return int(head_dim)
+        return int(
+            huggingface_config.hidden_size
+            // huggingface_config.num_attention_heads
+        )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """Layer count for the decoder stack (override when HF uses a different field)."""
+        return int(huggingface_config.num_hidden_layers)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Default KV params for standard grouped attention."""
+        return kv_cache_config.to_params(
+            dtype=cache_dtype,
+            n_kv_heads=huggingface_config.num_key_value_heads,
+            head_dim=cls.get_head_dim(huggingface_config),
+            num_layers=cls.get_num_layers(huggingface_config),
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+
+
+class ArchConfigWithPermissiveMaxSeqLen:
+    """Mixin for configs that honor ``max_length`` without bounding."""
+
+    max_position_embeddings: int
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``max_position_embeddings``."""
+        model_config = model_config or pipeline_config.model
+        if model_config.max_length:
+            return model_config.max_length
+        return huggingface_config.max_position_embeddings
+
+    def get_max_seq_len(self) -> int:
+        """Returns the resolved maximum sequence length stored on the config."""
+        return self.max_position_embeddings
+
+
+class ArchVLConfigWithTextSubconfig:
+    """Mixin for VLMs that embed a language-model arch config.
+
+    Annotate :attr:`llm_config` or :attr:`text_config` with the text arch type;
+    otherwise :class:`ArchConfigWithStoredKVParams` is used (Pixtral). The HF
+    subconfig is read from ``text_config`` or ``llm_config`` on the HuggingFace
+    config (MAX field names need not match HF attribute names).
+    Override :meth:`construct_kv_params` / :meth:`calculate_max_seq_len` when
+    resolution is dynamic (e.g. InternVL) or semantics differ (e.g. Gemma4 KV).
+    """
+
+    @classmethod
+    def _text_config_cls(cls) -> type[ArchConfigWithStoredKVParams]:
+        text_config_cls = cls.__annotations__.get(
+            "llm_config",
+            cls.__annotations__.get(
+                "text_config", ArchConfigWithStoredKVParams
+            ),
+        )
+        if isinstance(text_config_cls, type) and issubclass(
+            text_config_cls, ArchConfigWithStoredKVParams
+        ):
+            return text_config_cls
+        return ArchConfigWithStoredKVParams
+
+    @classmethod
+    def _hf_text_config(cls, huggingface_config: AutoConfig) -> AutoConfig:
+        hf_text = getattr(huggingface_config, "text_config", None)
+        if hf_text is None:
+            hf_text = getattr(huggingface_config, "llm_config", None)
+        if hf_text is None:
+            raise ValueError(
+                f"HuggingFace config {type(huggingface_config).__name__} has no "
+                "'text_config' or 'llm_config' attribute."
+            )
+        return hf_text
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length from the embedded text config."""
+        for config_attr in ("llm_config", "text_config"):
+            if config_attr in self.__annotations__:
+                return cast(
+                    ArchConfig, getattr(self, config_attr)
+                ).get_max_seq_len()
+        return super().get_max_seq_len()  # type: ignore[misc]
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Delegates to the annotated text config class."""
+        return cls._text_config_cls().construct_kv_params(
+            huggingface_config=cls._hf_text_config(huggingface_config),
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Delegates to the annotated text config class."""
+        return cls._text_config_cls().calculate_max_seq_len(
+            pipeline_config,
+            cls._hf_text_config(huggingface_config),
+            model_config,
+        )
 
 
 def _all_available_devices() -> list[DeviceRef]:
@@ -122,7 +307,15 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     - head_dim: int
     - num_layers: int
     - model_max_seq_len: int
+    - DEFAULT_ENCODING: SupportedEncoding
     """
+
+    # The architecture's default and supported encodings, mirrored from the
+    # `SupportedArchitecture` registration. `DEFAULT_ENCODING` is used by
+    # `initialize` to resolve `quantization_encoding` when the user didn't
+    # specify one. Concrete subclasses must define these.
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding]
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]]
 
     dtype: DType
     """The data type to use for the model."""
@@ -130,6 +323,8 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     """The physical devices to use when running the model."""
     cache_dtype: DType | None = None
     """The data type to use for the KV cache."""
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved weight encoding the model runs with."""
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KV cache configuration to use when running the model."""
     data_parallel_degree: int = 1
@@ -149,17 +344,20 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        if model_config.quantization_encoding is None:
-            raise ValueError(
-                "Quantization encoding is required for ArchConfigWithAttentionKVCache"
-            )
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         return cls(
-            dtype=supported_encoding_dtype(model_config.quantization_encoding),
+            dtype=supported_encoding_dtype(quantization_encoding),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in model_config.device_specs
             ],
-            cache_dtype=model_config.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                quantization_encoding,
+                model_config.kv_cache.kv_cache_format,
+            ),
+            quantization_encoding=quantization_encoding,
             kv_cache=model_config.kv_cache,
             data_parallel_degree=model_config.data_parallel_degree,
             user_provided_max_length=model_config.max_length,

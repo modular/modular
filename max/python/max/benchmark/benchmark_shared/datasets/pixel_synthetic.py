@@ -67,10 +67,13 @@ class SyntheticPixelBenchmarkDataset(PixelBenchmarkDataset):
             image_guidance_scale=kwargs.get("image_guidance_scale"),
             image_negative_prompt=kwargs.get("image_negative_prompt"),
             image_seed=kwargs.get("image_seed"),
+            num_frames=kwargs.get("num_frames"),
         )
         benchmark_task = kwargs.get("benchmark_task")
         input_image_paths: list[str] = []
-        if benchmark_task == "image-to-image":
+        # Both image-to-image and image-to-video consume an input image; only
+        # the payload routing (num-frames) differs downstream.
+        if benchmark_task in ("image-to-image", "image-to-video"):
             input_image_paths = [
                 self._get_placeholder_image_path(
                     width=kwargs.get("image_width") or 1024,

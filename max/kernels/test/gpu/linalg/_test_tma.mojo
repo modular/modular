@@ -14,8 +14,9 @@
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from layout import (
     IntTuple,
     Layout,
@@ -24,8 +25,7 @@ from layout import (
 from layout.layout import zipped_divide
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
-from std.memory import stack_allocation
-from std.memory.pointer import _GPUAddressSpace
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import IndexList
@@ -39,7 +39,7 @@ from linalg.arch.sm100._tma import (
     UInt32Indices,
     to_swizzle,
 )
-from std.gpu.host._tensormap import SwizzleMode
+from max.gpu.host._tensormap import SwizzleMode
 from std.gpu import WARP_SIZE
 from std.testing import assert_equal
 from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
@@ -194,14 +194,14 @@ def test_tma_load_kernel[
         dtype,
         smem_layout,
         MutAnyOrigin,
-        address_space=_GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    var mbar_ptr = stack_allocation[
+    var mbar_ptr = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=_GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -268,9 +268,9 @@ def test_2D_swizzle[
 
             for ii in range(load_shape_m):
                 for jj in range(load_shape_n):
-                    offset = swizzle(ii * load_shape_n + jj)
+                    var offset = swizzle(ii * load_shape_n + jj)
 
-                    m_offset, n_offset = divmod(offset, load_shape_n)
+                    var m_offset, n_offset = divmod(offset, load_shape_n)
 
                     if reference_tile[ii, jj] != rebind[
                         SIMD[
@@ -319,11 +319,14 @@ def test_3D_swizzle[
                                 + (ii * load_shape_n + jj)
                             )
 
+                            var b_offset: Int
                             b_offset, offset = divmod(
                                 offset, load_shape_m * load_shape_n
                             )
 
-                            m_offset, n_offset = divmod(offset, load_shape_n)
+                            var m_offset, n_offset = divmod(
+                                offset, load_shape_n
+                            )
 
                             if reference_tile[bb, ii, jj] != rebind[
                                 SIMD[
@@ -397,7 +400,7 @@ def test_tma_load[
         OOB_access=OOB_access,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         global_buffer_dst_tensor.device_tensor(),
         load_policy,
         grid_dim=(total_tiles),

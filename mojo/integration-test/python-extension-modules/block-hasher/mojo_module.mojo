@@ -21,7 +21,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -44,10 +44,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var data: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int, MutAnyOrigin]
-    var strides: UnsafePointer[Int, MutAnyOrigin]
+
+    var dimensions: Pointer[Int, MutUntrackedOrigin]
+
+    var strides: Pointer[Int, MutUntrackedOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -59,7 +61,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     def num_elts(self) -> Int:
         var num_elts = 1
         for i in range(self.nd):
-            num_elts *= self.dimensions[i]
+            num_elts *= self.dimensions[unsafe_offset=i]
         return num_elts
 
 
@@ -68,7 +70,7 @@ def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
+    py_array_object_ptr: Pointer[PyArrayObject[dtype], _],
     block_size: Int,
 ) -> PythonObject:
     # Compute number of hashes
@@ -89,8 +91,8 @@ def _mojo_block_hasher[
     var num_bytes = block_size * size_of[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
-        var hash_ptr_ints = hash_ptr_base + block_idx * block_size
-        var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
+        var hash_ptr_ints = hash_ptr_base.unsafe_offset(block_idx * block_size)
+        var hash_ptr_bytes = hash_ptr_ints.unsafe_bitcast[Byte]()
         var token_hash = hash[default_comp_time_hasher](
             hash_ptr_bytes, num_bytes
         )
@@ -106,13 +108,12 @@ def _mojo_block_hasher[
     return PythonObject(from_owned=result_py_list)
 
 
-@export
 def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
+    var py_array_object_ptr = Pointer[PyArrayObject[DType.int32]](
         unchecked_downcast_value=py_array_object
     )
 

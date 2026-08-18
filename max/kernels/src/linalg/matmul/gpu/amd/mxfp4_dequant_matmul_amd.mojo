@@ -19,9 +19,8 @@ MI355X (CDNA4) uses float8_e4m3fn; MI300X (CDNA3) uses float8_e4m3fnuz.
 The FP8 type is selected at compile time based on the target architecture.
 """
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import get_amd_fp8_dtype
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 
 from linalg.mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
@@ -64,7 +63,7 @@ def mxfp4_dequant_matmul_amd(
     # Step 1: Dequantize MXFP4 weights to FP8
     var b_fp8_buf = ctx.enqueue_create_buffer[fp8_type](static_N * static_K)
     var b_fp8_tt = TileTensor(
-        b_fp8_buf, row_major((Idx[static_N](), Idx[static_K]()))
+        b_fp8_buf, row_major((Idx[static_N], Idx[static_K]))
     )
 
     dequant_mxfp4(
@@ -78,7 +77,7 @@ def mxfp4_dequant_matmul_amd(
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
-    var a_fp8_tt = TileTensor(a_fp8_buf, row_major((Idx(M), Idx[static_K]())))
+    var a_fp8_tt = TileTensor(a_fp8_buf, row_major((M, Idx[static_K])))
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 

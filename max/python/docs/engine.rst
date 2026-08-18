@@ -19,6 +19,7 @@ Model inference
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompiledModel
    InferenceSession
    Model
 

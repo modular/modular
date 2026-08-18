@@ -17,9 +17,8 @@ transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 """
 
 from std.utils.index import IndexList
-from std.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from layout import (
@@ -32,10 +31,11 @@ from layout.int_tuple import depth, to_index_list, product
 from layout.runtime_tuple import to_index_list as runtime_tuple_to_index_list
 from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys import size_of
 from layout.swizzle import Swizzle
 from std.bit import log2_floor
+from std.builtin.device_passable import DeviceTypeEncoder
 
 
 struct TMADescriptor[
@@ -53,16 +53,6 @@ struct TMADescriptor[
             tensormap: The TMA tensormap that defines the memory access pattern.
         """
         self.tensormap = tensormap
-
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """
-        Copy initializes this `TMADescriptor` from another instance.
-
-        Args:
-            copy: The other `TMADescriptor` instance to copy from.
-        """
-        self.tensormap = copy.tensormap
 
 
 def create_tma_descriptor[
@@ -133,8 +123,10 @@ struct TMALoad[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -373,7 +365,7 @@ def copy[
         )
 
 
-@parameter
+@__parameter
 def to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 

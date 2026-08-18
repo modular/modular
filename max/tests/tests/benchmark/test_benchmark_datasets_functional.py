@@ -17,6 +17,9 @@ import warnings
 
 import hf_repo_lock
 from max.benchmark.benchmark_shared.datasets import BenchmarkDataset
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
 from max.pipelines.lib import generate_local_model_path
 from transformers import AutoTokenizer
 
@@ -120,17 +123,19 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
 
-    for sys_prompt_ratio in (0.0, 0.25, 0.5, 0.75):
-        samples = dataset.sample_requests(
-            num_requests=10,
-            tokenizer=tokenizer,
-            input_len="U(80, 100)",
-            output_len="10",
-            sys_prompt_ratio=sys_prompt_ratio,
-            max_num_unique_sys_prompt=1,
-            shuffle=False,
-        )
-        assert len(samples.requests) == 10, "Expected 10 requests"
+    with TokenizerPool(tokenizer) as pool:
+        for sys_prompt_ratio in (0.0, 0.25, 0.5, 0.75):
+            samples = dataset.sample_requests(
+                num_requests=10,
+                tokenizer=tokenizer,
+                pool=pool,
+                input_len="U(80, 100)",
+                output_len="10",
+                sys_prompt_ratio=sys_prompt_ratio,
+                max_num_unique_sys_prompt=1,
+                shuffle=False,
+            )
+            assert len(samples.requests) == 10, "Expected 10 requests"
 
         # (1) Each request's system length in tokens = prompt_len * sys_prompt_ratio
         # (2) Encode prompt_formatted and take first expected_sys_len token ids

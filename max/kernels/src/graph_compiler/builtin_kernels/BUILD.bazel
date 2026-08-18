@@ -1,0 +1,32 @@
+load("//bazel:api.bzl", "mojo_library")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "builtin_kernels",
+    srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
+    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
+    use_production_compiler_for_asan = True,
+    validate_missing_docs = False,
+    deps = [
+        "//Kernels/lib/attn_res",
+        "//Kernels/lib/matmul_rs",
+        "//Kernels/lib/msa",
+        "//Kernels/src/mega_ffn",
+        "//max:algorithm",
+        "//max:builtin_primitives",
+        "//max:comm",
+        "//max:extensibility",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:quantization",
+        "//max:shmem",
+        "//max:state_space",
+        "@mojo//:std",
+    ],
+)

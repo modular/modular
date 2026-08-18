@@ -7,28 +7,27 @@ description: An overview of the Mojo language.
 
 This page provides an overview of the Mojo language.
 
-If you know Python, then a lot of Mojo code will look familiar. However, Mojo
+If you know Python, then a lot of Mojo code looks familiar. However, Mojo
 incorporates features like static type checking, memory safety, next-generation
 compiler technologies, and more. As such, Mojo also has a lot in common with
 languages like C++ and Rust.
 
 If you prefer to learn by doing, follow the [Get started with
-Mojo](/docs/manual/get-started) tutorial.
+Mojo](/docs/manual/get-started/) tutorial.
 
 On this page, we'll introduce the essential Mojo syntax, so you can start
 coding quickly and understand other Mojo code you encounter. Subsequent
-sections in the Mojo Manual dive deeper into these topics, and links are
-provided below as appropriate.
+sections in the Mojo Manual dive deeper into these topics, and this page links
+to them as appropriate.
 
 Let's get started! 🔥
 
 :::note
 
-Mojo is a young language and there are many [features still
-missing](/docs/roadmap). As such, Mojo is currently **not** meant for
-beginners. Even this basics section assumes some programming experience.
-However, throughout the Mojo Manual, we try not to assume experience with any
-particular language.
+Mojo is a young language that's still [evolving](/docs/roadmap/). As such, Mojo
+is currently **not** meant for beginners. Even this basics section assumes some
+programming experience. However, throughout the Mojo Manual, we try not to
+assume experience with any particular language.
 
 :::
 
@@ -45,29 +44,25 @@ Every Mojo program must include a function named `main()` as the entry point.
 We'll talk more about functions soon, but for now it's enough to know that
 you can write `def main():` followed by an indented function body.
 
-The `print()` statement does what you'd expect, printing its arguments to
-the standard output.
+The [`print()`](/docs/std/io/io/print/) function does what you'd expect,
+printing its arguments to the standard output.
+
+This page omits `def main():` for many brief examples.
+To test these, add them to a `main()` function.
 
 ## Variables
 
-In Mojo, you can declare a variable by simply assigning a value to
-a new named variable:
+In Mojo, you can declare a variable using the `var` keyword:
 
 ```mojo
 def main():
-    x = 10
-    y = x * x
+    var x = 10
+    var y = x * x
     print(y)
 ```
 
-You can also _explicitly_ declare variables with the `var` keyword:
-
-```mojo
-var x = 10
-```
-
-When declaring a variable with `var`, you can also declare a variable type, with
-or without an assignment:
+You can also explicitly declare the variable type, with or without an
+assignment:
 
 ```mojo
 def main():
@@ -76,22 +71,23 @@ def main():
     sum = x + x
 ```
 
-Both implicitly declared and explicitly declared variables are statically typed:
-that is, the type is set at compile time, and doesn't change at runtime.
+Mojo variables are statically typed:
+that is, Mojo sets a variable's type at compile time, and the type doesn't
+change at runtime.
 If you don't specify a type, Mojo uses the type of the first value assigned to
 the variable.
 
 ```mojo
-x = 10
-x = "Foo" # Error: Cannot convert "StringLiteral" value to "Int"
+var x = 10
+x = "Foo" # Error: cannot implicitly convert 'StringLiteral["Foo"]' value to 'Int'
 ```
 
 For more details, see the page about
-[variables](/docs/manual/variables).
+[variables](/docs/manual/variables/).
 
 ## Blocks and statements
 
-Code blocks such as functions, conditions, and loops are defined
+Define code blocks such as functions, conditions, and loops
 with a colon followed by indented lines. For example:
 
 ```mojo
@@ -104,33 +100,40 @@ def loop():
 You can use any number of spaces or tabs for your indentation (we prefer 4
 spaces).
 
-All code statements in Mojo end with a newline. However, statements can span
-multiple lines if you indent the following lines. For example, this long string
-spans two lines:
+All code statements in Mojo end with a newline. The Mojo compiler is fairly
+lenient in allowing extra line breaks. As a rule of thumb, you can always break
+statements between a pair of parentheses (`()`), square brackets (`[]`), or
+curly braces (`{}`):
 
 ```mojo
-def print_line():
-    long_text = "This is a long line of text that is a lot easier to read if"
-                " it is broken up across two lines instead of one long line."
-    print(long_text)
+matrix_multiply(
+    matrix_a,
+    matrix_b,
+    result_matrix
+)
 ```
 
-And you can chain function calls across lines:
+You can add parentheses to continue a statement across lines:
 
 ```mojo
-def print_hello():
-    text = ",".join("Hello", " world!")
-    print(text)
+var long_text = (
+    "This is a long line of text that is a lot easier to read if"
+    " it is broken up across two lines instead of one long line."
+)
 ```
+
+Mojo combines adjacent string literals, so `long_text` ends up with
+a single, combined string.
 
 For more information on loops and conditional statements, see
-[Control flow](/docs/manual/control-flow).
+[Control flow](/docs/manual/control-flow/).
 
 ## Functions
 
-You define Mojo functions with the `def` keyword. For example, the
-following uses the `def` keyword to define a function named `greet`
-that requires a single `String` argument and returns a `String`:
+Define Mojo functions with the `def` keyword. For example, the
+following uses the `def` keyword to define a function named `greet()`
+that requires a single [`String`](/docs/std/collections/string/string/String/)
+argument and returns a `String`:
 
 ```mojo
 def greet(name: String) -> String:
@@ -151,7 +154,7 @@ Comments may also follow some code:
 var message = "Hello, World!" # This is also a valid comment
 ```
 
-API documentation comments are enclosed in triple quotes. For example:
+Enclose API documentation comments in triple quotes. For example:
 
 ```mojo
 def print(x: String):
@@ -165,14 +168,14 @@ def print(x: String):
 
 Documenting your code with these kinds of comments (known as "docstrings")
 is a topic we've yet to fully specify, but you can generate an API reference
-from docstrings using the [`mojo doc` command](/docs/cli/doc).
+from docstrings using the [`mojo doc` command](/docs/cli/doc/).
 
 :::note
 
 Technically, docstrings aren't _comments_, they're a special use of Mojo's
 syntax for multi-line string literals. For details, see
-[String literals](/docs/manual/types#string-literals) in the page on
-[Types](/docs/manual/types).
+[String literals](/docs/manual/types/#string-literals) in the page on
+[Types](/docs/manual/types/).
 
 :::
 
@@ -182,8 +185,9 @@ You can build high-level abstractions for types (or "objects") as a `struct`.
 
 A `struct` in Mojo is similar to a `class` in Python: they both support
 methods, fields, operator overloading, decorators for metaprogramming, and so
-on. However, Mojo structs are completely static—they are bound at compile-time,
-so they do not allow dynamic dispatch or any runtime changes to the structure.
+on. However, Mojo structs are completely static—the compiler binds them at
+compile time, so they don't allow dynamic dispatch or any runtime changes to
+the structure.
 (Mojo will also support Python-style classes in the future.)
 
 For example, here's a basic struct:
@@ -213,16 +217,16 @@ def use_mypair():
     mine.dump()
 ```
 
-The `MyPair` struct contains two special methods, `__init__()`, the constructor,
-and `__init__(out self, *, copy: Self)`, the copy constructor.
-_Lifecycle methods_ like this control how a struct is created, copied, moved,
-and destroyed.
+The `MyPair` struct contains two special methods, `__init__()`, the initializer,
+and `__init__(out self, *, copy: Self)`, the copy initializer.
+_Lifecycle methods_ like this control how Mojo creates, copies, moves, and
+destroys a struct.
 
 For most simple types, you don't need to write the lifecycle methods. You can
-use the `@fieldwise_init` decorator to generate the boilerplate field-wise
-initializer for you, and Mojo will synthesize copy and move constructors if you
-ask for them with trait conformance. So the
-`MyPair` struct can be simplified to this:
+use the [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/)
+decorator to generate the boilerplate field-wise initializer for you, and Mojo
+synthesizes copy and move initializers if you ask for them with trait
+conformance. So you can simplify the `MyPair` struct to this:
 
 ```mojo
 @fieldwise_init
@@ -235,7 +239,7 @@ struct MyPair(Copyable):
 ```
 
 For more details, see the page about
-[structs](/docs/manual/structs).
+[structs](/docs/manual/structs/).
 
 ### Traits
 
@@ -243,10 +247,10 @@ A trait is like a template of characteristics for a struct. If you want to
 create a struct with the characteristics defined in a trait, you must implement
 each characteristic (such as each method). Each characteristic in a trait is a
 "requirement" for the struct, and when your struct implements all of the
-requirements, it's said to "conform" to the trait.
+requirements, it "conforms" to the trait.
 
-Using traits allows you to write generic functions that can accept any type
-that conforms to a trait, rather than accept only specific types.
+Using traits allows you to write parameterized functions that can accept any
+type that conforms to a trait, rather than accepting only specific types.
 
 For example, here's how you can create a trait:
 
@@ -256,7 +260,7 @@ trait SomeTrait:
 ```
 
 The three dots following the method signature are Mojo syntax indicating that
-the method is not implemented.
+the method has no implementation.
 
 Here's a struct that conforms to `SomeTrait`:
 
@@ -280,47 +284,49 @@ def use_trait_function():
 ```
 
 You'll see traits used in a lot of APIs provided by Mojo's standard library. For
-example, Mojo's collection types like `List` and `Dict` can store any type that
-conforms to the `Copyable` trait. You can specify the type when
-you create a collection:
+example, Mojo's collection types like [`List`](/docs/std/collections/list/List/)
+and [`Dict`](/docs/std/collections/dict/Dict/) can store any type that conforms
+to the [`Movable`](/docs/std/builtin/value/Movable/) trait (`Dict` keys must
+also conform to [`KeyElement`](/docs/std/collections/dict/#keyelement)).
+You can specify the type when you create a collection:
 
 ```mojo
-my_list = List[Float64]()
+var my_list = List[Float64]()
 ```
 
 :::note
 
 You're probably wondering about the square brackets on `fun_with_traits()`.
-These aren't function _arguments_ (which go in parentheses); these are function
-_parameters_, which we'll explain next.
+These aren't function _arguments_ (which go in parentheses); these are
+compile-time _parameters_, which we'll explain in the next section.
 
 :::
 
 Without traits, the `x` argument in `fun_with_traits()` would have to declare a
-specific type that implements `required_method()`, such as `SomeStruct`
-(but then the function would accept only that type). With traits, the function
-can accept any type for `x` as long as it conforms to (it "implements")
-`SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
-it accepts a _generalized_ type instead of a specific type.
+specific type that implements `required_method()`, such as `SomeStruct` (but
+then the function would accept only that type). With traits, the function can
+accept any type for `x` as long as it conforms to (it "implements") `SomeTrait`.
+Thus, `fun_with_traits()` is a "parameterized function" because it accepts a
+_generalized_ type instead of a specific type.
 
-For more details, see the page about [traits](/docs/manual/traits).
+For more details, see the page about [traits](/docs/manual/traits/).
 
 ## Parameterization
 
 In Mojo, a parameter is a compile-time variable that becomes a runtime
-constant, and it's declared in square brackets on a function or struct.
+constant, and you declare it in square brackets on a function or struct.
 Parameters allow for compile-time metaprogramming, which means you can generate
 or modify code at compile time.
 
-Many other languages use "parameter" and "argument" interchangeably, so be
-aware that when we say things like "parameter" and "parametric function," we're
-talking about these compile-time parameters. Whereas, a function "argument" is
-a runtime value that's declared in parentheses.
+Many other languages use "parameter" and "argument" interchangeably, so be aware
+that when we say things like "parameter" and "parameterized function," we're
+talking about these compile-time parameters. In contrast, a function "argument"
+is a runtime value that you declare in parentheses.
 
-Parameterization is a complex topic that's covered in much more detail in the
-[Metaprogramming](/docs/manual/parameters/) section, but we want to break the
-ice just a little bit here. To get you started, let's look at a parametric
-function:
+Parameterization is a complex topic that the
+[Metaprogramming](/docs/manual/metaprogramming/) section covers in much more
+detail, but we want to break the ice just a little bit here. To get you started,
+let's look at a parameterized function:
 
 ```mojo
 def repeat[count: Int](msg: String):
@@ -329,9 +335,9 @@ def repeat[count: Int](msg: String):
         print(msg)
 ```
 
-This function has one parameter of type `Int` and one argument of type
-`String`. To call the function, you need to specify both the parameter and the
-argument:
+This function has one parameter of type [`Int`](/docs/std/builtin/simd/#int) and
+one argument of type `String`. To call the function, you need to specify both
+the parameter and the argument:
 
 ```mojo
 def call_repeat():
@@ -339,21 +345,21 @@ def call_repeat():
     # Prints "Hello" 3 times
 ```
 
-By specifying `count` as a parameter, the Mojo compiler is able to optimize the
-function because this value is guaranteed to not change at runtime. And the
-`comptime` keyword in the code tells the compiler to evaluate the `for` loop
-at compile time, not runtime.
+By specifying `count` as a parameter, the Mojo compiler can optimize the
+function because this value can't change at runtime. And the `comptime` keyword
+in the code tells the compiler to evaluate the `for` loop at compile time, not
+runtime.
 
 The compiler effectively generates a unique version of the `repeat()` function
 that repeats the message only 3 times. This makes the code more performant
 because there's less to compute at runtime.
 
 Similarly, you can define a struct with parameters, which effectively allows
-you to define variants of that type at compile-time, depending on the parameter
+you to define variants of that type at compile time, depending on the parameter
 values.
 
 For more detail on parameters, see the section on
-[Metaprogramming](/docs/manual/parameters/).
+[Metaprogramming](/docs/manual/metaprogramming/).
 
 ## Python integration
 
@@ -384,23 +390,20 @@ Hopefully this page has given you enough information to start experimenting with
 Mojo, but this is only touching the surface of what's available in Mojo.
 
 If you're in the mood to read more, continue through each page of this
-Mojo Manual—the next page from here is [Functions](/docs/manual/functions).
+Mojo Manual—the next page from here is [Functions](/docs/manual/functions/).
 
 Otherwise, here are some other resources to check out:
 
-- See [Get started with Mojo](/docs/manual/get-started) for a hands-on
-  tutorial that will get you up and running with Mojo.
+- See [Get started with Mojo](/docs/manual/get-started/) for a hands-on
+  tutorial that gets you up and running with Mojo.
 
 - If you want to experiment with some code, clone [our GitHub
   repo](https://github.com/modular/modular/) to try our code examples:
 
   ```sh
   git clone https://github.com/modular/modular.git
-  ```
-
-  ```sh
-  cd max/examples/mojo
+  cd modular/mojo/examples
   ```
 
 - To see all the available Mojo APIs, check out the [Mojo standard library
-  reference](/docs/lib).
+  reference](/docs/std/).

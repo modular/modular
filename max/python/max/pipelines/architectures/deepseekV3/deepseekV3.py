@@ -38,13 +38,14 @@ from max.nn.attention.multi_latent_attention import (
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
+    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, Module, SubgraphInput
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -66,32 +67,6 @@ from max.nn.transformer.distributed_transformer import (
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
-
-
-def _unpack_kv_collections(
-    kv_collections: Sequence[PagedCacheValues],
-) -> tuple[
-    list[BufferValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[BufferValue],
-]:
-    """Unpack KV collections into component lists.
-
-    Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
-    """
-    kv_scales = [
-        kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
-    ]
-    return (
-        [kv.kv_blocks for kv in kv_collections],
-        [kv.cache_lengths for kv in kv_collections],
-        [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
-        kv_scales,
-    )
 
 
 class ParallelismMode(enum.Enum):
@@ -143,6 +118,7 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
 def deepseek_logits_postprocess(
     h: list[TensorValue],
     input_row_offsets: list[TensorValue],
+    all_logits_input_row_offsets: TensorValue | None,
     return_n_logits: TensorValue,
     norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
     lm_head: Callable[
@@ -154,7 +130,8 @@ def deepseek_logits_postprocess(
     return_logits: ReturnLogits,
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
-    eagle3_captured_hs: list[list[TensorValue]] | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
+    emit_last_token_logits: bool = True,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
@@ -163,8 +140,14 @@ def deepseek_logits_postprocess(
     variable / all logits computation, logits scaling, and hidden-states
     extraction.
 
+    When ``emit_last_token_logits`` is False, the last-token norm + full-vocab
+    lm_head projection (and, under DP attention, its last-token allgather) is
+    skipped and ``last_logits`` is omitted from the output tuple. Callers that
+    consume only the VARIABLE logits (e.g. the unified MTP graph) set this to
+    avoid an unused vocab-sized GEMM + collective per step.
+
     Returns:
-        ``(last_logits, [logits, offsets], [hidden_states])`` — the optional
+        ``([last_logits], [logits, offsets], [hidden_states])`` — the optional
         segments are present only when the corresponding mode is active.
     """
     if is_data_parallel_attention:
@@ -174,111 +157,83 @@ def deepseek_logits_postprocess(
             last_token_indices = input_row_offsets[dev_idx][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
             last_token_per_dev.append(last_token_h)
-        last_token_distributed = ops.allgather(
-            last_token_per_dev, signal_buffers
-        )
+        # ``last_token_distributed`` is only consumed by the last-token lm_head
+        # below and by ``extract_hs`` for the LAST / LAST_PER_DEVICE modes;
+        # callers that suppress ``last_logits`` pair it with ALL /
+        # ALL_NORMALIZED hidden states, so the allgather is skipped too.
+        if emit_last_token_logits:
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+        else:
+            last_token_distributed = last_token_per_dev
     else:
         last_token_distributed = [
             ops.gather(h_i, offsets_i[1:] - 1, axis=0)
             for h_i, offsets_i in zip(h, input_row_offsets, strict=True)
         ]
 
-    norm_last_token = forward_sharded_layers(
-        norm_shards, last_token_distributed
-    )
-    last_logits = ops.cast(
-        lm_head(norm_last_token, signal_buffers)[0],
-        DType.float32,
-    )
+    last_logits: TensorValue | None = None
+    if emit_last_token_logits:
+        norm_last_token = forward_sharded_layers(
+            norm_shards, last_token_distributed
+        )
+        last_logits = ops.cast(
+            lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
+        )
 
     logits = None
     offsets = None
 
     if return_logits == ReturnLogits.VARIABLE:
+        # Compute the range on device 0 and broadcast to all devices.
+        # Using distributed_broadcast instead of per-device .to() copies
+        # avoids cross-stream D2D event sync that breaks CUDA graph
+        # capture. Per-device ops.range with a shared out_dim was also
+        # attempted and hit "input device gpu:0 must match result device
+        # gpu:1 in rebind()" — the shared symbolic dim triggers a cross-
+        # device rebind downstream.
+        return_n_logits_range = ops.range(
+            start=return_n_logits[0],
+            stop=0,
+            step=-1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=devices[0],
+        )
+        return_n_logits_range_per_dev = ops.distributed_broadcast(
+            return_n_logits_range, signal_buffers
+        )
+        variable_per_dev: list[TensorValue] = []
+        for dev_idx in range(len(devices)):
+            dev_offsets = (
+                ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
+                - return_n_logits_range_per_dev[dev_idx]
+            )
+            dev_indices = ops.reshape(dev_offsets, shape=(-1,))
+            variable_per_dev.append(ops.gather(h[dev_idx], dev_indices, axis=0))
         if is_data_parallel_attention:
-            # Compute the range on device 0 and broadcast to all devices.
-            # Using distributed_broadcast instead of per-device .to() copies
-            # avoids cross-stream D2D event sync that breaks CUDA graph
-            # capture. Per-device ops.range with a shared out_dim was also
-            # attempted and hit "input device gpu:0 must match result device
-            # gpu:1 in rebind()" — the shared symbolic dim triggers a cross-
-            # device rebind downstream.
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            return_n_logits_range_per_dev = ops.distributed_broadcast(
-                return_n_logits_range, signal_buffers
-            )
-            variable_tokens_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                dev_offsets = (
-                    ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
-                    - return_n_logits_range_per_dev[dev_idx]
-                )
-                indices = ops.reshape(dev_offsets, shape=(-1,))
-                variable_h = ops.gather(h0, indices, axis=0)
-                variable_tokens_per_dev.append(variable_h)
+            variable_per_dev = ops.allgather(variable_per_dev, signal_buffers)
 
-            variable_tokens_distributed = ops.allgather(
-                variable_tokens_per_dev, signal_buffers
-            )
-
-            norm_variable_tokens = forward_sharded_layers(
-                norm_shards, variable_tokens_distributed
-            )
-            logits = ops.cast(
-                lm_head(norm_variable_tokens, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = ops.range(
-                0,
-                TensorValue(logits.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-        else:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            last_offsets = (
-                ops.unsqueeze(input_row_offsets[0][1:], -1)
-                - return_n_logits_range
-            )
-            last_indices = ops.reshape(last_offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    lm_head(
-                        forward_sharded_layers(norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
+        logits = ops.cast(
+            lm_head(
+                forward_sharded_layers(norm_shards, variable_per_dev),
+                signal_buffers,
+            )[0],
+            DType.float32,
+        )
+        offsets = ops.range(
+            0,
+            TensorValue(variable_per_dev[0].shape[0]) + return_n_logits[0],
+            return_n_logits[0],
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=devices[0],
+        )
     elif return_logits == ReturnLogits.ALL:
+        if is_data_parallel_attention:
+            h = ops.allgather(h, signal_buffers)
         logits = ops.cast(
             lm_head(
                 forward_sharded_layers(norm_shards, h),
@@ -286,14 +241,24 @@ def deepseek_logits_postprocess(
             )[0],
             DType.float32,
         )
-        offsets = input_row_offsets[0]
+        offsets = (
+            all_logits_input_row_offsets
+            if all_logits_input_row_offsets is not None
+            else input_row_offsets[0]
+        )
 
     if logits_scaling != 1.0:
-        last_logits = last_logits / logits_scaling
+        if last_logits is not None:
+            last_logits = last_logits / logits_scaling
         if logits is not None:
             logits = logits / logits_scaling
 
-    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    assert last_logits is not None or logits is not None, (
+        "skipping last_logits requires VARIABLE/ALL logits to be emitted"
+    )
+    ret_val: tuple[TensorValue, ...] = (
+        () if last_logits is None else (last_logits,)
+    )
     if logits is not None and offsets is not None:
         ret_val += (logits, offsets)
 
@@ -302,7 +267,7 @@ def deepseek_logits_postprocess(
         last_token_hs_distributed=last_token_distributed,
         all_hs_distributed=h,
         normalizer=norm_shards,
-        eagle3_captured_hs=eagle3_captured_hs,
+        capture_hidden_states=capture_hidden_states,
     )
 
     return ret_val
@@ -368,16 +333,27 @@ class DeepseekV3DecoderLayer(Module):
             type[DataParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
             | type[TensorParallelLatentAttentionWithRope]
+            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
         match self.mode:
             case ParallelismMode.TP_EP:
-                mla_kwargs["dtype"] = DType.bfloat16
+                # TP attention + EP MoE: the cross-device communication is
+                # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.TP_TP:
-                mla_kwargs["dtype"] = DType.bfloat16
                 mla_kwargs["skip_allreduce"] = False
-                mla_cls = TensorParallelLatentAttentionWithRope
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = TensorParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
                     mla_kwargs["quant_config"] = config.quant_config
@@ -442,12 +418,20 @@ class DeepseekV3DecoderLayer(Module):
             else:
                 ep_size = 1
 
+            num_phy = (
+                config.ep_config.n_experts
+                if config.ep_config is not None
+                and config.ep_config.eplb_enabled
+                else config.n_routed_experts
+            )
+
             moe_kwargs: dict[str, Any] = dict(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
-                num_experts=config.n_routed_experts,
+                num_experts=num_phy,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                num_logical_experts=config.n_routed_experts,
                 gate_cls=functools.partial(
                     DeepseekV3TopKRouter,
                     routed_scaling_factor=config.routed_scaling_factor,
@@ -467,6 +451,11 @@ class DeepseekV3DecoderLayer(Module):
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
                 quant_config=config.quant_config,
+                shared_experts_dtype=(
+                    config.quant_config.shared_experts_dtype(config.dtype)
+                    if config.quant_config is not None
+                    else DType.bfloat16
+                ),
             )
 
             moe: MoE
@@ -474,6 +463,8 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
+
+            moe.layer_idx = layer_idx
 
             num_devices = len(config.devices)
             if self.mode == ParallelismMode.TP_TP:
@@ -486,13 +477,31 @@ class DeepseekV3DecoderLayer(Module):
                 )
             return moe
         else:
+            dense_quant = (
+                config.quant_config
+                if layer_idx not in config.dense_mlp_layers_without_quant
+                else None
+            )
+            # ``config.dtype`` is the packed-weight / graph encoding dtype
+            # (e.g. uint8 for ``float4_e2m1fnx2``). Unquantized dense MLPs use
+            # BF16 tensors; :class:`~max.nn.Linear` only switches to uint8 when
+            # ``quant_config.is_fp4`` is true.
+            mlp_weight_dtype = (
+                config.dtype if dense_quant is not None else DType.bfloat16
+            )
+            if (
+                dense_quant is None
+                and config.quant_config
+                and config.quant_config.embedding_output_dtype
+            ):
+                mlp_weight_dtype = config.quant_config.embedding_output_dtype
             mlp = MLP(
-                dtype=config.dtype,
+                dtype=mlp_weight_dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                quant_config=config.quant_config,
+                quant_config=dense_quant,
             )
             if self.mode == ParallelismMode.TP_TP or (
                 self.config.ep_config is not None
@@ -512,34 +521,15 @@ class DeepseekV3DecoderLayer(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
-        kv_scales: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
-        mla_decode_scalar_args: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers: list[BufferValue] | None = None,
+        layer_idx_per_device: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
-        # We have to unpack our PagedCacheValues into constituent parts so
-        # subgraphs have only max.graph.Values as arguments.
-        # Re-pack those arguments into a nice structured type.
-        num_devices = len(kv_blocks)
-        kv_collections = [
-            PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_lengths[i],
-                kv_scales=kv_scales[i] if kv_scales else None,
-                attention_dispatch_metadata=mla_decode_scalar_args[i]
-                if mla_decode_scalar_args is not None
-                else None,
-            )
-            for i in range(num_devices)
-        ]
+        num_devices = len(kv_collections)
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -575,11 +565,15 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         if self.config.ep_config is not None:
-            assert ep_inputs is not None
-            if self.ep_manager is not None:
+            if self.ep_manager is not None and ep_inputs is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-        mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        mlp_outs = forward_moe_sharded_layers(
+            self.mlp_shards,
+            norm_outs,
+            eplb_counter_buffers,
+            layer_idx_per_device,
+        )
 
         hs = self._post_mlp(hs, mlp_outs, signal_buffers)
         hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
@@ -772,6 +766,7 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -785,6 +780,7 @@ class DeepseekV3(Module):
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
+            eplb_counter_buffers_per_layer,
         )
 
     def _process_hidden_states(
@@ -798,6 +794,8 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        eplb_counter_buffers_per_layer: list[list[BufferValue]]
+        | None = None,  # (num_layers, num_devices)
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
@@ -814,6 +812,7 @@ class DeepseekV3(Module):
         # the caller. The caller is responsible for producing one copy per
         # device so we do not need a local distributed_broadcast here.
         input_row_offsets_ = list(input_row_offsets)
+        all_logits_input_row_offsets = input_row_offsets_[0]
 
         if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
@@ -851,25 +850,10 @@ class DeepseekV3(Module):
                 ]
             )
 
-        # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
-            _unpack_kv_collections(kv_collections)
-        )
-
-        # Extract dispatch metadata from KV collections (already on GPU
-        # for MLA, on CPU for MHA — placed by the KV cache manager).
-        mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].attention_dispatch_metadata is not None:
-            mla_decode_scalar_args = [
-                kv.attention_dispatch_metadata
-                for kv in kv_collections
-                if kv.attention_dispatch_metadata is not None
-            ]
-
         # For EAGLE3 mode, capture hidden states
         eagle3_captured: list[list[TensorValue]] = []
         eagle3_capture_ids: set[int] = set()
-        if self.return_hidden_states == ReturnHiddenStates.EAGLE3:
+        if self.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
             assert self.config.eagle_aux_hidden_state_layer_ids is not None, (
                 "EAGLE3 hidden-state capture requires "
                 "eagle_aux_hidden_state_layer_ids on the target config. "
@@ -881,26 +865,34 @@ class DeepseekV3(Module):
 
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            values: list[Value[Any] | Sequence[Value[Any]]] = [
+        ) -> list[SubgraphInput]:
+            values: list[SubgraphInput] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
-                kv_blocks,
-                cache_lengths,
-                lookup_tables,
-                max_lengths,
-                kv_scales,
+                kv_collections,
                 freqs_cis,
                 mla_prefill_metadata_flat,
                 input_row_offsets_,
             ]
 
-            if mla_decode_scalar_args is not None:
-                values.append(mla_decode_scalar_args)
-
-            if ep_inputs is not None:
-                values.append(ep_inputs)
+            values.append(ep_inputs if ep_inputs is not None else [])
+            values.append(
+                eplb_counter_buffers_per_layer[idx]
+                if eplb_counter_buffers_per_layer is not None
+                else []
+            )
+            if self.config.ep_config is not None and getattr(
+                self.config.ep_config, "eplb_enabled", False
+            ):
+                values.append(
+                    [
+                        ops.constant(idx, DType.int32, device=d)
+                        for d in self.config.devices
+                    ]
+                )
+            else:
+                values.append([])
 
             return values
 
@@ -911,7 +903,9 @@ class DeepseekV3(Module):
         h = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
-            weight_prefix_for_layer=lambda i: f"{self.subgraph_layer_prefix}.{i}.",
+            weight_prefix_for_layer=lambda i: (
+                f"{self.subgraph_layer_prefix}.{i}."
+            ),
             subgraph_layer_groups=self.subgraph_layer_groups,
             name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
             on_layer_output=capture_for_eagle3 if eagle3_capture_ids else None,
@@ -921,6 +915,7 @@ class DeepseekV3(Module):
         return deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=all_logits_input_row_offsets,
             return_n_logits=return_n_logits,
             norm_shards=self.norm_shards,
             lm_head=self.lm_head,
@@ -930,11 +925,12 @@ class DeepseekV3(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            eagle3_captured_hs=eagle3_captured if eagle3_captured else None,
+            capture_hidden_states=eagle3_captured if eagle3_captured else None,
         )
 
     def input_types(
-        self, kv_params: KVCacheParamInterface
+        self,
+        kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -978,7 +974,7 @@ class DeepseekV3(Module):
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
+        all_input_types.extend(kv_params.flattened_kv_inputs())
 
         # Add batch context lengths
         batch_context_length_type = TensorType(
@@ -990,4 +986,15 @@ class DeepseekV3(Module):
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())
+
+        if self.config.eplb_profile_enabled:
+            for _layer_idx in range(self.config.num_hidden_layers):
+                for device in self.config.devices:
+                    all_input_types.append(
+                        BufferType(
+                            DType.int64,
+                            shape=[self.config.n_routed_experts],
+                            device=device,
+                        )
+                    )
         return tuple(all_input_types)

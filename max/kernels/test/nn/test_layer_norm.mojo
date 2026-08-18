@@ -49,43 +49,41 @@ def run_layer_norm_cpu[
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.0001)
 
-    @__copy_capture(input_buf)
     @always_inline
-    @parameter
     def input_fn[
         width: Int,
-        _rank: Int,
         alignment: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        _rank: Int,
+    ](coords: IndexList[_rank]) {var input_buf} -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
         return input_buf.raw_load[width=width, alignment=alignment](idx)
 
-    @__copy_capture(gamma)
     @always_inline
-    @parameter
-    def gamma_fn[
-        width: Int, rank: Int, alignment: Int
-    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.raw_load[width=width, alignment=alignment](idx)
-
-    @__copy_capture(output_buf)
-    @always_inline
-    @parameter
     def output_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        width: SIMDLength, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output_buf}:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
+    layer_norm[dtype, rank, target="cpu"](
+        input_fn,
+        output_fn,
+        Coord(shape),
+        Scalar[DType.int](cols),
+        gamma,
+        beta,
+        epsilon,
+    )
 
+    var input_ptr_ptr: UnsafePointer[
+        input_ptr.T, origin_of(input_ptr)
+    ] = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            input_ptr_ptr + r * cols,
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -118,3 +116,13 @@ def main() raises:
     run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
     print("8")
     run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+
+    # float64 regression for KERN-3270: simd_width is 4 on AVX2, so
+    # num_cols=5 hits the vector loop plus a scalar tail, the shape that
+    # segfaulted.
+    print("9")
+    run_layer_norm_cpu[DType.float64](Index(4, 5))
+    print("10")
+    run_layer_norm_cpu[DType.float64](Index(3, 5))
+    print("11")
+    run_layer_norm_cpu[DType.float64](Index(7, 33))

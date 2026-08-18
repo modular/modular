@@ -34,6 +34,7 @@ Usage:
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -41,13 +42,12 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -87,8 +87,8 @@ def bench_blockwise_fp8_1d2d[
     comptime K = expert_shape[1]
 
     # Compute total tokens and max tokens per expert
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         var M = num_tokens_by_expert[i]
         total_num_tokens += M
@@ -217,9 +217,7 @@ def bench_blockwise_fp8_1d2d[
 
     var a_tt = TileTensor(
         a_dev_buf,
-        new_row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
-        ),
+        new_row_major(Coord(Int64(total_num_tokens), Idx[K])),
     )
     var b_tt = TileTensor(
         b_dev_buf,
@@ -227,16 +225,14 @@ def bench_blockwise_fp8_1d2d[
     )
     var c_tt = TileTensor(
         c_dev_buf,
-        new_row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        new_row_major(Coord(Int64(total_num_tokens), Idx[N])),
     )
     var a_scales_tt = TileTensor(
         a_scales_dev_buf,
         new_row_major(
             Coord(
-                Idx[K // BLOCK_SCALE_K](),
-                RuntimeInt[DType.int64](Int64(total_num_tokens)),
+                Idx[K // BLOCK_SCALE_K],
+                Int64(total_num_tokens),
             )
         ),
     )
@@ -247,15 +243,15 @@ def bench_blockwise_fp8_1d2d[
     var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
         a_offsets_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts + 1))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_active_experts + 1)),
+            Coord(Idx[1]),
         ),
     )
     var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
         expert_ids_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_active_experts)),
+            Coord(Idx[1]),
         ),
     )
     var expert_scales_tt = TileTensor[
@@ -263,8 +259,8 @@ def bench_blockwise_fp8_1d2d[
     ](
         expert_scales_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_experts))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_experts)),
+            Coord(Idx[1]),
         ),
     )
 
@@ -288,7 +284,7 @@ def bench_blockwise_fp8_1d2d[
         k_group_size=1,
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_tt,
         b_tt,
@@ -300,9 +296,8 @@ def bench_blockwise_fp8_1d2d[
     )
     @always_inline
     def bench_legacy(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                 config=config,
             ](
@@ -318,7 +313,7 @@ def bench_blockwise_fp8_1d2d[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_legacy](
         BenchId(run_name_prefix + " legacy"),
@@ -326,7 +321,7 @@ def bench_blockwise_fp8_1d2d[
     )
 
     # ===== Benchmark Structured Kernel =====
-    @parameter
+    @__parameter
     @__copy_capture(
         a_struct,
         b_struct,
@@ -339,9 +334,8 @@ def bench_blockwise_fp8_1d2d[
     )
     @always_inline
     def bench_structured(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
                 a_scales_type=DType.float32,
                 b_scales_type=DType.float32,
@@ -359,7 +353,7 @@ def bench_blockwise_fp8_1d2d[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_structured](
         BenchId(run_name_prefix + " structured"),

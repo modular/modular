@@ -16,23 +16,23 @@ from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
     block_idx,
     lane_id,
     warp_id,
 )
-from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.memory import external_memory
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -79,8 +79,9 @@ def tma_umma_kernel_pair_cta[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert a_type == b_type and a_type in (
         DType.float8_e4m3fn,
         DType.bfloat16,
@@ -126,18 +127,16 @@ def tma_umma_kernel_pair_cta[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -154,8 +153,8 @@ def tma_umma_kernel_pair_cta[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -180,7 +179,7 @@ def tma_umma_kernel_pair_cta[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     comptime b_canonical_layout = tile_to_descriptor[
@@ -197,10 +196,10 @@ def tma_umma_kernel_pair_cta[
         b_type
     ]()
 
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -475,10 +474,10 @@ def test_tma_umma_pair_cta[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -511,11 +510,11 @@ def test_tma_umma_pair_cta[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        Int32(K // BK),
         grid_dim=(
             align_up(M // BM, Int(cluster_shape[0])),
             align_up(N // BN // cta_group, Int(cluster_shape[1])),
@@ -556,8 +555,8 @@ def test_tma_umma_pair_cta[
 
     ctx.synchronize()
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
+    var c_host = c.tensor()
+    var c_host_ref = c_ref.tensor()
     for m in range(M):
         for n in range(N):
             # Increased tolerance for FP8/bfloat16 accumulation errors

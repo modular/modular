@@ -15,9 +15,9 @@
 
 from std.gpu import block_idx
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
 from std.testing import assert_equal
 
 comptime BLOCK_SIZE = 64
@@ -69,7 +69,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
     ctx.enqueue_copy(dev_buf, host_buf)
 
     comptime kernel = callee_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
@@ -137,7 +137,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
     ctx.enqueue_copy(dev_buf, host_buf)
 
     comptime kernel = deep_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,

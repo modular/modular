@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.gpu.host import DeviceContext, Dim
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.host import DeviceContext, Dim
 from std.gpu import cluster_dim
 
 
@@ -38,7 +38,7 @@ def test_cluster_sync_kernel():
 def test_cluster_sync(ctx: DeviceContext) raises:
     print("== test_cluster_sync")
     comptime kernel = test_cluster_sync_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         grid_dim=(2, 2, 2),
         block_dim=(1),
         cluster_dim=Dim((2, 2, 2)),

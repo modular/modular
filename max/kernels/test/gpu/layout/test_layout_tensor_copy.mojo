@@ -14,11 +14,10 @@
 from std.math import ceildiv
 from std.sys import simd_width_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
@@ -41,7 +40,7 @@ from std.utils import IndexList
 
 @always_inline
 def add_op[
-    dtype: DType, width: Int
+    dtype: DType, width: SIMDLength
 ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return lhs + rhs
 
@@ -95,7 +94,7 @@ def test_async_copy[
     arange(input.tensor())
 
     comptime kernel = async_copy_kernel[layout, BM, BN]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         input.device_tensor(), grid_dim=(N // BN, M // BM), block_dim=(BM, BN)
     )
 
@@ -234,7 +233,7 @@ def test_swizzle_copy[
         num_threads,
     ]
 
-    ctx.enqueue_function_experimental[copy](
+    ctx.enqueue_function[copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -372,7 +371,7 @@ def test_partial_copy_dram_to_sram_async[
     comptime kernel_type = partial_copy_dram_to_sram_async_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -477,7 +476,7 @@ def test_copy_dram_to_sram[
     comptime kernel_type = copy_dram_to_sram_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -598,7 +597,7 @@ def test_copy_sram_to_dram[
         block_dim_count,
         binary_op,
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         grid_dim=(1,),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
@@ -756,7 +755,7 @@ def test_copy_local_to_local[
     comptime kernel_type = copy_local_to_local_kernel[
         dtype, layout, WM, WN, MMA_M, MMA_N, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
@@ -895,7 +894,7 @@ def test_copy_dram_to_local[
     comptime kernel_type = copy_dram_to_local_kernel[
         layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -1038,7 +1037,7 @@ def test_copy_local_to_sram[
         num_threads,
         block_dim_count,
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),

@@ -32,11 +32,10 @@ def main() raises:
 """
 
 from std.math import isclose
-from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
-from std.memory import memcmp
-from std.python import PythonObject, ConvertibleToPython
+from std.memory import unsafe_memcmp
+from std.python import PythonObject
 from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
@@ -146,7 +145,7 @@ def assert_equal[
 #   compared, then drop this overload.
 @always_inline
 def assert_equal[
-    O1: ImmutOrigin, O2: ImmutOrigin
+    O1: ImmOrigin, O2: ImmOrigin
 ](
     lhs: List[StringSlice[O1]],
     rhs: List[StringSlice[O2]],
@@ -212,21 +211,15 @@ def assert_equal(
 
 
 @always_inline
-def assert_equal_pyobj[
-    LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
-](
-    lhs: LHS,
-    rhs: RHS,
+def assert_equal_pyobj(
+    lhs: PythonObject,
+    rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
     """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
-
-    Parameters:
-        LHS: Argument type that can be converted to `PythonObject`.
-        RHS: Argument type that can be converted to `PythonObject`.
 
     Args:
         lhs: The lhs of the equality.
@@ -237,13 +230,10 @@ def assert_equal_pyobj[
     Raises:
         An Error with the provided message if assert fails.
     """
-    var lhs_obj = lhs.copy().to_python_object()
-    var rhs_obj = rhs.copy().to_python_object()
-
-    if lhs_obj != rhs_obj:
+    if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs_obj),
-            String(rhs_obj),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -286,7 +276,7 @@ def assert_not_equal[
 
 @always_inline
 def assert_almost_equal[
-    dtype: DType, size: SIMDSize
+    dtype: DType, size: SIMDLength
 ](
     lhs: SIMD[dtype, size],
     rhs: SIMD[dtype, size],
@@ -569,7 +559,5 @@ struct assert_raises:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String.write(
-                trait_downcast[Writable](error)
-            )
+            return self.message_contains.value() in String(error)
         return True

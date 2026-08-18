@@ -20,8 +20,8 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import B200
 from layout import TileTensor
 from structured_kernels.tile_types import create_tma_tile
 
@@ -49,6 +49,7 @@ def blockwise_fp8_matmul[
     b_scales_type: DType,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    n_scale_granularity: Int = 128,
 ](
     c: TileTensor,
     a: TileTensor[mut=False, ...],
@@ -57,10 +58,20 @@ def blockwise_fp8_matmul[
     b_scales: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime a_type = config.a_type
-    comptime b_type = config.b_type
-    comptime c_type = config.c_type
     """Launch blockwise FP8 matmul kernel.
+
+    Parameters:
+        transpose_b: Whether `b` is stored transposed as N x K rather than
+            K x N. Only transposed B is currently supported.
+        a_scales_type: `DType` of the `a_scales` scaling factors. Must be
+            `float32` and must match `b_scales_type`.
+        b_scales_type: `DType` of the `b_scales` scaling factors. Must be
+            `float32` and must match `a_scales_type`.
+        config: `MatmulConfig` controlling tile shapes, CTA grouping, cluster
+            shape, swizzle modes, and pipeline stages for the kernel launch.
+        n_scale_granularity: B-scale block size along the N dimension in
+            elements (defaults to 128). Set smaller when the matmul's N-tile
+            spans multiple finer-grained scale blocks.
 
     Args:
         c: Output matrix (M x N).
@@ -73,6 +84,9 @@ def blockwise_fp8_matmul[
     Environment:
         USE_LEGACY_BLOCKWISE_FP8: If True, use legacy kernel instead of structured.
     """
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
 
     comptime if get_defined_bool["USE_LEGACY_BLOCKWISE_FP8", False]():
         sm100_warp_specialized_blockwise_fp8[
@@ -161,17 +175,18 @@ def blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[1]),
             Int32(corrected_config.cluster_shape[2]),
         ),
+        n_scale_granularity=n_scale_granularity,
     ]
 
     # Create TMA descriptors using kernel's layout types
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         Kernel.ATileLayout,
         Kernel.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         Kernel.BTileLayout,
         Kernel.BDescLayout,
         Index(
@@ -182,7 +197,7 @@ def blockwise_fp8_matmul[
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
-    a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
         Kernel.AScalesLayout,
         Index(1, BM),
@@ -214,13 +229,13 @@ def blockwise_fp8_matmul[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[Kernel.run, Kernel.run, dump_asm=False](
+    ctx.enqueue_function[Kernel.run, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

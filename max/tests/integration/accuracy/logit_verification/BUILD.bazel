@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_t
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -36,6 +35,7 @@ modular_py_test(
     name = "test_logit_verification_config",
     size = "medium",
     srcs = ["test_logit_verification_config.py"],
+    data = ["//max/tests/integration:hf-repo-lock.tsv"],
     deps = [
         ":logit_verification_config",
     ],

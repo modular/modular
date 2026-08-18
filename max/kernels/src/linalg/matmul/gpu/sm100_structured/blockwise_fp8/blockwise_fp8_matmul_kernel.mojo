@@ -31,19 +31,18 @@ Key differences from standard/block-scaled kernels:
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import *
-from layout import TensorLayout, TileTensor
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import *
+from layout import Layout, TensorLayout, TileTensor
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -118,6 +117,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    # B-scale N-direction block size (independent of BK_kernel).
+    n_scale_granularity: Int = 128,
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -125,6 +126,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     1. Load warp: TMA loads A, B, A-scales to SMEM
     2. MMA warp: Standard MMA (partial to TMEM)
     3. Epilogue warp: TMEM read → scale → register accumulate → output
+
+    Parameters:
+        a_type: Element type of the A matrix tiles.
+        b_type: Element type of the B matrix tiles.
+        c_type: Element type of the C output matrix tiles.
+        a_scales_type: A-scales element type (must equal `b_scales_type`).
+        b_scales_type: B-scales element type (must equal `a_scales_type`).
+        b_scales_layout: Memory layout of the B-scales tensor.
+        transpose_b: Whether B is stored transposed (must be `True`).
+        config: Matmul tile, MMA, pipeline, and cluster configuration.
+        cluster_shape: CTA cluster shape `(x, y, z)` for LLVM metadata
+            (defaults to `(1, 1, 1)`).
+        n_scale_granularity: B-scales N-direction block size in elements
+            (defaults to 128).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -399,6 +414,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.config.block_tile_shape,
         Self.config.mma_shape,
         Self.CLUSTER_SIZE,
+        Self.n_scale_granularity,
     ]
 
     # ========== Output Writer Type ==========
@@ -423,9 +439,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @staticmethod
     @always_inline
     def load_input_tiles[
-        a_tma_origin: ImmutOrigin,
-        b_tma_origin: ImmutOrigin,
-        a_scales_tma_origin: ImmutOrigin,
+        a_tma_origin: ImmOrigin,
+        b_tma_origin: ImmOrigin,
+        a_scales_tma_origin: ImmOrigin,
         tiles_origin: MutOrigin,
         //,
     ](
@@ -461,6 +477,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         elect_one_cta: Bool,
     ):
         """Load A, B, and A-scales tiles using TMA.
+
+        Parameters:
+            a_tma_origin: Immutable origin of the A TMA descriptor (inferred).
+            b_tma_origin: Immutable origin of the B TMA descriptor (inferred).
+            a_scales_tma_origin: Immutable origin of A-scales TMA descriptor
+                (inferred).
+            tiles_origin: Mutable origin of the producer tiles (inferred).
 
         Args:
             a_loader: TileLoader for A matrix.
@@ -499,11 +522,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                 b_tile.layout,
             )
 
@@ -550,6 +573,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         The epilogue accumulates across K in registers, not TMEM.
         Therefore init_c is always True (unlike standard matmul).
 
+        Parameters:
+            tiles_origin: Mutable origin of the consumer tiles (inferred).
+
         Args:
             tiles: Input consumer stage with A, B, A-scales tiles.
             mma_op: The MMA operator.
@@ -587,7 +613,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             1,
             2,
         ), "Only support cta_group == 1 or 2"
-        comptime assert Self.BK == 128, "Only support BK = 128"
+        comptime assert Self.BK in (64, 128), "Only support BK in (64, 128)"
 
     # ========== Static Helper Methods ==========
 
@@ -606,7 +632,21 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         clc_empty: Self.SmemType.Pipelines.ClcBarriers,
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
-        """Initialize barriers and prefetch TMA descriptors."""
+        """Initialize barriers and prefetch TMA descriptors.
+
+        Args:
+            ctx: Kernel context with warp and CTA role and multicast masks.
+            a_tma_op: TMA descriptor op for A matrix tiles.
+            b_tma_op: TMA descriptor op for B matrix tiles.
+            c_tma_op: TMA descriptor op for C output tiles.
+            a_scales_tma_op: TMA descriptor op for A-scales tiles.
+            input_barriers: Input pipeline barriers for producer and consumer.
+            accum_barriers: Accumulator barriers for MMA to epilogue sync.
+            clc_throttle: CLC throttle barriers for scheduler backpressure.
+            clc_full: CLC full barriers signalling tile availability.
+            clc_empty: CLC empty barriers signalling tile consumption.
+            tmem_dealloc: TMEM deallocation barrier for accumulator slot reuse.
+        """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
@@ -660,7 +700,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         # TMA descriptors -- types derived from loader's legacy layout computation
         a_tma_op: Self.ATmaOp,
@@ -668,11 +708,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         c_tma_op: Self.CTmaOp,
         a_scales_tma_op: Self.AScalesTmaOp,
         cluster_dim: StaticTuple[Int32, 3],
-        num_iters: Int,
+        num_iters: Int32,
         b_scales: Self.BScalesTile,
         problem_shape: StaticTuple[Int32, 3],
     ):
         """Kernel entry point for blockwise FP8 matmul."""
+        var _num_iters = Int(num_iters)
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
@@ -757,7 +798,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             for current in load_iter:
                 scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                for i in range(num_iters):
+                for i in range(_num_iters):
                     # Acquire tiles (waits for consumer to free slot)
                     var tiles = producer.acquire_stage()
                     Self.load_input_tiles(
@@ -802,7 +843,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             for _ in mma_iter:
                 if ctx.elect_one_cta:
-                    for _ in range(num_iters):
+                    for _ in range(_num_iters):
                         # Acquire MMA stage (waits for epilogue)
                         var mma_stage = mma_handle.acquire_k_stage_linear()
                         var accum = Self.AccumTensor(mma_stage.tmem_offset())
@@ -838,7 +879,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
                 # Per-K stages still use context manager for bundled sync
                 # (combines MMA→Epilogue and A-scales pipelines)
-                for k_iter in range(num_iters):
+                for k_iter in range(_num_iters):
                     with epi_handle.per_k_stage(input_pipeline) as epi_stage:
                         accum.promote(
                             b_scales,

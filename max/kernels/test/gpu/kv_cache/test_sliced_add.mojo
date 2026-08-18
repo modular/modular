@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Layout, RuntimeLayout, TileTensor, row_major
 from layout._utils import ManagedLayoutTensor
 from nn.slice import sliced_add
@@ -77,7 +77,7 @@ def test_sliced_add[
         a_device_tensor,
         b_device_tensor,
         lora_end_idx_host,
-        Optional(ctx),
+        ctx,
     )
 
     # Pull device results back via managed host view.

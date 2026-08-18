@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
-from std.gpu.host.device_context import DeviceExternalFunction
+import extensibility
+from max.gpu.host import DeviceContext
+from max.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
-from tensor import (
+from extensibility import (
     foreach,
     DynamicTensor,
     VariadicTensors,
@@ -22,15 +23,14 @@ from tensor import (
     OutputTensor,
     InputVariadicTensors,
 )
-from tensor import OutputVariadicTensors
-from tensor.managed_tensor_slice import (
+from extensibility import OutputVariadicTensors
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from std.utils.index import IndexList
-from std.runtime.asyncrt import DeviceContextPtr
 
 
-@compiler.register("my_add")
+@extensibility.register("my_add")
 struct MyAdd:
     @staticmethod
     def execute(
@@ -40,32 +40,34 @@ struct MyAdd:
     ):
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@extensibility.register_shape_function("my_add")
+def my_add_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
-@compiler.register("op_with_device_context")
+@extensibility.register("op_with_device_context")
 struct OpWidthDeviceContext:
     @staticmethod
     def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ):
         output[0] = x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@extensibility.register_shape_function("op_with_device_context")
+def op_with_device_context_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
-@compiler.register("op_with_multiple_outputs")
+@extensibility.register("op_with_multiple_outputs")
 struct OpWithMultipleOutputs:
     @staticmethod
     def execute(
@@ -76,14 +78,15 @@ struct OpWithMultipleOutputs:
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@extensibility.register_shape_function("op_with_multiple_outputs")
+def op_with_multiple_outputs_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
-@compiler.register("op_without_outputs")
+@extensibility.register("op_without_outputs")
 struct OpWithoutOutputs:
     @staticmethod
     def execute(
@@ -98,11 +101,11 @@ struct MyIntMemory(Movable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyInt del")
+    def __deinit__(deinit self):
+        print("MyInt ")
 
 
-@compiler.register("make_my_int_memory")
+@extensibility.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
     def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
@@ -114,14 +117,14 @@ struct MyIntReg(TrivialRegisterPassable):
     var val: Int
 
 
-@compiler.register("make_my_int_reg")
+@extensibility.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
     def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 
-@compiler.register("variadic_input_to_output")
+@extensibility.register("variadic_input_to_output")
 struct VariadicInputToOutput:
     @staticmethod
     def execute[
@@ -138,7 +141,7 @@ struct VariadicInputToOutput:
             output[i][0] += bias[0]
 
 
-@compiler.register("variadic_add")
+@extensibility.register("variadic_add")
 struct VariadicAdd:
     @staticmethod
     def execute[
@@ -156,7 +159,7 @@ struct VariadicAdd:
                 output[i] += input[j][i]
 
 
-@compiler.register("binary_kernel_with_raises")
+@extensibility.register("binary_kernel_with_raises")
 struct BinaryKernelWithRaises:
     @staticmethod
     def execute(
@@ -166,22 +169,23 @@ struct BinaryKernelWithRaises:
     ) raises:
         output[0] = x[0] + y[0]
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-        y: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@extensibility.register_shape_function("binary_kernel_with_raises")
+def binary_kernel_with_raises_shape(
+    x: InputTensor,
+    y: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"
 
 
-@compiler.register("mutable_input_tensor")
+@extensibility.register("mutable_input_tensor")
 struct MutableInputTensorKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
-@compiler.register("op_with_int_parameter")
+@extensibility.register("op_with_int_parameter")
 struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
     def execute(
@@ -192,51 +196,51 @@ struct OpWithIntParameter[IntParameter: Int]:
         print(Self.IntParameter)
 
 
-@compiler.register("op_with_dtype_parameter")
+@extensibility.register("op_with_dtype_parameter")
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.DTypeParameter)
 
 
-@compiler.register("op_with_string_parameter")
+@extensibility.register("op_with_string_parameter")
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
 
 
-@compiler.register("op_with_string_slice_parameter")
+@extensibility.register("op_with_string_slice_parameter")
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
 
 
-@compiler.register("op_with_static_string_parameter")
+@extensibility.register("op_with_static_string_parameter")
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     def execute(
-        output: OutputTensor[...],
+        output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
 
 
-@compiler.register("op_with_external_cubin")
+@extensibility.register("op_with_external_cubin")
 struct ExternalCubinVecAdd:
     """Custom op that uses an external cubin for vector addition."""
 
@@ -247,13 +251,14 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        var gpu_ctx = ctx
 
+        var external_func: DeviceExternalFunction
         with open(getenv("CUBIN_PATH"), "r") as file:
-            cubin_data = file.read_bytes()
+            var cubin_data = file.read_bytes()
 
             external_func = DeviceExternalFunction(
                 gpu_ctx,
@@ -263,9 +268,9 @@ struct ExternalCubinVecAdd:
                 asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
             )
 
-        length = output.dim_size(0)
-        block_dim = 32
-        grid_dim = (length + block_dim - 1) // block_dim
+        var length = output.dim_size(0)
+        var block_dim = 32
+        var grid_dim = (length + block_dim - 1) // block_dim
 
         # Execute the external cubin kernel
         gpu_ctx.enqueue_function(
@@ -279,7 +284,7 @@ struct ExternalCubinVecAdd:
         )
 
 
-@compiler.register("intentional_gpu_crash")
+@extensibility.register("intentional_gpu_crash")
 struct IntentionalGpuCrash:
     """A custom op that launches a GPU kernel which executes a trap instruction.
 
@@ -295,15 +300,13 @@ struct IntentionalGpuCrash:
     ](
         output: OutputTensor[rank=1, ...],
         x: InputTensor[dtype=output.dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        var gpu_ctx = ctx
 
         def crash_kernel():
             abort()
 
-        gpu_ctx.enqueue_function_experimental[crash_kernel](
-            grid_dim=(1,), block_dim=(1,)
-        )
+        gpu_ctx.enqueue_function[crash_kernel](grid_dim=(1,), block_dim=(1,))
         gpu_ctx.synchronize()

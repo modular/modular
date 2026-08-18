@@ -12,28 +12,45 @@
 # ===----------------------------------------------------------------------=== #
 import json
 import re
-import uuid
-from typing import Any
+from typing import Any, ClassVar
 
-from max.interfaces import (
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    build_xgrammar_tool_grammar,
+)
+from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
+    generate_call_id,
+    register,
+)
+from max.pipelines.modeling.types import (
     ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
+    PipelineTokenizer,
 )
 
-# Gemma4 special tokens for tool calls
-TOOL_CALL_START = "<|tool_call>"
-TOOL_CALL_END = "<tool_call|>"
-TOOL_START = "<|tool>"
-TOOL_END = "<tool|>"
-TOOL_RESPONSE_START = "<|tool_response>"
-TOOL_RESPONSE_END = "<tool_response|>"
-STRING_DELIM = '<|"|>'
+from .tokenizer import SpecialToken
 
 TOOL_CALL_PATTERN = re.compile(
-    r"<\|tool_call>call:([\w\-\.]+)\{(.*?)\}<tool_call\|>",
+    re.escape(SpecialToken.TOOL_CALL_START)
+    + r"call:([\w\-\.]+)\{(.*?)\}"
+    + re.escape(SpecialToken.TOOL_CALL_END),
     re.DOTALL,
 )
+
+
+def _json_loads_gemma4_string(body: str) -> str:
+    """Decode a ``<|"|>``-delimited Gemma4 string body as a JSON string body.
+
+    The grammar emits the body JSON-escaped (e.g. ``\\t`` for a tab) except a
+    literal ``"``, which is emitted raw. Backslashes are always doubled, so no
+    ``"`` is ever already-escaped: escape every ``"`` to ``\\"`` and decode
+    with :func:`json.loads`. Falls open (returns ``body`` unchanged) on
+    malformed input.
+    """
+    try:
+        return json.loads('"' + body.replace('"', '\\"') + '"')
+    except json.JSONDecodeError:
+        return body
 
 
 def _parse_gemma4_value(value_str: str) -> object:
@@ -41,6 +58,9 @@ def _parse_gemma4_value(value_str: str) -> object:
     value_str = value_str.strip()
     if not value_str:
         return value_str
+
+    if value_str == "null":
+        return None
 
     # Boolean
     if value_str == "true":
@@ -50,7 +70,7 @@ def _parse_gemma4_value(value_str: str) -> object:
 
     # Number (int or float)
     try:
-        if "." in value_str:
+        if "." in value_str or "e" in value_str or "E" in value_str:
             return float(value_str)
         return int(value_str)
     except ValueError:
@@ -117,16 +137,16 @@ def _parse_gemma4_args(
             break
 
         # String value: <|"|>...<|"|>
-        if args_str[i:].startswith(STRING_DELIM):
-            i += len(STRING_DELIM)
+        if args_str[i:].startswith(SpecialToken.STRING_DELIM):
+            i += len(SpecialToken.STRING_DELIM)
             val_start = i
-            end_pos = args_str.find(STRING_DELIM, i)
+            end_pos = args_str.find(SpecialToken.STRING_DELIM, i)
             if end_pos == -1:
                 # Unterminated string — take rest
-                result[key] = args_str[val_start:]
+                result[key] = _json_loads_gemma4_string(args_str[val_start:])
                 break
-            result[key] = args_str[val_start:end_pos]
-            i = end_pos + len(STRING_DELIM)
+            result[key] = _json_loads_gemma4_string(args_str[val_start:end_pos])
+            i = end_pos + len(SpecialToken.STRING_DELIM)
 
         # Nested object: {...}
         elif args_str[i] == "{":
@@ -134,14 +154,14 @@ def _parse_gemma4_args(
             obj_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if args_str[i:].startswith(STRING_DELIM):
+                if args_str[i:].startswith(SpecialToken.STRING_DELIM):
                     # Skip over string contents to avoid counting { inside strings
-                    i += len(STRING_DELIM)
-                    next_delim = args_str.find(STRING_DELIM, i)
+                    i += len(SpecialToken.STRING_DELIM)
+                    next_delim = args_str.find(SpecialToken.STRING_DELIM, i)
                     i = (
                         n
                         if next_delim == -1
-                        else next_delim + len(STRING_DELIM)
+                        else next_delim + len(SpecialToken.STRING_DELIM)
                     )
                     continue
                 if args_str[i] == "{":
@@ -164,13 +184,13 @@ def _parse_gemma4_args(
             arr_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if args_str[i:].startswith(STRING_DELIM):
-                    i += len(STRING_DELIM)
-                    next_delim = args_str.find(STRING_DELIM, i)
+                if args_str[i:].startswith(SpecialToken.STRING_DELIM):
+                    i += len(SpecialToken.STRING_DELIM)
+                    next_delim = args_str.find(SpecialToken.STRING_DELIM, i)
                     i = (
                         n
                         if next_delim == -1
-                        else next_delim + len(STRING_DELIM)
+                        else next_delim + len(SpecialToken.STRING_DELIM)
                     )
                     continue
                 if args_str[i] == "[":
@@ -212,14 +232,14 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
             break
 
         # String element
-        if arr_str[i:].startswith(STRING_DELIM):
-            i += len(STRING_DELIM)
-            end_pos = arr_str.find(STRING_DELIM, i)
+        if arr_str[i:].startswith(SpecialToken.STRING_DELIM):
+            i += len(SpecialToken.STRING_DELIM)
+            end_pos = arr_str.find(SpecialToken.STRING_DELIM, i)
             if end_pos == -1:
-                items.append(arr_str[i:])
+                items.append(_json_loads_gemma4_string(arr_str[i:]))
                 break
-            items.append(arr_str[i:end_pos])
-            i = end_pos + len(STRING_DELIM)
+            items.append(_json_loads_gemma4_string(arr_str[i:end_pos]))
+            i = end_pos + len(SpecialToken.STRING_DELIM)
 
         # Nested object
         elif arr_str[i] == "{":
@@ -227,10 +247,10 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
             obj_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if arr_str[i:].startswith(STRING_DELIM):
-                    i += len(STRING_DELIM)
-                    nd = arr_str.find(STRING_DELIM, i)
-                    i = nd + len(STRING_DELIM) if nd != -1 else n
+                if arr_str[i:].startswith(SpecialToken.STRING_DELIM):
+                    i += len(SpecialToken.STRING_DELIM)
+                    nd = arr_str.find(SpecialToken.STRING_DELIM, i)
+                    i = nd + len(SpecialToken.STRING_DELIM) if nd != -1 else n
                     continue
                 if arr_str[i] == "{":
                     depth += 1
@@ -274,58 +294,125 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
     return items
 
 
-def _tool_call_id() -> str:
-    return str(uuid.uuid4()).replace("-", "")[:8]
+@register("gemma4")
+class Gemma4ToolParser(StructuralTagToolParser):
+    """Gemma 4 tool parser using flat ``<|tool_call>`` … ``<tool_call|>`` pairs.
 
+    Uses the flat (no-section-wrapper) mode of :class:`StructuralTagToolParser`:
+    only ``CALL_BEGIN``/``CALL_END`` are set. Arguments are emitted atomically
+    (withheld until the close marker) because Gemma4's ``<|"|>`` string
+    delimiters make incremental JSON conversion non-monotonic.
+    """
 
-class Gemma4ToolParser:
-    def __init__(self) -> None:
-        self._buffer: str = ""
+    CALL_BEGIN: ClassVar[str] = SpecialToken.TOOL_CALL_START
+    CALL_END: ClassVar[str] = SpecialToken.TOOL_CALL_END
 
-    def parse_complete(self, response: str) -> ParsedToolResponse:
-        """Parses a complete response into tool calls."""
+    # ----- StructuralTagToolParser hooks ----------------------------------
+
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
         tool_calls: list[ParsedToolCall] = []
-
-        # Check if response contains tool calls section
-        if TOOL_CALL_START not in response:
-            # No tool calls in response
-            return ParsedToolResponse(content=response, tool_calls=[])
-
-        # Extract content before tool calls section (if any)
-        content_before: str | None = None
-        section_start_idx = response.find(TOOL_CALL_START)
-        if section_start_idx > 0:
-            content_before = response[:section_start_idx].strip() or None
-
-        # Parse individual tool calls
-        tool_call_tuples = TOOL_CALL_PATTERN.findall(response)
-        for func_name, args_str in tool_call_tuples:
+        for match in TOOL_CALL_PATTERN.finditer(tool_section):
+            func_name = match.group(1)
+            args_str = match.group(2)
             args_obj = _parse_gemma4_args(args_str)
-            arguments_json = json.dumps(args_obj, ensure_ascii=False)
-            tool_call = ParsedToolCall(
-                id=_tool_call_id(),
-                name=func_name,
-                arguments=arguments_json,
+            tool_calls.append(
+                ParsedToolCall(
+                    id=generate_call_id(),
+                    name=func_name,
+                    arguments=json.dumps(args_obj, ensure_ascii=False),
+                )
             )
-            tool_calls.append(tool_call)
+        return tool_calls
 
-        if not tool_calls:
-            raise ValueError(
-                f"Tool calls section found but no valid tool calls parsed from: {response}"
-            )
+    def _split_tool_call_body(
+        self, body: str, is_complete: bool
+    ) -> tuple[str | None, str | None]:
+        prefix = "call:"
+        if not body.startswith(prefix):
+            return (None, None)
+        brace_pos = body.find("{")
+        if brace_pos == -1:
+            return (None, None)
+        header = body[:brace_pos]
+        if is_complete and body.endswith("}"):
+            args = body[brace_pos + 1 : -1]
+        else:
+            args = body[brace_pos + 1 :]
+        return (header, args)
 
-        return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
+    def _extract_tool_id_and_name(
+        self, header: str
+    ) -> tuple[str | None, str | None]:
+        prefix = "call:"
+        if not header.startswith(prefix):
+            return (None, None)
+        name = header[len(prefix) :].strip()
+        if not name:
+            return (None, None)
+        return generate_call_id(), name
 
-    def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
-        """Parses incremental deltas for streaming tool calls.
+    def _format_args_for_streaming(
+        self, args_text: str, is_complete: bool
+    ) -> str:
+        if not is_complete:
+            return ""
+        try:
+            args_obj = _parse_gemma4_args(args_text)
+            return json.dumps(args_obj, ensure_ascii=False)
+        except Exception:
+            return "{}"
 
-        Note: Streaming tool call parsing for Gemma4 is not yet implemented.
-        This method accumulates tokens but does not emit chunks.
+    # ----- Constrained decoding grammar (xgrammar StructuralTag) ---------
+
+    XGRAMMAR_FORMAT = "gemma_4"
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        backend: str = "xgrammar",
+        tool_choice: str | dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Generate a constrained-decoding grammar for Gemma 4 tool calls.
+
+        Returns a serialized xgrammar ``StructuralTag`` that frames the
+        ``<|tool_call>call:func{...}<tool_call|>`` envelope and constrains each
+        call's arguments to that tool's JSON schema with bare keys and
+        ``<|"|>`` string delimiters (a ``"json"``-style ``JSONSchemaFormat``
+        configured via its bare-key and string-delimiter options). The full
+        JSON schema spec is enforced by xgrammar's native converter.
+
+        When ``response_format_schema`` is provided (tool_choice=auto), the
+        grammar also accepts a JSON response conforming to that schema as an
+        alternative to a tool call -- the model's first tokens select the
+        branch (mirrors the Kimi xgrammar path).
+
+        Args:
+            response_format_schema: Optional JSON schema dict. When provided,
+                the grammar also accepts a schema-conforming JSON response as an
+                alternative to a tool call.
+            tools: OpenAI-style tool dicts.
+            tokenizer: Unused (the xgrammar tag references literal markers).
+            backend: Structured-output backend; must be ``"xgrammar"``.
+            tool_choice: ``"auto"``, ``"required"``, or a named choice.
+            **kwargs: Ignored; accepts future kwargs.
+
+        Returns:
+            The StructuralTag serialized as a JSON string.
         """
-        self._buffer += delta
-        # TODO(SERVOPT-1180): Implement streaming delta parsing
-        return None
-
-    def reset(self) -> None:
-        """Resets internal state for a new streaming session."""
-        self._buffer = ""
+        if backend != "xgrammar":
+            raise InputError(
+                "Gemma 4 constrained tool calling requires the xgrammar "
+                "backend; run with --structured-output-backend=xgrammar."
+            )
+        normalized_choice = tool_choice if tool_choice is not None else "auto"
+        return build_xgrammar_tool_grammar(
+            Gemma4ToolParser.XGRAMMAR_FORMAT,
+            tools or [],
+            normalized_choice,
+            response_format_schema=response_format_schema,
+        )

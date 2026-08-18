@@ -14,28 +14,50 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class GptOssConfig(ArchConfigWithKVCache):
+class GptOssConfig(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for GPT OSS models.
 
     Contains parameters specific to the GPT OSS architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+    }
 
     # GPT OSS specific parameters
     vocab_size: int
@@ -133,39 +155,7 @@ class GptOssConfig(ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Constructs the KV cache parameters from configuration objects.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-        )
+    quantization_encoding: SupportedEncoding | None = None
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
@@ -178,28 +168,6 @@ class GptOssConfig(ArchConfigWithKVCache):
             The number of hidden layers specified in the configuration.
         """
         return huggingface_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig` if provided,
-        otherwise falls back to the `max_position_embeddings` from the HuggingFace
-        configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod
@@ -230,17 +198,15 @@ class GptOssConfig(ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
-
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
+
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in model_config.device_specs
@@ -350,6 +316,7 @@ class GptOssConfig(ArchConfigWithKVCache):
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

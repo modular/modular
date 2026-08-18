@@ -10,130 +10,83 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma4 attention tests (bf16 and fp8-KV variants).
 
+Module-scoped fixtures ensure each unique graph compiles once per shard.
+See `_attention_helpers.py` for build/execute helpers and `conftest.py`
+for shared fixtures.
+"""
 
 import copy
-import json
-import math
-import os
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from _attention_helpers import (
+    MAX_DTYPE,
+    TORCH_DTYPE,
+    CompiledAttention,
+    _attention_test_tensor,
+    build_max_attention_graph,
+    make_attention_weights_global,
+    make_attention_weights_local,
+    make_text_config,
+)
+from conftest import (
     Gemma4RotaryEmbedding,
     Gemma4TextAttention,
 )
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import KVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.pipelines.architectures.gemma4.layers.attention import (
-    Gemma4Attention as MaxGemma4Attention,
-)
-from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
-    ProportionalRotaryEmbedding,
-    ProportionalScalingParams,
-)
+from max.graph import DeviceRef
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
+from test_common.graph_utils import is_b100_b200
+from test_common.mef_precompile import init_from_mef, mefs_from_env
 from torch.utils.dlpack import from_dlpack
-from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
-
-MAX_SEQ_LEN = 1152
-
-TORCH_DTYPE = torch.bfloat16
-MAX_DTYPE = DType.bfloat16
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 
-def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
-    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
+@pytest.fixture(scope="module")
+def session(device: Device) -> InferenceSession:
+    return InferenceSession(devices=[device])
 
 
-@pytest.fixture
-def text_config() -> Gemma3TextConfig:
-    path = os.environ["PIPELINES_TESTDATA"]
-    config_path = Path(path) / "config.json"
-    with open(config_path) as file:
-        data = json.load(file)
-    # Use "text_config" for the multimodal variants
-    if "text_config" in data:
-        return Gemma3TextConfig(
-            **data["text_config"], attn_implementation="eager"
-        )
-    else:
-        return Gemma3TextConfig(**data, attn_implementation="eager")
+@pytest.fixture(scope="module")
+def device() -> Device:
+    return Accelerator()
 
 
-@pytest.fixture
-def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
+@pytest.fixture(scope="module")
+def text_config() -> Gemma4TextConfig:
+    return make_text_config()
+
+
+@pytest.fixture(scope="module")
+def input_tensor(text_config: Gemma4TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
-    return _generate_tensor((1, 11, text_config.hidden_size)).to("cuda")
+    return _attention_test_tensor((1, 11, text_config.hidden_size)).to("cuda")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def attention_weights_local(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
 ) -> dict[str, torch.Tensor]:
-    torch.manual_seed(42)
-
-    # calculated from google/gemma-3-1b-it checkpoint
-    O_PROJ_STD = 0.0237
-    K_PROJ_STD = 0.0309
-    Q_PROJ_STD = 0.0284
-    V_PROJ_STD = 0.0309
-    K_NORM_STD = 0.793
-    Q_NORM_STD = 0.68
-
-    q_dim = text_config.head_dim * text_config.num_attention_heads
-    kv_dim = text_config.head_dim * text_config.num_key_value_heads
-    hidden_size = text_config.hidden_size
-
-    return {
-        "k_norm.weight": _generate_tensor((text_config.head_dim,)) * K_NORM_STD,
-        "k_proj.weight": _generate_tensor((kv_dim, hidden_size)) * K_PROJ_STD,
-        "o_proj.weight": _generate_tensor((hidden_size, q_dim)) * O_PROJ_STD,
-        "q_norm.weight": _generate_tensor((text_config.head_dim,)) * Q_NORM_STD,
-        "q_proj.weight": _generate_tensor((q_dim, hidden_size)) * Q_PROJ_STD,
-        "v_proj.weight": _generate_tensor((kv_dim, hidden_size)) * V_PROJ_STD,
-    }
+    return make_attention_weights_local(text_config)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def attention_weights_global(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
 ) -> dict[str, torch.Tensor]:
-    torch.manual_seed(42)
-
-    # calculated from google/gemma-3-1b-it checkpoint
-    O_PROJ_STD = 0.0237
-    K_PROJ_STD = 0.0309
-    Q_PROJ_STD = 0.0284
-    K_NORM_STD = 0.793
-    Q_NORM_STD = 0.68
-
-    q_dim = text_config.global_head_dim * text_config.num_attention_heads
-    kv_dim = (
-        text_config.global_head_dim * text_config.num_global_key_value_heads
-    )
-    hidden_size = text_config.hidden_size
-
-    return {
-        "k_norm.weight": _generate_tensor((text_config.global_head_dim,))
-        * K_NORM_STD,
-        "k_proj.weight": _generate_tensor((kv_dim, hidden_size)) * K_PROJ_STD,
-        "o_proj.weight": _generate_tensor((hidden_size, q_dim)) * O_PROJ_STD,
-        "q_norm.weight": _generate_tensor((text_config.global_head_dim,))
-        * Q_NORM_STD,
-        "q_proj.weight": _generate_tensor((q_dim, hidden_size)) * Q_PROJ_STD,
-    }
+    return make_attention_weights_global(text_config)
 
 
 def _get_position_embeddings(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     use_global_rope: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -183,7 +136,7 @@ def _causal_attention_mask(seq_len: int) -> torch.Tensor:
 
 @torch.no_grad()
 def generate_torch_outputs(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     layer_idx: int,
@@ -215,101 +168,25 @@ def generate_torch_outputs(
     return layer(input_tensor, position_embeddings, attention_mask)[0]
 
 
-def generate_max_outputs(
-    text_config: Gemma3TextConfig,
-    input_tensor: torch.Tensor,
+def build_max_attention(
+    mef_path: Path,
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
-    device: Device,
+    device_ref: DeviceRef,
     layer_idx: int,
-) -> torch.Tensor:
-    """Runs the MAX Llama4 attention layer.
-
-    Returns the outputs:
-    1) Layer with rope
-    2) Attention without rope but with attention tuning
-
-    `layer_idx` affects whether the local or global `RoPE` is used. When
-    `layer_idx % 6 == 5`, the global `RoPE` is used. Otherwise, the local `RoPE`
-    is used.
-    """
-    is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
-    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
-    input_seq_len = input_tensor.shape[1]
-
-    # No remapping required for either sliding/local (QKV) or
-    # global/full (QK) layer types.
-    state_dict = {
-        weight_name: value.cpu()
-        for weight_name, value in attention_weights.items()
-    }
-
-    kv_params_local = KVCacheParams(
-        dtype=dtype,
-        devices=[device_ref],
-        n_kv_heads=text_config.num_key_value_heads,
-        head_dim=text_config.head_dim,
-        num_layers=len(
-            [lt for lt in text_config.layer_types if lt == "sliding_attention"]
-        ),
-        page_size=256,
+    *,
+    cache_dtype: DType | None = None,
+) -> CompiledAttention:
+    _, attention, kv_params = build_max_attention_graph(
+        text_config,
+        attention_weights,
+        dtype,
+        device_ref,
+        layer_idx,
+        cache_dtype=cache_dtype,
     )
-
-    kv_params_global = KVCacheParams(
-        dtype=dtype,
-        devices=[device_ref],
-        n_kv_heads=text_config.num_global_key_value_heads,
-        head_dim=text_config.global_head_dim,
-        num_layers=len(
-            [lt for lt in text_config.layer_types if lt == "full_attention"]
-        ),
-        page_size=256,
-    )
-
-    kv_params = (
-        kv_params_local
-        if text_config.layer_types[layer_idx] == "sliding_attention"
-        else kv_params_global
-    )
-
-    session = InferenceSession(devices=[Accelerator(0)])
-
-    attention = MaxGemma4Attention(
-        rope_global=ProportionalRotaryEmbedding(
-            dim=text_config.hidden_size,
-            n_heads=text_config.num_attention_heads,
-            theta=1000000.0,
-            max_seq_len=text_config.max_position_embeddings,
-            head_dim=text_config.global_head_dim,
-            interleaved=False,
-            scaling_params=ProportionalScalingParams(0.25),
-        ),
-        rope_local=Llama3RotaryEmbedding(
-            dim=text_config.hidden_size,
-            n_heads=text_config.num_attention_heads,
-            theta=10000.0,
-            max_seq_len=text_config.max_position_embeddings,
-            head_dim=text_config.head_dim,
-            interleaved=False,
-            scaling_params=None,
-        ),
-        num_attention_heads=text_config.num_attention_heads,
-        num_key_value_heads=text_config.num_key_value_heads,
-        num_global_key_value_heads=text_config.num_global_key_value_heads,
-        attention_k_eq_v=text_config.attention_k_eq_v,
-        hidden_size=text_config.hidden_size,
-        kv_params=kv_params,
-        global_head_dim=text_config.global_head_dim,
-        layer_idx=layer_idx,
-        layer_idx_in_cache=0,
-        is_sliding=text_config.layer_types[layer_idx] == "sliding_attention",
-        dtype=dtype,
-        devices=[device_ref],
-        qk_norm_eps=text_config.rms_norm_eps,
-        local_window_size=text_config.sliding_window,
-    )
-    attention.load_state_dict(state_dict)
 
     # Set up blank KV cache.
     kv_manager = PagedKVCacheManager(
@@ -318,76 +195,191 @@ def generate_max_outputs(
         session=session,
         max_batch_size=128,
     )
+    compiled = init_from_mef(session, mef_path, attention.state_dict())
+    return CompiledAttention(compiled=compiled, kv_manager=kv_manager)
 
-    # Construct input types.
-    input_type = TensorType(
-        dtype,
-        ["total_seq_len", text_config.hidden_size],
-        device=device_ref,
-    )
-    input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-    )
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
-    # Build graph.
-    with Graph(
-        "Gemma3Attention",
-        input_types=(
-            input_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
-        ),
-    ) as graph:
-        inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+def execute_max_attention(
+    compiled_attention: CompiledAttention,
+    input_tensor: torch.Tensor,
+    device: Device,
+) -> torch.Tensor:
+    """Runs a previously compiled attention graph against a fresh KV claim.
 
-        graph.output(
-            attention(
-                inputs.tensor,
-                kv_collection,
-                input_row_offsets=input_row_offsets.tensor,
-            )
-        )
+    Releases the request after execution so the shared kv_manager doesn't
+    accumulate state across test invocations.
+    """
+    input_seq_len = input_tensor.shape[1]
+    kv_manager = compiled_attention.kv_manager
+    compiled = compiled_attention.compiled
 
-    compiled = session.load(graph, weights_registry=attention.state_dict())
-
-    # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
-    assert kv_runtime_inputs.attention_dispatch_metadata is not None
+    kv_manager.claim(batch[0])
+    try:
+        kv_manager.alloc(batch[0])
+        kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
-    output = compiled.execute(
-        Buffer.from_dlpack(input_tensor[0]).to(device),
-        Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
-            device
-        ),
-        kv_runtime_inputs.kv_blocks.to(device),
-        kv_runtime_inputs.cache_lengths.to(device),
-        kv_runtime_inputs.lookup_table.to(device),
-        kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.attention_dispatch_metadata,
-    )[0]
-
+        # Under fp8 KV the kv_params.get_symbolic_inputs() expands with
+        # `kv_scales` buffer inputs.  Mirror that on the runtime side by
+        # including them in the execute call when present.
+        execute_args: list[Any] = [
+            Buffer.from_dlpack(input_tensor[0]).to(device),
+            Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
+                device
+            ),
+            *kv_runtime_inputs.flatten(),
+        ]
+        output = compiled.execute(*execute_args)[0]
+    finally:
+        kv_manager.release(batch[0])
     return output
 
 
-def test_attention_local(
-    text_config: Gemma3TextConfig,
+def _cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> float:
+    """Cosine similarity between two flat tensors (cast to fp32)."""
+    af = a.to(torch.float32).flatten()
+    bf = b.to(torch.float32).flatten()
+    return float(
+        torch.dot(af, bf) / (torch.linalg.norm(af) * torch.linalg.norm(bf))
+    )
+
+
+def assert_fp8_matches_bf16(
+    bf16_compiled: CompiledAttention,
+    fp8_compiled: CompiledAttention,
     input_tensor: torch.Tensor,
-    attention_weights_local: dict[str, torch.Tensor],
+    device: Device,
+    layer_idx: int,
+    head_dim_for_log: int,
 ) -> None:
-    max_output = generate_max_outputs(
+    """Shared helper: execute the bf16 reference and fp8 paths on the same
+    inputs from already-compiled attention graphs; assert cosine >= 0.99.
+
+    The bf16 reference uses the dtype = MAX_DTYPE cache (= bf16). The fp8
+    path uses `cache_dtype=float8_e4m3fn` + per-block fp32 scales at
+    granularity=64 (production Gemma4 wiring).  Both paths use
+    `rope.interleaved=False` (the trained Gemma4 RoPE convention).
+    """
+    bf16_out = execute_max_attention(bf16_compiled, input_tensor, device)
+    fp8_out = execute_max_attention(fp8_compiled, input_tensor, device)
+
+    bf16_t = from_dlpack(bf16_out).to(torch.float32)
+    fp8_t = from_dlpack(fp8_out).to(torch.float32)
+    cos = _cosine_similarity(bf16_t, fp8_t)
+    max_abs_diff = float((bf16_t - fp8_t).abs().max())
+    print(
+        f"[fp8_vs_bf16] layer_idx={layer_idx} head_dim={head_dim_for_log} "
+        f"cosine={cos:.6f} max_abs_diff={max_abs_diff:.4f}"
+    )
+    assert cos >= 0.99, (
+        "fp8 KV attention output diverged from bf16 baseline: "
+        f"cosine={cos:.4f} < 0.99 (layer_idx={layer_idx} "
+        f"head_dim={head_dim_for_log})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# BF16 compiled fixtures (shared by bf16 tests and as baselines for fp8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def compiled_local_bf16(
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
+    attention_weights_local: dict[str, torch.Tensor],
+) -> CompiledAttention:
+    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_bf16.mef"]
+    return build_max_attention(
+        mef_path,
+        session,
         text_config,
-        input_tensor,
         attention_weights_local,
         MAX_DTYPE,
-        Accelerator(),
+        DeviceRef.GPU(),
         layer_idx=0,
+    )
+
+
+@pytest.fixture(scope="module")
+def compiled_global_bf16(
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
+    attention_weights_global: dict[str, torch.Tensor],
+) -> CompiledAttention:
+    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_bf16.mef"]
+    return build_max_attention(
+        mef_path,
+        session,
+        text_config,
+        attention_weights_global,
+        MAX_DTYPE,
+        DeviceRef.GPU(),
+        layer_idx=5,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Native pure-fp8 compiled fixtures (no per-block scales, scale=1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def compiled_local_native_fp8(
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
+    attention_weights_local: dict[str, torch.Tensor],
+) -> CompiledAttention:
+    if not is_b100_b200():
+        pytest.skip("Native FP8 MHA requires B200 (SM100)")
+    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_native_fp8.mef"]
+    return build_max_attention(
+        mef_path,
+        session,
+        text_config,
+        attention_weights_local,
+        MAX_DTYPE,
+        DeviceRef.GPU(),
+        layer_idx=0,
+        cache_dtype=DType.float8_e4m3fn,
+    )
+
+
+@pytest.fixture(scope="module")
+def compiled_global_native_fp8(
+    session: InferenceSession,
+    text_config: Gemma4TextConfig,
+    attention_weights_global: dict[str, torch.Tensor],
+) -> CompiledAttention:
+    if not is_b100_b200():
+        pytest.skip("Native FP8 MHA requires B200 (SM100)")
+    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_native_fp8.mef"]
+    return build_max_attention(
+        mef_path,
+        session,
+        text_config,
+        attention_weights_global,
+        MAX_DTYPE,
+        DeviceRef.GPU(),
+        layer_idx=5,
+        cache_dtype=DType.float8_e4m3fn,
+    )
+
+
+# ---------------------------------------------------------------------------
+# BF16 attention tests
+# ---------------------------------------------------------------------------
+
+
+def test_attention_local(
+    text_config: Gemma4TextConfig,
+    input_tensor: torch.Tensor,
+    attention_weights_local: dict[str, torch.Tensor],
+    compiled_local_bf16: CompiledAttention,
+    device: Device,
+) -> None:
+    max_output = execute_max_attention(
+        compiled_local_bf16, input_tensor, device
     )
 
     torch_output = generate_torch_outputs(
@@ -403,17 +395,14 @@ def test_attention_local(
 
 
 def test_attention_global(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights_global: dict[str, torch.Tensor],
+    compiled_global_bf16: CompiledAttention,
+    device: Device,
 ) -> None:
-    max_output = generate_max_outputs(
-        text_config,
-        input_tensor,
-        attention_weights_global,
-        MAX_DTYPE,
-        Accelerator(),
-        layer_idx=5,
+    max_output = execute_max_attention(
+        compiled_global_bf16, input_tensor, device
     )
     torch_output = generate_torch_outputs(
         text_config,
@@ -427,4 +416,53 @@ def test_attention_global(
         from_dlpack(max_output).to(TORCH_DTYPE),
         rtol=2 * torch.finfo(TORCH_DTYPE).eps,
         atol=8 * torch.finfo(TORCH_DTYPE).eps,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Native pure-fp8 regression tests
+# ---------------------------------------------------------------------------
+# These exercise the native pure-fp8 path: fp8 Q/K/V read directly from the
+# paged cache, Q@K^T and P@V both raw fp8 MMAs at tensorwise scale=1, bf16
+# output. Routes through `mo.rope_split_store.ragged.paged` (outputs roped Q
+# as fp8) and `mo.mha.ragged.paged` (fp8 Q+KV in, bf16 out).
+# Cosine vs the bf16 baseline must clear the same 0.99 smoke bar. Same
+# sensitivity caveat: random-weight smoke gate, not a sufficient bug-detector
+# — end-to-end serving accuracy (e.g. gsm8k under a real checkpoint) is the
+# authoritative correctness gate.
+
+
+def test_attention_native_fp8_matches_bf16_local(
+    text_config: Gemma4TextConfig,
+    input_tensor: torch.Tensor,
+    compiled_local_bf16: CompiledAttention,
+    compiled_local_native_fp8: CompiledAttention,
+    device: Device,
+) -> None:
+    """Native pure-fp8 (no scales) sliding (head_dim=256) layer vs bf16."""
+    assert_fp8_matches_bf16(
+        compiled_local_bf16,
+        compiled_local_native_fp8,
+        input_tensor,
+        device,
+        layer_idx=0,
+        head_dim_for_log=text_config.head_dim,
+    )
+
+
+def test_attention_native_fp8_matches_bf16_global(
+    text_config: Gemma4TextConfig,
+    input_tensor: torch.Tensor,
+    compiled_global_bf16: CompiledAttention,
+    compiled_global_native_fp8: CompiledAttention,
+    device: Device,
+) -> None:
+    """Native pure-fp8 (no scales) global (head_dim=512) layer vs bf16."""
+    assert_fp8_matches_bf16(
+        compiled_global_bf16,
+        compiled_global_native_fp8,
+        input_tensor,
+        device,
+        layer_idx=5,
+        head_dim_for_log=text_config.global_head_dim,
     )

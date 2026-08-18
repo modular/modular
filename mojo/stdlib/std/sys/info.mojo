@@ -21,7 +21,7 @@ print(CompilationTarget.is_x86())
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
@@ -128,11 +128,11 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             False otherwise.
         """
         return __mlir_attr[
-            `#kgen.param.expr<eq,`,
+            `#kgen.param.identical<`,
             Self.__arch(),
             `, `,
             _get_kgen_string[name](),
-            `> : i1`,
+            `> : !kgen.scalar<bool>`,
         ]
 
     @always_inline("nodebug")
@@ -170,7 +170,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         Returns:
             True if the target supports SSE4, False otherwise.
         """
-        return Self._has_feature["sse4"]()
+        return Self._has_feature["sse4.1"]()
 
     @staticmethod
     def has_avx() -> Bool:
@@ -419,6 +419,123 @@ def _accelerator_arch() -> StaticString:
     )
 
 
+# ===-----------------------------------------------------------------------===#
+# Vendor
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct Vendor(Equatable, TrivialRegisterPassable, Writable):
+    """Represents GPU vendors.
+
+    This struct provides identifiers for different GPU vendors and utility
+    methods for comparison and string representation.
+
+    The struct defines a constant for each vendor the stdlib knows about and a
+    `NO_GPU` option for systems without an accelerator. It provides comparison
+    operators and string conversion methods for vendor identification.
+
+    It classifies the accelerator the compiler is targeting, which is what
+    `has_amd_gpu_accelerator()`, `has_nvidia_gpu_accelerator()` and
+    `has_apple_gpu_accelerator()` report. To identify a specific device, use
+    `GPUInfo.api`.
+    """
+
+    var _value: Int8
+    """The underlying integer value representing the vendor."""
+
+    comptime NO_GPU = Self(0)
+    """Represents no GPU or CPU-only execution."""
+
+    comptime AMD_GPU = Self(1)
+    """Represents AMD GPU vendor."""
+
+    comptime NVIDIA_GPU = Self(2)
+    """Represents NVIDIA GPU vendor."""
+
+    comptime APPLE_GPU = Self(3)
+    """Represents Apple GPU vendor."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Checks if two `Vendor` instances are equal.
+
+        Args:
+            other: The `Vendor` to compare with.
+
+        Returns:
+            True if vendors are equal, False otherwise.
+        """
+        return self._value == other._value
+
+    def __ne__(self, other: Self) -> Bool:
+        """Checks if two `Vendor` instances are not equal.
+
+        Args:
+            other: The `Vendor` to compare with.
+
+        Returns:
+            True if vendors are not equal, False otherwise.
+        """
+        return not (self == other)
+
+    @no_inline
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes vendor information to a writer.
+
+        Args:
+            writer: The writer to output vendor information to.
+        """
+        if self == Vendor.NO_GPU:
+            writer.write("no_gpu")
+            return
+        if self == Vendor.AMD_GPU:
+            writer.write("amd_gpu")
+            return
+        if self == Vendor.APPLE_GPU:
+            writer.write("apple_gpu")
+            return
+        if self == Vendor.NVIDIA_GPU:
+            writer.write("nvidia_gpu")
+            return
+
+        # Unreachable. Can't use `os.abort` here (`std.os` imports `std.sys`,
+        # so it would cycle) nor `assert False` (elided under `-D ASSERT=none`);
+        # trap directly, as `os.abort` itself does.
+        __mlir_op.`llvm.intr.trap`()
+
+
+@always_inline("nodebug")
+def _vendor_from_arch[arch: StaticString]() -> Vendor:
+    """Classifies an accelerator architecture string to its GPU `Vendor`.
+
+    This is the single source of truth for arch-string -> vendor mapping. It
+    recognizes bare architectures ("gfx950", "sm_90", "apple-m4"),
+    vendor-prefixed forms ("amdgpu:gfx950", "amd:gfx950", "nvidia:sm_90",
+    "metal:4"), and the generic "cuda" target, mapping each to the same vendor.
+
+    Only vendor-relevant substrings are matched. Unknown or empty arch strings
+    classify to `Vendor.NO_GPU`.
+
+    Parameters:
+        arch: The raw accelerator architecture string (e.g. from
+            `_accelerator_arch()`).
+
+    Returns:
+        The `Vendor` the architecture belongs to, or `Vendor.NO_GPU` if it is
+        empty or unrecognized.
+    """
+    # NOTE: use `in`-substring matching only (never `StaticString.startswith`,
+    # which miscompiles in deep comptime instantiation contexts; see MOCO-4328).
+    comptime if "amd" in arch or "gfx" in arch or "mi" in arch:
+        return Vendor.AMD_GPU
+    elif "nvidia" in arch or "sm" in arch or arch == "cuda":
+        return Vendor.NVIDIA_GPU
+    elif "metal" in arch or "apple" in arch:
+        return Vendor.APPLE_GPU
+    else:
+        return Vendor.NO_GPU
+
+
 @always_inline("nodebug")
 def _triple_attr[
     target: _TargetType = _current_target()
@@ -446,60 +563,142 @@ def is_triple[
         True if the triple matches and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         _triple_attr[target](),
         `, `,
         name.value,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
 @always_inline("nodebug")
+def _is_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
+    comptime for arch in archs:
+        comptime if is_nvidia_gpu[arch]():
+            return True
+    return False
+
+
+@always_inline("nodebug")
+def _has_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
+    comptime if not has_nvidia_gpu_accelerator():
+        return False
+
+    comptime for arch in archs:
+        comptime if arch.removeprefix("sm_") in _accelerator_arch():
+            return True
+    return False
+
+
+comptime _SM_80X_ARCHS: List[StaticString] = ["sm_80", "sm_86", "sm_89"]
+
+
+@always_inline("nodebug")
 def _is_sm_8x() -> Bool:
-    return (
-        is_nvidia_gpu["sm_80"]()
-        or is_nvidia_gpu["sm_86"]()
-        or is_nvidia_gpu["sm_89"]()
-    )
+    return _is_nvidia_gpu_any[_SM_80X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_8x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_80X_ARCHS]()
+
+
+comptime _SM_90X_ARCHS: List[StaticString] = ["sm_90", "sm_90a"]
 
 
 @always_inline("nodebug")
 def _is_sm_9x() -> Bool:
-    return is_nvidia_gpu["sm_90"]() or is_nvidia_gpu["sm_90a"]()
+    return _is_nvidia_gpu_any[_SM_90X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_9x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_90X_ARCHS]()
+
+
+comptime _SM_100X_ARCHS: List[StaticString] = ["sm_100", "sm_100a"]
 
 
 @always_inline("nodebug")
 def _is_sm_100x() -> Bool:
-    return is_nvidia_gpu["sm_100"]() or is_nvidia_gpu["sm_100a"]()
+    return _is_nvidia_gpu_any[_SM_100X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_100x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_100X_ARCHS]()
+
+
+comptime _SM_101X_ARCHS: List[StaticString] = ["sm_101", "sm_101a"]
 
 
 @always_inline("nodebug")
 def _is_sm_101x() -> Bool:
-    return is_nvidia_gpu["sm_101"]() or is_nvidia_gpu["sm_101a"]()
+    return _is_nvidia_gpu_any[_SM_101X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_101x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_101X_ARCHS]()
+
+
+comptime _SM_103X_ARCHS: List[StaticString] = ["sm_103", "sm_103a"]
 
 
 @always_inline("nodebug")
 def _is_sm_103x() -> Bool:
-    return is_nvidia_gpu["sm_103"]() or is_nvidia_gpu["sm_103a"]()
+    return _is_nvidia_gpu_any[_SM_103X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_103x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_103X_ARCHS]()
+
+
+comptime _SM_110X_ARCHS: List[StaticString] = ["sm_110", "sm_110a"]
 
 
 @always_inline("nodebug")
 def _is_sm_110x() -> Bool:
-    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+    return _is_nvidia_gpu_any[_SM_110X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_110x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_110X_ARCHS]()
+
+
+comptime _SM_120X_ARCHS: List[StaticString] = ["sm_120", "sm_120a"]
 
 
 @always_inline("nodebug")
 def _is_sm_120x() -> Bool:
-    return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
+    return _is_nvidia_gpu_any[_SM_120X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_120x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_120X_ARCHS]()
+
+
+comptime _SM_121X_ARCHS: List[StaticString] = ["sm_121", "sm_121a"]
+
+
+@always_inline("nodebug")
+def _is_sm_121x() -> Bool:
+    return _is_nvidia_gpu_any[_SM_121X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_121x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_121X_ARCHS]()
 
 
 @always_inline("nodebug")
 def _has_blackwell_tcgen05() -> Bool:
-    return (
-        "sm_100a" in _accelerator_arch()
-        or "sm_101a" in _accelerator_arch()
-        or "sm_103a" in _accelerator_arch()
-    )
+    return _has_nvidia_gpu_any[
+        _SM_100X_ARCHS + _SM_101X_ARCHS + _SM_103X_ARCHS
+    ]()
 
 
 @always_inline("nodebug")
@@ -508,8 +707,18 @@ def _is_sm_8x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+def _has_sm_8x_or_newer() -> Bool:
+    return _has_sm_8x() or _has_sm_9x_or_newer()
+
+
+@always_inline("nodebug")
 def _is_sm_9x_or_newer() -> Bool:
     return _is_sm_9x() or _is_sm_100x_or_newer()
+
+
+@always_inline("nodebug")
+def _has_sm_9x_or_newer() -> Bool:
+    return _has_sm_9x() or _has_sm_100x_or_newer()
 
 
 @always_inline("nodebug")
@@ -518,13 +727,33 @@ def _is_sm_100x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+def _has_sm_100x_or_newer() -> Bool:
+    return (
+        _has_blackwell_tcgen05()
+        or _has_sm_100x()
+        or _has_sm_103x()
+        or _has_sm_110x_or_newer()
+    )
+
+
+@always_inline("nodebug")
 def _is_sm_110x_or_newer() -> Bool:
     return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")
+def _has_sm_110x_or_newer() -> Bool:
+    return _has_sm_110x() or _has_sm_120x_or_newer()
+
+
+@always_inline("nodebug")
 def _is_sm_120x_or_newer() -> Bool:
-    return _is_sm_120x()
+    return _is_sm_120x() or _is_sm_121x()
+
+
+@always_inline("nodebug")
+def _has_sm_120x_or_newer() -> Bool:
+    return _has_sm_120x() or _has_sm_121x()
 
 
 @always_inline("nodebug")
@@ -586,6 +815,29 @@ def is_nvidia_gpu[subarch: StaticString]() -> Bool:
     return is_nvidia_gpu() and CompilationTarget._is_arch[subarch]()
 
 
+comptime _AMD_GCN_ARCHS: List[StaticString] = [
+    "gfx600",
+    "gfx601",
+    "gfx602",
+    "gfx700",
+    "gfx701",
+    "gfx702",
+    "gfx703",
+    "gfx704",
+    "gfx705",
+    "gfx801",
+    "gfx802",
+    "gfx803",
+    "gfx805",
+    "gfx810",
+    "gfx900",
+    "gfx902",
+    "gfx904",
+    "gfx906",
+    "gfx909",
+]
+
+
 @always_inline("nodebug")
 def _is_amd_gcn() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
@@ -594,27 +846,18 @@ def _is_amd_gcn() -> Bool:
     Returns:
         True if GCN and False otherwise.
     """
-    return (
-        is_amd_gpu["gfx600"]()
-        or is_amd_gpu["gfx601"]()
-        or is_amd_gpu["gfx602"]()
-        or is_amd_gpu["gfx700"]()
-        or is_amd_gpu["gfx701"]()
-        or is_amd_gpu["gfx702"]()
-        or is_amd_gpu["gfx703"]()
-        or is_amd_gpu["gfx704"]()
-        or is_amd_gpu["gfx705"]()
-        or is_amd_gpu["gfx801"]()
-        or is_amd_gpu["gfx802"]()
-        or is_amd_gpu["gfx803"]()
-        or is_amd_gpu["gfx805"]()
-        or is_amd_gpu["gfx810"]()
-        or is_amd_gpu["gfx900"]()
-        or is_amd_gpu["gfx902"]()
-        or is_amd_gpu["gfx904"]()
-        or is_amd_gpu["gfx906"]()
-        or is_amd_gpu["gfx909"]()
-    )
+    comptime for arch in _AMD_GCN_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA1_ARCHS: List[StaticString] = [
+    "gfx1010",  # Navi 10 (RX 5700 XT/5700)
+    "gfx1011",  # Navi 12
+    "gfx1012",  # Navi 14 (RX 5500 XT/5500)
+    "gfx1013",  # Navi 14
+]
 
 
 @always_inline("nodebug")
@@ -623,20 +866,29 @@ def _is_amd_rdna1() -> Bool:
     and we are compiling for the any of the Radeon RX 5000 series
     sub-architectures:
 
-        amdgpu:gfx1010: Navi 10 (RX 5700 XT/5700)
-        amdgpu:gfx1011: Navi 12
-        amdgpu:gfx1012: Navi 14 (RX 5500 XT/5500)
-        amdgpu:gfx1013: Navi 14
+        gfx1010: Navi 10 (RX 5700 XT/5700)
+        gfx1011: Navi 12
+        gfx1012: Navi 14 (RX 5500 XT/5500)
+        gfx1013: Navi 14
 
     Returns:
         True if the RDNA1 and False otherwise.
     """
-    return (
-        is_amd_gpu["amdgpu:gfx1010"]()
-        or is_amd_gpu["amdgpu:gfx1011"]()
-        or is_amd_gpu["amdgpu:gfx1012"]()
-        or is_amd_gpu["amdgpu:gfx1013"]()
-    )
+    comptime for arch in _AMD_RDNA1_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA2_ARCHS: List[StaticString] = [
+    "gfx1030",  # Navi 21 (RX 6900/6800)
+    "gfx1031",  # Navi 22 (RX 6700)
+    "gfx1032",  # Navi 23 (RX 6600)
+    "gfx1033",  # Navi 24 (Van Gogh)
+    "gfx1034",  # Navi 24
+    "gfx1035",  # Rembrandt APU
+    "gfx1036",  # Raphael APU
+]
 
 
 @always_inline("nodebug")
@@ -645,42 +897,57 @@ def _is_amd_rdna2() -> Bool:
     and we are compiling for the any of the Radeon RX 6000 series
     sub-architectures:
 
-        amdgpu:gfx1030: Navi 21 (RX 6900/6800)
-        amdgpu:gfx1031: Navi 22 (RX 6700)
-        amdgpu:gfx1032: Navi 23 (RX 6600)
-        amdgpu:gfx1033: Navi 24
-        amdgpu:gfx1034: Navi 24
-        amdgpu:gfx1035: Rembrandt APU
-        amdgpu:gfx1036: Raphael APU
+        gfx1030: Navi 21 (RX 6900/6800)
+        gfx1031: Navi 22 (RX 6700)
+        gfx1032: Navi 23 (RX 6600)
+        gfx1033: Navi 24 (Van Gogh)
+        gfx1034: Navi 24
+        gfx1035: Rembrandt APU
+        gfx1036: Raphael APU
 
     Returns:
         True if the RDNA2 and False otherwise.
     """
-    return (
-        is_amd_gpu["amdgpu:gfx1030"]()
-        or is_amd_gpu["amdgpu:gfx1031"]()
-        or is_amd_gpu["amdgpu:gfx1032"]()
-        or is_amd_gpu["amdgpu:gfx1033"]()
-        or is_amd_gpu["amdgpu:gfx1034"]()
-        or is_amd_gpu["amdgpu:gfx1035"]()
-        or is_amd_gpu["amdgpu:gfx1036"]()
-    )
+    comptime for arch in _AMD_RDNA2_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA3_ARCHS: List[StaticString] = [
+    "gfx1100",  # Navi 31
+    "gfx1101",  # Navi 32
+    "gfx1102",  # Navi 33
+    "gfx1103",  # Navi 34
+    "gfx1150",  # Navi 41
+    "gfx1151",  # Navi 42
+    "gfx1152",  # Navi 43
+    "gfx1153",  # Navi 44
+]
 
 
 @always_inline("nodebug")
 def _is_amd_rdna3() -> Bool:
-    return (
-        is_amd_gpu["gfx1100"]()
-        or is_amd_gpu["gfx1101"]()
-        or is_amd_gpu["gfx1102"]()
-        or is_amd_gpu["gfx1103"]()
-        # These last four are technically RDNA3.5, but we'll treat them as RDNA3
-        # for now.
-        or is_amd_gpu["gfx1150"]()
-        or is_amd_gpu["gfx1151"]()
-        or is_amd_gpu["gfx1152"]()
-        or is_amd_gpu["gfx1153"]()
-    )
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 7000 series
+    sub-architectures:
+
+        gfx1100: Navi 31
+        gfx1101: Navi 32
+        gfx1102: Navi 33
+        gfx1103: Navi 34
+        gfx1150: Navi 41
+        gfx1151: Navi 42
+        gfx1152: Navi 43
+        gfx1153: Navi 44
+
+    Returns:
+        True if the RDNA3 and False otherwise.
+    """
+    comptime for arch in _AMD_RDNA3_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
 
 
 @always_inline("nodebug")
@@ -799,7 +1066,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -808,7 +1075,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         ],
         `,`,
         `"little" : !kgen.string`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -823,7 +1090,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -832,7 +1099,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         ],
         `,`,
         `"big" : !kgen.string`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -897,8 +1164,32 @@ def simd_byte_width[target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
+def stdlib_plugin[target: _TargetType = _current_target()]() -> StaticString:
+    """Returns the stdlib plugin name for the specified target.
+
+    Parameters:
+        target: The target architecture.
+
+    Returns:
+        The stdlib plugin name for the specified target.
+    """
+    return StaticString(
+        __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            target,
+            `, "stdlib_plugin" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+    )
+
+
+@always_inline("nodebug")
 def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
+
+    The size includes any padding required by the type's alignment, so it is
+    always a multiple of `align_of[type]()` and always matches the stride
+    between adjacent elements of an array of the type.
 
     Parameters:
         type: The type in question.
@@ -931,13 +1222,15 @@ def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
         `> : !kgen.type`,
     ]
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_sizeof, #kgen.type<`,
-            mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDLength(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_sizeof, #kgen.type<`,
+                mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 
@@ -963,7 +1256,7 @@ def size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 def align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
@@ -982,13 +1275,15 @@ def align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
         `> : !kgen.type`,
     ]
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_alignof, #kgen.type<`,
-            +mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDLength(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_alignof, #kgen.type<`,
+                +mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 
@@ -1004,13 +1299,15 @@ def align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
         The alignment of the dtype in bytes.
     """
     return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_alignof, #kgen.type<`,
-            Scalar[dtype]._mlir_type,
-            `> : !kgen.type,`,
-            target,
-            `> : index`,
-        ]
+        SIMDLength(
+            mlir_value=__mlir_attr[
+                `#kgen.param.expr<get_alignof, #kgen.type<`,
+                Scalar[dtype]._mlir_type,
+                `> : !kgen.type,`,
+                target,
+                `> : index`,
+            ]
+        )
     )
 
 
@@ -1131,10 +1428,10 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
-        "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
-        osver.unsafe_ptr(),
+        "kern.osproductversion".as_c_string_slice(),
+        osver.unsafe_as_bytes_mut().unsafe_ptr(),
         Pointer(to=buf_len),
-        Optional[UnsafePointer[NoneType, MutAnyOrigin]](),
+        Optional[Pointer[NoneType, MutAnyOrigin]](),
         Int(0),
     )
     if err:
@@ -1149,11 +1446,17 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
 
     if "." in osver:
         major = Int(osver[byte = : osver.find(".")])
-        osver = String(osver[byte = osver.find(".") + 1 :])
+        # TODO(MOCO-4373): split into two statements so the interior-origin
+        # slice of `osver` is copied into a new String before `osver` is
+        # reassigned; the single-statement form false-positives on
+        # interior-origin invalidation.
+        var rest_major = String(osver[byte = osver.find(".") + 1 :])
+        osver = rest_major^
 
     if "." in osver:
         minor = Int(osver[byte = : osver.find(".")])
-        osver = String(osver[byte = osver.find(".") + 1 :])
+        var rest_minor = String(osver[byte = osver.find(".") + 1 :])
+        osver = rest_minor^
 
     if "." in osver:
         patch = Int(osver[byte = : osver.find(".")])
@@ -1183,7 +1486,14 @@ def has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return is_amd_gpu() or "amd" in _accelerator_arch()
+    # `_vendor_from_arch` is the single source of truth for classifying the raw
+    # `--target-accelerator` value, whether it is a bare architecture
+    # ("gfx950", "mi300x") or a vendor-prefixed form ("amdgpu:gfx950",
+    # "amd:gfx950"), so a bare target behaves identically to a prefixed one.
+    return (
+        is_amd_gpu()
+        or _vendor_from_arch[_accelerator_arch()]() == Vendor.AMD_GPU
+    )
 
 
 @always_inline("nodebug")
@@ -1206,7 +1516,44 @@ def has_nvidia_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an NVIDIA GPU.
     """
-    return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
+    # `_vendor_from_arch` is the single source of truth for classifying the raw
+    # `--target-accelerator` value, whether it is a bare architecture ("sm_90"),
+    # a vendor-prefixed form ("nvidia:sm_90"), or the generic "cuda", so a bare
+    # target behaves identically to a prefixed one.
+    return (
+        is_nvidia_gpu()
+        or _vendor_from_arch[_accelerator_arch()]() == Vendor.NVIDIA_GPU
+    )
+
+
+@always_inline("nodebug")
+def has_nvidia_gpu_accelerator[subarch: String]() -> Bool:
+    """Returns True if the host system has an NVIDIA GPU of the specified
+    sub-architecture and False otherwise.
+
+    Parameters:
+        subarch: The NVIDIA GPU sub-architecture to check for (e.g., "sm_80").
+
+    Returns:
+        True if the host system has an NVIDIA GPU of the specified
+        sub-architecture and False otherwise.
+    """
+    return is_nvidia_gpu[subarch]() or subarch in _accelerator_arch()
+
+
+@always_inline("nodebug")
+def has_nvidia_gpu_accelerator[subarchs: List[StaticString]]() -> Bool:
+    """Returns True if the host system has an NVIDIA GPU of the specified
+    sub-architecture and False otherwise.
+
+    Parameters:
+        subarchs: The NVIDIA GPU sub-architectures to check for (e.g., ["sm_80", "sm_86"]).
+
+    Returns:
+        True if the host system has an NVIDIA GPU of the specified
+        sub-architecture and False otherwise.
+    """
+    return _is_nvidia_gpu_any[subarchs]() or _has_nvidia_gpu_any[subarchs]()
 
 
 @always_inline("nodebug")
@@ -1216,4 +1563,11 @@ def has_apple_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has a Metal GPU.
     """
-    return is_apple_gpu() or "metal" in _accelerator_arch()
+    # `_vendor_from_arch` is the single source of truth for classifying the raw
+    # `--target-accelerator` value, whether it is a bare architecture
+    # ("apple-m4") or a vendor-prefixed form ("metal:4"), so a bare target
+    # behaves identically to a prefixed one.
+    return (
+        is_apple_gpu()
+        or _vendor_from_arch[_accelerator_arch()]() == Vendor.APPLE_GPU
+    )

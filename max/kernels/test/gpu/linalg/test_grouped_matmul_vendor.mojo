@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -61,8 +61,8 @@ def test_vendor[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -84,7 +84,7 @@ def test_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -92,21 +92,21 @@ def test_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_any_origin(),
-        row_major(Coord(Idx(num_active_experts + 1))),
+        a_offsets_host_ptr.as_unsafe_any_origin(),
+        row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_any_origin(),
-        row_major(Coord(Idx(num_active_experts))),
+        expert_ids_host_ptr.as_unsafe_any_origin(),
+        row_major(Coord(num_active_experts)),
     )
 
     # Setup offsets and expert ids
@@ -135,7 +135,7 @@ def test_vendor[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx(K))),
+        row_major(Coord(total_num_tokens, K)),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -143,19 +143,19 @@ def test_vendor[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx(N))),
+        row_major(Coord(total_num_tokens, N)),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx(N))),
+        row_major(Coord(total_num_tokens, N)),
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_active_experts + 1))),
+        row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(Idx(num_active_experts))),
+        row_major(Coord(num_active_experts)),
     )
 
     # Move inputs to device
@@ -194,7 +194,7 @@ def test_vendor[
     ctx.synchronize()
 
     # Verify results
-    rtol = 1e-2
+    var rtol = 1e-2
     for m in range(total_num_tokens):
         for n in range(N):
             var expect = c_ref_host[m, n][0]
@@ -255,8 +255,8 @@ def test_negative_lora_id_vendor[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -277,7 +277,7 @@ def test_negative_lora_id_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -285,17 +285,17 @@ def test_negative_lora_id_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_any_origin(),
-        row_major(Coord(Idx(num_active_experts + 1))),
+        a_offsets_host_ptr.as_unsafe_any_origin(),
+        row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_any_origin(),
-        row_major(Coord(Idx(num_active_experts))),
+        expert_ids_host_ptr.as_unsafe_any_origin(),
+        row_major(Coord(num_active_experts)),
     )
 
     # Setup offsets and expert ids
@@ -323,7 +323,7 @@ def test_negative_lora_id_vendor[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx(K))),
+        row_major(Coord(total_num_tokens, K)),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -331,7 +331,7 @@ def test_negative_lora_id_vendor[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx(N))),
+        row_major(Coord(total_num_tokens, N)),
     )
 
     # Move inputs to device

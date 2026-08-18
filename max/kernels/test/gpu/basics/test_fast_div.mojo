@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import *
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, Coord, Idx, row_major
 
 
 def test_fast_div() raises:
@@ -84,27 +84,21 @@ log2_shift: 6
 def run_elementwise[type: DType](ctx: DeviceContext) raises:
     comptime length = 256
 
-    var divisors_stack = InlineArray[Scalar[type], length](uninitialized=True)
+    var divisors_stack = Array[Scalar[type], length](uninitialized=True)
     var divisors = TileTensor(divisors_stack, row_major[length]())
-    var remainders_stack = InlineArray[Scalar[type], length](uninitialized=True)
+    var remainders_stack = Array[Scalar[type], length](uninitialized=True)
     var remainders = TileTensor(remainders_stack, row_major[length]())
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)
     var out_remainders = ctx.enqueue_create_buffer[type](length)
 
-    var out_divisors_buffer = TileTensor(out_divisors, row_major(Idx(length)))
-    var out_remainders_buffer = TileTensor(
-        out_remainders, row_major(Idx(length))
-    )
+    var out_divisors_buffer = TileTensor(out_divisors, row_major(length))
+    var out_remainders_buffer = TileTensor(out_remainders, row_major(length))
 
     @always_inline
-    @__copy_capture(out_divisors_buffer, out_remainders_buffer)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         comptime fast_div = FastDiv[type](4)
-        var idx = idx0[0]
+        var idx = idx0[0].value()
 
         out_divisors_buffer[idx] = (
             Scalar[fast_div.uint_type](idx) / fast_div
@@ -113,10 +107,10 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[fast_div.uint_type](idx) % fast_div
         ).cast[type]()
 
-    elementwise[func, simd_width=1, target="gpu"](Index(length), ctx)
+    elementwise[simd_width=1, target="gpu"](func, Coord(length), ctx)
 
-    ctx.enqueue_copy(divisors.ptr, out_divisors)
-    ctx.enqueue_copy(remainders.ptr, out_remainders)
+    ctx.enqueue_copy(divisors._storage, out_divisors)
+    ctx.enqueue_copy(remainders._storage, out_remainders)
 
     ctx.synchronize()
 

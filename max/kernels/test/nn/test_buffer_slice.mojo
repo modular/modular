@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_as_copy, slice_as_view
 
@@ -20,21 +21,18 @@ from std.utils.index import Index, IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
-    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var shape = tensor.layout.shape_coord()
     var stride = coord_to_index_list(tensor.layout.stride_coord())
-    print("New shape:", shape)
+    print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
     @always_inline
-    @parameter
     def print_elements_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](coords: IndexList[rank]):
-        var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.layout(Coord(index))
-        print(tensor.raw_load(idx))
+        simd_width: Int, alignment: Int = 1
+    ](coords: Coord) {var}:
+        print(tensor.load(coords))
 
-    elementwise[print_elements_lambda, 1](shape)
+    elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
 
 
 # slice_dim
@@ -51,9 +49,9 @@ def test_slice[
     use_copy: Bool,
 ) raises:
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
+    var output_mem = Array[Scalar[dtype], numelems](uninitialized=True)
 
-    var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
+    var memory1 = Array[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
         memory1,
         row_major(Coord(dims)),
@@ -64,7 +62,7 @@ def test_slice[
     print("In shape:", shape)
     print("In strides:", stride)
 
-    var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var start_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var start_tensor = TileTensor(
@@ -72,7 +70,7 @@ def test_slice[
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var end_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var end_tensor = TileTensor(
@@ -80,7 +78,7 @@ def test_slice[
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
+    var step_tensor_mem = Array[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
     var step_tensor = TileTensor(
@@ -121,6 +119,7 @@ def test_slice[
             start_tensor,
             end_tensor,
             step_tensor,
+            DeviceContext(api="cpu"),
         )
 
         print_elements(output_buffer)

@@ -30,8 +30,9 @@ Both launch a 1-block / 1-warp kernel, build a
 bit-exact against the expected slice.
 """
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_equal
 from layout import (
@@ -104,7 +105,7 @@ def kernel_case_a(
     var total = BN * DEPTH
     var i = tid
     while i < total:
-        out_ptr[i] = dst_smem.ptr[i]
+        out_ptr[i] = dst_smem._storage[i]
         i += 64
 
 
@@ -140,7 +141,7 @@ def kernel_case_b(
     var total = BN * DEPTH
     var i = tid
     while i < total:
-        out_ptr[i] = dst_smem.ptr[i]
+        out_ptr[i] = dst_smem._storage[i]
         i += 64
 
 
@@ -166,7 +167,7 @@ def test_case_a(ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[DType.bfloat16](size)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function_experimental[kernel_case_a](
+    ctx.enqueue_function[kernel_case_a](
         dev_in, dev_out, grid_dim=1, block_dim=64
     )
 
@@ -210,7 +211,7 @@ def test_case_b(ctx: DeviceContext) raises:
         unsafe_from_address=Int(dev_in.unsafe_ptr()) + head_dim_offset * 2
     )
 
-    ctx.enqueue_function_experimental[kernel_case_b](
+    ctx.enqueue_function[kernel_case_b](
         dev_in_offset, dev_out, grid_dim=1, block_dim=64
     )
 

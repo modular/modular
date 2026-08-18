@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Defines `_ComptimeConditional`, a compile-time conditional value wrapper."""
 
-from std.builtin.device_passable import DevicePassable
-from std.utils.type_functions import ConditionalType
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
-comptime _ComptimeConditonalType = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _ComptimeConditionalType = ImplicitlyCopyable & Deinitable & RegisterPassable
 
 
 # TODO: If this ever goes public, there is likely a better name for this...
 struct _ComptimeConditional[
-    T: DevicePassable & _ComptimeConditonalType,
+    T: DevicePassable & _ComptimeConditionalType,
     *,
     engaged: Bool,
 ](DevicePassable, ImplicitlyCopyable, RegisterPassable):
@@ -40,19 +39,17 @@ struct _ComptimeConditional[
         engaged: Compile-time flag controlling whether the value is present.
     """
 
-    var _value: ConditionalType[
-        Trait=_ComptimeConditonalType,
-        If=Self.engaged,
-        Then=Self.T,
-        Else=NoneType,
-    ]
+    comptime _ValueType: _ComptimeConditionalType = Self.T if Self.engaged else NoneType
+    var _value: Self._ValueType
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Forwards device type conversion to the inner value when engaged."""
         comptime if Self.engaged:
-            self[]._to_device_type(target)
+            self[]._to_device_type(encoder, target)
 
     @staticmethod
     def get_type_name() -> String:
