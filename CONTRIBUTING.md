@@ -54,8 +54,9 @@ contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
 - [MAX API and models](/max/CONTRIBUTING.md)
-- [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
-- [Code examples](examples#contributing)
+- [MAX accelerator library](/max/kernels/CONTRIBUTING.md)
+- [Code examples](/max/examples#contributing) and
+  [mojo/examples#contributing](mojo/examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)
 
 #### Please open an issue before opening a pull request

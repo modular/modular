@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,21 @@ class MLAPrefillMetadata:
     buffer_row_offsets: Tensor
     cache_offsets: Tensor
     buffer_lengths: Tensor
+
+    def __tree_flatten__(self) -> tuple[tuple[Tensor, ...], None]:
+        return (
+            self.buffer_row_offsets,
+            self.cache_offsets,
+            self.buffer_lengths,
+        ), None
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, aux: None, children: Sequence[Tensor]
+    ) -> MLAPrefillMetadata:
+        """Rebuilds an :class:`MLAPrefillMetadata` from flattened leaves."""
+        del aux
+        return cls(*children)
 
 
 class LatentAttentionWithRope(Module[..., Tensor]):

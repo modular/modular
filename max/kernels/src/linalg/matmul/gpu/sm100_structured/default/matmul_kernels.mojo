@@ -33,16 +33,16 @@ from std.math import ceildiv
 from std.sys import align_of, size_of
 
 from std.memory import UnsafePointer
-from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, warp_id as get_warp_id
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_group,
@@ -50,14 +50,14 @@ from std.gpu.memory import (
     fence_mbarrier_init,
     CacheEviction,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import async_copy_arrive, syncwarp
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.sync import async_copy_arrive, syncwarp
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     ComptimeInt,
     Coord,
@@ -174,6 +174,15 @@ struct B200MatmulSmem[
 
     Type aliases are provided for tile types (ATile, BTile, CTile) to enable
     cleaner function signatures.
+
+    Parameters:
+        a_type: Element type of the A input matrix tiles in shared memory.
+        b_type: Element type of the B input matrix tiles in shared memory.
+        c_type: Element type of the C output matrix tiles in shared memory.
+        transpose_b: Whether B is stored transposed (K-major), selecting the
+            B tile layout.
+        config: `MatmulConfig` holding block tile shape, MMA shape, output
+            tile shape, pipeline stage counts, and swizzle modes.
     """
 
     # ========== Derived Constants ==========
@@ -375,6 +384,29 @@ struct BlackwellMatmulSM100Kernel[
     - Cluster Launch Control (CLC) for dynamic tile scheduling
     - Warp specialization: Scheduler, TMA Load, MMA, Epilogue warps
     - Software pipelining for overlapping compute and memory operations
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix; must be `bfloat16`,
+            `float8_e4m3fn`, or `float32`.
+        transpose_b: Whether B is stored transposed (K-major); must be `True`.
+        config: `MatmulConfig` holding block tile shape, MMA shape, output
+            tile shape, pipeline stage counts, and swizzle modes.
+        cluster_shape: Thread block cluster dimensions, must match
+            `config.cluster_shape` (defaults to `(1, 1, 1)`).
+        elementwise_lambda_fn: Optional epilogue function applied to output
+            elements after MMA (defaults to `None`).
+        elementwise_compute_lambda_fn: Optional fused compute epilogue
+            applied during the MMA accumulation (defaults to `None`).
+        pdl_level: Programmatic Dependent Launch level for inter-grid
+            dependency ordering (defaults to `PDLLevel()`, off).
+        max_profiled_tiles_per_SM: Maximum number of tiles to profile per SM
+            (defaults to 0, profiling disabled).
+        output_writer_type: Output writer policy controlling how C tiles are
+            written to global memory (defaults to `StandardOutputWriter`).
+        c_desc_dim0_override: Override for the C TMA descriptor box row count
+            per TMA store; 0 uses the full SMEM tile dim0 (defaults to 0).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -756,10 +788,10 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     def write_output_tile[
-        tma_origin: ImmutOrigin
+        tma_origin: ImmOrigin
     ](
         c_tma_ops: Pointer[
-            InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
+            Array[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
         ],
         c_tiles: Self.SmemType.CTileArray,
         stage: Self.OutputPipeline.Stage,
@@ -770,6 +802,18 @@ struct BlackwellMatmulSM100Kernel[
 
         Construction of the concrete tile writer happens inside
         `Self.output_writer_type.write_batched`
+
+        Parameters:
+            tma_origin: Origin type for the C TMA descriptor memory.
+
+        Args:
+            c_tma_ops: Pointer to the array of C TMA descriptors, one per
+                peer for reduce-scatter or one for the local store.
+            c_tiles: Shared memory C tile array staging output tiles.
+            stage: Output pipeline stage holding the TMEM accumulator to
+                read.
+            tile_coord: `(m, n, k_start)` coordinates of the output tile.
+            shape: `(M, N)` problem dimensions for bounds checking.
         """
         Self.output_writer_type.write_batched[
             tma_origin,
@@ -851,6 +895,25 @@ struct BlackwellMatmulSM100Kernel[
     ):
         """Initialize barriers. TMA descriptor prefetch is done by each kernel
         entry point before calling this method.
+
+        Parameters:
+            use_tma_epilogue_load: Whether to initialize epilogue load barriers
+                (defaults to `False`).
+
+        Args:
+            ctx: Kernel context with election vars and CTA coordinates.
+            input_barriers: Barriers for the input (A/B) tile producer-consumer
+                pipeline.
+            accum_barriers: Barriers for the MMA-to-epilogue accumulator
+                pipeline.
+            clc_throttle: Throttle barriers for CLC scheduling.
+            clc_full: Full barriers signaling CLC pipeline stage occupancy.
+            clc_empty: Empty barriers signaling CLC pipeline stage availability.
+            tmem_dealloc: Barrier for TMEM deallocation synchronization across
+                the cluster.
+            epi_load_barriers: Barriers for the epilogue load producer-consumer
+                pipeline (defaults to a dangling pointer when
+                `use_tma_epilogue_load` is `False`).
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
             init_core_barriers[
@@ -920,6 +983,10 @@ struct BlackwellMatmulSM100Kernel[
             with consumer.acquire() as tiles:
                 Self.mma(stage.tmem, tiles, mma_op, ...)
 
+        Parameters:
+            tiles_origin: Origin type for the mutable tile payload memory
+                (inferred).
+
         Args:
             tmem_stage: TMEM stage for accumulators.
             tiles: ConsumerTiles context with encapsulated tile access.
@@ -985,6 +1052,10 @@ struct BlackwellMatmulSM100Kernel[
         Uses async_multicast_load_3d with batch coordinate from work_tile_coord[2].
         For non-batched calls, batch coord is 0 (grid_dim.z = 1).
 
+        Parameters:
+            tiles_origin: Origin type for the mutable tile payload memory
+                (inferred).
+
         Args:
             a_tma_op: 3D TMA descriptor for A matrix.
             b_tma_op: 3D TMA descriptor for B matrix.
@@ -1027,11 +1098,11 @@ struct BlackwellMatmulSM100Kernel[
 
                 # Peer CTA slice using pointer arithmetic
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1073,8 +1144,12 @@ struct BlackwellMatmulSM100Kernel[
         """Load A tiles only; set full expected bytes (A+B) on the barrier.
 
         Called before wait_on_dependent_grids() to prefetch the static weight
-        matrix (kernel-A in swapAB mode).  The barrier will not fire until
+        matrix (kernel-A in swapAB mode). The barrier will not fire until
         the matching complete_b_tiles() call delivers the remaining B bytes.
+
+        Parameters:
+            tiles_origin: Origin type for the mutable tile payload memory
+                (inferred).
 
         Args:
             a_tma_op: 3D TMA descriptor for A matrix.
@@ -1104,7 +1179,7 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
 
@@ -1132,7 +1207,7 @@ struct BlackwellMatmulSM100Kernel[
         """Load B tiles into a previously prefetched stage.
 
         Delivers the remaining B bytes so that the stage barrier fires and
-        the consumer can proceed.  Pair with prefetch_a_tiles().
+        the consumer can proceed. Pair with prefetch_a_tiles().
 
         Args:
             b_tma_op: 3D TMA descriptor for B matrix.
@@ -1161,7 +1236,7 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1196,8 +1271,12 @@ struct BlackwellMatmulSM100Kernel[
         """Load B tiles only; set full expected bytes (A+B) on the barrier.
 
         Called before wait_on_dependent_grids() to prefetch the static weight
-        matrix (kernel-B in non-swapAB mode).  The barrier will not fire until
+        matrix (kernel-B in non-swapAB mode). The barrier will not fire until
         the matching complete_a_tiles() call delivers the remaining A bytes.
+
+        Parameters:
+            tiles_origin: Origin type for the mutable tile payload memory
+                (inferred).
 
         Args:
             b_tma_op: 3D TMA descriptor for B matrix.
@@ -1230,7 +1309,7 @@ struct BlackwellMatmulSM100Kernel[
                 ](tiles.stage(), j)
 
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1258,7 +1337,7 @@ struct BlackwellMatmulSM100Kernel[
         """Load A tiles into a previously prefetched stage.
 
         Delivers the remaining A bytes so that the stage barrier fires and
-        the consumer can proceed.  Pair with prefetch_b_tiles().
+        the consumer can proceed. Pair with prefetch_b_tiles().
 
         Args:
             a_tma_op: 3D TMA descriptor for A matrix.
@@ -1284,7 +1363,7 @@ struct BlackwellMatmulSM100Kernel[
                 )
 
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
 
@@ -1300,8 +1379,8 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     def load_input_tiles_splitk[
-        a_tma_origin: ImmutOrigin,
-        b_tma_origin: ImmutOrigin,
+        a_tma_origin: ImmOrigin,
+        b_tma_origin: ImmOrigin,
         tiles_origin: MutOrigin,
         //,
     ](
@@ -1337,6 +1416,14 @@ struct BlackwellMatmulSM100Kernel[
         - expect_bytes signaling
         - k-group iteration
         - Peer CTA slicing for 2-SM MMA
+
+        Parameters:
+            a_tma_origin: Origin type for the A matrix TMA descriptor memory
+                (inferred).
+            b_tma_origin: Origin type for the B matrix TMA descriptor memory
+                (inferred).
+            tiles_origin: Origin type for the mutable tile payload memory
+                (inferred).
 
         Args:
             a_loader: TileLoader for A matrix (2D).
@@ -1381,11 +1468,11 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile._storage + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile._storage + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
@@ -1443,6 +1530,24 @@ struct BlackwellMatmulSM100Kernel[
         - 1D bias: warp-wide cp.async with zero-fill for OOB elements
         - AB_swapped: full MMA_N x BM TMA per output tile
         - non-AB_swapped: BM x stageN strips in stage-outer/col_wg-inner order
+
+        Parameters:
+            _epi_pipeline_stages: Number of stages in the epilogue load
+                producer-consumer pipeline.
+
+        Args:
+            epi_load_iter: Work iterator yielding output tile coordinates for
+                epilogue loads.
+            epilogue_load_pipeline: Producer-consumer pipeline managing
+                epilogue load stage synchronization.
+            epilogue_load_tma_op: TMA descriptor for the epilogue load tensor,
+                used in 2D load paths.
+            bias_1d_tile: 1D bias tile in global memory, used only for the 1D
+                bias load path.
+            epilogue_load_tiles: Shared memory tile array staging epilogue load
+                data.
+            mnk: Problem dimensions `(M, N, K)`; `N` bounds the bias extent for
+                OOB zero-fill.
         """
 
         comptime if Self.config.epilogue_is_1d:
@@ -1481,9 +1586,9 @@ struct BlackwellMatmulSM100Kernel[
                         0
                     )
                     var src_ptr = (
-                        bias_1d_tile.ptr + gmem_offset + lane_start
+                        bias_1d_tile._storage + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
-                    var dst_ptr = smem_tile.ptr + lane_start
+                    var dst_ptr = smem_tile._storage + lane_start
                     comptime for chunk in range(num_copies):
                         async_copy[
                             copy_bytes,
@@ -1584,23 +1689,41 @@ struct BlackwellMatmulSM100Kernel[
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        c_tma_ops: InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors],
+        c_tma_ops: Array[Self.CTmaOp, Self.num_c_tma_descriptors],
         epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
         rank_sigs: Optional[
-            InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+            Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
         ] = None,
-        my_rank: Int = 0,
+        my_rank_dev: Int32 = 0,
     ):
         """Main kernel entry point for SM100 matrix multiplication.
 
         Always uses 3D TMA descriptors. For non-batched inputs, batch=1 and
         batch_coord=0 (from k_start = block_idx.z = 0 when grid_dim.z = 1).
         For batched inputs, grid_dim.z = batch_size and batch_coord from k_start.
+
+        Args:
+            a_tma_op: 3D TMA descriptor for the A input matrix.
+            b_tma_op: 3D TMA descriptor for the B input matrix.
+            c_tma_ops: Array of C TMA descriptors, one per peer for
+                reduce-scatter or one for the local store.
+            epilogue_load_tma_op: TMA descriptor for the epilogue load
+                (bias) tensor.
+            bias_1d_tile: 1D bias tile in global memory, used only for the
+                1D bias epilogue path.
+            cluster_dim: Thread block cluster dimensions for CLC scheduling.
+            mnk: Problem dimensions `(M, N, K)` in elements.
+            workspace: Workspace buffer for profiling and scheduling state.
+            rank_sigs: Per-rank signal pointers for multi-GPU
+                reduce-scatter synchronization (defaults to `None`).
+            my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter
+                (defaults to 0).
         """
+        var my_rank = Int(my_rank_dev)
         Self.validate_constraints()
 
         # Access shared memory via bitcast
@@ -1838,12 +1961,16 @@ struct BlackwellMatmulSM100Kernel[
 
                         producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # Implies each SM will only process initial work, there is no
-            # more work to schedule.
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # With no CLC pipeline stages each SM only processes its initial work, so
+        # there is nothing to schedule. KERN-3311: fold that into the condition
+        # rather than `return`ing -- a return would skip the cluster exit barrier
+        # at the end of this function, leaving it divergent (undefined behavior).
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             # Scheduler warp uses its own iterator that manages both
             # producer and consumer state, plus throttle signaling
             var sched_iter = scheduler.scheduler_iterator()
@@ -1904,6 +2031,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 UInt32(i),
                                                 0,
                                             )
+
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
 
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
@@ -2046,6 +2192,20 @@ struct BlackwellMatmulSM100Kernel[
 
                         tile_idx += 1
 
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
+
     @staticmethod
     @always_inline
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
@@ -2080,6 +2240,10 @@ struct BlackwellMatmulSM100Kernel[
 
         Split-K divides the K dimension across multiple CTAs, with each CTA
         computing a partial result that is then reduced.
+
+        Parameters:
+            reduction_layout: Memory layout of the reduction workspace tensor,
+                must match the layout of `reduction_tensor`.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -2212,10 +2376,14 @@ struct BlackwellMatmulSM100Kernel[
 
                     producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # See run(): fold rather than `return`, so the cluster exit barrier below
+        # is reached by every thread.
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -2261,6 +2429,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 k_start,
                                             )
 
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
+
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
@@ -2296,6 +2483,20 @@ struct BlackwellMatmulSM100Kernel[
 
                     tile_idx += 1
 
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
+
 
 # ============================================================================
 # BlackwellMatmulSM100FallbackKernel - Simple non-warp-specialized kernel
@@ -2326,6 +2527,29 @@ struct BlackwellMatmulSM100FallbackKernel[
     - Basic barrier synchronization (no CLC scheduling)
     - Direct TileTensor output (no TMA for C)
     - Simpler pipeline with single buffer
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix.
+        c_layout: Memory layout of the C output tensor in global memory, used
+            for output tiling and static stride computation.
+        block_tile_shape: Block tile dimensions `(BM, BN, BK)` for
+            CTA-level tiling of the output and reduction dimensions.
+        mma_shape: MMA instruction dimensions `(MMA_M, MMA_N, MMA_K)` for
+            the tensor core operation.
+        transpose_b: Whether B is stored transposed (K-major) (defaults to
+            `True`).
+        cluster_shape: Thread block cluster dimensions used for LLVM cluster
+            metadata (defaults to `(1, 1, 1)`).
+        a_swizzle: Swizzle pattern for A shared memory tiles (defaults to
+            `TensorMapSwizzle.SWIZZLE_128B`).
+        b_swizzle: Swizzle pattern for B shared memory tiles (defaults to
+            `TensorMapSwizzle.SWIZZLE_128B`).
+        num_threads: Number of threads per CTA; must be 128 or 256 (defaults
+            to 128).
+        elementwise_lambda_fn: Optional epilogue function applied to output
+            elements (defaults to `None`).
     """
 
     # ========== Derived Constants ==========
@@ -2405,7 +2629,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        num_iters: Int,
+        num_iters: Int32,
     ):
         """Run the fallback matmul kernel.
 
@@ -2415,6 +2639,7 @@ struct BlackwellMatmulSM100FallbackKernel[
             c: Output tensor C (TileTensor, direct global memory writes).
             num_iters: Number of K-dimension iterations.
         """
+        var _num_iters = Int(num_iters)
         Self.validate_constraints()
 
         # Setup shared memory for A and B tiles
@@ -2439,7 +2664,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         # Shared memory pointer to hold tensor memory address
         var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()
 
-        var c_frag: InlineArray[Scalar[Self.accum_type], Self.c_frag_size]
+        var c_frag: Array[Scalar[Self.accum_type], Self.c_frag_size]
 
         comptime a_expected_bytes = Self.a_size * size_of[Self.a_type]()
         comptime b_expected_bytes = Self.b_size * size_of[Self.b_type]()
@@ -2483,7 +2708,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         ]()
 
         # Main loop over K dimension
-        for i in range(num_iters):
+        for i in range(_num_iters):
             # Only one thread per CTA does the copy
             if elect_one_thread:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))

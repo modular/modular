@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -30,12 +31,17 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers.models.auto.configuration_auto import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -148,6 +154,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     lm_head stay bf16.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     # Core dims
     hidden_size: int
     vocab_size: int
@@ -201,9 +213,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     # FP8: set of (kind, layer_idx) modules quantized to FP8 per-tensor static.
     # ``fp8_mamba_layers``: mamba layers whose in/out_proj are FP8.
     # ``fp8_mlp_layers``: MLP layers whose up/down_proj are FP8.
+    # ``fp8_moe_layers``: MoE layers whose routed + shared expert up/down_proj
+    # are FP8 (the 30B-A3B hybrid). The routed-expert grouped matmul consumes
+    # the FP8 weight stack directly (weight-only W8A16); the shared expert runs
+    # the dense FP8 Linear path.
     fp8_mamba_layers: set[int] = field(default_factory=set)
     fp8_mlp_layers: set[int] = field(default_factory=set)
+    fp8_moe_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
+
+    quantization_encoding: SupportedEncoding | None = None
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -249,6 +268,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         fp8_mamba: set[int] = set()
         fp8_mlp: set[int] = set()
+        fp8_moe: set[int] = set()
         for name in state_dict:
             if not name.endswith("weight_scale"):
                 continue
@@ -262,12 +282,18 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     fp8_mamba.add(li)
                 elif proj in ("up_proj", "down_proj"):
                     fp8_mlp.add(li)
+                # MoE routed/shared experts nest one level deeper:
+                # blocks.{i}.mixer.experts.{j}.{up,down}_proj.weight_scale and
+                # blocks.{i}.mixer.shared_experts.{up,down}_proj.weight_scale.
+                elif proj in ("experts", "shared_experts"):
+                    fp8_moe.add(li)
         self.fp8_mamba_layers = fp8_mamba
         self.fp8_mlp_layers = fp8_mlp
-        self.is_fp8 = bool(fp8_mamba or fp8_mlp)
+        self.fp8_moe_layers = fp8_moe
+        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe)
         logger.info(
             f"Nemotron-H FP8: {len(fp8_mamba)} mamba layers,"
-            f" {len(fp8_mlp)} MLP layers quantized"
+            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers quantized"
         )
 
     @staticmethod
@@ -299,7 +325,19 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         The forward pass maps each attention layer to a sequential KV cache
         index (0, 1, 2, ...), independent of the absolute layer index.
+
+        The reference configuration uses an FP8 KV cache for this checkpoint.
+        Select the same default while preserving explicit cache-format
+        overrides and non-FP8 model behavior.
         """
+        resolved_encoding = _select_quantization_encoding(
+            pipeline_config.model, NemotronHConfig.DEFAULT_ENCODING
+        )
+        if (
+            resolved_encoding == "float8_e4m3fn"
+            and kv_cache_config.kv_cache_format is None
+        ):
+            cache_dtype = DType.float8_e4m3fn
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
         return kv_cache_config.to_params(
@@ -332,9 +370,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "HuggingFace config is required for Nemotron-H but could not "
                 "be loaded; ensure config.json is present."
             )
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -345,7 +383,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             pipeline_config=pipeline_config,
             devices=device_refs,
             kv_cache_config=model_config.kv_cache,
-            cache_dtype=model_config.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                quantization_encoding,
+                model_config.kv_cache.kv_cache_format,
+            ),
         )
         return cls.from_hf(
             pipeline_config,
@@ -372,6 +413,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         if dtype == DType.float8_e4m3fn:
             dtype = DType.bfloat16
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         return cls(
             hidden_size=huggingface_config.hidden_size,
             vocab_size=huggingface_config.vocab_size,
@@ -422,4 +466,5 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 huggingface_config, "mamba_proj_bias", False
             ),
             kv_params=kv_params,
+            quantization_encoding=quantization_encoding,
         )

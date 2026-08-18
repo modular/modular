@@ -13,7 +13,7 @@
 
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import row_mean_of_squares_qk
 from std.testing import assert_almost_equal
@@ -114,4 +114,11 @@ def main() raises:
         )
         run_row_mean_of_squares_qk_gpu[DType.float32](
             ctx, 16, 1537, 257, rtol=1e-6, atol=1e-6
+        )
+        # Few rows + a row size past `_SPLITK_MIN_ROW` (32768) at float32's
+        # SIMD width (clears `_SPLITK_MAX_SIMD`): exercises the split-K
+        # kernel for both the q and k `row_mean_of_squares` calls, writing
+        # back through the stride-2 `q_out`/`k_out` closures.
+        run_row_mean_of_squares_qk_gpu[DType.float32](
+            ctx, 4, 65536, 40000, rtol=1e-6, atol=1e-6
         )

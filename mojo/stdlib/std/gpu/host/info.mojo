@@ -23,8 +23,31 @@ memory specifications, thread organization, and performance characteristics.
 # locations in this file that need to be updated.
 
 from std.math import ceildiv, floor
-from std.os import abort
-from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.sys.info import (
+    CompilationTarget,
+    _accelerator_arch,
+    _TargetType,
+)
+
+
+@always_inline
+def get_gpu_target[
+    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
+    target_arch: StaticString = _accelerator_arch(),
+]() -> _TargetType:
+    """Gets the GPU target information for the specified architecture.
+
+    Parameters:
+        target_arch: GPU architecture name (defaults to current accelerator architecture).
+
+    Returns:
+        Target type information for the specified GPU architecture.
+    """
+    comptime assert (
+        target_arch != ""
+    ), "target_arch must be a valid GPU architecture."
+    return GPUInfo.from_name[target_arch]().target()
+
 
 comptime _KB = 1024
 comptime _K = 1024
@@ -202,83 +225,6 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 
 
 # ===-----------------------------------------------------------------------===#
-# Vendor
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct Vendor(Equatable, TrivialRegisterPassable, Writable):
-    """Represents GPU vendors.
-
-    This struct provides identifiers for different GPU vendors and utility
-    methods for comparison and string representation.
-
-    The Vendor struct defines constants for common GPU vendors (NVIDIA, AMD)
-    and includes a NO_GPU option for systems without GPU support. It provides
-    comparison operators and string conversion methods for vendor identification.
-    """
-
-    var _value: Int8
-    """The underlying integer value representing the vendor."""
-
-    comptime NO_GPU = Self(0)
-    """Represents no GPU or CPU-only execution."""
-
-    comptime AMD_GPU = Self(1)
-    """Represents AMD GPU vendor."""
-
-    comptime NVIDIA_GPU = Self(2)
-    """Represents NVIDIA GPU vendor."""
-
-    comptime APPLE_GPU = Self(3)
-    """Represents Apple GPU vendor."""
-
-    def __eq__(self, other: Self) -> Bool:
-        """Checks if two `Vendor` instances are equal.
-
-        Args:
-            other: The `Vendor` to compare with.
-
-        Returns:
-            True if vendors are equal, False otherwise.
-        """
-        return self._value == other._value
-
-    def __ne__(self, other: Self) -> Bool:
-        """Checks if two `Vendor` instances are not equal.
-
-        Args:
-            other: The `Vendor` to compare with.
-
-        Returns:
-            True if vendors are not equal, False otherwise.
-        """
-        return not (self == other)
-
-    @no_inline
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes vendor information to a writer.
-
-        Args:
-            writer: The writer to output vendor information to.
-        """
-        if self == Vendor.NO_GPU:
-            writer.write("no_gpu")
-            return
-        if self == Vendor.AMD_GPU:
-            writer.write("amd_gpu")
-            return
-        if self == Vendor.APPLE_GPU:
-            writer.write("apple_gpu")
-            return
-        if self == Vendor.NVIDIA_GPU:
-            writer.write("nvidia_gpu")
-            return
-
-        abort("unable to format unrecognized `Vendor` value")
-
-
-# ===-----------------------------------------------------------------------===#
 # NoGPU
 # ===-----------------------------------------------------------------------===#
 
@@ -302,7 +248,6 @@ def _get_empty_target() -> _TargetType:
 
 comptime NoGPU = GPUInfo(
     name="NoGPU",
-    vendor=Vendor.NO_GPU,
     api="none",
     arch_name="no_gpu",
     compute=0,
@@ -493,7 +438,6 @@ def _get_metal_m5_metal4_target() -> _TargetType:
 comptime MetalM1 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M1",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m1",
     compute=3.0,  # Metal version 3.0
@@ -505,7 +449,6 @@ comptime MetalM1 = GPUInfo.from_family(
 comptime MetalM2 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M2",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m2",
     compute=3.0,  # Metal version 3.0
@@ -517,7 +460,6 @@ comptime MetalM2 = GPUInfo.from_family(
 comptime MetalM3 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M3",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m3",
     compute=3.0,  # Metal version 3.0 for M3
@@ -529,7 +471,6 @@ comptime MetalM3 = GPUInfo.from_family(
 comptime MetalM4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m4",
     compute=3.0,  # Metal version 3.0 for M4
@@ -541,7 +482,6 @@ comptime MetalM4 = GPUInfo.from_family(
 comptime MetalM5 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M5",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m5",
     compute=3.0,  # Metal version 3.0 for M5
@@ -553,7 +493,6 @@ comptime MetalM5 = GPUInfo.from_family(
 comptime MetalM1Metal4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M1 Metal4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m1-metal4",
     compute=4.0,  # Metal 4.0, requires macOS 26
@@ -565,7 +504,6 @@ comptime MetalM1Metal4 = GPUInfo.from_family(
 comptime MetalM2Metal4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M2 Metal4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m2-metal4",
     compute=4.0,  # Metal 4.0, requires macOS 26
@@ -577,7 +515,6 @@ comptime MetalM2Metal4 = GPUInfo.from_family(
 comptime MetalM3Metal4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M3 Metal4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m3-metal4",
     compute=4.0,  # Metal 4.0, requires macOS 26
@@ -589,7 +526,6 @@ comptime MetalM3Metal4 = GPUInfo.from_family(
 comptime MetalM4Metal4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M4 Metal4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m4-metal4",
     compute=4.0,  # Metal 4.0, requires macOS 26
@@ -601,7 +537,6 @@ comptime MetalM4Metal4 = GPUInfo.from_family(
 comptime MetalM5Metal4 = GPUInfo.from_family(
     family=AppleMetalFamily,
     name="M5 Metal4",
-    vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m5-metal4",
     compute=4.0,  # Metal 4.0, requires macOS 26
@@ -635,7 +570,7 @@ def _get_a100_target() -> _TargetType:
         `arch = "sm_80", `,
         `features = "+ptx81,+sm_80", `,
         `tune_cpu = "sm_80", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -645,7 +580,6 @@ def _get_a100_target() -> _TargetType:
 comptime A100 = GPUInfo.from_family(
     family=NvidiaAmpereDatacenterFamily,
     name="A100",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
     compute=8.0,
@@ -671,7 +605,7 @@ def _get_a10_target() -> _TargetType:
         `arch = "sm_86", `,
         `features = "+ptx81,+sm_86", `,
         `tune_cpu = "sm_86", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -681,7 +615,6 @@ def _get_a10_target() -> _TargetType:
 comptime A10 = GPUInfo.from_family(
     family=NvidiaAmpereWorkstationFamily,
     name="A10",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
     compute=8.6,
@@ -707,7 +640,7 @@ def _get_orin_nano_target() -> _TargetType:
         `arch = "sm_87", `,
         `features = "+ptx81,+sm_87", `,
         `tune_cpu = "sm_87", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -717,7 +650,6 @@ def _get_orin_nano_target() -> _TargetType:
 comptime OrinNano = GPUInfo.from_family(
     family=NvidiaAmpereEmbeddedFamily,
     name="Orin Nano",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
     compute=8.7,
@@ -744,7 +676,7 @@ def _get_jetson_thor_target() -> _TargetType:
         `arch = "sm_110", `,
         `features = "+ptx90,+sm_110", `,
         `tune_cpu = "sm_110", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
         `index_bit_width = 64`,
         `> : !kgen.target`,
@@ -754,7 +686,6 @@ def _get_jetson_thor_target() -> _TargetType:
 comptime JetsonThor = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="Jetson Thor",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=11.0,
@@ -780,7 +711,7 @@ def _get_dgx_spark_target() -> _TargetType:
         `arch = "sm_121a", `,
         `features = "+ptx88,+sm_121a", `,
         `tune_cpu = "sm_121a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -790,7 +721,6 @@ def _get_dgx_spark_target() -> _TargetType:
 comptime DGXSpark = GPUInfo.from_family(
     family=NvidiaBlackwellConsumerFamily,
     name="DGX Spark",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=12.1,
@@ -816,7 +746,7 @@ def _get_l4_target() -> _TargetType:
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_89", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -826,7 +756,6 @@ def _get_l4_target() -> _TargetType:
 comptime L4 = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="L4",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada",
     compute=8.9,
@@ -852,7 +781,7 @@ def _get_rtx4090m_target() -> _TargetType:
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -862,7 +791,6 @@ def _get_rtx4090m_target() -> _TargetType:
 comptime RTX4090m = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="RTX4090m",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada lovelace",
     compute=8.9,
@@ -888,7 +816,7 @@ def _get_rtx4090_target() -> _TargetType:
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -898,7 +826,6 @@ def _get_rtx4090_target() -> _TargetType:
 comptime RTX4090 = GPUInfo.from_family(
     family=NvidiaAdaFamily,
     name="RTX4090",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada lovelace",
     compute=8.9,
@@ -925,7 +852,7 @@ def _get_h100_target() -> _TargetType:
         `arch = "sm_90a", `,
         `features = "+ptx85,+sm_90a", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -936,7 +863,6 @@ def _get_h100_target() -> _TargetType:
 comptime H100 = GPUInfo.from_family(
     family=NvidiaHopperFamily,
     name="H100",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="hopper",
     compute=9.0,
@@ -962,7 +888,7 @@ def _get_b100_target() -> _TargetType:
         `arch = "sm_100a", `,
         `features = "+ptx88,+sm_100a", `,
         `tune_cpu = "sm_100a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -974,7 +900,6 @@ def _get_b100_target() -> _TargetType:
 comptime B100 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="B100",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=10.0,
@@ -986,7 +911,6 @@ comptime B100 = GPUInfo.from_family(
 comptime B200 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="B200",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=10.0,
@@ -1012,7 +936,7 @@ def _get_b300_target() -> _TargetType:
         `arch = "sm_103a", `,
         `features = "+ptx88,+sm_103a", `,
         `tune_cpu = "sm_103a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1022,7 +946,6 @@ def _get_b300_target() -> _TargetType:
 comptime B300 = GPUInfo.from_family(
     family=NvidiaBlackwellFamily,
     name="B300",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=10.3,
@@ -1085,7 +1008,7 @@ def _get_rtx5090_target() -> _TargetType:
         `arch = "sm_120a", `,
         `features = "+ptx87,+sm_120a", `,
         `tune_cpu = "sm_120a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1096,7 +1019,6 @@ def _get_rtx5090_target() -> _TargetType:
 comptime RTX5090 = GPUInfo.from_family(
     family=NvidiaBlackwellConsumerFamily,
     name="RTX5090",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="blackwell",
     compute=12.0,
@@ -1123,7 +1045,7 @@ def _get_rtx3090_target() -> _TargetType:
         `arch = "sm_86", `,
         `features = "+ptx63,+sm_86", `,
         `tune_cpu = "sm_86", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1134,7 +1056,6 @@ def _get_rtx3090_target() -> _TargetType:
 comptime RTX3090 = GPUInfo.from_family(
     family=NvidiaAmpereWorkstationFamily,
     name="NVIDIA GeForce RTX 3090",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
     compute=8.6,
@@ -1169,7 +1090,6 @@ def _get_gtx1080ti_target() -> _TargetType:
 comptime GTX1080Ti = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA GeForce GTX 1080 Ti",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="pascal",
     compute=6.1,
@@ -1208,7 +1128,6 @@ def _get_gtx1060_target() -> _TargetType:
 comptime GTX1060 = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA GeForce GTX 1060",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="pascal",
     compute=6.1,
@@ -1243,7 +1162,6 @@ def _get_gtx970_target() -> _TargetType:
 comptime GTX970 = GPUInfo.from_family(
     family=NvidiaMaxwellFamily,
     name="NVIDIA GeForce GTX 970",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="maxwell",
     compute=5.2,
@@ -1270,7 +1188,7 @@ def _get_teslap100_target() -> _TargetType:
         `arch = "sm_60", `,
         `features = "+ptx50,+sm_60", `,
         `tune_cpu = "sm_60", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1280,7 +1198,6 @@ def _get_teslap100_target() -> _TargetType:
 comptime TeslaP100 = GPUInfo.from_family(
     family=NvidiaPascalFamily,
     name="NVIDIA Tesla P100",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="pascal",
     compute=6.0,
@@ -1307,7 +1224,7 @@ def _get_rtx2060_target() -> _TargetType:
         `arch = "sm_75", `,
         `features = "+ptx63,+sm_75", `,
         `tune_cpu = "sm_75", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -1317,7 +1234,6 @@ def _get_rtx2060_target() -> _TargetType:
 comptime RTX2060 = GPUInfo.from_family(
     family=NvidiaTuringFamily,
     name="RTX2060",
-    vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="turing",
     compute=7.5,
@@ -1353,7 +1269,6 @@ def _get_mi250x_target() -> _TargetType:
 comptime MI250X = GPUInfo.from_family(
     family=AMDCDNA2Family,
     name="MI250X",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx90a",
     compute=9.0,
@@ -1389,7 +1304,6 @@ def _get_mi300x_target() -> _TargetType:
 comptime MI300X = GPUInfo.from_family(
     family=AMDCDNA3Family,
     name="MI300X",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx942",
     compute=9.4,
@@ -1425,7 +1339,6 @@ def _get_mi300a_target() -> _TargetType:
 comptime MI300A = GPUInfo.from_family(
     family=AMDCDNA3Family,
     name="MI300A",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx942",
     compute=9.4,
@@ -1468,7 +1381,6 @@ def _get_mi355x_target() -> _TargetType:
 comptime MI355X = GPUInfo.from_family(
     family=AMDCDNA4Family,
     name="MI355X",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx950",
     compute=9.5,
@@ -1684,7 +1596,6 @@ def _get_steamdeck_target() -> _TargetType:
 comptime Radeon9070 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 9070",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1201",
     compute=12.0,
@@ -1696,7 +1607,6 @@ comptime Radeon9070 = GPUInfo.from_family(
 comptime Radeon9060 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 9060",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1200",
     compute=12.0,
@@ -1708,7 +1618,6 @@ comptime Radeon9060 = GPUInfo.from_family(
 comptime Radeon7900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7900",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1100",
     compute=11.0,
@@ -1720,7 +1629,6 @@ comptime Radeon7900 = GPUInfo.from_family(
 comptime Radeon7800 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7800/7700",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1101",
     compute=11.0,
@@ -1732,7 +1640,6 @@ comptime Radeon7800 = GPUInfo.from_family(
 comptime Radeon7600 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 7600",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1102",
     compute=11.0,
@@ -1744,7 +1651,6 @@ comptime Radeon7600 = GPUInfo.from_family(
 comptime Radeon6900 = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 6900",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1030",
     compute=10.3,
@@ -1757,7 +1663,6 @@ comptime Radeon6900 = GPUInfo.from_family(
 comptime Radeon780m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 780M",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1103",
     compute=11.0,
@@ -1769,7 +1674,6 @@ comptime Radeon780m = GPUInfo.from_family(
 comptime Radeon880m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 880M",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1150",
     compute=11.5,
@@ -1781,7 +1685,6 @@ comptime Radeon880m = GPUInfo.from_family(
 comptime Radeon8060s = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 8060S",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1151",
     compute=11.5,
@@ -1793,7 +1696,6 @@ comptime Radeon8060s = GPUInfo.from_family(
 comptime Radeon860m = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Radeon 860M",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1152",
     compute=11.5,
@@ -1805,7 +1707,6 @@ comptime Radeon860m = GPUInfo.from_family(
 comptime SteamDeck = GPUInfo.from_family(
     family=AMDRDNAFamily,
     name="Steam Deck",
-    vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx1033",
     compute=10.3,
@@ -1831,11 +1732,14 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     var name: StaticString
     """The model name of the GPU."""
 
-    var vendor: Vendor
-    """The vendor/manufacturer of the GPU (e.g., NVIDIA, AMD)."""
-
     var api: StaticString
-    """The graphics/compute API supported by the GPU (e.g., CUDA, ROCm)."""
+    """The graphics/compute API the GPU is programmed through.
+
+    Each vendor has its own API, so this also identifies the vendor: `"cuda"`
+    for NVIDIA, `"hip"` for AMD, `"metal"` for Apple, and `"none"` for `NoGPU`.
+    A stdlib plugin contributes its own name for hardware the stdlib has no
+    built-in knowledge of. Comparisons must use these exact spellings.
+    """
 
     var arch_name: StaticString
     """The architecture name of the GPU (e.g., sm_80, gfx942)."""
@@ -1987,7 +1891,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     def from_family(
         family: AcceleratorArchitectureFamily,
         name: StaticString,
-        vendor: Vendor,
         api: StaticString,
         arch_name: StaticString,
         compute: Float32,
@@ -2003,7 +1906,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         Args:
             family: Architecture family providing default values.
             name: The model name of the GPU.
-            vendor: The vendor/manufacturer of the GPU.
             api: The graphics/compute API supported by the GPU.
             arch_name: The architecture name of the GPU.
             compute: Compute capability version number.
@@ -2015,7 +1917,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         """
         return Self(
             name=name,
-            vendor=vendor,
             api=api,
             arch_name=arch_name,
             compute=compute,
@@ -2050,7 +1951,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
             writer: A Writer instance to output the GPU information.
         """
         writer.write("name: ", self.name, "\n")
-        writer.write("vendor: ", self.vendor, "\n")
         writer.write("api: ", self.api, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
         writer.write("compute: ", self.compute, "\n")
@@ -2219,6 +2119,10 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
     # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942", "amd:gfx942" -> "gfx942"
     # Apple: "metal:4" -> "apple-m4"
+    #
+    # Every rule below must leave each `_all_targets` entry unchanged: these are
+    # substring replacements, so a pattern that is a prefix of an already
+    # canonical name corrupts it.
     comptime target_arch = (
         target_arch0
         # NVIDIA normalization
@@ -2232,7 +2136,6 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("mi250x", "gfx90a")
         .replace("mi300x", "gfx942")
         .replace("mi355x", "gfx950")
-        .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
         .replace("amd:", "")
         # Apple normalization, general "metal:" → "apple-m" replacement.

@@ -106,6 +106,16 @@ class MAXAsyncPushQueue(Protocol, Generic[_PushItemType]):
         """Attempt to put an item without blocking; raises immediately on failure."""
         ...
 
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        """Whether ``put`` can currently accept an item without blocking.
+
+        A point-in-time check when ``timeout_s`` is 0: ``False`` means the queue
+        is full (the consumer has stopped draining) or has no consumer connected
+        yet. A positive ``timeout_s`` waits up to that long for the queue to
+        become writable; ``None`` blocks indefinitely.
+        """
+        ...
+
 
 @runtime_checkable
 class MAXAsyncPullQueue(Protocol, Generic[_PullItemType]):

@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -103,9 +103,9 @@ def test_matmul[
         c_ref_tt,
         a_immut_tt,
         b_immut_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

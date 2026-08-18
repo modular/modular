@@ -58,7 +58,7 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from std.builtin.range import _StridedRange, _StridedScalarRange
+from std.builtin.range import _StridedRange
 from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
@@ -168,7 +168,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             self._data = copy._data
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the `IntArray` and free its memory if owned.
 
         Only frees memory for owned arrays (positive _size) to prevent
@@ -177,7 +177,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         if self.owning() and self._data:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=self._data.unsafe_value()
+                    unsafe_owned_ptr=self._data.unsafe_value()
                 ).unsafe_with_layout(AllocLayout[Int](count=self.size()))
             )
 
@@ -297,7 +297,7 @@ def create_unknown_int_tuple(rank: Int) -> IntTuple:
     return result
 
 
-struct _IntTupleIter[origin: ImmutOrigin](
+struct _IntTupleIter[origin: ImmOrigin](
     Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
@@ -374,7 +374,7 @@ struct IntTuple(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
+    ]: Iterator = _IntTupleIter[ImmOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:
@@ -418,8 +418,8 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     def elements_size[
-        _origin: ImmutOrigin, n: Int
-    ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
+        _origin: ImmOrigin, n: Int
+    ](elements: Array[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
         Computes the sum of sizes for all elements at the given index in an array
@@ -588,7 +588,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    def __init__(out self, existing: Self, rng: _StridedRange):
+    def __init__(out self, existing: Self, rng: _StridedRange[DType.int]):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing
@@ -1728,7 +1728,7 @@ def sum(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a + (
             Int(b) if is_int(b) else sum(b)
@@ -1753,7 +1753,7 @@ def product(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a * (
             Int(b) if is_int(b) else product(b)
@@ -1779,7 +1779,7 @@ def tuple_max(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
@@ -2011,7 +2011,7 @@ def abs(t: IntTuple) -> IntTuple:
         A new `IntTuple` with the same structure but with absolute values.
     """
 
-    @parameter
+    @__parameter
     def int_abs(x: Int) -> Int:
         return x.__abs__()
 
@@ -2166,10 +2166,9 @@ def weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
         False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return True
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[lambda (a: IntTuple, b: IntTuple) -> Bool: True](
+        a, b
+    )
 
 
 @always_inline("nodebug")
@@ -2190,10 +2189,9 @@ def compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is compatible with shape B, False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return Int(a) == size(b)
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[
+        lambda (a: IntTuple, b: IntTuple) -> Bool: Int(a) == size(b)
+    ](a, b)
 
 
 @always_inline("nodebug")
@@ -2215,10 +2213,9 @@ def weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is weakly compatible with shape B, False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return size(b) % Int(a) == 0
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[
+        lambda (a: IntTuple, b: IntTuple) -> Bool: size(b) % Int(a) == 0
+    ](a, b)
 
 
 @always_inline("nodebug")
@@ -2472,7 +2469,7 @@ def idx2crd2(
                 len(stride),
             )
 
-            @parameter
+            @__parameter
             def idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
                 return idx2crd(idx, shape, stride)
 
@@ -2968,12 +2965,14 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """
     var result = IntTuple()
 
-    comptime for i in range(element_types.size):
+    comptime for i in range(element_types.length):
         comptime T = element_types[i]
 
         comptime if T.is_tuple:
-            # Recursively convert nested tuples
-            result.append(coord_to_int_tuple[element_types[i]]())
+            # Splat the nested `Coord`'s own element types. Passing `T` itself
+            # as the whole pack would re-enter with an identical pack, so the
+            # recursion would never shrink.
+            result.append(coord_to_int_tuple[*T.ParamListType]())
         else:
             comptime if T.is_static_value:
                 result.append(IntTuple(T.static_value))

@@ -166,7 +166,7 @@ class CustomOpLibrary:
     For more information, see the [custom ops for PyTorch](/max/develop/custom-kernels-pytorch) tutorial.
 
     Args:
-        kernel_library: The path to a ``.mojo`` file or a ``.mojoc``/``.mojopkg`` with
+        kernel_library: The path to a ``.mojo`` file or a ``.mojoc`` with
             your custom op kernels, or the corresponding library object.
     """
 

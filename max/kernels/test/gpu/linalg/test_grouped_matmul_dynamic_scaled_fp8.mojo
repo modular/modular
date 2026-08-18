@@ -22,7 +22,7 @@ grouped_matmul_sm100_blockwise_scaled_fp8 in
 test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,

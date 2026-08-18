@@ -14,7 +14,7 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import grid_dim
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from internal_utils import assert_almost_equal
 from layout.layout import *
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
@@ -162,8 +162,8 @@ def test_fp8_multistage_gemm[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=0.01,

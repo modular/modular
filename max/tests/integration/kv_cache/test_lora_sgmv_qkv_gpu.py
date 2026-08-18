@@ -90,7 +90,7 @@ def dump_kv_cache_to_torch(
 
     results = []
     for ctx in batch:
-        req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
+        req_blocks = cache.get_req_blocks(ctx)
         seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
@@ -269,31 +269,24 @@ def run_sgmv_qkv_lora_kernel(
     combined_rank = lora_a.shape[1]
     q_dim = lora_b_q.shape[1]
     kv_dim = lora_b_kv.shape[1]
-    num_lora_groups = len(lora_ids)
 
     total_seq_len = sum(seq_lens)
 
     # input_row_offsets contains all sequences
     input_row_offsets = calc_input_row_offsets(seq_lens)
 
-    # Create KV offsets for the 2M layout (K portion then V portion)
-    # K: groups with original offsets (from grouped_offsets)
-    # V: groups with offsets shifted by lora_end_idx
-    grouped_offsets_kv = []
-    grouped_ids_kv = []
-
-    # K portion - use grouped_offsets (only LoRA groups)
-    for offset in grouped_offsets:
-        grouped_offsets_kv.append(offset)
-    for id_ in lora_ids:
-        grouped_ids_kv.append(id_)
-
-    # V portion (skip first offset to avoid duplicate lora_end_idx)
-    for offset in grouped_offsets[1:]:
-        grouped_offsets_kv.append(lora_end_idx + offset)
-    for id_ in lora_ids:
-        # V adapter IDs are offset by num_adapters
-        grouped_ids_kv.append(id_ + num_adapters if id_ >= 0 else id_)
+    # Build the fused LoRA-B weight the single-launch kernel consumes:
+    # [num_adapters, q_dim + 2*kv_dim, rank], rows ordered Q | K | V per adapter.
+    # K uses lora_b_kv[g], V uses lora_b_kv[num_adapters + g] (matching the
+    # torch reference oracle).
+    fused_b = torch.cat(
+        [
+            lora_b_q,
+            lora_b_kv[:num_adapters],
+            lora_b_kv[num_adapters:],
+        ],
+        dim=1,
+    )
 
     kv_params = MHAKVCacheParams(
         dtype=DTYPE,
@@ -314,8 +307,8 @@ def run_sgmv_qkv_lora_kernel(
     batch = []
     for seq_len in seq_lens:
         context = create_text_context(np.empty(seq_len))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Zero the KV cache
@@ -338,39 +331,29 @@ def run_sgmv_qkv_lora_kernel(
                 device=device_ref,
             ),
             TensorType(
-                DTYPE, [num_adapters, q_dim, max_rank], device=device_ref
-            ),
-            TensorType(
-                DTYPE, [2 * num_adapters, kv_dim, max_rank], device=device_ref
+                DTYPE,
+                [num_adapters, q_dim + 2 * kv_dim, max_rank],
+                device=device_ref,
             ),
             TensorType(DType.int32, ["lora_ids"], device=device_ref),
-            TensorType(DType.uint32, ["lora_ranks"], device=DeviceRef.CPU()),
             TensorType(
                 DType.uint32, ["lora_grouped_offsets"], device=device_ref
             ),
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
             TensorType(DType.int64, ["lora_end"], device=DeviceRef.CPU()),
             TensorType(DType.int64, [1], device=DeviceRef.CPU()),
-            TensorType(DType.int32, ["lora_ids_kv"], device=device_ref),
-            TensorType(
-                DType.uint32, ["lora_grouped_offsets_kv"], device=device_ref
-            ),
             *kv_symbolic_inputs.flatten(),
         ],
     ) as graph:
         (
             x,
             a_in,
-            b_q_in,
-            b_kv_in,
+            b_in,
             ids,
-            ranks,
             grouped_offs,
             row_offs,
             end_idx,
             batch_len,
-            ids_kv,
-            offs_kv,
             *kv_inputs,
         ) = graph.inputs
 
@@ -387,19 +370,17 @@ def run_sgmv_qkv_lora_kernel(
         q_out = sgmv_qkv_lora_kernel(
             input=x.tensor,
             lora_a=a_in.tensor,
-            lora_b_q=b_q_in.tensor,
-            lora_b_kv=b_kv_in.tensor,
+            lora_b=b_in.tensor,
             lora_ids=ids.tensor,
-            lora_ranks=ranks.tensor,
             input_row_offsets=row_offs.tensor,
             lora_grouped_offsets=grouped_offs.tensor,
             lora_end_idx=end_idx.tensor,
             batch_seq_len=batch_len.tensor,
-            lora_ids_kv=ids_kv.tensor,
-            lora_grouped_offsets_kv=offs_kv.tensor,
             kv_collection=kv_collection,
             kv_params=kv_params,
             layer_idx=layer_idx,
+            q_dim=q_dim,
+            kv_dim=kv_dim,
             max_lora_seq_len=max(seq_lens),
             max_rank=max_rank,
         )
@@ -416,22 +397,15 @@ def run_sgmv_qkv_lora_kernel(
 
     kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
-    rank = combined_rank // 3
     result = compiled.execute(
         to_max_tensor(input_tensor, device),
         to_max_tensor(lora_a, device),
-        to_max_tensor(lora_b_q, device),
-        to_max_tensor(lora_b_kv, device),
+        to_max_tensor(fused_b, device),
         Buffer.from_numpy(lora_ids.astype(np.int32)).to(device),
-        Buffer.from_numpy(np.full(num_lora_groups, rank, dtype=np.uint32)),
         Buffer.from_numpy(grouped_offsets.astype(np.uint32)).to(device),
         Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        Buffer.from_numpy(np.array(grouped_ids_kv, dtype=np.int32)).to(device),
-        Buffer.from_numpy(np.array(grouped_offsets_kv, dtype=np.uint32)).to(
-            device
-        ),
         *kv_runtime_inputs.flatten(),
     )
 

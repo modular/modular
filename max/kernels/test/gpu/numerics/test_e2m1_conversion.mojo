@@ -17,7 +17,7 @@ from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import nan, inf
 from std.sys import bit_width_of
 

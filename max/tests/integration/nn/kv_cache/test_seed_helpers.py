@@ -15,9 +15,11 @@
 
 Covers all behavioral branches of ``resolve_kv_hash_seed``:
 
-- ``ahash64`` ignores any provided seed and returns ``None``.
-- ``ahash64`` warns when a non-empty seed_hex is supplied (operator
-  signal that the value is dead).
+- ``ahash64`` returns ``None`` when no seed is configured, and never
+  auto-generates one (unlike ``sha256``) -- default deployments keep
+  deterministic, cross-restart-stable behavior.
+- ``ahash64`` decodes and uses an explicitly configured seed_hex, the
+  same as ``sha256`` / ``sha256_64`` do.
 - ``sha256`` / ``sha256_64`` accept a valid 64-char hex seed.
 - ``sha256`` / ``sha256_64`` cache a generated random seed across
   multiple calls within the same process.
@@ -51,17 +53,16 @@ def test_ahash64_returns_none_when_no_seed() -> None:
     assert resolve_kv_hash_seed("ahash64", None) is None
 
 
-def test_ahash64_returns_none_and_warns_when_seed_provided(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    with caplog.at_level(logging.WARNING, logger="max.pipelines.kv_cache"):
-        result = resolve_kv_hash_seed("ahash64", "ab" * 32)
+def test_ahash64_decodes_valid_hex() -> None:
+    """An explicitly configured seed_hex is decoded and used, not dropped."""
+    seed_hex = "ab" * 32  # 64 chars -> 32 bytes
+    result = resolve_kv_hash_seed("ahash64", seed_hex)
+    assert result == bytes.fromhex(seed_hex)
 
-    assert result is None
-    assert any(
-        "ignored" in record.message and "ahash64" in record.message
-        for record in caplog.records
-    ), f"expected warning, got records: {caplog.records}"
+
+def test_ahash64_rejects_short_hex() -> None:
+    with pytest.raises(ValueError, match="exactly 32 bytes"):
+        resolve_kv_hash_seed("ahash64", "ab" * 16)  # only 16 bytes
 
 
 def test_sha256_decodes_valid_hex() -> None:

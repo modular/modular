@@ -32,7 +32,7 @@ import std.os
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.os import PathLike, listdir, stat_result
-from std.ffi import c_char, external_call, _CPointer
+from std.ffi import c_char, external_call
 from std.sys import CompilationTarget
 
 from std.reflection import call_location
@@ -60,10 +60,10 @@ def cwd() raises -> Path:
     ```
     """
     comptime MAX_CWD_BUFFER_SIZE = 1024
-    var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
+    var buf = Array[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var ptr = buf.unsafe_ptr()
-    var res = external_call["getcwd", _CPointer[c_char, origin_of(buf)]](
+    var res = external_call["getcwd", OptionalPointer[c_char, origin_of(buf)]](
         ptr, Int(MAX_CWD_BUFFER_SIZE)
     )
 
@@ -601,7 +601,9 @@ struct Path(
         """
         return std.os.path.basename(self)
 
-    def parts(self) -> List[StringSlice[origin_of(self.path)]]:
+    def parts(
+        self,
+    ) -> List[StringSlice[origin_of(self.path)._get_owned_interior["bytes"]]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

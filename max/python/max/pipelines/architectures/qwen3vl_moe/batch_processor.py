@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
@@ -36,6 +37,7 @@ from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import Tracer
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
+from .model_config import Qwen3VLConfig
 
 if TYPE_CHECKING:
     from .model import Qwen3VLInputs
@@ -62,10 +64,10 @@ class Qwen3VLMoeBatchProcessor(
         """Returns empty image and deepstack embedding buffers for text-only decode."""
         if self._cached_empty_embeddings is None:
             hf_config = self.runtime.pipeline_config.model.huggingface_config
-            quantization_encoding = (
-                self.runtime.pipeline_config.model.quantization_encoding
+            quantization_encoding = _select_quantization_encoding(
+                self.runtime.pipeline_config.model,
+                Qwen3VLConfig.DEFAULT_ENCODING,
             )
-            assert quantization_encoding is not None
             dtype = supported_encoding_dtype(quantization_encoding)
             hidden_size = hf_config.text_config.hidden_size
             n_deepstack_layers = len(

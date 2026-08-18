@@ -26,8 +26,8 @@ BF16 GMEM round trip).
 
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import UnsafePointer
 from layout import Coord, Idx, TileTensor, row_major
 
@@ -89,6 +89,31 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     `tensor_sf` (E8M0 cannot represent non-power-of-2 multipliers
     losslessly); per-block scales are the only quantization parameter.
 
+    Parameters:
+        transpose_b: Transpose the B weight in the matmul (defaults to
+            True).
+        target: Target backend selector forwarded to the inner
+            dispatch as a `StaticString` (defaults to `"cpu"`).
+        pdl_level: Program-Dependent Launch level forwarded to the
+            grid controls (defaults to `PDLLevel.ON`).
+        match_bf16: Round the in-tile fused epilogue through `bf16`
+            in the SMEM scatter so its output matches the chained
+            reference (matmul -> bf16 GMEM -> SwiGLU+quant) (defaults
+            to True). When False, `fp32` is preserved end-to-end,
+            which is numerically slightly more accurate but may
+            quantize a tiny fraction of values to a different fp8
+            bucket.
+        use_inplace: Take the register-only in-place epilogue on the
+            decode regime (avg tokens/expert <= 8), skipping the
+            `bf16` SMEM scratchpad (defaults to True). The
+            dispatch-level gate forces the cooperative path on
+            prefill regimes; flip to False to benchmark the
+            cooperative path on decode.
+        clamp_activation: Activation flavor (defaults to False).
+            False is plain SwiGLU; True is clamped (`swigluoai`).
+            Pass the HF config `swiglu_alpha`/`swiglu_limit` as the
+            runtime `alpha`/`limit` args when set to True.
+
     Args:
         c_packed: Output `float8_e4m3fn`, shape `(M_total, D)` (one
             byte per element). `D = moe_dim` and `N = 2D` is the
@@ -141,14 +166,16 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
+    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+        c_packed._storage
+    )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
-    ](c_swiglu_scales.ptr)
+    ](c_swiglu_scales._storage)
     # MXFP8 doesn't use a per-expert tensor_sf; the trait method is
     # gated out for MXFP8 so this pointer is never dereferenced.
     var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-        expert_scales.ptr
+        expert_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
         c_packed_row_stride,

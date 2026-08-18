@@ -51,9 +51,10 @@ both `W` and `R`). `V_LAYOUT = row_major[2, 4, 32]`: 2 K-strips x 4
 depth-tiles x 32 FP8 elts/fragment per lane.
 """
 
-from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id
-from std.gpu.host import DeviceContext
-from std.gpu.sync import s_waitcnt
+from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.sync import s_waitcnt
 from std.memory import AddressSpace
 from std.sys.intrinsics import readfirstlane
 from std.testing import assert_equal
@@ -199,10 +200,12 @@ def kernel_v227_round_trip(
     # R — read back the full V register tile from each slot, per-lane.
     # v227 base + faithful v227 readout cell.
     var base_v227 = _Op.precompute_v_lane_base[v_full_v227=True](
-        v_smem_v227.ptr
+        v_smem_v227._storage
     )
     # ours base + ours st_8x32 readout cell.
-    var base_ref = _Op.precompute_v_lane_base[v_full_v227=False](v_smem_ref.ptr)
+    var base_ref = _Op.precompute_v_lane_base[v_full_v227=False](
+        v_smem_ref._storage
+    )
 
     var lid = Int(lane_id())
 
