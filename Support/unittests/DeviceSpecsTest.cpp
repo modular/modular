@@ -75,6 +75,42 @@ TEST(DeviceSpecs, DisabledFeaturesRoundTrip) {
             spec.target.disabledFeatures);
 }
 
+TEST(DeviceSpecs, ABIRoundTrip) {
+  DeviceSpec spec;
+  spec.ref.label = "cpu";
+  spec.target.triple = llvm::Triple("riscv64-unknown-linux-gnu");
+  spec.target.arch = "generic-rv64";
+  spec.target.abi = "lp64d";
+
+  ErrorOr<DeviceSpec> roundTrippedOr =
+      DeviceSpec::deserializeFromJSON(spec.serializeToJSON());
+  ASSERT_FALSE(roundTrippedOr.isError());
+  EXPECT_EQ(roundTrippedOr->target.abi, spec.target.abi);
+}
+
+TEST(DeviceSpecs, CheckSatisfiesRequirementsABI) {
+  TargetInfo provided;
+  provided.triple = llvm::Triple("riscv64-unknown-linux-gnu");
+  provided.arch = "generic-rv64";
+  provided.abi = "lp64d";
+
+  // No ABI requirement is always satisfied.
+  TargetInfo noABIRequired = provided;
+  noABIRequired.abi.clear();
+  EXPECT_FALSE(provided.checkSatisfiesRequirements(noABIRequired).isError());
+
+  // A matching ABI requirement is satisfied.
+  TargetInfo sameABIRequired = provided;
+  EXPECT_FALSE(provided.checkSatisfiesRequirements(sameABIRequired).isError());
+
+  // A different ABI requirement is not satisfied; unlike arch/features, ABI
+  // compatibility is exact-or-nothing.
+  TargetInfo differentABIRequired = provided;
+  differentABIRequired.abi = "lp64";
+  EXPECT_TRUE(
+      provided.checkSatisfiesRequirements(differentABIRequired).isError());
+}
+
 TEST(DeviceSpecs, FindDeviceSpec) {
   DeviceSpecCollection specs = createDeviceSpecCollection();
   EXPECT_EQ(specs.getHostDeviceSpec().ref.toString(), "cpu:0");

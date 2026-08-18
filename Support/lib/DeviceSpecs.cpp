@@ -150,6 +150,7 @@ void TargetInfo::serializeToJSON(llvm::json::OStream &json) const {
   json.attribute("arch", arch);
   json.attribute("features", features);
   json.attribute("disabledFeatures", disabledFeatures);
+  json.attribute("abi", abi);
   json.objectEnd();
 }
 
@@ -195,6 +196,9 @@ TargetInfo::deserializeFromJSON(const llvm::json::Value *json) {
       result.disabledFeatures.emplace_back(*optFeature);
     }
   }
+  // Absent in older serialized data means no ABI constraint.
+  if (std::optional<StringRef> optABI = object->getString("abi"))
+    result.abi = *optABI;
   return result;
 }
 
@@ -268,6 +272,21 @@ static ErrorOrSuccess satisfiesArch(StringRef provided, StringRef required) {
   if (!(versionedRequired <= versionedProvided)) {
     return Error(Twine("Provided arch '") + provided +
                  "' does not match required arch '" + required + "'.");
+  }
+  return success();
+}
+
+/// Returns success if provided ABI matches required ABI. Unlike arch and
+/// features, ABI compatibility is exact-or-nothing: there is no notion of one
+/// ABI satisfying a "lesser" one.
+static ErrorOrSuccess satisfiesABI(StringRef provided, StringRef required) {
+  if (required.empty())
+    // No constraint.
+    return success();
+
+  if (provided != required) {
+    return Error(Twine("Provided ABI '") + provided +
+                 "' does not match required ABI '" + required + "'.");
   }
   return success();
 }
@@ -346,6 +365,8 @@ TargetInfo::checkSatisfiesRequirements(const TargetInfo &required) const {
     return errOr.takeError();
   if (auto errOr =
           satisfiesFeatures(features, disabledFeatures, required.features))
+    return errOr.takeError();
+  if (auto errOr = satisfiesABI(abi, required.abi))
     return errOr.takeError();
   return success();
 }

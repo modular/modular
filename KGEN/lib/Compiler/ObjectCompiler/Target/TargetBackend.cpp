@@ -71,9 +71,12 @@ defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT) {
 
   // The ABI name drives the target data layout (e.g. NVPTX "shortptr" selects
   // 32-bit const/local/shared pointers), so it must be set at machine
-  // creation time.
+  // creation time. `targetABI`'s shortptr mechanism takes precedence over
+  // the user-facing `targetAbi` since it encodes a data-layout invariant,
+  // not just a calling-convention preference.
   llvm::TargetOptions targetOptions;
-  targetOptions.MCOptions.ABIName = options.targetABI;
+  targetOptions.MCOptions.ABIName =
+      !options.targetABI.empty() ? options.targetABI : options.targetAbi;
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       llvm::Triple(options.targetTriple), options.targetCpu,
       options.targetFeatures, targetOptions, options.relocModel,

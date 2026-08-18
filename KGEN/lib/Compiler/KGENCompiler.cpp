@@ -270,6 +270,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   compilationOptions.targetTriple = target.getTripleStr();
   compilationOptions.targetCpu = target.getArch();
   compilationOptions.targetFeatures = target.getFeatures();
+  compilationOptions.targetAbi = target.getAbi();
   if (compilationOptions.targetAccelerator.empty()) {
 #if MLRT_ACCELERATOR_SUPPORT
     compilationOptions.targetAccelerator =
@@ -490,6 +491,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       compilationOptions.targetTriple = target.getTripleStr();
       compilationOptions.targetCpu = target.getArch();
       compilationOptions.targetFeatures = target.getFeatures();
+      compilationOptions.targetAbi = target.getAbi();
       if (compilationOptions.targetAccelerator.empty()) {
 #if MLRT_ACCELERATOR_SUPPORT
         compilationOptions.targetAccelerator =

@@ -1138,7 +1138,8 @@ void M::eraseTargetInfo(ModuleOp module) {
 ErrorOr<TargetInfoAttr>
 M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                     StringRef features, StringRef tuneCpu,
-                    StringRef acceleratorArch, llvm::Reloc::Model relocModel) {
+                    StringRef acceleratorArch, llvm::Reloc::Model relocModel,
+                    StringRef abi) {
   std::string errorMessage;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
       llvm::Triple(targetTriple), errorMessage);
@@ -1194,7 +1195,7 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                              resolvedFeatures, std::move(*dl),
                              machine->getRelocationModel(),
                              simdWidthFromFeatures(StringRef(resolvedFeatures)),
-                             pointerBitWidth, tuneCpu, acceleratorArch);
+                             pointerBitWidth, tuneCpu, acceleratorArch, abi);
 }
 
 bool M::isKnownTargetFeature(StringRef feature, StringRef targetTriple) {
@@ -1258,7 +1259,8 @@ ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
     return errOr.takeError();
   return TargetInfo(targetInfoAttr.getTriple(),
                     std::string(targetInfoAttr.getArch()),
-                    std::move(errOr->enabled), std::move(errOr->disabled));
+                    std::move(errOr->enabled), std::move(errOr->disabled),
+                    std::string(targetInfoAttr.getAbi()));
 }
 
 /// Returns attribute representing runtime target info.
@@ -1269,7 +1271,7 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
       /*stdlib_plugin=*/"default", encodeFeatures(runtimeTargetInfo),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
-      /*tune_cpu=*/{}, /*accelerator_arch=*/{});
+      /*tune_cpu=*/{}, /*accelerator_arch=*/{}, runtimeTargetInfo.abi);
 }
 
 namespace mlir {

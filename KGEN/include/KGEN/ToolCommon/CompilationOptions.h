@@ -192,11 +192,18 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  /// User-supplied target ABI name (`--target-abi`, or a `#kgen.target`'s
+  /// `abi` field): a target-identity property shared by every kernel
+  /// compiled for that target. Forwarded to the TargetMachine (see
+  /// `targetABI` below) and recorded as a `target-abi` LLVM module flag,
+  /// mirroring clang's `-target-abi`.
+  std::string targetAbi;
   std::string targetDataLayout;
-  /// Target ABI name forwarded to the TargetMachine (MCOptions.ABIName).
-  /// For NVPTX, "shortptr" selects 32-bit const/local/shared pointers to
-  /// match the shortptr data layout our GPU targets declare; it is set from
-  /// the `nvptx-short-ptr` emission option.
+  /// Target ABI name forwarded to the TargetMachine (MCOptions.ABIName),
+  /// taking precedence over `targetAbi` above when both are set. Unlike
+  /// `targetAbi`, this is a per-kernel override (e.g. NVPTX's "shortptr"
+  /// ABI, set from the `nvptx-short-ptr` emission option), reset before
+  /// each compile rather than carried on the target's identity.
   std::string targetABI;
   std::optional<llvm::CodeModel::Model> mcmodel;
   std::optional<uint64_t> largeDataThreshold;

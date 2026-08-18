@@ -112,7 +112,7 @@ TEST(ArchTarget, StdlibPlugin) {
       /*features=*/"", /*data_layout=*/{},
       /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_bit_width=*/std::nullopt,
-      /*tune_cpu=*/"", /*accelerator_arch=*/"");
+      /*tune_cpu=*/"", /*accelerator_arch=*/"", /*abi=*/"");
   EXPECT_EQ(defaultAttr.getStdlibPlugin(), "default");
 
   // A non-default plugin name is stored on and read back from the attribute.
@@ -121,7 +121,7 @@ TEST(ArchTarget, StdlibPlugin) {
       /*features=*/"", /*data_layout=*/{},
       /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_bit_width=*/std::nullopt,
-      /*tune_cpu=*/"", /*accelerator_arch=*/"");
+      /*tune_cpu=*/"", /*accelerator_arch=*/"", /*abi=*/"");
   EXPECT_EQ(pluginAttr.getStdlibPlugin(), "metal");
 }
 
