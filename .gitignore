@@ -169,3 +169,7 @@ docs/releases/nightly.md
 mojo/docs/releases/nightly.md
 
 .bazelignore
+
+# Nix
+/result
+/result-*
