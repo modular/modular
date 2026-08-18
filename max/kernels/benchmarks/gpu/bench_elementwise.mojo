@@ -136,13 +136,13 @@ def run_elementwise[
             ctx,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var num_bytes = 2 * N * size_of[dtype]()
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "elementwise",
             input_id=String(
