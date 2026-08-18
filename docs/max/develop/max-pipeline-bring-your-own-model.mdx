@@ -123,16 +123,19 @@ with `--enable-lora`:
 ```sh
 max serve \
   --model meta-llama/Llama-3.1-8B-Instruct \
+  --prefer-module-v3 \
   --lora-paths finance=/path/to/finance-adapter \
   --enable-lora \
   --no-enable-prefix-caching
 ```
 
-Prefix caching is enabled by default and is incompatible with LoRA serving, so
-`--no-enable-prefix-caching` is required. LoRA serving currently supports Llama
-3 base models with PEFT-trained adapters in safetensors format; other base
-architectures are not yet supported. For dynamic loading and unloading of
-adapters while the server is running, see
+LoRA serving requires a ModuleV3 architecture, so you must pass
+`--prefer-module-v3` to select the ModuleV3 variant of the model.
+Prefix caching is enabled by default and is incompatible with LoRA
+serving, so you must pass `--no-enable-prefix-caching`. LoRA serving currently
+supports Llama 3 base models with PEFT-trained adapters in safetensors format;
+it doesn't yet support other base architectures. For dynamic loading and
+unloading of adapters while the server is running, see
 [LoRA adapters](/serve/lora-adapters).
 
 ## Next steps
