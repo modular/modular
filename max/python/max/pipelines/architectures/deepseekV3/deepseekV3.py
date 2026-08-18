@@ -329,12 +329,12 @@ class DeepseekV3DecoderLayer(Module):
             mla_kwargs["o_proj_quant_config"] = config.quant_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
-        mla_cls: (
-            type[DataParallelLatentAttentionWithRope]
-            | type[DataParallelLatentAttentionWithRopeFp8]
-            | type[TensorParallelLatentAttentionWithRope]
-            | type[TensorParallelLatentAttentionWithRopeFp8]
-        )
+        mla_cls: type[
+            DataParallelLatentAttentionWithRope
+            | DataParallelLatentAttentionWithRopeFp8
+            | TensorParallelLatentAttentionWithRope
+            | TensorParallelLatentAttentionWithRopeFp8
+        ]
         match self.mode:
             case ParallelismMode.TP_EP:
                 # TP attention + EP MoE: the cross-device communication is

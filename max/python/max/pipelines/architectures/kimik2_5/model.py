@@ -761,7 +761,7 @@ class KimiK2_5Model(
         devices: list[Device],
     ) -> None:
         """Kimi packs inline in :meth:`vision_execute` (chunked encode)."""
-        return None
+        return
 
     def vision_execute(
         self,

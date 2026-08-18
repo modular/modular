@@ -69,13 +69,15 @@ ignore = [
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
   "F403", # glob imports
-  "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
+  "S102",  # Checks for `exec` (security concern, TODO maybe enable on a subset of targets)
+  "S110",  # Checks for try-except-pass, suggests logging
+  "S112",  # Checks for try-except-continue, suggests logging
   "SIM102", # Collapsible if
   "SIM105", # Suppressible exception
   "SIM108", # Use ternary operator
@@ -157,21 +159,11 @@ ignore = [
   "PYI025",
   "PYI026",
   "PYI029",
-  "PYI030",
   "PYI032",
   "PYI034",
   "PYI036",
-  "PYI041",
-  "PYI055",
   "PYI059",
   "PYI063",
-  "RET501",
-  "RUF036",
-  "RUF059",
-  "S102",
-  "S110",
-  "S112",
-  "SIM910",
 ]
 extend-select = [
   "ANN", # Require function type annotations

@@ -687,7 +687,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
@@ -823,7 +823,7 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,

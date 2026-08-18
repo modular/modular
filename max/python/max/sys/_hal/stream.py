@@ -130,7 +130,7 @@ class Stream:
         self,
         dtype: DType,
         shape: Sequence[int] = (),
-        value: float | int = 0,
+        value: float = 0,
     ) -> Array:
         """Allocates a device ``Array`` and enqueues a fill on this stream.
 
@@ -143,7 +143,7 @@ class Stream:
             arr._enqueue_fill(self, value)
         return arr
 
-    def array_fill(self, arr: Array, value: float | int) -> None:
+    def array_fill(self, arr: Array, value: float) -> None:
         """Enqueues a fill of ``arr`` with ``value`` on this stream.
 
         Returns before the fill completes; order it before reading.

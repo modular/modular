@@ -223,7 +223,7 @@ class Array:
         context: Context,
         dtype: DType,
         shape: Sequence[int] = (),
-        value: float | int = 0,
+        value: float = 0,
         *,
         pinned: bool = False,
     ) -> Array:
@@ -627,7 +627,7 @@ class Array:
     # Bulk operations
     # ------------------------------------------------------------------
 
-    def fill(self, value: float | int) -> None:
+    def fill(self, value: float) -> None:
         """Fills every element with ``value`` (blocking).
 
         A zero fill uses a single-byte memset (and is the only value fillable
@@ -667,7 +667,7 @@ class Array:
                     )
                     self._context.fill(view, packed, value_size)
 
-    def _enqueue_fill(self, sink: Queue | Stream, value: float | int) -> None:
+    def _enqueue_fill(self, sink: Queue | Stream, value: float) -> None:
         """Enqueues a fill of every element with ``value`` onto ``sink`` (a
         ``Queue`` or ``Stream``), without host synchronization. Used by the
         async ``array_fill``.
