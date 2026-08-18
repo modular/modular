@@ -515,6 +515,17 @@ This version is still a work in progress.
   along without being handed a mesh. Its `original_spec` and
   `original_unreduced` properties are removed.
 
+- Added `max.experimental.tree_utils`, pytree utilities over nested `list` /
+  `tuple` / `namedtuple` / `dict` and any class declaring the tree protocol:
+  `__tree_flatten__` with either `__tree_unflatten__` or `__tree_empty__`, and
+  an optional `__tree_setattr__`. There is no registry and no decorator, so a
+  type opts in by declaring the methods. `flatten` and `unflatten` carry a
+  value across a flat boundary, `leaves`, `paths` and `nodes` read it, `map`
+  builds a new tree, and `update` writes path-keyed values into an existing one
+  in place. Every walk takes `leaf`, saying where it stops, and `shared`,
+  saying whether a value reachable by two paths is one object or two. Import
+  the module as a namespace: `from max.experimental import tree_utils as tree`.
+
 - `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
   argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
   contiguous groups of that many, each reducing independently, so the fused op
