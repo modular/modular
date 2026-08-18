@@ -194,11 +194,29 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
+# The lock lives with the cache populator that consumes it, which is internal
+# and therefore absent from the open-source tree. Walking up from this file
+# finds it in a source checkout and in bazel runfiles alike (the internal
+# smoke-test target pulls it in as data); externally it is simply missing and
+# revisions go unpinned.
+_HF_REPO_LOCK_RELPATH = (
+    "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
+)
+
+
+def _find_hf_repo_lock() -> Path | None:
+    for base in Path(__file__).resolve().parents:
+        tsv = base / _HF_REPO_LOCK_RELPATH
+        if tsv.is_file():
+            return tsv
+    return None
+
+
 @cache
 def _load_hf_repo_lock() -> dict[str, str]:
     """Read hf-repo-lock.tsv, return {lowercase_repo: revision} mapping."""
-    tsv = Path(__file__).resolve().parent.parent.parent / "hf-repo-lock.tsv"
-    if not tsv.exists():
+    tsv = _find_hf_repo_lock()
+    if tsv is None:
         logger.warning("hf-repo-lock.tsv not found, skipping revision pinning")
         return {}
     db = {}
