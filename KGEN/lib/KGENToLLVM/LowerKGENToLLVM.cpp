@@ -1270,6 +1270,19 @@ void LowerKGENToLLVMPass::runOnOperation() {
   moduleAttrs.erase(EnvAttr::getEnvAttrName());
   theModule->setAttrs(moduleAttrs.getDictionary(&getContext()));
 
+  // Recorded as a module flag, mirroring clang, rather than a function
+  // attribute like `target-cpu`/`target-features`/`tune-cpu` below.
+  if (!targetInfo.getAbi().empty()) {
+    auto flag = LLVM::ModuleFlagAttr::get(
+        &getContext(), LLVM::ModFlagBehavior::Error,
+        StringAttr::get(&getContext(), "target-abi"),
+        StringAttr::get(&getContext(), targetInfo.getAbi()));
+    OpBuilder b(&getContext());
+    b.setInsertionPointToStart(theModule.getBody());
+    LLVM::ModuleFlagsOp::create(b, theModule.getLoc(),
+                                ArrayAttr::get(&getContext(), {flag}));
+  }
+
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
 

@@ -156,6 +156,23 @@ kgen.func @used_func() {
 
 // -----
 
+// `abi`, when set, is recorded as a `target-abi` module flag (mirroring
+// clang), not a function attribute like `target-cpu`/`target-features`.
+module attributes {M.target_info = #M.target<triple="", arch="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, abi="lp64d">} {
+
+// CHECK: llvm.module_flags [#llvm.mlir.module_flag<error, "target-abi", "lp64d">]
+// CHECK-LABEL: llvm.func internal @with_abi
+// CHECK-SAME: ["target-cpu", "skylake-avx512"]
+// CHECK-SAME: ["target-features", "+fma"]
+// CHECK-NOT: "target-abi"
+kgen.func @with_abi(%arg0: si32) -> si32 {
+  kgen.return %arg0 : si32
+}
+
+}
+
+// -----
+
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @struct_constant

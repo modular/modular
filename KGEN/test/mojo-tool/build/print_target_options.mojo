@@ -16,11 +16,15 @@
 # Test --print-supported-targets lists registered targets
 # RUN: %mojo-build --print-supported-targets 2>&1 | FileCheck %s --check-prefix=CHECK_TARGETS
 
-# Test --print-effective-target shows host target by default
-# RUN: %mojo-build --print-effective-target 2>&1 | FileCheck %s --check-prefix=CHECK_EFFECTIVE
+# Test --print-effective-target shows host target by default, with no
+# --target-abi line since it is unset
+# RUN: %mojo-build --print-effective-target 2>&1 | FileCheck %s --check-prefixes=CHECK_EFFECTIVE,CHECK_NO_ABI
 
 # Test --print-effective-target with cross-compilation options
 # RUN: %mojo-build --print-effective-target --target-triple x86_64-unknown-linux-gnu --mcpu=haswell 2>&1 | FileCheck %s --check-prefix=CHECK_EFFECTIVE_CROSS
+
+# Test --print-effective-target reflects --target-abi
+# RUN: %mojo-build --print-effective-target --target-abi lp64d 2>&1 | FileCheck %s --check-prefix=CHECK_EFFECTIVE_ABI
 
 # Test --print-supported-cpus requires --target-triple
 # RUN: not %mojo-build --print-supported-cpus 2>&1 | FileCheck %s --check-prefix=CHECK_CPUS_NO_TARGET
@@ -52,6 +56,11 @@
 # CHECK_EFFECTIVE_CROSS: --target-triple x86_64-unknown-linux-gnu
 # CHECK_EFFECTIVE_CROSS: --target-cpu haswell
 # CHECK_EFFECTIVE_CROSS: --target-features +avx
+
+# CHECK_EFFECTIVE_ABI: Effective target configuration:
+# CHECK_EFFECTIVE_ABI: --target-abi lp64d
+
+# CHECK_NO_ABI-NOT: --target-abi
 
 # CHECK_CPUS_NO_TARGET: error: --print-supported-cpus requires --target-triple to be specified
 

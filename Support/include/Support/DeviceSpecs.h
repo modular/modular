@@ -74,12 +74,17 @@ struct TargetInfo {
   /// See getHostTargetInfo() for why this field exists.
   std::vector<std::string> disabledFeatures;
 
+  /// The target ABI name (e.g. RISC-V's `lp64d`), mirroring `TargetInfoAttr`'s
+  /// `abi`. Empty means no ABI constraint.
+  std::string abi;
+
   TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string arch = {},
              std::vector<std::string> &&features = {},
-             std::vector<std::string> &&disabledFeatures = {})
+             std::vector<std::string> &&disabledFeatures = {},
+             std::string abi = {})
       : triple(std::move(triple)), arch(std::move(arch)),
         features(std::move(features)),
-        disabledFeatures(std::move(disabledFeatures)) {}
+        disabledFeatures(std::move(disabledFeatures)), abi(std::move(abi)) {}
 
   /// Serializes this target info to JSON.
   void serializeToJSON(llvm::json::OStream &json) const;

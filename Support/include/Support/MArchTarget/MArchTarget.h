@@ -49,7 +49,7 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
 ErrorOr<TargetInfoAttr>
 getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
                  StringRef mcpu, StringRef mtune, StringRef acceleratorArch,
-                 llvm::Reloc::Model relocModel);
+                 llvm::Reloc::Model relocModel, StringRef abi = "");
 
 } // namespace M
 

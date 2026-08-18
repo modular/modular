@@ -387,7 +387,8 @@ ErrorOr<TargetInfoAttr>
 getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                  StringRef features, StringRef tuneCpu = "",
                  StringRef acceleratorArch = "",
-                 llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_);
+                 llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_,
+                 StringRef abi = "");
 
 /// Returns true if `feature` is a recognized LLVM subtarget feature name for
 /// `targetTriple`, host x86-64, or host aarch64. The union keeps a cross-arch

@@ -131,7 +131,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           result.target, optionIDs.targetTriple, optionIDs.targetCpu,
           optionIDs.targetFeatures, optionIDs.march, optionIDs.mcpu,
           optionIDs.mtune, optionIDs.targetAccelerator, optionIDs.mcmodel,
-          optionIDs.largeDataThreshold, optionIDs.relocationModel))
+          optionIDs.largeDataThreshold, optionIDs.relocationModel,
+          optionIDs.targetAbi))
     return err.takeError();
 
   // Parse stability options.
@@ -450,7 +451,7 @@ ErrorOrSuccess M::parseTargetOptions(
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
     llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier relocationModelId) {
+    llvm::opt::OptSpecifier relocationModelId, llvm::opt::OptSpecifier abiId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -462,6 +463,10 @@ ErrorOrSuccess M::parseTargetOptions(
   StringRef targetFeatures = args.getLastArgValue(featuresId);
   if (args.hasMultipleArgs(featuresId))
     return Error("too many specified target features, expected exactly one");
+
+  StringRef targetAbi = args.getLastArgValue(abiId);
+  if (args.hasMultipleArgs(abiId))
+    return Error("too many specified target ABIs, expected exactly one");
 
   StringRef mArch = args.getLastArgValue(marchId);
   if (args.hasMultipleArgs(marchId))
@@ -520,6 +525,9 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetCpu = mCpu.split('+').first.str();
   } else
     compilationOptions.setDefaultCPU();
+
+  if (!targetAbi.empty())
+    compilationOptions.targetAbi = targetAbi.str();
 
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
@@ -613,7 +621,8 @@ ErrorOrSuccess M::parseTargetOptions(
     // Use `-march` to determine the feature set.
     targetOr = getMArchFeatures(
         &ctx, compilationOptions.targetTriple, mArch, mCpu, mTune,
-        compilationOptions.targetAccelerator, compilationOptions.relocModel);
+        compilationOptions.targetAccelerator, compilationOptions.relocModel,
+        compilationOptions.targetAbi);
   } else {
     // Use the full triple, specific CPU, and manually specified features to
     // get the target info.
@@ -621,7 +630,7 @@ ErrorOrSuccess M::parseTargetOptions(
         &ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
         compilationOptions.targetFeatures, /*tuneCpu=*/"",
         /*acceleratorArch=*/compilationOptions.targetAccelerator,
-        compilationOptions.relocModel);
+        compilationOptions.relocModel, compilationOptions.targetAbi);
   }
   if (targetOr.isError())
     return targetOr.takeError();

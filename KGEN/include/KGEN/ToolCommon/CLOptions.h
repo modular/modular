@@ -19,6 +19,7 @@
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "llvm/MC/MCTargetOptionsCommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include <filesystem>
@@ -183,6 +184,14 @@ public:
         elaborationMaxDepth);
     options.warnOnUnstableAPIs = warnOnUnstableAPIs;
     options.ignoredDeprecations = ignoredDeprecations;
+    // LLVM's MC layer already owns a global `-target-abi` flag (see the
+    // comment by `targetFeatures` above); read its value instead of adding a
+    // second one under the same name. `getABIName()` asserts unless this
+    // registration has run; its `cl::opt`s are function-local statics, so
+    // constructing it here is a harmless no-op for tools (like `kgen`) that
+    // already trigger it via target-machine setup.
+    static llvm::mc::RegisterMCTargetOptionsFlags mcTargetOptionsFlags;
+    options.targetAbi = std::string(llvm::mc::getABIName());
 
     return options;
   }
@@ -395,6 +404,12 @@ private:
           "Compilation target CPU features. Defaults to the host features."),
       llvm::cl::location(options.targetFeatures),
       llvm::cl::cat(KGENOptionsCategory)};
+
+  // No `--target-abi` MOpt here: LLVM's MC layer already registers a global
+  // `-target-abi` flag (llvm::mc::getABIName(), MCTargetOptionsCommandFlags.h)
+  // that this binary links; a second cl::opt of the same name aborts at
+  // startup with "registered more than once". getCompilationOptions() below
+  // reads LLVM's flag directly instead.
 
   M::cl::MOpt<std::string, true> march{
       "march", cl::desc("Architecture to generate code for (see --version)."),

@@ -81,6 +81,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier targetTriple;
   llvm::opt::OptSpecifier targetCpu;
   llvm::opt::OptSpecifier targetFeatures;
+  llvm::opt::OptSpecifier targetAbi;
   llvm::opt::OptSpecifier march;
   llvm::opt::OptSpecifier mcpu;
   llvm::opt::OptSpecifier mtune;
@@ -198,7 +199,8 @@ ErrorOrSuccess parseTargetOptions(
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
     llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier relocationModelId = {});
+    llvm::opt::OptSpecifier relocationModelId = {},
+    llvm::opt::OptSpecifier abiId = {});
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
