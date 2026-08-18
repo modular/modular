@@ -157,7 +157,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
 
         comptime if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
-            return "nvptx-short-ptr=true"
+            return "target-abi=shortptr"
         else:
             return ""
 

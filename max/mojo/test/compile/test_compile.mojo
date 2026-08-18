@@ -83,7 +83,7 @@ def test_data_layout_asm() raises:
     var target_short_asm = compile_info[
         my_func,
         emission_kind="asm",
-        compile_options="nvptx-short-ptr=true",
+        compile_options="target-abi=shortptr",
         target=target_short_ptr,
     ]()
 
