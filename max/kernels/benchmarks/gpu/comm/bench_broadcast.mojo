@@ -48,7 +48,6 @@ from std.testing import assert_true
 
 
 @always_inline
-@__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 

@@ -469,7 +469,6 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
         return num_bytes >= 4 * 1024 * 1024  # 4 MiB
 
 
-@__parameter
 def broadcast[
     dtype: DType,
     in_layout: TensorLayout,
@@ -591,7 +590,6 @@ def broadcast[
             )
 
 
-@__parameter
 def broadcast_2stage[
     dtype: DType,
     in_layout: TensorLayout,

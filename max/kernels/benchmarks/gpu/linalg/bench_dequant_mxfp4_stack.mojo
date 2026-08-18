@@ -83,9 +83,8 @@ def bench_dequant_stack[
             num_cols=K,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     comptime total_bytes = (
@@ -95,7 +94,8 @@ def bench_dequant_stack[
     )
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             String(
                 "dequant_mxfp4_to_bf16(N=",

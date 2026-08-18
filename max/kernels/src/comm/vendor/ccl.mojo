@@ -372,7 +372,6 @@ def wait_for_comms(ngpus: Int):
         pass
 
 
-@__parameter
 def allreduce[
     dtype: DType,
     in_layout: TensorLayout,
@@ -450,7 +449,6 @@ def allreduce[
         ](epilogue_wrapper, Coord(output_tensor.num_elements()), ctx)
 
 
-@__parameter
 def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
@@ -500,7 +498,6 @@ def is_broadcast_available() -> Bool:
     return _is_ccl_symbol_available["ncclBroadcast"]()
 
 
-@__parameter
 def allgather[
     dtype: DType,
     in_layout: TensorLayout,
@@ -595,7 +592,6 @@ def allgather[
             ctx.enqueue_copy(dest_db, src_db)
 
 
-@__parameter
 def broadcast[
     dtype: DType,
     in_layout: TensorLayout,

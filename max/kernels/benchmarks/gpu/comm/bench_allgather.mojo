@@ -42,7 +42,6 @@ from std.testing import assert_true
 
 
 @always_inline
-@__parameter
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
