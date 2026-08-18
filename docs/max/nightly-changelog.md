@@ -419,6 +419,14 @@ This version is still a work in progress.
   instead of rebuilding every image's rows with out-of-bounds sentinels.
   Per-chunk copy cost now scales with the chunk size rather than the
   request's total image tokens.
+- Added `DeviceBuffer.unsafe_host_ptr()` to the Mojo `max.gpu.host` API. On
+  devices with unified memory (Apple silicon), it returns a CPU-addressable
+  pointer to the buffer, so the host can read a kernel's output after
+  `DeviceContext.synchronize()` without an `enqueue_copy` round trip. Reads
+  through it are uncached, so it suits small control records rather than bulk
+  readback. A CPU device returns the buffer's own pointer, since its
+  allocations are host memory already; devices whose memory is not
+  CPU-addressable raise.
 
 ### Inference server
 
