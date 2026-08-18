@@ -15,16 +15,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
     resolve_indexer_types,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -60,6 +66,13 @@ class Glm5_1Config(DeepseekV3_2Config):
     until GLM-specific bring-up diverges from DeepSeek-V3.2.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float4_e2m1fnx2",
+        "float8_e4m3fn",
+        "bfloat16",
+    }
+
     @override
     @classmethod
     def initialize(
@@ -77,11 +90,13 @@ class Glm5_1Config(DeepseekV3_2Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -125,6 +140,10 @@ class Glm5_1Config(DeepseekV3_2Config):
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
             max_position_embeddings=config.max_position_embeddings,
+            max_seq_len=upper_bounded_default(
+                upper_bound=config.max_position_embeddings,
+                default=model_config.max_length,
+            ),
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
@@ -139,4 +158,8 @@ class Glm5_1Config(DeepseekV3_2Config):
             indexer_types=resolve_indexer_types(
                 config, config.num_hidden_layers
             ),
+            indexer_rope_interleave=getattr(
+                config, "indexer_rope_interleave", False
+            ),
+            quantization_encoding=quantization_encoding,
         )

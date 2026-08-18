@@ -13,7 +13,7 @@
 
 from std.hashlib._fnv1a import Fnv1a
 
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -57,12 +57,12 @@ def test_hash_byte_array() raises:
 def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significantly different hash values
-    var buffer = InlineArray[UInt8, 256](fill=0)
+    var buffer = Array[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
     hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
-        memset_zero(buffer.unsafe_ptr(), 256)
+        unsafe_memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = UInt8(v)
         hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
@@ -73,7 +73,7 @@ def test_avalanche() raises:
 def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
-    var buffer = InlineArray[UInt8, 8](fill=0)
+    var buffer = Array[UInt8, 8](fill=0)
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
@@ -83,7 +83,7 @@ def test_trailing_zeros() raises:
 
 
 def test_fill_factor() raises:
-    words = gen_word_pairs[words_ar]()
+    var words = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", Fnv1a](words, len(words), 0.63)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 2, 0.86)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 4, 0.98)
@@ -128,7 +128,7 @@ def test_fill_factor() raises:
 
 def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
-        hasher = Fnv1a()
+        var hasher = Fnv1a()
         hasher._update_with_simd(value)
         return hasher^.finish()
 

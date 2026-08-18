@@ -45,6 +45,7 @@ from max.nn import ReturnLogits
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,
+    TextAndVisionContext,
     TextGenerationContextType,
     TextGenerationOutput,
 )
@@ -52,8 +53,14 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     load_kv_manager,
+)
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    as_vision_context_batches,
 )
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -68,7 +75,6 @@ from max.support.algorithm import flatten2d
 
 from .utils import (
     StructuredOutputHelper,
-    get_eos_tokens,
     update_context_and_prepare_responses,
 )
 
@@ -90,7 +96,7 @@ from ..interfaces import (
 from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
-from ..vision_encoder_cache import VisionEncoderMetrics
+from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -121,7 +127,7 @@ class TextGenerationPipelineInterface(
 
     @property
     @abstractmethod
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -136,8 +142,6 @@ class TextGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[TextGenerationContextType]],
-        # TODO: This should be removed.
-        eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
             TextGenerationContextType,
@@ -154,8 +158,6 @@ class TextGenerationPipeline(
         Args:
             pipeline_config: Configuration for the pipeline and runtime behavior.
             pipeline_model: Concrete model implementation to use for execution.
-            eos_token_id: Default EOS token id used when HF config does not supply
-                one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
             memory_plan: Memory plan from the registry containing max_batch_size
@@ -178,15 +180,13 @@ class TextGenerationPipeline(
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        self._devices = load_devices(model_config.device_specs)
+        self._devices = load_devices(list(memory_plan.require_device_specs()))
         self._tokenizer = tokenizer
 
         self.batch_info_output_fname = environ.get(
             "MAX_BATCH_INFO_FILENAME", None
         )
         self.batch_infos: list[BatchInfo] = []
-
-        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Initialize structured output helper for constrained decoding.
         # The helper's ``enable_response_format_schema`` mirrors the user
@@ -200,20 +200,22 @@ class TextGenerationPipeline(
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
             pipeline_config.sampling.structured_output_backend,
+            pipeline_config.sampling.structured_output_any_whitespace,
         )
         self.vocab_size = self._structured_output.vocab_size
 
         # Initialize Session.
-        session = InferenceSession(devices=[*self._devices])
+        session = InferenceSession(
+            devices=[*self._devices],
+            precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
+            export_mefs=pipeline_config.runtime.export_mefs,
+        )
         self.session = session
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not model_config.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = model_config.resolved_weight_paths()
 
@@ -234,7 +236,7 @@ class TextGenerationPipeline(
             max_batch_size=max_batch_size,
         )
 
-        available_cache_memory = model_config.kv_cache._available_cache_memory
+        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
         self._kv_manager = load_kv_manager(
             params=kv_params,
@@ -243,6 +245,16 @@ class TextGenerationPipeline(
             session=session,
             available_cache_memory=available_cache_memory,
         )
+
+        self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
+            None
+        )
+        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                max_entries=pipeline_config.runtime.max_vision_cache_entries,
+                plan=pipeline_config.runtime._vision_cache_plan,
+                devices=self._devices,
+            )
 
         # Device the sampler runs on. ``sample_on_host`` routes sampling to the
         # host CPU.
@@ -414,14 +426,26 @@ class TextGenerationPipeline(
         if self.batch_info_output_fname is not None:
             self._record_batch_info(flat_batch)
 
-        return (
-            self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=replica_batches,
-                kv_cache_inputs=kv_cache_inputs,
-            ),
-            bitmask,
-            flat_batch,
+        model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+            replica_batches=replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
         )
+
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            vision_result = self._encoder_cache.run_vision_encode(
+                self._pipeline_model,
+                as_vision_context_batches(replica_batches),
+                self._devices,
+            )
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model,
+                model_inputs,
+                self._devices,
+                vision_result,
+            )
+
+        return (model_inputs, bitmask, flat_batch)
 
     @traced
     def _maybe_sort_loras(
@@ -605,7 +629,8 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
 
         return res
 
@@ -639,14 +664,16 @@ class TextGenerationPipeline(
         """Release model-specific resources for a completed request.
 
         Primary and extra KV cache lifecycle is managed by the batch
-        constructor.  This method handles model-specific cleanup only
-        (e.g. vision encoder cache).
+        constructor.  This method drops the request's vision-encoder-cache
+        references and any model-specific state.
         """
+        if self._encoder_cache is not None:
+            self._encoder_cache.release_request(request_id)
         if hasattr(self._pipeline_model, "release"):
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 
@@ -655,9 +682,24 @@ class TextGenerationPipeline(
 
         Returns ``None`` for text-only models and for batches that did no
         vision encoding (e.g. decode steps). The metrics come from the
-        underlying model's :class:`VisionEncoderCache`, if it has one.
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
+        otherwise, for a model that owns its encoder cache internally, from
+        :class:`SupportsPooledVisionMetrics`.
         """
-        cache = getattr(self._pipeline_model, "_ve_cache", None)
-        if cache is None:
-            return None
-        return cache.pop_metrics()
+        if self._encoder_cache is not None:
+            return self._encoder_cache.pop_metrics()
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_vision_metrics()
+        return None
+
+    def batch_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns video encoder metrics for the most recent batch.
+
+        Returns ``None`` for models with no video support and for batches
+        that did no video encoding. Video encoding has no pipeline-owned
+        cache equivalent to :class:`VisionEncoderCache`, so this only ever
+        comes from a model implementing :class:`SupportsPooledVisionMetrics`.
+        """
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_video_metrics()
+        return None

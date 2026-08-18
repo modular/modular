@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass, field, replace
+from typing import Any, ClassVar
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
@@ -26,6 +26,7 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -97,14 +98,63 @@ def parse_dflash_draft_hf_config(
     )
 
 
+def resolve_dflash_num_speculative_tokens(
+    pipeline_config: PipelineConfig,
+    *,
+    warn: bool = True,
+) -> int:
+    """Returns the resolved DFlash draft width.
+
+    The DFlash drafter's behavior is only defined at its trained
+    ``block_size``, so the width is ``block_size - 1``; a mismatching
+    explicit ``num_speculative_tokens`` is overridden with a warning. When
+    the draft checkpoint declares no ``block_size``, an explicit
+    ``--num-speculative-tokens`` is required and returned as-is. Pure: the
+    caller's config is never mutated or copied.
+    """
+    speculative = pipeline_config.speculative
+    assert speculative is not None
+    assert pipeline_config.draft_model is not None
+    dflash_hf = parse_dflash_draft_hf_config(
+        pipeline_config.draft_model.huggingface_config
+    )
+    if dflash_hf.block_size is None:
+        if speculative.num_speculative_tokens is None:
+            raise ValueError(
+                "The DFlash draft checkpoint declares no block_size; set"
+                " --num-speculative-tokens explicitly."
+            )
+        return speculative.num_speculative_tokens
+    expected_spec = dflash_hf.block_size - 1
+    actual_spec = speculative.num_speculative_tokens
+    if warn and actual_spec is not None and actual_spec != expected_spec:
+        logger.warning(
+            "DFlash draft was trained at block_size=%d, so"
+            " num_speculative_tokens is being overridden from %d to"
+            " %d. The DFlash draft's behavior is only defined at"
+            " its trained block_size.",
+            dflash_hf.block_size,
+            actual_spec,
+            expected_spec,
+        )
+    return expected_spec
+
+
 @dataclass(kw_only=True)
 class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
     target: Llama3Config
     draft: Llama3Config
     speculative_config: SpeculativeConfig
     target_layer_ids: list[int] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    quantization_encoding: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
@@ -151,7 +201,11 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
         if self.block_size > 0:
             expected_spec = self.block_size - 1
             actual_spec = self.speculative_config.num_speculative_tokens
-            if actual_spec != expected_spec:
+            if actual_spec is not None and actual_spec != expected_spec:
+                # Check only, never written back: the trained width is
+                # resolved as a plain int by
+                # :func:`resolve_dflash_num_speculative_tokens` and
+                # threaded by the model.
                 logger.warning(
                     "DFlash draft was trained at block_size=%d, so"
                     " num_speculative_tokens is being overridden from %d to"
@@ -161,14 +215,19 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
                     actual_spec,
                     expected_spec,
                 )
-                self.speculative_config.num_speculative_tokens = expected_spec
 
     def resolve_block_size(self, *, default: int | None = None) -> int:
         if self.block_size > 0:
             return self.block_size
         if default is not None:
             return default
-        return self.speculative_config.num_speculative_tokens + 1
+        num_spec = self.speculative_config.num_speculative_tokens
+        if num_spec is None:
+            raise ValueError(
+                "The DFlash draft checkpoint declares no block_size; set"
+                " --num-speculative-tokens explicitly."
+            )
+        return num_spec + 1
 
     def get_kv_params(self) -> KVCacheParamInterface:
         target_kv_params = self.target.get_kv_params()
@@ -185,9 +244,24 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
     ) -> Self:
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
+        assert pipeline_config.speculative is not None
+
+        speculative_config = pipeline_config.speculative
+        resolved: int | None = None
+        if speculative_config.num_speculative_tokens is None:
+            # Unset resolves to the drafter's trained width: unlike the
+            # DSpark pipelines, this model never re-derives the baked
+            # ``num_draft_tokens`` after load, so the value used here is
+            # the one serving runs with. The resolved value lives on this
+            # arch config's own speculative section; the caller's
+            # pipeline_config is never mutated or copied.
+            resolved = resolve_dflash_num_speculative_tokens(pipeline_config)
+            speculative_config = speculative_config.model_copy(
+                update={"num_speculative_tokens": resolved}
+            )
+
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
-        assert pipeline_config.speculative is not None
 
         target_config = Llama3Config.initialize_from_config(
             pipeline_config, model_config.huggingface_config, model_config
@@ -197,6 +271,15 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
             pipeline_config.draft_model.huggingface_config,
             pipeline_config.draft_model,
         )
+        if resolved is not None:
+            # ``initialize_from_config`` derives KV from the raw pipeline
+            # config, where the unset width would bake num_draft_tokens=0.
+            target_config.kv_params = replace(
+                target_config.kv_params, num_draft_tokens=resolved
+            )
+            draft_config.kv_params = replace(
+                draft_config.kv_params, num_draft_tokens=resolved
+            )
 
         # Empty placeholder values for the DFlash-specific fields;
         # ``UnifiedDflashLlama3Model.load_model`` parses the draft HF config
@@ -204,7 +287,7 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
         return cls(
             target=target_config,
             draft=draft_config,
-            speculative_config=pipeline_config.speculative,
+            speculative_config=speculative_config,
             target_layer_ids=[],
             mask_token_id=0,
         )

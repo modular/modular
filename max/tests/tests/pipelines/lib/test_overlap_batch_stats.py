@@ -50,6 +50,7 @@ def _fake_batch(
         enqueue_monotonic=enqueue_monotonic,
         inputs=SimpleNamespace(
             batch_type=batch_type,
+            batch_size=batch_size,
             flat_batch=[object()] * batch_size,
             input_tokens=input_tokens,
             context_tokens=context_tokens,
@@ -112,13 +113,25 @@ def test_execution_time_clamped_non_negative() -> None:
     assert _take(pipe).execution_time_s == 0.0
 
 
-def test_spec_decode_output_tokens_recorded() -> None:
+def test_spec_decode_stats_recorded() -> None:
     pipe = _fake_pipeline()
-    spec = SimpleNamespace(output_tokens=13)
+    spec = SimpleNamespace(
+        output_tokens=13,
+        draft_tokens_generated=24,
+        draft_tokens_accepted=12,
+        avg_acceptance_length=1.5,
+        num_speculative_tokens=3,
+        acceptance_rate_per_position=[0.75, 0.5, 0.25],
+    )
     _record(pipe, _fake_batch(10.0, batch_type=BatchType.TG), spec, 10.2)
     stats = _take(pipe)
     assert stats.batch_type == BatchType.TG
     assert stats.num_output_tokens == 13
+    assert stats.draft_tokens_generated == 24
+    assert stats.draft_tokens_accepted == 12
+    assert stats.avg_acceptance_length == 1.5
+    assert stats.max_acceptance_length == 3
+    assert stats.acceptance_rate_per_position == [0.75, 0.5, 0.25]
 
 
 def test_take_pops_stats() -> None:

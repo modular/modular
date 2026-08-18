@@ -37,6 +37,7 @@ class TokenizerInfo:
         vocab_size: int | None = None,
         stop_token_ids: Sequence[int] | None = None,
         add_prefix_space: bool = False,
+        special_token_ids: Sequence[int] | None = None,
     ) -> None: ...
     @property
     def vocab_type(self) -> VocabType: ...
@@ -71,7 +72,14 @@ class GrammarCompiler:
         max_memory_bytes: int = -1,
     ) -> None: ...
     def compile_json_schema(
-        self, schema: str, any_whitespace: bool = True, strict_mode: bool = True
+        self,
+        schema: str,
+        any_whitespace: bool = True,
+        strict_mode: bool = True,
+        require_object_root: bool = False,
+        reject_unsupported: bool = False,
+        separators: tuple[str, str] | None = None,
+        max_whitespace_cnt: int | None = None,
     ) -> CompiledGrammar: ...
     def compile_grammar(
         self, ebnf_str: str, root_rule_name: str = "root"

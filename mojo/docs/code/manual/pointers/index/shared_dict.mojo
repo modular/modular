@@ -32,7 +32,7 @@ struct SharedDict(ImplicitlyCopyable):
 
 
 def main():
-    thing1 = SharedDict()
-    thing2 = thing1
+    var thing1 = SharedDict()
+    var thing2 = thing1
     thing1["Flip"] = "Flop"
     print(thing2["Flip"])

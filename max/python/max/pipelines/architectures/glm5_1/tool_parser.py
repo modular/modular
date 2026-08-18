@@ -29,81 +29,58 @@ arrays, and objects are emitted as JSON. Decoding therefore tries ``json.loads``
 first and falls back to the raw string, exactly as the MiniMax M2 / Qwen 3.5
 parsers do.
 
-Constraint level for tool calls (see ``generate_tool_call_grammar``): the
-generated grammar constrains the ``<tool_call>`` envelope and the
+Constraint level for tool calls (see ``generate_tool_call_grammar``): a
+serialized xgrammar ``StructuralTag`` (xgrammar's builtin ``glm_4_7`` format,
+``glm_xml`` style) frames the ``<tool_call>`` envelope and the
 ``<arg_key>``/``<arg_value>`` framing, restricts the function name to the
-provided tools, and — when a tool supplies a ``parameters`` schema — constrains
-the arguments to that schema (declared keys, ``required`` properties, and each
-value's type). GLM emits string values *bare* and all other types as JSON, so
-non-string values are constrained via ``%json`` over the sub-schema while
-strings are handled with bare ``enum`` / ``pattern`` rules. ``response_format``
-schemas are enforced via the dedicated ``json_response`` branch.
+provided tools, and constrains each call's arguments to that tool's
+``parameters`` schema — string values bare, every other type as JSON.
+``response_format`` schemas are accepted as a JSON alternative to a tool call.
 
-Reference: ``architectures/gemma4/tool_parser.py`` (flat-mode base + grammar),
-``architectures/minimax_m2/tool_parser.py`` (structural grammar tier).
+Reference: ``architectures/gemma4/tool_parser.py`` (flat-mode base + xgrammar
+grammar).
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    build_xgrammar_tool_grammar,
+)
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
-    canonicalize_lark_rule_name,
-    escape_for_lark_string,
     generate_call_id,
-    get_token_id,
-    maybe_name_from_tool,
-    names_from_tools,
     register,
-    resolve_lark_token_reference,
 )
 from max.pipelines.modeling.types import ParsedToolCall, PipelineTokenizer
 
 # Special-token surface forms (all single tokens in the GLM vocab).
-TOOL_CALL_OPEN = "<tool_call>"
-TOOL_CALL_CLOSE = "</tool_call>"
-ARG_KEY_OPEN = "<arg_key>"
-ARG_KEY_CLOSE = "</arg_key>"
-ARG_VALUE_OPEN = "<arg_value>"
-ARG_VALUE_CLOSE = "</arg_value>"
-
-# Tokens the grammar references, in a stable order.
-_GRAMMAR_TOKENS = (
-    TOOL_CALL_OPEN,
-    TOOL_CALL_CLOSE,
-    ARG_KEY_OPEN,
-    ARG_KEY_CLOSE,
-    ARG_VALUE_OPEN,
-    ARG_VALUE_CLOSE,
-)
-
-# Turn-ender tokens the model emits to *end* a tool-calling turn — GLM's
-# ``generation_config.eos_token_id`` set. ``<|observation|>`` is the token the
-# chat template places immediately after ``</tool_call>`` (it opens the tool
-# result), so it is what the model is trained to emit to hand off after a tool
-# call; ``<|user|>`` / ``<|endoftext|>`` close a normal turn. The grammar must
-# admit these after the calls — otherwise the only legal continuations are
-# another ``<tool_call>`` or the bare tokenizer EOS, which denies the model its
-# trained turn-ender and forces it to repeat tool calls until ``max_tokens``.
-_TURN_END_TOKENS = ("<|observation|>", "<|user|>", "<|endoftext|>")
+_TOOL_CALL_OPEN = "<tool_call>"
+_TOOL_CALL_CLOSE = "</tool_call>"
+_ARG_KEY_OPEN = "<arg_key>"
+_ARG_KEY_CLOSE = "</arg_key>"
+_ARG_VALUE_OPEN = "<arg_value>"
+_ARG_VALUE_CLOSE = "</arg_value>"
 
 # Complete-parse regexes. Non-greedy so a value never swallows the next marker
 # (markers are special tokens, so they never appear inside a value anyway).
 _TOOL_CALL_BLOCK_RE = re.compile(
-    re.escape(TOOL_CALL_OPEN) + r"(.*?)" + re.escape(TOOL_CALL_CLOSE),
+    re.escape(_TOOL_CALL_OPEN) + r"(.*?)" + re.escape(_TOOL_CALL_CLOSE),
     re.DOTALL,
 )
 _ARG_PAIR_RE = re.compile(
-    re.escape(ARG_KEY_OPEN)
+    re.escape(_ARG_KEY_OPEN)
     + r"(.*?)"
-    + re.escape(ARG_KEY_CLOSE)
+    + re.escape(_ARG_KEY_CLOSE)
     + r"\s*"
-    + re.escape(ARG_VALUE_OPEN)
+    + re.escape(_ARG_VALUE_OPEN)
     + r"(.*?)"
-    + re.escape(ARG_VALUE_CLOSE),
+    + re.escape(_ARG_VALUE_CLOSE),
     re.DOTALL,
 )
 
@@ -113,16 +90,28 @@ def _decode_value(raw: str) -> object:
 
     Strings arrive bare; numbers, booleans, arrays, and objects arrive as JSON.
     Try ``json.loads`` first (covers every non-string case plus quoted strings)
-    and fall back to the raw text for bare strings. Empty payloads decode to the
-    empty string.
+    and fall back to the raw text verbatim for bare strings. The grammar frames
+    the value with no surrounding whitespace, so the raw payload is exactly the
+    value: it must be returned unstripped, or space padding a length-bounded
+    value used to reach its ``minLength`` (spaces are valid content bytes) would
+    be dropped below the bound.
     """
-    stripped = raw.strip()
-    if not stripped:
+    if not raw:
         return ""
     try:
-        return json.loads(stripped)
+        decoded = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
         return raw
+    # GLM strings are emitted bare; a payload that JSON-decodes to a *string*
+    # is a quoted-string form whose surrounding quotes are literal content.
+    # The grammar's length bound counts the raw bytes, so returning the
+    # un-quoted form would drop a value below its ``minLength`` (e.g.
+    # ``"b"`` -> ``b``, ``""`` -> ``""``). Keep the raw payload for the string
+    # case; decode only non-string JSON (numbers, booleans, null, arrays,
+    # objects).
+    if isinstance(decoded, str):
+        return raw
+    return decoded
 
 
 def _parse_args(args_body: str) -> dict[str, object]:
@@ -136,198 +125,202 @@ def _parse_args(args_body: str) -> dict[str, object]:
     return args
 
 
-# ---------------------------------------------------------------------------
-# Schema-aware grammar generation (constrains tool-call arguments to the
-# declared JSON schema, not just the structure).
-#
-# GLM emits ``<arg_value>`` payloads with a type-dependent encoding (see
-# ``_decode_value``): *strings are bare* (no quotes), every other type is
-# JSON (``v | tojson``). So a non-string value is constrainable with
-# llguidance's built-in ``%json`` over the property's sub-schema (which also
-# covers nested objects/arrays, ``required``, numeric bounds, etc.), while
-# string values need bare handling (free text, an ``enum`` alternation, or a
-# ``pattern`` regex).
-# ---------------------------------------------------------------------------
-
-_JSON_VALUE_TYPES = frozenset(
-    {"integer", "number", "boolean", "null", "object", "array"}
-)
-
-
-def _resolve_refs(
-    node: Any, defs: dict[str, Any], _depth: int = 0, _max_depth: int = 10
-) -> Any:
-    """Inline ``$ref`` pointers using ``$defs``; cap recursion for cycles."""
-    if isinstance(node, list):
-        return [_resolve_refs(i, defs, _depth, _max_depth) for i in node]
-    if not isinstance(node, dict):
-        return node
-    ref = node.get("$ref")
-    if (
-        isinstance(ref, str)
-        and ref.startswith("#/$defs/")
-        and _depth < _max_depth
-    ):
-        name = ref[len("#/$defs/") :]
-        if name in defs:
-            return _resolve_refs(defs[name], defs, _depth + 1, _max_depth)
-    return {
-        k: _resolve_refs(v, defs, _depth, _max_depth)
-        for k, v in node.items()
-        if k != "$defs"
-    }
+def _json_type(value: object) -> str:
+    """Return the JSON Schema primitive type name for a decoded value."""
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if value is None:
+        return "null"
+    if isinstance(value, list):
+        return "array"
+    return "object"
 
 
-def _extract_tool_schemas(
-    tools: list[dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    """Map function name -> ref-resolved ``parameters`` schema."""
-    schemas: dict[str, dict[str, Any]] = {}
-    for t in tools:
-        name = maybe_name_from_tool(t)
-        if not name:
-            continue
-        params = t.get("function", {}).get("parameters")
-        if isinstance(params, dict) and params.get("properties"):
-            defs = params.get("$defs", {})
-            schemas[name] = _resolve_refs(params, defs) if defs else params
-    return schemas
+_STRING_FACET_KEYS = ("minLength", "maxLength", "pattern", "format")
 
 
-def _glm_value_symbol(
-    prop_schema: dict[str, Any],
-    prefix: str,
-    rules_parts: list[str],
-    terminals: list[str],
-) -> str:
-    """Return the Lark symbol that constrains one ``<arg_value>`` body.
-
-    Strings are bare (``ARG_VALUE`` free text, an enum alternation, or a
-    pattern regex); every other concrete scalar/container type delegates to
-    ``%json``. Unknown/union types fall back to the permissive ``ARG_VALUE``.
-    """
-    enum = prop_schema.get("enum")
-    if isinstance(enum, list) and enum:
-        # Each value is matched in its on-the-wire form: strings bare, others
-        # JSON-encoded (mirrors ``_decode_value`` / the chat template).
-        alts = [
-            '"'
-            + escape_for_lark_string(
-                v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
-            )
-            + '"'
-            for v in enum
-        ]
-        rule = f"{prefix}_enum"
-        rules_parts.append(f"{rule}: " + " | ".join(alts))
-        return rule
-
-    jtype = prop_schema.get("type")
-    if jtype == "string":
-        pattern = prop_schema.get("pattern")
-        if isinstance(pattern, str) and pattern:
-            term = prefix.upper() + "_PAT"
-            terminals.append(f"{term}: /{pattern}/")
-            return term
-        return (
-            "ARG_VALUE"  # bare free string, bounded by the </arg_value> token
-        )
-
-    if isinstance(jtype, str) and jtype in _JSON_VALUE_TYPES:
-        rule = f"{prefix}_json"
-        rules_parts.append(
-            f"{rule}: %json "
-            + json.dumps(prop_schema, separators=(",", ":"), ensure_ascii=False)
-        )
-        return rule
-
-    # No/union type: don't risk rejecting a valid bare string.
-    return "ARG_VALUE"
+def _schema_types(schema: dict[str, Any]) -> set[str]:
+    t = schema.get("type")
+    if isinstance(t, str):
+        return {t}
+    if isinstance(t, list):
+        return {x for x in t if isinstance(x, str)}
+    # A schema that declares string facets but omits "type" still constrains
+    # a string (JSON Schema applies these keywords only to strings), matching
+    # the grammar's own is_string test. Infer "string" so a bare non-string
+    # value is coerced back to its string form.
+    if any(k in schema for k in _STRING_FACET_KEYS):
+        return {"string"}
+    return set()
 
 
-def _glm_ordered_args(
-    prefix: str,
-    arg_rules: list[str],
-    required: list[bool],
-    rules_parts: list[str],
-) -> str:
-    """Build suffix rules enforcing schema order; required args can't be
-    skipped, optional ones may be (no separator between GLM arg pairs)."""
-    n = len(arg_rules)
-    if n == 0:
-        return ""
-    has_req_after = [False] * n
-    for i in range(n - 2, -1, -1):
-        has_req_after[i] = required[i + 1] or has_req_after[i + 1]
-    for i in range(n - 1, -1, -1):
-        sfx = f"{prefix}_sfx_{i}"
-        prop = arg_rules[i]
-        if i == n - 1:
-            rules_parts.append(f"{sfx}: {prop}")
-        else:
-            nxt = f"{prefix}_sfx_{i + 1}"
-            if has_req_after[i]:
-                if required[i]:
-                    rules_parts.append(f"{sfx}: {prop} {nxt}")
-                else:
-                    rules_parts.append(f"{sfx}: {prop} {nxt} | {nxt}")
-            else:
-                if required[i]:
-                    rules_parts.append(f"{sfx}: {prop} ({nxt})?")
-                else:
-                    rules_parts.append(f"{sfx}: {prop} ({nxt})? | {nxt}")
-    top = f"{prefix}_sfx_0"
-    return top if any(required) else f"{top}?"
+def _value_matches(value: object, types: set[str]) -> bool:
+    if not types:
+        return True
+    jt = _json_type(value)
+    if jt in types:
+        return True
+    # An integer also satisfies a ``number`` type.
+    return jt == "integer" and "number" in types
 
 
-def _glm_args_rule(
-    name: str,
-    schema: dict[str, Any],
-    aks: str,
-    ake: str,
-    avs: str,
-    ave: str,
-    rules_parts: list[str],
-    terminals: list[str],
-) -> str:
-    """Build and return the args-body rule name for one tool's schema."""
-    canon = canonicalize_lark_rule_name(name)
-    props: dict[str, Any] = schema.get("properties", {})
-    required = set(schema.get("required", []))
-
-    arg_rules: list[str] = []
-    req_flags: list[bool] = []
-    for pname, pschema in props.items():
-        pcanon = canonicalize_lark_rule_name(pname)
-        prefix = f"a_{canon}_{pcanon}"
-        val = _glm_value_symbol(
-            pschema if isinstance(pschema, dict) else {},
-            prefix,
-            rules_parts,
-            terminals,
-        )
-        arg_rule = f"argp_{canon}_{pcanon}"
-        rules_parts.append(
-            f'{arg_rule}: {aks} "{escape_for_lark_string(pname)}" {ake} '
-            f"{avs} {val} {ave}"
-        )
-        arg_rules.append(arg_rule)
-        req_flags.append(pname in required)
-
-    ordered_top = _glm_ordered_args(
-        f"o_{canon}", arg_rules, req_flags, rules_parts
+def _as_string(value: object) -> str:
+    """Return the on-wire bare-string form of a decoded value."""
+    return (
+        value
+        if isinstance(value, str)
+        else json.dumps(value, ensure_ascii=False)
     )
 
-    parts: list[str] = []
-    if ordered_top:
-        parts.append(ordered_top)
-    # additionalProperties (default True) allows extra, unconstrained args.
-    if schema.get("additionalProperties", True) is not False:
-        parts.append("arg*")
 
-    body = f"args_{canon}"
-    rules_parts.append(f"{body}: " + (" ".join(parts) if parts else "arg*"))
-    return body
+def _ref_index(root: object) -> dict[str, Any]:
+    """Index a schema's referenceable subschemas for local ``$ref`` resolution.
+
+    Covers ``#/$defs`` / ``#/definitions`` pointers plus ``$id``-anchored
+    subschemas (indexed by full ``$id``, by URI path, and by filename) so the
+    draft-7 base-URI ``$ref`` forms the suite exercises resolve without a full
+    URI resolver.
+    """
+    index: dict[str, Any] = {}
+    for defs_key in ("$defs", "definitions"):
+        d = root.get(defs_key) if isinstance(root, dict) else None
+        if isinstance(d, dict):
+            for name, sub in d.items():
+                index.setdefault(f"#/{defs_key}/{name}", sub)
+
+    def walk(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        nid = node.get("$id")
+        if isinstance(nid, str) and nid:
+            index.setdefault(nid, node)
+            path = nid.split("://", 1)[-1]
+            if "/" in path:
+                index.setdefault("/" + path.split("/", 1)[1], node)
+            index.setdefault(nid.rstrip("/").rsplit("/", 1)[-1], node)
+        for value in node.values():
+            walk(value)
+
+    walk(root)
+    return index
+
+
+def _resolve_local_ref(schema: object, index: dict[str, Any]) -> object:
+    """Follow local ``$ref`` chains via the precomputed :func:`_ref_index`."""
+    seen: set[str] = set()
+    while isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        ref = schema["$ref"]
+        if ref in seen:
+            break
+        seen.add(ref)
+        target = index.get(ref)
+        if target is None and not ref.startswith("#"):
+            # Base-URI relative ref: match on trailing path / filename.
+            target = index.get(ref.lstrip("/").rsplit("/", 1)[-1])
+        if not isinstance(target, dict):
+            break
+        schema = target
+    return schema
+
+
+def _coerce_to_schema(
+    value: object, schema: object, defs: dict[str, Any]
+) -> object:
+    """Coerce a decoded ``<arg_value>`` back toward its schema-declared type.
+
+    GLM emits string values *bare* (see ``_decode_value``), so a value whose
+    text happens to be a JSON scalar/container (``123``, ``true``,
+    ``{"a":1}``) decodes to that type even though the grammar constrained the
+    field to a string. Wherever the (ref-resolved) schema admits ``string`` but
+    the decoded value matches none of the declared types, restore the on-wire
+    string form so the round-tripped arguments match the schema the grammar
+    enforced. Recurses through ``object`` / ``array`` / ``anyOf`` / ``oneOf``
+    schemas; leaves values that already satisfy the schema untouched.
+    """
+    schema = _resolve_local_ref(schema, defs)
+    if not isinstance(schema, dict):
+        return value
+
+    # allOf: a value must satisfy every subschema, so coerce through each. A
+    # single-element allOf is the common ``{"allOf": [{"$ref": ...}]}`` wrapper.
+    allof = schema.get("allOf")
+    if isinstance(allof, list) and allof:
+        for sub in allof:
+            value = _coerce_to_schema(value, sub, defs)
+
+    types = _schema_types(schema)
+    # The schema admits a string here but the value decoded to another type:
+    # the grammar only produced a bare string, so treat it as that string.
+    # Checked before ``anyOf`` so a ``{"type": "string", "anyOf": [...]}`` base
+    # type is still applied.
+    if "string" in types and not _value_matches(value, types):
+        return _as_string(value)
+
+    for key in ("anyOf", "oneOf"):
+        branches = schema.get(key)
+        if isinstance(branches, list) and branches:
+            resolved = [_resolve_local_ref(b, defs) for b in branches]
+            for b in resolved:
+                bt = _schema_types(b) if isinstance(b, dict) else set()
+                if bt and _value_matches(value, bt):
+                    return _coerce_to_schema(value, b, defs)
+            # Object branches usually omit an explicit ``"type": "object"`` and
+            # only declare ``properties``/``required``, so the type check above
+            # can't pick one. For an object value, coerce through the branch
+            # whose required keys are all present (else one whose properties it
+            # touches), so a bare scalar under a string-typed property (e.g.
+            # ``{"foo": 123}`` where ``foo`` is a string) is restored.
+            if isinstance(value, dict):
+                for b in resolved:
+                    if not isinstance(b, dict):
+                        continue
+                    req = b.get("required")
+                    if (
+                        isinstance(req, list)
+                        and req
+                        and all(k in value for k in req)
+                    ):
+                        return _coerce_to_schema(value, b, defs)
+                for b in resolved:
+                    if not isinstance(b, dict):
+                        continue
+                    props = b.get("properties")
+                    if isinstance(props, dict) and any(
+                        k in props for k in value
+                    ):
+                        return _coerce_to_schema(value, b, defs)
+            allows_string = any(
+                isinstance(b, dict) and "string" in _schema_types(b)
+                for b in resolved
+            )
+            if allows_string and not isinstance(value, str):
+                return _as_string(value)
+            return value
+
+    if isinstance(value, dict):
+        props = schema.get("properties")
+        if isinstance(props, dict):
+            return {
+                k: (_coerce_to_schema(v, props[k], defs) if k in props else v)
+                for k, v in value.items()
+            }
+        return value
+    if isinstance(value, list):
+        items = schema.get("items")
+        if isinstance(items, dict):
+            return [_coerce_to_schema(v, items, defs) for v in value]
+        return value
+    return value
 
 
 @register("glm45")
@@ -340,8 +333,34 @@ class GlmToolParser(StructuralTagToolParser):
     parameter XML that we convert to growing JSON for streaming.
     """
 
-    CALL_BEGIN: ClassVar[str] = TOOL_CALL_OPEN
-    CALL_END: ClassVar[str] = TOOL_CALL_CLOSE
+    CALL_BEGIN: ClassVar[str] = _TOOL_CALL_OPEN
+    CALL_END: ClassVar[str] = _TOOL_CALL_CLOSE
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._stream_tool_schemas: dict[
+            str, tuple[dict[str, Any], dict[str, Any]]
+        ] = {}
+        self._active_params_schema: dict[str, Any] | None = None
+        self._active_defs: dict[str, Any] = {}
+        self._coerce_schema: dict[str, Any] | None = None
+        self._coerced: dict[str, tuple[object, object]] = {}
+
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """Stores per-tool ``parameters`` schemas for streaming coercion."""
+        self._stream_tool_schemas = {
+            name: (schema, _ref_index(schema))
+            for name, schema in schemas.items()
+        }
+
+    def reset(self) -> None:
+        super().reset()
+        self._active_params_schema = None
+        self._active_defs = {}
+        self._coerce_schema = None
+        self._coerced = {}
 
     # ----- Complete parsing --------------------------------------------
 
@@ -375,14 +394,22 @@ class GlmToolParser(StructuralTagToolParser):
         ``<arg_key>`` marker or the closing ``</tool_call>`` has arrived the name
         boundary is unknown, so return ``(None, None)`` to defer.
         """
-        key_idx = body.find(ARG_KEY_OPEN)
+        key_idx = body.find(_ARG_KEY_OPEN)
         if key_idx >= 0:
-            name = body[:key_idx].strip()
-            return (name or None), body[key_idx:]
+            name = body[:key_idx].strip() or None
+            self._activate_schema(name)
+            return name, body[key_idx:]
         if is_complete:
-            name = body.strip()
-            return (name or None), ""
+            name = body.strip() or None
+            self._activate_schema(name)
+            return name, ""
         return None, None
+
+    def _activate_schema(self, name: str | None) -> None:
+        """Selects the schema and defs to coerce the in-progress call against."""
+        self._active_params_schema, self._active_defs = (
+            self._stream_tool_schemas.get(name or "", (None, {}))
+        )
 
     def _format_args_for_streaming(
         self, args_text: str, is_complete: bool
@@ -394,6 +421,28 @@ class GlmToolParser(StructuralTagToolParser):
         pair lands.
         """
         args = _parse_args(args_text)
+        schema = self._active_params_schema
+        if schema is not None and args:
+            if schema is not self._coerce_schema:
+                self._coerce_schema = schema
+                self._coerced = {}
+            coerced_args: dict[str, object] = {}
+            for key, value in args.items():
+                cached = self._coerced.get(key)
+                if (
+                    cached is not None
+                    and type(cached[0]) is type(value)
+                    and cached[0] == value
+                ):
+                    coerced_args[key] = cached[1]
+                    continue
+                out = _coerce_to_schema({key: value}, schema, self._active_defs)
+                coerced_value = (
+                    out[key] if isinstance(out, dict) and key in out else value
+                )
+                self._coerced[key] = (value, coerced_value)
+                coerced_args[key] = coerced_value
+            args = coerced_args
         if not args:
             return "{}" if is_complete else ""
         inner = ", ".join(
@@ -402,145 +451,68 @@ class GlmToolParser(StructuralTagToolParser):
         )
         return "{" + inner + ("}" if is_complete else "")
 
+    # ----- Schema-aware argument coercion ------------------------------
+
+    def coerce_arguments(
+        self, args: dict[str, Any], schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Coerce parsed arguments toward their tool ``parameters`` schema.
+
+        GLM's bare string encoding is type-ambiguous (``123`` is the string
+        ``"123"`` for a string-typed field, but decodes to the integer ``123``).
+        The router invokes this on the non-streaming complete parse with the
+        tool's ``parameters`` schema so a string field the grammar constrained
+        is reported as the string it constrained.
+        """
+        index = _ref_index(schema)
+        coerced = _coerce_to_schema(args, schema, index)
+        return coerced if isinstance(coerced, dict) else args
+
     # ----- Constrained-decoding grammar --------------------------------
+
+    XGRAMMAR_FORMAT = "glm_4_7"
 
     @staticmethod
     def generate_tool_call_grammar(
         response_format_schema: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        backend: str = "xgrammar",
+        tool_choice: str | dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
-        """Generates a Lark grammar for GLM tool-call constrained decoding.
+        """Generates a tool-call constrained-decoding grammar for GLM.
 
-        Special tokens are referenced by ID (``<[N]>``) so multi-byte literal
-        matches don't trip llguidance. The envelope and ``<arg_key>``/
-        ``<arg_value>`` framing are always constrained, and the calls must end
-        on a turn-ender token (``<|observation|>``/``<|user|>``/
-        ``<|endoftext|>``) so the grammar closes instead of looping.
-
-        When a tool supplies a ``parameters`` schema, arguments are constrained
-        to it: ``<arg_key>`` is restricted to the declared property names,
-        ``required`` properties must appear, and each ``<arg_value>`` is
-        constrained to its property type — bare for strings (with ``enum`` /
-        ``pattern`` support), and via ``%json`` over the sub-schema for every
-        other type (numbers, booleans, nested objects/arrays, etc.). Tools with
-        no properties schema fall back to permissive (valid-structure) args.
-        When ``response_format_schema`` is provided an alternative JSON branch
-        matching the schema is added.
-
-        Not enforced for string values: ``maxLength`` / ``format`` (GLM strings
-        are bare, so JSON-schema string facets beyond ``pattern`` aren't
-        applied); numeric/object facets rely on ``%json`` coverage.
+        Returns a serialized xgrammar ``StructuralTag``. It frames the
+        ``<tool_call>func<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>``
+        envelope and constrains each call's arguments to that tool's JSON schema
+        using xgrammar's native ``glm_xml`` style (bare string values, JSON for
+        every other type). When ``response_format_schema`` is provided the tag
+        also accepts a schema-conforming JSON response as an alternative to a
+        tool call (mirroring the gemma4/kimi xgrammar paths).
 
         Args:
             response_format_schema: Optional JSON schema dict. When provided,
                 the grammar also accepts a JSON response matching the schema.
             tools: Optional list of OpenAI-style tool dicts. ``None`` accepts
                 any tool name.
-            tokenizer: Tokenizer used to resolve GLM special-token IDs.
-            **kwargs: Ignored (accepts ``backend``, ``tool_choice``, etc.).
+            tokenizer: Unused (the xgrammar tag references literal markers).
+            backend: Structured-output backend; must be ``"xgrammar"``.
+            tool_choice: ``"auto"``, ``"required"``, or a named choice.
+            **kwargs: Ignored (accepts future kwargs).
 
         Returns:
-            A Lark grammar string for the constrained-decoding backend.
+            The StructuralTag serialized as a JSON string.
         """
-        if tokenizer is None:
-            raise ValueError(
-                "tokenizer is required for GLM tool-call grammar generation"
+        if backend != "xgrammar":
+            raise InputError(
+                "GLM constrained tool calling requires the xgrammar "
+                "backend; run with --structured-output-backend=xgrammar."
             )
-
-        token_ids: dict[str, int] = {}
-        for token in _GRAMMAR_TOKENS:
-            tid = get_token_id(tokenizer, token)
-            if tid is None:
-                raise ValueError(
-                    f"GLM grammar generation could not resolve token {token!r}"
-                )
-            token_ids[token] = tid
-
-        tcs = resolve_lark_token_reference(token_ids[TOOL_CALL_OPEN])
-        tce = resolve_lark_token_reference(token_ids[TOOL_CALL_CLOSE])
-        aks = resolve_lark_token_reference(token_ids[ARG_KEY_OPEN])
-        ake = resolve_lark_token_reference(token_ids[ARG_KEY_CLOSE])
-        avs = resolve_lark_token_reference(token_ids[ARG_VALUE_OPEN])
-        ave = resolve_lark_token_reference(token_ids[ARG_VALUE_CLOSE])
-
-        # Resolve the turn-ender tokens that may follow the calls. Include only
-        # the ones present in this tokenizer's vocab.
-        end_refs = [
-            resolve_lark_token_reference(tid)
-            for tok in _TURN_END_TOKENS
-            if (tid := get_token_id(tokenizer, tok)) is not None
-        ]
-
-        tool_names = names_from_tools(tools)
-        tool_schemas = _extract_tool_schemas(tools) if tools else {}
-
-        schema_rules: list[str] = []
-        terminals = [
-            r"ARG_KEY: /[\s\S]+/",
-            r"ARG_VALUE: /[\s\S]*/",
-        ]
-        func_rule = ""
-
-        if tool_schemas:
-            # Schema-aware: each tool gets its own alternative constraining keys
-            # to the declared properties and each value to its property type.
-            # Tools without a properties schema keep the permissive ``arg*``.
-            alts: list[str] = []
-            for name in dict.fromkeys(tool_names or []):
-                esc = escape_for_lark_string(name)
-                schema = tool_schemas.get(name)
-                if schema is None:
-                    alts.append(f'{tcs} "{esc}" arg* {tce}')
-                    continue
-                body = _glm_args_rule(
-                    name, schema, aks, ake, avs, ave, schema_rules, terminals
-                )
-                alts.append(f'{tcs} "{esc}" {body} {tce}')
-            tool_call_rule = "tool_call: " + " | ".join(f"({a})" for a in alts)
-        elif tool_names:
-            name_alts = " | ".join(
-                f'"{escape_for_lark_string(n)}"' for n in tool_names
-            )
-            func_rule = f"func_name: {name_alts}"
-            tool_call_rule = f"tool_call: {tcs} func_name arg* {tce}"
-        else:
-            func_rule = "func_name: FUNC_NAME"
-            terminals.append(r"FUNC_NAME: /[^<\s][^<]*/")
-            tool_call_rule = f"tool_call: {tcs} func_name arg* {tce}"
-
-        # Require a turn-ender after the calls so the grammar closes
-        # deterministically (mirrors gemma4's ``tool_call+ (TURN_END | ...)``).
-        # Fall back to the bare ``tool_call+`` only if no turn-ender resolved.
-        if end_refs:
-            tool_calls_rule = "tool_calls: tool_call+ tool_calls_end"
-            tool_calls_end_rule = "tool_calls_end: " + " | ".join(end_refs)
-        else:
-            tool_calls_rule = "tool_calls: tool_call+"
-            tool_calls_end_rule = ""
-
-        rules = [
-            tool_calls_rule,
-            tool_calls_end_rule,
-            tool_call_rule,
-            f"arg: {aks} ARG_KEY {ake} {avs} ARG_VALUE {ave}",
-            func_rule,
-            *schema_rules,
-        ]
-        rule_lines = "\n".join(line for line in rules if line)
-        terminal_lines = "\n".join(line for line in terminals if line)
-        tool_grammar = f"\n{rule_lines}\n\n{terminal_lines}\n"
-
-        if response_format_schema is None:
-            return f"\nstart: tool_calls\n{tool_grammar}"
-
-        schema_with_opts = {
-            **response_format_schema,
-            "x-guidance": {"whitespace_pattern": ""},
-        }
-        schema_json = json.dumps(schema_with_opts, separators=(",", ":"))
-        return (
-            f"\nstart: tool_calls | json_response\n"
-            f"json_response: %json {schema_json}\n{tool_grammar}"
+        normalized_choice = tool_choice if tool_choice is not None else "auto"
+        return build_xgrammar_tool_grammar(
+            GlmToolParser.XGRAMMAR_FORMAT,
+            tools or [],
+            normalized_choice,
+            response_format_schema=response_format_schema,
         )

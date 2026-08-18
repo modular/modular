@@ -18,13 +18,13 @@ process creation, output capture, and resource cleanup automatically.
 """
 
 import std.sys._libc as libc
-from std.ffi import external_call, _CPointer
+from std.ffi import external_call
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
 from std.sys.info import CompilationTarget
 
-from std.memory import Span
+from std.collections import Span
 
 
 struct _POpenHandle:
@@ -50,7 +50,7 @@ struct _POpenHandle:
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the handle opened via popen."""
         _ = pclose(self._handle)
 
@@ -66,7 +66,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = _CPointer[c_char, MutUntrackedOrigin]()
+        var line = OptionalPointer[c_char, MutUntrackedOrigin]()
         var res = String()
 
         while True:
@@ -78,10 +78,12 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
+                from_utf8=Span(
+                    unsafe_ptr=line.value().unsafe_bitcast[Byte](), length=read
+                )
             )
 
-        libc.free(unsafe_cast[Type=NoneType](line))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](line))
         return String(res.rstrip())
 
 

@@ -63,7 +63,7 @@
 
 from std.collections import Set
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import max, min
 from std.random import rand, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
@@ -245,10 +245,13 @@ def _select_test_kernel[
 ](
     scores: TileTensor[score_type, ScoresLT, MutAnyOrigin],
     out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin],
-    num_blocks: Int,
-    k: Int,
+    num_blocks_dev: Int32,
+    k_dev: Int32,
 ):
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
+    # `Int` is not device-passable; widen the fixed-width args.
+    var num_blocks = Int(num_blocks_dev)
+    var k = Int(k_dev)
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
     var o_lt = out_idxs.to_layout_tensor()
@@ -277,7 +280,7 @@ def _fill_scores(
     contract: Bool,
 ):
     var n = num_rows * num_blocks
-    var span = Span(ptr=scores_host, length=n)
+    var span = Span(unsafe_ptr=scores_host, length=n)
     if contract:
         # contract oracle: heavy NaN/Inf/+-0/+-max coverage over every row.
         fill_with_specials(span, density=0.35)
@@ -367,8 +370,8 @@ def run_one_case(
     ctx.enqueue_function[kernel](
         scores_t,
         out_t,
-        num_blocks,
-        k,
+        Int32(num_blocks),
+        Int32(k),
         grid_dim=num_rows,
         block_dim=_snap_block_dim(spec.block_dim),
     )
@@ -527,8 +530,8 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         ctx.enqueue_function[kernel](
             scores_t,
             out_t,
-            num_blocks,
-            k,
+            Int32(num_blocks),
+            Int32(k),
             grid_dim=num_rows,
             block_dim=bd,
         )

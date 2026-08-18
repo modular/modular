@@ -47,8 +47,9 @@ exercised transitively by the kernel-level tests once FP8 is wired
 end-to-end.
 """
 
-from std.gpu import barrier, lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import lane_id, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_equal
 
@@ -313,7 +314,7 @@ def kernel_load_K_fp8[
     comptime _total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _total:
-        k_smem.ptr[i] = src_swz_ptr[i]
+        k_smem._storage[i] = src_swz_ptr[i]
         i += 64
     barrier()
 
@@ -538,7 +539,7 @@ def kernel_load_V_fp8[
     comptime _total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _total:
-        v_smem.ptr[i] = src_ptr[i]
+        v_smem._storage[i] = src_ptr[i]
         i += 64
     barrier()
 

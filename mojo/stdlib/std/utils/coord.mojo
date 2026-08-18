@@ -15,6 +15,7 @@
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.os import abort
 from std.reflection import reflect
+from std.collections import Array
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
 
@@ -298,10 +299,10 @@ struct Coord[*element_types: CoordLike](
     comptime static_product = _StaticProduct[*Self.element_types]
     """The product of all static dimensions, or -1 if any are dynamic."""
 
-    comptime rank = Self.element_types.size
+    comptime rank = Self.element_types.length
     """The number of top-level elements in this `Coord`."""
 
-    comptime flat_rank = _Flattened[*Self.element_types].size
+    comptime flat_rank = _Flattened[*Self.element_types].length
     """The total number of leaf elements after flattening nested `Coord`s."""
 
     comptime is_flat = Self.rank == Self.flat_rank
@@ -342,9 +343,31 @@ struct Coord[*element_types: CoordLike](
         self = type_of(self)()
 
         comptime for i in range(rank):
-            UnsafePointer(to=self[i]).unsafe_write(
+            Pointer(to=self[i]).write(
                 rebind[type_of(self[i])](Scalar[dtype](index_list[i]))
             )
+
+    def __init__[
+        rank: Int, dtype: DType
+    ](
+        out self: Coord[
+            *TypeList.splat[Trait=CoordLike, rank, Scalar[dtype]]()
+        ],
+        array: Array[Scalar[dtype], rank],
+    ):
+        """Construct an all-dynamic `Coord` from an `Array`.
+
+        Parameters:
+            rank: The number of elements in the array.
+            dtype: The data type of the array elements.
+
+        Args:
+            array: The `Array` to convert to a `Coord`.
+        """
+        self = type_of(self)()
+
+        comptime for i in range(rank):
+            Pointer(to=self[i]).write(rebind[type_of(self[i])](array[i]))
 
     @staticmethod
     @always_inline("nodebug")
@@ -369,7 +392,7 @@ struct Coord[*element_types: CoordLike](
         Returns:
             The number of elements in the tuple.
         """
-        return Self.element_types.size
+        return Self.element_types.length
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `Coord` to a writer.
@@ -646,7 +669,7 @@ struct Coord[*element_types: CoordLike](
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
-        comptime flat_size = FlatTypes.size
+        comptime flat_size = FlatTypes.length
 
         var flat_tuple: _RegTuple[*FlatTypes]
 
@@ -661,18 +684,16 @@ struct Coord[*element_types: CoordLike](
 
             comptime if FlatType.is_static_value:
                 # Compile-time known value
-                UnsafePointer(to=flat_tuple[i]).unsafe_write(
+                Pointer(to=flat_tuple[i]).write(
                     rebind[FlatType](ComptimeInt[FlatType.static_value]())
                 )
             else:
                 # Runtime value - use _get_flattened to get the value
                 var val = _get_flattened[i](self)
                 comptime if FlatType == Int:
-                    UnsafePointer(to=flat_tuple[i]).unsafe_write(
-                        rebind[FlatType](val)
-                    )
+                    Pointer(to=flat_tuple[i]).write(rebind[FlatType](val))
                 else:
-                    UnsafePointer(to=flat_tuple[i]).unsafe_write(
+                    Pointer(to=flat_tuple[i]).write(
                         rebind[FlatType](Scalar[FlatType.DTYPE](val))
                     )
 
@@ -706,7 +727,7 @@ struct Coord[*element_types: CoordLike](
 
         comptime for i in range(Self.__len__()):
             # Convert all elements to Scalar[dtype]
-            UnsafePointer(to=result[i]).unsafe_write(
+            Pointer(to=result[i]).write(
                 rebind[ResultTypes[i]](Scalar[dtype](self[i].value()))
             )
 
@@ -758,11 +779,9 @@ struct Coord[*element_types: CoordLike](
         comptime for i in range(Self.__len__()):
             comptime ResultType = ResultTypes[i]
             comptime if ResultType.is_static_value:
-                UnsafePointer(to=result[i]).unsafe_write(
-                    rebind[ResultType](self[i])
-                )
+                Pointer(to=result[i]).write(rebind[ResultType](self[i]))
             else:
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultType](Scalar[dtype](self[i].value()))
                 )
 
@@ -1041,14 +1060,12 @@ def idx2crd[
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx, shape_t[i], stride_t[i]
                 )
-                UnsafePointer(to=result[i]).unsafe_write(
-                    rebind[ResultTypes[i]](nested)
-                )
+                Pointer(to=result[i]).write(rebind[ResultTypes[i]](nested))
             elif (
                 Shape.ParamListType[i].is_static_value
                 and Shape.ParamListType[i].static_value == 1
             ):
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             else:
@@ -1056,12 +1073,12 @@ def idx2crd[
                 var shape_val = Int(shape_t[i].value())
                 var coord_val = _linear_idx_to_coord(idx, stride_val, shape_val)
 
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
-            UnsafePointer(to=result[0]).unsafe_write(
+            Pointer(to=result[0]).write(
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
@@ -1070,7 +1087,7 @@ def idx2crd[
             )
 
             comptime for i in range(shape_len):
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
@@ -1139,14 +1156,12 @@ def idx2crd[
                 var nested = idx2crd[out_dtype=out_dtype](
                     Int(idx.value()), shape_t[i], stride_t[i]
                 )
-                UnsafePointer(to=result[i]).unsafe_write(
-                    rebind[ResultTypes[i]](nested)
-                )
+                Pointer(to=result[i]).write(rebind[ResultTypes[i]](nested))
             elif (
                 Shape.ParamListType[i].is_static_value
                 and Shape.ParamListType[i].static_value == 1
             ):
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             elif (
@@ -1162,12 +1177,12 @@ def idx2crd[
                 var coord_val = _linear_idx_to_coord(
                     Int(idx.value()), stride_val, shape_val
                 )
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
-            UnsafePointer(to=result[0]).unsafe_write(
+            Pointer(to=result[0]).write(
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         elif (
@@ -1183,7 +1198,7 @@ def idx2crd[
             )
 
             comptime for i in range(shape_len):
-                UnsafePointer(to=result[i]).unsafe_write(
+                Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
@@ -1215,7 +1230,7 @@ def coord_to_index_list[
 
 @always_inline
 def dyn_coord[
-    dtype: DType, *element_types: Movable
+    dtype: DType, *element_types: Movable & Deinitable
 ](
     var values: Tuple[*element_types],
     out result: Coord[
@@ -1239,7 +1254,7 @@ def dyn_coord[
     result = {}
 
     comptime for i in range(type_of(values).__len__()):
-        UnsafePointer(to=result[i]).unsafe_write(
+        Pointer(to=result[i]).write(
             rebind[type_of(result[i])](Scalar[dtype](rebind[Int](values[i])))
         )
 
@@ -1331,7 +1346,7 @@ def _get_flattened_helper[
     comptime T = element_types[i]
 
     comptime if T.is_tuple:
-        comptime count = _Flattened[*T.ParamListType].size
+        comptime count = _Flattened[*T.ParamListType].length
 
         comptime if flat_idx >= current_offset and flat_idx < current_offset + count:
             return _get_flattened[flat_idx - current_offset](tuple[i].tuple())
@@ -1379,7 +1394,7 @@ comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
 comptime _IsNotTuplePredicate[T: CoordLike] = not T.is_tuple
 
-comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
+comptime _IsFlat[*element_types: CoordLike] = element_types.all[
     _IsNotTuplePredicate,
 ]()
 """True iff no element in the variadic is a tuple. Single-pass; lets
@@ -1387,9 +1402,7 @@ comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
 on the (typical) flat path."""
 
 
-comptime _AllStaticFlat[
-    *element_types: CoordLike
-] = element_types.all_satisfies[
+comptime _AllStaticFlat[*element_types: CoordLike] = element_types.all[
     _IsStaticPredicate,
 ]()
 
@@ -1402,9 +1415,7 @@ compile-time-known dim."""
 
 comptime _AllEqualPredicate[T1: AnyType, T2: type_of(T1)] = T1 == T2
 
-comptime _AllEqual[
-    T: AnyType, *element_types: AnyType
-] = element_types.all_satisfies[
+comptime _AllEqual[T: AnyType, *element_types: AnyType] = element_types.all[
     _AllEqualPredicate[T, _],
 ]()
 
@@ -1614,7 +1625,7 @@ comptime _Idx2CrdResultTypes[
     shape_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    shape_types.size,
+    shape_types.length,
     _Idx2CrdResultTabulator[
         out_dtype, idx_type, stride_types, shape_types, ...
     ],
@@ -1677,9 +1688,9 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         # Move each element into the tuple storage.
-        @parameter
+        @__parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).unsafe_write(elt)
+            Pointer(to=self[idx]).write(elt)
 
         args^.consume_elements[init_elt]()
 
@@ -1692,7 +1703,7 @@ struct _RegTuple[*element_types: CoordLike](
             The tuple length.
         """
 
-        comptime result = Self.element_types.size
+        comptime result = Self.element_types.length
         return result
 
     @always_inline("nodebug")
@@ -1718,16 +1729,14 @@ struct _RegTuple[*element_types: CoordLike](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(
-            to=self._mlir_value
-        )._get_kgen_pointer()
+        var storage_kgen_ptr = Pointer(to=self._mlir_value)._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
+            _type=Pointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __init__[*elt_types: CoordLike](out self: _RegTuple[*elt_types]):
@@ -1743,7 +1752,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).unsafe_write(elt_types[i]())
+            Pointer(to=self[i]).write(elt_types[i]())
 
     @always_inline("nodebug")
     def reverse(
@@ -1770,9 +1779,9 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            UnsafePointer(to=result[i]).unsafe_write(
+            Pointer(to=result[i]).write(
                 rebind[type_of(result[i])](
-                    self[Self.element_types.size - 1 - i]
+                    self[Self.element_types.length - 1 - i]
                 )
             )
 
@@ -1815,12 +1824,10 @@ struct _RegTuple[*element_types: CoordLike](
         comptime self_len = Self.__len__()
 
         comptime for i in range(self_len):
-            UnsafePointer(to=result[i]).unsafe_write(
-                rebind[type_of(result[i])](self[i])
-            )
+            Pointer(to=result[i]).write(rebind[type_of(result[i])](self[i]))
 
         comptime for i in range(type_of(other).__len__()):
-            UnsafePointer(to=result[self_len + i]).unsafe_write(
+            Pointer(to=result[self_len + i]).write(
                 rebind[type_of(result[self_len + i])](other[i])
             )
 
@@ -1874,7 +1881,7 @@ comptime _Multiply[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _MultiplyTabulator[Lhs, Rhs, ...],
 ]()
 
@@ -1925,7 +1932,7 @@ comptime _Divide[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _DivideTabulator[Lhs, Rhs, ...],
 ]()
 
@@ -1949,7 +1956,7 @@ comptime _CeilDiv[
     Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    Lhs.size,
+    Lhs.length,
     _CeilDivTabulator[Lhs, Rhs, ...],
 ]()
 

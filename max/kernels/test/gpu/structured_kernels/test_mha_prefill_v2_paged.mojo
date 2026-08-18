@@ -29,7 +29,7 @@ Shape: BATCH=1, SEQ_LEN=256, NUM_KEYS=512, page_size=128, 4 pages.
 depth tested at {64, 128}.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.utils import IndexList, StaticTuple
 

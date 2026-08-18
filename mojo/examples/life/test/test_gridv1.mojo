@@ -14,7 +14,7 @@
 from gridv1 import Grid
 from std.testing import assert_equal, TestSuite
 
-comptime data4x4 = [
+comptime data4x4: List[List[Int]] = [
     [0, 1, 1, 0],
     [1, 1, 0, 0],
     [0, 0, 1, 1],
@@ -23,7 +23,7 @@ comptime data4x4 = [
 
 
 def test_gridv1_init() raises:
-    grid = Grid(4, 4, materialize[data4x4]())
+    var grid = Grid(4, 4, materialize[data4x4]())
     assert_equal(4, grid.rows)
     assert_equal(4, grid.cols)
     for row in range(4):
@@ -31,7 +31,7 @@ def test_gridv1_init() raises:
 
 
 def test_gridv1_index() raises:
-    grid = Grid(4, 4, materialize[data4x4]())
+    var grid = Grid(4, 4, materialize[data4x4]())
     for row in range(4):
         for col in range(4):
             assert_equal(materialize[data4x4]()[row][col], grid[row, col])
@@ -42,34 +42,34 @@ def test_gridv1_index() raises:
 
 
 def test_gridv1_str() raises:
-    grid = Grid(4, 4, materialize[data4x4]())
-    grid_str = String(grid)
+    var grid = Grid(4, 4, materialize[data4x4]())
+    var grid_str = String(grid)
     var str4x4 = " ** \n**  \n  **\n*  *"
     assert_equal(str4x4, grid_str)
 
 
 def test_gridv1_evolve() raises:
-    data_gen2 = [
+    var data_gen2 = [
         [0, 0, 1, 0],
         [1, 0, 0, 0],
         [0, 0, 1, 0],
         [1, 0, 0, 0],
     ]
-    data_gen3 = [
+    var data_gen3 = [
         [0, 1, 0, 1],
         [0, 1, 0, 1],
         [0, 1, 0, 1],
         [0, 1, 0, 1],
     ]
 
-    grid_gen1 = Grid(4, 4, materialize[data4x4]())
+    var grid_gen1 = Grid(4, 4, materialize[data4x4]())
 
-    grid_gen2 = grid_gen1.evolve()
+    var grid_gen2 = grid_gen1.evolve()
     for row in range(4):
         for col in range(4):
             assert_equal(data_gen2[row][col], grid_gen2[row, col])
 
-    grid_gen3 = grid_gen2.evolve()
+    var grid_gen3 = grid_gen2.evolve()
     for row in range(4):
         for col in range(4):
             assert_equal(data_gen3[row][col], grid_gen3[row, col])

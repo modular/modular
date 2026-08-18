@@ -49,7 +49,7 @@ After all tiles:
 """
 
 from std.gpu import lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_almost_equal, assert_equal
 
@@ -375,7 +375,7 @@ def kernel_case4_subnormal(
 @always_inline
 def _logit_for_tile(t: Int) -> Float32:
     """Logit pattern for case 5; selected at runtime since the index is
-    iteration-driven. Using a flat function instead of an InlineArray
+    iteration-driven. Using a flat function instead of an Array
     sidesteps a constructor-overload picker mismatch in the test env."""
     if t == 0:
         return Float32(0.0)

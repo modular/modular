@@ -12,10 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
-from max.pipelines.diffusion.interface import (
-    DiffusionPipeline,
-    DiffusionPipelineOutput,
-)
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     BatchProcessorRuntime,
@@ -40,8 +36,14 @@ from .arch_config import (
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
+    GraphPipelineModel,
+    GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3PipelineModel,
+    ModuleV3PipelineModelWithKVCache,
+    MultiGraphPipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
@@ -59,12 +61,16 @@ __all__ = [
     "ArchVLConfigWithTextSubconfig",
     "BatchProcessor",
     "BatchProcessorRuntime",
-    "DiffusionPipeline",
-    "DiffusionPipelineOutput",
     "GenerateMixin",
+    "GraphPipelineModel",
+    "GraphPipelineModelWithKVCache",
     "ModelInputs",
     "ModelOutputs",
+    "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3PipelineModel",
+    "ModuleV3PipelineModelWithKVCache",
     "ModuleV3SingleReplicaBatchProcessor",
+    "MultiGraphPipelineModelWithKVCache",
     "PipelineModel",
     "PipelineModelWithKVCache",
     "RaggedBatchProcessor",
