@@ -39,6 +39,7 @@ from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 
 
 class Qwen3_5Attention(Module):
@@ -104,33 +105,26 @@ class Qwen3_5Attention(Module):
             multiply_before_cast=False,
         )
 
-        q_weight_dim = head_dim * num_attention_heads
-        kv_weight_dim = head_dim * num_key_value_heads
+        self.q_weight_dim = head_dim * num_attention_heads
+        self.kv_weight_dim = head_dim * num_key_value_heads
 
         # q_proj outputs 2x width when gated (query + gate)
-        self.q_proj = linear_cls(
+        self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dim=q_weight_dim * 2,  # 2x for query + gate
+            out_dims=[
+                self.q_weight_dim * 2,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=devices[0],
+            stacked=False,
             has_bias=has_bias,
-        )
-        self.k_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
-        )
-        self.v_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
+            linear_cls=linear_cls,
         )
         self.o_proj = linear_cls(
-            in_dim=q_weight_dim,
+            in_dim=self.q_weight_dim,
             out_dim=hidden_size,
             dtype=dtype,
             device=devices[0],
@@ -159,8 +153,16 @@ class Qwen3_5Attention(Module):
         """
         total_seq_len = x.shape[0]
 
-        # Q projection: produces [total_seq_len, n_heads * head_dim * 2]
-        q_out = self.q_proj(x)
+        qkv = self.qkv_proj(x)
+        q_out, key, value = ops.split(
+            qkv,
+            [
+                self.q_weight_dim * 2,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            axis=-1,
+        )
 
         # Split into query and gate.
         # The weight layout is interleaved per head:
@@ -186,10 +188,6 @@ class Qwen3_5Attention(Module):
             ),
             shape=[-1, self.n_heads * self.head_dim],
         )
-
-        # K, V projections
-        key = self.k_proj(x)
-        value = self.v_proj(x)
 
         # query is already [total_seq_len, n_heads, head_dim] from the reshape above
 
