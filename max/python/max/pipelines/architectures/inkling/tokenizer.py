@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.lib.tokenizer import resolve_single_special_token
 from transformers import AutoTokenizer
 
 from .model_config import InklingVisionConfig
@@ -25,10 +26,19 @@ from .processor import InklingProcessor, load_processor_config
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
+_THINKING_START_TOKEN = "<|content_thinking|>"
+_END_MESSAGE_TOKEN = "<|end_message|>"
+
 
 class InklingTokenizer(TextAndVisionTokenizer):
     """Tokenizer for Inkling, whose own ``AutoProcessor`` class is not shipped
-    with the checkpoint, so :class:`InklingProcessor` takes its place."""
+    with the checkpoint, so :class:`InklingProcessor` takes its place.
+
+    Also exposes Inkling's reasoning-delimiter ids, satisfying the
+    ``ReasoningPipelineTokenizer`` protocol that
+    ``OverlapTextGenerationPipeline`` requires of any architecture that names a
+    reasoning parser.
+    """
 
     def __init__(
         self,
@@ -69,3 +79,20 @@ class InklingTokenizer(TextAndVisionTokenizer):
             InklingVisionConfig.from_hf(huggingface_config.vision_config),
         )
         self.vision_token_ids = [self.processor.image_token_id]
+
+        self._reasoning_start_token_id: int = resolve_single_special_token(
+            self.delegate, _THINKING_START_TOKEN
+        )
+        self._reasoning_end_token_id: int = resolve_single_special_token(
+            self.delegate, _END_MESSAGE_TOKEN
+        )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Token id of ``<|content_thinking|>``."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Token id of ``<|end_message|>``."""
+        return self._reasoning_end_token_id
