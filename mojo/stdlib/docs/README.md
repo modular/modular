@@ -39,4 +39,4 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.
-- [docs.modular.com](https://docs.modular.com): All other developer docs.
+- [max.modular.com](https://max.modular.com): All other developer docs.
