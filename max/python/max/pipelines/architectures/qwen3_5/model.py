@@ -225,7 +225,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # Initialize per-request state cache for linear attention layers.
         # _num_linear_layers is populated by _build_graph, so this and the
         # slot-idx prealloc must run after it.
-        if self._num_linear_layers > 0:
+        if self._num_linear_layers > 0 and not is_virtual_device_mode():
             self._state_cache = GatedDeltaNetStateCache(
                 num_layers=self._num_linear_layers,
                 conv_dim=self._conv_dim,
@@ -237,14 +237,13 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 device=self.devices[0],
                 dtype=self._model_dtype,
             )
-            if not is_virtual_device_mode():
-                self._slot_idx_prealloc = Buffer(
-                    shape=[max_batch_size],
-                    dtype=DType.uint32,
-                    device=self.devices[0],
-                )
+            self._slot_idx_prealloc = Buffer(
+                shape=[max_batch_size],
+                dtype=DType.uint32,
+                device=self.devices[0],
+            )
 
-        if self._vision_state_dict is not None:
+        if self._vision_state_dict is not None and not is_virtual_device_mode():
             # Pre-allocate empty vision input buffers for the LM graph so that
             # buffers() always returns the correct input count for CUDA graph capture.
             self._empty_lm_image_embeddings = Buffer.zeros(
