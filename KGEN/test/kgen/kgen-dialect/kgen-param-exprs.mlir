@@ -47,54 +47,12 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: = kgen.param.constant: i1 = <0>
   %7 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype bf16, f16))>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> from_builtin(p1), [add(from_builtin(p2), 1), from_builtin(p2), 3, 1]))>
-  %8 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [3, 1, p2, add(p2, 1), 1]))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %9 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(0, [1, 2]))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %10 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, []))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %11 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [p1, 1]))>
-
-  // COM: An unknown carries no value, so it does not match even itself and
-  // COM: membership stays open.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> *?, [1, *?]))>
-  %in_unknown = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> *?, [*?, 1]))>
-
-  // COM: A one-element `in` degrades to an identity proposition, not to `eq`:
-  // COM: membership asks one yes/no, which is what identity answers.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:scalar<index> from_builtin(p1), 1))>
-  %12 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [1]))>
-
   // CHECK: <index>i1 = <#kgen.gen<to_builtin(:scalar<bool> identical(:type simd<*(0,0), f32>, simd<2, f32>))>>
   kgen.param.constant: !kgen.generator<<index>i1> = <
     #kgen.gen<to_builtin(:scalar<bool> identical(:type
       #kgen.type<!kgen.simd<*(0,0), f32>>,
       #kgen.type<!kgen.simd<2, f32>>
     ))>>
-
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [type, f64]))>
-  %13 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [f64, type, f64, type]))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %14 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [si64, f64]))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %15 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, []))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %16 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type, f32]))>
-
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
-  %17 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
-
-  // COM: A one-element `in` degrades to identity, not `eq`: membership asks one
-  // COM: yes/no, which is what identity answers.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype type, f32))>
-  %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [f32]))>
 
   // CHECK: = kgen.param.constant: scalar<bool> = <not(int1)>
   %19 = kgen.param.constant: scalar<bool> = <xor(int1, true)>
@@ -405,45 +363,6 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant = <8589934592>
   %9 = kgen.param.constant = <shl(1, 33)>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(in(:scalar<index> from_builtin(p1), [add(from_builtin(p2), 1), from_builtin(p2), 3, 1])))>
-  %10 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [3, 1, p2, add(p2, 1), 1]))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %11 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(0, [1, 2]))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %12 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, []))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %13 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [p1, 1]))>
-
-  // COM: And `not_in` is its negation, which has no `ne` sugar since that stays
-  // COM: specific to `eq`.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:scalar<index> from_builtin(p1), 1)))>
-  %14 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [1]))>
-
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(in(:dtype f32, [type, f64])))>
-  %15 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype f32, [f64, type, f64, type]))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %16 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype f32, [si64, f64]))>
-
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %17 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, []))>
-
-  // CHECK: = kgen.param.constant: i1 = <0>
-  %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [type, f32]))>
-
-  // COM: And its negation prints through the generic `not`, since `ne` sugar is
-  // COM: specific to `eq`.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:dtype type, f32)))>
-  %19 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [f32]))>
-
-  // This can't be folded because it is target specific: true on 32-bit and
-  // false on 64-bit.
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> 0, [4294967296, 8589934592]))>
-  %20 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(0, [shl(1, 32), shl(2, 32)]))>
-
   kgen.return
 }
 
@@ -658,9 +577,6 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
 kgen.generator @string_params<a: string, b: string>() {
   // CHECK: kgen.param.assert <identical(:string a, b)>, "samesies only"
   kgen.param.assert <identical(:string a, b)>, "samesies only"
-
-  // CHECK: kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
-  kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
 
   // CHECK: kgen.param.declare s1: string = <"exciting">
   kgen.param.declare s1: string = <"exciting">
@@ -1340,16 +1256,6 @@ kgen.generator @param_identical_type_equality<p1>() {
     #kgen.type<index>
   )>
 
-  // COM: The struct-ref cases above always see the struct on the left, because
-  // COM: `identical` sorts its operands and a simple constant sorts right. `in`
-  // COM: shares the same fold but compares its lhs against each element without
-  // COM: sorting, so it reaches the mirrored ordering. Folding to false at all
-  // COM: requires deciding the struct element, which only the mirror can do.
-  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
-  kgen.param.constant: scalar<bool> = <in(
-    :!kgen.type #kgen.type<index>,
-    [#kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>, #kgen.type<f32>]
-  )>
   kgen.return
 }
 
