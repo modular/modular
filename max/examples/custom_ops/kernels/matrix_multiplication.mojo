@@ -1126,7 +1126,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     comptime WM = 32
                     comptime WN = WARP_SIZE
                     # different MMA shapes for AMD and NVIDIA, see:
-                    # https://mojolang.org/docs/layout/tensor_core/TensorCore/
+                    # https://max.modular.com/api/mojo/layout/tensor_core/TensorCore/
                     comptime MMA_M = 16
                     comptime MMA_N = 16 if has_amd_gpu_accelerator() else 8
                     comptime MMA_K = 4

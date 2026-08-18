@@ -81,7 +81,7 @@ everything works.
   weird sigils all over the place. They can generally ignore RP until (and if)
   they get advanced enough to know about performance. When they do, they can
   have a single decorator that
-  [can be googled and is documented](https://docs.modular.com/mojo/manual/decorators/register-passable/)
+  [can be googled and is documented](https://mojolang.org/docs/manual/decorators/register-passable/)
   rather than trying to figure out what
   [C++ `&&` means when in an argument list](https://learn.microsoft.com/en-us/cpp/cpp/rvalue-reference-declarator-amp-amp?view=msvc-170).
 
