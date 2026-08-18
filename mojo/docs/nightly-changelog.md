@@ -153,6 +153,8 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example
   `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
