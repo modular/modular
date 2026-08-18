@@ -118,6 +118,11 @@ This version is still a work in progress.
   `Movable`. Both operands are consumed and their elements are moved into the
   new array, whose length is the sum of the operands' lengths.
 
+- `Array` now supports repetition with the `*` operator when its type `T` is
+  `Copyable` and the multiplier is an integer literal. The array is consumed:
+  its elements are copied into all but the last repetition and moved into the
+  last one.
+
 - Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
   `is_trivially_deletable()` in `std.memory` in favor of
   `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and
