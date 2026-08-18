@@ -131,18 +131,25 @@ class QuantizedLinear(nn.Module):
             name="weight",
             # The DType must be uint8.
             dtype=DType.uint8,
-            # This shape must be updated to match the quantized shape
-            shape=[in_dim, out_dim],
+            # qmatmul expects the transposed weight, so the shape is
+            # [out_dim, in_dim] rather than [in_dim, out_dim].
+            shape=[out_dim, in_dim],
             device=DeviceRef.CPU(),
             quantization_encoding=quantization_encoding,
         )
-        self.bias = Weight(name="bias", dtype=DType.float32, shape=[out_dim])
+        self.bias = Weight(
+            name="bias",
+            dtype=DType.float32,
+            shape=[out_dim],
+            device=DeviceRef.CPU(),
+        )
 
     def __call__(self, x):
         return ops.qmatmul(
             self.weight.quantization_encoding, None, x, self.weight.to(x.device)
-        ) + bias.to(x.device)
+        ) + self.bias.to(x.device)
 
+in_dim, out_dim = 64, 32
 quantized_linear = QuantizedLinear(in_dim, out_dim, QuantizationEncoding.Q4_0)
 ```
 
