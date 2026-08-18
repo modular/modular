@@ -53,6 +53,8 @@ struct MaybeUninit[T: AnyType](
     `MaybeUninit[T]` helps enable low level code deal with uninitialized data.
 
     ```mojo
+    from std.memory import MaybeUninit
+
     # The compiler knows `uninit` may contain uninitialized data, so it
     # makes no assumptions.
     var uninit = MaybeUninit[Int]()
@@ -65,6 +67,8 @@ struct MaybeUninit[T: AnyType](
     However, improper usage of this type can lead to undefined behavior:
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[Int]()
     # Undefined Behavior: reading uninitialized memory 👻
     print(uninit.unsafe_assume_init())
@@ -165,14 +169,19 @@ struct MaybeUninit[T: AnyType](
     `Deinitable`.
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[String]()
-    # error: `uninit` abandoned without being explicitly destroyed
+    # Error if never consumed: `uninit` abandoned without being destroyed
+    uninit^.unsafe_forget()
     ```
 
     Use `unsafe_deinit()` when the storage contains a live `T` whose
     deinitializer must run.
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[String]()
     uninit.unsafe_write("hello")
     # SAFETY: `uninit` contains a live `String`.
@@ -182,6 +191,8 @@ struct MaybeUninit[T: AnyType](
     Use `unsafe_forget()` when the storage does not contain a live `T`:
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[String]()
     # SAFETY: Nothing was ever written into the storage, so there is no `String`
     # to destroy.
@@ -193,17 +204,24 @@ struct MaybeUninit[T: AnyType](
     moved:
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[String]()
     uninit.unsafe_write("hello")
     var moved = uninit^ # OK: `String` is trivially movable.
+    # SAFETY: `moved` now holds the live `String`.
+    moved^.unsafe_deinit()
     ```
 
     However, `String` is not trivially copyable so `MaybeUninit[String]` is not
     `ImplicitlyCopyable`. Copying it implicitly is a compile-time error.
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[String]()
-    var copy = uninit # error: `MaybeUninit[String]` is not `ImplicitlyCopyable`
+    # var copy = uninit  # Error: MaybeUninit[String] is not ImplicitlyCopyable
+    uninit^.unsafe_forget()
     ```
 
     For types such as `Int` that are trivially movable, copyable, and
@@ -211,6 +229,8 @@ struct MaybeUninit[T: AnyType](
     `MaybeUninit[Int]` behaves like an ordinary trivial value.
 
     ```mojo
+    from std.memory import MaybeUninit
+
     var uninit = MaybeUninit[Int]()
     var copy = uninit # OK: Int is trivially copyable
     var moved = uninit^ # OK: Int is trivially movable
