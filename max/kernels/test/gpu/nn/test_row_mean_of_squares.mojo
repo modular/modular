@@ -13,7 +13,7 @@
 
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import row_mean_of_squares
 from std.testing import assert_almost_equal
@@ -49,22 +49,24 @@ def run_row_mean_of_squares_gpu[
     ctx.enqueue_copy(data_d, data_h)
 
     @always_inline
-    @__copy_capture(data_buf)
-    @parameter
     def input_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
+    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[in_dtype, width]:
         var idx = data_buf.layout(Coord(coords))
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
-    @__copy_capture(out_buf)
-    @parameter
-    def output_fn(row: Int, val: Scalar[out_dtype]) -> None:
-        var idx = out_buf.layout(Coord(Index(row, 0)))
-        out_buf.raw_store[width=1](idx, val)
+    def output_fn[
+        width: SIMDLength, rank: Int
+    ](coords: IndexList[rank], val: SIMD[out_dtype, width]) {
+        var out_buf
+    } -> None:
+        var idx = out_buf.layout(Coord(Index(coords[0], 0)))
+        out_buf.raw_store[width=width](idx, val)
 
-    row_mean_of_squares[input_fn, output_fn, target="gpu"](shape, ctx)
+    row_mean_of_squares[in_dtype, out_dtype, 2, target="gpu"](
+        input_fn, output_fn, shape, ctx
+    )
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
 
@@ -91,6 +93,14 @@ def main() raises:
         run_row_mean_of_squares_gpu[DType.bfloat16](ctx, 16, 1537)
         # A column count larger than one block can cover (grid-stride loop).
         run_row_mean_of_squares_gpu[DType.bfloat16](ctx, 4, 8192)
+        # Few rows + a row size past `_SPLITK_MIN_ROW` (32768): exercises the
+        # inner-axis split-K tier now that `supports_tiled` no longer blocks
+        # it here. float32's narrower SIMD width also clears `_SPLITK_MAX_SIMD`
+        # (bf16's wider natural width does not, so it stays on block/warp).
+        run_row_mean_of_squares_gpu[DType.bfloat16](ctx, 4, 65536)
+        run_row_mean_of_squares_gpu[DType.float32](
+            ctx, 4, 65536, rtol=1e-6, atol=1e-6
+        )
 
         # float32 must also be accepted (tighter tolerance).
         run_row_mean_of_squares_gpu[DType.float32](

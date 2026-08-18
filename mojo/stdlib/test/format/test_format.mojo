@@ -90,14 +90,13 @@ def test_write_sequence_to_with_element_fn_counter() raises:
 
     var count = 0
 
-    @parameter
-    def write_numbers[T: Writer](mut w: T) raises StopIteration:
+    def write_numbers[T: Writer](mut w: T) raises StopIteration {mut count}:
         if count >= 3:
             raise StopIteration()
         w.write(count)
         count += 1
 
-    write_sequence_to[ElementFn=write_numbers](output)
+    write_sequence_to(output, write_numbers)
     assert_equal(output, "[0, 1, 2]")
 
     _ = count
@@ -108,11 +107,10 @@ def test_write_sequence_to_empty_sequence() raises:
     """
     var output = String()
 
-    @parameter
-    def write_nothing[T: Writer](mut w: T) raises StopIteration:
+    def write_nothing[T: Writer](mut w: T) raises StopIteration {}:
         raise StopIteration()
 
-    write_sequence_to[ElementFn=write_nothing](output)
+    write_sequence_to(output, write_nothing)
     assert_equal(output, "[]")
 
 
@@ -122,14 +120,13 @@ def test_write_sequence_to_single_element() raises:
 
     var written = False
 
-    @parameter
-    def write_once[T: Writer](mut w: T) raises StopIteration:
+    def write_once[T: Writer](mut w: T) raises StopIteration {mut written}:
         if written:
             raise StopIteration()
         w.write("only")
         written = True
 
-    write_sequence_to[ElementFn=write_once](output)
+    write_sequence_to(output, write_once)
     assert_equal(output, "[only]")
 
     _ = written
@@ -141,16 +138,13 @@ def test_write_sequence_to_custom_delimiters() raises:
 
     var index = 0
 
-    @parameter
-    def write_items[T: Writer](mut w: T) raises StopIteration:
+    def write_items[T: Writer](mut w: T) raises StopIteration {mut index}:
         if index >= 3:
             raise StopIteration()
         w.write("item", index)
         index += 1
 
-    write_sequence_to[ElementFn=write_items](
-        output, start="{", end="}", sep="; "
-    )
+    write_sequence_to(output, write_items, start="{", end="}", sep="; ")
     assert_equal(output, "{item0; item1; item2}")
 
     _ = index
@@ -199,7 +193,7 @@ def test_format_long_strings_simd_boundaries() raises:
     """
 
     # Helper: build a string of 'x' repeated `n` times.
-    fn pad(n: Int) -> String:
+    def pad(n: Int) -> String:
         return String("x") * n
 
     # --- Braces at boundary positions (15, 16, 31, 32, 63, 64) ---

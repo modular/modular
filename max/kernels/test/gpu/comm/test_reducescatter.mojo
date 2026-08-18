@@ -26,7 +26,7 @@ from comm.reducescatter import (
     elementwise_epilogue_type,
 )
 from internal_utils._testing import test_value_for_gpu_element
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
@@ -134,7 +134,7 @@ def reducescatter_test[
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -190,7 +190,7 @@ def reducescatter_test[
         )
     )
     comptime num_input_bufs = 1 if use_multimem else ngpus
-    var in_bufs = InlineArray[InputTileType, num_input_bufs](uninitialized=True)
+    var in_bufs = Array[InputTileType, num_input_bufs](uninitialized=True)
 
     comptime if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -250,12 +250,12 @@ def reducescatter_test[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_bufs)
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: SIMDSize,
+        _width: SIMDLength,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -419,7 +419,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -505,10 +505,8 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
 
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
-        var group_in_bufs = InlineArray[InputTileType, group_size](
-            uninitialized=True
-        )
-        var group_rank_sigs = InlineArray[
+        var group_in_bufs = Array[InputTileType, group_size](uninitialized=True)
+        var group_rank_sigs = Array[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](uninitialized=True)
 
@@ -574,7 +572,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     _ = host_in^
 
 
-@parameter
+@__parameter
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
@@ -588,9 +586,9 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_1d_lengths)),
         range(2),
     ):
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime ngpus = test_gpu_counts[ngpus_idx]
-        comptime length = test_1d_lengths[length_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
+        comptime length = rebind[Int](test_1d_lengths[length_idx])
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:
@@ -624,10 +622,14 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_2d_shapes)),
         range(2),
     ):
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime ngpus = test_gpu_counts[ngpus_idx]
-        comptime M = test_2d_shapes[shape_idx][0]
-        comptime D = test_2d_shapes[shape_idx][1]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
+        comptime M = rebind[type_of(test_2d_shapes[0])](
+            test_2d_shapes[shape_idx]
+        )[0]
+        comptime D = rebind[type_of(test_2d_shapes[0])](
+            test_2d_shapes[shape_idx]
+        )[1]
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:

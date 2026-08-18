@@ -47,7 +47,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, Module, SubgraphInput
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE, make_concatenated_gated_activation_fn
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -65,31 +65,6 @@ from max.nn.transformer.distributed_transformer import (
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
 from .model_config import Step3p5Config
-
-
-def _unpack_kv_collections(
-    kv_collections: Sequence[PagedCacheValues],
-) -> tuple[
-    list[BufferValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-]:
-    """Split ``PagedCacheValues`` into flat tensor lists for subgraph inputs."""
-    return (
-        [kv.kv_blocks for kv in kv_collections],
-        [kv.cache_lengths for kv in kv_collections],
-        [kv.lookup_table for kv in kv_collections],
-        [kv.max_prompt_length for kv in kv_collections],
-        [kv.max_cache_length for kv in kv_collections],
-        [
-            kv.attention_dispatch_metadata
-            for kv in kv_collections
-            if kv.attention_dispatch_metadata is not None
-        ],
-    )
 
 
 class ParallelismMode(Enum):
@@ -373,33 +348,11 @@ class Step3p5TransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_prompt_lengths: list[TensorValue],
-        kv_max_cache_lengths: list[TensorValue],
-        dispatch_metadata_tensors: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
-        num_devices = len(kv_blocks)
-        kv_collections = [
-            PagedCacheValues(
-                kv_blocks=kv_blocks[i],
-                cache_lengths=kv_cache_lengths[i],
-                lookup_table=kv_lookup_table[i],
-                max_prompt_length=kv_max_prompt_lengths[i],
-                max_cache_length=kv_max_cache_lengths[i],
-                attention_dispatch_metadata=(
-                    dispatch_metadata_tensors[i]
-                    if dispatch_metadata_tensors
-                    else None
-                ),
-            )
-            for i in range(num_devices)
-        ]
-
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -839,28 +792,14 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        (
-            kv_blocks,
-            kv_cache_lengths,
-            kv_lookup_table,
-            kv_max_prompt_lengths,
-            kv_max_cache_lengths,
-            dispatch_metadata_tensors,
-        ) = _unpack_kv_collections(kv_collections)
-
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            values: list[Value[Any] | Sequence[Value[Any]]] = [
+        ) -> list[SubgraphInput]:
+            values: list[SubgraphInput] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 hs,
                 signal_buffers,
-                kv_blocks,
-                kv_cache_lengths,
-                kv_lookup_table,
-                kv_max_prompt_lengths,
-                kv_max_cache_lengths,
-                dispatch_metadata_tensors,
+                kv_collections,
                 per_layer_freqs[idx],
                 input_row_offsets_list,
             ]

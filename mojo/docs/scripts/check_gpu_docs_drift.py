@@ -54,12 +54,12 @@ REQUIREMENTS_MDX = DOCS_DIR / "requirements.mdx"
 # Entries to skip — not real hardware GPUs
 SKIP_NAMES = {"NoGPU", "YourGPU", "Your GPU"}
 
-# Vendor enum values -> canonical vendor names
+# GPUInfo.api values -> canonical vendor names
 VENDOR_MAP = {
-    "Vendor.NVIDIA_GPU": "NVIDIA",
-    "Vendor.AMD_GPU": "AMD",
-    "Vendor.APPLE_GPU": "Apple",
-    "Vendor.NO_GPU": "none",
+    "cuda": "NVIDIA",
+    "hip": "AMD",
+    "metal": "Apple",
+    "none": "none",
 }
 
 
@@ -102,16 +102,8 @@ def parse_info_mojo(path: Path) -> list[dict]:
             m = re.search(rf'{field_name}\s*=\s*"([^"]*)"', body)
             return m.group(1) if m else None
 
-        def extract_field_unquoted(
-            field_name: str, body: str = body
-        ) -> str | None:
-            m = re.search(rf"{field_name}\s*=\s*(\S+)", body)
-            if m:
-                return m.group(1).rstrip(",")
-            return None
-
         name = extract_field("name")
-        vendor = extract_field_unquoted("vendor")
+        api = extract_field("api")
         arch_name = extract_field("arch_name")
         version = extract_field("version")
 
@@ -120,7 +112,7 @@ def parse_info_mojo(path: Path) -> list[dict]:
                 {
                     "alias": alias,
                     "name": name,
-                    "vendor": VENDOR_MAP.get(vendor, vendor or "unknown"),
+                    "vendor": VENDOR_MAP.get(api, api or "unknown"),
                     "arch_name": arch_name or "",
                     "version": version or "",
                 }

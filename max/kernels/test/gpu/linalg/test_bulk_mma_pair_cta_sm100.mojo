@@ -22,14 +22,14 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
     block_idx,
@@ -37,14 +37,14 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.memory import external_memory
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive_multicast,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -103,8 +103,10 @@ def bulk_mma_pair_cta_kernel[
     a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime cta_group = 2
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -167,8 +169,8 @@ def bulk_mma_pair_cta_kernel[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -191,7 +193,7 @@ def bulk_mma_pair_cta_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # Build descriptors for the accumulator (MMASmemDescriptorPair)
     comptime a_canonical_layout = tile_to_descriptor[ab_type, a_smem_layout]()
@@ -209,10 +211,10 @@ def bulk_mma_pair_cta_kernel[
         ab_type
     ]()
 
-    adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -398,9 +400,11 @@ def bulk_mma_pair_cta_ts_kernel[
     a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
     """TS pair-CTA kernel: A from TMEM (via tcgen05_cp), B from SMEM."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime cta_group = 2
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -462,8 +466,8 @@ def bulk_mma_pair_cta_ts_kernel[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -486,7 +490,7 @@ def bulk_mma_pair_cta_ts_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # A in TMEM: BK//2 u32 columns (each u32 = 2 packed bf16).
     comptime A_TMEM_COLS = BK // 2
@@ -504,7 +508,7 @@ def bulk_mma_pair_cta_ts_kernel[
         ab_type
     ]()
 
-    bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -610,7 +614,7 @@ def bulk_mma_pair_cta_ts_kernel[
         # Compute the M-part of the offset once (invariant across K).
         var m_offset = (a_row % 8) * sw_K + (a_row // 8) * (8 * sw_K)
 
-        var a_data = InlineArray[Scalar[DType.float32], BK](uninitialized=True)
+        var a_data = Array[Scalar[DType.float32], BK](uninitialized=True)
         comptime for j in range(BK):
             var base = m_offset + (j % sw_K) + (j // sw_K) * outer_k_stride
             a_data[j] = a_smem[sw(base)].cast[DType.float32]()
@@ -775,10 +779,10 @@ def test_bulk_mma_pair_cta[
     var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -812,7 +816,7 @@ def test_bulk_mma_pair_cta[
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
                 align_up(N // BN // cta_group, Int(cluster_shape[1])),
@@ -845,7 +849,7 @@ def test_bulk_mma_pair_cta[
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
                 align_up(N // BN // cta_group, Int(cluster_shape[1])),
@@ -886,8 +890,8 @@ def test_bulk_mma_pair_cta[
 
     ctx.synchronize()
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
+    var c_host = c.tensor()
+    var c_host_ref = c_ref.tensor()
 
     for m in range(M):
         for n in range(N):

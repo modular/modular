@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
@@ -70,6 +69,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
         grid_dim=(4),
         block_dim=(1),
     )
+    ctx.synchronize()
     assert_true(check_state, "Inconsistent values in shared memory")
 
 

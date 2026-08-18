@@ -15,25 +15,35 @@
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from max.experimental.cascade.pipelines.textgen import (
+from fastapi.responses import StreamingResponse
+from max.experimental.cascade.core import Runtime
+from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
     GenerateRequest,
     TextGenInterface,
 )
+from max.experimental.cascade.serve.openai_chat_pipeline import (
+    OpenAIChatCompletionPipeline,
+)
 from max.serve.schemas.openai import (
     ChatCompletionResponseChoice,
     ChatCompletionResponseMessage,
-    ChatCompletionStreamResponseChoice,
-    ChatCompletionStreamResponseDelta,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse,
 )
-from sse_starlette.sse import EventSourceResponse
+
+
+def _convert_stop(stop: str | Sequence[str] | None) -> list[str] | None:
+    """Normalize the OpenAI ``stop`` field into a list of strings."""
+    if stop is None:
+        return None
+    if isinstance(stop, str):
+        return [stop]
+    return list(stop)
 
 
 def _normalize_message_content(
@@ -63,40 +73,29 @@ def _normalize_message_content(
     return "".join(text_parts)
 
 
-async def _stream_response(
-    response: AsyncIterable[str],
-    model: str,
-) -> AsyncIterator[str]:
-    async for text_chunk in response:
-        chunk = CreateChatCompletionStreamResponse(
-            id="chatcmpl-cascade",
-            created=int(time.time()),
-            model=model,
-            object="chat.completion.chunk",
-            choices=[
-                ChatCompletionStreamResponseChoice(
-                    index=0,
-                    delta=ChatCompletionStreamResponseDelta(
-                        content=text_chunk,
-                    ),
-                    finish_reason=None,
-                )
-            ],
-        )
-        yield chunk.model_dump_json()
-    yield "[DONE]"
-
-
-def build_router(
+async def build_router(
     pipeline: TextGenInterface,
+    runtime: Runtime,
 ) -> APIRouter:
-    """Build OpenAI-style chat-completion routes for a pipeline."""
+    """Build OpenAI-style chat-completion routes for a text generator.
+
+    The routes pair ``pipeline`` with an :class:`OpenAIChatCompletionPipeline`
+    so the per-token SSE serialization runs on the CPU worker pool instead of
+    the API event loop. That wrapper is an implementation detail of this
+    adapter, so callers hand over a plain :class:`TextGenInterface`.
+
+    ``runtime`` is the one ``pipeline`` is already deployed on; only the
+    wrapper's own formatter worker is deployed here.
+    """
+    chat = OpenAIChatCompletionPipeline(pipeline)
+    await chat.deploy(runtime)
+
     router = APIRouter()
 
     @router.post("/v1/chat/completions", response_model=None)
     async def chat_completions(
         request: CreateChatCompletionRequest,
-    ) -> CreateChatCompletionResponse | EventSourceResponse:
+    ) -> CreateChatCompletionResponse | StreamingResponse:
         messages: ChatMessages = [
             {
                 "role": message.get("role", ""),
@@ -106,19 +105,51 @@ def build_router(
             }
             for message in request.messages
         ]
+        # Forward every request-configurable text-gen field OpenAI exposes.
+        # The passthrough fields share ``GenerateRequest``'s ``None`` defaults,
+        # so forwarding them verbatim leaves unset ones on the model default.
         req = GenerateRequest(
             ignore_eos=request.ignore_eos,
+            top_k=request.top_k,
+            top_p=request.top_p,
+            min_p=request.min_p,
+            thinking_temperature=request.thinking_temperature,
+            seed=request.seed,
+            frequency_penalty=request.frequency_penalty,
+            presence_penalty=request.presence_penalty,
+            repetition_penalty=request.repetition_penalty,
+            stop=_convert_stop(request.stop),
+            stop_token_ids=request.stop_token_ids,
         )
-        if request.max_tokens is not None:
-            req.num_tokens = request.max_tokens
-        response = pipeline.generate_text(req, messages)
-
+        # Fields whose ``GenerateRequest`` default differs from "unset" are only
+        # overridden when the client supplies a value. ``max_completion_tokens``
+        # supersedes the legacy ``max_tokens``.
+        max_new_tokens = (
+            request.max_completion_tokens
+            if request.max_completion_tokens is not None
+            else request.max_tokens
+        )
+        if max_new_tokens is not None:
+            req.num_tokens = max_new_tokens
+        if request.min_tokens is not None:
+            req.min_new_tokens = request.min_tokens
+        if request.temperature is not None:
+            req.temperature = request.temperature
         if request.stream:
-            return EventSourceResponse(
-                _stream_response(response, model=request.model),
+            # The wrapper emits fully-framed OpenAI SSE bytes (formatting is
+            # offloaded to a worker), so the route just forwards them.
+            return StreamingResponse(
+                chat.stream_chat_sse(
+                    req,
+                    messages,
+                    request.model,
+                    "chatcmpl-cascade",
+                    int(time.time()),
+                ),
+                media_type="text/event-stream",
             )
 
-        chunks = [chunk async for chunk in response]
+        chunks = [chunk async for chunk in chat.generate_text(req, messages)]
         return CreateChatCompletionResponse(
             id="chatcmpl-cascade",
             created=int(time.time()),

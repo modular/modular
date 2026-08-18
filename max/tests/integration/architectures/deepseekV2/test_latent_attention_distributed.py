@@ -144,8 +144,8 @@ def _single_gpu_baseline(
     # Reserve 1 request
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -167,7 +167,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
         kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         tok = (
             Buffer.from_numpy(
@@ -179,7 +179,8 @@ def _single_gpu_baseline(
         out = compiled.execute(tok, row_off.to(device0), *kv_inputs)
 
         ctx.update(42)
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]
@@ -364,8 +365,8 @@ def _run_distributed_dp(
     seq_len = total_tokens if use_prefill else 1
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
-        kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx)
+        kv_manager.claim(ctx, replica_idx=replica_idx)
+        kv_manager.alloc(ctx)
         batch.append(ctx)
     batches_by_replica = [[ctx] for ctx in batch]
 
@@ -397,7 +398,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=replica_idx)
+            kv_manager.alloc(ctx)
         fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
@@ -418,7 +419,9 @@ def _run_distributed_dp(
         # Advance contexts
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batches_by_replica)
+        for replica_batch in batches_by_replica:
+            for ctx in replica_batch:
+                kv_manager.step(ctx)
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]

@@ -22,8 +22,8 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major, coord_to_index_list
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
@@ -36,16 +36,16 @@ from std.utils.index import Index
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
 ]
 
 
-@parameter
+@__parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
@@ -182,12 +182,12 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device, m, n)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

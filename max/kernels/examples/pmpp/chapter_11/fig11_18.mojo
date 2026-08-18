@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import thread_idx, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
@@ -64,7 +64,7 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = stack_allocation[
+    var warp_sums_s = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
         address_space=AddressSpace.SHARED,
@@ -112,7 +112,7 @@ def inter_block_scan(
         Sum from all previous blocks.
     """
     # Allocate shared memory for previous block's partial sum
-    var prev_block_partial_sum_s = stack_allocation[
+    var prev_block_partial_sum_s = unsafe_stack_allocation[
         1,
         Float32,
         address_space=AddressSpace.SHARED,
@@ -159,7 +159,7 @@ def scan_kernel(
         N: Number of elements.
     """
     # Assign block index dynamically
-    var bid_s = stack_allocation[
+    var bid_s = unsafe_stack_allocation[
         1,
         UInt32,
         address_space=AddressSpace.SHARED,
@@ -173,7 +173,7 @@ def scan_kernel(
     var block_segment = Int(bid) * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory for buffer
-    var buffer_s = stack_allocation[
+    var buffer_s = unsafe_stack_allocation[
         COARSE_FACTOR * BLOCK_DIM,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -200,7 +200,7 @@ def scan_kernel(
     thread_sum = block_scan(thread_sum)
 
     # Collect thread partial sums
-    var thread_sums = stack_allocation[
+    var thread_sums = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
         address_space=AddressSpace.SHARED,

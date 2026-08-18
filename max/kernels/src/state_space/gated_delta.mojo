@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gated DeltaNet recurrence kernel for Qwen3.5 — Pass 2 of two-pass prefill.
+"""Gated DeltaNet recurrence kernel for Qwen3.5: Pass 2 of two-pass prefill.
 
 Implements the gated delta rule recurrence over a ragged (variable-length)
-batch of sequences.  This is Pass 2 of the prefill path; it consumes the
+batch of sequences. This is Pass 2 of the prefill path; it consumes the
 conv1d output produced by Pass 1 (gated_delta_conv1d_fwd).
 
 The five steps of the gated delta rule at each token t for value-dim element
@@ -39,11 +39,11 @@ vd_i and value head h are:
 Thread mapping (GPU)
 --------------------
 One CTA owns one (batch_item, value_head); the block has VALUE_HEAD_DIM
-threads.  Thread `tid == vd_element` owns the KD-element state column
+threads. Thread `tid == vd_element` owns the KD-element state column
 
     state_col[k] = recurrent_state[slot_idx[batch_item], value_head, k, tid]
 
-in registers and iterates over its sequence sequentially.  KEY_HEAD_DIM is a
+in registers and iterates over its sequence sequentially. KEY_HEAD_DIM is a
 compile-time constant, so the inner k-loop is fully unrolled and the state
 column lives in registers (no spill to local memory) across the whole
 sequence.
@@ -54,7 +54,7 @@ sequence.
 The per-token raw Q and K vectors for this value head's key head are loaded
 once per block into shared memory (one element per thread, coalesced), so the
 KD reduction reads them from shared memory instead of every vd-thread
-re-reading the same KD elements from global memory.  L2 normalisation and the
+re-reading the same KD elements from global memory. L2 normalisation and the
 1/sqrt(KD) query scale are folded in as scalars factored out of the KD
 reductions, so no normalised Q/K array is materialised.
 
@@ -68,7 +68,7 @@ Tensor shapes
 -------------
 Inputs:
   qkv_conv_output    : [total_seq_len, conv_dim]              float32
-      Conv1d output from Pass 1.  Channel layout:
+      Conv1d output from Pass 1. Channel layout:
         Q: channels [0, key_dim)
         K: channels [key_dim, 2*key_dim)
         V: channels [2*key_dim, 2*key_dim + value_dim)
@@ -80,11 +80,11 @@ Inputs:
   beta_per_token     : [total_seq_len, num_value_heads]        float32
       Per-token, per-head beta gate (sigmoid pre-applied).
   recurrent_state    : [max_slots, num_value_heads, key_head_dim, value_head_dim]
-      Mutable recurrent-state pool.  The kernel reads/writes slot
+      Mutable recurrent-state pool. The kernel reads/writes slot
       `slot_idx[batch_item]` in place; all other slots are untouched.
       Pool dtype is independent of the working dtype, so the caller can
       keep per-token tensors at float32 while storing the pool at the
-      model's native dtype (typically bfloat16).
+      model's native dtype (bfloat16).
   slot_idx           : [batch_size]                            uint32
       Pool slot index for each batch item.
   input_row_offsets  : [batch_size + 1]                        uint32
@@ -93,7 +93,7 @@ Inputs:
 
 Outputs:
   recurrence_output  : [total_seq_len, value_dim]              float32
-      Flat output for all tokens.  Indexed as
+      Flat output for all tokens. Indexed as
       output[flat_t, value_head_idx * value_head_dim + vd_element_idx].
   (recurrent_state is mutated in place; there is no separate state-out
    tensor.)
@@ -101,13 +101,12 @@ Outputs:
 
 import std.math
 from std.gpu import (
-    barrier,
     block_idx,
     thread_idx,
 )
-from std.gpu.memory import AddressSpace
+from max.gpu.sync import barrier
 from std.math import rsqrt
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from layout import TensorLayout, TileTensor
 
 
@@ -117,8 +116,8 @@ from layout import TensorLayout, TileTensor
 
 
 def gated_delta_recurrence_fwd_gpu[
-    work_dtype: DType,  # for qkv/decay/beta/recurrence_output (typically fp32)
-    state_dtype: DType,  # for the recurrent_state pool (typically bf16)
+    work_dtype: DType,  # for qkv/decay/beta/recurrence_output (fp32)
+    state_dtype: DType,  # for the recurrent_state pool (bf16)
     KEY_HEAD_DIM: Int,  # key_head_dim, compile-time (e.g. 128 for Qwen3.5)
     VALUE_HEAD_DIM: Int,  # value_head_dim, compile-time (e.g. 128 for Qwen3.5)
     recurrence_output_LT: TensorLayout,
@@ -129,10 +128,10 @@ def gated_delta_recurrence_fwd_gpu[
     slot_idx_LT: TensorLayout,
     input_row_offsets_LT: TensorLayout,
 ](
-    batch_size: Int,
-    num_value_heads: Int,  # nv
-    num_key_heads: Int,  # nk; heads_expansion_ratio = nv / nk
-    key_dim: Int,  # num_key_heads * key_head_dim
+    batch_size: Int32,
+    num_value_heads: Int32,  # nv
+    num_key_heads: Int32,  # nk; heads_expansion_ratio = nv / nk
+    key_dim: Int32,  # num_key_heads * key_head_dim
     recurrence_output: TileTensor[
         work_dtype, recurrence_output_LT, MutUntrackedOrigin
     ],
@@ -171,13 +170,83 @@ def gated_delta_recurrence_fwd_gpu[
 
     One CTA owns one (batch_item, value_head); thread `tid == vd_element` owns
     the KD-element state column ``recurrent_state[slot, value_head, :, tid]`` in
-    registers for the whole sequence.  The per-token raw Q/K for this value
+    registers for the whole sequence. The per-token raw Q/K for this value
     head's key head are staged once per block in shared memory (one element per
     thread, coalesced) so the KD reductions read them from shared memory rather
     than every vd-thread re-reading the same KD elements from global memory;
     L2 normalisation and the 1/sqrt(KD) query scale are folded in as scalars
     factored out of the reductions.
+
+    Parameters:
+        work_dtype: `DType` for the per-token input and output tensors
+            (`qkv_conv_output`, `decay_per_token`, `beta_per_token`,
+            `recurrence_output`), `float32`.
+        state_dtype: `DType` for the `recurrent_state` pool (`bfloat16`).
+        KEY_HEAD_DIM: Compile-time key head dimension (e.g. 128 for
+            Qwen3.5).
+        VALUE_HEAD_DIM: Compile-time value head dimension; must equal
+            `KEY_HEAD_DIM`.
+        recurrence_output_LT: `TensorLayout` for `recurrence_output`.
+        qkv_conv_output_LT: `TensorLayout` for `qkv_conv_output`.
+        decay_per_token_LT: `TensorLayout` for `decay_per_token`.
+        beta_per_token_LT: `TensorLayout` for `beta_per_token`.
+        recurrent_state_LT: `TensorLayout` for `recurrent_state`.
+        slot_idx_LT: `TensorLayout` for `slot_idx`.
+        input_row_offsets_LT: `TensorLayout` for
+            `input_row_offsets`.
+
+    Args:
+        batch_size: Number of sequences in the ragged batch.
+        num_value_heads: Number of value heads (`nv`).
+        num_key_heads: Number of key heads (`nk`); the GQA expansion
+            ratio is `num_value_heads / num_key_heads`.
+        key_dim: Total key dimension, equal to
+            `num_key_heads * KEY_HEAD_DIM`.
+        recurrence_output: Flat output of shape
+            `[total_seq_len, value_dim]` holding the recurrence result
+            for every token.
+        recurrent_state: Mutable state pool of shape
+            `[max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM]`;
+            the kernel reads and writes slot `slot_idx[batch_item]` in
+            place.
+        slot_idx: Pool slot index for each batch item, shape
+            `[batch_size]`, `uint32`.
+        qkv_conv_output: Conv1d output from Pass 1, shape
+            `[total_seq_len, conv_dim]`, with Q in channels
+            `[0, key_dim)`, K in `[key_dim, 2*key_dim)`, V in
+            `[2*key_dim, 2*key_dim + value_dim)`.
+        decay_per_token: Per-token per-head scalar decay factor, shape
+            `[total_seq_len, num_value_heads]`.
+        beta_per_token: Per-token per-head beta gate, shape
+            `[total_seq_len, num_value_heads]`.
+        input_row_offsets: Ragged offsets of shape `[batch_size + 1]`;
+            sequence `b` spans flat indices
+            `[input_row_offsets[b], input_row_offsets[b+1])`.
+        qkv_conv_output_seqlen_stride: Stride between consecutive
+            sequence positions in `qkv_conv_output`.
+        qkv_conv_output_channel_stride: Stride between consecutive
+            channels in `qkv_conv_output`.
+        per_token_seqlen_stride: Stride between consecutive sequence
+            positions in `decay_per_token` and `beta_per_token`.
+        per_token_head_stride: Stride between consecutive heads in
+            `decay_per_token` and `beta_per_token`.
+        recurrent_state_slot_stride: Stride between consecutive slots
+            in `recurrent_state`.
+        recurrent_state_value_head_stride: Stride between consecutive
+            value heads in `recurrent_state`.
+        recurrent_state_key_dim_stride: Stride between consecutive
+            key-dim elements in `recurrent_state`.
+        recurrent_state_value_dim_stride: Stride between consecutive
+            value-dim elements in `recurrent_state`.
+        recurrence_output_seqlen_stride: Stride between consecutive
+            sequence positions in `recurrence_output`.
+        recurrence_output_valuedim_stride: Stride between consecutive
+            value-dim elements in `recurrence_output`.
     """
+    var _batch_size = Int(batch_size)
+    var _num_value_heads = Int(num_value_heads)
+    var _num_key_heads = Int(num_key_heads)
+    var _key_dim = Int(key_dim)
     comptime assert (
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
@@ -186,25 +255,29 @@ def gated_delta_recurrence_fwd_gpu[
     var block = Int(block_idx.x)
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
-    var batch_item_idx = block // num_value_heads
-    var value_head_idx = block % num_value_heads
-    if batch_item_idx >= batch_size:
+    var batch_item_idx = block // _num_value_heads
+    var value_head_idx = block % _num_value_heads
+    if batch_item_idx >= _batch_size:
         return
 
     # GQA: map value head to key head.
-    var heads_expansion_ratio = num_value_heads // num_key_heads
+    var heads_expansion_ratio = _num_value_heads // _num_key_heads
     var key_head_idx = value_head_idx // heads_expansion_ratio
 
     # Read the pool slot for this batch item exactly once. The caller
     # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
-    var slot = Int(slot_idx.ptr[batch_item_idx])
+    var slot = Int(slot_idx._storage[batch_item_idx])
 
     # Shared memory: raw Q and K for the current token (one element per kd).
-    var q_raw_s = stack_allocation[
-        KEY_HEAD_DIM, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    var q_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
-    var k_raw_s = stack_allocation[
-        KEY_HEAD_DIM, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    var k_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
@@ -216,17 +289,21 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        state_col[kd] = Scalar[DType.float32](recurrent_state.ptr[off])
+        state_col[kd] = Scalar[DType.float32](recurrent_state._storage[off])
 
-    var sequence_start_flat_idx = Int(input_row_offsets.ptr[batch_item_idx])
-    var sequence_end_flat_idx = Int(input_row_offsets.ptr[batch_item_idx + 1])
+    var sequence_start_flat_idx = Int(
+        input_row_offsets._storage[batch_item_idx]
+    )
+    var sequence_end_flat_idx = Int(
+        input_row_offsets._storage[batch_item_idx + 1]
+    )
     var sequence_length = sequence_end_flat_idx - sequence_start_flat_idx
 
     # Precompute constant channel offsets for Q, K, V in the conv_dim layout.
     var query_channel_base = UInt32(key_head_idx * KEY_HEAD_DIM)
-    var key_channel_base = UInt32(key_dim + key_head_idx * KEY_HEAD_DIM)
+    var key_channel_base = UInt32(_key_dim + key_head_idx * KEY_HEAD_DIM)
     var value_channel = UInt32(
-        2 * key_dim + value_head_idx * VALUE_HEAD_DIM + tid
+        2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
     )
     var query_scale = Float32(1.0) / std.math.sqrt(Float32(KEY_HEAD_DIM))
 
@@ -250,8 +327,8 @@ def gated_delta_recurrence_fwd_gpu[
             token_qkv_row_offset
             + (key_channel_base + UInt32(tid)) * qkv_conv_output_channel_stride
         )
-        q_raw_s[tid] = Float32(qkv_conv_output.ptr[q_off])
-        k_raw_s[tid] = Float32(qkv_conv_output.ptr[k_off])
+        q_raw_s[tid] = Float32(qkv_conv_output._storage[q_off])
+        k_raw_s[tid] = Float32(qkv_conv_output._storage[k_off])
         barrier()
 
         # ── L2 norms from SMEM (shared across all vd-threads of this head) ─
@@ -268,7 +345,7 @@ def gated_delta_recurrence_fwd_gpu[
 
         # ── V element (only this thread's vd column) ──────────────────────
         var value_element = Float32(
-            qkv_conv_output.ptr[
+            qkv_conv_output._storage[
                 token_qkv_row_offset
                 + value_channel * qkv_conv_output_channel_stride
             ]
@@ -279,8 +356,8 @@ def gated_delta_recurrence_fwd_gpu[
             UInt32(flat_token_idx) * per_token_seqlen_stride
             + UInt32(value_head_idx) * per_token_head_stride
         )
-        var decay_value = Float32(decay_per_token.ptr[head_token_offset])
-        var beta_value = Float32(beta_per_token.ptr[head_token_offset])
+        var decay_value = Float32(decay_per_token._storage[head_token_offset])
+        var beta_value = Float32(beta_per_token._storage[head_token_offset])
 
         # ── Step 1+2: decay state, accumulate kv_memory ───────────────────
         # kv_memory = key_inv_norm * Σ_k (decay·state_col[k]) · k_raw[k].
@@ -312,7 +389,7 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(value_head_idx * VALUE_HEAD_DIM + tid)
             * recurrence_output_valuedim_stride
         )
-        recurrence_output.ptr[recurrence_output_flat_offset] = Scalar[
+        recurrence_output._storage[recurrence_output_flat_offset] = Scalar[
             work_dtype
         ](output_value)
 
@@ -328,4 +405,4 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        recurrent_state.ptr[off] = Scalar[state_dtype](state_col[kd])
+        recurrent_state._storage[off] = Scalar[state_dtype](state_col[kd])

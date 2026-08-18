@@ -14,7 +14,7 @@
 from std.math import iota
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.reflection import reflect
 from std.testing import assert_equal
 
@@ -24,9 +24,12 @@ def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
-    supplement: Int,
+    len_dev: Int32,
+    supplement_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var len = Int(len_dev)
+    var supplement = Int(supplement_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -38,13 +41,13 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
     comptime arg_types = type_of(compiled).declared_arg_types
 
     # The list is always present and reports the kernel's arity.
-    assert_equal(arg_types.size, 5)
+    assert_equal(arg_types.length, 5)
 
     # Indexing yields the declared argument types in order.
     comptime assert arg_types[0] == UnsafePointer[Float32, ImmutAnyOrigin]
     comptime assert arg_types[2] == UnsafePointer[Float32, MutAnyOrigin]
-    comptime assert arg_types[3] == Int
-    comptime assert arg_types[4] == Int
+    comptime assert arg_types[3] == Int32
+    comptime assert arg_types[4] == Int32
 
     assert_equal(reflect[arg_types[0]].base_name(), "Pointer")
 
@@ -85,8 +88,8 @@ def test_basic(ctx: DeviceContext) raises:
         in0_device,
         in1_device,
         out_device,
-        length,
-        supplement,
+        Int32(length),
+        Int32(supplement),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -185,9 +188,9 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    var output = Span(ptr=out_device.unsafe_ptr(), length=length)
-    var in0 = Span(ptr=in0_device.unsafe_ptr(), length=length)
-    var in1 = Span(ptr=in1_device.unsafe_ptr(), length=length)
+    var output = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
+    var in0 = Span(unsafe_ptr=in0_device.unsafe_ptr(), length=length)
+    var in1 = Span(unsafe_ptr=in1_device.unsafe_ptr(), length=length)
 
     def vec_closure() {var supplement, var in0, var in1, var output}:
         var tid = global_idx.x

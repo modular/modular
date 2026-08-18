@@ -28,9 +28,9 @@ from std.math.polynomial import polynomial_evaluate
 @always_inline
 def polynomial_evaluate[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
-    coefficients: Span[Scalar[dtype], ...],
+    coefficients: Span[Scalar[dtype], _],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial.
 
@@ -57,9 +57,9 @@ def polynomial_evaluate[
 @always_inline
 def _horner_evaluate[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
-    coefficients: Span[Scalar[dtype], ...],
+    coefficients: Span[Scalar[dtype], _],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial using the passed in value and the specified
     coefficients using the Horner scheme. The Horner scheme evaluates the

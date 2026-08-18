@@ -15,7 +15,14 @@
 from std.math import iota
 from std.random import rand, seed
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 
@@ -24,7 +31,7 @@ from nn.topk import _top_k_cpu, _top_k_sampling
 from std.utils.index import IndexList, product
 
 comptime FillFnType = def[rank: Int, dtype: DType](
-    TileTensor[mut=True, dtype, ...]
+    TileTensor[mut=True, dtype, ..., Storage=PointerStorage[element_width=1]]
 ) -> None
 
 
@@ -109,6 +116,7 @@ def test_case_sampling[
 
     var max_k = K
 
+    var batch_size: Int
     comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
@@ -200,17 +208,25 @@ def main() raises:
 
     def fill_iota[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ):
         iota(
-            buf.ptr,
+            buf._storage,
             coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     def fill_rand[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ):
         rand(
-            buf.ptr,
+            buf._storage,
             coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
@@ -280,7 +296,11 @@ def main() raises:
 
     def fill_identical[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ):
         _ = buf.fill(1)
 
     def test_identical():
@@ -312,9 +332,13 @@ def main() raises:
 
     def fill_custom[
         rank: Int, dtype: DType
-    ](buf: TileTensor[mut=True, dtype, ...]):
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ):
         var flat_buf = TileTensor(
-            buf.ptr,
+            buf._storage,
             row_major(buf.num_elements()),
         )
 
@@ -379,7 +403,13 @@ def main() raises:
     # 6,9,5,2,3,1,7,9,5,1,9,0,2,3,4,
     test_3d_sorted_sampling()
 
-    def ones[rank: Int, dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+    def ones[
+        rank: Int, dtype: DType
+    ](
+        buf: TileTensor[
+            mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+        ]
+    ):
         for i in range(
             coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):

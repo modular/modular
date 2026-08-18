@@ -21,8 +21,7 @@ and one always-on shared expert.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Sequence
-from typing import Any
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import (
@@ -33,7 +32,6 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 from max.nn.comm import Allreduce, Signals
@@ -41,7 +39,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, Module, SubgraphInput
 from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, forward_moe_sharded_layers
@@ -56,33 +54,6 @@ from max.nn.transformer.distributed_transformer import (
 from .layers.attention import HYV3Attention
 from .layers.moe_gate import HYV3TopKRouter
 from .model_config import HYV3Config
-
-
-def _unpack_kv_collections(
-    kv_collections: Sequence[PagedCacheValues],
-) -> tuple[
-    list[BufferValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-]:
-    # Subgraphs require flat Value inputs; PagedCacheValues is a Python
-    # dataclass that can't be passed directly.
-    dispatch_metadata_tensors = [
-        kv.attention_dispatch_metadata
-        for kv in kv_collections
-        if kv.attention_dispatch_metadata is not None
-    ]
-    return (
-        [kv.kv_blocks for kv in kv_collections],
-        [kv.cache_lengths for kv in kv_collections],
-        [kv.lookup_table for kv in kv_collections],
-        [kv.max_prompt_length for kv in kv_collections],
-        [kv.max_cache_length for kv in kv_collections],
-        dispatch_metadata_tensors,
-    )
 
 
 def _is_dense_layer(config: HYV3Config, layer_idx: int) -> bool:
@@ -235,31 +206,11 @@ class HYV3TransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_prompt_lengths: list[TensorValue],
-        kv_max_cache_lengths: list[TensorValue],
-        dispatch_metadata_tensors: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         ep_inputs: list[TensorValue | BufferValue] | None = None,
     ) -> list[TensorValue]:
-        num_devices = len(kv_blocks)
-        kv_collections = [
-            PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_prompt_lengths[i],
-                kv_max_cache_lengths[i],
-                attention_dispatch_metadata=dispatch_metadata_tensors[i]
-                if dispatch_metadata_tensors
-                else None,
-            )
-            for i in range(num_devices)
-        ]
-
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_outs = [
             shard(
@@ -424,28 +375,14 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        (
-            kv_blocks,
-            cache_lengths,
-            lookup_tables,
-            max_prompt_lengths,
-            max_cache_lengths,
-            dispatch_metadata_tensors,
-        ) = _unpack_kv_collections(kv_collections)
-
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            values: list[Value[Any] | Sequence[Value[Any]]] = [
+        ) -> list[SubgraphInput]:
+            values: list[SubgraphInput] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
-                kv_blocks,
-                cache_lengths,
-                lookup_tables,
-                max_prompt_lengths,
-                max_cache_lengths,
-                dispatch_metadata_tensors,
+                kv_collections,
                 freqs_cis_list,
                 input_row_offsets_list,
             ]

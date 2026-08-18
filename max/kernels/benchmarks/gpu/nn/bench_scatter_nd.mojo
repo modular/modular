@@ -25,6 +25,7 @@ so the achievable ceiling is the device-to-device memcpy bandwidth.
 
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchId,
@@ -32,7 +33,7 @@ from std.benchmark import (
     Bencher,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_nd_generator
@@ -62,18 +63,17 @@ def run_row_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 1]())
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * cols * size_of[dtype]()
@@ -119,18 +119,17 @@ def run_elem_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 2]())
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * size_of[dtype]()

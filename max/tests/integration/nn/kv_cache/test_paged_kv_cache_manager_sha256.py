@@ -75,11 +75,11 @@ def _drive_one_request(
 ) -> TextContext:
     """Run a minimal claim+alloc+step cycle so req_to_hashes is populated."""
     ctx = create_text_context(np.empty(prompt_len))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])
     ctx.update(42)
-    kv_manager.step([[ctx]])
+    kv_manager.step(ctx)
     return ctx
 
 
@@ -116,7 +116,7 @@ async def test_explicit_seed_is_deterministic() -> None:
 
 @pytest.mark.asyncio
 async def test_ahash64_default_produces_int_hashes() -> None:
-    """Default kv_hash_algo yields legacy int hashes."""
+    """Default kv_hash_algo yields canonical 8-byte hashes."""
     kv_manager = _make_kv_manager()  # default = ahash64
     ctx = _drive_one_request(kv_manager)
 
@@ -125,4 +125,5 @@ async def test_ahash64_default_produces_int_hashes() -> None:
 
     assert len(hashes) >= 1
     for h in hashes:
-        assert isinstance(h, int)
+        assert isinstance(h, bytes)
+        assert len(h) == 8

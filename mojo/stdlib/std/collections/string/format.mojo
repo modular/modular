@@ -15,7 +15,7 @@
 This module provides string formatting functionality similar to Python's
 `str.format()` method. The `format()` method (available on the
 [`String`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan`](/docs/std/collections/string/string_span/StringSpan/#format)
 types) takes the current string as a template (or "format string"), which can
 contain literal text and/or replacement fields delimited by curly braces (`{}`).
 The replacement fields are replaced with the values of the arguments.
@@ -65,46 +65,14 @@ var s4 = "{!r}".format("test")  # "'test'"
 
 This module has no public API; its functionality is available through the
 [`String.format()`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice.format()`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan.format()`](/docs/std/collections/string/string_span/StringSpan/#format)
 methods.
 """
 
 
 from std.builtin.globals import global_constant
-from std.collections.string.string_slice import _memchr2, get_static_string
-from std.compile import get_type_name
-from std.memory import Span
+from std.collections.string.string_span import _memchr2, get_static_string
 from std.utils import Variant
-
-
-# ===-----------------------------------------------------------------------===#
-# Helpers
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _find_next_brace(
-    ptr: UnsafePointer[mut=False, UInt8], start: Int, length: Int
-) -> Int:
-    """Finds the index of the next `{` or `}` character.
-
-    Delegates to `_memchr2` (which uses SIMD internally) to search for both
-    brace characters simultaneously in a single pass.
-
-    Args:
-        ptr: Pointer to the format string bytes.
-        start: The byte offset to start searching from.
-        length: The total byte length of the format string.
-
-    Returns:
-        The index of the next brace character, or -1 if not found.
-    """
-    var remaining = Span[Byte](ptr=ptr + start, length=length - start)
-    var result = _memchr2(remaining, UInt8(ord("{")), UInt8(ord("}")))
-    if not result:
-        return -1
-    return Int(result) - Int(ptr)
-
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -113,7 +81,7 @@ fn _find_next_brace(
 
 @fieldwise_init
 struct _PrecompiledEntries[
-    format_origin: ImmutOrigin, entry_origin: ImmutOrigin, //, *Ts: Writable
+    format_origin: ImmOrigin, entry_origin: ImmOrigin, //, *Ts: Writable
 ](ImplicitlyCopyable):
     """Holds a non-owning view of precompiled format string entries.
 
@@ -140,9 +108,9 @@ struct _PrecompiledEntries[
 
 
 @fieldwise_init
-struct _PrecompiledEntriesRuntime[
-    format_origin: ImmutOrigin, //, *Ts: Writable
-](Movable):
+struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
+    Movable
+):
     """Holds precompiled format string entries with owned runtime-allocated storage.
 
     This struct is similar to `_PrecompiledEntries` but uses a `List` to own
@@ -161,18 +129,40 @@ struct _PrecompiledEntriesRuntime[
 
 
 @always_inline
+def _find_next_brace(ptr: ImmPointer[UInt8, _], start: Int, length: Int) -> Int:
+    """Finds the index of the next `{` or `}` character.
+
+    Delegates to `_memchr2` (which uses SIMD internally) to search for both
+    brace characters simultaneously in a single pass.
+
+    Args:
+        ptr: Pointer to the format string bytes.
+        start: The byte offset to start searching from.
+        length: The total byte length of the format string.
+
+    Returns:
+        The index of the next brace character, or -1 if not found.
+    """
+    var remaining = Span(
+        unsafe_ptr=ptr.unsafe_offset(start), length=length - start
+    )
+    var result = _memchr2(remaining.as_imm(), UInt8(ord("{")), UInt8(ord("}")))
+    if not result:
+        return -1
+    return Int(result.unsafe_value()) - Int(ptr)
+
+
+@always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDeletable & Copyable, //, list: List[T]
-]() -> Span[T, StaticConstantOrigin]:
+    T: Deinitable & Copyable, //, list: List[T]
+]() -> Span[T, ImmStaticOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
-        var array = InlineArray[T, len(list)](uninitialized=True)
+    def list_to_array[list: List[T]]() -> Array[T, len(list)]:
+        var array = Array[T, len(list)](uninitialized=True)
 
         comptime for i in range(len(list)):
-            UnsafePointer(to=array[i]).unsafe_write(
-                materialize[list[i].copy()]()
-            )
+            Pointer(to=array[i]).unsafe_write(materialize[list[i].copy()]())
         return array^
 
     comptime array = list_to_array[list]()
@@ -193,15 +183,17 @@ struct _FormatUtils:
         """Format the arguments using the given format string and precompiled entries.
         """
         var offset = 0
-        var ptr = compiled.format.unsafe_ptr()
+        var ptr = compiled.format.as_bytes().unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
 
         @always_inline
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
         var auto_arg_index = 0
@@ -317,9 +309,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) -> Variant[
-        _PrecompiledEntriesRuntime[
-            format_origin=ImmutOrigin(format.origin), *Ts
-        ],
+        _PrecompiledEntriesRuntime[format_origin=ImmOrigin(format.origin), *Ts],
         Error,
     ]:
         """Parses and compiles a format string without raising an error.
@@ -339,7 +329,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin=ImmutOrigin(format.origin), *Ts
+        format_origin=ImmOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -362,7 +352,7 @@ struct _FormatUtils:
             An error if the format string is invalid or if replacement fields
             don't match the provided argument types.
         """
-        comptime FormatOrigin = ImmutOrigin(format.origin)
+        comptime FormatOrigin = ImmOrigin(format.origin)
         comptime EntryType = _FormatCurlyEntry[FormatOrigin]
 
         var manual_indexing_count = 0
@@ -370,7 +360,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = Ts.size
+        comptime n_args = Ts.length
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -378,7 +368,7 @@ struct _FormatUtils:
 
         var entries = List[EntryType]()
         var start = Optional[Int](None)
-        var fmt_ptr = format.unsafe_ptr()
+        var fmt_ptr = format.as_bytes().unsafe_ptr()
         var fmt_len = format.byte_length()
         var total_estimated_entry_byte_width = 0
 
@@ -388,7 +378,7 @@ struct _FormatUtils:
             if next == -1:
                 break
             i = next
-            if fmt_ptr[i] == `{`:
+            if fmt_ptr[unsafe_offset=i] == `{`:
                 if not start:
                     start = i
                     i += 1
@@ -400,10 +390,10 @@ struct _FormatUtils:
                 start = None
                 i += 1
                 continue
-            elif fmt_ptr[i] == `}`:
+            elif fmt_ptr[unsafe_offset=i] == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
+                    if (i + 1) < fmt_len and fmt_ptr[unsafe_offset=i + 1] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         i += 2
@@ -460,7 +450,7 @@ struct _FormatUtils:
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
+struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -565,19 +555,23 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
-                unsafe_from_utf8=Span(ptr=p + start, length=end - start)
+                unsafe_from_utf8=Span[UInt8, p.origin](
+                    unsafe_ptr=p.unsafe_offset(start), length=end - start
+                )
             )
 
-        var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
-        var field_ptr = field.unsafe_ptr()
+        var field = _build_slice(
+            fmt_src.as_bytes().unsafe_ptr(), start_value + 1, i
+        )
+        var field_ptr = field.as_bytes().unsafe_ptr()
         var field_len = i - (start_value + 1)
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
-            if field_ptr[idx] == UInt8(ord("!")):
+            if field_ptr[unsafe_offset=idx] == UInt8(ord("!")):
                 exclamation_index = idx
                 break
             idx += 1
@@ -585,7 +579,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         if exclamation_index != -1:
             if new_idx == field_len:
                 raise Error("Empty conversion flag.")
-            var conversion_flag = field_ptr[new_idx]
+            var conversion_flag = field_ptr[unsafe_offset=new_idx]
             if field_len - new_idx > 1 or (
                 conversion_flag not in Self.supported_conversion_flags
             ):
@@ -617,11 +611,10 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                 manual_indexing_count += 1
             except e:
 
-                @parameter
-                def check_string() -> Bool:
+                def check_string() {e} -> Bool:
                     return "not convertible to integer" in String(e)
 
-                debug_assert[check_string]("Not the expected error from atol")
+                debug_assert(check_string, "Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})
@@ -643,8 +636,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        def _format(idx: Int) {read self, read args, mut writer}:
-            comptime for i in range(Ts.size):
+        def _format(idx: Int) {imm self, imm args, mut writer}:
+            comptime for i in range(Ts.length):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0
