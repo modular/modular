@@ -1136,7 +1136,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Args:
             value: The value.
         """
-        self._value = Self._Storage.__init__(value)
+        self._value = Self._Storage(value)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
