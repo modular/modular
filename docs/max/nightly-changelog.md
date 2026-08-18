@@ -697,6 +697,12 @@ This version is still a work in progress.
   bitmask inputs and applies the grammar mask across every speculative position,
   matching the EAGLE speculative-decoding pipelines.
 
+- Fixed GPT-OSS, OLMo 3, and OLMo 2 ignoring `--max-length`. The server
+  accepted prompts up to the checkpoint's own length limit, and sized the KV
+  cache for that limit, whatever you asked for and whatever memory allowed.
+  Both now use the length you set. Runs that pass no `--max-length` are
+  unaffected.
+
 - Fixed DeepSeek-V3.2 and GLM-5.x pipelines ignoring `--max-length`: the
   resolved maximum sequence length was silently pinned to the DeepSeek
   default (163840) regardless of the flag or the checkpoint's advertised

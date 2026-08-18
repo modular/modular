@@ -201,7 +201,9 @@ class Olmo2Config(
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            max_position_embeddings=huggingface_config.max_position_embeddings,
+            max_position_embeddings=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config, model_config
+            ),
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=get_rope_theta(huggingface_config),
             attention_bias=getattr(huggingface_config, "attention_bias", False),
