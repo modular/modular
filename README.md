@@ -19,7 +19,7 @@ including the **MAX Framework**🧑‍🚀 and the **Mojo Language**🔥.
 
 To get started with the Modular Platform and serve a model using the MAX
 framework, see
-[the MAX quickstart guide](https://<<<modular.com/get-started).
+[the MAX quickstart guide](https://max.modular.com/get-started).
 
 To get started with the Mojo language, see
 [the Mojo quickstart guide](https://mojolang.org/docs/manual/quickstart/).
