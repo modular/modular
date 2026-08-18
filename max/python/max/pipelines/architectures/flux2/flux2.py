@@ -178,7 +178,7 @@ class Flux2TransformerBlock(Module):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
-        quant: Flux2BlockQuant = Flux2BlockQuant(),
+        quant: Flux2BlockQuant = Flux2BlockQuant(),  # noqa: B008
     ) -> None:
         """Initialize Flux2TransformerBlock.
 

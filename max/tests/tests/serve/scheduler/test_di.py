@@ -224,7 +224,7 @@ def create_di_scheduler(
     enable_chunked_prefill: bool = True,
     kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     overlap_prefill: bool = False,
     overlap_decode: bool = False,
     spec_decode_prefill: bool = False,

@@ -295,7 +295,7 @@ class Weights(Protocol):
         dtype: DType | None = None,
         shape: ShapeLike | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> Weight:
         """Creates a :class:`Weight` object for this tensor.
 
