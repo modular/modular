@@ -462,8 +462,5 @@ class ArrayType(max._core.Type):
     @property
     def element_type(self) -> max._core.Type | None: ...
 
-class DataLayout:
-    pass
-
-class IntArrayElementsAttr:
-    pass
+class DataLayout: ...
+class IntArrayElementsAttr: ...

@@ -97,7 +97,7 @@ class Base:
         assert cls is not Base, "Cannot instantiate Base"
         return object.__new__(cls)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """
         Compare two nodes for equality.
 

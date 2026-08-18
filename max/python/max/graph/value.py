@@ -1037,7 +1037,7 @@ class TensorValue(Value[mo.TensorType]):
             index = (index,)
         return ops.slice_tensor(self, index)
 
-    def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.
 
         Args:
@@ -1059,7 +1059,7 @@ class TensorValue(Value[mo.TensorType]):
         """Rounds to the elementwise nearest integer, with ties going towards the nearest even number."""
         return ops.round(self)
 
-    def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise inequality comparison.
 
         Args:

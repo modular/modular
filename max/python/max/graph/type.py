@@ -175,7 +175,7 @@ class DeviceRef:
     def __repr__(self) -> str:
         return str(self)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Returns ``True`` if devices are equal."""
         if not isinstance(other, DeviceRef):
             return False
@@ -307,7 +307,7 @@ class _TensorTypeBase(Type[MlirType]):
         """
         return len(self.shape)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Checks whether the two tensors have the same type, shape, and device.
 
         Args:

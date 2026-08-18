@@ -39,8 +39,6 @@ class PipelineInputs:
                 self.config = config
     """
 
-    ...
-
 
 # TODO: We should change this to a abstract base class, but this blocks
 # msgspec.Struct implementations of this class.

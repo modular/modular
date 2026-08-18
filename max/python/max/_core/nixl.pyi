@@ -65,41 +65,18 @@ class Status(enum.Enum):
 
     SUCCESS = 0
 
-class NotPostedError(Exception):
-    pass
-
-class InvalidParamError(Exception):
-    pass
-
-class BackendError(Exception):
-    pass
-
-class NotFoundError(Exception):
-    pass
-
-class MismatchError(Exception):
-    pass
-
-class NotAllowedError(Exception):
-    pass
-
-class RepostActiveError(Exception):
-    pass
-
-class UnknownError(Exception):
-    pass
-
-class NotSupportedError(Exception):
-    pass
-
-class RemoteDisconnectError(Exception):
-    pass
-
-class CanceledError(Exception):
-    pass
-
-class NoTelemetryError(Exception):
-    pass
+class NotPostedError(Exception): ...
+class InvalidParamError(Exception): ...
+class BackendError(Exception): ...
+class NotFoundError(Exception): ...
+class MismatchError(Exception): ...
+class NotAllowedError(Exception): ...
+class RepostActiveError(Exception): ...
+class UnknownError(Exception): ...
+class NotSupportedError(Exception): ...
+class RemoteDisconnectError(Exception): ...
+class CanceledError(Exception): ...
+class NoTelemetryError(Exception): ...
 
 class TransferTelemetry:
     @property

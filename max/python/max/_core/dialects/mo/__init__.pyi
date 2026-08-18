@@ -8751,8 +8751,5 @@ class WhileOp(max._core.Operation):
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
-class ParamExprBuilder:
-    pass
-
-class ShapeMaterializeResult:
-    pass
+class ParamExprBuilder: ...
+class ShapeMaterializeResult: ...

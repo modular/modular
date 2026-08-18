@@ -29,23 +29,12 @@ from . import passes as passes
 
 DiagnosticHandler = Callable
 
-class DenseElementsAttr(max._core.Attribute):
-    pass
-
-class DenseResourceElementsAttr(max._core.Attribute):
-    pass
-
-class FlatSymbolRefAttr(max._core.Attribute):
-    pass
-
-class AffineMap:
-    pass
-
-class IntegerSet:
-    pass
-
-class _ElementsAttrIndexer:
-    pass
+class DenseElementsAttr(max._core.Attribute): ...
+class DenseResourceElementsAttr(max._core.Attribute): ...
+class FlatSymbolRefAttr(max._core.Attribute): ...
+class AffineMap: ...
+class IntegerSet: ...
+class _ElementsAttrIndexer: ...
 
 class SignednessSemantics(enum.Enum):
     signless = 0

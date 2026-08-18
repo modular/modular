@@ -21,7 +21,7 @@ import os
 import pathlib
 import types
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, overload
+from typing import Any, TypeAlias, overload
 
 import max._core.driver
 import max._core.dtype
@@ -30,7 +30,7 @@ from max._core.driver import Buffer
 from max._core.mlrt import AsyncValue
 from max._core_types.driver import DLPackArray
 
-InputType = DLPackArray | Buffer | int | float | bool
+InputType: TypeAlias = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
@@ -55,9 +55,6 @@ class TensorSpec:
         If a dimension size is unknown/dynamic (such as the batch size), its
         value is ``None``.
         """
-
-    def __repr__(self) -> str: ...
-    def __str__(self) -> str: ...
 
 class ModelMetadata:
     """Input and output metadata for a compiled model function."""
@@ -284,7 +281,6 @@ class Model:
     def __call__(self, *args: InputType, **kwargs: InputType) -> list[Buffer]:
         """Executes the model. See :class:`Model` for details."""
 
-    def __repr__(self) -> str: ...
     def capture(
         self, graph_keys: int | Sequence[int], *inputs: Buffer
     ) -> list[Buffer]:
