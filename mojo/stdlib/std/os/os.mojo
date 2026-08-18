@@ -307,7 +307,15 @@ def _abort_impl[
                 flush=True,
             )
     else:
-        print(prefix, " ", loc, ": ", message, sep="", flush=True)
+        print(
+            prefix,
+            StaticString(" "),
+            loc,
+            StaticString(": "),
+            message,
+            sep="",
+            flush=True,
+        )
 
     abort()
 
