@@ -51,6 +51,7 @@ from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.stacked_linear import StackedLinear
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
@@ -106,33 +107,18 @@ class GatedDeltaNet(Module):
         self.value_dim = value_head_dim * num_value_heads
         self.conv_dim = self.key_dim * 2 + self.value_dim
 
-        # Input projections
-        self.in_proj_qkv = Linear(
+        self.in_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dim=self.conv_dim,
+            out_dims=[
+                self.conv_dim,
+                self.value_dim,
+                num_value_heads,
+                num_value_heads,
+            ],
+            names=["in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a"],
             dtype=dtype,
             device=device,
-            has_bias=False,
-        )
-        self.in_proj_z = Linear(
-            in_dim=hidden_size,
-            out_dim=self.value_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=False,
-        )
-        self.in_proj_b = Linear(
-            in_dim=hidden_size,
-            out_dim=num_value_heads,
-            dtype=dtype,
-            device=device,
-            has_bias=False,
-        )
-        self.in_proj_a = Linear(
-            in_dim=hidden_size,
-            out_dim=num_value_heads,
-            dtype=dtype,
-            device=device,
+            stacked=False,
             has_bias=False,
         )
 
@@ -208,10 +194,12 @@ class GatedDeltaNet(Module):
         K = self.conv_kernel_size
 
         # ---- Projections (all tokens, fully parallel) ----
-        qkv = self.in_proj_qkv(x)  # [N, conv_dim]
-        z = self.in_proj_z(x)  # [N, value_dim]
-        b_proj = self.in_proj_b(x)  # [N, nv]
-        a_proj = self.in_proj_a(x)  # [N, nv]
+        proj = self.in_proj(x)
+        qkv, z, b_proj, a_proj = ops.split(
+            proj,
+            [self.conv_dim, self.value_dim, nv, nv],
+            axis=-1,
+        )
         qkv_f32 = ops.cast(qkv, DType.float32)  # [N, conv_dim]
 
         # ---- Decay / beta params ----
