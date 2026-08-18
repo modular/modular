@@ -23,7 +23,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from PIL import Image
 
 pipeline_config = PipelineArgs(
@@ -33,7 +33,7 @@ pipeline_config = PipelineArgs(
     trust_remote_code=True,
     max_length=512,
     kv_cache=KVCacheConfig(),
-    max_batch_size=1,
+    runtime=PipelineRuntimeConfig(max_batch_size=1),
 )
 
 

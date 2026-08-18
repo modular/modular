@@ -37,12 +37,8 @@ glm5_1_arch = SupportedArchitecture(
         "zai-org/GLM-5.2-FP8",
         "zai-org/GLM-5",
     ],
-    default_encoding="float8_e4m3fn",
-    supported_encodings={
-        "float4_e2m1fnx2",
-        "float8_e4m3fn",
-        "bfloat16",
-    },
+    default_encoding=Glm5_1Config.DEFAULT_ENCODING,
+    supported_encodings=Glm5_1Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=Glm5_1Model,
     batching=DeepseekV3BatchProcessor,
@@ -58,7 +54,11 @@ glm5_1_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    # The "glm45" tool parser only emits Lark tool-call grammars, which the
-    # xgrammar backend cannot compile. Pin to llguidance (matches gemma4).
-    default_structured_output_backend="llguidance",
+    default_structured_output_backend="xgrammar",
+    # GLM strongly prefers pretty-printed JSON: under the compact grammar its
+    # content-bearing continuations are all masked at the first array decision
+    # and the schema's shortest terminator wins (measured 8/8 degenerate
+    # {"findings":[]} vs 0/8 whitespace-tolerant on GLM-5.2). Whitespace runs
+    # stay bounded via STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN.
+    default_structured_output_any_whitespace=True,
 )

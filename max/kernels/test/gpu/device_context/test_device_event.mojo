@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
 from std.testing import assert_equal
 
 
@@ -21,10 +21,11 @@ from std.testing import assert_equal
 def simple_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
     multiplier: Float32,
 ):
     """Simple kernel that multiplies input by a multiplier."""
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -79,7 +80,7 @@ def test_event_record_and_synchronize(ctx: DeviceContext) raises:
         func,
         input_device,
         output_device,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -137,7 +138,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
         func,
         input_device,
         intermediate_device,
-        length,
+        Int32(length),
         multiplier1,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -152,7 +153,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
         func,
         intermediate_device,
         output_device,
-        length,
+        Int32(length),
         multiplier2,
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -207,7 +208,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext) raises:
             func,
             input_device,
             output_devices[i],
-            length,
+            Int32(length),
             multipliers[i],
             grid_dim=ceildiv(length, 32),
             block_dim=32,
@@ -267,7 +268,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
         func,
         input_device,
         buffer1,
-        length,
+        Int32(length),
         Float32(2.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -280,7 +281,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
         func,
         buffer1,
         buffer2,
-        length,
+        Int32(length),
         Float32(3.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -293,7 +294,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
         func,
         buffer2,
         buffer3,
-        length,
+        Int32(length),
         Float32(5.0),
         grid_dim=ceildiv(length, 32),
         block_dim=32,
@@ -350,7 +351,7 @@ def test_event_across_context_streams(ctx: DeviceContext) raises:
         func,
         input_device,
         output_device,
-        length,
+        Int32(length),
         multiplier,
         grid_dim=ceildiv(length, 32),
         block_dim=32,

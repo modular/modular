@@ -47,6 +47,7 @@ Configuration
    MAXModelConfig
    PipelineArgs
    PipelineConfig
+   PipelineRuntimeConfig
    ProfilingConfig
    SamplingConfig
    SpeculativeConfig

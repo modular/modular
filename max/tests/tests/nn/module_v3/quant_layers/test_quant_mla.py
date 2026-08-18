@@ -48,6 +48,7 @@ from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
     FP8BlockTensor,
+    NVFP4Tensor,
 )
 
 # Block-aligned dimensions (multiples of 128 on the quantized axes) so the FP8
@@ -148,7 +149,7 @@ def _expected_parameters(
 ) -> set[str]:
     def proj(name: str) -> set[str]:
         if quantized:
-            return {f"{name}.data", f"{name}.scale_inv"}
+            return {f"{name}.data", f"{name}.weight_scale_inv"}
         return {name}
 
     names: set[str] = set()
@@ -270,7 +271,7 @@ def test_mla_fp8_weight_types(
         ).to(device)
         assert isinstance(layer.q_proj, FP8BlockTensor)
         assert layer.q_proj.data.dtype == DType.float8_e4m3fn
-        assert layer.q_proj.scale_inv.dtype == DType.float32
+        assert layer.q_proj.weight_scale_inv.dtype == DType.float32
         assert list(layer.q_proj.data.shape) == [
             _N_HEADS * _QK_HEAD_DIM,
             _HIDDEN_SIZE,
@@ -434,13 +435,13 @@ def test_mla_fp8_tensor_parallel(
         # Rowwise weights co-shard data and scales on axis 0.
         assert isinstance(layer.kv_b_proj, FP8BlockTensor)
         assert layer.kv_b_proj.data.mapping.to_placements() == (Sharded(0),)
-        assert layer.kv_b_proj.scale_inv.mapping.to_placements() == (
+        assert layer.kv_b_proj.weight_scale_inv.mapping.to_placements() == (
             Sharded(0),
         )
         # o_proj is columnwise: data and scales shard the contraction (axis 1).
         assert isinstance(layer.o_proj.weight, FP8BlockTensor)
         assert layer.o_proj.weight.data.mapping.to_placements() == (Sharded(1),)
-        assert layer.o_proj.weight.scale_inv.mapping.to_placements() == (
+        assert layer.o_proj.weight.weight_scale_inv.mapping.to_placements() == (
             Sharded(1),
         )
 
@@ -467,4 +468,174 @@ def test_mla_fp8_tensor_parallel(
     assert out.mapping.mesh == mesh
     # o_proj is row-parallel, so the attention output is a partial sum; the
     # all-reduce that resolves it lives in the transformer block.
+    assert out.mapping.to_placements() == (Partial(),)
+
+
+# --------------------------------------------------------------------------- #
+# NVFP4
+# --------------------------------------------------------------------------- #
+
+_NVFP4_LEAVES = ("data", "weight_scale", "weight_scale_2", "input_scale")
+
+
+def _expected_nvfp4_parameters(*, q_lora_rank: int | None) -> set[str]:
+    """NVFP4 checkpoints quantize only ``o_proj``; q/kv stay bf16."""
+    names = _expected_parameters(q_lora_rank=q_lora_rank, quantized=False)
+    names.discard("o_proj.weight")
+    return names | {f"o_proj.weight.{leaf}" for leaf in _NVFP4_LEAVES}
+
+
+def test_mla_nvfp4_leaves_latent_projections_bf16(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    """``quantized`` tracks the FP8 path only: NVFP4 keeps q/kv in bf16."""
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=nvfp4_quant_config
+        ).to(device)
+
+        assert layer.quantized is False
+        assert layer.weight_block_size is None
+        assert isinstance(layer.q_proj, Tensor)
+        assert isinstance(layer.kv_a_proj_with_mqa, Tensor)
+        assert isinstance(layer.kv_b_proj, Tensor)
+        # Only the output projection runs on the FP4 kernels.
+        assert isinstance(layer.o_proj.weight, NVFP4Tensor)
+        assert list(layer.o_proj.weight.data.shape) == [
+            _HIDDEN_SIZE,
+            _N_HEADS * _V_HEAD_DIM // 2,
+        ]
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_nvfp4_parameters(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    q_lora_rank: int | None,
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params,
+            q_lora_rank=q_lora_rank,
+            quant_config=nvfp4_quant_config,
+        ).to(device)
+        names = {name for name, _ in layer.parameters}
+        assert names == _expected_nvfp4_parameters(q_lora_rank=q_lora_rank)
+
+
+def test_mla_nvfp4_wqkv_stays_bf16(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    """The fused q||kv_a weight is a plain concat, not a quantized bundle."""
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=nvfp4_quant_config
+        ).to(device)
+        wqkv = layer.wqkv
+        assert isinstance(wqkv, Tensor)
+        assert list(wqkv.shape) == [
+            _N_HEADS * _QK_HEAD_DIM + _CACHE_HEAD_DIM,
+            _HIDDEN_SIZE,
+        ]
+
+
+def test_mla_nvfp4_forward(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """NVFP4 prefill forward maps ``[S, hidden]`` -> ``[S, hidden]`` (bf16)."""
+    batch_size = 1
+    total_seq_len = 4
+    n_pages = 4
+
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=nvfp4_quant_config
+        ).to(device)
+
+        x = Tensor.zeros(
+            [total_seq_len, _HIDDEN_SIZE], dtype=DType.bfloat16, device=device
+        )
+        freqs_cis = Tensor.zeros(
+            [total_seq_len, _QK_ROPE_HEAD_DIM],
+            dtype=DType.bfloat16,
+            device=device,
+        )
+        input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
+        kv_collection = _build_kv_collection(
+            kv_params, batch_size, n_pages, [device]
+        )
+
+        out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
+
+    assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.dtype == DType.bfloat16
+
+
+def test_mla_nvfp4_tensor_parallel(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """NVFP4 ``o_proj`` is row-parallel: block leaves shard, globals replicate."""
+    batch_size = 1
+    total_seq_len = 4
+    n_pages = 4
+
+    with F.lazy(), default_dtype(DType.bfloat16):
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        kv_params = _make_kv_params(devices)
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+
+        layer = tensor_parallel_latent_attention_with_rope(
+            _make_layer(
+                kv_params,
+                q_lora_rank=None,
+                quant_config=nvfp4_quant_config,
+            )
+        ).to(mesh)
+
+        weight = layer.o_proj.weight
+        assert isinstance(weight, NVFP4Tensor)
+        # o_proj is columnwise: the contraction axis (1) is sharded.
+        assert weight.data.mapping.to_placements() == (Sharded(1),)
+        assert weight.weight_scale.mapping.to_placements() == (Sharded(1),)
+        # A per-tensor scale cannot be split, so both globals are replicated.
+        assert weight.weight_scale_2.mapping.to_placements() == (Replicated(),)
+        assert weight.input_scale.mapping.to_placements() == (Replicated(),)
+
+        x = Tensor.zeros(
+            [total_seq_len, _HIDDEN_SIZE],
+            dtype=DType.bfloat16,
+            device=replicated_mapping,
+        )
+        freqs_cis = Tensor.zeros(
+            [total_seq_len, _QK_ROPE_HEAD_DIM],
+            dtype=DType.bfloat16,
+            device=replicated_mapping,
+        )
+        input_row_offsets = Tensor.zeros(
+            [batch_size + 1], dtype=DType.uint32, device=replicated_mapping
+        )
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
+        kv_collection = _build_kv_collection(
+            kv_params, batch_size, n_pages, devices
+        )
+
+        out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
+
+    assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.dtype == DType.bfloat16
+    assert out.mapping.mesh == mesh
     assert out.mapping.to_placements() == (Partial(),)

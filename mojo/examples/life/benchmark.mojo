@@ -15,7 +15,6 @@ from std.time import perf_counter_ns
 
 import gridv1
 import gridv2
-import gridv3
 
 
 def main():
@@ -25,29 +24,24 @@ def main():
     comptime cols = 1024
 
     # Initial state
-    gridv1 = gridv1.Grid.random(rows, cols, seed=42)
-    gridv2 = gridv2.Grid[rows, cols].random(seed=42)
-    gridv3 = gridv3.Grid[rows, cols].random(seed=42)
+    var gridv1 = gridv1.Grid.random(rows, cols, seed=42)
+    var gridv2 = gridv2.Grid[rows, cols].random(seed=42)
 
     # Warm up
-    warmv1 = gridv1.copy()
+    var warmv1 = gridv1.copy()
     for _ in range(warmup_iterations):
         warmv1 = warmv1.evolve()
 
-    warmv2 = gridv2.copy()
+    var warmv2 = gridv2.copy()
     for _ in range(warmup_iterations):
         warmv2 = warmv2.evolve()
 
-    warmv3 = gridv3.copy()
-    for _ in range(warmup_iterations):
-        warmv3 = warmv3.evolve()
-
     # Benchmark
-    start_time = perf_counter_ns()
+    var start_time = perf_counter_ns()
     for _ in range(benchmark_iterations):
         gridv1 = gridv1.evolve()
-    stop_time = perf_counter_ns()
-    elapsed = round(Float64(stop_time - start_time) / 1e6, 3)
+    var stop_time = perf_counter_ns()
+    var elapsed = round(Float64(stop_time - start_time) / 1e6, 3)
     print(
         benchmark_iterations,
         "evolutions of gridv1.Grid elapsed time: ",
@@ -63,18 +57,6 @@ def main():
     print(
         benchmark_iterations,
         "evolutions of gridv2.Grid elapsed time: ",
-        elapsed,
-        "ms",
-    )
-
-    start_time = perf_counter_ns()
-    for _ in range(benchmark_iterations):
-        gridv3 = gridv3.evolve()
-    stop_time = perf_counter_ns()
-    elapsed = round(Float64(stop_time - start_time) / 1e6, 3)
-    print(
-        benchmark_iterations,
-        "evolutions of gridv3.Grid elapsed time: ",
         elapsed,
         "ms",
     )

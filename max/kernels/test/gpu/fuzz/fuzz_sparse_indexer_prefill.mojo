@@ -47,7 +47,7 @@
 #   2 = write an out-of-range index -> trips the validity contract under diff.
 
 from std.collections import Set
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, max, min, sqrt
 from std.random import randn, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
@@ -337,7 +337,7 @@ def run_one_case(
     var q_host = ctx.enqueue_create_host_buffer[kv_type](q_n)
     var k_host = ctx.enqueue_create_host_buffer[kv_type](k_n + k_pad)
     _fill_stable(q_host.as_span(), spec.dist)
-    _fill_stable(Span(ptr=k_host.unsafe_ptr(), length=k_n), spec.dist)
+    _fill_stable(Span(unsafe_ptr=k_host.unsafe_ptr(), length=k_n), spec.dist)
     for j in range(k_pad):
         k_host[k_n + j] = Scalar[kv_type](PLANT_VAL)
 
@@ -345,9 +345,8 @@ def run_one_case(
     # A token in batch 0 with local_idx < extend[0]//2 must NOT see this key; if
     # the kernel reads it (intra-diagonal-block causality bug) the block max
     # jumps detectably above the f32 reference (which excludes it).
-    var plant_key = -1
     if spec.plant == 1 and batch >= 1 and extend[0] >= 2:
-        plant_key = prefix[0] + extend[0] // 2  # within batch-0 key region
+        var plant_key = prefix[0] + extend[0] // 2  # within batch-0 key region
         for d in range(idx_head_dim):
             k_host[plant_key * idx_head_dim + d] = Scalar[kv_type](PLANT_VAL)
 

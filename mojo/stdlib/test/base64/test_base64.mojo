@@ -77,12 +77,18 @@ def test_b64decode() raises:
     with assert_raises(
         contains="ValueError: Input length '21' must be divisible by 4"
     ):
-        _ = b64decode[validate=True]("invalid base64 string")
+        _ = b64decode("invalid base64 string")
+
+    # A truncated input must raise instead of reading out of bounds.
+    with assert_raises(
+        contains="ValueError: Input length '3' must be divisible by 4"
+    ):
+        _ = b64decode("abc")
 
     with assert_raises(
         contains="ValueError: Unexpected character ' ' encountered"
     ):
-        _ = b64decode[validate=True]("invalid base64 string!!!")
+        _ = b64decode("invalid base64 string!!!")
 
 
 def test_b16encode() raises:
@@ -123,6 +129,26 @@ def test_b16decode() raises:
     assert_equal(
         b16decode("414243444546616263646566"), bytes_of("ABCDEFabcdef")
     )
+
+    # RFC 4648 section 8: reject any character outside the uppercase alphabet
+    # `[0-9A-F]`, including lowercase hex digits.
+    with assert_raises(contains="Unexpected character 'G' encountered"):
+        _ = b16decode("GG")
+
+    with assert_raises(contains="Unexpected character 'Z' encountered"):
+        _ = b16decode("ZZ")
+
+    with assert_raises(contains="Unexpected character 'g' encountered"):
+        _ = b16decode("gg")
+
+    with assert_raises(contains="Unexpected character 'f' encountered"):
+        _ = b16decode("ff")
+
+    with assert_raises(contains="Unexpected character ' ' encountered"):
+        _ = b16decode("  ")
+
+    with assert_raises(contains="Input length '3' must be divisible by 2"):
+        _ = b16decode("616")
 
 
 def main() raises:

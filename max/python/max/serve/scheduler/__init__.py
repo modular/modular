@@ -140,6 +140,7 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
+            max_pending_requests=settings.max_pending_requests,
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)

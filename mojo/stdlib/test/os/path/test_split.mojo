@@ -21,7 +21,7 @@ from std.testing import TestSuite, assert_equal
 
 def test_split() raises:
     # Normal case
-    head, tail = split(std.os.path.join("a", "b", "c.txt"))
+    var head, tail = split(std.os.path.join("a", "b", "c.txt"))
     assert_equal(head, std.os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
@@ -61,7 +61,7 @@ def test_split() raises:
     assert_equal(tail, "c.txt")
 
     # Test with source_location()
-    source_location = String(source_location().file_name())
+    var source_location = String(source_location().file_name())
     head, tail = split(source_location)
     assert_equal(head + std.os.sep + tail, source_location)
 
