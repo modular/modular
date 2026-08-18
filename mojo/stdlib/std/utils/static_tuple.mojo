@@ -21,19 +21,18 @@ from std.utils import StaticTuple
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.memory import (
-    is_trivially_copyable,
-    is_trivially_destructible,
-    is_trivially_movable,
-)
 from std.reflection import reflect
-from std.utils.type_functions import ConditionalType
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
 
-comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDeletable & RegisterPassable
+comptime _StaticTupleTraits = ImplicitlyCopyable & Deinitable & RegisterPassable
 """The required trait conformances for a StaticTuple's element type."""
 
 
@@ -47,9 +46,9 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
       size: The number of elements.
     """
     comptime assert (
-        is_trivially_movable[T]()
-        and is_trivially_copyable[T]()
-        and is_trivially_destructible[T]()
+        IsTriviallyMovable[T]
+        and IsTriviallyCopyable[T]
+        and IsTriviallyDeinitable[T]
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
@@ -76,15 +75,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
 
-    comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
-        Trait=_StaticTupleTraits,
-        If=conforms_to(Self.element_type, DevicePassable),
-        Then=downcast[
-            downcast[Self.element_type, DevicePassable].device_type,
-            _StaticTupleTraits,
-        ],
-        Else=Self.element_type,
-    ]
+    comptime _DeviceElementType: _StaticTupleTraits = downcast[
+        Self.element_type.device_type,
+        _StaticTupleTraits,
+    ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
 
@@ -251,9 +245,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx.__mlir_index__()
+            Pointer(to=self._mlir_value)._get_kgen_pointer(),
+            idx.__mlir_index__(),
         )
-        return UnsafePointer[origin=origin_of(self)](ptr)[]
+        return Pointer[origin=origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline("nodebug")
     def _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -283,6 +278,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
 
         return Self(mlir_value=array)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __eq__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -306,6 +302,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return True
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ne__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -326,6 +323,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (self == other)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __lt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -351,6 +349,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return False
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __le__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -372,6 +371,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (other < self)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __gt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -392,6 +392,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return other < self
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ge__[
         _E: Comparable & TrivialRegisterPassable, //

@@ -29,8 +29,8 @@ mistral_arch = SupportedArchitecture(
     name="MistralForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=MistralConfig.DEFAULT_ENCODING,
+    supported_encodings=MistralConfig.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,
@@ -42,4 +42,6 @@ mistral_arch = SupportedArchitecture(
     config=MistralConfig,
     batching=MistralBatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

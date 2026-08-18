@@ -20,13 +20,13 @@ def test_conditional_timer_no_error() raises:
     with ConditionalTimer():
         print("Beginning no-error execution")
         std.time.sleep(0.1)
-        i = 1
+        var i = 1
         _ = flaky_identity(i)
         print("Ending no-error execution")
 
 
 def test_conditional_timer_suppressed_error() raises:
-    i = 2
+    var i = 2
     with assert_raises(contains="just a warning"):
         _ = flaky_identity(i)
 
@@ -42,7 +42,7 @@ def test_conditional_timer_propagated_error() raises:
         with ConditionalTimer():
             print("Beginning propagated error execution")
             std.time.sleep(0.1)
-            i = 4
+            var i = 4
             _ = flaky_identity(i)
             # We should not reach this line
 

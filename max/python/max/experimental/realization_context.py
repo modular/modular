@@ -47,9 +47,10 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import hashlib
 import logging
 import weakref
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -59,7 +60,7 @@ from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental.executor import (
-    CompositeExecutor,
+    CompilingExecutor,
     Executor,
     InterpreterExecutor,
     default_executor,
@@ -81,6 +82,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
+    Type,
     Value,
     ops,
 )
@@ -228,14 +230,9 @@ class EagerRealizationContext(RealizationContext):
         elif use_interpreter is None:
             self._executor = default_executor()
         elif use_interpreter:
-            self._executor = CompositeExecutor(
-                interpreter=InterpreterExecutor(max_ops=None),
-                fallback_on_error=False,
-            )
+            self._executor = InterpreterExecutor(max_ops=None)
         else:
-            self._executor = CompositeExecutor(
-                interpreter=None, fallback_on_error=True
-            )
+            self._executor = CompilingExecutor()
         self.sources = {}
         self.source_values = {}
         self.unrealized = []
@@ -495,6 +492,12 @@ class LazyRealizationContext(EagerRealizationContext):
         assert c.real
     """
 
+    #: Subgraph dedup table; armed per instance by ``lazy()``.
+    subgraph_cache: dict[Any, Any] | None = None
+    #: Output tree structure per keyed subgraph (see
+    #: :attr:`GraphRealizationContext.subgraph_out_defs`).
+    subgraph_out_defs: dict[str, Any] = {}
+
     def __exit__(
         self,
         exception_type: type[Ex] | None,
@@ -502,6 +505,16 @@ class LazyRealizationContext(EagerRealizationContext):
         traceback: TracebackType | None,
     ):
         self.graph.__exit__(exception_type, exception, traceback)
+
+
+def _fresh_subgraph_name(graph: Graph, base: str) -> str:
+    """Returns ``base`` or a numbered variant not yet registered on ``graph``."""
+    if base not in graph._subgraphs:
+        return base
+    i = 1
+    while f"{base}_{i}" in graph._subgraphs:
+        i += 1
+    return f"{base}_{i}"
 
 
 class GraphRealizationContext(RealizationContext):
@@ -527,6 +540,12 @@ class GraphRealizationContext(RealizationContext):
     graph: Graph
     """The graph being constructed in this context."""
     signal_buffers: list[BufferValue] | None
+    #: Subgraph dedup table; armed by ``Module.compile``, ``None`` inlines.
+    subgraph_cache: dict[Any, Any] | None
+    #: Output tree structure per keyed subgraph, so a caller that reuses a
+    #: cached subgraph (skipping its body trace) can still rebuild the call's
+    #: results. Keyed by the same dedup key as :attr:`subgraph_cache`.
+    subgraph_out_defs: dict[str, Any]
 
     def __init__(
         self,
@@ -542,6 +561,8 @@ class GraphRealizationContext(RealizationContext):
         """
         self.graph = graph
         self.signal_buffers = signal_buffers
+        self.subgraph_cache = None
+        self.subgraph_out_defs = {}
 
     async def realize_all(self) -> list[Tensor]:
         """Raises TypeError - graph contexts cannot realize tensors.
@@ -659,7 +680,78 @@ def ensure_context() -> Generator[None]:
 def lazy() -> Generator[None]:
     """Defers tensor realization until explicitly awaited."""
     with LazyRealizationContext() as ctx, realization_context(ctx):
+        # Arm subgraph dedup: a lazy block builds one graph, like compile.
+        ctx.subgraph_cache = {}
+        ctx.subgraph_out_defs = {}
         yield
+
+
+def define_subgraph(
+    ctx: GraphRealizationContext | LazyRealizationContext,
+    name: str,
+    input_types: Sequence[Type[Any]],
+    build_body: Callable[[list[Value[Any]]], Sequence[Value[Any]]],
+    *,
+    key: str | None = None,
+) -> Graph:
+    """Defines a deduplicated subgraph on ``ctx`` and returns it.
+
+    Works for any graph-building context — ahead-of-time graph or lazy — since
+    it reasons only in graph values and so is independent of when ``ctx``
+    realizes. ``build_body(inputs) -> outputs`` traces the body.
+
+    Bodies are deduplicated so a repeated call reuses one definition. When
+    ``key`` is given, it is the dedup key: two calls with the same ``key`` share
+    a definition and the caller vouches that their bodies match. When ``key`` is
+    ``None``, the body's IR hash is the key, so only bodies that print to
+    identical IR share.
+
+    ``ctx``'s signal buffers are appended as trailing subgraph inputs so
+    collectives in the body work; the caller passes the matching signal values
+    (``ctx.signal_buffers``) when it emits :func:`~max.graph.ops.call`.
+    """
+    cache = ctx.subgraph_cache
+    if cache is None:
+        raise TypeError("define_subgraph requires the root trace context.")
+
+    if key is not None and (subgraph := cache.get(key)) is not None:
+        return subgraph
+
+    signals = ctx.signal_buffers or []
+    name = _fresh_subgraph_name(ctx.graph, key or name)
+    subgraph = ctx.graph.add_subgraph(
+        name,
+        input_types=[*input_types, *(b.type for b in signals)],
+        custom_extensions=ctx.graph.kernel_libraries_paths,
+        devices=list(ctx.graph.device_chains),
+    )
+    n = len(input_types)
+    child = GraphRealizationContext(
+        subgraph,
+        signal_buffers=[i.buffer for i in subgraph.inputs[n:]] or None,
+    )
+    # child.subgraph_cache stays None, so a nested call in the body inlines.
+    with realization_context(child), child:
+        subgraph.output(*build_body(list(subgraph.inputs[:n])))
+
+    if key is None:
+        # No user key: dedup on the body's IR. Blank only the first ``"{name}"``
+        # (the op's own sym_name), leaving an identical name string in the body
+        # (e.g. a custom op) untouched, so an identical body hashes the same
+        # regardless of its fresh name.
+        asm = subgraph._mlir_op.get_asm(
+            assume_verified=True,
+            enable_debug_info=False,
+            print_generic_op_form=True,
+            use_local_scope=True,
+        ).replace(f'"{name}"', '"_"', 1)
+        key = hashlib.sha256(asm.encode()).hexdigest()
+    if key in cache:
+        ctx.graph._subgraphs.pop(name, None)
+        subgraph._mlir_op.erase()
+        return cache[key]
+    cache[key] = subgraph
+    return subgraph
 
 
 __all__ = [

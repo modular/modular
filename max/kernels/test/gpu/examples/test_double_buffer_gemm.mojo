@@ -16,9 +16,10 @@ from std.math.uutils import udivmod
 from std.sys import argv, simd_width_of
 from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import async_copy_wait_all
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.memory import async_copy_wait_all
 from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (
@@ -149,7 +150,7 @@ def sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
-    var a_reg: InlineArray[
+    var a_reg: Array[
         LayoutTensor[
             a_type,
             layout_a,
@@ -172,7 +173,7 @@ def sgemm_double_buffer[
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
-    var b_reg: InlineArray[
+    var b_reg: Array[
         LayoutTensor[
             b_type,
             layout_b,
@@ -370,7 +371,7 @@ def test(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[gemm](
                 c_tensor,
@@ -436,9 +437,9 @@ def test(ctx: DeviceContext) raises:
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )

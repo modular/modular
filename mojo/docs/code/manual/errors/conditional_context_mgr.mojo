@@ -21,13 +21,13 @@ struct ConditionalTimer(ImplicitlyCopyable):
         self.start_time = 0
 
     def __enter__(mut self) -> Self:
-        self.start_time = Int(std.time.perf_counter_ns())
+        self.start_time = std.time.perf_counter_ns()
         return self
 
     def __exit__(mut self):
-        end_time = std.time.perf_counter_ns()
-        elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+        var end_time = std.time.perf_counter_ns()
+        var elapsed_time_ms = round(
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -63,7 +63,7 @@ def main() raises:
                 print("continue executed")
                 continue
 
-            j = flaky_identity(i)
+            var j = flaky_identity(i)
             print("j =", j)
 
             print("Ending execution")

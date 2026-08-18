@@ -69,15 +69,32 @@ class UnifiedMTPGemma4(Module):
         draft_config: Gemma4AssistantConfig,
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
+        use_greedy_acceptance: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
-            if speculative_config
+            if speculative_config is not None
+            and speculative_config.num_speculative_tokens is not None
             else 1
         )
+        # Greedy acceptance (argmax) has no mid-graph allocation, so the fused
+        # spec graph is CUDA-graph-capturable; the stochastic path is not.
+        # Greedy serving only (temp 0, top_k 1); relaxed/synthetic are rejected.
+        if use_greedy_acceptance and speculative_config is not None:
+            if speculative_config.use_relaxed_acceptance_for_thinking:
+                raise ValueError(
+                    "use_greedy_acceptance is incompatible with "
+                    "use_relaxed_acceptance_for_thinking"
+                )
+            if speculative_config.synthetic_acceptance_rate is not None:
+                raise ValueError(
+                    "use_greedy_acceptance is incompatible with "
+                    "synthetic_acceptance_rate"
+                )
+        self.use_greedy_acceptance = use_greedy_acceptance
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
         if (
@@ -93,7 +110,7 @@ class UnifiedMTPGemma4(Module):
                 else None
             ),
             num_draft_steps=self.num_draft_steps,
-            use_stochastic=True,
+            use_stochastic=not use_greedy_acceptance,
             relaxed_topk=relaxed_topk,
             relaxed_delta=relaxed_delta,
         )
@@ -107,6 +124,8 @@ class UnifiedMTPGemma4(Module):
         self,
         tokens: TensorValue,
         input_row_offsets: TensorValue,
+        image_embeddings: list[TensorValue],
+        image_token_indices: list[TensorValue],
         draft_tokens: TensorValue,
         signal_buffers: list[BufferValue],
         sliding_kv_collections: list[PagedCacheValues],
@@ -146,18 +165,13 @@ class UnifiedMTPGemma4(Module):
         n_devs = len(devices)
         device0 = devices[0]
 
-        # Create empty image embeddings/indices for text-only MTP
-        hidden_size = self.config.text_config.hidden_size
-        empty_image_embeddings = [
-            ops.constant(0, DType.bfloat16, dev).broadcast_to([0, hidden_size])
-            for dev in devices
-        ]
-        empty_image_indices = [
-            ops.constant(0, DType.int32, dev).broadcast_to([0])
-            for dev in devices
-        ]
-
         # -- 3. Target forward --
+        # Vision embeddings are scattered into the target's token embeddings at
+        # image_token_indices. Images are only present during prefill, where
+        # draft_tokens is [batch, 0] (K=0), so merged_tokens == prompt tokens
+        # and merged_offsets_per_dev == input_row_offsets: the indices computed
+        # against the active window map directly onto merged_tokens. During
+        # decode both lists are empty (zero-row), so the scatter is a no-op.
         target_outputs = self.target(
             merged_tokens,
             signal_buffers,
@@ -165,8 +179,8 @@ class UnifiedMTPGemma4(Module):
             global_kv_collections,
             return_n_logits,
             merged_offsets_per_dev,
-            empty_image_embeddings,
-            empty_image_indices,
+            image_embeddings,
+            image_token_indices,
         )
 
         logits = target_outputs[1]
@@ -297,7 +311,7 @@ class UnifiedMTPGemma4(Module):
             1, DType.uint32, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        # Create decode-step KV collections with max_lengths[0,0] = 1.
+        # Create decode-step KV collections with max_prompt_length = 1.
         # Without this, cross-attention sees max_prompt_length() > 1 (the
         # merged prefill length), is_token_generation stays False, and the
         # depth512 pair-CTA prefill kernel is invoked for a 1-token query —
@@ -306,18 +320,16 @@ class UnifiedMTPGemma4(Module):
         decode_sliding_kv = [
             replace(
                 kv,
-                max_lengths=ops.concat(
-                    [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-                ).reshape([1, 2]),
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
             )
             for kv in sliding_kv_collections
         ]
         decode_global_kv = [
             replace(
                 kv,
-                max_lengths=ops.concat(
-                    [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-                ).reshape([1, 2]),
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
             )
             for kv in global_kv_collections
         ]
@@ -377,6 +389,8 @@ class UnifiedMTPGemma4(Module):
             SpecDecodeInputTypeSpec(
                 distributed=True,
                 data_parallel_degree=1,
+                enable_vision=True,
+                vision_hidden_size=self.config.text_config.hidden_size,
                 include_in_thinking_phase=True,
                 enable_structured_output=self.enable_structured_output,
             ),

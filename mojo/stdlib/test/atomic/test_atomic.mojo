@@ -59,29 +59,29 @@ def test_ordering_stringable() raises:
 
 def _test_atomic[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
-    var atom = Atomic[dtype](3)
+    var atom = Atomic[scalar](3)
 
     assert_equal(atom.load(), scalar(3))
 
-    assert_equal(atom.value, scalar(3))
+    assert_equal(atom._value, scalar(3))
 
     atom += scalar(4)
-    assert_equal(atom.value, scalar(7))
+    assert_equal(atom._value, scalar(7))
 
     atom -= scalar(4)
-    assert_equal(atom.value, scalar(3))
+    assert_equal(atom._value, scalar(3))
 
     atom.max(scalar(0))
-    assert_equal(atom.value, scalar(3))
+    assert_equal(atom._value, scalar(3))
 
     atom.max(scalar(42))
-    assert_equal(atom.value, scalar(42))
+    assert_equal(atom._value, scalar(42))
 
     atom.min(scalar(3))
-    assert_equal(atom.value, scalar(3))
+    assert_equal(atom._value, scalar(3))
 
     atom.min(scalar(0))
-    assert_equal(atom.value, scalar(0))
+    assert_equal(atom._value, scalar(0))
 
     atom.store(scalar(99))
     assert_equal(atom.load(), scalar(99))
@@ -94,7 +94,7 @@ def test_atomic() raises:
 
 def _test_compare_exchange[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
-    var atom = Atomic[dtype](3)
+    var atom = Atomic[scalar](3)
 
     # Successful cmpxchg
     var expected = scalar(3)
@@ -120,7 +120,7 @@ def test_compare_exchange() raises:
 
 def test_comptime_atomic() raises:
     def comptime_fn() -> Int:
-        var atom = Atomic[DType.int](3)
+        var atom = Atomic[Int](3)
         atom += 4
         atom -= 4
         return Int(atom.load())
@@ -141,7 +141,7 @@ def test_comptime_fence() raises:
 def test_comptime_compare_exchange() raises:
     def comptime_fn(expected_in: Int32) -> Tuple[Bool, Int32, Int32]:
         var expected = expected_in
-        var atom = Atomic[DType.int32](0)
+        var atom = Atomic[Int32](0)
         var success = atom.compare_exchange(expected, 42)
         return (success, expected, atom.load())
 

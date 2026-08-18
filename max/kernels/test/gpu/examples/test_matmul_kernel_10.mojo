@@ -16,6 +16,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod, umod
 from std.sys import has_amd_gpu_accelerator
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,6 +28,7 @@ from layout import (
     Coord,
     TileTensor,
     TensorLayout,
+    PointerStorage,
     Idx,
     row_major,
     stack_allocation,
@@ -34,16 +36,15 @@ from layout import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from std.memory import stack_allocation
 
 from std.utils import StaticTuple
 from std.utils.index import Index
@@ -83,9 +84,24 @@ def sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: TileTensor[c_type, CLayoutType, MutAnyOrigin],
-    mat_a: TileTensor[a_type, ALayoutType, MutAnyOrigin],
-    mat_b: TileTensor[b_type, BLayoutType, MutAnyOrigin],
+    mat_c: TileTensor[
+        c_type,
+        CLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_a: TileTensor[
+        a_type,
+        ALayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
+    mat_b: TileTensor[
+        b_type,
+        BLayoutType,
+        MutAnyOrigin,
+        Storage=PointerStorage[element_width=1],
+    ],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ) where (a_type.is_numeric() and b_type.is_numeric()):
@@ -122,12 +138,12 @@ def sgemm_warp_tiling_kernel[
     )
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a.ptr + c_row * BM * K
-    var bb_ptr = mat_b.ptr + c_col * BN
+    var aa_ptr = mat_a._storage + c_row * BM * K
+    var bb_ptr = mat_b._storage + c_col * BN
     # Move C_ptr to warp's output tile
     var M_offset_warp = c_row * BM + warp_row * WM
     var N_offset_warp = c_col * BN + warp_col * WN
-    var cc_ptr = mat_c.ptr + M_offset_warp * N + N_offset_warp
+    var cc_ptr = mat_c._storage + M_offset_warp * N + N_offset_warp
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -264,10 +280,14 @@ def matmul_naive(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     var x = global_idx.x
     var y = global_idx.y
 
@@ -408,12 +428,11 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         NUM_THREADS=K10_NUM_THREADS,
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_matmul_10(mut b: Bencher):
-        @parameter
         @always_inline
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[sgemm_type](
                 c_buffer,
                 a_buffer,
@@ -424,7 +443,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
                 block_dim=(K10_NUM_THREADS,),
             )
 
-        b.iter_custom[run_func](ctx)
+        bencher_iter_custom(b, run_func, ctx)
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
@@ -439,24 +458,23 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_naive(mut b: Bencher):
-        @parameter
         @always_inline
-        def run_func_naive(ctx: DeviceContext) raises:
+        def run_func_naive(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[matmul_naive](
                 a_device,
                 b_device,
                 c_device,
-                M,
-                N,
-                K,
+                Int32(M),
+                Int32(N),
+                Int32(K),
                 grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
 
-        b.iter_custom[run_func_naive](ctx)
+        bencher_iter_custom(b, run_func_naive, ctx)
 
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),

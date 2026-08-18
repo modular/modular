@@ -21,6 +21,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
+from .batch_processor import PixtralBatchProcessor
 from .model import PixtralModel
 from .model_config import PixtralConfig
 from .tokenizer import PixtralTokenizer
@@ -30,10 +31,8 @@ pixtral_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     example_repo_ids=["mistral-experimental/pixtral-12b"],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=PixtralConfig.DEFAULT_ENCODING,
+    supported_encodings=PixtralConfig.SUPPORTED_ENCODINGS,
     pipeline_model=PixtralModel,
     tokenizer=PixtralTokenizer,
     context_type=TextAndVisionContext,
@@ -49,5 +48,8 @@ pixtral_arch = SupportedArchitecture(
         validate_requires_vision_context,
     ],
     config=PixtralConfig,
+    batching=PixtralBatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

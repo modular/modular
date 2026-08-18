@@ -8,7 +8,6 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -122,6 +121,21 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "fake_weights",
+    testonly = True,
+    srcs = ["fake_weights.py"],
+    imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+)
+
+modular_py_library(
     name = "github_utils",
     testonly = True,
     srcs = ["github_utils.py"],
@@ -137,6 +151,31 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/graph",
         requirement("nvitop"),
+    ],
+)
+
+modular_py_library(
+    name = "mef_precompile",
+    testonly = True,
+    srcs = ["mef_precompile.py"],
+    imports = [".."],
+    # Package default plus two consumers that live outside //max/tests but use
+    # the same CPU/GPU compile split: //max/python/layer_benchmarks' harness
+    # tests, and the GPT-2 device-conformance suites, which sit under
+    # //max/internal because they reach into the closed-source driver plugins.
+    visibility = [
+        "//:__pkg__",
+        "//max/internal/driver/test:__pkg__",
+        "//max/python/layer_benchmarks:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    deps = [
+        requirement("click"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -157,6 +196,15 @@ modular_py_library(
     testonly = True,
     srcs = ["registry.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("pytest"),
         requirement("typing-extensions"),
@@ -170,6 +218,15 @@ modular_py_library(
     testonly = True,
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -270,7 +327,9 @@ modular_py_library(
         "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("typing-extensions"),
@@ -352,10 +411,59 @@ modular_py_library(
     deps = [
         ":mocks",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "modular_graph_test",
+    testonly = True,
+    srcs = ["modular_graph_test.py"],
+    imports = [".."],
+    deps = [
+        ":graph_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "graph_error_messages_scenario",
+    testonly = True,
+    srcs = ["graph_error_messages_scenario.py"],
+    imports = [".."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# Shared row-wise reduction graph construction. Not testonly, so the Kepler
+# rowwise-reductions benchmark (a non-testonly binary) can share this builder
+# with the correctness test.
+modular_py_library(
+    name = "reduction_graphs",
+    srcs = ["reduction_graphs.py"],
+    imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//utils/benchmarking/kepler/graph:__pkg__",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
     ],
 )

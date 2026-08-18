@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Exhaustive kernel-level tests for the preshuffled-B grouped MXFP4 kernels.
 
-Bypasses the public `mxfp4_grouped_matmul_amd_preb` dispatcher and exercises
+Bypasses the public `block_scaled_grouped_matmul_amd_preb` dispatcher and exercises
 each preb kernel directly against a per-expert ungrouped GPU reference
-(`mxfp4_block_scaled_matmul_amd`):
+(`block_scaled_matmul_amd`):
 
   - `PreShuffledBGroupedGEMM.launch[persistent=True]`   — persistent 1D grid
                                                           + XCD swizzle
@@ -38,9 +38,9 @@ Usage:
   br test_mxfp4_grouped_matmul_amd_kernels.mojo.test
 """
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
-from std.gpu.memory import CacheOperation
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host.info import MI355X
+from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
@@ -51,7 +51,7 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
     PreShuffledBGroupedGEMM,
     Shuffler,
-    mxfp4_block_scaled_matmul_amd,
+    block_scaled_matmul_amd,
 )
 
 
@@ -87,7 +87,7 @@ def _build_routing(
 
 
 # ===----------------------------------------------------------------------=== #
-# GPU reference — per-expert ungrouped `mxfp4_block_scaled_matmul_amd`.
+# GPU reference — per-expert ungrouped `block_scaled_matmul_amd`.
 # Shares the AMD MFMA code path, so a bug common to all MFMA paths would not
 # be caught; but it's fast enough to support large shapes.
 # ===----------------------------------------------------------------------=== #
@@ -104,7 +104,7 @@ def _gpu_per_expert_reference[
     b_dev: DeviceBuffer[DType.uint8],
     a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
     b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    c_ref_dev: DeviceBuffer[DType.float32],
+    mut c_ref_dev: DeviceBuffer[DType.float32],
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // MXFP4_SF_VECTOR_SIZE
@@ -139,7 +139,7 @@ def _gpu_per_expert_reference[
             row_major(Coord(num_tokens, Idx[N])),
         )
 
-        mxfp4_block_scaled_matmul_amd(
+        block_scaled_matmul_amd(
             c_expert, a_expert, b_expert, sfa_expert, sfb_expert, ctx
         )
 
@@ -163,13 +163,17 @@ def _run_preb[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,  # struct param — sizes the persistent grid
+    static_grid_z: Bool = False,  # comptime grid.z = n_local_experts (direct)
 ](
     name: String,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
+    grid_m_cap: Int = -1,  # direct grid.y cap (-1 => full stride)
+    ascale_stride_toks: Int = -1,  # A-scale slot stride source (-1 => max)
 ) raises:
     comptime assert K % 128 == 0, "K must be a multiple of 128"
     comptime packed_K = K // 2
@@ -230,9 +234,12 @@ def _run_preb[
     _fill_random_e8m0(b_sc_h, num_experts * N * scale_K)
     _build_routing(a_off_h, eid_h, num_tokens_by_expert, expert_ids_list)
 
-    # Per-expert preshuffled-A-scale slot stride: align_up(max, 32).
-    # Caller-supplied bound; in production this is a model-config constant.
-    var max_padded_M = align_up(max_tokens, 32)
+    # Per-expert preshuffled-A-scale slot stride: align_up(stride, 32).
+    # ascale_stride_toks > max_tokens overshoots the grid.y cap to test decoupling.
+    var ascale_toks = (
+        ascale_stride_toks if ascale_stride_toks > 0 else max_tokens
+    )
+    var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
     var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
@@ -302,7 +309,7 @@ def _run_preb[
         a_sc_pre_tt,
         a_off_tt_for_pre,
         num_active,
-        max_tokens,
+        ascale_toks,
         ctx.default_device_info.sm_count * 2,
         ctx,
     )
@@ -367,7 +374,9 @@ def _run_preb[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
+        static_grid_z=static_grid_z,
     ](
         c_tt,
         a_tt,
@@ -376,9 +385,10 @@ def _run_preb[
         b_sc_tt,
         a_off_tt,
         eid_tt,
-        max_tokens,
+        ascale_toks,  # max_num_tokens_per_expert = A-scale slot stride
         num_active,
         ctx,
+        grid_m_cap,
     )
     ctx.synchronize()
 
@@ -425,6 +435,7 @@ def test_persistent[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
 ](
@@ -455,6 +466,7 @@ def test_persistent[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
@@ -472,17 +484,25 @@ def test_direct[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
+    pipeline_depth: Int = 2,
     waves_per_eu: Int = 0,
     wg_per_cu: Int = 2,
+    static_grid_z: Bool = False,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
+    grid_m_cap: Int = -1,
+    ascale_stride_toks: Int = -1,
 ) raises:
     """`PreShuffledBGroupedGEMM.launch[persistent=False]` — 3D workload-sized
     grid: one WG per (n_tile, m_tile, expert). `wg_per_cu` is accepted for
-    signature parity with `test_persistent`; the direct grid ignores it."""
+    signature parity with `test_persistent`; the direct grid ignores it.
+
+    `grid_m_cap` sizes grid.y to a decode cap; `ascale_stride_toks` overrides
+    the A-scale slot stride; `static_grid_z` uses the comptime local-expert
+    count for grid.z (requires routing arrays sized to `num_experts`)."""
     _run_preb[
         num_experts,
         N,
@@ -496,9 +516,18 @@ def test_direct[
         b_cache_policy=b_cache_policy,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
+        pipeline_depth=pipeline_depth,
         waves_per_eu=waves_per_eu,
         wg_per_cu=wg_per_cu,
-    ](name, num_tokens_by_expert, expert_ids_list, ctx)
+        static_grid_z=static_grid_z,
+    ](
+        name,
+        num_tokens_by_expert,
+        expert_ids_list,
+        ctx,
+        grid_m_cap,
+        ascale_stride_toks,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -944,7 +973,7 @@ def main() raises:
     # ----------------------------------------------------------------- #
     # Production dispatch-band coverage — real kimi N/K with the EXACT
     # (BM, BN, BK_ELEMS, WN, persistent, b_cache_policy) each band in
-    # mxfp4_grouped_matmul_amd.mojo launches. One representative token
+    # block_scaled_grouped_matmul_amd.mojo launches. One representative token
     # distribution per band (a few active experts + an inactive slot
     # where useful). STREAMING vs ALWAYS is result-identical (cache hint);
     # these cases assert the exact instantiation compiles, runs, and is
@@ -1309,5 +1338,341 @@ def main() raises:
         b_cache_policy=SX,
         cluster_drain_sched=True,
     ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
+
+    # MiniMax-M3 dispatcher band configs (N=6144; up K=6144, down K=3072).
+    # Exactly the tiles block_scaled_grouped_matmul_amd_preb selects for M3 (defaults
+    # for the scheduler knobs, matching run_kernel). Certifies each M3 band
+    # instantiation against the per-expert reference.
+    print("---- MiniMax-M3 dispatcher band configs ----")
+    # up: etm<=128 BN64 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, b_cache_policy=SX
+    ]("M3 up etm<=128 BN64 STREAM", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # up: etm 7..14 dip micro-band BM16/BN128 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 up etm7..14 BM16/BN128 STREAM", [4, 2, 3, 4], [0, 1, 2, 3], ctx)
+    # up: etm<=512 BM32/BN128 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=32, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 up etm<=512 BM32/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    # up: etm<=2047 BM64/BN128
+    test_persistent[4, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=32](
+        "M3 up etm<=1023 BM64/BN128/WN32",
+        [256, 256, 256, 256],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    test_persistent[4, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up etm<=2047 BM64/BN128/WN64",
+        [256, 256, 256, 256],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    # up: etm<=4095 BM128/BN128
+    test_persistent[4, 6144, 6144, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up etm<=4095 BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # up: else direct BM64/BN128
+    test_direct[1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up direct", [512], [0], ctx
+    )
+    # down: etm<=96 BN64 STREAM
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=64, BK_ELEMS=512, WN=16, b_cache_policy=SX
+    ]("M3 down etm<=96 BN64 STREAM", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # down: etm 7..14 dip micro-band BM16/BN128 STREAM
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 down etm7..14 BM16/BN128 STREAM", [4, 2, 3, 4], [0, 1, 2, 3], ctx)
+    # down: etm<=384 BM32/BN256
+    test_persistent[4, 6144, 3072, BM=32, BN=256, BK_ELEMS=512, WN=64](
+        "M3 down etm<=384 BM32/BN256", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    # down: etm<=1536 BM64/BN128
+    test_persistent[4, 6144, 3072, BM=64, BN=128, BK_ELEMS=512, WN=32](
+        "M3 down etm<=1536 BM64/BN128", [256, 256, 256, 256], [0, 1, 2, 3], ctx
+    )
+    # down: else BM128/BN128 persistent
+    test_persistent[4, 6144, 3072, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 down else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # down decode band: direct capped grid.y + static grid.z vs ref, across
+    # balanced / skew / BM32 / static-z empties / A-scale decoupling.
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap bal",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap skew",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=32,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap BM32",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    # static grid.z over-launch: 8 slots, 2 active; 6 M==0 slots early-return.
+    test_direct[
+        8,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct+cap static-z empties",
+        [32, 0, 8, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        ctx,
+        grid_m_cap=32,
+    )
+    # Decoupling: A-scale stride (512) >> grid.y cap (32).
+    test_direct[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 down decode direct decouple stride=512",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+        ascale_stride_toks=512,
+    )
+    # gate_up decode band (deep K=6144): same coverage as the down cases.
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap bal",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap skew",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=32,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap BM32",
+        [8, 8, 8, 8],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+    )
+    # static grid.z over-launch: 8 slots, 2 active; 6 M==0 slots early-return.
+    test_direct[
+        8,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct+cap static-z empties",
+        [32, 0, 8, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+        ctx,
+        grid_m_cap=32,
+    )
+    # Decoupling under deep K: A-scale stride (512) >> grid.y cap (32).
+    test_direct[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        b_cache_policy=SX,
+        static_grid_z=True,
+    ](
+        "M3 gate_up decode direct decouple stride=512",
+        [32, 4, 4, 4],
+        [0, 1, 2, 3],
+        ctx,
+        grid_m_cap=32,
+        ascale_stride_toks=512,
+    )
+    # up/gate (unfused, N=3072, K=6144): etm<=4096 BM64/BN128 persistent
+    test_persistent[4, 3072, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up/gate etm<=4096 BM64/BN128",
+        [256, 128, 256, 128],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    # up/gate (unfused): else BM128/BN128 persistent
+    test_persistent[4, 3072, 6144, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up/gate else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # M3 etm<=2 low-batch-decode band
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+
+    # ----------------------------------------------------------------- #
+    # Pipeline-depth parameterization (deeper-prefetch lever).
+    # `pipeline_depth > 2` sizes the B-fragment ring to `pipeline_depth`
+    # slots and swaps the b_prefetch steady loop's end-of-iter draining
+    # barrier() for the non-draining `s_waitcnt[lgkmcnt=0]` + bare s_barrier.
+    # This is the CORRECTNESS gate for the depth plumbing + barrier seam: at
+    # depth 3/4 the deeper ring is allocated and the non-draining barrier
+    # engages, and the result must still match the per-expert reference.
+    #
+    # FALSE-NEGATIVE GUARD: this is numerics-only. A build that (regressively)
+    # left the draining barrier in place would ALSO pass here — the perf
+    # effect (B loads actually staying outstanding) is NOT observable from
+    # numerics and MUST be rocprof-verified on GPU when depth is raised in a
+    # dispatch band. Passing this test alone does not prove the lever works.
+    #
+    # M3 decode-band tiles (N=6144; up K=6144, down K=3072), a few active
+    # experts + an inactive slot, on both the persistent and direct grids.
+    print("---- pipeline_depth > 2 (deeper prefetch) correctness ----")
+    # M3 up decode tile, depth 3 and 4 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 up decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=4
+    ]("M3 up decode depth=4", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 up decode tile, BN128/WN32 variant, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=128, BK_ELEMS=512, WN=32, pipeline_depth=3
+    ]("M3 up decode BN128 depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # M3 down decode tile, depth 3 (persistent).
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=64, BK_ELEMS=512, WN=16, pipeline_depth=3
+    ]("M3 down decode depth=3", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # Direct grid at depth 3 and 4 — a larger single expert so the steady
+    # loop (where the non-draining barrier lives) runs many iterations.
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=3
+    ]("M3 up direct depth=3", [512], [0], ctx)
+    test_direct[
+        1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64, pipeline_depth=4
+    ]("M3 up direct depth=4", [512], [0], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

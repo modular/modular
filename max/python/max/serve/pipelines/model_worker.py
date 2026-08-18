@@ -34,6 +34,7 @@ from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineInputsType,
@@ -43,12 +44,26 @@ from max.pipelines.modeling.types import (
 from max.profiler import Tracer, traced
 from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsBackend,
+    EplbStatsResetBackend,
+)
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
-from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.common import (
+    configure_kernel_tracing,
+    configure_logging,
+    configure_metrics,
+    configure_tracing,
+)
+from max.serve.telemetry.gc_utils import (
+    _release_free_host_memory,
+    freeze_gc_heap,
+    install_gc_debugger,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -67,6 +82,8 @@ GiB = 1024 * 1024 * 1024
 
 @runtime_checkable
 class SupportsGraphCaptureWarmup(Protocol):
+    max_batch_size: int
+
     def warmup_graph_capture(self) -> None: ...
 
 
@@ -91,6 +108,42 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
         return
     pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
+
+
+def _get_eplb_stats_accumulator(
+    pipeline: Pipeline[Any, Any],
+    enabled: bool,
+) -> EplbStatsAccumulator | None:
+    """Retrieve the pipeline's pre-built EplbStatsAccumulator if profiling is on.
+
+    Args:
+        pipeline: The model pipeline running in this worker process.
+        enabled: pipeline_config.runtime.eplb_profile i.e. whether the user has opted in to EPLB profiling for this run.
+
+    Returns:
+        The accumulator constructed by the pipeline's load_model, or
+        None if profiling is disabled or the pipeline does not expose one.
+    """
+    if not enabled:
+        return None
+
+    pipeline_model = get_pipeline_model(pipeline)
+    accumulator = getattr(pipeline_model, "_eplb_stats_accumulator", None)
+    if accumulator is None:
+        logger.warning(
+            "MAX_SERVE_EPLB_PROFILE is enabled but pipeline %s does not "
+            "expose an EplbStatsAccumulator; routing histograms unavailable.",
+            type(pipeline_model).__name__ if pipeline_model else "None",
+        )
+        return None
+
+    logger.info(
+        "EPLB stats profiling enabled: %d MoE layers x %d logical experts (top-%d).",
+        accumulator.metadata.num_moe_layers,
+        accumulator.metadata.num_logical_experts,
+        accumulator.metadata.num_experts_per_token,
+    )
+    return accumulator
 
 
 def get_reset_prefix_cache_backend(
@@ -190,8 +243,11 @@ class ModelWorker:
                 can dominate first-run startup on cold filesystem caches.
         """
         configure_logging(settings)
+        configure_tracing(settings)
+        configure_kernel_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
+
         run_start_s = time.monotonic()
         spawn_duration_s = (
             time.time() - spawn_start_wall_ts
@@ -220,7 +276,9 @@ class ModelWorker:
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
-            # Use any model's device_specs — all components share the same device.
+            # Use any model's device_specs — all components share the same
+            # device. Reads the raw field, which may name a GPU the model was
+            # downcast off of; priming an unused GPU is harmless.
             prime_start_s = time.monotonic()
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])
@@ -274,6 +332,10 @@ class ModelWorker:
                 other_s,
             )
 
+            if os.getenv("MODULAR_MAX_RELEASE_FREE_HOST_MEMORY"):
+                with Tracer("release_free_host_memory"):
+                    _release_free_host_memory()
+
             warmup_duration_s = 0.0
             with Tracer("graph_capture_warmup"):
                 if pipeline_config.runtime.device_graph_capture:
@@ -281,11 +343,6 @@ class ModelWorker:
                         raise ValueError(
                             "device_graph_capture is enabled but the pipeline "
                             "does not support graph-capture warmup."
-                        )
-                    max_batch_size = pipeline_config.runtime.max_batch_size
-                    if max_batch_size is None:
-                        raise ValueError(
-                            "device_graph_capture requires max_batch_size to be set."
                         )
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
@@ -295,7 +352,7 @@ class ModelWorker:
                         "(model=%s, max_batch_size=%d).",
                         warmup_duration_s,
                         pipeline_config.models.main_architecture_name,
-                        max_batch_size,
+                        pipeline.max_batch_size,
                     )
 
             total_in_run_s = time.monotonic() - run_start_s
@@ -356,7 +413,42 @@ class ModelWorker:
                 get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
-            # Maybe retrieve LoRA manager and construct the ZMQ request processor.
+            # Tear down the KV connector when the worker exits (normal exit,
+            # exception, or SIGTERM-driven cancellation). This drains host/disk
+            # transfers and, for the tiered connector, removes the on-disk
+            # offload directory so it isn't leaked across restarts.
+            if kv_cache is not None:
+                exit_stack.callback(kv_cache.shutdown)
+
+            # Get the EPLB stats accumulator (None unless profiling is
+            # enabled and the pipeline supports it).
+            eplb_stats_accumulator = _get_eplb_stats_accumulator(
+                pipeline, settings.eplb_profile
+            )
+
+            if eplb_stats_accumulator is not None:
+                # Zero warmup/graph-capture skew so the first snapshot is clean.
+                eplb_stats_accumulator.reset()
+
+            eplb_stats_backend = (
+                EplbStatsBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
+                )
+                if eplb_stats_accumulator is not None
+                else None
+            )
+
+            eplb_stats_reset_backend = (
+                EplbStatsResetBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
+                )
+                if eplb_stats_accumulator is not None
+                else None
+            )
+
+            # Maybe retrieve LoRA manager.
             lora_request_processor = None
             pipeline_model = get_pipeline_model(pipeline)
             if pipeline_config.lora:
@@ -367,6 +459,32 @@ class ModelWorker:
                     lora_manager,
                     zmq_endpoint_base,
                 )
+
+            # Freeze the GC heap now that all long-lived startup objects are
+            # allocated to reduce the work in subsequent GC collections.
+            # See: https://github.com/vllm-project/vllm/blob/95ed0feaa5cd7fb16d72c53ce04950aaf07c4698/vllm/utils/gc_utils.py
+            gc_freeze_start_s = time.monotonic()
+            with Tracer("gc_freeze_after_warmup"):
+                frozen_objects = freeze_gc_heap()
+            gc_freeze_ms = (time.monotonic() - gc_freeze_start_s) * 1000.0
+            logger.info(
+                "Froze %d GC-tracked objects after warmup in %.1fms.",
+                frozen_objects,
+                gc_freeze_ms,
+                extra={
+                    "event": "gc_freeze",
+                    "gc_frozen_objects": frozen_objects,
+                    "gc_freeze_ms": gc_freeze_ms,
+                },
+            )
+
+            # Optionally instrument CPython garbage-collection pauses. This is
+            # done after warmup as graph capture can trigger a large number
+            # of GC collections that are noisy.
+            install_gc_debugger(
+                enabled=settings.gc_debug,
+                top_objects=settings.gc_debug_top_objects,
+            )
 
             # Mark the start of the process, and run the scheduler.
             logger.debug("Started model worker!")
@@ -384,6 +502,14 @@ class ModelWorker:
                 ):
                     assert kv_cache is not None
                     kv_cache.reset_prefix_cache()
+
+                # Serve any pending EP stats requests.
+                if eplb_stats_backend is not None:
+                    eplb_stats_backend.serve_pending_requests()
+
+                if eplb_stats_reset_backend is not None:
+                    eplb_stats_reset_backend.serve_pending_requests()
+
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()
@@ -500,4 +626,9 @@ async def start_model_worker(
         logger.debug("Model worker task is ready")
 
         async with model_worker_interface.model_worker_proxy() as model_worker:
+            # Block until the worker channel is connected before serving, so
+            # runtime admission never has to disambiguate "not connected yet"
+            # from "queue full." Reuses the model-worker readiness budget.
+            await model_worker.wait_until_connected(settings.mw_timeout_s)
+            logger.debug("Model worker channel connected")
             yield model_worker

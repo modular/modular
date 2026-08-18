@@ -13,16 +13,22 @@
 
 from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
-from std.memory import (
-    is_trivially_copyable,
-    is_trivially_destructible,
-    is_trivially_movable,
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import size_of
 
 from std.testing import *
 from std.testing import TestSuite
-from test_utils import ExplicitDelOnly, MoveOnly, check_write_to
+from test_utils import (
+    DelCounter,
+    ExplicitDelOnly,
+    MoveOnly,
+    PinnedExplicitDelOnly,
+    check_write_to,
+)
 
 
 def test_basic() raises:
@@ -96,7 +102,7 @@ def test_optional_reg_basic() raises:
 
 
 def test_optional_is() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_false(a is None)
 
     a = Optional[Int](None)
@@ -104,7 +110,7 @@ def test_optional_is() raises:
 
 
 def test_optional_isnot() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_true(a is not None)
 
     a = Optional[Int](None)
@@ -112,7 +118,7 @@ def test_optional_isnot() raises:
 
 
 def test_optional_reg_is() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_false(a is None)
 
     a = OptionalReg[Int](None)
@@ -120,7 +126,7 @@ def test_optional_reg_is() raises:
 
 
 def test_optional_reg_isnot() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_true(a is not None)
 
     a = OptionalReg[Int](None)
@@ -159,7 +165,7 @@ def test_optional_conformance() raises:
 
 @fieldwise_init
 struct _NonWritable(Movable):
-    """A `Movable & ImplicitlyDeletable` type that is not `Writable`,
+    """A `Movable & Deinitable` type that is not `Writable`,
     `Copyable`, or `Hashable` — used to exercise the negative case of
     `Optional`'s conditional conformances."""
 
@@ -189,20 +195,20 @@ struct _NonTrivial(Copyable):
     def __init__(out self, *, deinit move: Self):
         pass
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
 def test_optional_triviality() raises:
     comptime trivial = Optional[Int]
-    assert_true(is_trivially_copyable[trivial]())
-    assert_true(is_trivially_movable[trivial]())
-    assert_true(is_trivially_destructible[trivial]())
+    assert_true(IsTriviallyCopyable[trivial])
+    assert_true(IsTriviallyMovable[trivial])
+    assert_true(IsTriviallyDeinitable[trivial])
 
     comptime not_trivial = Optional[_NonTrivial]
-    assert_false(is_trivially_copyable[not_trivial]())
-    assert_false(is_trivially_movable[not_trivial]())
-    assert_false(is_trivially_destructible[not_trivial]())
+    assert_false(IsTriviallyCopyable[not_trivial])
+    assert_false(IsTriviallyMovable[not_trivial])
+    assert_false(IsTriviallyDeinitable[not_trivial])
 
 
 def test_optional_write_to() raises:
@@ -243,8 +249,8 @@ def test_optional_hash() raises:
 
 
 def test_optional_equality() raises:
-    o = Optional(10)
-    n = Optional[Int]()
+    var o = Optional(10)
+    var n = Optional[Int]()
     assert_true(o == 10)
     assert_true(o != 11)
     assert_true(o != n)
@@ -405,14 +411,14 @@ def double(var x: Int) -> Float64:
 
 def test_map_with_value() raises:
     var opt = Optional(21)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_true(result)
     assert_equal(result.value(), 42.0)
 
 
 def test_map_with_none() raises:
     var opt = Optional[Int](None)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_false(result)
 
 
@@ -422,7 +428,7 @@ def test_map_with_closure_that_takes_by_read() raises:
     def closure_by_read(s: String) -> String:
         return s + "42"
 
-    var result1 = opt.map[To=String](closure_by_read)
+    var result1 = opt.map(closure_by_read)
     assert_equal(result1[], "hello42")
 
 
@@ -435,56 +441,197 @@ def try_parse_int(var s: String) -> Optional[Int]:
 
 def test_and_then_with_value() raises:
     var opt = Optional("42")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_true(result)
     assert_equal(result.value(), 42)
 
 
 def test_and_then_with_value_returns_none() raises:
     var opt = Optional("not_a_number")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
 def test_and_then_with_none() raises:
     var opt = Optional[String](None)
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
-def test_optional_linear_type_destroy_with() raises:
-    # `Optional` holding a linear value is retired via `destroy_with`.
+def _unwrap_linear(var x: ExplicitDelOnly) -> Int:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def _unwrap_linear_opt(var x: ExplicitDelOnly) -> Optional[Int]:
+    var data = x.data
+    x^.destroy()
+    return data
+
+
+def test_map_linear_type() raises:
+    # `map` moves the linear value out and consumes the `Optional`; the
+    # emptied `Optional` is destroyed without instantiating `Variant.__deinit__`.
+    var opt = Optional(ExplicitDelOnly(5))
+    var result = opt^.map(_unwrap_linear)
+    assert_equal(result.value(), 5)
+
+    # The empty branch is destroyed without calling `_unwrap_linear`.
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.map(_unwrap_linear))
+
+
+def test_and_then_linear_type() raises:
+    var opt = Optional(ExplicitDelOnly(7))
+    var result = opt^.and_then(_unwrap_linear_opt)
+    assert_equal(result.value(), 7)
+
+    var empty = Optional[ExplicitDelOnly](None)
+    assert_false(empty^.and_then(_unwrap_linear_opt))
+
+
+def test_optional_linear_type_deinit_with() raises:
+    # `Optional` holding a linear value is destroyed via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.deinit_with(ExplicitDelOnly.destroy)
 
-    # `Optional[T]` holding `None` is retired without invoking
-    # `destroy_func`.
+    # `Optional[T]` holding `None` is destroyed without invoking
+    # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.deinit_with(ExplicitDelOnly.destroy)
 
 
-def test_optional_destroy_with_runs_exactly_once() raises:
-    # Verify `destroy_func` runs exactly once on the contained value.
+def test_optional_linear_type_deinit_assert_empty() raises:
+    # An empty `Optional` holding a linear type is destroyed without a
+    # caller-provided deinitializer via `deinit_assert_empty`.
+    var v = Optional[ExplicitDelOnly](None)
+    v^.deinit_assert_empty()
+
+
+def test_optional_deinit_with_runs_exactly_once() raises:
+    # Verify `deinit_func` runs exactly once on the contained value.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](42)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 1)
 
 
-def test_optional_destroy_with_none_does_not_call_destroy() raises:
-    # Verify `destroy_func` is not called when the `Optional` is empty.
+def test_optional_deinit_with_none_does_not_call_destroy() raises:
+    # Verify `deinit_func` is not called when the `Optional` is empty.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](None)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 0)
+
+
+# `Deinitable` but explicitly not `Movable`: rejected at the parameter
+# bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
+struct _NotMovable(Deinitable, Movable where False):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+
+def test_optional_non_movable_element_type() raises:
+    # `Optional` of a non-`Movable` element type is now a valid type.
+    var empty = Optional[_NotMovable]()
+    assert_false(empty)
+    assert_equal(empty.bounds()[0], 0)
+
+
+def test_optional_non_movable_construct_in_place() raises:
+    # `init_with=` populates an `Optional` with a non-`Movable` value in place.
+    def make() -> _NotMovable:
+        return _NotMovable(7)
+
+    var opt = Optional[_NotMovable](init_with=make)
+    assert_true(opt)
+    assert_equal(opt.bounds()[0], 1)
+    assert_equal(opt.value().x, 7)
+
+
+def test_optional_pinned_linear_type_deinit_with() raises:
+    var counter = 0
+
+    def destroy(var value: PinnedExplicitDelOnly) {mut counter}:
+        counter += 1
+        value^.destroy()
+
+    def make() -> PinnedExplicitDelOnly:
+        return PinnedExplicitDelOnly(7)
+
+    var opt = Optional[PinnedExplicitDelOnly](init_with=make)
+    var is_some = opt.__bool__()
+    var data = opt.value().data
+    # Destroy before potentially raising after assert
+    opt^.deinit_with(destroy)
+    assert_true(is_some)
+    assert_equal(data, 7)
+    assert_equal(counter, 1)
+
+    # The empty case is destroyed without invoking `deinit_func`.
+    var empty = Optional[PinnedExplicitDelOnly](None)
+    empty^.deinit_with(destroy)
+    assert_equal(counter, 1)
+
+
+def test_optional_pinned_linear_type_deinit_assert_empty() raises:
+    var empty = Optional[PinnedExplicitDelOnly](None)
+    empty^.deinit_assert_empty()
+
+
+def test_optional_niched_storage_deinit_with() raises:
+    comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
+
+    var x = 42
+    var some = Optional[PointerType](
+        Pointer(to=x).unsafe_origin_cast[AnyOrigin[mut=True]]()
+    )
+    some^.deinit_with(PointerType.__deinit__)
+
+    var empty = Optional[PointerType](None)
+    empty^.deinit_with(PointerType.__deinit__)
+
+    var empty2 = Optional[PointerType](None)
+    empty2^.deinit_assert_empty()
+
+
+def test_optional_construct_in_place_calls_closure_once() raises:
+    var calls = 0
+
+    def make() {mut calls} -> Int:
+        calls += 1
+        return 7
+
+    var opt = Optional[Int](init_with=make)
+    assert_equal(opt.value(), 7)
+    assert_equal(calls, 1)
+
+
+def test_optional_construct_in_place_destroys_value_once() raises:
+    # `init_with=` marks the storage's active type by hand before emplacing, so check
+    # that teardown runs the element's destructor exactly once.
+    var del_count = 0
+    var counter_ptr = Pointer(to=del_count)
+    comptime Counter = DelCounter[origin_of(del_count)]
+
+    def make() {counter_ptr} -> Counter:
+        return Counter(counter_ptr)
+
+    var opt = Optional[Counter](init_with=make)
+    assert_true(opt)
+    _ = opt^
+    assert_equal(del_count, 1)
 
 
 def main() raises:

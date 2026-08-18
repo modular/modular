@@ -33,12 +33,11 @@ hy_v3_arch = SupportedArchitecture(
         "tencent/Hy3-preview",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=HYV3Config.DEFAULT_ENCODING,
+    supported_encodings=HYV3Config.SUPPORTED_ENCODINGS,
     pipeline_model=HYV3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
@@ -46,4 +45,6 @@ hy_v3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     batching=HyV3BatchProcessor,
     memory_planner=HyV3MemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

@@ -14,11 +14,11 @@
 """Figure 15.14: Matrix multiplication with double buffering (software pipelining)."""
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 comptime bM = 64
 comptime bN = 64
@@ -108,12 +108,12 @@ def mm_tiled_kernel_double_buffer(
     var Cr = SIMD[DType.float32, tM * tN](0.0)
 
     # Allocate double-buffered shared memory (2 sets of tiles)
-    var A_s = stack_allocation[
+    var A_s = unsafe_stack_allocation[
         2 * bM * bK,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var B_s = stack_allocation[
+    var B_s = unsafe_stack_allocation[
         2 * bK * bN,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,

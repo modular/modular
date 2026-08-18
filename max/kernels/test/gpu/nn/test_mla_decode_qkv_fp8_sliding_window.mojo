@@ -42,7 +42,7 @@ from std.sys import (
 )
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -61,7 +61,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.index import Index
 
 
@@ -237,7 +237,7 @@ def test[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_fp8_tt,
@@ -349,6 +349,7 @@ def test[
         )
     print("  PASSED")
 
+    _ = mla_args
     _ = q_fp8_device_ptr
     _ = k_fp8_device_ptr
     _ = q_bf16_dequant_device_ptr

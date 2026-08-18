@@ -13,20 +13,31 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.context import TextContext
-from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.lib.registry import (
+    SupportedArchitecture,
+    _retrieve_chat_template,
+)
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
 from test_common.mocks import (
-    DummyPipelineConfig,
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
 )
@@ -39,6 +50,31 @@ from test_common.pipeline_model_dummy import (
     DummyPixelTokenizer,
 )
 from test_common.registry import prepare_registry
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    def _gen(repo_id: str, revision: str) -> str:
+        try:
+            return _real_generate_local_model_path(repo_id, revision)
+        except Exception:
+            return f"/fake/cache/{repo_id}"
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_gen,
+        ),
+    ):
+        yield
 
 
 @prepare_registry
@@ -57,23 +93,15 @@ def test_registry__test_register() -> None:
 def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # PipelineConfig construction is now pure (no resolve() auto-call).
-    # The unknown-architecture error surfaces when retrieve() is called.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="GSAI-ML/LLaDA-8B-Instruct",
-                    # This forces it to fail if we don't have it.
-                    trust_remote_code=True,
-                    max_length=1,
-                )
-            }
-        ),
+    config = PipelineArgs(
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
+        # This forces it to fail if we don't have it.
+        trust_remote_code=True,
+        max_length=1,
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.retrieve(config)
+        PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -83,25 +111,17 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # PipelineConfig construction is now pure (no resolve() auto-call).
-    # The unknown-architecture error surfaces when retrieve_factory() is called.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="GSAI-ML/LLaDA-8B-Instruct",
-                    trust_remote_code=True,
-                    max_length=1,
-                )
-            }
-        ),
+    config = PipelineArgs(
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
+        trust_remote_code=True,
+        max_length=1,
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(
         ValueError,
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        PIPELINE_REGISTRY.retrieve(config)
+        PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -150,14 +170,14 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     )
     PIPELINE_REGISTRY.register(pixel_arch)
 
-    pipeline_config = DummyPipelineConfig(
+    pipeline_args = PipelineArgs(
         model_path="dummy/pixel-model",
         quantization_encoding="bfloat16",
-        max_batch_size=1,
         max_length=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config,
+        PipelineConfig.from_args(pipeline_args),
         task=PipelineTask.PIXEL_GENERATION,
         override_architecture="DummyPixelPipeline",
     )
@@ -187,7 +207,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -210,7 +229,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -382,7 +400,6 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type="none",  # Different rope type
     )
     assert arch1 != arch11
 
@@ -516,3 +533,53 @@ def test_architecture_context_types_are_msgspec_compatible() -> None:
                     f"Architecture '{arch.name}' has context_type={context_type.__name__} "
                     f"but tokenizer.new_context() returns {return_type.__name__}."
                 )
+
+
+def test_registry__retrieve_chat_template_none_returns_none() -> None:
+    assert _retrieve_chat_template(None) is None
+
+
+@pytest.mark.parametrize(
+    ("file_content", "expected"),
+    [
+        pytest.param("{{ messages }}", "{{ messages }}", id="plain_text"),
+        pytest.param(
+            json.dumps({"chat_template": "{{ messages }}"}),
+            "{{ messages }}",
+            id="json_with_chat_template_key",
+        ),
+        pytest.param(
+            json.dumps({"some_other_key": "value"}),
+            json.dumps({"some_other_key": "value"}),
+            id="json_without_chat_template_key",
+        ),
+        pytest.param("not { valid json", "not { valid json", id="invalid_json"),
+    ],
+)
+def test_registry__retrieve_chat_template_reads_file(
+    tmp_path: Path, file_content: str, expected: str
+) -> None:
+    # Anything that isn't a JSON object with a "chat_template" key falls
+    # back to the raw file content.
+    template_file = tmp_path / "template.txt"
+    template_file.write_text(file_content)
+
+    assert _retrieve_chat_template(template_file) == expected
+
+
+@pytest.mark.parametrize(
+    ("build_path", "match"),
+    [
+        pytest.param(
+            lambda tmp_path: tmp_path / "missing.jinja",
+            "does not exist",
+            id="missing",
+        ),
+        pytest.param(lambda tmp_path: tmp_path, "not a file", id="directory"),
+    ],
+)
+def test_registry__retrieve_chat_template_invalid_path_raises(
+    tmp_path: Path, build_path: Callable[[Path], Path], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _retrieve_chat_template(build_path(tmp_path))

@@ -34,6 +34,7 @@ from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.transformer import captures_by_device
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
@@ -84,7 +85,8 @@ class Eagle3KimiK25Unified(Module):
         self.enable_vision = enable_vision
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
-            if speculative_config
+            if speculative_config is not None
+            and speculative_config.num_speculative_tokens is not None
             else 1
         )
         relaxed_topk: int | None = None
@@ -206,7 +208,7 @@ class Eagle3KimiK25Unified(Module):
                 ep_inputs,
             )
         logits = target_outputs[1]
-        hidden_states = list(target_outputs[3 : 3 + n_devs])
+        hidden_states = captures_by_device(target_outputs[3:], n_devs)
 
         # ``seed`` is the per-batch ``[batch_size]`` uint64 device buffer
         # that feeds ``topk_fused_sampling`` (recovered + bonus tokens) per
@@ -340,23 +342,16 @@ class Eagle3KimiK25Unified(Module):
         )
 
         one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
-        new_max_lengths = [
-            ops.concat(
-                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-            ).reshape([1, 2])
-            for kv in draft_kv_collections
-        ]
 
         draft_kv_collections = [
             replace(
                 kv,
-                max_lengths=max_lengths,
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
                 mla_num_partitions=kv.draft_mla_num_partitions,
             )
-            for kv, max_lengths in zip(
-                draft_kv_collections, new_max_lengths, strict=True
-            )
+            for kv in draft_kv_collections
         ]
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])

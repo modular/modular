@@ -12,8 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import json
+
+from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
-from max.serve.router.openai_routes import openai_parse_chat_completion_request
+from max.serve.router.openai_routes import (
+    _create_response_format,
+    openai_parse_chat_completion_request,
+)
 
 """
 It is unclear why the type ignore for CreateChatCompletionRequest is necessary.
@@ -21,7 +27,7 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from max.serve.schemas.openai import CreateChatCompletionRequest
@@ -553,6 +559,85 @@ def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
     assert request.tool_choice is None
 
 
+def test_openai_response_format_schema_advertises_boolean() -> None:
+    """The generated JSON/OpenAPI schema must advertise the boolean ``schema``
+    so the published docs match what the endpoint actually accepts."""
+    schema = CreateChatCompletionRequest.model_json_schema()
+    schema_field = schema["$defs"]["JSONSchema"]["properties"]["schema"]
+    types = {
+        opt.get("type") for opt in schema_field.get("anyOf", [schema_field])
+    }
+    assert "boolean" in types
+
+
+@pytest.mark.parametrize("schema", [True, False])
+def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
+    """A boolean is a valid JSON Schema; the request must accept it verbatim
+    (de-sugaring to a dict happens later, in ``_create_response_format``)."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "target", "schema": schema},
+        },
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    response_format = cast(dict[str, Any], request.response_format)
+    assert response_format["json_schema"]["schema"] is schema
+
+
+def test_create_response_format_probes_normalized_schema() -> None:
+    """``_create_response_format`` validates the *normalized* schema against
+    the active backend (via the injected validator), so an uncompilable schema
+    is a 400 here rather than a worker crash later."""
+    probed: list[str] = []
+
+    class _RecordingValidator:
+        """GrammarValidator that records the schema it is asked to check."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            return None
+
+        def check_json_schema(self, json_schema: str) -> None:
+            probed.append(json_schema)
+
+    class _RaisingValidator:
+        """GrammarValidator that rejects everything, as an uncompilable
+        schema would."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            raise InputError("cannot compile")
+
+        def check_json_schema(self, json_schema: str) -> None:
+            raise InputError("cannot compile")
+
+    # A schema with no root ``type`` — normalization defaults it to "object",
+    # and that normalized form is what the validator (and worker) must compile.
+    response_format = cast(
+        Any,
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": {"properties": {}}},
+        },
+    )
+
+    _create_response_format(
+        response_format,
+        enable_response_format_schema=True,
+        grammar_validator=_RecordingValidator(),
+    )
+    assert len(probed) == 1
+    assert json.loads(probed[0])["type"] == "object"
+
+    with pytest.raises(InputError):
+        _create_response_format(
+            response_format,
+            enable_response_format_schema=True,
+            grammar_validator=_RaisingValidator(),
+        )
+
+
 def test_openai_chat_message_validates_structure() -> None:
     """Regression for SERVSYS-1257: ``messages`` should not be typed as
     ``list[dict[str, Any]]`` (the ``Any`` clobbered OpenAI SDK validation).
@@ -783,6 +868,46 @@ def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
     assert video_url["max_long_side_pixel"] == 1008
 
 
+async def test_openai_wrap_content_carries_detail_hint() -> None:
+    """``detail`` is carried onto wrapped image/video content parts."""
+    smily_b64 = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+        "AAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": smily_b64, "detail": "high"},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": "data:video/mp4;base64,AAAA",
+                                "detail": "low",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    settings = Settings()
+    parsed = await openai_parse_chat_completion_request(request, True, settings)
+    content = parsed.messages[0].content
+    assert isinstance(content, list)
+    assert content[1].type == "image"
+    assert content[1].detail == "high"
+    assert content[2].type == "video"
+    assert content[2].detail == "low"
+
+
 async def test_openai_root_role_accepted_and_passed_through() -> None:
     """The MiniMax ``root`` role validates and passes through unchanged as the first message."""
     request_data = {
@@ -878,6 +1003,127 @@ def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
     }
 
 
+def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": "Hello"}],
+            **payload,
+        }
+    )
+    return request.resolved_chat_template_kwargs
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        pytest.param({}, None, id="no_reasoning_controls"),
+        pytest.param(
+            {"chat_template_kwargs": {"enable_thinking": False}},
+            {"enable_thinking": False},
+            id="passthrough_without_reasoning_controls",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high"},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "none"},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "none"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="client_effort_none_disables_thinking",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="client_effort_enables_thinking",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {
+                    "reasoning_effort": "none",
+                    "enable_thinking": True,
+                }
+            },
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "none",
+            },
+            id="client_toggle_wins_over_client_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="openrouter_effort",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "high"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "high",
+            },
+            id="openrouter_enabled_wins_over_effort",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high", "reasoning": {"effort": "low"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort_wins",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {
+                    "reasoning_effort": "low",
+                    "enable_thinking": False,
+                },
+            },
+            {
+                "reasoning_effort": "low",
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="client_kwargs_win",
+        ),
+    ],
+)
+def test_resolved_chat_template_kwargs(
+    payload: dict[str, Any], expected: dict[str, Any] | None
+) -> None:
+    """Reasoning controls are folded into the kwargs the chat template sees."""
+    assert _chat_template_kwargs_for(payload) == expected
+
+
 # ---------------------------------------------------------------------------
 # MiniMax v1/chat/completions format-correctness conformance.
 # ---------------------------------------------------------------------------
@@ -958,6 +1204,30 @@ def test_openai_tool_function_name_charset_is_per_model() -> None:
             _validate_tool_function_name(bad, minimax_re)
 
 
+def test_openai_tool_function_name_length_limit() -> None:
+    """Tool-name length cap is 1024 chars; empty and invalid charsets rejected."""
+    from max.pipelines.context.exceptions import InputError
+    from max.serve.router.openai_routes import (
+        _MAX_TOOL_NAME_LEN,
+        _validate_tool_function_name,
+    )
+
+    assert _MAX_TOOL_NAME_LEN == 1024
+
+    # A name exactly at the cap is accepted.
+    _validate_tool_function_name("a" * _MAX_TOOL_NAME_LEN)
+
+    # One character past the cap is rejected.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("a" * (_MAX_TOOL_NAME_LEN + 1))
+
+    # Empty and invalid-character names are still rejected regardless of length.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("")
+    with pytest.raises(InputError):
+        _validate_tool_function_name("has space")
+
+
 async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
     """Assistant ``tool_calls.arguments`` that isn't valid JSON -> 400 (verifier 16_12)."""
     from max.pipelines.context.exceptions import InputError
@@ -986,6 +1256,24 @@ async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
         }
     )
     with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+
+async def test_openai_rejects_text_content_part_without_text_field() -> None:
+    """``{'type': 'text'}`` parts must include ``text`` and error cleanly."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": [{"type": "text"}]}],
+        }
+    )
+
+    with pytest.raises(
+        InputError,
+        match=r"Content part of type 'text' must include a 'text' field\.",
+    ):
         await openai_parse_chat_completion_request(
             request, wrap_content=True, settings=Settings()
         )
@@ -1216,3 +1504,133 @@ async def test_openai_accepts_64mb_request_body() -> None:
     assert len(messages) == 1
     assert not images
     assert not videos
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({}, True),  # defaults to True
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),  # False is accepted and preserved
+    ],
+)
+def test_reasoning_split(payload: dict[str, Any], expected: bool) -> None:
+    """``reasoning_split`` defaults to True; both True and False are accepted."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        **payload,
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    assert request.reasoning_split is expected
+
+
+def test_merge_tool_call_deltas_coalesces_same_index_in_one_chunk() -> None:
+    """A name/id delta and its first args delta in one chunk merge to one entry.
+
+    Regression for CENG-768: with ``STREAM_MIN_CHUNK_TOKENS`` batching a single
+    ``parse_delta`` return carries both the call-start and the opening args for
+    the same call. Emitting them as two ``tool_calls`` entries that share an
+    index breaks strict OpenAI clients; the router must coalesce them into one
+    first-frame entry ``{index, id, type, function: {name, arguments}}``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, id="call_abc", name="save_config"),
+            ParsedToolCallDelta(index=0, arguments="{"),
+        ]
+    )
+    assert len(merged) == 1
+    entry = merged[0]
+    assert entry.index == 0
+    assert entry.id == "call_abc"
+    assert entry.type == "function"
+    assert entry.function is not None
+    assert entry.function.name == "save_config"
+    assert entry.function.arguments == "{"
+
+
+def test_merge_tool_call_deltas_two_calls_one_chunk_one_entry_each() -> None:
+    """Two calls firing in one chunk yield one entry each, ordered by index."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, arguments=', "days": 2}'),
+            ParsedToolCallDelta(index=1, id="call_xyz", name="get_time"),
+            ParsedToolCallDelta(index=1, arguments='{"tz": "UTC"}'),
+        ]
+    )
+    assert [e.index for e in merged] == [0, 1]
+    # index 0 is a continuation: args only, no id/name/type.
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ', "days": 2}'
+    # index 1 is a first frame: id + type + name + concatenated args.
+    assert merged[1].id == "call_xyz"
+    assert merged[1].type == "function"
+    assert merged[1].function is not None
+    assert merged[1].function.name == "get_time"
+    assert merged[1].function.arguments == '{"tz": "UTC"}'
+
+
+def test_merge_tool_call_deltas_first_frame_has_empty_args_string() -> None:
+    """A first frame with no args in its chunk still carries ``arguments == ""``.
+
+    Matches OpenAI's first-frame shape so a client that reads
+    ``function.arguments`` unconditionally does not see ``null``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, id="call_1", name="ping")]
+    )
+    assert len(merged) == 1
+    assert merged[0].function is not None
+    assert merged[0].function.arguments == ""
+
+
+def test_merge_tool_call_deltas_ignores_content_only_deltas() -> None:
+    """Content-only deltas carry no tool call and produce no entry."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    assert (
+        _merge_tool_call_deltas(
+            [ParsedToolCallDelta(index=0, content="hello ")]
+        )
+        == []
+    )
+
+
+def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
+    None
+):
+    """An empty-string ``arguments`` is present-but-empty, not absent.
+
+    Pins the ``is not None`` presence semantics: a lone ``arguments=""`` delta
+    still yields one continuation entry (args-only, no id/type/name) rather
+    than being dropped or promoted to a first frame. ``parse_delta`` never
+    emits empty-string fields today, so this only fixes the edge's intent; it
+    must stay behavior-identical on real input.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, arguments="")]
+    )
+    assert len(merged) == 1
+    assert merged[0].index == 0
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ""

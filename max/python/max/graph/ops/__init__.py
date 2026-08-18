@@ -60,6 +60,10 @@ from . import (
     reducescatter,
 )
 from .allgather import allgather
+from .allgather_rms_norm import (
+    allgather_rms_norm,
+    allgather_rms_norm_quant_mxfp8,
+)
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k
@@ -80,6 +84,10 @@ from .custom import custom, inplace_custom
 from .debug import print
 from .distributed_scatter import distributed_scatter
 from .elementwise import *
+
+# `floor_div` is re-exported by name (not only via the `*` above) to make its
+# public-API visibility explicit; `elementwise` defines no `__all__`.
+from .elementwise import floor_div
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min
 from .flatten import flatten
@@ -100,6 +108,7 @@ from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
+from .reduce_scatter_rms_norm import reduce_scatter_rms_norm
 from .reduction import argmax, argmin, mean, prod, sum
 from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
@@ -126,6 +135,7 @@ from .scatter import (
     scatter_nd_min,
     scatter_nd_mul,
 )
+from .sequence import side_stream
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack
 from .slice_tensor import slice_tensor

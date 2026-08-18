@@ -75,6 +75,7 @@ def __set_torch_memory_limit() -> None:
 def run():  # noqa: ANN201
     # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
     # special cases
+    os.environ["HF_MODULES_CACHE"] = os.environ["TEST_TMPDIR"]
     if os.environ.get("HF_ESCAPES_SANDBOX") != "1":
         os.environ["HF_HOME"] = os.environ["TEST_TMPDIR"]
 
@@ -155,8 +156,11 @@ fi
 
     __set_torch_memory_limit()
     namespace, unknown_args = __build_parser().parse_known_args(args)
+    xml_file = os.environ["XML_OUTPUT_FILE"]
+    if Path(xml_file).exists():
+        os.chmod(xml_file, mode=0o600)
     pytest_args = [
-        f"--junitxml={os.environ['XML_OUTPUT_FILE']}",
+        f"--junitxml={xml_file}",
         "-o",
         "xfail_strict=true",
         "-o",

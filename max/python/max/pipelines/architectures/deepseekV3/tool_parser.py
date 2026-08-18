@@ -250,7 +250,7 @@ def _read_repo_file(repo: HuggingFaceRepo, filename: str) -> str | None:
     rel_path = f"{subfolder}/{filename}" if subfolder else filename
 
     if repo.repo_type == "local":
-        local_path = os.path.join(repo.repo_id, rel_path)
+        local_path = os.path.join(repo.local_path, rel_path)
         if not os.path.isfile(local_path):
             return None
         try:

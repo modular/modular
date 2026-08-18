@@ -27,6 +27,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.layer import Module, Shardable
@@ -248,6 +249,7 @@ class GptOssAttention(Module, Shardable):
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )
+            assert isinstance(self.kv_params, MHAKVCacheParams)
             sharded_num_kv_heads = num_heads_for_device(
                 num_heads=self.kv_params.n_kv_heads,
                 device_idx=shard_idx,

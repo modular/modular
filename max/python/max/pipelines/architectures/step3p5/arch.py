@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from .batch_processor import Step3p5BatchProcessor
 from .model import Step3p5Model
 from .model_config import Step3p5Config
 from .weight_adapters import convert_step3p5_state_dict
@@ -29,18 +30,20 @@ step3p5_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["stepfun-ai/Step-3.5-Flash"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=Step3p5Config.DEFAULT_ENCODING,
+    supported_encodings=Step3p5Config.SUPPORTED_ENCODINGS,
     pipeline_model=Step3p5Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: convert_step3p5_state_dict,
     },
     config=Step3p5Config,
+    batching=Step3p5BatchProcessor,
     multi_gpu_supported=True,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

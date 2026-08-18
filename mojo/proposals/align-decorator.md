@@ -69,7 +69,7 @@ var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
 
 ```mojo
 struct BlockingSpinLock(Defaultable):
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
 ```
 
 Without cache-line alignment, multiple `BlockingSpinLock` instances in an array
@@ -81,7 +81,7 @@ With `@align`:
 ```mojo
 @align(64)  # Cache line size
 struct BlockingSpinLock(Defaultable):
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
 ```
 
 ### Current Workarounds
@@ -187,7 +187,7 @@ Support alignment on individual struct fields:
 ```mojo
 struct MixedAlignment:
     @align(64)
-    var hot_data: Atomic[DType.int64]
+    var hot_data: Atomic[Int64]
     var cold_data: Int
 ```
 
