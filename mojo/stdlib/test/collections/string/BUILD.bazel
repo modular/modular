@@ -30,7 +30,10 @@ _LIT_TESTS = [
         copts = [
             "--debug-level",
             "full",
-        ],
+        ] + [
+            "--warn-on-unstable-apis",
+            "-Werror",
+        ] if src.endswith("_stable.mojo") else [],
         data = [src],  # NOTE: some tests attempt to read their source files
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
