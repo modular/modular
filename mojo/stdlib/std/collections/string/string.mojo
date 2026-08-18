@@ -302,6 +302,7 @@ struct String(
         """Destroy the string data."""
         self._drop_ref()
 
+    @stable(since="1.1")
     @always_inline("nodebug")
     def __init__(out self):
         """Construct an empty string."""
@@ -311,17 +312,18 @@ struct String(
         self._len_or_data = 0
         self._capacity_or_data = Self.FLAG_IS_INLINE
 
+    @stable(since="1.1")
     @always_inline("nodebug")
-    def __init__(out self, *, capacity: Int):
-        """Construct an empty string with a given capacity.
+    def __init__(out self, *, capacity_bytes: Int):
+        """Construct an empty string with at least a given capacity.
 
         Args:
-            capacity: The capacity of the string to allocate.
+            capacity_bytes: The minimum capacity (in bytes) to allocate.
         """
-        if capacity <= Self.INLINE_CAPACITY:
+        if capacity_bytes <= Self.INLINE_CAPACITY:
             self = Self()
         else:
-            self._capacity_or_data = (capacity + 7) >> 3
+            self._capacity_or_data = (capacity_bytes + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
             self._set_ref_counted()
@@ -432,7 +434,7 @@ struct String(
 
         comptime REPLACEMENT = StaticString("�")
 
-        self = String(capacity=len(from_utf8_lossy))
+        self = String(capacity_bytes=len(from_utf8_lossy))
         for chunk in UTF8Chunks(from_utf8_lossy):
             self += chunk.valid
             if len(chunk.invalid) > 0:
@@ -500,7 +502,7 @@ struct String(
             self = String()
             args._write_to(self, end=end, sep=sep)
         else:
-            self = String(capacity=total_bytes.size)
+            self = String(capacity_bytes=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
@@ -523,7 +525,7 @@ struct String(
         if total_bytes.size <= Self.INLINE_CAPACITY:
             args._write_to(self, sep="")
         else:
-            self.reserve(total_bytes.size)
+            self.reserve_bytes(total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             args._write_to(buffer, sep="")
             buffer.flush()
@@ -549,7 +551,7 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self = Self(capacity=unsafe_uninit_length)
+        self = Self(capacity_bytes=unsafe_uninit_length)
         self._set_byte_length(unsafe_uninit_length)
 
     def __init__(
@@ -618,8 +620,13 @@ struct String(
     # null terminator, inline, and indirect. If indirect the length is also
     # stored in the capacity field.
 
-    @always_inline("nodebug")
+    @deprecated(use=capacity_bytes)
+    @doc_hidden
     def capacity(self) -> Int:
+        return self.capacity_bytes()
+
+    @always_inline("nodebug")
+    def capacity_bytes(self) -> Int:
         """Get the current capacity of the `String`'s internal buffer.
 
         Returns:
@@ -714,7 +721,7 @@ struct String(
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
-                            count=self.capacity() + Self.REF_COUNT_SIZE
+                            count=self.capacity_bytes() + Self.REF_COUNT_SIZE
                         )
                     )
                 )
@@ -1040,7 +1047,7 @@ struct String(
         sufficient and does not check UTF-8 validity.
         """
         assert (
-            self.capacity() > self.byte_length()
+            self.capacity_bytes() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
         self.unsafe_ptr_mut().unsafe_offset(length).write(byte)
@@ -1055,7 +1062,7 @@ struct String(
         self._clear_nul_terminator()
         var length = self.byte_length()
         var new_length = length + codepoint.utf8_byte_length()
-        self.reserve(new_length)
+        self.reserve_bytes(new_length)
         _ = codepoint.unsafe_write_utf8(
             self.unsafe_ptr_mut().unsafe_offset(length)
         )
@@ -1437,12 +1444,12 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        var new_cap = max(self.capacity(), capacity)
+        var new_cap = max(self.capacity_bytes(), capacity)
         # Decide on strategy for making the string mutable
         if new_cap <= Self.INLINE_CAPACITY:
             if not self._is_inline():
                 self._inline_string()
-        elif not self._is_unique() or new_cap > self.capacity():
+        elif not self._is_unique() or new_cap > self.capacity_bytes():
             self._realloc_mutable(new_cap)
 
         return self.unsafe_ptr().unsafe_mut_cast[True]()
@@ -2258,23 +2265,29 @@ struct String(
             unsafe_uninit_length,
             " which does not lie on a codepoint boundary.",
         )
-        if unsafe_uninit_length > self.capacity():
-            self.reserve(unsafe_uninit_length)
+        if unsafe_uninit_length > self.capacity_bytes():
+            self.reserve_bytes(unsafe_uninit_length)
         self._set_byte_length(unsafe_uninit_length)
 
-    def reserve(mut self, new_capacity: Int):
-        """Reserves the requested capacity.
+    @deprecated(use=reserve_bytes)
+    @doc_hidden
+    def reserve(mut self, new_capacity_bytes: Int, /):
+        self.reserve_bytes(new_capacity_bytes)
+
+    @stable(since="1.1")
+    def reserve_bytes(mut self, new_capacity_bytes: Int, /):
+        """Reserves at least the requested capacity.
 
         Args:
-            new_capacity: The new capacity in stored bytes.
+            new_capacity_bytes: The minimum new capacity in bytes.
 
         Notes:
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the data is moved.
         """
-        if new_capacity <= self.capacity():
+        if new_capacity_bytes <= self.capacity_bytes():
             return
-        self._realloc_mutable(new_capacity)
+        self._realloc_mutable(new_capacity_bytes)
 
     # Make a string mutable on the stack.
     def _inline_string(mut self):
@@ -2294,7 +2307,7 @@ struct String(
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
+        var new_capacity = (max(capacity, self.capacity_bytes() * 2) + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
         unsafe_memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count

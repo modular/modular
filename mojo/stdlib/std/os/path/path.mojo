@@ -299,7 +299,7 @@ def realpath[
     Returns:
         A String of the resolved path.
     """
-    var string = String(capacity=MAX_PATH)
+    var string = String(capacity_bytes=MAX_PATH)
 
     # Bind the fspath result to a variable so its buffer stays alive
     # through the libc_realpath call (avoids use-after-free).
@@ -792,7 +792,7 @@ def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=2 * len(bytes))
+                buf.reserve_bytes(2 * len(bytes))
             buf.write_string(path_str[byte=i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

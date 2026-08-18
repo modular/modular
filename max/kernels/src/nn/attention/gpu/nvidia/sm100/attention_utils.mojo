@@ -1494,7 +1494,7 @@ def _build_mma[
     # interpreter cannot memcpy into a String's inline (SSO) buffer, so
     # appending a small fragment to a still-small string fails to interpret
     # ("can't get dst memory"). A heap-backed destination interprets fine.
-    var mma = String(capacity=64)
+    var mma = String(capacity_bytes=64)
     mma += "{\n"
     if not a_tmem:
         mma += ".reg .b64 %rda;\n"
