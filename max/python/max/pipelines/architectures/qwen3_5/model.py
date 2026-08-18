@@ -345,18 +345,16 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         with Graph(
             "qwen3_5_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *weights_types,
-                    *indices_types,
-                    *rot_pos_ids_types,
-                    *max_grid_size_types,
-                    *grid_thw_types,
-                    *cu_seqlens_types,
-                    *max_seqlen_types,
-                    *signals.input_types(),
-                ]
+            input_types=(
+                *pixel_values_types,
+                *weights_types,
+                *indices_types,
+                *rot_pos_ids_types,
+                *max_grid_size_types,
+                *grid_thw_types,
+                *cu_seqlens_types,
+                *max_seqlen_types,
+                *signals.input_types(),
             ),
             module=module,
         ) as graph:

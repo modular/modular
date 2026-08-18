@@ -457,7 +457,7 @@ def codegen_yaml(specs: list[TuningSpec], output_path: Path) -> None:
     common_params = list(common.T.to_dict().values())
 
     common_key = "common"
-    b = dict({"<<": f"*{common_key}"})
+    b = {"<<": f"*{common_key}"}
     for i, p in enumerate(uniq_params):
         uniq_params[i] = dict(b, **p)
 

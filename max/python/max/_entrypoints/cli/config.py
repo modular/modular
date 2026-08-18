@@ -103,7 +103,7 @@ class JSONType(click.ParamType):
 
 
 def get_interior_type(type_hint: type | str | Any) -> type[Any]:
-    interior_args = set(get_args(type_hint)) - set([type(None)])
+    interior_args = set(get_args(type_hint)) - {type(None)}
     if len(interior_args) > 1:
         raise ValueError(
             "Parsing does not currently supported Union type, with more than"

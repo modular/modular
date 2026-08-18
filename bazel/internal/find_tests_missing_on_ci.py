@@ -54,7 +54,7 @@ def _cquery_tests(config: str, tag: str | None) -> set[str]:
 
     print(shlex.join(command))
     result = subprocess.check_output(command).decode()
-    targets = set(x.strip() for x in result.splitlines() if x.strip())
+    targets = {x.strip() for x in result.splitlines() if x.strip()}
 
     if not targets:
         raise SystemExit(
@@ -68,14 +68,14 @@ def _cquery_tests(config: str, tag: str | None) -> set[str]:
 
 
 def _main() -> None:
-    all_tests = set(
+    all_tests = {
         x.strip() if x.startswith("@") else f"@@{x.strip()}"
         for x in subprocess.check_output(
             ["bazel", "query", "tests(//...) - attr(tags, manual, //...)"]
         )
         .decode()
         .splitlines()
-    )
+    }
 
     cpu_tests = _cquery_tests("remote-intel", None)
     macos_tests = _cquery_tests("remote-macos", None)

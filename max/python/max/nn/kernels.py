@@ -1345,7 +1345,7 @@ def fused_qkv_ragged_matmul_quantized(
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128_desc_act",
             wqkv.device,
-            list((wqkv, perm_idx)),
+            [wqkv, perm_idx],
             out_types=[
                 TensorType(
                     DType.uint8,
@@ -1358,7 +1358,9 @@ def fused_qkv_ragged_matmul_quantized(
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128",
             wqkv.device,
-            list((wqkv,)),
+            [
+                wqkv,
+            ],
             out_types=[
                 TensorType(
                     DType.uint8,

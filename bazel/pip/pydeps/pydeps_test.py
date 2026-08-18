@@ -50,7 +50,7 @@ def main() -> int:
         for src in srcs:
             deps_info[PythonModule.from_path(Path(src))] = label
 
-    target_srcs = set(Path(src) for src in json_content["TARGET_SOURCES"])
+    target_srcs = {Path(src) for src in json_content["TARGET_SOURCES"]}
 
     working_dir = (
         Path(json_content["WORKING_DIR"]).resolve().relative_to(Path.cwd())

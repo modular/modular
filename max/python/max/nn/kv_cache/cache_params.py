@@ -402,17 +402,17 @@ class KVCacheBuffer(KVCacheBufferInterface):
                 "(len(values) > 1)"
             )
 
-        unique_dtype = set(b.dtype for b in self.values)
+        unique_dtype = {b.dtype for b in self.values}
         if len(unique_dtype) > 1:
             raise ValueError("All values must have the same dtype")
 
-        unique_shapes = set(b.shape for b in self.values)
+        unique_shapes = {b.shape for b in self.values}
         if len(unique_shapes) > 1:
             raise ValueError("All values must have the same shape")
 
-        unique_is_pinned = set(
+        unique_is_pinned = {
             isinstance(b, DevicePinnedBuffer) for b in all_buffers
-        )
+        }
         if len(unique_is_pinned) > 1:
             raise ValueError(
                 "All values (and scales if present) must be either all pinned "
@@ -425,15 +425,15 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(self.scales) != len(self.values):
             raise ValueError("Scales must be the same length as values")
 
-        unique_dtype = set(b.dtype for b in self.scales)
+        unique_dtype = {b.dtype for b in self.scales}
         if len(unique_dtype) > 1:
             raise ValueError("All scales must have the same dtype")
 
-        unique_shapes = set(b.shape for b in self.scales)
+        unique_shapes = {b.shape for b in self.scales}
         if len(unique_shapes) > 1:
             raise ValueError("All scales must have the same shape")
 
-        unique_num_pages = set(b.shape[0] for b in all_buffers)
+        unique_num_pages = {b.shape[0] for b in all_buffers}
         if len(unique_num_pages) > 1:
             raise ValueError(
                 "Values and scales must have the same number of pages"

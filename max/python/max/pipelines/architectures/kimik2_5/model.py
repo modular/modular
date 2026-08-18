@@ -615,15 +615,13 @@ class KimiK2_5Model(
         # Build the vision graph
         with Graph(
             "kimik2_5_vision_graph",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *grid_thws_types,
-                    *cu_seqlens_types,
-                    *max_seqlen_types,
-                    *vision_rot_pos_ids_types,
-                    *signal_buffer_types,
-                ]
+            input_types=(
+                *pixel_values_types,
+                *grid_thws_types,
+                *cu_seqlens_types,
+                *max_seqlen_types,
+                *vision_rot_pos_ids_types,
+                *signal_buffer_types,
             ),
             module=module,
         ) as graph:
