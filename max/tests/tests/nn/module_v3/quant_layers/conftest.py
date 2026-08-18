@@ -15,9 +15,9 @@
 
 The quant layers are traced under :func:`max.experimental.functional.lazy`
 against a mocked accelerator, so they exercise GPU kernel dispatch without a
-real device. ``mock_accelerator`` provides that stand-in device and
-``fp8_quant_config`` provides the block-scaled FP8 config used to drive the
-quantized code paths.
+real device. ``mock_accelerator`` provides that stand-in device;
+``fp8_quant_config`` and ``nvfp4_quant_config`` provide the block-scaled FP8
+and NVFP4 configs used to drive the quantized code paths.
 """
 
 from __future__ import annotations
@@ -41,6 +41,10 @@ from max.nn.quant_config import (
 # Dimensions in the tests are multiples of this so the weight-scale grid
 # divides evenly.
 FP8_BLOCK_SIZE = (128, 128)
+
+# NVFP4 packs two float4-e2m1 values per byte with one float8_e4m3fn scale per
+# 16-element block along K.
+NVFP4_BLOCK_SIZE = (1, 16)
 
 
 def _make_fake_gpu(id: int = 0) -> MagicMock:
@@ -77,6 +81,20 @@ def mock_accelerator() -> Iterator[MagicMock]:
 
 
 @pytest.fixture
+def sm100_arch() -> Iterator[None]:
+    """Reports an SM100 architecture for the duration of the test.
+
+    The NVFP4 kernel wrappers pick their scale layout from the *host's*
+    accelerator architecture (rank-5 TCGEN scale tiles on SM100/SM120, rank-2
+    elsewhere), so tracing the Blackwell path takes more than a fake device.
+    """
+    with patch(
+        "max.nn.kernels.accelerator_architecture_name", return_value="sm_100a"
+    ):
+        yield
+
+
+@pytest.fixture
 def fp8_quant_config() -> QuantConfig:
     """A block-scaled FP8 config matching the deepseekV3 FP8 checkpoint."""
     return QuantConfig(
@@ -94,4 +112,29 @@ def fp8_quant_config() -> QuantConfig:
         mlp_quantized_layers={0},
         attn_quantized_layers={0},
         format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+
+@pytest.fixture
+def nvfp4_quant_config() -> QuantConfig:
+    """A modelopt NVFP4 config, mirroring ``parse_quant_config``'s output.
+
+    The activation scale is *static* (loaded from the checkpoint) and drives
+    the dynamic block quantization of activations before the FP4 matmul.
+    """
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.STATIC,
+            dtype=DType.float32,
+            block_size=NVFP4_BLOCK_SIZE,
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e4m3fn,
+            block_size=NVFP4_BLOCK_SIZE,
+        ),
+        mlp_quantized_layers={0},
+        attn_quantized_layers={0},
+        format=QuantFormat.NVFP4,
     )

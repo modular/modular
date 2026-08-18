@@ -30,7 +30,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.percentile_metrics import (
@@ -39,6 +39,7 @@ from max.benchmark.benchmark_shared.percentile_metrics import (
     Metrics,
     PercentileMetrics,
     _is_finite_and_positive,
+    compute_confidence_info,
 )
 from max.benchmark.benchmark_shared.request import ServerTokenStats
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -79,15 +80,6 @@ def _calculate_basic_stats(
     }
 
 
-_T_CRITICAL_95: Mapping[int, float] = {
-    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
-    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
-    15: 2.131, 20: 2.086, 25: 2.060, 30: 2.042,
-    40: 2.021, 60: 2.000, 80: 1.990, 100: 1.984, 120: 1.980,
-}  # fmt: skip
-_T_DF_KEYS = sorted(_T_CRITICAL_95.keys())
-
-
 class BatchType(str, Enum):
     """Type of batch."""
 
@@ -108,7 +100,9 @@ class HistogramMetric(str, Enum):
         "maxserve_batch_prompt_throughput_tokens_per_second"
     )
     BATCH_SIZE = "maxserve_batch_size"
-    CACHE_HIT_RATE_PCT = "maxserve_cache_hit_rate_percent_utilization"
+    CACHE_REQUEST_PREFIX_COVERAGE_PCT = (
+        "maxserve_cache_request_prefix_coverage_percent"
+    )
     CACHE_USED_KV_PCT = "maxserve_cache_used_kv_pct_percent"
     INPUT_PROCESSING_TIME_MS = "maxserve_input_processing_time_milliseconds"
     INPUT_TOKENS_PER_REQUEST = "maxserve_input_tokens_per_request_tokens"
@@ -122,56 +116,20 @@ class HistogramMetric(str, Enum):
     )
 
 
-def _t_critical_95(df: int) -> float:
-    """Look up the 95% t critical value for given degrees of freedom."""
-    if df >= 120:
-        return 1.96
-    for k in reversed(_T_DF_KEYS):
-        if df >= k:
-            return _T_CRITICAL_95[k]
-    return _T_CRITICAL_95[1]
-
-
-def _compute_confidence_info(
-    data: list[float], scaled_mean: float, scale_factor: float
-) -> ConfidenceInfo | None:
-    """Compute 95% CI for a metric from raw (unscaled) data."""
-    n = len(data)
-    if n < 2 or not _is_finite_and_positive(scaled_mean):
-        return None
-
-    t = _t_critical_95(n - 1)
-    se = float(np.std(data, ddof=1)) * scale_factor / math.sqrt(n)
-    margin = t * se
-    ci_lower = scaled_mean - margin
-    ci_upper = scaled_mean + margin
-    ci_relative_width = (ci_upper - ci_lower) / scaled_mean
-
-    confidence: ConfidenceLevel
-    if n < 5:
-        confidence = "insufficient_data"
-    elif ci_relative_width <= 0.10:
-        confidence = "high"
-    elif ci_relative_width <= 0.20:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    return ConfidenceInfo(
-        ci_lower=ci_lower,
-        ci_upper=ci_upper,
-        ci_relative_width=ci_relative_width,
-        confidence=confidence,
-        sample_size=n,
-    )
-
-
-class ThroughputMetrics(Metrics):
+@dataclass(init=False)
+class ThroughputMetrics(PercentileMetrics):
     """
     Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
     are worse for throughput (e.g., p99 represents the 1st percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (rather than wrapping one in a
+    private attribute) so the computed stats live in dataclass fields: JSON /
+    ``model_dump`` serializable, and expandable into per-stat columns by the
+    schema-driven CSV flattener. The public API (``mean``, ``p99``,
+    ``to_flat_dict``, ``format_with_prefix``, ``validate_metrics``, ...) is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -194,8 +152,8 @@ class ThroughputMetrics(Metrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
-        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        ci = compute_confidence_info(data, basic_stats["mean"], scale_factor)
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -210,25 +168,22 @@ class ThroughputMetrics(Metrics):
             "p99": float(np.percentile(data, 1)) * scale_factor,  # Bottom 1%
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of throughput metrics in table format."""
         return self.format_with_prefix(prefix="throughput")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
-class StandardPercentileMetrics(Metrics):
+@dataclass(init=False)
+class StandardPercentileMetrics(PercentileMetrics):
     """
     Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
     (e.g., p99 represents the 99th percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (see ``ThroughputMetrics``)
+    so the computed stats are serializable dataclass fields; the public API is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -251,8 +206,8 @@ class StandardPercentileMetrics(Metrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
-        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        ci = compute_confidence_info(data, basic_stats["mean"], scale_factor)
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -267,19 +222,12 @@ class StandardPercentileMetrics(Metrics):
             "p99": float(np.percentile(data, 99)) * scale_factor,
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
+@dataclass(init=False)
 class RatePercentileMetrics(StandardPercentileMetrics):
     """Bounded ratio in [0, 1]; mean of per-item ratios.
 
@@ -298,14 +246,17 @@ class RatePercentileMetrics(StandardPercentileMetrics):
         scale_factor = 100.0 if as_percent else 1.0
         unit = "%" if as_percent else None
         super().__init__(data, scale_factor=scale_factor, unit=unit)
-        self._upper_bound = scale_factor
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
-        m = self._metrics.mean
+        # Upper bound follows the stored representation: 100 for a percentage
+        # (unit "%"), 1 for a fraction. Catches negatives and values above the
+        # representation's maximum.
+        upper_bound = 100.0 if self.unit == "%" else 1.0
+        m = self.mean
         if not math.isfinite(m):
             return False, [f"Invalid mean: {m}"]
-        if m < 0 or m > self._upper_bound:
-            return False, [f"Mean {m} outside [0, {self._upper_bound}]"]
+        if m < 0 or m > upper_bound:
+            return False, [f"Mean {m} outside [0, {upper_bound}]"]
         return True, []
 
 
@@ -410,8 +361,6 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
                 d.update(val.to_flat_dict(name))
                 d.update(val.confidence_to_flat_dict(name))
-            elif isinstance(val, ChunkTimingMetrics):
-                d.update(val.to_flat_dict(name))
         if self.metrics_by_endpoint:
             # Backwards compat: `server_metrics` mirrors the first endpoint so
             # existing BigQuery/analysis consumers keep working.
@@ -471,7 +420,19 @@ class _CompletedRunBase(BaseModel):
     completed: int
     failures: int
     request_throughput: float
-    latency_ms: StandardPercentileMetrics
+    # Successful requests dropped from the measured set by the skip_first /
+    # skip_last trim windows. ``completed`` counts only what remains, so
+    # without this field a slow iteration whose few successes all fell inside
+    # the windows is indistinguishable from one where the server did nothing.
+    excluded_successful: int = 0
+    # ``None`` when the iteration produced no measured samples (e.g. every
+    # request failed or all were skipped). Emitting ``None`` rather than a
+    # NaN-filled metric keeps the serialized JSON free of null-valued
+    # percentile objects: ``model_dump_json`` renders ``NaN`` as ``null``
+    # (and BigQuery does the same on ingest), which strict downstream
+    # consumers — the benchmark-visibility dashboard — otherwise reject
+    # field-by-field and surface as spurious "dropped metric" warnings.
+    latency_ms: StandardPercentileMetrics | None = None
 
     errors: list[str] = Field(default_factory=list)
     request_submit_times: list[float | None] = Field(default_factory=list)
@@ -487,19 +448,39 @@ class _CompletedRunBase(BaseModel):
             "completed": self.completed,
             "failures": self.failures,
             "request_throughput": self.request_throughput,
+            "excluded_successful": self.excluded_successful,
             "errors": self.errors,
             "request_submit_times": self.request_submit_times,
             "request_complete_times": self.request_complete_times,
         }
-        d.update(self.latency_ms.to_flat_dict("latency_ms"))
-        d.update(self.latency_ms.confidence_to_flat_dict("latency_ms"))
+        if self.latency_ms is not None:
+            d.update(self.latency_ms.to_flat_dict("latency_ms"))
+            d.update(self.latency_ms.confidence_to_flat_dict("latency_ms"))
         return d
+
+    def all_measured_excluded(self) -> bool:
+        """Return True when successes existed but the skip windows ate them all.
+
+        In this state every derived metric (throughput, latency, token
+        counts) is degenerate for lack of samples, not because the server
+        did nothing — validation reports it as a single insufficient-data
+        error instead of one error per degenerate metric.
+        """
+        return self.completed <= 0 and self.excluded_successful > 0
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate common aggregate invariants.
 
         Subclasses extend with their workload-specific checks.
         """
+        if self.all_measured_excluded():
+            return False, [
+                f"Insufficient data: all {self.excluded_successful}"
+                " successful requests were excluded by the skip_first /"
+                " skip_last windows, leaving no measured samples. The server"
+                " completed requests, but too few for this concurrency"
+                " level's trim; no metrics can be concluded from this run."
+            ]
         errors: list[str] = []
         if self.failures > 0:
             errors.append(f"Some requests failed (failures={self.failures})")
@@ -510,9 +491,10 @@ class _CompletedRunBase(BaseModel):
                 "Invalid throughput:"
                 f" request_throughput={self.request_throughput}"
             )
-        ok, sub_errors = self.latency_ms.validate_metrics()
-        if not ok:
-            errors.extend(f"latency_ms: {e}" for e in sub_errors)
+        if self.latency_ms is not None:
+            ok, sub_errors = self.latency_ms.validate_metrics()
+            if not ok:
+                errors.extend(f"latency_ms: {e}" for e in sub_errors)
         return len(errors) == 0, errors
 
     def confidence_warnings(self) -> list[str]:
@@ -532,26 +514,40 @@ class TextGenAggregates(_CompletedRunBase):
     nonempty_response_chunks: int
     max_concurrent_conversations: int | None = None
 
-    input_throughput: ThroughputMetrics
-    output_throughput: ThroughputMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    # All metric fields below are ``None`` when the iteration produced no
+    # samples to derive them from (see ``latency_ms`` on the base class):
+    # a fully-failed iteration leaves every field ``None``, while a
+    # prefill-only / single-output-token iteration leaves just the
+    # decode-phase fields (``tpot_ms`` / ``itl_ms`` / ``step_tpot_ms``)
+    # ``None``. This avoids serializing NaN-filled percentile objects.
+    input_throughput: ThroughputMetrics | None = None
+    output_throughput: ThroughputMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
-    ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    ttft_ms: StandardPercentileMetrics | None = None
+    tpot_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
     # Per-step TPOT: ITL / tokens_per_step for each decode step.
     # Only populated when chunk-level text is available for re-tokenization.
     step_tpot_ms: StandardPercentileMetrics | None = Field(
         default=None, json_schema_extra={"phase": "decode"}
     )
-    itl_ms: StandardPercentileMetrics = Field(
-        json_schema_extra={"phase": "decode"}
+    itl_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
     )
 
     max_input: int
     max_output: int
     max_total: int
+
+    # Run-level aggregate throughput: (input + output) tokens per minute over
+    # wall-clock duration. Derived in ``_derive_aggregate_tokens_per_minute``
+    # so it is a real stored field (not a ``@computed_field``) and therefore
+    # flows through the field-based CSV reporter as well as the JSON reporters,
+    # rather than existing only inside ``to_result_dict``. ``nan`` when
+    # duration is non-positive (degenerate / fully-skipped runs).
+    aggregate_tokens_per_minute: float = float("nan")
 
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
@@ -583,17 +579,28 @@ class TextGenAggregates(_CompletedRunBase):
     # for single-turn workloads or when usage data is unavailable.
     per_turn_cache_retentions: list[float] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _derive_aggregate_tokens_per_minute(self) -> TextGenAggregates:
+        """Derive run-level TPM so console, JSON, and CSV share one source.
+
+        Computed from the token totals and wall-clock duration rather than
+        stored by callers, so every construction path (and JSON round-trips)
+        yields a consistent value.
+        """
+        self.aggregate_tokens_per_minute = (
+            (self.total_input + self.total_output) * 60.0 / self.duration
+            if self.duration > 0
+            else float("nan")
+        )
+        return self
+
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
         # Aggregate across the entire benchmark run (not per-GPU): sum of
         # input + output tokens divided by wall-clock duration, in tokens/min.
-        d["aggregate_tokens_per_minute"] = (
-            (self.total_input + self.total_output) * 60.0 / self.duration
-            if self.duration > 0
-            else float("nan")
-        )
+        d["aggregate_tokens_per_minute"] = self.aggregate_tokens_per_minute
         d["max_concurrent_conversations"] = self.max_concurrent_conversations
         d["skip_first_n_requests"] = self.skip_first_n_requests
         d["skip_last_n_requests"] = self.skip_last_n_requests
@@ -607,15 +614,17 @@ class TextGenAggregates(_CompletedRunBase):
             ("input_throughput", self.input_throughput),
             ("output_throughput", self.output_throughput),
         ]:
-            d.update(pm.to_flat_dict(name))
-            d.update(pm.confidence_to_flat_dict(name))
+            if pm is not None:
+                d.update(pm.to_flat_dict(name))
+                d.update(pm.confidence_to_flat_dict(name))
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
         ]:
-            d.update(spm.to_flat_dict(name))
-            d.update(spm.confidence_to_flat_dict(name))
+            if spm is not None:
+                d.update(spm.to_flat_dict(name))
+                d.update(spm.confidence_to_flat_dict(name))
         if self.step_tpot_ms is not None:
             d.update(self.step_tpot_ms.to_flat_dict("step_tpot_ms"))
             d.update(self.step_tpot_ms.confidence_to_flat_dict("step_tpot_ms"))
@@ -644,22 +653,26 @@ class TextGenAggregates(_CompletedRunBase):
         return d
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
-        _, errors = super().validate_metrics()
+        ok, errors = super().validate_metrics()
+        if self.all_measured_excluded():
+            return ok, errors
         if self.total_output <= 0:
             errors.append(
                 f"No output tokens generated (total_output={self.total_output})"
             )
-        optional_metrics: list[tuple[str, StandardPercentileMetrics]] = []
-        if self.step_tpot_ms is not None:
-            optional_metrics.append(("step_tpot_ms", self.step_tpot_ms))
         for name, m in [
             ("input_throughput", self.input_throughput),
             ("output_throughput", self.output_throughput),
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
-            *optional_metrics,
+            ("step_tpot_ms", self.step_tpot_ms),
         ]:
+            # ``None`` means the metric had no samples this iteration
+            # (e.g. decode metrics on a prefill-only run); the empty case
+            # is already reported via ``completed`` / ``total_output``.
+            if m is None:
+                continue
             ok, sub_errors = m.validate_metrics()
             if not ok:
                 errors.extend(f"{name}: {e}" for e in sub_errors)
@@ -694,15 +707,14 @@ class TextGenAggregates(_CompletedRunBase):
 
     def confidence_warnings(self) -> list[str]:
         warns: list[str] = []
-        optional_pairs: list[tuple[str, StandardPercentileMetrics]] = []
-        if self.step_tpot_ms is not None:
-            optional_pairs.append(("step_tpot_ms", self.step_tpot_ms))
         for name, metric in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("output_throughput", self.output_throughput),
-            *optional_pairs,
+            ("step_tpot_ms", self.step_tpot_ms),
         ]:
+            if metric is None:
+                continue
             ci = getattr(metric, "confidence_info", None)
             if ci and ci.confidence in ("low", "insufficient_data"):
                 warns.append(
@@ -731,53 +743,6 @@ class PixelGenAggregates(_CompletedRunBase):
 
 
 BenchmarkType = Literal["text", "pixel"]
-
-
-@dataclass(kw_only=True)
-class SteadyStateResult:
-    """Steady-state detection outcome and its per-window metrics."""
-
-    detected: bool
-    start_index: int | None
-    end_index: int | None
-    count: int
-    warning: str | None
-    mode: str | None = None
-    # ``TextGenAggregates`` rather than ``BenchmarkResult``: steady
-    # state is text-only, and using the parent type would self-contain once
-    # steady-state data moves into ``BenchmarkResult`` for result
-    # publication.
-    metrics: TextGenAggregates | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
-        d: dict[str, object] = {
-            "steady_state_detected": self.detected,
-            "steady_state_start_index": self.start_index,
-            "steady_state_end_index": self.end_index,
-            "steady_state_count": self.count,
-            "steady_state_warning": self.warning,
-        }
-        if self.mode is not None:
-            d["steady_state_mode"] = self.mode
-        if self.metrics is not None:
-            t = self.metrics
-            for suffix, value in [
-                ("request_throughput", t.request_throughput),
-                ("mean_ttft_ms", t.ttft_ms.mean),
-                ("p99_ttft_ms", t.ttft_ms.p99),
-                ("mean_tpot_ms", t.tpot_ms.mean),
-                ("p99_tpot_ms", t.tpot_ms.p99),
-                ("mean_itl_ms", t.itl_ms.mean),
-                ("p99_itl_ms", t.itl_ms.p99),
-                ("mean_latency_ms", t.latency_ms.mean),
-                ("p99_latency_ms", t.latency_ms.p99),
-            ]:
-                d[f"steady_state_{suffix}"] = value
-            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
-                pm = getattr(t, name)
-                d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
-        return d
 
 
 class BenchmarkResult(BaseModel):
@@ -812,21 +777,32 @@ class BenchmarkResult(BaseModel):
     #
     # IMPORTANT: keep these as two *separate* Optional fields, NOT a combined
     # union ``aggregates: TextGenAggregates | PixelGenAggregates | None``.
-    # The generic CSV reporter in
-    # ``utils/benchmarking/results_publication/reporters/csv.py`` can only
+    # The shared type-driven CSV column derivation in
+    # ``max/python/max/benchmark/benchmark_shared/model_csv.py`` can only
     # expand ``Optional[SingleStructuredType]`` recursively into per-field
     # columns.  A two-type union returns ``None`` from
-    # ``_unwrap_optional_structured_type``, causing ``_flatten_model`` to fall
+    # ``_unwrap_optional_structured_type``, causing ``flatten_model`` to fall
     # through to ``json.dumps`` and emit a single opaque JSON-blob column —
     # making the CSV output difficult to work with in spreadsheet tools.
     text_data: TextGenAggregates | None = None
     pixel_data: PixelGenAggregates | None = None
 
     # Text-generation-only fields. Stay ``None`` for pixel workloads.
-    steady_state_result: SteadyStateResult | None = None
     spec_decode_stats: SpecDecodeStats | None = None
     session_server_stats: dict[str, list[ServerTokenStats]] | None = None
     aggregate_server_stats: list[ServerTokenStats] | None = None
+
+    # Lightweight steady-state detection diagnostics (scalars only — no
+    # duplicate metric set). Populated by ``build_text_generation_result``
+    # after MAD-based window detection. ``None`` for pixel workloads and
+    # failed iterations.
+    steady_state_detected: bool | None = None
+    steady_state_window_count: int | None = None
+    steady_state_mode: str | None = None
+    steady_state_warning: str | None = None
+    # Per-request TTFT outliers rejected in the steady-state window
+    # (bounded by the request count). See build_text_generation_result.
+    num_outliers_rejected: int | None = None
 
     @model_validator(mode="after")
     def _check_data_matches_task_type(self) -> BenchmarkResult:
@@ -835,10 +811,14 @@ class BenchmarkResult(BaseModel):
         if self.pixel_data is not None and self.task_type != "pixel":
             raise ValueError(f"pixel_data set but task_type={self.task_type!r}")
         text_only_fields = (
-            self.steady_state_result,
             self.spec_decode_stats,
             self.session_server_stats,
             self.aggregate_server_stats,
+            self.steady_state_detected,
+            self.steady_state_window_count,
+            self.steady_state_mode,
+            self.steady_state_warning,
+            self.num_outliers_rejected,
         )
         if self.task_type != "text" and any(
             field is not None for field in text_only_fields
@@ -1013,8 +993,14 @@ class BenchmarkResult(BaseModel):
 
         if self.lora_metrics is not None:
             d["lora_metrics"] = self.lora_metrics.to_result_dict()
-        if self.steady_state_result is not None:
-            d.update(self.steady_state_result.to_result_dict())
+        # Lightweight steady-state detection diagnostics (no duplicate metric
+        # set — scalars only for observability / PERF-2615 telemetry).
+        if self.steady_state_detected is not None:
+            d["steady_state_detected"] = self.steady_state_detected
+            d["steady_state_window_count"] = self.steady_state_window_count
+            d["steady_state_mode"] = self.steady_state_mode
+            d["steady_state_warning"] = self.steady_state_warning
+            d["num_outliers_rejected"] = self.num_outliers_rejected
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
         if self.session_server_stats is not None:
@@ -1049,40 +1035,6 @@ class BenchmarkResult(BaseModel):
         if agg is None:
             return []
         return agg.confidence_warnings()
-
-
-@dataclass
-class ChunkTimingMetrics:
-    """Timing statistics for audio chunks (min, mean, median, p99, max)."""
-
-    min: float
-    mean: float
-    median: float
-    p99: float
-    max: float
-
-    @staticmethod
-    def from_samples(data: list[float]) -> ChunkTimingMetrics:
-        if not data:
-            return ChunkTimingMetrics(
-                min=0.0, mean=0.0, median=0.0, p99=0.0, max=0.0
-            )
-        return ChunkTimingMetrics(
-            min=float(np.min(data)),
-            mean=float(np.mean(data)),
-            median=float(np.median(data)),
-            p99=float(np.percentile(data, 99)),
-            max=float(np.max(data)),
-        )
-
-    def to_flat_dict(self, name: str) -> dict[str, float]:
-        return {
-            f"min_{name}": self.min,
-            f"mean_{name}": self.mean,
-            f"median_{name}": self.median,
-            f"p99_{name}": self.p99,
-            f"max_{name}": self.max,
-        }
 
 
 # ---------------------------------------------------------------------------

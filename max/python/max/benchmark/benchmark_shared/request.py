@@ -26,7 +26,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -37,7 +37,12 @@ from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import NotRequired, TypedDict
 
-from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
+from .config import (
+    PIXEL_GENERATION_TASKS,
+    Backend,
+    BenchmarkTask,
+    SamplingConfig,
+)
 from .datasets.types import (
     ChatMessage,
     OpenAIImage,
@@ -87,6 +92,10 @@ class BaseRequestFuncInput(ABC):
 
     model: str
     session_id: str | None
+    # kw_only so this can default without disturbing the required-field
+    # ordering of subclasses (RequestFuncInput adds several fields with no
+    # default after inheriting from this base).
+    cache_salt: str | None = field(default=None, kw_only=True)
 
     @abstractmethod
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
@@ -105,6 +114,28 @@ def _apply_sampling_to_request_payload(
         payload["top_k"] = sampling.top_k
     if sampling.top_p is not None:
         payload["top_p"] = sampling.top_p
+
+
+def _build_final_payload(
+    base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Return a new payload: a shallow copy of *base_payload* with *extra_body*
+    merged on top, last-writer-wins (an *extra_body* key overrides the managed
+    field of the same name). Not mutated, so *base_payload* keeps its precise
+    type and the result is ``dict[str, Any]``.
+    """
+    payload: dict[str, Any] = dict(base_payload)
+    if not extra_body:
+        return payload
+    for key, value in extra_body.items():
+        if key in payload:
+            logger.warning(
+                "extra_body key %r overwrites managed request field; "
+                "last-writer-wins.",
+                key,
+            )
+        payload[key] = value
+    return payload
 
 
 @dataclass
@@ -262,14 +293,27 @@ class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
     def __init__(
-        self, tokenizer: PreTrainedTokenizerBase | None = None
+        self,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        extra_body: Mapping[str, Any] | None = None,
+        backend: Backend | None = None,
     ) -> None:
         """Initialize the request driver.
 
         Args:
             tokenizer: Optional tokenizer for per-chunk TPOT computation.
+            extra_body: Optional arbitrary top-level fields merged onto every
+                request payload (last-writer-wins). Consumed by the
+                text-generation drivers (chat completions, completions, and
+                TensorRT-LLM); other drivers ignore it.
+            backend: The inference backend. Used by
+                :class:`OpenAIChatCompletionsRequestDriver` to enable the ATOM
+                server-reported-timing workaround for the ``atom`` backend.
+                TODO(ATOM): remove once ATOM streams chat/completions correctly.
         """
         self.tokenizer = tokenizer
+        self.extra_body = extra_body
+        self.backend = backend
 
     @abstractmethod
     async def request(
@@ -366,17 +410,20 @@ class TRTLLMRequestDriver(RequestDriver):
         assert api_url.endswith("generate_stream")
 
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
+            base_payload: dict[
+                str, bool | str | int | float | list[ChatMessage]
+            ] = {
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
             }
 
             if request_func_input.max_tokens is not None:
-                payload["max_tokens"] = request_func_input.max_tokens
+                base_payload["max_tokens"] = request_func_input.max_tokens
             _apply_sampling_to_request_payload(
-                payload, request_func_input.sampling
+                base_payload, request_func_input.sampling
             )
+            payload = _build_final_payload(base_payload, self.extra_body)
 
             output = RequestFuncOutput()
             output.prompt_len = request_func_input.prompt_len
@@ -551,12 +598,18 @@ async def _run_openai_stream_request(
                         if not data.choices:
                             continue
 
-                        # Any valid response chunk counts as having received content
-                        has_content = True
-
                         # Only track timing for chunks with actual text
                         text_content = content_extractor(data)
                         if text_content:
+                            # A response only counts as content-bearing once it
+                            # streams actual text. Chunks that carry only a role
+                            # or finish_reason, or that put text in a delta
+                            # field we don't model (e.g. a model whose output
+                            # lands outside reasoning/reasoning_content/content),
+                            # leave this False so the request is flagged rather
+                            # than recorded as a success with ttft=0 and no
+                            # tokens.
+                            has_content = True
                             timestamp = time.perf_counter()
                             # First token
                             if ttft == 0.0:
@@ -577,8 +630,11 @@ async def _run_openai_stream_request(
                             generated_text += text_content
                     if not has_content:
                         output.error = (
-                            "No content returned, there could be an issue with"
-                            " accuracy"
+                            "No text content captured from the response"
+                            " (choices were present but"
+                            " delta.reasoning/reasoning_content/content were"
+                            " all empty). The model may stream text in a field"
+                            " this client does not parse."
                         )
                         output.success = False
                     else:
@@ -612,7 +668,9 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
+        base_payload: dict[
+            str, bool | str | int | float | list[ChatMessage]
+        ] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
@@ -621,8 +679,11 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         }
 
         if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
+        payload = _build_final_payload(base_payload, self.extra_body)
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -637,6 +698,95 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             content_extractor=lambda data: data.choices[0].text,
             tokenizer=self.tokenizer,
         )
+
+
+async def _run_atom_nonstream_chat_request(
+    *,
+    api_url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    prompt_len: int,
+) -> RequestFuncOutput:
+    """ATOM workaround: non-streaming chat request using server-reported timing.
+
+    ATOM returns the whole chat completion in one SSE chunk, so client-side
+    stream timing is degenerate. Its non-streaming ``usage`` block reports
+    ``ttft_s``/``tpot_s``/``latency_s`` instead; we use those and set
+    ``generated_text`` so metrics derive TPOT as
+    ``(latency - ttft)/(output_len - 1)`` (== ``usage.tpot_s``).
+
+    TODO(ATOM): remove once ATOM streams chat/completions correctly.
+    """
+    output = RequestFuncOutput()
+    output.prompt_len = prompt_len
+    output.request_submit_time = time.perf_counter()
+
+    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+        try:
+            async with session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
+                if response.status != 200:
+                    output.error = response.reason or ""
+                    output.success = False
+                    return output
+                body = await response.json()
+        except Exception:
+            output.success = False
+            output.error = "".join(traceback.format_exception(*sys.exc_info()))
+            return output
+
+    try:
+        message = body["choices"][0].get("message") or {}
+    except (KeyError, IndexError, TypeError):
+        output.success = False
+        output.error = f"Malformed chat completion response: {body!r}"
+        return output
+
+    # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
+    generated_text = (
+        (message.get("reasoning") or "")
+        + (message.get("reasoning_content") or "")
+        + (message.get("content") or "")
+    )
+    usage = body.get("usage") or {}
+    ttft_s = usage.get("ttft_s")
+    tpot_s = usage.get("tpot_s")
+    latency_s = usage.get("latency_s")
+
+    if ttft_s is None or latency_s is None:
+        output.success = False
+        output.error = (
+            "ATOM server-reported timing requested but the response 'usage' is"
+            " missing ttft_s/latency_s; this workaround only applies to an ATOM"
+            " server that reports server-side timing on non-streaming"
+            f" chat/completions. usage={usage!r}"
+        )
+        return output
+    if not generated_text:
+        output.success = False
+        output.error = "No text content in chat completion response."
+        return output
+
+    output.generated_text = generated_text
+    output.ttft = ttft_s
+    # Metrics derive TPOT from (latency - ttft)/(output_len - 1) == usage.tpot_s.
+    output.latency = latency_s
+    prompt_details = usage.get("prompt_tokens_details") or {}
+    completion_tokens = usage.get("completion_tokens")
+    output.server_token_stats = ServerTokenStats(
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=completion_tokens,
+        total_tokens=usage.get("total_tokens"),
+        cached_tokens=prompt_details.get("cached_tokens", 0),
+    )
+    # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
+    # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).
+    if tpot_s is not None and completion_tokens and completion_tokens > 1:
+        output.itl = [tpot_s] * (completion_tokens - 1)
+        output.tpot = [tpot_s] * (completion_tokens - 1)
+    output.success = True
+    return output
 
 
 class OpenAIChatCompletionsRequestDriver(RequestDriver):
@@ -665,7 +815,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 msg.model_dump() for msg in request_func_input.prompt
             ]
 
-        payload: dict[
+        base_payload: dict[
             str,
             bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
         ] = {
@@ -677,20 +827,23 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         }
 
         if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
         if request_func_input.response_format is not None:
             # Convert TypedDict to plain dict so mypy accepts the assignment into
-            # payload (since a TypedDict is stricter than a dict[str, Any]).
-            payload["response_format"] = dict(
+            # base_payload (since a TypedDict is stricter than a dict[str, Any]).
+            base_payload["response_format"] = dict(
                 request_func_input.response_format
             )
         if request_func_input.tools:
-            payload["tools"] = request_func_input.tools
+            base_payload["tools"] = request_func_input.tools
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
+            base_payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
+        payload = _build_final_payload(base_payload, self.extra_body)
 
         headers = {
             "Content-Type": "application/json",
@@ -698,6 +851,21 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         }
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
+        if request_func_input.cache_salt:
+            headers["X-Cache-Salt"] = request_func_input.cache_salt
+
+        if self.backend == "atom":
+            # ATOM doesn't per-token-stream chat/completions: send non-streaming
+            # and read timing from `usage`. TODO(ATOM): remove once it streams.
+            nonstream_payload = dict(payload)
+            nonstream_payload["stream"] = False
+            nonstream_payload.pop("stream_options", None)
+            return await _run_atom_nonstream_chat_request(
+                api_url=api_url,
+                payload=nonstream_payload,
+                headers=headers,
+                prompt_len=request_func_input.prompt_len,
+            )
 
         return await _run_openai_stream_request(
             api_url=api_url,
@@ -1453,8 +1621,9 @@ class RequestCounter:
             self.total_sent_requests += 1
             if self.total_sent_requests == self.max_requests:
                 logger.info(
-                    f"Ending run: max requests {self.max_requests} have been"
-                    " sent"
+                    f"Request cap reached (--num-prompts={self.max_requests}):"
+                    " no new requests will start; waiting for queued and"
+                    " in-flight requests to complete."
                 )
             return True
 

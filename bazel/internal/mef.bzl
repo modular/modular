@@ -1,11 +1,24 @@
 """Generate MEF files from python Graphs."""
 
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
+load(":modular_genrule.bzl", "modular_genrule")
 load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
+    # Internal-only kernel packages. Each is imported by a graph-op
+    # registration in //max:builtin_kernels, so its .mojopkg has to be on the
+    # graph compiler's runtime import path -- otherwise the whole
+    # builtin_kernels package body fails to resolve. This list is flat, not
+    # transitive, so adding a //Kernels/... dep to //max:builtin_kernels
+    # requires adding it here too. The open-source build has none of these
+    # packages; the OSS `mef` wrapper in //oss/modular/bazel:api.bzl rewrites
+    # them to their prebuilt @modular_wheel equivalents.
+    "//Kernels/lib/attn_res",
+    "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
+    "//Kernels/src/mega_ffn",
+    "//max:algorithm",
     "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",
@@ -26,6 +39,7 @@ MOJO_DEPS = [
     "//max:state_space",
     "//max:structured_kernels",
     "//max:weights_registry",
+    "//max:max_mojo",
     "@mojo//:std",
 ]
 
@@ -54,11 +68,14 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         **kwargs
     )
 
-    native.genrule(
+    modular_genrule(
         name = name,
         outs = [mef_name],
-        exec_compatible_with = TARGET_CONSTRAINTS,
-        target_compatible_with = target_compatible_with,
+        exec_compatible_with = TARGET_CONSTRAINTS + target_compatible_with,
+        target_compatible_with = target_compatible_with + select({
+            "//:asan": ["@platforms//:incompatible"],  # TODO: SDLC-4011
+            "//conditions:default": [],
+        }),
         cmd = " ".join([
             "MODULAR_HOME=.",
             "MODULAR_MOJO_MAX_IMPORT_PATH=" + ",".join([

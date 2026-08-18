@@ -16,7 +16,7 @@ import std.math as math
 from std.math import rsqrt
 from std.sys import simd_width_of
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal, assert_true
@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Float32) raises -> Tuple[
     Float64,
     Float64,
 ]:
@@ -82,7 +82,7 @@ def run_group_norm_gpu[
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -90,7 +90,7 @@ def run_group_norm_gpu[
 
     @__copy_capture(data_buf)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -100,14 +100,14 @@ def run_group_norm_gpu[
 
     @__copy_capture(gamma)
     @always_inline
-    @parameter
+    @__parameter
     def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
         return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
-    @parameter
+    @__parameter
     def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
         return beta.raw_load[width=width](idx)

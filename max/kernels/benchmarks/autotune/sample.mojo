@@ -31,10 +31,10 @@ from std.time import sleep
 def bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
 ](mut m: Bench, mode: Mode, pe_rank: Int) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def call_fn():
             sleep(0.01)

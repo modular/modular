@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the SIMD strategy for generating random `SIMD` values in property tests."""
 
+from . import Strategy
 from std.testing.prop.random import Rng
 
 
@@ -21,7 +22,7 @@ __extension SIMD:
         *,
         min: Scalar[dtype] = Scalar[dtype].MIN_FINITE,
         max: Scalar[dtype] = Scalar[dtype].MAX_FINITE,
-    ) -> _SIMDStrategy[dtype, size]:
+    ) -> _SIMDStrategy[dtype, length]:
         """Returns a strategy for generating random SIMD values.
 
         Args:
@@ -31,7 +32,7 @@ __extension SIMD:
         Returns:
             A strategy for generating random SIMD values.
         """
-        return _SIMDStrategy[dtype, size](min=min, max=max)
+        return _SIMDStrategy[dtype, length](min=min, max=max)
 
 
 struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):

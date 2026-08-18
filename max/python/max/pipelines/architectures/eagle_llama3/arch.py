@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from ..llama3.batch_processor import Llama3BatchProcessor
 from ..llama3.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
@@ -35,9 +36,9 @@ eagle_llama_arch = SupportedArchitecture(
         "float32",
     },
     pipeline_model=EagleLlama3Model,
+    batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -47,6 +48,8 @@ eagle_llama_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
 
 eagle3_llama_arch = SupportedArchitecture(
@@ -60,9 +63,9 @@ eagle3_llama_arch = SupportedArchitecture(
         "float32",
     },
     pipeline_model=EagleLlama3Model,
+    batching=Llama3BatchProcessor,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={
@@ -72,4 +75,6 @@ eagle3_llama_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

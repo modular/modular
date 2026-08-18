@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.device_passable import DevicePassable
 from std.math import align_up
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import InitializationType
 
 # 512 MiB — larger than 2x the infinity cache on MI300x (256 MiB)
@@ -65,12 +66,26 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
     @always_inline
     def unsafe_ptr(self) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Raw device pointer to base of buffer."""
-        return self._buf.unsafe_ptr()
+        # TODO: This should properly keep/use origins.
+        # `DeviceBuffer.unsafe_ptr()` ties the returned pointer's mutability
+        # and origin to the borrow of the buffer.
+        return (
+            self._buf.unsafe_ptr()
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
 
     @always_inline
     def offset_ptr(self, iteration: Int) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Device pointer offset to the window for this iteration."""
-        return self._buf.unsafe_ptr() + self.offset(iteration)
+        # TODO: This should properly keep/use origins.
+        # `DeviceBuffer.unsafe_ptr()` ties the returned pointer's mutability
+        # and origin to the borrow of the buffer.
+        return (
+            (self._buf.unsafe_ptr() + self.offset(iteration))
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
 
     @always_inline
     def device_buffer(self) -> DeviceBuffer[Self.dtype]:
@@ -85,7 +100,7 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
 
     def init_on_device(
         self, init_type: InitializationType, ctx: DeviceContext
-    ) raises:
+    ) raises where conforms_to(Scalar[Self.dtype], DevicePassable):
         """Initialize the entire buffer on the device."""
         from internal_utils._utils import init_vector_launch
 

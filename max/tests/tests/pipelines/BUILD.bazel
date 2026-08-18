@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -16,19 +15,25 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental/torch",
         "//max/python/max/nn",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
         "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/architectures/step3p5",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
+        requirement("numpy"),
+        requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
     ],

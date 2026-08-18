@@ -32,12 +32,13 @@ SMEM Layout (native FP8):
 
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, block_idx, warp_id
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.memory import external_memory
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -105,6 +106,44 @@ struct MLA_SM100_Decode_QKV_FP8[
     # Only used inside `comptime if Self.fold_q`
     q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
+    """Native FP8 MLA decode kernel struct for SM100 (B200).
+
+    Holds all of Q, K, V, and P as FP8 e4m3 in shared memory and drives the
+    three-warpgroup decode pipeline (softmax, correction, and MMA+load+store)
+    using native FP8 WGMMA (`tcgen05.mma.kind::f8f6f4`) for both the QK and PV
+    matmuls. The FP8 tensorwise dequant scale is folded into the softmax QK
+    scale so no BF16 conversion of Q or KV is needed on the hot path.
+
+    Parameters:
+        q_type: The precision used for the softmax accumulator and
+            output byte sizing (`bfloat16`), even though
+            Q, K, V, and P are FP8 in shared memory.
+        KVLUTType: The paged KV cache operand type, providing the
+            KV dtype and page size used for TMA loads.
+        output_type: The data type of the output tensor written via
+            TMA store.
+        SplitAccumType: The optional pointer type for the split-K
+            LSE accumulation buffer used when decoding is
+            partitioned across CTAs.
+        MaskType: The attention mask type; one of `NullMask`,
+            `CausalMask`, or `SlidingWindowCausalMask`.
+        config: The decode configuration providing tile sizes,
+            stage counts, head counts, and TMEM layout for the
+            kernel.
+        ValidLengthType: The optional pointer type for the
+            per-request valid sequence length buffer.
+        _is_cache_length_accurate: Whether the cache length used
+            for offset computation is accurate (defaults to
+            `False`).
+        ragged: Whether ragged (variable-length) sequences are
+            used, skipping blocks beyond the actual sequence
+            length (defaults to `False`).
+        fold_q: Whether speculative decoding folds multiple Q
+            tokens into the `BM=64` M tile (defaults to `False`).
+        q_len_fold: Number of Q tokens folded into the `BM=64` M
+            tile under `fold_q=True` (defaults to 1).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
@@ -156,7 +195,7 @@ struct MLA_SM100_Decode_QKV_FP8[
 
     # --------------------------------------------------------------------------
     # Sliding-window k-tile skip (only callable when MaskType is
-    # SlidingWindowCausalMask).  All warpgroups call this with the same
+    # SlidingWindowCausalMask). All warpgroups call this with the same
     # `offset_position` to avoid barriers deadlock.
     #
     # For SlidingWindowCausalMask with window_size W:
@@ -248,7 +287,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
     ):
         # MaskType assertion: native FP8 backend supports NullMask, CausalMask,
-        # and SlidingWindowCausalMask.  Sliding window support is exclusive to
+        # and SlidingWindowCausalMask. Sliding window support is exclusive to
         # this backend.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
@@ -263,14 +302,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
 
         # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
             Self.config,
@@ -327,7 +366,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         # Sliding-window split-K: a CTA whose entire split lies BELOW the
         # per-row lower bound (causal_limit - W) has nothing to compute and
         # must take the same -inf-LSE early-exit path as `num_keys_this_split
-        # == 0`.  Comptime-gated so non-sliding builds compile to byte-
+        # == 0`. Comptime-gated so non-sliding builds compile to byte-
         # identical PTX.
         comptime _sliding_window_mask: Bool = (
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
@@ -398,7 +437,7 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # ---- SMEM layout (all FP8, N stages) ----
         # Q FP8 region: 64 x 576 x 1 bytes = 36864 bytes
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.fp8_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -488,7 +527,7 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
 
         if warp_idx == 8:
             if is_leader:
@@ -639,7 +678,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         if offset_position.num_keys_this_split == 0:
             return
 
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -791,7 +830,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
 
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -799,7 +838,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             return
 
         # Sliding-window early exit + leading-tile skip (comptime-gated;
-        # entire block compiles away for non-sliding masks).  Must match
+        # entire block compiles away for non-sliding masks). Must match
         # `load` exactly so consumer iterations equal producer iterations.
         comptime _sliding_window_mask: Bool = (
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
@@ -834,7 +873,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -882,7 +921,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -890,7 +929,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             return
 
         # Sliding-window early exit + leading-tile skip (comptime-gated;
-        # entire block compiles away for non-sliding masks).  Must match
+        # entire block compiles away for non-sliding masks). Must match
         # `load` exactly so consumer iterations equal producer iterations.
         comptime _sliding_window_mask: Bool = (
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"

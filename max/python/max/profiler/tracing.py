@@ -112,7 +112,7 @@ def traced(
             else:
                 return func(*args, **kwargs)
 
-    return wrapper
+    return wrapper  # type: ignore
 
 
 class Tracer:

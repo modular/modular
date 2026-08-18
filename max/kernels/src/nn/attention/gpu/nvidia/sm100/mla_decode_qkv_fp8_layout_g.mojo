@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Native FP8 MLA decode kernel for SM100 (B200) — Layout G fold path.
+"""Native FP8 MLA decode kernel for SM100 (B200): Layout G fold path.
 
 qkv=fp8 / BM=32 / MMA_M=32 / 1x4 datapath
 specialisations (softmax, correction, output store, TMA/MMA descriptor
@@ -36,19 +36,19 @@ from std.math.constants import log2e
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -129,7 +129,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     # Layout G handles BOTH fold (fold_q==True, q_len_fold > 1) and non-fold
-    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases.  The kernel body
+    # (fold_q==False, q_len_fold==1, num_heads <= 32) cases. The kernel body
     # has full `comptime if Self.fold_q ... else ...` branching for both.
     # The dispatcher is responsible for picking a (fold_q, q_len_fold) pair
     # that satisfies `num_heads * q_len_fold <= BM_G(32)`.
@@ -137,6 +137,40 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     # Number of q_tokens folded into the BM=32 M tile under fold_q==True.
     q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
+    """Implements the native FP8 MLA decode kernel for SM100 (B200) using the Layout G fold path.
+
+    Uses a BM=32, MMA_M=32, 1x4 datapath with five KV pipeline stages where all
+    of Q, K, V, and P reside in shared memory as FP8. Handles both the
+    query-fold (`fold_q==True`, `q_len_fold > 1`) and non-fold (`fold_q==False`,
+    `q_len_fold==1`, `num_heads <= 32`) cases, with the dispatcher selecting a
+    `(fold_q, q_len_fold)` pair satisfying `num_heads * q_len_fold <= 32`.
+
+    Parameters:
+        q_type: Element dtype of the query operand; also selects the MMA
+            accumulator type via `get_accum_type`.
+        KVLUTType: `MHAOperand` describing the KV cache lookup table; its
+            `dtype` is `float8_e4m3fn` for this FP8 kernel.
+        output_type: Element dtype of the output tensor; must be `bfloat16`.
+        SplitAccumType: `OptionalPointer` type for the split-K LSE
+            accumulation buffer written under `decoding_warp_split_k`.
+        MaskType: `MHAMask` variant selecting the attention mask; supports
+            `NullMask`, `CausalMask`, and `SlidingWindowCausalMask`.
+        config: `MLA_SM100_Decode_Config` holding tile sizes, pipeline
+            stage counts, head counts, and TMEM/SMEM layout.
+        ValidLengthType: `OptionalPointer` type for the per-sequence valid
+            length buffer consumed under ragged batching.
+        _is_cache_length_accurate: Whether the supplied cache length is
+            exact rather than `cache_length + seq_len` (defaults to `False`).
+        ragged: Whether the batch contains variable-length sequences,
+            enabling early exit for blocks past the sequence length
+            (defaults to `False`).
+        fold_q: Whether to fold multiple query tokens into the BM=32 M
+            tile (defaults to `False`).
+        q_len_fold: Number of query tokens packed into the BM=32 M tile
+            when `fold_q` is `True`; must satisfy
+            `num_q_heads * q_len_fold <= 32` (defaults to 1).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
@@ -396,7 +430,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 pack=False,
             ](s_tmem_slot)
 
-            comptime for _i in range(type_of(s_row_val).size):
+            comptime for _i in range(type_of(s_row_val).length):
                 s_row.raw_store(_i, s_row_val[_i])
             tcgen05_load_wait()
 
@@ -405,7 +439,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Scale-fold + mask. apply_mask sees a half_load-wide tile
             # (BN_QK/4 instead of Layout E's BN_QK/2).
             var s_row_val_vectorized = s_row.vectorize[2]()
-            comptime vs_count = (half_load + 2 - 1) // 2
+            comptime vs_count = ceildiv(half_load, 2)
             comptime for _vi in range(vs_count):
                 s_row_val_vectorized[_vi] = (
                     s_row_val_vectorized[_vi] * scale_log2e
@@ -499,7 +533,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # tile — no prior O accumulator to correct).
             if tiles_done > first_processed_tile_sw:
                 c_prod.acquire()
-                var _scale_tuple = InlineArray[Scalar[Self.AccumType], 1](
+                var _scale_tuple = Array[Scalar[Self.AccumType], 1](
                     fill=scale_for_old_max
                 )
                 tcgen05_st[
@@ -754,7 +788,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var out_cons = DecodeOutConsumer[Self.output_type, Self.config](
             out_pipeline, out_smem
         )
-        elect_mask = elect()
+        var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
 
@@ -947,7 +981,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         float2_register[j] = element * SIMD[Self.AccumType, 2](
                             scale_value
                         )
-                    var _o_st_corr = InlineArray[
+                    var _o_st_corr = Array[
                         Scalar[Self.AccumType], per_warp_corr_elems
                     ](uninitialized=True)
 
@@ -1043,13 +1077,13 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = Int(scalar_args.raw_load(2))
+        var num_partitions = mla_decode_pack.num_partitions
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
             Self.config,
@@ -1168,7 +1202,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 return
 
         # SMEM allocation: Q FP8, KV stages, P stages, max/li, barriers.
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.fp8_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -1250,7 +1284,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         #   CORR_LI     = 449
         var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
 
         # Init: warp 8 inits barriers, warp 9 allocates TMEM.
         if warp_idx == 8:
@@ -1402,7 +1436,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         if offset_position.num_keys_this_split == 0:
             return
 
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         # Sliding-window early exit + leading-tile skip.
         comptime _sliding_window_mask: Bool = (
@@ -1525,7 +1561,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
 
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         if num_k_tiles == 0:
             return
@@ -1558,7 +1596,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -1604,7 +1642,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(offset_position.num_keys_this_split, Self.BN_QK)
+        var num_k_tiles = ceildiv(
+            offset_position.num_keys_this_split, Self.BN_QK
+        )
 
         if num_k_tiles == 0:
             return

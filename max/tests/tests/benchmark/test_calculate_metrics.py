@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 from unittest.mock import MagicMock
 
@@ -25,8 +27,8 @@ from max.benchmark.benchmark_shared.request import (
     ServerTokenStats,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
-    _compute_steady_state_result,
     _per_turn_cache_retentions,
+    build_text_generation_result,
     calculate_metrics,
     calculate_pixel_generation_metrics,
 )
@@ -87,6 +89,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
     assert math.isclose(metrics.text_data.step_tpot_ms.p50, 100.0, rel_tol=1e-3)
     # tpot_ms is per-request: (latency - ttft) / (output_len - 1)
     #                       = (1.0 - 0.1) / (5 - 1) = 0.225 s -> 225 ms.
+    assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.p50, 225.0, rel_tol=1e-3)
 
 
@@ -136,6 +139,7 @@ def test_tpot_both_definitions() -> None:
     assert metrics.text_data is not None
 
     # Per-request tpots = [0.1, 0.2]; mean = 0.15 s -> 150 ms.
+    assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.mean, 150.0, rel_tol=1e-6)
 
     # Per-step step_tpots = [0.1]*9 + [0.2]*3; mean = 1.5/12 s -> 125 ms.
@@ -146,7 +150,7 @@ def test_tpot_both_definitions() -> None:
 
 
 def test_tpot_zero_decode_tokens() -> None:
-    """When all requests produce <= 1 token, TPOT mean is NaN."""
+    """When all requests produce <= 1 token, decode metrics are ``None``."""
     # Output with 1 token (only TTFT, no decode)
     output = RequestFuncOutput(
         success=True,
@@ -177,8 +181,12 @@ def test_tpot_zero_decode_tokens() -> None:
 
     assert metrics.text_data is not None
 
-    # With empty tpots, StandardPercentileMetrics gets [nan], so mean is nan
-    assert math.isnan(metrics.text_data.tpot_ms.mean)
+    # With no decode samples the decode-phase percentile metrics are
+    # ``None`` (rather than a NaN-filled object), while prefill-phase
+    # metrics that do have samples stay populated.
+    assert metrics.text_data.tpot_ms is None
+    assert metrics.text_data.itl_ms is None
+    assert metrics.text_data.ttft_ms is not None
 
 
 def test_empty_outputs_no_crash() -> None:
@@ -203,8 +211,22 @@ def test_empty_outputs_no_crash() -> None:
 
     assert metrics.text_data.completed == 0
     assert metrics.text_data.output_lens == []
-    # TPOT mean should be NaN since there are no outputs
-    assert math.isnan(metrics.text_data.tpot_ms.mean)
+    # With no samples, percentile metrics are ``None`` (not a NaN-filled
+    # object) so the serialized JSON stays free of null-valued percentile
+    # objects that strict downstream consumers reject.
+    assert metrics.text_data.latency_ms is None
+    assert metrics.text_data.ttft_ms is None
+    assert metrics.text_data.tpot_ms is None
+    assert metrics.text_data.itl_ms is None
+    assert metrics.text_data.input_throughput is None
+    assert metrics.text_data.output_throughput is None
+
+    # And the empty case round-trips through JSON as ``null`` fields, not
+    # ``{"p50": null, ...}`` objects (regression guard for MXTOOLS-45:
+    # legacy NaN objects tripped the dashboard's per-field drop pass).
+    dumped = json.loads(metrics.model_dump_json())
+    assert dumped["text_data"]["tpot_ms"] is None
+    assert dumped["text_data"]["latency_ms"] is None
 
 
 def test_itl_metrics_unchanged() -> None:
@@ -238,6 +260,7 @@ def test_itl_metrics_unchanged() -> None:
     assert metrics.text_data is not None
 
     # ITL should be computed from the raw itl values [0.1, 0.2, 0.3] * 1000
+    assert metrics.text_data.itl_ms is not None
     assert math.isclose(metrics.text_data.itl_ms.mean, 200.0, rel_tol=1e-3)
     assert math.isclose(metrics.text_data.itl_ms.p50, 200.0, rel_tol=1e-3)
 
@@ -282,6 +305,7 @@ def test_failed_requests_excluded() -> None:
     assert metrics.text_data.completed == 1
     assert metrics.text_data.failures == 1
     # Per-request tpot_ms uses only the successful request, not [999.0].
+    assert metrics.text_data.tpot_ms is not None
     assert metrics.text_data.tpot_ms.p50 < 500.0
     # Per-step step_tpot_ms uses only [0.1, 0.2] from the successful request.
     assert metrics.text_data.step_tpot_ms is not None
@@ -357,6 +381,8 @@ def test_skip_last_n_requests() -> None:
     assert metrics_all.text_data.completed == 3
     assert metrics_skip_last.text_data.completed == 2
     # The last request's high TTFT (0.5s) is excluded from latency metrics.
+    assert metrics_skip_last.text_data.ttft_ms is not None
+    assert metrics_all.text_data.ttft_ms is not None
     assert (
         metrics_skip_last.text_data.ttft_ms.mean
         < metrics_all.text_data.ttft_ms.mean
@@ -416,6 +442,7 @@ def test_skip_first_and_last_n_requests() -> None:
     # Only the middle request is measured.
     assert metrics.text_data.completed == 1
     # Only the middle request's TTFT (0.1s = 100ms) should be measured
+    assert metrics.text_data.ttft_ms is not None
     assert math.isclose(metrics.text_data.ttft_ms.mean, 100.0, rel_tol=1e-3)
 
 
@@ -477,6 +504,7 @@ def test_skip_last_with_cancelled_requests() -> None:
     # entries, so only the middle successful request is measured.
     assert metrics.text_data.completed == 1
     # Only the second request should be measured (skip first 1, last 1)
+    assert metrics.text_data.ttft_ms is not None
     assert math.isclose(metrics.text_data.ttft_ms.mean, 200.0, rel_tol=1e-3)
 
 
@@ -549,6 +577,7 @@ def test_calculate_pixel_generation_metrics() -> None:
         metrics.pixel_data.request_throughput, 0.4, rel_tol=1e-6
     )
     assert metrics.pixel_data.total_generated_outputs == 3
+    assert metrics.pixel_data.latency_ms is not None
     assert math.isclose(
         metrics.pixel_data.latency_ms.mean, 1500.0, rel_tol=1e-6
     )
@@ -1077,36 +1106,6 @@ def _make_request_func_output(
     )
 
 
-def test_compute_steady_state_result_not_detected() -> None:
-    """With too few requests, _compute_steady_state_result returns only detection-metadata keys."""
-    outputs = [_make_request_func_output() for _ in range(3)]
-    result = _compute_steady_state_result(
-        outputs=outputs,
-        tokenizer=None,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        metrics_by_endpoint=None,
-    ).to_result_dict()
-
-    assert result == {
-        "steady_state_detected": False,
-        "steady_state_start_index": None,
-        "steady_state_end_index": None,
-        "steady_state_count": 0,
-        "steady_state_warning": (
-            "Too few valid requests (3 of 3 total) for steady-state"
-            " detection (need at least 100). TPOT was absent across the"
-            " run, so detection ran in TTFT-only mode; the run has too few"
-            " valid requests (cancelled, failed, or missing"
-            " timestamps/TTFT are filtered out)."
-        ),
-        "steady_state_mode": "ttft_only",
-    }
-
-
 def _make_stable_request_func_output(submit_time: float) -> RequestFuncOutput:
     """Return a RequestFuncOutput with stable TTFT and TPOT suitable for steady-state detection."""
     tpot = [0.02, 0.02, 0.02]
@@ -1122,71 +1121,253 @@ def _make_stable_request_func_output(submit_time: float) -> RequestFuncOutput:
     )
 
 
-def test_compute_steady_state_result_detected() -> None:
-    """With enough stable requests, _compute_steady_state_result detects steady state and returns metric keys."""
-    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+def test_build_text_generation_result_not_detected_falls_back_to_trim() -> None:
+    """With too few requests (no steady state), build_text_generation_result uses head/tail trim.
+
+    When steady state is not detected the full-run path runs with the
+    caller-supplied skip_first / skip_last parameters unchanged.  Diagnostic
+    scalars still appear on the result.
+    """
+    outputs = [_make_request_func_output() for _ in range(3)]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
-    result = _compute_steady_state_result(
+    result = build_text_generation_result(
         outputs=outputs,
+        benchmark_duration=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
         cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
-        metrics_by_endpoint=None,
-    ).to_result_dict()
+    )
 
-    assert set(result.keys()) == {
-        # Detection metadata — always present.
-        "steady_state_detected",
-        "steady_state_start_index",
-        "steady_state_end_index",
-        "steady_state_count",
-        "steady_state_warning",
-        "steady_state_mode",
-        # Per-metric summaries — present when detected and ≥2 valid requests.
-        "steady_state_request_throughput",
-        "steady_state_mean_ttft_ms",
-        "steady_state_p99_ttft_ms",
-        "steady_state_mean_tpot_ms",
-        "steady_state_p99_tpot_ms",
-        "steady_state_mean_itl_ms",
-        "steady_state_p99_itl_ms",
-        "steady_state_mean_latency_ms",
-        "steady_state_p99_latency_ms",
-        # Confidence-interval keys for each latency metric.
-        "steady_state_ttft_ms_ci_lower",
-        "steady_state_ttft_ms_ci_upper",
-        "steady_state_ttft_ms_ci_relative_width",
-        "steady_state_ttft_ms_confidence",
-        "steady_state_ttft_ms_sample_size",
-        "steady_state_tpot_ms_ci_lower",
-        "steady_state_tpot_ms_ci_upper",
-        "steady_state_tpot_ms_ci_relative_width",
-        "steady_state_tpot_ms_confidence",
-        "steady_state_tpot_ms_sample_size",
-        "steady_state_itl_ms_ci_lower",
-        "steady_state_itl_ms_ci_upper",
-        "steady_state_itl_ms_ci_relative_width",
-        "steady_state_itl_ms_confidence",
-        "steady_state_itl_ms_sample_size",
-        "steady_state_latency_ms_ci_lower",
-        "steady_state_latency_ms_ci_upper",
-        "steady_state_latency_ms_ci_relative_width",
-        "steady_state_latency_ms_confidence",
-        "steady_state_latency_ms_sample_size",
-    }
+    assert result.steady_state_detected is False
+    assert result.steady_state_window_count == 0
+    assert result.steady_state_warning is not None
+    assert "Too few" in result.steady_state_warning
+    # The metrics themselves should still be computed (fall-back path).
+    assert result.text_data is not None
+    assert result.text_data.completed == 3
 
-    assert result["steady_state_detected"] is True
-    assert result["steady_state_mode"] == "full"
-    assert result["steady_state_start_index"] is not None
-    assert result["steady_state_end_index"] is not None
-    assert isinstance(result["steady_state_count"], int)
-    assert result["steady_state_count"] > 0
-    assert result["steady_state_warning"] is None
-    # With ttft=0.05 s the mean should be ≈50 ms.
-    assert result["steady_state_mean_ttft_ms"] == pytest.approx(50.0, rel=0.05)
+
+def test_build_text_generation_result_all_failed_suppresses_ss_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A run with no successful requests must not emit a steady-state warning.
+
+    Regression test for PERF-2615: a run where every request failed logged
+    ``Steady-state detection: Too few valid requests (0 of N total)`` at
+    WARNING, which read as a detection bug. It is a run failure (surfaced by
+    the failure count), so the steady-state path stays quiet and falls back.
+    """
+    outputs = [
+        RequestFuncOutput(success=False, latency=0.0, ttft=0.0, prompt_len=10)
+        for _ in range(200)
+    ]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    with caplog.at_level(logging.WARNING):
+        result = build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=1.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=32,  # detection runs (not skipped)
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+        )
+
+    assert not any(
+        "Steady-state detection:" in r.message and r.levelno >= logging.WARNING
+        for r in caplog.records
+    )
+    assert result.steady_state_detected is False
+    assert result.text_data is not None
+
+
+def test_build_text_generation_result_too_few_but_some_success_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Some successful-but-unusable requests below threshold still warn.
+
+    Distinguishes the genuine "too few valid" case (worth surfacing) from the
+    all-failed run above (suppressed).
+    """
+    outputs = [_make_request_func_output() for _ in range(3)]  # 3 successful
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    with caplog.at_level(logging.WARNING):
+        build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=1.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=32,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+        )
+
+    assert any("Steady-state detection:" in r.message for r in caplog.records)
+
+
+def test_build_text_generation_result_detected_uses_window_with_rejection() -> (
+    None
+):
+    """With enough stable requests, build_text_generation_result uses the MAD window + rejection.
+
+    Checks that:
+    - steady_state_detected is True
+    - the single reported metric set reflects the window (not full run)
+    - outlier rejection diagnostic is present
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=200.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert result.steady_state_detected is True
+    assert result.steady_state_window_count is not None
+    assert result.steady_state_window_count > 0
+    assert result.steady_state_mode == "full"
+    assert result.steady_state_warning is None
+    assert result.num_outliers_rejected is not None
+    assert result.text_data is not None
+    # The reported TTFT should be very close to 50 ms (all inputs are 0.05 s).
+    assert result.text_data.ttft_ms is not None
+    assert result.text_data.ttft_ms.mean == pytest.approx(50.0, rel=0.05)
+
+
+def test_build_text_generation_result_concurrency_one_falls_back() -> None:
+    """At concurrency=1 detection is skipped; the full-run path (with trim) is used.
+
+    Outlier rejection is NOT applied on the concurrency-1 fallback path.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(50)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=50.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=1,  # detection skipped
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Detection was skipped → not detected.
+    assert result.steady_state_detected is False
+    assert result.steady_state_warning is None  # skipped, not failed
+    assert result.num_outliers_rejected == 0  # no rejection on fallback
+    assert result.text_data is not None
+    assert result.text_data.completed == 50
+
+
+def test_build_text_generation_result_with_outlier_inputs() -> None:
+    """Synthetic run: stable-phase requests with realistic spread + extreme TTFT outliers.
+
+    Validates three properties end-to-end:
+    (a) detection selects a steady window (from the stable phase),
+    (b) outlier rejection drops the extreme TTFT values when the window
+        has enough natural spread for MAD > 0,
+    (c) the not-detected fallback path handles concurrency=1 without rejection.
+    """
+    import math
+    import random
+
+    random.seed(42)
+
+    # 110 stable-phase requests with small natural spread so MAD > 0.
+    # TTFT alternates ≈ 0.04-0.06 s → median 0.05 s, MAD ≈ 0.01 s.
+    stable = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.04 + (i % 2) * 0.02,  # alternates 0.04 / 0.06
+            prompt_len=10,
+            generated_text="hello world",
+            itl=[0.02, 0.02, 0.02],
+            tpot=[0.02, 0.02, 0.02],
+            request_submit_time=float(i),
+        )
+        for i in range(110)
+    ]
+    # Inject 3 extreme TTFT outliers mixed into the stable range.
+    # |mz| = 0.6745 * (50.0 - 0.05) / 0.01 ≈ 3372 >> 3.5 → must be rejected.
+    extreme_outliers = [
+        RequestFuncOutput(
+            success=True,
+            latency=51.0,
+            ttft=50.0,  # extreme: 50 s
+            prompt_len=10,
+            generated_text="hello world",
+            itl=[0.02],
+            tpot=[0.02],
+            request_submit_time=float(50 + i * 20),  # scattered in the middle
+        )
+        for i in range(3)
+    ]
+    all_outputs = stable + extreme_outliers
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    # (a+b) With concurrency > 1, detection may find a window; if it does,
+    # rejection should drop the extreme TTFTs so the mean stays near 50 ms.
+    # We also simply verify the result is sane and completes without error.
+    result_high = build_text_generation_result(
+        outputs=all_outputs,
+        benchmark_duration=120.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=32,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+    assert result_high.text_data is not None
+    assert result_high.steady_state_detected is not None
+    # num_outliers_rejected diagnostic is always present on the text path.
+    assert result_high.num_outliers_rejected is not None
+
+    # (c) At concurrency=1, detection is skipped; trim is used; outliers are
+    # included but the fallback path should still complete without error.
+    result_one = build_text_generation_result(
+        outputs=all_outputs,
+        benchmark_duration=120.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=1,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+    assert result_one.steady_state_detected is False
+    assert result_one.steady_state_warning is None  # skipped, not failed
+    assert result_one.num_outliers_rejected == 0  # no rejection on fallback
+    assert result_one.text_data is not None
+    assert result_one.text_data.ttft_ms is not None
+    assert not math.isnan(result_one.text_data.ttft_ms.mean)
 
 
 def _turn(

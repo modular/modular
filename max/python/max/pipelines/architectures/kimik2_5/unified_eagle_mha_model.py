@@ -17,8 +17,8 @@ Mirrors :class:`Eagle3KimiK25Unified` but:
 - carries an MHA draft (:class:`Eagle3MHADraft`) whose KV cache geometry
   is independent of the target's MLA cache;
 - declares an independent set of per-device draft KV inputs (kv_blocks,
-  cache_lengths, lookup_table, max_lengths, attention_dispatch_metadata)
-  instead of borrowing the target's slots.
+  cache_lengths, lookup_table, max_prompt_length, max_cache_length,
+  attention_dispatch_metadata) instead of borrowing the target's slots.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.transformer import captures_by_device
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
@@ -98,7 +99,8 @@ class Eagle3MHAKimiK25Unified(Module):
         self.enable_vision = enable_vision
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
-            if speculative_config
+            if speculative_config is not None
+            and speculative_config.num_speculative_tokens is not None
             else 1
         )
         relaxed_topk: int | None = None
@@ -126,6 +128,12 @@ class Eagle3MHAKimiK25Unified(Module):
         self.draft: Eagle3MHADraft | None = None
         if draft_config is not None:
             self.draft = Eagle3MHADraft(draft_config)
+            aux_layer_ids = config.eagle_aux_hidden_state_layer_ids
+            assert aux_layer_ids is not None
+            assert len(aux_layer_ids) == draft_config.fc_input_multiplier, (
+                f"the target captures {len(aux_layer_ids)} aux hidden states "
+                f"but the draft's fc fuses {draft_config.fc_input_multiplier}"
+            )
 
     def __call__(
         self,
@@ -219,7 +227,7 @@ class Eagle3MHAKimiK25Unified(Module):
                 ep_inputs,
             )
         logits = target_outputs[1]
-        hidden_states = list(target_outputs[3 : 3 + n_devs])
+        hidden_states = captures_by_device(target_outputs[3:], n_devs)
 
         effective_bitmasks = apply_overlap_bitmask(
             pinned_bitmask,
@@ -343,25 +351,18 @@ class Eagle3MHAKimiK25Unified(Module):
         )
 
         one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
-        new_max_lengths = [
-            ops.concat(
-                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
-            ).reshape([1, 2])
-            for kv in draft_kv_collections
-        ]
 
         # The pipeline_model already swapped attention_dispatch_metadata to
         # the draft slot at graph-init; carry that through to the step-1+
-        # collections along with the updated max_lengths.
+        # collections along with the updated max prompt / cache lengths.
         draft_kv_collections = [
             replace(
                 kv,
-                max_lengths=max_lengths,
+                max_prompt_length=one,
+                max_cache_length=kv.max_cache_length,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
             )
-            for kv, max_lengths in zip(
-                draft_kv_collections, new_max_lengths, strict=True
-            )
+            for kv in draft_kv_collections
         ]
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
@@ -471,7 +472,7 @@ def _patch_draft0_kv_cache(kv: PagedCacheValues) -> PagedCacheValues:
     """
     decode_md = kv.draft_attention_dispatch_metadata
     assert decode_md is not None
-    step0_max_prompt = kv.max_lengths[0, 0].cast(DType.int64).reshape([1]) + 1
+    step0_max_prompt = kv.max_prompt_length.cast(DType.int64).reshape([1]) + 1
     step0_md = ops.concat(
         [decode_md[0:1], step0_max_prompt, decode_md[2:4]],
         axis=0,

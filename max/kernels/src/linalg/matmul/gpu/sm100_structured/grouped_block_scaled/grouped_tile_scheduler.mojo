@@ -36,8 +36,8 @@ from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
 from std.gpu import block_idx, grid_dim
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
@@ -144,6 +144,13 @@ struct GroupedWorkIterator[
     For 2SM (cta_group=2), both CTAs in a cluster work on the same logical tile.
     The cluster index (block_idx.x // cta_group) is used for tile assignment,
     and advance step is grid_dim.x // cta_group (number of clusters).
+
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
 
     Usage:
         var work_iter = scheduler.work_iterator()
@@ -432,6 +439,15 @@ struct GroupedCLCWorkIterator[
     for 2SM support. It uses CLC barriers to ensure both CTAs in a cluster
     process the same tile at the same time.
 
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        num_clc_stages: Number of CLC pipeline stages for barrier-based
+            synchronization.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+
     Usage:
         var work_iter = scheduler.clc_work_iterator()
         for current in work_iter:
@@ -692,6 +708,15 @@ struct GroupedCLCSchedulerIterator[
     The scheduler warp produces work items for other warps via CLC.
     It iterates through all tiles across all groups and signals CLC barriers.
 
+    Parameters:
+        tile_m: M dimension of output tiles.
+        tile_n: N dimension of output tiles.
+        tile_k: K dimension of input tiles.
+        max_groups: Maximum number of groups.
+        num_clc_stages: Number of CLC pipeline stages for barrier-based
+            synchronization.
+        cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
         for _ in sched_iter:
@@ -741,7 +766,17 @@ struct GroupedCLCSchedulerIterator[
         throttle_ptr: SMemPtr[SharedMemBarrier],
         initial_work: GroupedWorkInfo,
     ):
-        """Initialize scheduler iterator."""
+        """Initialize scheduler iterator.
+
+        Args:
+            problem_sizes: (num_groups, 4) tensor with [M, N, K, L] per group.
+            num_groups: Number of active groups.
+            full_mbar: CLC full barrier pointer.
+            empty_mbar: CLC empty barrier pointer.
+            clc_response: CLC response storage pointer.
+            throttle_ptr: Throttle pipeline barrier pointer.
+            initial_work: Initial work item (first tile).
+        """
         self.work_info = initial_work
         # Each cluster starts at its own linear tile index
         # block_idx.x // cta_group gives the cluster's starting tile

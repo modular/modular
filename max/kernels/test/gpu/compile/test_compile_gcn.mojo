@@ -14,20 +14,22 @@
 from std.math import exp
 
 from std.gpu import (
-    AMDScheduleBarrierMask,
-    barrier,
     thread_idx,
     block_dim,
     grid_dim,
     lane_id,
+)
+from max.gpu.sync import (
+    AMDScheduleBarrierMask,
+    barrier,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
     s_waitcnt_barrier,
 )
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,
@@ -254,10 +256,10 @@ def test_barrier_compile() raises:
 def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[kernel, target=MI300X_TARGET]())
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[parametric[kernel], target=MI300X_TARGET]())
     # CHECK: ; ModuleID =

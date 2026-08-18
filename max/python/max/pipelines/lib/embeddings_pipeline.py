@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 from max.support.algorithm import flatten2d
 
 from .interfaces import PipelineModel
+from .memory_estimation import _MemoryPlan
 
 logger = logging.getLogger("max.pipelines")
 
@@ -63,22 +64,19 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[EmbeddingsContext]],
-        eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
             BaseContextType, npt.NDArray[np.integer[Any]], TextGenerationRequest
         ],
+        memory_plan: _MemoryPlan,
     ) -> None:
         del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
+        self._max_batch_size = memory_plan.max_batch_size
         self._weight_adapters = weight_adapters
-        # Initialize Session.
-        devices = load_devices(self._pipeline_config.model.device_specs)
+        devices = load_devices(list(memory_plan.require_device_specs()))
         session = InferenceSession(devices=[*devices])
         self._pipeline_config.configure_session(session)
-
-        if not self._pipeline_config.model.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
 
         # Resolve weight paths (downloads from HF if needed).
         weight_paths = self._pipeline_config.model.resolved_weight_paths()
@@ -103,6 +101,11 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
             ),
             return_logits=ReturnLogits.ALL,
         )
+
+    @property
+    def max_batch_size(self) -> int:
+        """Return the maximum number of requests that can be processed in one batch."""
+        return self._max_batch_size
 
     @traced
     def execute(

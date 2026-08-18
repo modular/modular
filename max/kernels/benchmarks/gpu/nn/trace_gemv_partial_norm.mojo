@@ -31,7 +31,7 @@
 
 from std.memory import alloc
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 
 from nn.gemv_partial_norm import (
@@ -81,7 +81,7 @@ def main() raises:
         var normed_tensor = TileTensor(normed_dev, normed_shape)
         var unnormed_tensor = TileTensor(unnormed_dev, unnormed_shape)
 
-        var eps = Scalar[a_type](0.001)
+        var eps = Float32(0.001)
 
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
         ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
@@ -127,7 +127,9 @@ def main() raises:
             eps,
             counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
-            trace_buf=GmemTrace(trace_buf.unsafe_ptr()),
+            trace_buf=GmemTrace(
+                trace_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            ),
         )
         ctx.synchronize()
 

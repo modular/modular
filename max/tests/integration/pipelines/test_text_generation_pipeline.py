@@ -14,6 +14,7 @@
 
 import asyncio
 import logging
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import hf_repo_lock
@@ -26,6 +27,10 @@ from max.pipelines.context import (
 )
 from max.pipelines.lib import generate_local_model_path
 from max.pipelines.lib.pipeline_variants import text_generation
+from max.pipelines.lib.vision_encoder_cache import (
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
@@ -89,6 +94,38 @@ def test_text_generation_image_metadata() -> None:
         image_hash=hash_image(np.array([99])),
     )
     assert image_metadata.image_hash is not None
+
+
+def test_batch_vision_metrics_falls_back_to_pooled_pipeline_model() -> None:
+    """A pipeline model that owns its cache internally (no ``_encoder_cache``,
+    e.g. MiniMax-M3) still surfaces vision/video metrics via
+    ``SupportsPooledVisionMetrics`` (CLIN-1638)."""
+    vision_sentinel = VisionEncoderMetrics(num_images_total=1)
+    video_sentinel = VideoEncoderMetrics(num_clips_total=1)
+
+    class _FakePooledMetricsModel:
+        def pop_vision_metrics(self) -> VisionEncoderMetrics | None:
+            return vision_sentinel
+
+        def pop_video_metrics(self) -> VideoEncoderMetrics | None:
+            return video_sentinel
+
+    pipeline = cast(Any, object.__new__(text_generation.TextGenerationPipeline))
+    pipeline._encoder_cache = None
+    pipeline._pipeline_model = _FakePooledMetricsModel()
+
+    assert pipeline.batch_vision_metrics() is vision_sentinel
+    assert pipeline.batch_video_metrics() is video_sentinel
+
+
+def test_batch_vision_metrics_none_without_protocol_or_cache() -> None:
+    """Text-only models (no cache, no pooled-metrics protocol) get None."""
+    pipeline = cast(Any, object.__new__(text_generation.TextGenerationPipeline))
+    pipeline._encoder_cache = None
+    pipeline._pipeline_model = object()
+
+    assert pipeline.batch_vision_metrics() is None
+    assert pipeline.batch_video_metrics() is None
 
 
 def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``Event``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Context as HALContext
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.event import (
+from _hal.context import Context as HALContext
+from _hal.device import get_device_spec
+from _hal.event import (
     Event as HALEvent,
     EVENT_FLAG_CPU_VISIBLE,
 )
@@ -45,7 +45,7 @@ struct Event(Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

@@ -15,9 +15,9 @@ from std.collections import Optional
 from std.sys import size_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from std.memory.unsafe import bitcast
@@ -139,7 +139,7 @@ struct ManagedLayoutTensor[
 
     def device_tensor[
         update: Bool = True
-    ](self) raises -> Self.layout_tensor_type:
+    ](mut self) raises -> Self.layout_tensor_type:
         assert (
             self.ctx.api() != "cpu"
         ), "device_tensor cannot be constructed for host only tensor."
@@ -182,7 +182,7 @@ struct ManagedLayoutTensor[
             self.ctx.synchronize()
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -193,7 +193,7 @@ def load_to_simd(
     comptime assert (
         tensor.layout.all_dims_known()
     ), "load_to_simd is supported only for tensors with known layout"
-    comptime size = type_of(res).size
+    comptime size = type_of(res).length
     return rebind[type_of(res)](
         tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )
