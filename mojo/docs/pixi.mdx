@@ -19,7 +19,7 @@ docs](https://pixi.sh/latest/).
 :::note
 
 All our [GitHub code
-examples](https://github.com/modular/modular/tree/main/max/examples) include a
+examples](https://github.com/modular/modular/tree/main/mojo/examples) include a
 `pixi.toml` file. This file configures the environment to make sure we all
 use the same packages and get the same results—you just need to install
 `pixi`.
@@ -111,8 +111,7 @@ a project:
 pixi init example-project
 ```
 
-Then, enter the project directory to install `mojo`
-(or [`max[all]`](/packages#whats-included), which also installs `mojo`):
+Then, enter the project directory to install `mojo`:
 
 ```sh
 cd example-project
@@ -139,7 +138,7 @@ You can optionally specify the version with a
 [version specifier](https://packaging.python.org/en/latest/specifications/version-specifiers/#id5):
 
 ```sh
-pixi add "mojo~=0.26.1" "numpy<2.0"
+pixi add "mojo~=1.0.0" "numpy<2.0"
 ```
 
 If you always want the latest version, you can use the wildcard specifier:
