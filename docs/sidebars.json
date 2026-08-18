@@ -319,6 +319,17 @@
               "items": [
                 "__AUTOGEN:max.experimental.torch__"
               ]
+            },
+            {
+              "type": "category",
+              "label": "tree_utils",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/experimental.tree_utils"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.tree_utils__"
+              ]
             }
           ]
         },
