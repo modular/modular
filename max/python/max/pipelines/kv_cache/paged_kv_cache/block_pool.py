@@ -89,7 +89,7 @@ class BlockPool:
         self,
         block_hash: bytes,
         block: KVCacheBlock,
-    ) -> None | KVCacheBlock:
+    ) -> KVCacheBlock | None:
         """Get or commit a block into the prefix cache.
 
         If there already exists a committed block with the same hash, we return

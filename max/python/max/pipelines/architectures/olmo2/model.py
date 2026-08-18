@@ -34,7 +34,7 @@ class Olmo2Model(LlamaModelBase):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     attention_bias: bool = False

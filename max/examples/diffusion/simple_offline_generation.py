@@ -548,7 +548,7 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"PipelineExecutor: {arch.pipeline_model}"
         )
     pipeline_model = cast(
-        "type[DiffusionPipeline] | type[PipelineExecutor[Any, Any, Any]]",
+        "type[DiffusionPipeline | PipelineExecutor[Any, Any, Any]]",
         arch.pipeline_model,
     )
     config.runtime.denoising_cache = DenoisingCacheConfig(

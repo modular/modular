@@ -59,7 +59,7 @@ class VisionConfig:
     intermediate_size: int
     """Intermediate size in the vision encoder's feed-forward layers."""
 
-    norm_type: Literal["rms_norm"] | Literal["layer_norm"]
+    norm_type: Literal["rms_norm", "layer_norm"]
     """Type of normalization used in the vision encoder."""
 
     image_size: int
@@ -308,7 +308,7 @@ class InternVLConfig(ArchConfigWithKVCache):
         vision_state_dict: dict[str, WeightData],
         dtype: DType,
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the InternVLConfig instance with state_dict dependent fields.
 

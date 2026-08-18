@@ -27,9 +27,9 @@ CascadeValue: TypeAlias = Union[
     float,
     bool,
     int,
-    None,
     dict[str, "CascadeValue"],
     list["CascadeValue"],
+    None,
 ]
 
 

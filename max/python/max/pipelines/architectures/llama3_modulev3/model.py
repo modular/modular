@@ -82,7 +82,7 @@ class Llama3Model(
     )
 
     config_class: type[Any] = Llama3Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
     #: Serve LoRA via the ModuleV3 adapters-as-inputs path (LoRAManagerV3).

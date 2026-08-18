@@ -27,7 +27,7 @@ from ..llama3.model import LlamaModelBase
 class Phi3Model(LlamaModelBase):
     """Phi 3 pipeline model implementation."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     def __init__(

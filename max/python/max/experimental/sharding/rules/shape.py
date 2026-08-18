@@ -837,7 +837,7 @@ def pad_rule(
     input: TensorLayout,
     paddings: Iterable[int],
     mode: str = "constant",
-    value: TensorLayout | int | float = 0,
+    value: TensorLayout | float = 0,
 ) -> ActionSet:
     """Strategies for ``pad``: sharding allowed on unpadded axes only."""
     pads = tuple(paddings)

@@ -144,7 +144,7 @@ class CompletedTransfer:
 
     def synchronize(self) -> None:
         """No-op: this transfer is already complete."""
-        return None
+        return
 
 
 @runtime_checkable
@@ -272,7 +272,7 @@ class KVConnector(Protocol):
                 is replica-agnostic (keyed by hash); this only selects the
                 client.
         """
-        return None
+        return
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -318,7 +318,7 @@ class KVConnector(Protocol):
         remote NIXL load it host-polls the off-stream RDMA to completion. No-op
         by default.
         """
-        return None
+        return
 
     def wait_for_offloads(self) -> None:
         """Settle offloads posted since the last call.
@@ -336,7 +336,7 @@ class KVConnector(Protocol):
         the RDMA to completion and marks the block readable inline. A block is
         never marked readable before its bytes land.
         """
-        return None
+        return
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
@@ -355,7 +355,7 @@ class KVConnector(Protocol):
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""
-        return None
+        return
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -364,7 +364,7 @@ class KVConnector(Protocol):
 
     def reset_metrics(self) -> None:
         """Reset per-batch transfer counters after the scheduler samples them."""
-        return None
+        return
 
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:

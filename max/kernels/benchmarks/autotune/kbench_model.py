@@ -340,7 +340,7 @@ class KbenchCache:
     def store_failed(self, key: str) -> None:
         """Store build failure result for the specified key."""
         if not self.is_active:
-            return None
+            return
         # TODO: revise the following conflict.
         if key in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")

@@ -444,7 +444,7 @@ def _binary_with_scalar_promotion(
     alignment directly.
     """
 
-    def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
+    def wrapper(lhs: Tensor | float, rhs: Tensor | float) -> Tensor:
         if any_distributed((lhs, rhs)):
             if isinstance(lhs, (int, float)) and isinstance(rhs, Tensor):
                 lhs = full_like(rhs, lhs)
@@ -1432,8 +1432,8 @@ _where_inner = functional(ops.where, rule=ternary_rule)
 
 def where(
     cond: Tensor,
-    x: Tensor | int | float,
-    y: Tensor | int | float,
+    x: Tensor | float,
+    y: Tensor | float,
 ) -> Tensor:
     """Selects elements from two tensors element-wise based on a condition.
 

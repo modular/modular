@@ -112,7 +112,7 @@ def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
 
 
 def buffer_create(
-    type: BufferType, init_value: float | int | bool | None = None
+    type: BufferType, init_value: float | bool | None = None
 ) -> BufferValue:
     """Creates a new buffer of the given type.
 

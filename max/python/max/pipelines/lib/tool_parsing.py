@@ -424,7 +424,7 @@ class StructuralTagToolParser(ABC):
         Schema-driven parsers (e.g. MiniMax-M3) override this; see
         ``ToolParser.set_streaming_tool_schemas`` for when that is required.
         """
-        return None
+        return
 
     # ----- Hooks (subclasses override) ----------------------------------
 

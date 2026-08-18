@@ -700,7 +700,7 @@ class _DataclassInstance(Protocol):
 
 def _is_structured_type(
     t: object,
-) -> TypeIs[type[BaseModel] | type[_DataclassInstance]]:
+) -> TypeIs[type[BaseModel | _DataclassInstance]]:
     """Returns ``True`` if ``t`` is a ``BaseModel`` subclass or a dataclass."""
     return isinstance(t, type) and (
         issubclass(t, BaseModel) or dataclasses.is_dataclass(t)
@@ -709,7 +709,7 @@ def _is_structured_type(
 
 def _unwrap_optional_structured_type(
     annotation: object,
-) -> type[BaseModel] | type[_DataclassInstance] | None:
+) -> type[BaseModel | _DataclassInstance] | None:
     """Returns the inner structured type when ``annotation`` wraps one, or ``None``.
 
     A structured type is a ``BaseModel`` subclass or a dataclass.
@@ -754,7 +754,7 @@ def _iter_fields(model_type: type[ModelT]) -> Iterable[tuple[str, object]]:
 
 
 def columns_for_type(
-    model_type: type[BaseModel] | type[_DataclassInstance],
+    model_type: type[BaseModel | _DataclassInstance],
 ) -> Iterable[str]:
     """Yields flattened column names for a ``BaseModel`` or dataclass type.
 

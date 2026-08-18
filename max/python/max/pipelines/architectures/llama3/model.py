@@ -121,7 +121,7 @@ class LlamaModelBase(
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    norm_method: Literal["rms_norm", "layer_norm"]
     """Normalization layer."""
 
     attention_bias: bool = False
@@ -300,7 +300,7 @@ class Llama3Model(LlamaModelBase):
     """Llama 3 pipeline model implementation."""
 
     config_class: type[Llama3Config] = Llama3Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     def __init__(

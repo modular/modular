@@ -214,7 +214,7 @@ def create_click_option(
     field_type: Any,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     # Get Help text.
-    help_text = help_for_fields.get(dataclass_field.name, None)
+    help_text = help_for_fields.get(dataclass_field.name)
 
     # Get help field.
     return click.option(

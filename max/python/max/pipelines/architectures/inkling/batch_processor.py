@@ -172,7 +172,7 @@ class InklingBatchProcessor(
         )
         total_seq_len = int(lengths.sum())
         pinned = not device0.is_host
-        host_buffer_cls: type[Buffer] | type[DevicePinnedBuffer] = (
+        host_buffer_cls: type[Buffer | DevicePinnedBuffer] = (
             DevicePinnedBuffer if pinned else Buffer
         )
         host_tokens: Buffer = host_buffer_cls(

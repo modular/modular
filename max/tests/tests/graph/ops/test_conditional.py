@@ -157,7 +157,7 @@ def test_conditional_fresh_device_in_branch() -> None:
 
         def else_fn() -> None:
             _ = ops.transfer_to(x0, device=DeviceRef.GPU(1))
-            return None
+            return
 
         ops.cond(pred, None, then_fn, else_fn)
 
@@ -186,7 +186,7 @@ def test_conditional_fresh_device_in_branch_in_subgraph() -> None:
 
             def else_fn() -> None:
                 _ = ops.transfer_to(x1, device=DeviceRef.GPU(1))
-                return None
+                return
 
             ops.cond(x0, None, then_fn, else_fn)
 
@@ -218,7 +218,7 @@ def test_conditional_existing_device_in_branch_in_subgraph() -> None:
 
             def else_fn() -> None:
                 _ = ops.transfer_to(x1, device=DeviceRef.GPU(1))
-                return None
+                return
 
             ops.cond(x0, None, then_fn, else_fn)
 

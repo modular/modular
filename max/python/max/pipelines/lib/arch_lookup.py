@@ -29,12 +29,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias
 
+from max.experimental.nn import Module
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .interfaces.pipeline_model import PipelineModel
+from .pipeline_executor import PipelineExecutor
 from .tokenizer import TextTokenizer
 
 if TYPE_CHECKING:
-    from max.experimental.nn import Module
     from max.graph.weights import WeightsAdapter, WeightsFormat
     from max.pipelines.context import (
         PixelContext,
@@ -51,8 +53,6 @@ if TYPE_CHECKING:
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
-    from .interfaces.pipeline_model import PipelineModel
-    from .pipeline_executor import PipelineExecutor
 
 logger = logging.getLogger("max.pipelines")
 
@@ -61,11 +61,9 @@ __all__ = [
     "SupportedArchitecture",
 ]
 
-PipelineModelType: TypeAlias = (
-    "type[PipelineModel[Any]] "
-    "| type[PipelineExecutor[Any, Any, Any]] "
-    "| type[Module[Any, Any]]"
-)
+PipelineModelType: TypeAlias = type[
+    PipelineModel[Any] | PipelineExecutor[Any, Any, Any] | Module[Any, Any]
+]
 
 
 @dataclass(frozen=False)
@@ -154,7 +152,7 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextContext] | type[EmbeddingsContext]
+    context_type: type[TextContext | EmbeddingsContext]
     """The context class type that this architecture uses for managing request state and inputs.
 
     This should be a class (not an instance) that implements either the `TextContext`

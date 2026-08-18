@@ -81,7 +81,7 @@ def render(tensor: Tensor) -> str:
     return f"Tensor({formatted}, {', '.join(meta)})"
 
 
-def _format_value(val: float | int | bool) -> str:
+def _format_value(val: float | bool) -> str:
     """Format a single element value.
 
     Args:

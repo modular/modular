@@ -77,12 +77,12 @@ PipelineTypes: TypeAlias = Pipeline[Any, Any]
 
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
-) -> (
-    type[TextGenerationPipeline[TextContext]]
-    | type[EmbeddingsPipeline]
-    | type[PixelGenerationPipeline[Any]]
-    | type[OverlapTextGenerationPipeline[TextContext]]
-):
+) -> type[
+    TextGenerationPipeline[TextContext]
+    | EmbeddingsPipeline
+    | PixelGenerationPipeline[Any]
+    | OverlapTextGenerationPipeline[TextContext]
+]:
     """Returns the pipeline class for the given task and config.
 
     Args:
@@ -1015,7 +1015,7 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
         task: PipelineTask | None = None,
-    ) -> type[TextContext] | type[EmbeddingsContext]:
+    ) -> type[TextContext | EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
         The context type defines how the pipeline manages request state and inputs during

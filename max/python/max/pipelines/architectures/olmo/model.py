@@ -27,7 +27,7 @@ from ..llama3.model import LlamaModelBase
 class OlmoModel(LlamaModelBase):
     """Olmo pipeline model implementation."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "layer_norm"
 
     def __init__(
         self,
