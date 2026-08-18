@@ -283,7 +283,7 @@ def _Model_release_captured_graph(
 
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
-Model.__repr__ = _Model_repr  # type: ignore[method-assign]
+Model.__repr__ = _Model_repr  # type: ignore[assignment, method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
@@ -308,8 +308,8 @@ def _TensorSpec_repr(self: TensorSpec) -> str:
     )
 
 
-TensorSpec.__str__ = _TensorSpec_str  # type: ignore[method-assign]
-TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[method-assign]
+TensorSpec.__str__ = _TensorSpec_str  # type: ignore[assignment, method-assign]
+TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[assignment, method-assign]
 
 
 def _is_torch_tensor(obj: Any) -> bool:

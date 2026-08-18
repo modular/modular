@@ -5265,11 +5265,6 @@ class _KGENDType:
     @staticmethod
     def get_int(arg0: int, arg1: bool, /) -> _KGENDType: ...
 
-class _DTypeValue:
-    pass
-
-class ParamDefValue:
-    pass
-
-class ParameterEvaluator:
-    pass
+class _DTypeValue: ...
+class ParamDefValue: ...
+class ParameterEvaluator: ...

@@ -436,7 +436,7 @@ class DFAState:
             if next is old:
                 self.arcs[label] = new
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         # Equality test -- ignore the nfaset instance variable
         assert isinstance(other, DFAState)
         if self.isfinal != other.isfinal:

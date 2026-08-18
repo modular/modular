@@ -24,7 +24,7 @@ import argparse
 import ast
 import os
 import sys
-from collections.abc import Set
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +66,7 @@ ARCH_LABEL_OVERRIDES: dict[str, list[str]] = {
 
 
 def derive_modality_labels(
-    task: str | None, input_modalities: Set[str]
+    task: str | None, input_modalities: AbstractSet[str]
 ) -> list[str]:
     """Derive human-readable input-to-output modality labels.
 
