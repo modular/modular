@@ -318,6 +318,114 @@ def _assert_scalar_reversed_matches[
         assert_equal(backward[i], forward[len(forward) - 1 - i])
 
 
+def _assert_forward_terminates[
+    dtype: DType, //
+](start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]) raises:
+    """Asserts forward iteration yields exactly the `len()` grid elements."""
+    var expected = range(start, end, step).__len__()
+    var seen = List[Scalar[dtype]]()
+    for x in range(start, end, step):
+        # Bail out rather than hang, and let the count assert below report it.
+        if len(seen) > expected:
+            break
+        seen.append(x)
+    assert_equal(len(seen), expected)
+    for i in range(len(seen)):
+        assert_equal(seen[i], start + Scalar[dtype](i) * step)
+
+
+def test_range_forward_step_past_dtype_limit() raises:
+    # On the last element, `start + step` can fall outside the dtype. The
+    # wrapped cursor re-entered the range and iterated forever, disagreeing
+    # with `len()` (MSTDL-2975).
+    _assert_forward_terminates(UInt8(250), UInt8(255), UInt8(2))
+    _assert_forward_terminates(UInt8(0), UInt8(255), UInt8(200))
+    _assert_forward_terminates(UInt64.MAX - 1, UInt64.MAX, UInt64(5))
+    # Signed overflows the same way, in both step directions.
+    _assert_forward_terminates(Int8(120), Int8(127), Int8(5))
+    _assert_forward_terminates(Int8(126), Int8.MAX, Int8(5))
+    _assert_forward_terminates(Int8(-120), Int8(-128), Int8(-5))
+    _assert_forward_terminates(Int8.MIN + 1, Int8.MIN, Int8(-5))
+    _assert_forward_terminates(Int64.MAX - 1, Int64.MAX, Int64(5))
+    _assert_forward_terminates(Int64.MIN + 1, Int64.MIN, Int64(-5))
+    # The grid landing exactly on `end` never wrapped, and still must not.
+    _assert_forward_terminates(UInt8(250), UInt8.MAX, UInt8(1))
+    _assert_forward_terminates(Int8(120), Int8(125), Int8(5))
+    # Reversing such a range agrees with forward now that it terminates.
+    _assert_scalar_reversed_matches(UInt8(250), UInt8(255), UInt8(2))
+    _assert_scalar_reversed_matches(Int8(120), Int8(127), Int8(5))
+
+
+def _prop_forward_terminates[dtype: DType](var draw: SIMD[dtype, 4]) raises:
+    comptime T = Scalar[dtype]
+    var step = (draw[1] & 7) + 1
+    # A raw offset, not a whole number of steps, so `end` usually sits off the
+    # range's grid. That is what lets the cursor step over `end` instead of
+    # onto it, which is the only way it can leave the dtype. Under 16 elements
+    # either way, so a wrapping cursor is caught by the count rather than
+    # iterating the whole dtype first.
+    var span = draw[2] & 15
+
+    # `start` roams the whole dtype, so `start + span` reaches past the limit.
+    _assert_forward_terminates(draw[0], draw[0] + span, step)
+
+    # The wrap needs the last step to cross the limit, which a uniform draw
+    # reaches on `Int8` and never on `Int64`, so pin the remaining triples
+    # against both bounds (MSTDL-3095).
+    _assert_forward_terminates(T.MAX - span, T.MAX, step)
+    _assert_forward_terminates(T.MIN, T.MIN + span, step)
+    comptime if not dtype.is_unsigned():
+        _assert_forward_terminates(T.MIN + span, T.MIN, -step)
+        _assert_forward_terminates(T.MAX, T.MAX - span, -step)
+
+
+def test_range_forward_scalar_properties() raises:
+    # The seed is pinned: a property test that picks its own seed reports a
+    # failure no one else can reproduce.
+    comptime for dtype in DTYPES:
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
+            _prop_forward_terminates[dtype]
+        ](SIMD[dtype, 4].strategy())
+
+
+def test_range_forward_step_past_int_limit() raises:
+    # The `Indexer` overloads reach the same cursor through `DType.int`.
+    var seen = List[Int]()
+    for x in range(Int.MAX - 1, Int.MAX, 5):
+        if len(seen) > 1:
+            break
+        seen.append(x)
+    assert_equal(len(seen), 1)
+    assert_equal(seen[0], Int.MAX - 1)
+
+    var descending = List[Int]()
+    for x in range(Int.MIN + 1, Int.MIN, -5):
+        if len(descending) > 1:
+            break
+        descending.append(x)
+    assert_equal(len(descending), 1)
+    assert_equal(descending[0], Int.MIN + 1)
+
+
+def test_range_forward_step_past_dtype_limit_comptime() raises:
+    # Unrolling the same ranges must terminate too: a cursor that wrapped back
+    # into the range would hang the compiler rather than the program.
+    var unsigned = List[UInt8]()
+    comptime for i in range(UInt8(250), UInt8(255), UInt8(2)):
+        unsigned.append(i)
+    assert_equal(unsigned, [UInt8(250), UInt8(252), UInt8(254)])
+
+    var signed = List[Int8]()
+    comptime for i in range(Int8(120), Int8(127), Int8(5)):
+        signed.append(i)
+    assert_equal(signed, [Int8(120), Int8(125)])
+
+    var descending = List[Int8]()
+    comptime for i in range(Int8(-120), Int8(-128), Int8(-5)):
+        descending.append(i)
+    assert_equal(descending, [Int8(-120), Int8(-125)])
+
+
 def test_range_reversed_scalar_at_dtype_bounds() raises:
     # A reversed range must not depend on `start - step` being representable:
     # these all sit within `step` of the dtype's limit (MSTDL-2973).
@@ -365,11 +473,11 @@ def test_range_reversed_scalar_unsigned() raises:
 def _prop_reversed_matches[dtype: DType](var draw: SIMD[dtype, 4]) raises:
     comptime T = Scalar[dtype]
     var step = (draw[1] & 7) + 1
-    # A whole number of steps, so the forward cursor lands on `end` instead of
-    # overshooting it — overshoot is a separate bug (MSTDL-2975), and drawing
-    # it here would report that one instead. Under 16 elements either way: an
-    # unbounded span would collect a `List` the size of the dtype.
-    var span = step * (draw[2] & 15)
+    # A raw offset now that the forward cursor stops on an `end` it steps over,
+    # so reversal is checked against ends that sit off the range's grid too.
+    # Under 16 elements: an unbounded span would collect a `List` the size of
+    # the dtype.
+    var span = draw[2] & 15
 
     # `start` roams the whole dtype, so `start + span` reaches past the limit.
     _assert_scalar_reversed_matches(draw[0], draw[0] + span, step)

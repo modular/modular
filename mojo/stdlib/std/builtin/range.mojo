@@ -275,7 +275,24 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
                     raise StopIteration()
 
             var result = self.start
-            self.start += self.step
+            # `start + step` wraps when the element after this one falls
+            # outside the dtype. The wrapped cursor lands on the far side of
+            # `end`, which the bound test above reads as "keep going", so the
+            # loop would restart near the opposite limit and never finish.
+            # Wrapping is the only way a step can move the cursor against its
+            # own direction, so detect it that way and park the cursor on
+            # `end`, which stops the next call for either step direction.
+            #
+            # The step's direction is loop-invariant and hoists out of the
+            # loop, leaving a single compare per iteration. Picking between
+            # two comparisons on `step > 0` instead leaves two, in every
+            # strided loop in every GPU kernel.
+            var next = self.start + self.step
+            var wrapped = next < self.start
+            comptime if not Self.dtype.is_unsigned():
+                # A negative step moves the cursor down without wrapping.
+                wrapped = wrapped != (self.step < 0)
+            self.start = select(wrapped, self.end, next)
             return result
         else:
             if self.idx != 0:
