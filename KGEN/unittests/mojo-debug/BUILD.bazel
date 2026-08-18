@@ -15,6 +15,8 @@ modular_cc_library(
     ],
 )
 
+# Disabled due to nondeterminism. Tracking: QUA-852
+# Re-enable tracking: https://linear.app/modularml/issue/MOTO-1646
 modular_cc_test(
     name = "unittests",
     srcs = glob(
@@ -41,11 +43,7 @@ modular_cc_test(
     tags = [
         "resources:cpu:4",
     ],
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//:ubsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["@platforms//:incompatible"],
     deps = [
         ":Support",
         "//Support:Globals",
