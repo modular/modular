@@ -22,6 +22,7 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 from .memory_planner import InklingMemoryPlanner
 from .model import InklingModel
 from .model_config import InklingConfig
+from .reasoning import InklingReasoningParser  # noqa: F401  registers "inkling"
 from .tokenizer import InklingTokenizer
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -45,4 +46,5 @@ inkling_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     memory_planner=InklingMemoryPlanner,
+    reasoning_parser="inkling",
 )
