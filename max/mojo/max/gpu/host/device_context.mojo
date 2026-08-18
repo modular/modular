@@ -213,7 +213,7 @@ def _checked(
     err: _CString,
     *,
     msg: String = "",
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
 ) raises:
     if err:
         _raise_checked_impl(err, msg, location.or_else(call_location()))
@@ -3060,7 +3060,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         comptime num_args = Ts.length
         var num_captures = max(0, self._func_impl.num_captures)
@@ -3296,7 +3296,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -4496,7 +4496,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Enqueues an external device function for execution on this device.
 
@@ -4589,7 +4589,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a capturing kernel for execution on this device with type checking.
 
@@ -4710,7 +4710,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
         overload takes in a function that's `capturing`.

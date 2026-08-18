@@ -753,7 +753,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
         """Adds a type-checked compiled kernel function as a node in this graph.
 
@@ -822,7 +822,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
         """Adds an external device function as a node in this graph.
 
@@ -901,7 +901,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
         """Compiles and adds a capturing kernel closure as a node in this graph.
 
@@ -1030,7 +1030,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
         """Compiles and adds a kernel function as a node in this graph.
 
@@ -1164,7 +1164,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
         """Compiles and adds a capturing kernel function as a node in this
         graph.
