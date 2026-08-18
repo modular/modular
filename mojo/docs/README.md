@@ -30,7 +30,7 @@ sources in [`stdlib/std`](../stdlib/std) as follows:
 (``/std/...``, ``/kernels/...``).
 [`mojodoc_api_href.py`](../../bazel/internal/mojodoc_api_href.py)
 is the single place that knows the published site layout and rewrites them:
-stdlib → **mojolang.org** ``/docs/std/...``, kernels → **docs.modular.com**
+stdlib → **mojolang.org** ``/docs/std/...``, kernels → **max.modular.com**
 ``/api/mojo/...``.
 
 ## Contributing
@@ -70,4 +70,4 @@ Guide](../../CONTRIBUTING.md)
   codebase.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.
-- [docs.modular.com](https://docs.modular.com): All other developer docs.
+- [max.modular.com](https://max.modular.com): All other developer docs.

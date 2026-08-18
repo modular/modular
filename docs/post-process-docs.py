@@ -205,7 +205,7 @@ def remove_docs_domain(file_path) -> None:  # noqa: ANN001
                 with open(file_path, "r+") as file:
                     content = file.read()
                     updated_content = re.sub(
-                        r"https://docs.modular.com/", "/", content
+                        r"https://max.modular.com/", "/", content
                     )
                     file.seek(0)
                     file.write(updated_content)

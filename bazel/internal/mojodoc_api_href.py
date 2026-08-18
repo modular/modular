@@ -22,8 +22,8 @@ The ``hosted_on_mojolang`` flag chooses root-relative vs absolute, so that
 each href works regardless of where the rendered Markdown lives:
 
 - Mojolang-hosted (stdlib): std hrefs are root-relative; cross-site MAX Mojo
-  API hrefs are absolute ``https://docs.modular.com/...``.
-- Docs.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
+  API hrefs are absolute ``https://max.modular.com/...``.
+- Max.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
   root-relative; cross-site std hrefs are absolute
   ``https://mojolang.org/...``."""
 
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 MOJOLANG_ORIGIN = "https://mojolang.org"
 MOJOLANG_PATH_PREFIX = "/docs"
-MAX_MOJO_ORIGIN = "https://docs.modular.com"
+MAX_MOJO_ORIGIN = "https://max.modular.com"
 MAX_MOJO_PATH_PREFIX = "/api/mojo"
 
 

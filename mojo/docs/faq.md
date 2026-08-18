@@ -73,7 +73,7 @@ Not alone. Mojo is one component of the Modular Platform, which
 makes it easier for you to author highly performant, portable CPU and GPU graph
 operations, but you'll also need a runtime (or "OS") that supports graph-level
 transformations and heterogeneous compute, which the
-[MAX framework](https://docs.modular.com) provides.
+[MAX framework](https://max.modular.com) provides.
 
 ### How do I convert Python programs or libraries to Mojo?
 
@@ -159,7 +159,7 @@ the LSP and debugger tools. It includes:
 
 If you're interested in GPU programming, install the `max` package, which
 includes the MAX framework and Mojo. For details, see
-[Get started with GPU programming](https://docs.modular.com/gpu/intro-tutorial/)
+[Get started with GPU programming](https://max.modular.com/gpu/intro-tutorial/)
 in the MAX documentation.
 
 ### What are the license terms for the SDK?
