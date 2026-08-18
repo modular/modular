@@ -10,6 +10,11 @@
     "status": 302
   },
   {
+    "source": "/pixi/",
+    "dest": "https://mojolang.org/docs/pixi/",
+    "status": 302
+  },
+  {
     "source": "/intro/",
     "dest": "https://www.modular.com/open-source/max",
     "status": 302
