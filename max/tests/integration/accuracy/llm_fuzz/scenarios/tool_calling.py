@@ -173,9 +173,7 @@ class ToolCallingAttacks(BaseScenario):
 
         for name, (tools, expected) in malformed_tools.items():
             resp = await client.post_json(with_tools(tools))
-            if resp.error == "TIMEOUT":
-                v = Verdict.FAIL
-            elif resp.status >= 500:
+            if resp.error == "TIMEOUT" or resp.status >= 500:
                 v = Verdict.FAIL
             elif expected == "reject":
                 if 400 <= resp.status < 500:

@@ -104,9 +104,7 @@ class ProtocolAbuse(BaseScenario):
             resp = await client.post_raw_bytes(
                 valid_body, headers=headers, timeout=config.timeout * 0.33
             )
-            if resp.status >= 500:
-                verdict = Verdict.FAIL
-            elif resp.error == "TIMEOUT":
+            if resp.status >= 500 or resp.error == "TIMEOUT":
                 verdict = Verdict.FAIL
             elif resp.status in (200, 400, 413, 431):
                 verdict = Verdict.PASS

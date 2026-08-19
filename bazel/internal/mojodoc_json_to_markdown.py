@@ -417,9 +417,7 @@ def generateMarkdown(
         else:
             output = output / Path("index.md")
         mojo_json["slug"] = " "
-    elif mojo_json["kind"] == "struct":
-        output = output / Path(name + ".md")
-    elif mojo_json["kind"] == "trait":
+    elif mojo_json["kind"] in ("struct", "trait"):
         output = output / Path(name + ".md")
     elif mojo_json["kind"] == "function":
         # Account for function names that match sibling struct names
