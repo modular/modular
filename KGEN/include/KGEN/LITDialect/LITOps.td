@@ -294,7 +294,7 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
 
     ```mlir
     %bound = lit.bind_params %fn : !lit.generator<<"dtype": !DType, "width": !Int>() -> !T>, ?, 2
-      -> !lit.generator<<"dtype": !DType>() -> !T>
+      to !lit.generator<<"dtype": !DType>() -> !T>
     lit.call_indirect %bound(%arg) : ...
     ```
   }];

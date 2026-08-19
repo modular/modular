@@ -566,15 +566,15 @@ lit.fn @origin_callee<lt: !lit.origin<false>>(%x: !lit.ref<index, mut lt>) -> ()
 
 // CHECK-LABEL: @bind_params_origin_unbound
 kgen.generator @bind_params_origin_unbound(%fn: !FnWithOrigin) {
-  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, imm *(0,0)>) -> ()>, ? -> !lit.generator<<origin<false>>
-  %partial = lit.bind_params %fn : !FnWithOrigin, ? -> !FnWithOrigin
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, imm *(0,0)>) -> ()>, ? to !lit.generator<<origin<false>>
+  %partial = lit.bind_params %fn : !FnWithOrigin, ? to !FnWithOrigin
   kgen.return
 }
 
 // CHECK-LABEL: @bind_params_origin_bound
 kgen.generator @bind_params_origin_bound(%fn: !FnWithOrigin, %x: !lit.ref<index, imm #lit.any.origin>) {
-  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, imm *(0,0)>) -> ()>, :origin<false> #lit.any.origin -> !lit.generator<(!lit.ref<index, imm #lit.any.origin>) -> ()>
-  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin -> !FnBound
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, imm *(0,0)>) -> ()>, :origin<false> #lit.any.origin to !lit.generator<(!lit.ref<index, imm #lit.any.origin>) -> ()>
+  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin to !FnBound
   // CHECK: lit.call_indirect %{{.*}}(%{{.*}}) : !lit.generator<(!lit.ref<index, imm #lit.any.origin>) -> ()>
   lit.call_indirect %bound(%x) : !FnBound
   kgen.return
@@ -582,8 +582,8 @@ kgen.generator @bind_params_origin_bound(%fn: !FnWithOrigin, %x: !lit.ref<index,
 
 // CHECK-LABEL: @bind_params_origin_discharged
 kgen.generator @bind_params_origin_discharged(%fn: !FnWithOriginAndConstraints) {
-  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>, {{.*}}>(!lit.ref<index, imm *(0,0)>) -> ()>, :origin<false> #lit.any.origin | "10" -> !lit.generator<<{<true, {{.*}}>}>(!lit.ref<index, imm #lit.any.origin>) -> ()>
-  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "10" -> !FnOriginBoundOneConstraint
+  // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>, {{.*}}>(!lit.ref<index, imm *(0,0)>) -> ()>, :origin<false> #lit.any.origin | "10" to !lit.generator<<{<true, {{.*}}>}>(!lit.ref<index, imm #lit.any.origin>) -> ()>
+  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "10" to !FnOriginBoundOneConstraint
   kgen.return
 }
 
