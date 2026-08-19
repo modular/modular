@@ -2177,7 +2177,8 @@ ASTDecl *ClosureEmitter::liftClosureIntoMethod(
             .front();
 
     Value replacement = extractedRef;
-    if (!isa<RefType>(capture.getType()) || isByReferenceCapture(convention))
+    if (!sugarIsa<RefType>(capture.getType()) ||
+        isByReferenceCapture(convention))
       replacement =
           RefLoadOp::create(bodyBuilder, promotedBodyLoc, extractedRef);
     captureReplacements[capture] = replacement;
@@ -2370,6 +2371,12 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     CaptureConvention captureConvention =
         concreteFieldCaptureConventions[index];
 
+    // `__init__`'s byref-result is always `self`; a capture of the same
+    // spelling would alias both origins. Keep the field name; rename the arg.
+    StringAttr initArgName = fieldName;
+    if (fieldName.getValue() == "self")
+      initArgName = StringAttr::get(ctx, "__capture_self");
+
     Type argType;
     ArgConvention argConvention;
     switch (captureConvention) {
@@ -2377,7 +2384,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     case CaptureConvention::kConventionMut:
     case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionRef:
-      if (isa<RefType>(fieldType)) {
+      if (sugarIsa<RefType>(fieldType)) {
         argType = fieldType;
         argConvention = ArgConvention::Ref;
         break;
@@ -2385,7 +2392,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       [[fallthrough]];
     case CaptureConvention::kConventionTrivialCopy:
     case CaptureConvention::kConventionCopy:
-      argType = ASTType(fieldType).getRefForArgument(fieldName.getValue(),
+      argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                      /*isMut=*/false);
       argConvention = ArgConvention::ReadMem;
       break;
@@ -2396,7 +2403,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
         argType = fieldType;
         argConvention = ArgConvention::OwnedReg;
       } else {
-        argType = ASTType(fieldType).getRefForArgument(fieldName.getValue(),
+        argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                        /*isMut=*/true);
         argConvention = ArgConvention::OwnedMem;
       }
@@ -2406,7 +2413,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
     initArgumentTypes.push_back(argType);
     argConventions.push_back(argConvention);
-    argNames.push_back(fieldName);
+    argNames.push_back(initArgName);
     argPassingKinds.push_back(PassingKind::PosOnly);
   }
 
@@ -2455,7 +2462,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
       // Reference captures
       if (isByReferenceCapture(concreteFieldCaptureConventions[index]) &&
-          isa<RefType>(fieldType)) {
+          sugarIsa<RefType>(fieldType)) {
         RefStoreOp::create(bodyBuilder, arg, fieldRef);
         continue;
       }
@@ -2689,7 +2696,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
-    if (capture.getCaptureConvention() == CaptureConvention::kConventionMove)
+    if (capture.getCaptureConvention() == CaptureConvention::kConventionMove &&
+        sugarIsa<RefType>(value.getType()) &&
+        sugarCast<RefType>(value.getType()).isMutableKnown(true))
       constructorArgs.push_back(MRValue(value));
     else
       constructorArgs.push_back(capture.getValue());
@@ -2706,7 +2715,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     auto captureName = StringAttr::get(ctx, capture.getSpelling());
     auto captureConvention = capture.getCaptureConvention();
     Type mlirType = value.getType();
-    if (auto refType = dyn_cast<LIT::RefType>(mlirType))
+    if (auto refType = sugarDynCast<LIT::RefType>(mlirType))
       mlirType = refType.getElementType();
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
@@ -2717,8 +2726,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       // TODO: Pointers are register passable, so this demotion
       // should become unnecessary once downstream passes are fixed.
       TypeConvention captureConventionMet =
-          (isa<LIT::RefType>(value.getType())
-               ? ASTType(cast<LIT::RefType>(value.getType()).getElementType())
+          (sugarIsa<LIT::RefType>(value.getType())
+               ? ASTType(
+                     sugarCast<LIT::RefType>(value.getType()).getElementType())
                : ASTType(value.getType()))
               .getRegisterPassability(nestedFnDecl.getLoc(), shared);
       updateCaptureConvention(captureConventionMet);
@@ -2728,24 +2738,24 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       break;
     case CaptureConvention::kConventionCopy:
     case CaptureConvention::kConventionMove: {
-      if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
+      if (auto refType = sugarDynCast<LIT::RefType>(value.getType())) {
         if (auto captureOriginParam = dyn_cast<ParamDeclRefAttr>(
                 OriginType::stripMutCastAndRebind(refType.getOrigin())))
           byValueCapturedOriginParamNames.insert(captureOriginParam.getName());
       }
       // Copy/move captures materialize storage for the captured value itself,
       // not for a reference wrapper. Use the pointee as the field type.
-      if (isa<LIT::RefType>(value.getType()))
+      if (sugarIsa<LIT::RefType>(value.getType()))
         captureTypeAttr = TypeParamAttr::get(mlirType, anyType);
 
-      if (auto structType = dyn_cast<StructType>(mlirType)) {
+      if (auto structType = sugarDynCast<StructType>(mlirType)) {
         updateCaptureConvention(typeConventionOf(shared, structType));
-      } else if (isa<TraitType>(mlirType)) {
+      } else if (sugarIsa<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
                          "existentials are not implemented.");
         return {};
-      } else if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+      } else if (auto paramType = sugarDynCast<ParamType>(mlirType)) {
         updateCaptureConvention(
             typeConventionOf(shared, paramType, capture, nestedFnDecl));
       }
@@ -3010,7 +3020,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                           std::optional<bool> mutability) -> CValue {
     // Ensure we are not capturing an immutable reference by mutable
     // reference.
-    if (auto refType = dyn_cast<RefType>(value.getType().mlirType)) {
+    if (auto refType = sugarDynCast<RefType>(value.getType().mlirType)) {
       // If the mutability is not specified or the reference type match the
       // specified mutability, return the original value.
       OriginType originType = refType.getOriginType();
@@ -3057,7 +3067,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   switch (parsedConvention) {
   case CaptureConvention::kConventionMove: {
     Type type = valueInParent.getType().mlirType;
-    if (auto ref = dyn_cast<RefType>(valueInParent.getType().mlirType))
+    if (auto ref = sugarDynCast<RefType>(valueInParent.getType().mlirType))
       type = ref.getElementType();
     if (!ASTType(type).isMovable(closure.getLoc(), shared, *fnParentDecl)) {
       shared.emitError(location, "Cannot capture ")
@@ -3071,7 +3081,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
     // If it was captured by move then there was a transfer operation.
     convention = parsedConvention;
-    if (isa<RefType>(valueInParent.getType().mlirType))
+    if (sugarIsa<RefType>(valueInParent.getType().mlirType))
       captureValue = CValue::getMValueForRef(valueInParent.getMlirValue());
     else
       captureValue = MRValue(valueInParent.getMlirValue());
@@ -3084,7 +3094,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       convention = CaptureConvention::kConventionTrivialCopy;
       // if we are capturing by mutable copy and its trivial do not capture
       // the reference.
-      if (isa<RefType>(valueInParent.getType())) {
+      if (sugarIsa<RefType>(valueInParent.getType())) {
         SyntheticNode node(result->getLoc());
         ExprDest dest(EC_Capture);
         captureValue = emitter.emitRValue(
@@ -3095,7 +3105,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       }
     } else {
       convention = parsedConvention;
-      if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
+      if (auto refType =
+              sugarDynCast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
           Location fusedLoc =
