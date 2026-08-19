@@ -213,7 +213,7 @@ def test_reserve_vision_cache_blocks_raises_when_explicitly_set() -> None:
         )
 
 
-def test_reserve_vision_cache_blocks_splits_budget_across_devices() -> None:
+def test_reserve_vision_cache_blocks_shards_budget_across_devices() -> None:
     available = 1024**3
     total, plan, _ = _block_reserve(
         utilization=0.001,
@@ -221,8 +221,10 @@ def test_reserve_vision_cache_blocks_splits_budget_across_devices() -> None:
         available_memory=available,
         n_devices=2,
     )
-    block_bytes = 128 * 10 * 2
-    assert total == (int(available * 0.001) // block_bytes) * block_bytes
+    block_bytes = 128 * 10
+    requested = int(available * 0.001) // 2
+    num_blocks = requested // block_bytes // 2 * 2
+    assert total == num_blocks * block_bytes
     assert plan.bytes_per_device == total // 2
 
 

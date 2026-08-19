@@ -373,7 +373,7 @@ def _entry_rows(
     row = 0
     for block_id in entry.block_ids:
         chunk = min(pool.block_tokens, entry.num_tokens - row)
-        parts.append(pool.rows_view(0, block_id, 0, chunk).to_numpy())
+        parts.append(pool.rows_view(block_id, 0, chunk).to_numpy())
         row += chunk
     return np.concatenate(parts)
 
@@ -825,6 +825,129 @@ def test_assemble_concatenates_in_order() -> None:
     assert arr.shape == (8, hidden)
     np.testing.assert_array_equal(arr[:3], buf_a.to_numpy())
     np.testing.assert_array_equal(arr[3:], buf_b.to_numpy())
+
+
+def _make_sharded_cache(
+    n_devices: int, block_tokens: int = 4
+) -> VisionEncoderCache[TextAndVisionContext]:
+    """A cache whose pool is sharded across ``n_devices`` host devices."""
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=1024,
+            hidden_size=4,
+            dtype=DType.float32,
+        ),
+        devices=[CPU() for _ in range(n_devices)],
+        block_tokens=block_tokens,
+    )
+
+
+def test_sharded_pool_places_blocks_round_robin() -> None:
+    cache = _make_sharded_cache(2)
+    pool = cache._pool
+    assert pool is not None
+    assert pool.num_blocks % 2 == 0
+    for b in range(pool.num_blocks):
+        assert pool.host_device_index(b) == b % 2
+
+
+def test_sharded_store_spans_shards_and_gathers_identically() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(10)
+    cache.insert(0xA, [buf, buf], 10)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    hosts = {pool.host_device_index(b) for b in entry.block_ids}
+    assert hosts == {0, 1}
+    out = [
+        Buffer(shape=[10, 4], dtype=DType.float32, device=CPU())
+        for _ in range(2)
+    ]
+    pool.copy_out(out, 0, entry.block_ids, 0, 10)
+    for o in out:
+        np.testing.assert_array_equal(o.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_gather_slice_across_shard_boundary() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(10)
+    cache.insert(0xA, [buf, buf], 10)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    out = [
+        Buffer(shape=[5, 4], dtype=DType.float32, device=CPU())
+        for _ in range(2)
+    ]
+    pool.copy_out(out, 0, entry.block_ids, 2, 7)
+    for o in out:
+        np.testing.assert_array_equal(o.to_numpy(), buf.to_numpy()[2:7])
+
+
+def test_sharded_rows_view_lives_on_host_shard() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(4)
+    cache.insert(0xA, [buf, buf], 4)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    (block_id,) = entry.block_ids
+    view = pool.rows_view(block_id, 0, 4)
+    np.testing.assert_array_equal(view.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_assemble_single_span_all_devices() -> None:
+    cache = _make_sharded_cache(2)
+    hidden = 4
+    buf = _make_buffer(3, hidden)
+    cache.insert(0xA, [buf, buf], 3)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.arange(3, dtype=np.int32),
+        active_length=3,
+    )
+    empty = [_make_buffer(0, hidden) for _ in range(2)]
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]), n_devices=2, empty_embeddings=empty
+    )
+    assert len(result) == 2
+    for r in result:
+        np.testing.assert_array_equal(r.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_assemble_multi_span_all_devices() -> None:
+    cache = _make_sharded_cache(2)
+    hidden = 4
+    buf_a = _make_buffer(3, hidden)
+    buf_b = _make_buffer(5, hidden)
+    cache.insert(0xA, [buf_a, buf_a], 3)
+    cache.insert(0xB, [buf_b, buf_b], 5)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+        image_token_indices=np.arange(8, dtype=np.int32),
+        active_length=8,
+    )
+    empty = [_make_buffer(0, hidden) for _ in range(2)]
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]), n_devices=2, empty_embeddings=empty
+    )
+    assert len(result) == 2
+    for r in result:
+        arr = r.to_numpy()
+        np.testing.assert_array_equal(arr[:3], buf_a.to_numpy())
+        np.testing.assert_array_equal(arr[3:], buf_b.to_numpy())
 
 
 def test_assemble_returns_empty_when_no_vision() -> None:
@@ -1941,9 +2064,8 @@ def test_block_store_roundtrip_multi_block() -> None:
 def test_block_store_roundtrip_multi_device() -> None:
     cache = _make_block_cache(num_blocks=4, block_tokens=4, n_devices=2)
     hidden = 4
-    dev0 = Buffer.from_numpy(np.ones((6, hidden), dtype=np.float32))
-    dev1 = Buffer.from_numpy(np.full((6, hidden), 2.0, dtype=np.float32))
-    cache.insert(0xA, [dev0, dev1], 6)
+    buf = _make_buffer(6, hidden)
+    cache.insert(0xA, [buf, buf], 6)
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 6, image_hash=0xA)],
@@ -1955,8 +2077,9 @@ def test_block_store_roundtrip_multi_device() -> None:
         n_devices=2,
         empty_embeddings=[_make_buffer(0, hidden), _make_buffer(0, hidden)],
     )
-    np.testing.assert_allclose(result[0].to_numpy(), 1.0)
-    np.testing.assert_allclose(result[1].to_numpy(), 2.0)
+    assert len(result) == 2
+    for r in result:
+        np.testing.assert_array_equal(r.to_numpy(), buf.to_numpy())
 
 
 def test_block_fragmentation_rounds_up_to_whole_blocks() -> None:
