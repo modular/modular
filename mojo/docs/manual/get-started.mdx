@@ -405,11 +405,11 @@ implement, usually in the form of one or more method signatures.
 - The `List` type and other Mojo collection types like
   [`Dict`](/docs/std/collections/dict/Dict/) and
   [`Set`](/docs/std/collections/set/Set/) conform to the
-  [`Copyable`](/docs/std/builtin/value/Copyable/) trait, which indicates that
+  [`Copyable`](/docs/std/traits/copyable/Copyable/) trait, which indicates that
   they are **explicitly copyable**.
 
 - The `String`, `Int` and other numeric types conform to the
-  [`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) trait,
+  [`ImplicitlyCopyable`](/docs/std/traits/copyable/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
   `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you
   can also use types that conform to the `ImplicitlyCopyable` trait in the same
@@ -608,9 +608,9 @@ structs support several different [lifecycle methods](/docs/manual/lifecycle/)
 that define the behavior when an instance of the struct is created, moved,
 copied, and destroyed.
 
-Structs that conform to the [`Movable`](/docs/std/builtin/value/Movable/)
+Structs that conform to the [`Movable`](/docs/std/traits/movable/Movable/)
 [trait](/docs/manual/traits/) denote a type whose value can be moved, and
-structs that conform to the [`Copyable`](/docs/std/builtin/value/Copyable/)
+structs that conform to the [`Copyable`](/docs/std/traits/copyable/Copyable/)
 trait denote a type whose value can be *explicitly* copied and/or moved. You can
 then implement custom move and copy initializers that perform the necessary
 operations to move or copy the instance.

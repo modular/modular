@@ -22,7 +22,7 @@ each href works regardless of where the rendered Markdown lives:
 
 - Mojolang-hosted (stdlib): std hrefs are root-relative; cross-site MAX Mojo
   API hrefs are absolute ``https://max.modular.com/...``.
-- Max.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
+- max.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
   root-relative; cross-site std hrefs are absolute
   ``https://mojolang.org/...``."""
 
@@ -46,6 +46,11 @@ def _max_mojo_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
     if hosted_on_mojolang:
         return f"{MAX_MOJO_ORIGIN}{site_path}"
     return site_path
+
+
+def _is_private_api_path(path: str) -> bool:
+    segments = [segment for segment in path.split("/") if segment]
+    return any(segment.startswith("_") for segment in segments)
 
 
 def _mojo_docs_site_path(path: str) -> str:
@@ -85,6 +90,9 @@ def resolve_api_href(
 
     if not path.startswith("/"):
         path = "/" + path
+
+    if _is_private_api_path(path):
+        return ""
 
     # Stdlib type referenced from any package
     if path == "/std" or path.startswith("/std/"):

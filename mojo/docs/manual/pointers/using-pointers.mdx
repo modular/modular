@@ -223,7 +223,7 @@ str_ptr.unsafe_write(my_string^)
 
 Note that to move the value, you usually need to add the transfer sigil (`^`),
 unless the value is an
-[implicitly copyable](/docs/std/builtin/value/ImplicitlyCopyable/) type (like
+[implicitly copyable](/docs/std/traits/copyable/ImplicitlyCopyable/) type (like
 `Int`) or a newly-constructed, "owned" value:
 
 ```mojo
