@@ -40,6 +40,7 @@ from std.math import align_down, ceildiv
 from std.math.math import min as _min
 from std.memory import UnsafePointer, unsafe_memset_zero
 from std.memory import alloc as ptr_alloc
+from std.sys import size_of
 from std.sys.info import simd_width_of
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -54,10 +55,11 @@ from algorithm.reduce_op import ReduceOp, Reducer
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
-# Bytes per partial-state slot in the split-axis scratch buffer.
-# Mirrors the GPU split-K convention; covers every common monoid
-# (`ReduceSum` ≤ 16, `ArgMax` ≤ 16, `OnlineLogSumExp` ≤ 16,
-# Welford ≤ 24).
+# Bytes per partial-state slot in the split-axis scratch buffer. `launch`
+# allocates the buffer before the body picks its concrete monoid, so the
+# slot is a fixed worst-case size. Slots hold the lane-collapsed
+# `State.Single`, so 128 bytes covers every monoid; `pjoin` asserts the
+# fit at compile time.
 comptime _SPLITK_STATE_BYTES = 128
 
 # Gating constants for the CPU axis-split tier. Enable only when the
@@ -393,12 +395,12 @@ def pjoin[
       accumulator into the scalar `acc` field).
     - Tiled (`emit_tile_width > 1`): per-output accumulators already final;
       each lane is a separate output; skip the cross-participant join.
-    - Split-axis (`is_splitk_tier`): write this worker's partial to its
-      slot in `ctx._partials_base`, atomically increment
+    - Split-axis (`is_splitk_tier`): write this worker's width-1
+      partial to its slot in `ctx._partials_base`, atomically increment
       `counters_base[row_idx]`, and — only the worker whose increment
       brings the counter to `blocks_per_row` — gather all partials,
-      `join` them into `self.state`, and set `ctx._is_last_block` so
-      `rowwise.once` gates emission.
+      `join` them, run `join_parallel` once on the merged result, and
+      set `ctx._is_last_block` so `rowwise.once` gates emission.
 
     Parameters:
         State: The monoid type being joined.
@@ -411,12 +413,13 @@ def pjoin[
             `rowwise.once` knows which worker emits.
     """
     comptime if ctx._tier == ReduceTier.Splitk:
-        # Per-worker finalization first: collapse the lanes to a width-1
-        # scalar, finalize (SerialReducer is a one-worker no-op), broadcast
-        # back. Branchless (reduce/broadcast are identity at W == 1).
+        comptime assert (
+            size_of[State.Single]() <= _SPLITK_STATE_BYTES
+        ), "split-K partial slot too small for this monoid's width-1 state"
+        # Collapse this worker's lanes to width 1 and publish the raw
+        # width-1 partial, so it stays `join`-able for the cross-worker
+        # merge. Finalization happens once, on the fully merged state.
         var sc = state.reduce()
-        sc.join_parallel(SerialReducer())
-        state = State(sc)
         var num_splits = Int(ctx._blocks_per_row)
         var split = Int(ctx._block_in_row)
         var row_idx_ = Int(ctx._row_idx)
@@ -424,9 +427,9 @@ def pjoin[
             ctx._partials_base + row_idx_ * num_splits * _SPLITK_STATE_BYTES
         )
         var slot_ptr = (row_base_bytes + split * _SPLITK_STATE_BYTES).bitcast[
-            State
+            State.Single
         ]()
-        slot_ptr[0] = state
+        slot_ptr[0] = sc
         var counter_ptr = ctx._counters_base + row_idx_
         # `fetch_add` returns the prior value; `prev + 1 == num_splits`
         # means this worker arrived last.
@@ -440,8 +443,10 @@ def pjoin[
                     continue
                 var other_ptr = (
                     row_base_bytes + s * _SPLITK_STATE_BYTES
-                ).bitcast[State]()
-                state.join(other_ptr[0])
+                ).bitcast[State.Single]()
+                sc.join(other_ptr[0])
+            sc.join_parallel(SerialReducer())
+        state = State(sc)
     elif ctx.emit_tile_width == 1:
         # Cooperative: collapse lanes to a width-1 scalar, finalize, broadcast
         # back (branchless — identity at W == 1).
