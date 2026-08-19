@@ -74,8 +74,9 @@ def _bucket_ws[sm_count: Int](n: Int, p_max: Int) -> Int:
     combine per rung -- so a rung added here automatically gains its
     specialization there. NOTE the cap is NOT snapped: when `p_max` bites, the
     returned `P` is off-rung and the combine takes its generic runtime-`P`
-    kernel. That is the common case for a long cache at `raw_grid >= 4`
-    (B200: `p_max == 37`), so the static-`P` win is not available there.
+    kernel. That is the common case when the ceiling binds off-rung
+    (B200: 37 through `raw_grid <= 24`, then decaying), so the
+    static-`P` win is not available there.
 
     `raw_grid` (`prompt_tiles * kv_heads * batch`) is INVARIANT within a CUDA-graph
     capture: batch is fixed per capture, kv_heads per compilation, and seq len per
@@ -108,50 +109,52 @@ def _bucket_ws[sm_count: Int](n: Int, p_max: Int) -> Int:
     return min(sm_count, p_max)
 
 
-# The `raw_grid` value at which `ws_p_ceiling` stops following one GPC wave's
-# SM-fill and flattens out. This is the ONLY tunable degree of freedom in the
-# ceiling (see `ws_p_ceiling` for why), and it is dimensionless: the ceiling it
-# implies scales with `sm_count` rather than being pinned to one device's
-# partition count.
+# The `raw_grid` value where `ws_p_ceiling` stops following one GPC wave's
+# SM-fill and starts its measured plateau.
 comptime WS_RAW_GRID_CLAMP: UInt32 = 4
+
+# Last `raw_grid` covered by the B200 ragged partition sweep.
+comptime WS_SWEEP_MAX_RAW_GRID: UInt32 = 24
 
 
 @always_inline
 def ws_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
     """Capture-invariant partition-count ceiling for the split-K crossover
-    (M4): one GPC wave's SM-fill `sm_count // raw_grid`, flattened once
-    `raw_grid` passes `WS_RAW_GRID_CLAMP`.
+    (M4): follows one GPC wave's SM-fill, holds the measured plateau through
+    `WS_SWEEP_MAX_RAW_GRID`, then decays toward one partition.
 
     `raw_grid` is capture-invariant (see `_bucket_ws`), so this is a single
     fixed value per CUDA-graph capture.
 
-    Small `raw_grid` follows one wave exactly; large `raw_grid` -- where one
-    wave alone is too small to be worth splitting to -- flattens at
-    `sm_count // WS_RAW_GRID_CLAMP`. Written as one floor-divide rather than
-    `clamp(target, one_wave, sm_count)` against a separate absolute `target`
-    constant, because those two spellings are algebraically identical for any
-    `target` of the form `sm_count // k`
-    (`max(sm_count // raw_grid, sm_count // k) == sm_count // min(raw_grid, k)`)
-    and the clamp form invites retuning `target` to a value that is NOT of that
-    form -- which silently breaks the small-`raw_grid` passthrough below for
-    every `raw_grid < k`, with no test to catch it.
-
-    Why flatten instead of scaling with one wave, and why `4`: checked against
-    a measured B200 ragged partition sweep (batch sweep at cache=131072). A
-    flat MULTIPLE of `one_wave` reproduces the moderate-batch optimum
+    Why plateau at `WS_RAW_GRID_CLAMP == 4`, checked against a measured
+    B200 ragged partition sweep (batch sweep at cache=131072): a flat
+    MULTIPLE of `one_wave` reproduces the moderate-batch optimum
     (`3*one_wave` at batch=22, `one_wave==6` -> 20, close to the measured
     workspace optimum) but ALSO scales up the already-good small-`raw_grid`
     case into a measured regression (that same `3x` turns batch=4's
     `one_wave==37` into 111, ~45% slower than 37). Clamping `raw_grid` instead
-    leaves batch=4's 37 untouched -- it is exactly `sm_count // 4` -- and lifts
-    a small one-wave (batch=22's 6) to 37. The forced workspace P-sweep at
-    batch=22 peaked at P=47, so 37 undershoots that peak by ~10-25% rather
-    than matching it; `4` is the largest clamp that does not push batch=4 past
-    its own measured optimum (P=49 costs batch=4 ~7-10% versus its P=37 peak).
-    All four route arms in that sweep peaked in roughly the same absolute-P
-    band, so this is shared across 1Q/WS-G/WS-E rather than per-route.
+    leaves batch=4's 37 untouched -- it is exactly `sm_count // 4` -- and
+    lifts a small one-wave (batch=22's 6) to 37. The forced workspace P-sweep
+    at batch=22 peaked at P=47, so 37 undershoots that peak by ~10-25% rather
+    than matching it; `4` is the largest clamp that does not push batch=4
+    past its own measured optimum (P=49 costs batch=4 ~7-10% versus its P=37
+    peak). All four route arms in that sweep peaked in roughly the same
+    absolute-P band, so this is shared across 1Q/WS-G/WS-E rather than
+    per-route.
+
+    Beyond the sweep, the inverse target keeps the split grid near a fixed
+    wave budget instead of growing with `raw_grid`.
     """
-    return UInt32(sm_count) // min(raw_grid, WS_RAW_GRID_CLAMP)
+    comptime assert (
+        WS_SWEEP_MAX_RAW_GRID % WS_RAW_GRID_CLAMP == 0
+    ), "WS_RAW_GRID_CLAMP must divide WS_SWEEP_MAX_RAW_GRID exactly"
+    comptime oversub = WS_SWEEP_MAX_RAW_GRID // WS_RAW_GRID_CLAMP
+    var g = max(raw_grid, 1)
+    return clamp(
+        UInt32(sm_count) * oversub // g,
+        1,
+        UInt32(sm_count) // min(g, WS_RAW_GRID_CLAMP),
+    )
 
 
 @always_inline
