@@ -516,12 +516,19 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen) {
-    return concreteNodes.read([name](auto &insts) {
+    ImplNode *implNode = concreteNodes.read([name](auto &insts) -> ImplNode * {
       auto iter = insts.find(name);
-      if (iter == insts.end())
-        return FuncOp();
-      return cast<FuncOp>(iter->second->inst);
+      return iter == insts.end() ? nullptr : iter->second;
     });
+    if (!implNode)
+      return FuncOp();
+    // A generator instance is registered under its concrete name before it
+    // has elaborated (or failed), so it must go through the same
+    // readiness/error protocol as a call by generator name. Only an instance
+    // with no expansion node is an already-concrete function.
+    if (implNode->parent)
+      return concretizeCallee(parent, implNode->parent, loc);
+    return cast<FuncOp>(implNode->inst);
   }
 
   auto vals =
@@ -529,13 +536,24 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
 
   // Lookup the node if it already exists.
   ParamNode *node = getOrCreateNode(vals, gen, /*depth=*/0);
+  return concretizeCallee(parent, node, loc);
+}
+
+ErrorTreeOr<FuncOp>
+Elaborator::concretizeCallee(ImplNode *parent, ParamNode *node, Location loc) {
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
       specializeGenerator(parent, node, loc, /*addWaiter=*/true);
   if (result.shouldSkipNode())
     return FuncOp();
-  if (result.isError())
+  if (result.isError()) {
+    // A failure not recorded on the node must still surface as an error,
+    // never as an unfinished body.
+    ErrorTreeOr<FuncOp> func = node->getFirstConcreteFunc();
+    if (func.isError())
+      return func;
     return ErrorTree(loc, "failed to elaborate callee function");
+  }
   return node->getFirstConcreteFunc();
 }
 

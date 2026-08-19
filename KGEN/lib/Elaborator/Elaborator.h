@@ -128,6 +128,12 @@ public:
   ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
                                           SymbolConstantAttr symbol);
 
+  /// Resolve `node` to its concrete function on behalf of `parent`, going
+  /// through the readiness/error protocol: return none if the node is not
+  /// ready yet, its error if it failed to elaborate.
+  ErrorTreeOr<FuncOp> concretizeCallee(ImplNode *parent, ParamNode *node,
+                                       Location loc);
+
   /// Look up the callee symbol (for a struct generator). If elaboration is
   /// already in-progress or done, return the concrete symbol reference.
   /// Otherwise, dispatch an elaboration of the struct generator and immediately
