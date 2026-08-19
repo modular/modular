@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
@@ -340,7 +339,7 @@ class KVConnector(Protocol):
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
-        ...
+        return
 
     # Optional properties with default implementations
     @property
@@ -365,15 +364,3 @@ class KVConnector(Protocol):
     def reset_metrics(self) -> None:
         """Reset per-batch transfer counters after the scheduler samples them."""
         return
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        """Set of hash algos this connector accepts in ``load``/``offload``.
-
-        The default ``frozenset({"ahash64"})`` keeps legacy connectors
-        written before SHA-256 support landed working under the original
-        hashing algo. Connectors that accept 32-byte SHA-256 hashes must
-        override this to advertise ``frozenset({"ahash64", "sha256"})``
-        (or an SHA-256-only set).
-        """
-        return frozenset({"ahash64"})

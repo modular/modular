@@ -195,7 +195,6 @@ def create_connector(
         # own device page pool.
         return RustTierConnector(
             replica_kv_memory=replica_kv_memory,
-            kv_hash_algo=params.kv_hash_algo,
             disk_cache_dir=disk_dir,
             host_offload_max_gb=cfg.host_offload_max_gb,
             disk_offload_max_gb=cfg.disk_offload_max_gb,
