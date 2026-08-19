@@ -92,7 +92,7 @@ kgen.generator @bind_params_discharged_mask_cleared() {
 lit.fn @bind_params_origin_op(%fn: !FnWithOrigin) {
   // CHECK-NOT: lit.bind_params
   // CHECK: kgen.return
-  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin -> !lit.generator<() -> ()>
+  %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin to !lit.generator<() -> ()>
   kgen.return
 }
 
@@ -103,7 +103,7 @@ lit.fn @bind_params_origin_discharged(%fn: !FnWithOriginAndConstraints) {
   // CHECK-NOT: lit.bind_params
   // CHECK-NOT: | "
   // CHECK: kgen.return
-  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "1" -> !lit.generator<() -> ()>
+  %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "1" to !lit.generator<() -> ()>
   kgen.return
 }
 
