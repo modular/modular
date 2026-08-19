@@ -89,8 +89,8 @@ def matmul_naive(mut C: Matrix, A: Matrix, B: Matrix):
 
 # Perform 2D tiling on the iteration space defined by end_x and end_y
 def tile[
-    tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int
-](end_x: Int, end_y: Int):
+    tile_x: Int, tile_y: Int
+](end_x: Int, end_y: Int, tiled_fn: Some[Tile2DFunc]):
     for y in range(0, end_y, tile_y):
         for x in range(0, end_x, tile_x):
             tiled_fn[tile_x, tile_y](x, y)
@@ -109,13 +109,13 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @__parameter
-    def calc_row(m0: Int):
+    def calc_row(m0: Int) {mut C, imm}:
         for m in range(tile_m * m0, tile_m * m0 + tile_m):
             _ = m  # FIXME: param closures not noticing access.
 
-            @__parameter
-            def calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
+            def calc_tile[
+                tile_x: Int, tile_y: Int
+            ](x: Int, y: Int) {mut C, imm}:
                 comptime for _k in range(tile_y):
                     var k = _k + y
                     var A_val = A[m, k]
@@ -138,9 +138,9 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                         unroll_factor=unroll_factor,
                     ](dot)
 
-            tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
+            tile[tile_n, tile_k](C.cols, B.rows, calc_tile)
 
-    sync_parallelize[calc_row](C.rows // tile_m)
+    sync_parallelize(calc_row, C.rows // tile_m)
 
 
 def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):

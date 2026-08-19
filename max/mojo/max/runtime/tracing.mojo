@@ -749,6 +749,20 @@ struct Trace[
         else:
             return ""
 
+    @staticmethod
+    @always_inline
+    def _get_detail_str(detail_fn: Some[def() -> String]) -> String:
+        """Return the detail str when tracing is enabled and an empty string otherwise.
+        """
+
+        comptime if (
+            is_profiling_enabled[Self.category, Self.level]()
+            or _is_gpu_profiler_detailed_enabled[Self.category, Self.level]()
+        ):
+            return detail_fn()
+        else:
+            return ""
+
     @always_inline
     def start(mut self) raises:
         """Start recording trace event.

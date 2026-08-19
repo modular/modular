@@ -607,16 +607,16 @@ def _transpose_2d_serial_tiled[
     var N = simplified_input_shape[simplified_rank - 2]
     var M = simplified_input_shape[simplified_rank - 1]
 
-    @__parameter
-    @__copy_capture(N, M)
     @always_inline
-    def process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
+    def process_tile[
+        tile_size_m: Int, tile_size_n: Int
+    ](m: Int, n: Int) {var N, var M, imm}:
         _process_tile[tile_size_m, tile_size_n, dtype](
             m, n, M, N, output.ptr + offset, input.ptr + offset
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
-    tile[process_tile, [tile_size, 1], [tile_size, 1]](0, 0, M, N)
+    tile[[tile_size, 1], [tile_size, 1]](0, 0, M, N, process_tile)
 
 
 @always_inline

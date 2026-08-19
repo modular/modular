@@ -610,8 +610,9 @@ def mla_indexer_ragged_float8_paged[
             if max_new_tokens > 1:
 
                 @always_inline
-                @__parameter
-                def apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
+                def apply_mask_dispatch[
+                    mask_t: MHAMask
+                ](mask: mask_t) raises {imm}:
                     comptime mask_kernel = apply_mask_kernel[
                         mask_t,
                         scores_tile.LayoutType,
@@ -635,7 +636,7 @@ def mla_indexer_ragged_float8_paged[
                         block_dim=(16, 16, 1),
                     )
 
-                dispatch_mask[mask_str, apply_mask_dispatch]()
+                dispatch_mask[mask_str](apply_mask_dispatch)
 
         # The bitonic path can only select up to the champion width
         # (PERSISTENT_TOPK_MAX_N); topk_gpu handles the rare k above it.

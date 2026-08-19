@@ -2238,10 +2238,15 @@ def mla_decoding_single_batch[
         q_gmem_iter._incr()
 
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
+    ](kv_tile_start_row: Int, end: Int) {
+        mut mask_warp_col,
+        mut kv_nope_smem_iter,
+        mut k_rope_smem_iter,
+        mut v_smem_iter,
+        imm,
+    }:
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), kv_head_idx, 0
         )
@@ -2355,8 +2360,7 @@ def mla_decoding_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @__parameter
-        def _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]() {imm}:
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -2426,7 +2430,7 @@ def mla_decoding_single_batch[
                                 p_reg_vec2[mma_id, i],
                             )
 
-        unswitch[_apply_mask](
+        unswitch(
             mask.status(
                 UInt32(batch_idx),
                 Index[dtype=DType.uint32](
@@ -2435,7 +2439,8 @@ def mla_decoding_single_batch[
                 ),
                 Index[dtype=DType.uint32](1, BN),
             )
-            == TileMaskStatus.PARTIAL_MASK
+            == TileMaskStatus.PARTIAL_MASK,
+            _apply_mask,
         )
 
         # Increment mask to next BM x BN block.
@@ -2503,7 +2508,7 @@ def mla_decoding_single_batch[
 
         barrier()
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](start, end)
+    tile_and_unswitch[[BN]](start, end, loop_over_kvcache)
 
     # Apply softmax denumerator.
     comptime for m_mma in range(num_m_mmas):
@@ -4035,12 +4040,18 @@ def mla_prefill_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
+    ](kv_tile_start_row: Int, end: Int) {
+        var seq_len,
+        var num_keys,
+        var start_pos,
+        mut mask_warp_col,
+        mut k_smem_iter,
+        mut v_smem_iter,
+        imm,
+    }:
         if (
             mask.status(
                 UInt32(batch_idx),
@@ -4147,10 +4158,9 @@ def mla_prefill_single_batch[
         _ = p_reg_tile.fill(0)
 
         @always_inline
-        @__parameter
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
-        ):
+        ) {imm}:
             return {
                 tensor.ptr,
                 {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
@@ -4230,8 +4240,7 @@ def mla_prefill_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @__parameter
-        def _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]() {imm}:
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -4302,7 +4311,7 @@ def mla_prefill_single_batch[
                                 p_reg_vec2[mma_id, i],
                             )
 
-        unswitch[_apply_mask](
+        unswitch(
             mask.status(
                 UInt32(batch_idx),
                 Index[dtype=DType.uint32](
@@ -4311,7 +4320,8 @@ def mla_prefill_single_batch[
                 ),
                 Index[dtype=DType.uint32](BM, BN),
             )
-            == TileMaskStatus.PARTIAL_MASK
+            == TileMaskStatus.PARTIAL_MASK,
+            _apply_mask,
         )
 
         # Increment mask to next BM x BN block.
@@ -4448,7 +4458,7 @@ def mla_prefill_single_batch[
                 ufloordiv(BN, BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](0, num_keys)
+    tile_and_unswitch[[BN]](0, num_keys, loop_over_kvcache)
 
     comptime output_gmem_layout = Layout(
         IntTuple(BM, depth), IntTuple(num_heads * depth, 1)

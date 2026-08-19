@@ -222,15 +222,16 @@ def gather_reduce[
     var gather_axis_size = Int(input.dim(gather_axis))
 
     @always_inline
-    @__copy_capture(
-        output_bind,
-        input_bind,
-        indices,
-        out_vecs_per_thread,
-        gather_axis_size,
-    )
-    @__parameter
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {
+        var output_bind,
+        var input_bind,
+        var indices,
+        var out_vecs_per_thread,
+        var gather_axis_size,
+        imm,
+    }:
         comptime prefetch_offset = -1
 
         var output = output_bind
@@ -263,19 +264,19 @@ def gather_reduce[
         comptime j_tile_size = 4 if CompilationTarget.has_neon() else 1
 
         for i in range(out_vec_start, out_vec_end):
-
+            # TODO(MOCO-4664): `var i` copy-captures the loop variable to work
+            # around wrong debug-info scopes on implicit nested-scope captures.
             @always_inline
-            @__copy_capture(input, indices, output)
-            @__parameter
-            def gather_k_tile[simd_width: Int](k: Int):
+            def gather_k_tile[
+                simd_width: Int
+            ](k: Int) {var i, var input, var indices, var output, imm}:
                 @always_inline
-                @__parameter
                 def reduce_j_tile[
                     unroll_factor: Int
                 ](
                     accums: StaticTuple[SIMD[dtype, simd_width], unroll_factor],
                     j: Int,
-                ) -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
+                ) {imm} -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
                         indices.load[width=unroll_factor](Coord(i, j)),
@@ -314,14 +315,11 @@ def gather_reduce[
                 var out_idx = Coord(i, k)
                 output.store[width=simd_width, alignment=1](out_idx, accum)
 
-            tile[
-                gather_k_tile,
-                k_tile_sizes,
-            ](0, row_size)
+            tile[k_tile_sizes,](0, row_size, gather_k_tile)
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = i
 
-    sync_parallelize[task_func](num_tasks, ctx)
+    sync_parallelize(task_func, num_tasks, ctx)
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)

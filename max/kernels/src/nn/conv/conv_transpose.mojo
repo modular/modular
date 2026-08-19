@@ -641,11 +641,6 @@ struct ConvTransposedPacked[
     def _c_tile_loop(self, n: Int, g: Int, c_tile_size: Int):
         """Loop over C tiles."""
 
-        @always_inline
-        @__parameter
-        def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
-            self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
-
         var c_offset = g * self.conv_shape.c_per_group()
         var c_round_by_tile = align_down(
             (self.conv_shape.c_per_group() - 1), c_tile_size
@@ -676,8 +671,9 @@ struct ConvTransposedPacked[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
-        @__parameter
-        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[
+            size: Int
+        ](f_tile_offset: Int, f_tile_size: Int) {imm}:
             self.input_space_loop[
                 micro_kernel_height, size // simd_size, False, last_c_tile
             ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
@@ -700,13 +696,13 @@ struct ConvTransposedPacked[
         tile[
             [micro_kernel_f_size, simd_size],
             simd_size,
-            f_tile_iteration,
         ](
             group_f_offset,
             group_f_end_align_simd,
             micro_kernel_f_size,
             simd_size,
             primary_cleanup_tile=simd_size,
+            workgroup_function=f_tile_iteration,
         )
 
         # If this is the last partition in F and it's not a multiple of simd_size.
@@ -877,9 +873,12 @@ struct ConvTransposedPacked[
                 -self.conv_shape.pad_w_lower() + self.conv_shape.wo() * ho
             )
 
-            @__parameter
+            # TODO(MOCO-4664): `var h` copy-captures the loop variable to work
+            # around wrong debug-info scopes on implicit nested-scope captures.
             @always_inline
-            def work_fn[height: Int, effected_by_padding: Bool](w: Int):
+            def work_fn[
+                height: Int, effected_by_padding: Bool
+            ](w: Int) {var h, mut input_base, mut output_base, imm}:
                 update_w_tile_2d[
                     height,
                     micro_kernel_width,
@@ -906,12 +905,13 @@ struct ConvTransposedPacked[
                 )
 
             tile_middle_unswitch_boundaries[
-                work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
+                [micro_kernel_height, 5, 4, 3, 2, 1]
             ](
                 0,
                 left_pad_impact_end,
                 right_pad_impact_start,
                 self.conv_shape.w(),
+                work_fn,
             )
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = input_base
@@ -968,9 +968,13 @@ struct ConvTransposedPacked[
                     + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
                 )
 
-                @__parameter
+                # TODO(MOCO-4664): `var d`/`var h` copy-capture the loop
+                # variables to work around wrong debug-info scopes on
+                # implicit nested-scope captures.
                 @always_inline
-                def work_fn[height: Int, effected_by_padding: Bool](w: Int):
+                def work_fn[
+                    height: Int, effected_by_padding: Bool
+                ](w: Int) {var d, var h, mut input_base, mut output_base, imm}:
                     update_w_tile_3d[
                         height,
                         micro_kernel_width,
@@ -999,13 +1003,13 @@ struct ConvTransposedPacked[
                     )
 
                 tile_middle_unswitch_boundaries[
-                    work_fn,
                     [micro_kernel_height, 5, 4, 3, 2, 1],
                 ](
                     0,
                     left_pad_impact_end,
                     right_pad_impact_start,
                     self.conv_shape.w(),
+                    work_fn,
                 )
                 # TODO(MOCO-2074): Suppress false positive unused var warning.
                 _ = input_base
@@ -1466,10 +1470,14 @@ def pack_filter(
     for g in range(num_groups):
         var group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
+        # TODO(MOCO-4664): `var g` copy-captures the loop variable to work
+        # around wrong debug-info scopes on implicit nested-scope captures.
         @always_inline
-        @__copy_capture(group_start, C, F_per_group, F)
-        @__parameter
-        def pack[f_tile_size: Int](f_tile_start: Int):
+        def pack[
+            f_tile_size: Int
+        ](f_tile_start: Int) {
+            var g, var group_start, var C, var F_per_group, var F, imm
+        }:
             var packed_filter_ptr = (
                 group_start + f_tile_start * window_dims_prod * C
             )
@@ -1497,7 +1505,7 @@ def pack_filter(
                     filter_ptr += 1
 
         # If F % simd_size != 0, the following won't touch the remainder.
-        tile[pack, [micro_kernel_f_size, simd_size]](0, F_per_group)
+        tile[[micro_kernel_f_size, simd_size]](0, F_per_group, pack)
 
     # Check the remainder if any
     var F_round_by_simd = align_down(F_per_group, simd_size)

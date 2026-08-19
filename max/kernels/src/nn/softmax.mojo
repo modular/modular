@@ -1140,9 +1140,9 @@ def _softmax_gpu[
         # Short inner axes (<32) use a warp-local kernel with one
         # element per lane for coalesced loads. Longer rows stay on the
         # block/online path below.
-        @__parameter
-        @__copy_capture(num_rows, shape_il, output, sm_count)
-        def dispatch_warp_or_block[use_warp: Bool]() raises:
+        def dispatch_warp_or_block[
+            use_warp: Bool
+        ]() raises {var num_rows, var shape_il, var output, var sm_count, imm}:
             comptime if use_warp:
                 comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_ROWS
                 var warp_num_blocks = min(
@@ -1195,9 +1195,15 @@ def _softmax_gpu[
                 # per row to amortise the wider tile dispatch. Otherwise downgrade
                 # to scalar; `unswitch` lifts the predicate so each kernel variant
                 # has one inner-loop shape.
-                @__parameter
-                @__copy_capture(num_blocks, shape_il, output, num_splits)
-                def dispatch[use_vectorized: Bool]() raises:
+                def dispatch[
+                    use_vectorized: Bool
+                ]() raises {
+                    var num_blocks,
+                    var shape_il,
+                    var output,
+                    var num_splits,
+                    imm,
+                }:
                     comptime kernel_simd_width = (
                         simd_width if use_vectorized else 1
                     )
@@ -1280,13 +1286,14 @@ def _softmax_gpu[
                         attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
 
-                unswitch[dispatch](
+                unswitch(
                     simd_width > 1
                     and shape_il[axis] % simd_width == 0
-                    and shape_il[axis] >= BLOCK_SIZE * simd_width
+                    and shape_il[axis] >= BLOCK_SIZE * simd_width,
+                    dispatch,
                 )
 
-        unswitch[dispatch_warp_or_block](shape_il[axis] <= WARP_SIZE)
+        unswitch(shape_il[axis] <= WARP_SIZE, dispatch_warp_or_block)
     else:
         # Fallback: sink-attention or logsoftmax variants stay on the legacy
         # 3-pass kernel until those variants are added to the online path.

@@ -294,13 +294,13 @@ struct PackMatrixRows[
         # fill rows with valid data
 
         var row_idx: Int = 0
-        var col_idx: Int
+        var col_idx: Int = 0
 
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline
-        @__copy_capture(transpose_buffer)
-        @__parameter
-        def transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
+        def transpose_pack_unit[
+            static_switch0: Bool, static_switch1: Bool
+        ]() {var transpose_buffer, imm}:
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
                 static_switch0,
@@ -317,9 +317,10 @@ struct PackMatrixRows[
         while row_idx < pack_tile_rows:
             col_idx = 0
             while col_idx < pack_tile_cols:
-                unswitch[transpose_pack_unit](
+                unswitch(
                     row_idx + Self.simd_size <= valid_tile_simd_dim[0],
                     col_idx + Self.simd_size <= valid_tile_simd_dim[1],
+                    transpose_pack_unit,
                 )
                 col_idx += Self.simd_size
             row_idx += Self.simd_size
@@ -581,12 +582,12 @@ struct PackMatrixCols[
         comptime unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
-        var col_idx: Int
+        var col_idx: Int = 0
 
         @always_inline
-        @__copy_capture(valid_row_count)
-        @__parameter
-        def pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
+        def pack_unit[
+            skip_row_bound: Bool, skip_col_bound: Bool
+        ]() {var valid_row_count, imm}:
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx
             )
@@ -596,9 +597,10 @@ struct PackMatrixCols[
         while row_idx < valid_row_count:
             col_idx = 0
             while col_idx < pack_tile_cols:
-                unswitch[pack_unit](
+                unswitch(
                     row_idx + unroll_factor < valid_row_count,
                     col_idx + Self.simd_size < valid_cols,
+                    pack_unit,
                 )
                 col_idx += Self.simd_size
             row_idx += unroll_factor

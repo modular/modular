@@ -317,9 +317,8 @@ def _apply_mask[
     var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
     var mask_warp_col: UInt32 = kv_tile_start_row + fragment_col
 
-    @__parameter
     @always_inline
-    def _apply_mask_capture[masked: Bool]():
+    def _apply_mask_capture[masked: Bool]() {imm}:
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
@@ -401,13 +400,14 @@ def _apply_mask[
     comptime if decoding:
         _apply_mask_capture[True]()
     else:
-        unswitch[_apply_mask_capture](
+        unswitch(
             (mask_status == TileMaskStatus.PARTIAL_MASK)
             # NOTE: mask_status should be either PARTIAL_MASK or NO_MASK at
             # this point.
             # In the NO_MASK case, we still need to mask out the scores for the
             # last tile, which goes beyond num_keys (for num_keys % 128 != 0).
-            or (UInt32(BN) + kv_tile_start_row > position.num_keys)
+            or (UInt32(BN) + kv_tile_start_row > position.num_keys),
+            _apply_mask_capture,
         )
 
 

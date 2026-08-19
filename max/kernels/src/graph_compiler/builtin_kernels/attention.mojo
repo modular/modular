@@ -427,9 +427,15 @@ struct FlashAttentionGPU:
         var k_buffer = k.to_layout_tensor()
         var v_buffer = v.to_layout_tensor()
 
-        @__parameter
-        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[
+            mask_t: MHAMask
+        ](mask: mask_t) raises {
+            var output_buffer,
+            var q_buffer,
+            var k_buffer,
+            var v_buffer,
+            imm,
+        }:
             flash_attention[](
                 output_buffer,
                 q_buffer,
@@ -440,11 +446,7 @@ struct FlashAttentionGPU:
                 ctx,
             )
 
-        dispatch_mask[
-            mask_str,
-            _dispatch_flash_attention,
-            local_window_size,
-        ]()
+        dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
 
 
 @extensibility.register("mo.mha.padded.no_cache")
@@ -482,9 +484,15 @@ struct PaddedFlashAttentionGPU:
             valid_length.to_layout_tensor()
         )
 
-        @__parameter
-        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[
+            mask_t: MHAMask
+        ](mask: mask_t) raises {
+            var output_buffer,
+            var q_buffer,
+            var k_buffer,
+            var v_buffer,
+            imm,
+        }:
             flash_attention[
                 _use_valid_length=True,
                 _padded_ndbuffer=True,
@@ -499,11 +507,7 @@ struct PaddedFlashAttentionGPU:
                 valid_length=OptionalReg[valid_length_t](_valid_length),
             )
 
-        dispatch_mask[
-            mask_str,
-            _dispatch_flash_attention,
-            local_window_size,
-        ]()
+        dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
 
 
 @extensibility.register("mo.mha.ragged.no_cache")
@@ -570,9 +574,15 @@ struct RaggedFlashAttentionGPU:
             input_row_offsets.to_layout_tensor()
         )
 
-        @__parameter
-        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        def _dispatch_flash_attention[
+            mask_t: MHAMask
+        ](mask: mask_t) raises {
+            var output_buffer,
+            var q_buffer,
+            var k_buffer,
+            var v_buffer,
+            imm,
+        }:
             flash_attention_ragged[](
                 output_buffer,
                 q_buffer,
@@ -585,11 +595,7 @@ struct RaggedFlashAttentionGPU:
                 ctx,
             )
 
-        dispatch_mask[
-            mask_str,
-            _dispatch_flash_attention,
-            local_window_size,
-        ]()
+        dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
 
 
 @extensibility.register("mo.composite.no_mask_flash_attention_cpu")

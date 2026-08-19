@@ -845,9 +845,9 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @__parameter
-    @__copy_capture(k, v)
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {var k, var v, imm}:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q, k, v, mask, scale, output, sink_weights
@@ -864,7 +864,7 @@ def _flash_attention_dispatch[
                 context,
             )
 
-    return dispatch_mask[mask_str, _dispatch_flash_attention]()
+    return dispatch_mask[mask_str](_dispatch_flash_attention)
 
 
 def _flash_attention_dispatch_materialized_mask[
@@ -896,11 +896,9 @@ def _flash_attention_dispatch_materialized_mask[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @__parameter
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises {imm}:
         @always_inline
-        @__parameter
-        def call_flash_attention[sink: Bool]() raises:
+        def call_flash_attention[sink: Bool]() raises {imm}:
             comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
                     q,
@@ -924,15 +922,16 @@ def _flash_attention_dispatch_materialized_mask[
                     sink_weights=sink_weights,
                 )
 
-        unswitch[call_flash_attention](Bool(sink_weights))
+        unswitch(Bool(sink_weights), call_flash_attention)
 
-    return dispatch_materialized_mask[_dispatch_flash_attention](
+    return dispatch_materialized_mask(
         LayoutTensor[mask_nd.dtype, mask_nd.layout, mask_nd.origin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
                 mask_nd.runtime_layout.shape.value.canonicalize()
             ),
-        )
+        ),
+        _dispatch_flash_attention,
     )
 
 

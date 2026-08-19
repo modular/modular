@@ -161,8 +161,7 @@ def correlation[
 
     var w_val: UnsafePointer[w_list.T, origin_of(w_list)] = w_list.unsafe_ptr()
 
-    @__parameter
-    def accumulate[weighted: Bool]():
+    def accumulate[weighted: Bool]() {u, v, len, mut}:
         def apply_wfn[simd_width: Int](idx: Int) {u, v, mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
@@ -189,7 +188,7 @@ def correlation[
 
         vectorize[simd_width](len, apply_wfn)
 
-    unswitch[accumulate](w.__bool__())
+    unswitch(w.__bool__(), accumulate)
 
     uv += uv_simd.reduce_add()
     uu += uu_simd.reduce_add()

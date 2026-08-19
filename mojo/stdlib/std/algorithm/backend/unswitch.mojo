@@ -20,16 +20,18 @@ from .tile import Static1DTileUnitFunc, tile
 # ===-----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-comptime SwitchedFunction = def[sw: Bool]() raises capturing[_] -> None
+comptime SwitchedFunction = def[sw: Bool]() raises -> None
 """Signature of a function that unswitch can take."""
 
 # Version of unswitch supporting 2 predicates.
-comptime SwitchedFunction2 = def[sw0: Bool, sw1: Bool]() capturing[_] -> None
+comptime SwitchedFunction2 = def[sw0: Bool, sw1: Bool]() -> None
 """Signature for unswitch supporting 2 predicates."""
 
 
 @always_inline
-def unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
+def unswitch(
+    dynamic_switch: Bool, switched_func: Some[SwitchedFunction]
+) raises:
     """Performs a functional unswitch transformation.
 
     Unswitch is a simple pattern that is similar idea to loop unswitching
@@ -61,13 +63,11 @@ def unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
     TODO: Once nested lambdas compose well should make unswitch compose with
     tile in an easy way.
 
-    Parameters:
-        switched_func: The function containing the inner loop logic that can be
-          unswitched.
-
     Args:
         dynamic_switch: The dynamic condition that enables the unswitched code
           path.
+        switched_func: The function containing the inner loop logic that can be
+          unswitched.
 
     Raises:
         If the operation fails.
@@ -79,9 +79,9 @@ def unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
 
 
 @always_inline
-def unswitch[
-    switched_func: def[sw: Bool]() capturing[_] -> None
-](dynamic_switch: Bool):
+def unswitch(
+    dynamic_switch: Bool, switched_func: Some[def[sw: Bool]() -> None]
+):
     """Performs a functional unswitch transformation.
 
     Unswitch is a simple pattern that is similar idea to loop unswitching
@@ -113,13 +113,11 @@ def unswitch[
     TODO: Once nested lambdas compose well should make unswitch compose with
     tile in an easy way.
 
-    Parameters:
-        switched_func: The function containing the inner loop logic that can be
-          unswitched.
-
     Args:
         dynamic_switch: The dynamic condition that enables the unswitched code
           path.
+        switched_func: The function containing the inner loop logic that can be
+          unswitched.
     """
 
     if dynamic_switch:
@@ -129,39 +127,37 @@ def unswitch[
 
 
 @always_inline
-def unswitch[
-    switched_func: SwitchedFunction2
-](dynamic_switch_a: Bool, dynamic_switch_b: Bool):
+def unswitch(
+    dynamic_switch_a: Bool,
+    dynamic_switch_b: Bool,
+    switched_func: Some[SwitchedFunction2],
+):
     """Performs a functional 2-predicates unswitch transformation.
-
-    Parameters:
-        switched_func: The function containing the inner loop logic that has 2
-          predicates which can be unswitched.
 
     Args:
         dynamic_switch_a: The first dynamic condition that enables the outer
           unswitched code path.
         dynamic_switch_b: The second dynamic condition that enables the inner
           unswitched code path.
+        switched_func: The function containing the inner loop logic that has 2
+          predicates which can be unswitched.
     """
     # TODO: This could be a lot easier to write once parameter names can be
     #  removed.
     if dynamic_switch_a:
 
         @always_inline
-        @__parameter
-        def switched_a_true[static_switch: Bool]():
+        def switched_a_true[static_switch: Bool]() {imm}:
             switched_func[True, static_switch]()
 
-        unswitch[switched_a_true](dynamic_switch_b)
+        unswitch(dynamic_switch_b, switched_a_true)
     else:
 
         @always_inline
-        @__parameter
-        def switched_a_false[static_switch: Bool]():
+        def switched_a_false[static_switch: Bool]() {imm}:
             switched_func[False, static_switch]()
 
-        unswitch[switched_a_false](dynamic_switch_b)
+        unswitch(dynamic_switch_b, switched_a_false)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -170,24 +166,25 @@ def unswitch[
 
 comptime Static1DTileUnswitchUnitFunc = def[width: Int, sw: Bool](
     Int, Int
-) capturing[_] -> None
+) -> None
 """Signature of a tiled function with static tile size and unswitch flag.
 
 The function takes a static tile size parameter and offset arguments,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Static1DTileUnitFuncWithFlag = def[width: Int, flag: Bool](
-    Int
-) capturing[_] -> None
+comptime Static1DTileUnitFuncWithFlag = def[width: Int, flag: Bool](Int) -> None
 """Signature of a tiled function with a static tile size, offset, and flag."""
 
 
 @always_inline("nodebug")
 def tile_and_unswitch[
-    workgroup_function: Static1DTileUnswitchUnitFunc,
     tile_size_list: List[Int],
-](offset: Int, upperbound: Int):
+](
+    offset: Int,
+    upperbound: Int,
+    workgroup_function: Some[Static1DTileUnswitchUnitFunc],
+):
     """Performs time and unswitch functional transformation.
 
     A variant of static tile given a workgroup function that can be unswitched.
@@ -196,14 +193,14 @@ def tile_and_unswitch[
     false only on the residue tile.
 
     Parameters:
-        workgroup_function: Workgroup function that processes one tile of
-          workload.
         tile_size_list: List of tile sizes to launch work.
 
     Args:
         offset: The initial index to start the work from.
         upperbound: The runtime upperbound that the work function should not
           exceed.
+        workgroup_function: Workgroup function that processes one tile of
+          workload.
     """
 
     # Initialize where to start on the overall work load.
@@ -225,16 +222,17 @@ def tile_and_unswitch[
         )
 
 
-comptime Dynamic1DTileUnswitchUnitFunc = def[sw: Bool](Int, Int, Int) capturing[
-    _
-] -> None
+comptime Dynamic1DTileUnswitchUnitFunc = def[sw: Bool](Int, Int, Int) -> None
 """Signature of a dynamic tiled unswitch unit function."""
 
 
 @always_inline
-def tile_and_unswitch[
-    workgroup_function: Dynamic1DTileUnswitchUnitFunc,
-](offset: Int, upperbound: Int, *tile_size_list: Int):
+def tile_and_unswitch(
+    offset: Int,
+    upperbound: Int,
+    *tile_size_list: Int,
+    workgroup_function: Some[Dynamic1DTileUnswitchUnitFunc],
+):
     """Performs time and unswitch functional transformation.
 
     A variant of dynamic tile given a workgroup function that can be
@@ -242,14 +240,12 @@ def tile_and_unswitch[
     the static unswitch is true throughout the "inner" portion of the workload
     and is false only on the residue tile.
 
-    Parameters:
-        workgroup_function: Workgroup function that processes one tile of
-          workload.
-
     Args:
         offset: The initial index to start the work from.
         upperbound: The runtime upperbound that the work function should not exceed.
         tile_size_list: List of tile sizes to launch work.
+        workgroup_function: Workgroup function that processes one tile of
+          workload.
     """
 
     # Initialize where to start on the overall work load.
@@ -273,7 +269,6 @@ def tile_and_unswitch[
 
 @always_inline
 def tile_middle_unswitch_boundaries[
-    work_fn: Static1DTileUnitFuncWithFlag,
     middle_tile_sizes: List[Int],
     left_tile_size: Int = 1,  # No tiling by default.
     right_tile_size: Int = 1,  # No tiling by default.
@@ -282,6 +277,7 @@ def tile_middle_unswitch_boundaries[
     left_boundary_end: Int,
     right_boundary_start: Int,
     right_boundary_end: Int,
+    work_fn: Some[Static1DTileUnitFuncWithFlag],
 ):
     """Divides 1d iteration space into three parts and tiles them with different
     steps.
@@ -296,7 +292,6 @@ def tile_middle_unswitch_boundaries[
     tile sizes with the switch as false.
 
     Parameters:
-        work_fn: Work function that processes one tile of workload.
         middle_tile_sizes: List of tile sizes for the middle part.
         left_tile_size: Tile size for the left boundary region.
         right_tile_size: Tile size for the right boundary region.
@@ -306,6 +301,7 @@ def tile_middle_unswitch_boundaries[
         left_boundary_end: End index of the left boundary.
         right_boundary_start: Start index of the right boundary.
         right_boundary_end: End index of the right boundary.
+        work_fn: Work function that processes one tile of workload.
 
     `middle_tile_sizes` should be in descending order for optimal performance.
     (Larger tile size appeared later in the list fails the while-loop.)
@@ -336,16 +332,15 @@ def tile_middle_unswitch_boundaries[
 
 comptime Static1DTileUnitFuncWithFlags = def[
     width: Int, left_flag: Bool, right_flag: Bool
-](Int) capturing[_] -> None
+](Int) -> None
 """Signature of a tiled function with left and right boundary flags."""
 
 
 @always_inline
 def tile_middle_unswitch_boundaries[
-    work_fn: Static1DTileUnitFuncWithFlags,
     tile_size: Int,
     size: Int,
-]():
+](work_fn: Some[Static1DTileUnitFuncWithFlags],):
     """Tile 1d iteration space with boundary conditions at both ends.
 
     This generator is primarily for convolution with static shapes. `work_fn`'s
@@ -353,10 +348,12 @@ def tile_middle_unswitch_boundaries[
     static output row size, i.e., WO dimension.
 
     Parameters:
-        work_fn: Work function that updates one tile. It has two flags for
-            left and right boundaries, respectively.
         tile_size: 1D Tile size.
         size: Iteration range is [0, size).
+
+    Args:
+        work_fn: Work function that updates one tile. It has two flags for
+            left and right boundaries, respectively.
     """
 
     # Tile size covers the entire range, e.g., using 14x2 register tile for
@@ -378,8 +375,7 @@ def tile_middle_unswitch_boundaries[
 
         # middle
         @always_inline
-        @__parameter
-        def update_middle[_tile_size: Int](_offset: Int):
+        def update_middle[_tile_size: Int](_offset: Int) {imm}:
             work_fn[_tile_size, False, False](_offset)
 
         comptime num_middle_points = size - tile_size_lbound - tile_size_rbound
@@ -387,8 +383,8 @@ def tile_middle_unswitch_boundaries[
         # `tile` can't handle zero tile size.
         comptime tile_size_remainder = remainder if remainder > 0 else 1
 
-        tile[update_middle, [tile_size, tile_size_remainder]](
-            tile_size_lbound, size - tile_size_rbound
+        tile[[tile_size, tile_size_remainder]](
+            tile_size_lbound, size - tile_size_rbound, update_middle
         )
 
         # right boundary

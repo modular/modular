@@ -1691,16 +1691,17 @@ def launch[
                 MutUntrackedOrigin
             ]()
 
-            @__parameter
-            @__copy_capture(
-                shape_il,
-                body,
-                partials_ptr,
-                counters_ptr,
-                blocks_per_row,
-                total_blocks,
-            )
-            def dispatch_splitk[use_simd: Bool]() raises:
+            def dispatch_splitk[
+                use_simd: Bool
+            ]() raises {
+                var shape_il,
+                var body,
+                var partials_ptr,
+                var counters_ptr,
+                var blocks_per_row,
+                var total_blocks,
+                imm,
+            }:
                 comptime sw = effective_simd if use_simd else 1
                 comptime splitk_params = ContextParams(
                     axis=axis,
@@ -1736,7 +1737,7 @@ def launch[
             # folding the tier flag into the predicate: off the tuned path the
             # wide-stripe kernel could never launch but would still be compiled.
             comptime if _SPLITK_ROW_TIER_TUNED:
-                unswitch[dispatch_splitk](use_simd_full)
+                unswitch(use_simd_full, dispatch_splitk)
             else:
                 dispatch_splitk[False]()
 
@@ -1764,15 +1765,14 @@ def launch[
     # smaller block that one-pass-covers the row at full SIMD wins.
     var rows_saturate_gpu = num_rows >= sm_count
 
-    @__parameter
-    @__copy_capture(shape_il, num_blocks, body)
-    def dispatch_bs_one_pass[BS: Int]() raises:
+    def dispatch_bs_one_pass[
+        BS: Int
+    ]() raises {var shape_il, var num_blocks, var body, imm}:
         # Smaller-BS one-pass path: `BS * simd >= row_size`. Active
         # threads do one SIMD tile; tail threads stay idle (contribute
         # identity to the block reduce). Reached only when
         # `num_rows >= sm_count`, so the GPU stays saturated.
-        @__parameter
-        def dispatch[use_simd: Bool]() raises:
+        def dispatch[use_simd: Bool]() raises {imm}:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(
                 axis=axis,
@@ -1806,11 +1806,11 @@ def launch[
         var use_simd_full = (
             effective_simd > 1 and row_size % effective_simd == 0
         )
-        unswitch[dispatch](use_simd_full)
+        unswitch(use_simd_full, dispatch)
 
-    @__parameter
-    @__copy_capture(shape_il, num_blocks, body)
-    def dispatch_bs_default() raises:
+    def dispatch_bs_default() raises {
+        var shape_il, var num_blocks, var body, imm
+    }:
         # Default block tier: BS = launched BLOCK_SIZE, multi-pass via
         # grid stride. Under-utilization gate (#104) drops to sw=1 when
         # `row_size < BLOCK_SIZE * simd` so all threads stay busy with
@@ -1827,8 +1827,7 @@ def launch[
             )
         )
 
-        @__parameter
-        def dispatch[use_simd: Bool]() raises:
+        def dispatch[use_simd: Bool]() raises {imm}:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(
                 axis=axis,
@@ -1859,11 +1858,11 @@ def launch[
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
                 )
 
-        unswitch[dispatch](use_simd_full)
+        unswitch(use_simd_full, dispatch)
 
-    @__parameter
-    @__copy_capture(shape_il, num_blocks, body)
-    def dispatch_bs_large[BS: Int]() raises:
+    def dispatch_bs_large[
+        BS: Int
+    ]() raises {var shape_il, var num_blocks, var body, imm}:
         # Larger-BS path: few rows leave the GPU under-saturated even at
         # `BLOCK_SIZE=256`, so grow BS to make each row's block fat
         # enough to fill its SM — the counterpart of
@@ -1871,8 +1870,7 @@ def launch[
         # rows). Reached when `num_rows < sm_count` and the row is big
         # enough that `BS * effective_simd` keeps threads busy (no
         # idle-tail).
-        @__parameter
-        def dispatch[use_simd: Bool]() raises:
+        def dispatch[use_simd: Bool]() raises {imm}:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(
                 axis=axis,
@@ -1906,8 +1904,8 @@ def launch[
         # SIMD width only on SIMD-divisible rows so a body's `ws > 1`
         # tile lands on an aligned offset (the alignment contract, same
         # guard as the other dispatchers); odd rows fall to scalar.
-        unswitch[dispatch](
-            effective_simd > 1 and row_size % effective_simd == 0
+        unswitch(
+            effective_simd > 1 and row_size % effective_simd == 0, dispatch
         )
 
     # Pick BS adaptively:
