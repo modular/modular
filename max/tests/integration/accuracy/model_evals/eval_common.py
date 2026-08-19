@@ -337,6 +337,9 @@ def exact_match_score(
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
         "truncated": truncated,
+        "stop_ratio": round((total - errors - truncated) / (total - errors), 4)
+        if (total - errors) > 0
+        else 0.0,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
         **finish_stats(results),
