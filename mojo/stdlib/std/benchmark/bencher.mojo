@@ -724,7 +724,7 @@ struct Bench(Writable):
 
     def bench_with_input[
         T: AnyType,
-        FuncType: def(mut Bencher, T) -> None,
+        FuncType: def(mut Bencher, T) raises -> None,
     ](
         mut self,
         func: FuncType,
@@ -748,11 +748,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @__parameter
-        def input_closure(mut b: Bencher):
+        def input_closure(mut b: Bencher) raises {imm}:
             func(b, input)
 
-        self.bench_function[input_closure](bench_id, measures)
+        self.bench_function(input_closure, bench_id, measures)
 
     def bench_with_input[
         T: TrivialRegisterPassable,

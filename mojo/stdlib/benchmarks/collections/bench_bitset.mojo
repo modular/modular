@@ -23,55 +23,45 @@ comptime OP_LOOP_SIZE = 1000
 """Bench loop size for BitSet operation tests."""
 
 
-@__parameter
 def bench_empty_bitset_init[size: Int](mut b: Bencher) raises:
     @always_inline
-    @__parameter
     def call_fn():
         for _ in range(0, INIT_LOOP_SIZE):
             var b = BitSet[size]()
             keep(len(b))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_init_from[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](fill=True)
 
-    @__copy_capture(initial)
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {var initial}:
         for _ in range(0, INIT_LOOP_SIZE):
             var b = BitSet(initial)
             keep(len(b))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_set[size: Int](mut b: Bencher) raises:
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn():
         var bitset = BitSet[size]()
         for _ in range(0, OP_LOOP_SIZE):
             comptime for i in range(0, bitset.size):
                 bitset.set(i)
         keep(len(bitset))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_clear[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](fill=True)
 
-    @__copy_capture(initial)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var initial}:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
             comptime for i in range(0, bitset.size):
@@ -79,17 +69,14 @@ def bench_bitset_clear[width: Int](mut b: Bencher) raises:
 
         keep(len(bitset))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_toggle[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](fill=True)
 
-    @__copy_capture(initial)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var initial}:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
             comptime for i in range(0, bitset.size):
@@ -97,35 +84,28 @@ def bench_bitset_toggle[width: Int](mut b: Bencher) raises:
 
         keep(len(bitset))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_test[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](fill=True)
 
-    @__copy_capture(initial)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var initial}:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
             comptime for i in range(0, bitset.size):
                 keep(bitset.test(i))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_union[width: Int](mut b: Bencher) raises:
-    var lhs_init = SIMD[DType.bool, width](True)
-    var rhs_init = SIMD[DType.bool, width](False)
+    var lhs_init = SIMD[DType.bool, width](fill=True)
+    var rhs_init = SIMD[DType.bool, width](fill=False)
 
-    @__copy_capture(lhs_init)
-    @__copy_capture(rhs_init)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var lhs_init, var rhs_init}:
         var lhs = BitSet[width](lhs_init)
         var rhs = BitSet[width](rhs_init)
 
@@ -133,19 +113,15 @@ def bench_bitset_union[width: Int](mut b: Bencher) raises:
             var new = lhs.union(rhs)
             keep(len(new))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_intersection[width: Int](mut b: Bencher) raises:
-    var lhs_init = SIMD[DType.bool, width](True)
-    var rhs_init = SIMD[DType.bool, width](False)
+    var lhs_init = SIMD[DType.bool, width](fill=True)
+    var rhs_init = SIMD[DType.bool, width](fill=False)
 
-    @__copy_capture(lhs_init)
-    @__copy_capture(rhs_init)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var lhs_init, var rhs_init}:
         var lhs = BitSet[width](lhs_init)
         var rhs = BitSet[width](rhs_init)
 
@@ -153,19 +129,15 @@ def bench_bitset_intersection[width: Int](mut b: Bencher) raises:
             var new = lhs.intersection(rhs)
             keep(len(new))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_bitset_difference[width: Int](mut b: Bencher) raises:
-    var lhs_init = SIMD[DType.bool, width](True)
-    var rhs_init = SIMD[DType.bool, width](False)
+    var lhs_init = SIMD[DType.bool, width](fill=True)
+    var rhs_init = SIMD[DType.bool, width](fill=False)
 
-    @__copy_capture(lhs_init)
-    @__copy_capture(rhs_init)
     @always_inline
-    @__parameter
-    def call_fn() raises:
+    def call_fn() {var lhs_init, var rhs_init}:
         var lhs = BitSet[width](lhs_init)
         var rhs = BitSet[width](rhs_init)
 
@@ -173,7 +145,7 @@ def bench_bitset_difference[width: Int](mut b: Bencher) raises:
             var new = lhs.difference(rhs)
             keep(len(new))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 def main() raises:
@@ -184,56 +156,65 @@ def main() raises:
 
     comptime for i in range(len(sizes)):
         comptime size = rebind[Int](sizes[i])
-        m.bench_function[bench_empty_bitset_init[size]](
-            BenchId(String("bench_empty_bitset_init[", size, "]"))
+        m.bench_function(
+            bench_empty_bitset_init[size],
+            BenchId(String("bench_empty_bitset_init[", size, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_init_from[width]](
-            BenchId(String("bench_bitset_init_from[", width, "]"))
+        m.bench_function(
+            bench_bitset_init_from[width],
+            BenchId(String("bench_bitset_init_from[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_set[width]](
-            BenchId(String("bench_bitset_set[", width, "]"))
+        m.bench_function(
+            bench_bitset_set[width],
+            BenchId(String("bench_bitset_set[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_clear[", width, "]"))
+        m.bench_function(
+            bench_bitset_clear[width],
+            BenchId(String("bench_bitset_clear[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_test[", width, "]"))
+        m.bench_function(
+            bench_bitset_test[width],
+            BenchId(String("bench_bitset_test[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_toggle[", width, "]"))
+        m.bench_function(
+            bench_bitset_toggle[width],
+            BenchId(String("bench_bitset_toggle[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_union[", width, "]"))
+        m.bench_function(
+            bench_bitset_union[width],
+            BenchId(String("bench_bitset_union[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_intersection[", width, "]"))
+        m.bench_function(
+            bench_bitset_intersection[width],
+            BenchId(String("bench_bitset_intersection[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
         comptime width = rebind[Int](widths[width_idx])
-        m.bench_function[bench_bitset_clear[width]](
-            BenchId(String("bench_bitset_difference[", width, "]"))
+        m.bench_function(
+            bench_bitset_difference[width],
+            BenchId(String("bench_bitset_difference[", width, "]")),
         )
 
     m.dump_report()

@@ -31,7 +31,6 @@ struct NonTrivial(Copyable, Defaultable):
         self.value = move.value + 1
 
 
-@__parameter
 def bench_move[
     T: Copyable & Defaultable & Deinitable, size: Int
 ](mut b: Bencher) raises:
@@ -44,7 +43,6 @@ def bench_move[
     )
 
 
-@__parameter
 def bench_copy[
     T: Copyable & Defaultable & Deinitable, size: Int
 ](mut b: Bencher) raises:
@@ -64,16 +62,20 @@ def main() raises:
         )
     )
     comptime for size in SIZES:
-        m.bench_function[bench_move[Int, size]](
-            BenchId("array_move/trivial/" + String(size))
+        m.bench_function(
+            bench_move[Int, size],
+            BenchId("array_move/trivial/" + String(size)),
         )
-        m.bench_function[bench_move[NonTrivial, size]](
-            BenchId("array_move/nontrivial/" + String(size))
+        m.bench_function(
+            bench_move[NonTrivial, size],
+            BenchId("array_move/nontrivial/" + String(size)),
         )
-        m.bench_function[bench_copy[Int, size]](
-            BenchId("array_copy/trivial/" + String(size))
+        m.bench_function(
+            bench_copy[Int, size],
+            BenchId("array_copy/trivial/" + String(size)),
         )
-        m.bench_function[bench_copy[NonTrivial, size]](
-            BenchId("array_copy/nontrivial/" + String(size))
+        m.bench_function(
+            bench_copy[NonTrivial, size],
+            BenchId("array_copy/nontrivial/" + String(size)),
         )
     m.dump_report()
