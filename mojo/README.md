@@ -39,7 +39,7 @@ If it's your first time, we recommend you follow our tutorial to
 
 If you want to try GPU programming in Mojo, check out our tutorial to
 [get started with GPU
-programming](https://mojolang.org/docs/manual/gpu/intro-tutorial).
+programming](https://max.modular.com/gpu/intro-tutorial/).
 
 ## Contributing
 
