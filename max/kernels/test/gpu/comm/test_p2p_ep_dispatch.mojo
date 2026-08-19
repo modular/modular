@@ -1126,18 +1126,15 @@ def test_dispatch_common[
 
     # First, bench the dispatch kernel overhead
 
-    @__parameter
-    def per_gpu_dispatch(i: Int) raises:
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher) raises:
-            @__parameter
-            @always_inline
-            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                var dev_id = Int(ctx.id())
-                run_dispatch_async(dev_id, cache_iter)
+    @always_inline
+    def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {}:
+        var dev_id = Int(ctx.id())
+        run_dispatch_async(dev_id, cache_iter)
 
-            bencher_iter_custom[call_fn](b, list_of_ctx[i])
+    def per_gpu_dispatch(i: Int) raises capturing:
+        @always_inline
+        def bench_iter(mut b: Bencher) raises capturing:
+            bencher_iter_custom(b, call_fn_dispatch, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
@@ -1168,18 +1165,15 @@ def test_dispatch_common[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @__parameter
-    def per_gpu_dispatch_wait(i: Int) raises:
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher) raises:
-            @__parameter
-            @always_inline
-            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                var dev_id = Int(ctx.id())
-                run_dispatch_async_wait(dev_id, cache_iter)
+    @always_inline
+    def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {}:
+        var dev_id = Int(ctx.id())
+        run_dispatch_async_wait(dev_id, cache_iter)
 
-            bencher_iter_custom[call_fn](b, list_of_ctx[i])
+    def per_gpu_dispatch_wait(i: Int) raises capturing:
+        @always_inline
+        def bench_iter(mut b: Bencher) raises capturing:
+            bencher_iter_custom(b, call_fn_dispatch_wait, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
@@ -1213,19 +1207,16 @@ def test_dispatch_common[
             clean_up(dev_i)
             list_of_ctx[dev_i].synchronize()
 
-        @__parameter
-        def per_gpu_e2e(i: Int) raises:
-            @__parameter
-            @always_inline
-            def bench_iter(mut b: Bencher) raises:
-                @__parameter
-                @always_inline
-                def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                    var dev_id = Int(ctx.id())
-                    run_dispatch_async(dev_id, cache_iter + 1)
-                    run_dispatch_async_wait(dev_id, cache_iter + 1)
+        @always_inline
+        def call_fn_e2e(ctx: DeviceContext, cache_iter: Int) raises {}:
+            var dev_id = Int(ctx.id())
+            run_dispatch_async(dev_id, cache_iter + 1)
+            run_dispatch_async_wait(dev_id, cache_iter + 1)
 
-                bencher_iter_custom[call_fn](b, list_of_ctx[i])
+        def per_gpu_e2e(i: Int) raises capturing:
+            @always_inline
+            def bench_iter(mut b: Bencher) raises capturing:
+                bencher_iter_custom(b, call_fn_e2e, list_of_ctx[i])
 
             run_e2e(i, 0)
             list_of_ctx[i].synchronize()

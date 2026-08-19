@@ -16,5 +16,4 @@
 from .bencher import (
     bench_multicontext,
     bencher_iter_custom,
-    bencher_iter_custom_multicontext,
 )
