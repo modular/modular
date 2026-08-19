@@ -30,6 +30,12 @@
 // MLOG(LogLevel::DEBUG, "{}", "hello"); // hello printed at debug level
 // MLOG(LogLevel::DEBUG, "{} {}", "hello", 42); // hello 42
 //
+// MLOG_KV logs structured data instead of a formatted message. It takes a
+// level followed by alternating key, value pairs, up to four pairs:
+// MLOG_KV(LogLevel::INFO, "event", "span_start", "batch_id", 42);
+// In JSON mode each pair becomes a top-level field; otherwise the pairs
+// render as key=value tokens.
+//
 // The library goals are as follows:
 // 1. Log in as few cycles as we can muster
 // 2. Output messages reasonably quickly after they are logged
@@ -60,6 +66,8 @@
 #include <mutex>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 namespace M {
 class Config; // avoids including "Configuration.h"
@@ -76,6 +84,13 @@ class Config; // avoids including "Configuration.h"
     MLOG(::M::Log::LogLevel::FATAL, __VA_ARGS__);                              \
     getDefaultLog().flush();                                                   \
     std::abort();                                                              \
+  } while (0)
+
+#define MLOG_KV(level, ...)                                                    \
+  do {                                                                         \
+    const ::M::Log::LogLevel mlogKVLevel = (level);                            \
+    if (::M::Log::getDefaultLog().getLogLevel() <= mlogKVLevel)                \
+      ::M::Log::logKV(mlogKVLevel, __VA_ARGS__);                               \
   } while (0)
 
 namespace M::Log {
@@ -168,28 +183,71 @@ LogArg toLogArg(T &&val) {
     static_assert(!std::is_same_v<T, T>, "Unsupported log argument type.");
   }
 }
+
+template <typename T, size_t I>
+using is_sv_convertible =
+    std::is_convertible<std::tuple_element_t<I, T>, std::string_view>;
+
+template <typename Tuple, size_t... Is>
+constexpr bool keysAreStringsImpl(std::index_sequence<Is...>) {
+  return ((Is % 2 == 1 || is_sv_convertible<Tuple, Is>::value) && ...);
+}
+
+// Checks that the even-indexed arguments of an MLOG_KV pair list can be
+// rendered as field names. Without this an int key compiles and silently
+// produces an unusable JSON object key.
+template <typename... Args>
+constexpr bool keysAreStrings() {
+  return keysAreStringsImpl<std::tuple<Args...>>(
+      std::index_sequence_for<Args...>{});
+}
 } // namespace Detail
+
+// Selects how a record's args are interpreted: positional arguments to
+// fmtString, or alternating key, value pairs with no format string.
+enum class RecordKind : uint8_t {
+  Formatted,
+  KeyValue,
+};
 
 struct LogRecord {
   constexpr static size_t maxArgs = 8;
+  constexpr static size_t maxKVPairs = maxArgs / 2;
   using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
   // Mojo FFI mirrors Timestamp as Int64. If this fires, the platform's
   // system_clock uses a different rep type and the Mojo bindings need
   // revisiting.
   static_assert(std::is_same_v<Timestamp::clock::duration::rep, int64_t>);
+  // Four key-value pairs, since a pair occupies two arg slots.
   Timestamp timestamp;
   std::string_view fmtString;
   std::array<LogArg, maxArgs> args;
   uint8_t argCount;
   LogLevel level;
+  RecordKind kind;
   Channel::Channels channel;
+
+  // Disambiguates the key-value constructor, which shares the args array with
+  // the formatted one but has no format string to key off.
+  struct KeyValueTag {};
 
   template <typename... Args>
   LogRecord(Timestamp ts, LogLevel lvl, Channel::Channels c,
             std::string_view fmt, Args &&...args)
       : timestamp(ts), fmtString(fmt),
         args{Detail::toLogArg(std::forward<Args>(args))...},
-        argCount(sizeof...(Args)), level(lvl), channel(c) {
+        argCount(sizeof...(Args)), level(lvl), kind(RecordKind::Formatted),
+        channel(c) {
+    static_assert(sizeof...(Args) <= maxArgs, "Too many log arguments");
+  }
+
+  template <typename... Args>
+  LogRecord(KeyValueTag, Timestamp ts, LogLevel lvl, Channel::Channels c,
+            Args &&...args)
+      : timestamp(ts), fmtString(""),
+        args{Detail::toLogArg(std::forward<Args>(args))...},
+        argCount(sizeof...(Args)), level(lvl), kind(RecordKind::KeyValue),
+        channel(c) {
     static_assert(sizeof...(Args) <= maxArgs, "Too many log arguments");
   }
 
@@ -327,6 +385,34 @@ inline void logWriteDispatch(Logger &log, LogLevel level,
                    {fmt.get().data(), fmt.get().size()},
                    std::forward<Args>(args)...);
   logWrite(log, std::move(record));
+}
+
+// Same shape as logWriteDispatch, but the args are alternating key, value
+// pairs rather than positional arguments to a format string.
+template <typename... Args>
+inline void logKVDispatch(Logger &log, LogLevel level,
+                          Channel::Channels channel, Args &&...args) {
+  static_assert(sizeof...(Args) >= 2,
+                "MLOG_KV needs at least one key, value pair");
+  static_assert(sizeof...(Args) % 2 == 0,
+                "MLOG_KV takes alternating key, value pairs");
+  static_assert(sizeof...(Args) <= LogRecord::maxKVPairs * 2,
+                "MLOG_KV takes at most four key, value pairs");
+  static_assert(Detail::keysAreStrings<Args...>(),
+                "MLOG_KV keys must be convertible to std::string_view");
+
+  if (log.getLogLevel() > level || !log.isEnabled(channel))
+    return;
+
+  LogRecord record(LogRecord::KeyValueTag{}, std::chrono::system_clock::now(),
+                   level, channel, std::forward<Args>(args)...);
+  logWrite(log, std::move(record));
+}
+
+template <typename... Args>
+void logKV(LogLevel level, Args &&...args) {
+  logKVDispatch(getDefaultLog(), level, Channel::Default,
+                std::forward<Args>(args)...);
 }
 
 template <typename... Args>

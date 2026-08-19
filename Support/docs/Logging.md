@@ -16,6 +16,87 @@ are convenience wrappers around `MLOG(level, "format string", args...)`, which
 emits a message at the specified level to a file or stdout. `MLOG_FATAL` will
 abort the user program after logging the message.
 
+#### Structured key-value records
+
+`MLOG_KV(level, key, value, ...)` emits named fields instead of a formatted
+message. It takes alternating key-value pairs, up to four pairs, and the keys
+must be strings:
+
+```cpp
+MLOG_KV(LogLevel::INFO,
+        "event",       "span_start",
+        "operation",   "prefill",
+        "batch_id",    batchId,
+        "request_id",  requestId);
+```
+
+In JSON mode each pair becomes a top-level field, which makes the values
+usable as indexed facets downstream. Otherwise the pairs render as
+`key=value` tokens after the usual prefix:
+
+```text
+[INFO] event=span_start operation=prefill batch_id=42 request_id=a1b2c3
+```
+
+The same record under `MODULAR_LOG_JSON`:
+
+```json
+{"timestamp": "2026-03-16T12:00:00.123456Z", "level": "INFO",
+ "channel": "default", "event": "span_start", "operation": "prefill",
+ "batch_id": 42, "request_id": "a1b2c3"}
+```
+
+Two properties differ from `MLOG`. Arguments are not evaluated at all when the
+level is filtered out, so `MLOG_KV` is safe to place on hot paths. And keys are
+written verbatim, so avoid `timestamp`, `level`, and `channel` — a key that
+collides with an envelope field produces a duplicate JSON key.
+
+Keep keys to 16 characters or fewer. A longer key does not fit `LogArg`'s
+inline buffer, so it is copied into the record's shared 256-byte arena along
+with every other string in that record — and the arena clips rather than
+grows. A clipped key is a silently renamed field, and two long keys sharing a
+prefix can clip to the same name.
+
+##### More examples
+
+Values keep their type through to JSON, so numbers and booleans arrive
+unquoted and stay filterable as numbers rather than strings:
+
+```cpp
+MLOG_KV(LogLevel::INFO,
+        "event",       "cache_lookup",
+        "hit",         found,           // bool    -> true
+        "latency_ms",  elapsedMs,       // double  -> 1.5
+        "entries",     cache.size());   // integer -> 4096
+```
+
+```json
+{"timestamp": "...", "level": "INFO", "channel": "default",
+ "event": "cache_lookup", "hit": true, "latency_ms": 1.5, "entries": 4096}
+```
+
+On a hot path there is no need to guard the call yourself. The macro checks
+the level before it evaluates anything, so an expensive argument costs nothing
+when the record is filtered out:
+
+```cpp
+// summarize() does not run unless DEBUG is enabled.
+MLOG_KV(LogLevel::DEBUG, "event", "batch_done", "stats", summarize(batch));
+```
+
+Four pairs is the ceiling, and the count must be even. Both are compile-time
+errors, as is a key that is not a string:
+
+```cpp
+MLOG_KV(LogLevel::INFO, "a", 1, "b");            // error: needs pairs
+MLOG_KV(LogLevel::INFO, 7, "value");             // error: key must be a string
+MLOG_KV(LogLevel::INFO, "a", 1, "b", 2,
+        "c", 3, "d", 4, "e", 5);                 // error: at most four pairs
+```
+
+Emit a second record when a call site needs more than four fields; there is no
+continuation form.
+
 ### Mojo
 
 There is a Mojo interface wrapping the C++ Log library. It uses the same `fmt`
@@ -80,12 +161,15 @@ A nonzero drop count indicates the log rate exceeded consumer throughput. Set
 
 ### String argument lifetime
 
-String arguments (non-literal `std::string` and `std::string_view` values) are
-copied into a per-slot arena at enqueue time so they remain valid after the call
-returns. Each slot holds up to 256 bytes of string data. If the total string
-content in a single log record exceeds 256 bytes, the excess is silently
-clipped. Keep dynamic string arguments short, or prefer string literals (which
-have static storage and are never copied).
+String arguments are copied into a per-slot arena at enqueue time so they remain
+valid after the call returns. Each slot holds up to 256 bytes of string data. If
+the total string content in a single log record exceeds 256 bytes, the excess is
+silently clipped. Keep string arguments short.
+
+What decides whether a string is copied is its length, not its storage
+duration: values of 16 bytes or fewer are stored inline in the `LogArg` itself
+and never reach the arena, while anything longer is copied — a string literal
+included.
 
 ## JSON output format
 
@@ -94,12 +178,15 @@ followed by a newline (newline-delimited JSON / NDJSON). Other formatting flags
 (`MODULAR_LOG_ISO_TIME`, `MODULAR_LOG_NO_TIMESTAMP`, etc.) are ignored in this
 mode.
 
+A line is one of two shapes. Records from `MLOG` carry a `message` field and
+nothing else; records from `MLOG_KV` carry their pairs as additional
+top-level fields and have no `message`.
+
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["timestamp", "level", "message"],
-  "additionalProperties": false,
+  "required": ["timestamp", "level", "channel"],
   "properties": {
     "timestamp": {
       "type": "string",
@@ -111,10 +198,28 @@ mode.
       "enum": ["DBG", "INFO", "WARN", "ERR", "FATL"],
       "description": "Severity level of the log message."
     },
+    "channel": {
+      "type": "string",
+      "description": "Name of the channel the record was logged on."
+    },
     "message": {
       "type": "string",
-      "description": "Log message text."
+      "description": "Log message text. Present only on MLOG records."
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": ["message"],
+      "additionalProperties": false
+    },
+    {
+      "not": {"required": ["message"]},
+      "minProperties": 4,
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"],
+        "description": "One MLOG_KV pair. Up to four are present."
+      }
+    }
+  ]
 }
 ```

@@ -49,17 +49,25 @@ std::string validateLogLineSchema(const std::string &line) {
   if (!obj)
     return "top-level value is not a JSON object";
 
-  // required fields
-  for (const char *key : {"timestamp", "level", "channel", "message"})
+  // envelope fields, present on both record variants
+  for (const char *key : {"timestamp", "level", "channel"})
     if (!obj->get(key))
       return std::string("missing required field: ") + key;
 
-  // no additional properties
-  static const llvm::StringSet<> allowed = {
-      {"timestamp"}, {"level"}, {"channel"}, {"message"}};
-  for (auto &[k, v] : *obj)
-    if (!allowed.contains(k))
-      return "unexpected field: " + k.str();
+  // A formatted record carries "message" and nothing else; a key-value record
+  // carries its pairs as additional top-level fields instead.
+  bool isKeyValue = !obj->get("message");
+  if (!isKeyValue) {
+    static const llvm::StringSet<> allowed = {
+        {"timestamp"}, {"level"}, {"channel"}, {"message"}};
+    for (auto &[k, v] : *obj)
+      if (!allowed.contains(k))
+        return "unexpected field: " + k.str();
+    if (!obj->getString("message"))
+      return R"("message" must be a string)";
+  } else if (obj->size() <= 3) {
+    return "key-value record has no pair fields";
+  }
 
   // type checks
   if (!obj->getString("timestamp"))
@@ -68,8 +76,6 @@ std::string validateLogLineSchema(const std::string &line) {
     return R"("level" must be a string)";
   if (!obj->getString("channel"))
     return R"("channel" must be a string)";
-  if (!obj->getString("message"))
-    return R"("message" must be a string)";
 
   // enum check on "level"
   static const llvm::StringSet<> validLevels = {
@@ -155,7 +161,12 @@ std::string readLogSince(std::streampos offset) {
 
 class LogJSONTest : public ::testing::Test {
 protected:
-  void SetUp() override { startPos_ = currentLogEnd(); }
+  void SetUp() override {
+    // The logger is async, so a previous test's last record may still be in
+    // the ring. Drain it before marking where this test's output starts.
+    getDefaultLog().flush();
+    startPos_ = currentLogEnd();
+  }
 
   std::string capturedOutput() const {
     getDefaultLog().flush();
@@ -244,12 +255,75 @@ TEST_F(LogJSONTest, LevelFilteringSuppressesOutput) {
   setLogLevel(level);
 }
 
+TEST_F(LogJSONTest, KeyValuePairsBecomeTopLevelFields) {
+  MLOG_KV(LogLevel::INFO, "event", "span_start", "operation", "prefill");
+  auto out = capturedOutput();
+  EXPECT_NE(out.find(R"("event":"span_start")"), std::string::npos);
+  EXPECT_NE(out.find(R"("operation":"prefill")"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, KeyValueRecordHasNoMessageField) {
+  MLOG_KV(LogLevel::INFO, "event", "span_end");
+  EXPECT_EQ(capturedOutput().find(R"("message")"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, KeyValueRecordKeepsEnvelopeFields) {
+  MLOG_KV(LogLevel::WARN, "event", "evicted");
+  auto out = capturedOutput();
+  EXPECT_NE(out.find(R"("level":"WARN")"), std::string::npos);
+  EXPECT_NE(out.find(R"("channel":"default")"), std::string::npos);
+}
+
+// Datadog facets are typed, so an integer must not arrive quoted.
+TEST_F(LogJSONTest, IntegerValueIsAJSONNumber) {
+  MLOG_KV(LogLevel::INFO, "batch_id", 42);
+  EXPECT_NE(capturedOutput().find(R"("batch_id":42)"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, UnsignedValueIsAJSONNumber) {
+  MLOG_KV(LogLevel::INFO, "duration_us", 1234u);
+  EXPECT_NE(capturedOutput().find(R"("duration_us":1234)"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, BoolValueIsAJSONBool) {
+  MLOG_KV(LogLevel::INFO, "cached", true);
+  EXPECT_NE(capturedOutput().find(R"("cached":true)"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, StringValueIsEscaped) {
+  MLOG_KV(LogLevel::INFO, "detail", R"(say "hi")");
+  EXPECT_NE(capturedOutput().find(R"("detail":"say \"hi\"")"),
+            std::string::npos);
+}
+
+TEST_F(LogJSONTest, ValueLongerThanInlineBufferSurvivesTheArena) {
+  std::string longValue(64, 'x');
+  MLOG_KV(LogLevel::INFO, "trace_id", longValue);
+  EXPECT_NE(capturedOutput().find(R"("trace_id":")" + longValue + R"(")"),
+            std::string::npos);
+}
+
+TEST_F(LogJSONTest, KeyValueOutputIsOnOneLine) {
+  MLOG_KV(LogLevel::INFO, "event", "span_start", "batch_id", 7);
+  auto out = capturedOutput();
+  EXPECT_EQ(std::count(out.begin(), out.end(), '\n'), 1);
+}
+
+TEST_F(LogJSONTest, KeyValueLevelFilteringSuppressesOutput) {
+  auto level = getDefaultLog().getLogLevel();
+  setLogLevel(LogLevel::ERROR);
+  MLOG_KV(LogLevel::INFO, "event", "suppressed");
+  EXPECT_TRUE(capturedOutput().empty());
+  setLogLevel(level);
+}
+
 // Validate each emitted line against the schema in Support/docs/Logging.md.
 TEST_F(LogJSONTest, OutputMatchesSchema) {
   MLOG(LogLevel::DEBUG, "schema check debug");
   MLOG(LogLevel::INFO, "schema check info");
   MLOG(LogLevel::WARN, "schema check warn");
   MLOG(LogLevel::ERROR, "schema check error");
+  MLOG_KV(LogLevel::INFO, "event", "schema check kv", "batch_id", 1);
   auto out = capturedOutput();
   ASSERT_FALSE(out.empty());
   std::istringstream stream(out);
