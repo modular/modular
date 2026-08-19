@@ -286,6 +286,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- A `where` clause naming a type that an enclosing `where` clause constrained
+  to a tighter trait can now be proven. Calling a method declared
+  `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
+  prove correctness`, even though `T` was plainly in `Ts`.
+
 - `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
   or an object for a `riscv32` or `riscv64` triple failed with `target '...'
   is not supported by this build`.

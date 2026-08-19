@@ -216,6 +216,14 @@ template <typename To, typename From>
   return sugarDynCast<To>(val);
 }
 
+//===----------------------------------------------------------------------===//
+// Type Identity Wrappers
+//===----------------------------------------------------------------------===//
+
+/// Peel off transparent wrappers that do not change type identity: rebind,
+/// upcast, downcast, and extension.
+TypedAttr stripIdentityWrappers(TypedAttr attr);
+
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

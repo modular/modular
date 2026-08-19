@@ -1232,18 +1232,6 @@ static void forEachConformsToInProposition(
   visit(proposition);
 }
 
-TypedAttr LIT::stripIdentityWrappers(TypedAttr attr) {
-  while (true) {
-    TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
-    stripped = UpcastAttr::strip(stripped);
-    stripped = DowncastAttr::strip(stripped);
-    stripped = ExtensionAttr::strip(stripped);
-    if (stripped == attr)
-      return attr;
-    attr = stripped;
-  }
-}
-
 TraitType LIT::getTraitBoundFromAssumptions(
     TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
