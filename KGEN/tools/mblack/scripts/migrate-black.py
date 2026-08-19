@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -20,7 +21,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-#!/usr/bin/env python3
 # check out every commit added by the current branch, blackify them,
 # and generate diffs to reconstruct the original commits, but then
 # blackified
