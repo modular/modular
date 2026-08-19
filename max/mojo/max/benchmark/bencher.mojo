@@ -142,24 +142,6 @@ def bench_multicontext[
 
 
 def bencher_iter_custom[
-    kernel_launch_fn: def(DeviceContext) raises capturing[_] -> None
-](mut self_: Bencher, ctx: DeviceContext):
-    """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-    Parameters:
-        kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-    Args:
-        self_: The bencher state.
-        ctx: The GPU DeviceContext for launching kernel.
-    """
-    try:
-        self_.elapsed = ctx.execution_time[kernel_launch_fn](self_.num_iters)
-    except e:
-        abort(String(e))
-
-
-def bencher_iter_custom[
     FuncType: def(DeviceContext) raises -> None,
 ](mut self_: Bencher, func: FuncType, ctx: DeviceContext):
     """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
@@ -174,38 +156,14 @@ def bencher_iter_custom[
 
     Notes:
 
-    This overload is intentionally separate from the parametric
-    `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-    capture benchmark-local state are closure values, and the current
-    closure typing rules do not let those values compose with a
-    `def(DeviceContext) raises capturing[_]` compile-time parameter while
-    preserving their capture object. This value-taking overload forwards
-    the closure to `DeviceContext.execution_time()` so `FuncType` carries
-    the captured state.
+    Nested launch closures that capture benchmark-local state are closure
+    values. This value-taking overload forwards the closure to
+    `DeviceContext.execution_time()` so `FuncType` carries the captured
+    state.
     """
 
     try:
         self_.elapsed = ctx.execution_time(func, self_.num_iters)
-    except e:
-        abort(String(e))
-
-
-def bencher_iter_custom[
-    kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
-](mut self_: Bencher, ctx: DeviceContext):
-    """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-    Parameters:
-        kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-    Args:
-        self_: The bencher state.
-        ctx: The GPU DeviceContext for launching kernel.
-    """
-    try:
-        self_.elapsed = ctx.execution_time_iter[kernel_launch_fn](
-            self_.num_iters
-        )
     except e:
         abort(String(e))
 
@@ -225,41 +183,13 @@ def bencher_iter_custom[
 
     Notes:
 
-    This overload is intentionally separate from the parametric
-    `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
-    capture benchmark-local state are closure values, and the current
-    closure typing rules do not let those values compose with a
-    `def(DeviceContext, Int) raises capturing[_]` compile-time parameter
-    while preserving their capture object. This value-taking overload
-    forwards the closure to `DeviceContext.execution_time_iter()` so
-    `FuncType` carries the captured state.
+    Nested launch closures that capture benchmark-local state are closure
+    values. This value-taking overload forwards the closure to
+    `DeviceContext.execution_time_iter()` so `FuncType` carries the
+    captured state.
     """
 
     try:
         self_.elapsed = ctx.execution_time_iter(func, self_.num_iters)
-    except e:
-        abort(String(e))
-
-
-def bencher_iter_custom_multicontext[
-    kernel_launch_fn: def() raises capturing[_] -> None
-](mut self_: Bencher, ctxs: List[DeviceContext]):
-    """Times a target GPU function with custom number of iterations via DeviceContext ctx.
-
-    Parameters:
-        kernel_launch_fn: The target GPU kernel launch function to benchmark.
-
-    Args:
-        self_: The bencher state.
-        ctxs: The list of GPU DeviceContext's for launching kernel.
-    """
-    try:
-        # Find the max elapsed time across the list of GPU DeviceContext's.
-        self_.elapsed = 0
-        for i in range(len(ctxs)):
-            self_.elapsed = max(
-                self_.elapsed,
-                ctxs[i].execution_time[kernel_launch_fn](self_.num_iters),
-            )
     except e:
         abort(String(e))

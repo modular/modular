@@ -709,6 +709,10 @@ This version is still a work in progress.
   adapters; serve the model's ModuleV3 variant (for example,
   `--prefer-module-v3`) to use LoRA adapters.
 
+- Removed the parametric `max.benchmark.bencher_iter_custom[fn](bencher, ctx)`
+  overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
+  closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
+
 ## Fixes
 
 - On Apple Silicon, a missing Metal Toolchain (a separate download since
