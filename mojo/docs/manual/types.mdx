@@ -819,7 +819,7 @@ The following sections give brief introduction to the main collection types.
 
 [`List`](/docs/std/collections/list/List/) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`Copyable`](/docs/std/builtin/value/Copyable/) trait. Most of the common
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter, like
 this:
@@ -934,7 +934,7 @@ var values = Dict[String, Float64]()
 
 The dictionary's key type must conform to the
 [`KeyElement`](/docs/std/collections/dict/#keyelement) trait, and value elements
-must conform to the [`Copyable`](/docs/std/builtin/value/Copyable/) trait.
+must conform to the [`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
@@ -996,7 +996,7 @@ We both like:
 An [`Optional`](/docs/std/collections/optional/Optional/) represents a
 value that may or may not be present. Like the other collection types, it is
 parameterized, and can hold any type that conforms to the
-[`Copyable`](/docs/std/builtin/value/Copyable/) trait.
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
 ```mojo
 # Two ways to initialize an Optional with a value

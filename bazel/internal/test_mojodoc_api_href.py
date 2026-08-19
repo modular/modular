@@ -124,3 +124,23 @@ def test_normalize_missing_leading_slash() -> None:
         "std/builtin/Int",
         hosted_on_mojolang=False,
     ) == (f"{MOJOLANG_ORIGIN}/docs/std/builtin/Int")
+
+
+def test_private_module_path_returns_empty_href() -> None:
+    assert (
+        resolve_api_href(
+            "/docs/std/collections/dict/_DictValueIter",
+            hosted_on_mojolang=True,
+        )
+        == ""
+    )
+
+
+def test_private_symbol_in_public_module_returns_empty_href() -> None:
+    assert (
+        resolve_api_href(
+            "/docs/std/python/_cpython/PyObjectPtr",
+            hosted_on_mojolang=False,
+        )
+        == ""
+    )
