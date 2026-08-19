@@ -53,7 +53,6 @@ def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-@__parameter
 def bench_math[
     math_f1p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size]
@@ -73,7 +72,6 @@ def bench_math[
 # ===-----------------------------------------------------------------------===#
 # Benchmark fma
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_math3[
     math_f3p: def[dtype: DType, size: SIMDLength](
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
@@ -93,7 +91,6 @@ def bench_math3[
 # ===-----------------------------------------------------------------------===#
 # Benchmark lcm/gcd
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 
@@ -114,19 +111,19 @@ def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
 def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_math[sin]](BenchId("bench_math_sin"))
-    m.bench_function[bench_math[cos]](BenchId("bench_math_cos"))
-    m.bench_function[bench_math[tan]](BenchId("bench_math_tan"))
-    m.bench_function[bench_math[asin]](BenchId("bench_math_asin"))
-    m.bench_function[bench_math[acos]](BenchId("bench_math_acos"))
-    m.bench_function[bench_math[atan]](BenchId("bench_math_atan"))
-    m.bench_function[bench_math[log]](BenchId("bench_math_log"))
-    m.bench_function[bench_math[log2]](BenchId("bench_math_log2"))
-    m.bench_function[bench_math[sqrt]](BenchId("bench_math_sqrt"))
-    m.bench_function[bench_math[exp2]](BenchId("bench_math_exp2"))
-    m.bench_function[bench_math[exp]](BenchId("bench_math_exp"))
-    m.bench_function[bench_math[erf]](BenchId("bench_math_erf"))
-    m.bench_function[bench_math3[fma]](BenchId("bench_math_fma"))
-    m.bench_function[bench_math2[lcm]](BenchId("bench_math_lcm"))
-    m.bench_function[bench_math2[gcd]](BenchId("bench_math_gcd"))
+    m.bench_function(bench_math[sin], BenchId("bench_math_sin"))
+    m.bench_function(bench_math[cos], BenchId("bench_math_cos"))
+    m.bench_function(bench_math[tan], BenchId("bench_math_tan"))
+    m.bench_function(bench_math[asin], BenchId("bench_math_asin"))
+    m.bench_function(bench_math[acos], BenchId("bench_math_acos"))
+    m.bench_function(bench_math[atan], BenchId("bench_math_atan"))
+    m.bench_function(bench_math[log], BenchId("bench_math_log"))
+    m.bench_function(bench_math[log2], BenchId("bench_math_log2"))
+    m.bench_function(bench_math[sqrt], BenchId("bench_math_sqrt"))
+    m.bench_function(bench_math[exp2], BenchId("bench_math_exp2"))
+    m.bench_function(bench_math[exp], BenchId("bench_math_exp"))
+    m.bench_function(bench_math[erf], BenchId("bench_math_erf"))
+    m.bench_function(bench_math3[fma], BenchId("bench_math_fma"))
+    m.bench_function(bench_math2[lcm], BenchId("bench_math_lcm"))
+    m.bench_function(bench_math2[gcd], BenchId("bench_math_gcd"))
     m.dump_report()
