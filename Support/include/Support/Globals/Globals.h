@@ -18,6 +18,7 @@
 
 #include "llvm/ADT/StringMap.h"
 
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -29,6 +30,10 @@ class TypeInfoTable;
 
 namespace ProfilingDetail {
 struct GlobalProfilerContext;
+}
+
+namespace Profiling::Detail {
+struct RangeSink;
 }
 
 namespace Globals {
@@ -54,6 +59,28 @@ getTypeInfoTableSingleton(const std::function<Detail::TypeInfoTable *()> &ctor);
 // `getConfigOverrides()`.
 extern MODULAR_CXX_EXPORT std::mutex &getConfigOverridesMutex();
 extern MODULAR_CXX_EXPORT llvm::StringMap<std::string> &getConfigOverrides();
+
+// Process-wide hot-path state for //Support:ProfilingRanges. The range shim
+// is statically linked into many shared libraries, so this state lives here
+// for the same reason as the config overrides above: a gate flip or sink
+// attachment performed through one shim copy must be visible to every other
+// copy's hot path, and per-copy function-local statics would break that.
+// Only the shim (Ranges.cpp) and the profiler integration write these —
+// the integration receives the gate addresses through the plugin ABI's
+// registerShim (Support/Profiling/PluginABI.h); everything else reads them
+// through the inline accessors in Support/Profiling/Ranges.h.
+struct ProfilingRangeGlobals {
+  // Explicit enable()/disable() intent.
+  std::atomic<bool> enabled{false};
+  // True while a trace of either origin is live and ranges record.
+  std::atomic<bool> recordingActive{false};
+  // The attached profiler integration's function table, set when a shim
+  // copy's acquire first succeeds (racing copies may each store their own
+  // equivalent table; last write wins); valid for the process lifetime.
+  std::atomic<const M::Profiling::Detail::RangeSink *> cachedSink{nullptr};
+};
+
+extern MODULAR_CXX_EXPORT ProfilingRangeGlobals &getProfilingRangeGlobals();
 
 } // namespace Globals
 

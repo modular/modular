@@ -19,8 +19,11 @@
 // provides by overriding the weak Detail::acquireRangeSink() at link time.
 // When no sink is linked (e.g. the open-source compiler stack) every call
 // degrades to a safe no-op, so any binary in the repo can link
-// //Support:ProfilingRanges unconditionally: no build config, no DT_NEEDED, no
-// packaging cost, and nothing profiler-specific in this tree.
+// //Support:ProfilingRanges unconditionally: no build config, nothing
+// profiler-specific in this tree, and the only runtime dependency is
+// libMSupportGlobals.so — the process-global singleton library every
+// runtime host already carries — which holds the gates so all statically
+// linked copies of the shim observe the same state.
 //
 // Off-cost: when disabled, every call checks a single relaxed atomic bool
 // and returns. Branch predictors eliminate the cost in steady state, so the
@@ -46,12 +49,12 @@ namespace Detail {
 // (rather than an extern global) so there is no static-initialization-order
 // hazard.
 //
-// The library is always linked statically, so every DSO that links it owns a
-// private copy of this flag. The profiler keeps all copies coherent: each
-// copy that attaches a sink hands the profiler its gate addresses, and the
-// profiler stores the authoritative values into every attached copy whenever
-// they change. A copy that never attaches can only ever read false — which
-// is also correct, since nothing can record there.
+// The library is always linked statically, but the flag itself lives in the
+// process-global block in libMSupportGlobals.so, so every DSO's copy of
+// this accessor returns the same object: a gate flip performed through any
+// copy is immediately visible to every other copy's hot path — coherence
+// needs no per-copy registration or mirroring (the plugin ABI's
+// registerShim still registers gate addresses; see PluginABI.h).
 std::atomic<bool> &getEnabledGate() noexcept;
 } // namespace Detail
 
@@ -66,8 +69,8 @@ namespace Detail {
 // The hot gate for range recording: true while a trace of either origin —
 // explicit enable or an externally requested on-demand capture — is live.
 // Distinct from getEnabledGate(), which tracks only the explicit enable
-// intent and stays false during externally driven traces. Same per-copy +
-// profiler-mirroring story as getEnabledGate().
+// intent and stays false during externally driven traces. Same
+// process-global storage story as getEnabledGate().
 std::atomic<bool> &getRecordingGate() noexcept;
 } // namespace Detail
 
@@ -81,9 +84,9 @@ namespace Detail {
 // Per-thread sticky flag: set once this thread has registered with the
 // profiler, so registerCurrentThreadIfEnabled's fast path short-circuits
 // forever after on this thread.  Written only by
-// registerCurrentThreadSlow(). Per copy, like the gates: re-running the
-// registration once per copy per thread is harmless (it is idempotent on
-// the profiler side).
+// registerCurrentThreadSlow(). Per copy (unlike the gates, which are
+// process-global): re-running the registration once per copy per thread is
+// harmless (it is idempotent on the profiler side).
 extern thread_local bool gThreadRegistered;
 
 // Slow path of registerCurrentThreadIfEnabled: registers the calling thread

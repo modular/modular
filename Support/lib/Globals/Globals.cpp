@@ -52,3 +52,9 @@ M::Globals::getConfigOverrides() {
   static llvm::StringMap<std::string> m;
   return m;
 }
+
+MODULAR_CXX_EXPORT M::Globals::ProfilingRangeGlobals &
+M::Globals::getProfilingRangeGlobals() {
+  static ProfilingRangeGlobals globals;
+  return globals;
+}
