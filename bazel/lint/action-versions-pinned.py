@@ -17,6 +17,7 @@
 import os
 import re
 import subprocess
+import sys
 from typing import Any
 
 import yaml
@@ -87,4 +88,4 @@ def main() -> int:
 if __name__ == "__main__":
     if path := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(path)
-    exit(main())
+    sys.exit(main())

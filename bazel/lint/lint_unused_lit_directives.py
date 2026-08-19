@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 _LIT_REGEX = re.compile(
@@ -109,7 +110,7 @@ def _main() -> None:
         print(
             "error: failed to query test files, likely an error in the linter."
         )
-        exit(1)
+        sys.exit(1)
 
     errors = []
     for file in all_test_files - lit_test_files:
@@ -131,7 +132,7 @@ def _main() -> None:
 
     if errors:
         print("\n".join(sorted(errors)))
-        exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

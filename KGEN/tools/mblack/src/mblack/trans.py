@@ -640,7 +640,7 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
                 new_line.append(string_leaf)
 
             if string_idx <= i < string_idx + num_of_strings:
-                for comment_leaf in line.comments_after(LL[i]):
+                for comment_leaf in line.comments_after(leaf):
                     new_line.append(comment_leaf, preformatted=True)
                 continue
 

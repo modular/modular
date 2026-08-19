@@ -15,6 +15,7 @@
 import logging
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -32,7 +33,7 @@ def main() -> None:
         )
     except:
         logging.critical("Failed to install the mojo_jupyter package.")
-        exit(1)
+        sys.exit(1)
 
     # Build the type script extension.
     try:
@@ -44,7 +45,7 @@ def main() -> None:
         logging.critical(
             "Failed to build the mojo_jupyter typescript extension."
         )
-        exit(1)
+        sys.exit(1)
 
     # Link to the extension directory.
     try:
@@ -60,7 +61,7 @@ def main() -> None:
         )
     except:
         logging.critical("Failed to install the mojo_jupyter extension.")
-        exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

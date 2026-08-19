@@ -135,7 +135,7 @@ def _main(uv_lock: str, output_path: str) -> None:
         print("\nerror: Found duplicate packages that are not expected:")
         for package in sorted(unexpected_duplicates):
             print(f"  {package}")
-        exit(1)
+        sys.exit(1)
 
     targets = ""
     all_downloads = set()

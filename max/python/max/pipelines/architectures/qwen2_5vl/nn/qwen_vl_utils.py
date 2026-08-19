@@ -229,7 +229,7 @@ def smart_nframes(
             )
         nframes = min(min(max(nframes, min_frames), max_frames), total_frames)
         nframes = floor_by_factor(nframes, FRAME_FACTOR)
-    if not (FRAME_FACTOR <= nframes and nframes <= total_frames):
+    if not (FRAME_FACTOR <= nframes <= total_frames):
         raise ValueError(
             f"nframes should in interval [{FRAME_FACTOR}, {total_frames}], but got {nframes}."
         )

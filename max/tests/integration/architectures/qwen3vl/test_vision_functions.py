@@ -386,7 +386,7 @@ def get_seqlens_torch(
     cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
     # Calculate max sequence length
-    max_seqlen = max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
+    max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
 
     return cu_seqlens, max_seqlen
 

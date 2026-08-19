@@ -139,9 +139,8 @@ def query_llm(
         except Exception as e:
             print(f"Error Occurs: {e}        Retry ...")
             time.sleep(1)
-    else:
-        print("Max tries. Failed.")
-        return ""
+    print("Max tries. Failed.")
+    return ""
 
 
 def extract_answer(response: str) -> str | None:

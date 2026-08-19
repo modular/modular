@@ -117,7 +117,6 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> None:
         del state_dict
-        return
 
     def _prepare_state_dict(
         self, state_dict: dict[str, Any], model_config: Any

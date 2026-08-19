@@ -14,6 +14,7 @@
 
 import shlex
 import subprocess
+import sys
 
 _IGNORED_TARGETS = {
     "@@//max/kernels/benchmarks:nn/bench_gather_reduce.mojo.test",  # Disabled
@@ -92,7 +93,7 @@ def _main() -> None:
         print("error: these tests do not run on known CI configurations:")
         for test in sorted(missing_on_ci):
             print(f"  {test}")
-        exit(1)
+        sys.exit(1)
     else:
         print("All tests should be run on CI")
 

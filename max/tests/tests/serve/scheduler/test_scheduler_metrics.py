@@ -381,7 +381,6 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
 def test_to_log_extra_required_fields() -> None:
     extra = _make_metrics().to_log_extra()
 
-    #
     assert extra["event"] == "batch_metrics"
     assert extra["batch_type"] == "CE"
 

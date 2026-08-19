@@ -28,10 +28,9 @@ import sys
 from typing import Any
 
 if sys.version_info < (3, 11):
-    from exceptiongroup import BaseExceptionGroup
+    from exceptiongroup import BaseExceptionGroup  # builtin in 3.11+
     from taskgroup import TaskGroup
 else:
-    BaseExceptionGroup = BaseExceptionGroup  # builtin in 3.11+
     from asyncio import TaskGroup
 
 
