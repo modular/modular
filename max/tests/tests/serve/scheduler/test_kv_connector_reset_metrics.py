@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
@@ -47,10 +46,6 @@ class _CountingConnector:
     @property
     def name(self) -> str:
         return "counting"
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
 
     def load(
         self,

@@ -35,7 +35,6 @@ from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import cast
 
-from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
@@ -101,10 +100,6 @@ class _AsyncConnector:
     @property
     def name(self) -> str:
         return "async-fake"
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
 
     def load(
         self,

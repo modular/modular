@@ -122,10 +122,6 @@ class _TierStubConnector:
     def host_block_count(self) -> BlockCount:
         return BlockCount(free=4, total=4)
 
-    @property
-    def supported_hash_algos(self) -> frozenset[str]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
-
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
     ) -> tuple[int, int]:
