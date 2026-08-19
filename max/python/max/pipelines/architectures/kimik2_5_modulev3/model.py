@@ -307,9 +307,9 @@ class KimiK2_5Model(
         )
 
         if llm.topk_method == "noaux_tc":
-            for key in state_dict:
+            for key, value in state_dict.items():
                 if key.endswith("e_score_correction_bias"):
-                    llm.correction_bias_dtype = state_dict[key].dtype
+                    llm.correction_bias_dtype = value.dtype
                     break
 
         n_devices = len(self.devices)

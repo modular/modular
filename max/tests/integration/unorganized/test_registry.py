@@ -242,7 +242,7 @@ def test_supported_architecture__eq__method() -> None:
     assert arch2 == arch1
 
     # Test equality with self
-    assert arch1 == arch1
+    assert arch1 == arch1  # noqa: PLR0124
 
     # Test inequality with different class
     assert arch1 != "not an architecture"

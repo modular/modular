@@ -59,17 +59,37 @@ ignore = [
   "ANN003", # TODO: Missing type annotation for **kwargs
   "ANN204", # TODO: Missing return type annotation for special method
   "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
+  "ASYNC210", # Async functions should not call blocking HTTP methods
+  "ASYNC230", # Async functions should not open files with blocking methods like `open`
+  "ASYNC251", # Async functions should not call `time.sleep`
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
+  "BLE001", # Do not catch blind exception: `Exception`
   "C408", # Rewrites `dict(foo="bar")` to `{"foo": "bar"}`, questionable readability improvement
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)
+  "DTZ001", # `datetime.datetime()` called without a `tzinfo` argument
+  "DTZ005", # `datetime.datetime.now()` called without a `tz` argument
+  "DTZ006", # `datetime.datetime.fromtimestamp()` called without a `tz` argument
+  "DTZ007", # Naive datetime constructed using `datetime.datetime.strptime()` without %z
+  "DTZ011", # `datetime.date.today()` used
   "E402", # TODO: import top of file
+  "E501", # Line length, no autofix.
   "E722", # bare except
   "E731", # TODO: Don't assign lambda
   "E741", # TODO: Ambiguous variable name
   "F821", # TODO: Undefined names, means script is invalid
+  "FLY002", # TODO: The strings this flags are usually quite silly looking
   "FURB122", # Questionable readability improvement
+  "G201", # Use .exception() instead of .error() on loggers
+  "ISC004", # TODO: Unparenthesized implicit string concatenation in collection
+  "LOG015", # Use of root logger, usually low value in standalone scripts
+  "N999", # Invalid or non_snake_case module names. Former: TODO, latter: maybe not worth it.
+  "PERF402", # TODO: Use `list` or `list.copy` to create a copy of a list
+  "PLC0105", # Something about type variables and covariance
+  "PLC0414", # Import alias does not rename original package - we do this intentionally in several places
+  "PLW1508", # Invalid type for environment variable default - we do this a lot and it's usually valid.
+  "PLW1510", # subprocess.run without explicit `check` - low value
   "PYI019", # Adds typing_extensions in a lot of places in pre-3.11 world. Maybe revisit when we drop 3.10.
   "PYI034", # Fine, but can't be auto-applied to stubfiles, and adds typing_extensions everywhere in pre-3.11 world.
   "PYI036", # TODO: `__exit__` annotations
@@ -91,36 +111,6 @@ ignore = [
   "SIM905", # Use a list literal instead of str.split
   "TRY002", # TODO: Suggests to use more specific errors than "Exception"
   "TRY004", # TODO: Suggests TypeError for invalid types
-
-  # TODO: Temporary exclusions - bumping to 0.16.3 is a large jump
-  "ASYNC210",
-  "ASYNC230",
-  "ASYNC251",
-  "BLE001",
-  "DTZ001",
-  "DTZ005",
-  "DTZ006",
-  "DTZ007",
-  "DTZ011",
-  "E501",
-  "FLY002",
-  "G201",
-  "ISC004",
-  "LOG015",
-  "N999",
-  "PERF402",
-  "PLC0105",
-  "PLC0206",
-  "PLC0414",
-  "PLE1206",
-  "PLR0124",
-  "PLR0402",
-  "PLR1704",
-  "PLR1730",
-  "PLW0602",
-  "PLW1508",
-  "PLW1509",
-  "PLW1510",
 ]
 extend-select = [
   "ANN", # Require function type annotations

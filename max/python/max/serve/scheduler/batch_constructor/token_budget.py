@@ -169,8 +169,7 @@ class TokenBudgetCollection:
         min_val = float("inf")
         for token_budget in self.token_budgets:
             remaining = token_budget.remaining
-            if min_val > remaining:
-                min_val = remaining
+            min_val = min(min_val, remaining)
 
         if min_val == float("inf"):
             raise ValueError(

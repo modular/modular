@@ -24,7 +24,6 @@ import math
 
 import pytest
 import torch
-import torch.nn as nn
 from _transformer_graphs import (
     DECODER_HIDDEN_SIZE,
     HIDDEN_DIM,
@@ -49,6 +48,7 @@ from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
     compute_position_ids,
 )
 from test_common.mef_precompile import init_from_mef, mefs_from_env
+from torch import nn
 
 TORCH_DTYPE = torch.bfloat16
 

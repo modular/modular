@@ -28,9 +28,9 @@ depend only on capture and enqueue order, not on how many streams are involved.
 
 from __future__ import annotations
 
-import max.driver as driver
 import numpy as np
 import pytest
+from max import driver
 from max.driver import Accelerator, Buffer, LaunchTraceEntry, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession

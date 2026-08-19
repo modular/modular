@@ -30,13 +30,13 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-import torch.nn as nn
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Conv2d
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from torch import nn
 
 
 @pytest.fixture

@@ -32,7 +32,6 @@ from dataclasses import dataclass
 
 import pytest
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from conftest import TorchEncoder, TorchPatchEmbed, TorchPatchMergerMLP
 from datasets import load_dataset
@@ -57,6 +56,7 @@ from max.pipelines.architectures.kimik2_5.weight_adapters import (
     KIMIK2_5_VISION_MAPPING,
 )
 from safetensors.torch import load_file
+from torch import nn
 
 logger = logging.getLogger(__name__)
 
