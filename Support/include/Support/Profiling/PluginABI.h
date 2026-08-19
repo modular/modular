@@ -56,13 +56,17 @@
 extern "C" {
 #endif
 
-// The hot-path gate mirror owned by one statically linked shim copy. Both
-// pointers are std::atomic<bool>* (typed void* to keep the struct C-clean);
-// they must stay valid for the life of the process (see the lifetime
-// contract above). The plugin is the single source of truth: it stores the
-// authoritative values into every registered copy's gates whenever they
-// change, so each copy's inline isEnabled()/isRangeRecordingActive() stay
-// one relaxed atomic load with no cross-DSO call.
+// The hot-path gates a shim copy asks the plugin to drive. Both pointers
+// are std::atomic<bool>* (typed void* to keep the struct C-clean); they
+// must stay valid for the life of the process (see the lifetime contract
+// above). The plugin is the single source of truth: it stores the
+// authoritative values through every registered pointer whenever they
+// change, so the shim's inline isEnabled()/isRangeRecordingActive() stay
+// one relaxed atomic load with no cross-DSO call. The shim's gates live in
+// the process-global block in libMSupportGlobals.so, so every registered
+// copy's pointers alias the same two atomics and the mirror writes all land
+// on one object; the ABI keeps the addresses explicit so a shim build with
+// per-copy gates would still work.
 typedef struct M_ProfilerShimGates {
   // Mirrors the session API's enable intent (enable()/disable()).
   void *enabledGate;

@@ -12,12 +12,16 @@
 //===----------------------------------------------------------------------===//
 //
 // Implementation of the minimal range-annotation API
-// (Support/Profiling/Ranges.h): the per-copy hot-path gates and thin forwarders
-// into the optional RangeSink. The sink is obtained through
-// Detail::acquireRangeSink, defined WEAK here with a nullptr result — the
-// host-side profiler integration overrides it with a strong definition, so
-// linking that integration is the only wiring. This file deliberately knows
-// nothing about how a profiler is found, loaded, or implemented.
+// (Support/Profiling/Ranges.h): the hot-path gates and thin forwarders
+// into the optional RangeSink. The gates and the cached sink pointer live in
+// one process-global block (Globals::getProfilingRangeGlobals, in
+// libMSupportGlobals.so), so every statically linked copy of this file
+// observes the same state — see the gate comments in Ranges.h. The sink is
+// obtained through Detail::acquireRangeSink, defined WEAK here with a
+// nullptr result — the host-side profiler integration overrides it with a
+// strong definition, so linking that integration is the only wiring. This
+// file deliberately knows nothing about how a profiler is found, loaded, or
+// implemented.
 //
 // Sink-absent semantics: enable()/disable() honor the intent locally (so
 // isEnabled()/state() behave exactly like a profiler-attached host that
@@ -29,6 +33,8 @@
 
 #include "Support/Profiling/Ranges.h"
 
+#include "Support/Globals/Globals.h"
+
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -38,14 +44,23 @@ namespace M::Profiling {
 
 namespace Detail {
 
-std::atomic<bool> &getEnabledGate() noexcept {
-  static std::atomic<bool> enabledGate{false};
-  return enabledGate;
+namespace {
+
+// One process-global state block (gates + cached sink), shared by every
+// statically linked copy of this file through libMSupportGlobals.so. The
+// function-local reference caches the cross-library lookup per copy.
+Globals::ProfilingRangeGlobals &globals() noexcept {
+  static Globals::ProfilingRangeGlobals &g =
+      M::Globals::getProfilingRangeGlobals();
+  return g;
 }
 
+} // namespace
+
+std::atomic<bool> &getEnabledGate() noexcept { return globals().enabled; }
+
 std::atomic<bool> &getRecordingGate() noexcept {
-  static std::atomic<bool> recordingGate{false};
-  return recordingGate;
+  return globals().recordingActive;
 }
 
 thread_local bool gThreadRegistered = false;
@@ -61,13 +76,14 @@ __attribute__((weak)) const RangeSink *acquireRangeSink(SinkRequest request) {
 namespace {
 
 // Lock-free mirror of the last successful acquisition, for the recording
-// paths (step, rangeBegin/End, registerCurrentThreadSlow): set exactly once,
-// so a raised recording gate always observes the sink. Control-plane calls
-// go through acquire() below instead.
-std::atomic<const RangeSink *> &getCachedSink() {
-  static std::atomic<const RangeSink *> cachedSink{nullptr};
-  return cachedSink;
-}
+// paths (step, rangeBegin/End, registerCurrentThreadSlow). Racing first
+// attachments may each store their own copy's sink; every stored value
+// forwards to the same plugin and stays valid for the process lifetime, so
+// last-write-wins is benign. Living in the process-global block, one copy's
+// attachment serves every copy — including copies (and their control-plane
+// calls) that never attach themselves. Control-plane calls go through
+// acquire() below instead.
+std::atomic<const RangeSink *> &getCachedSink() { return globals().cachedSink; }
 
 const RangeSink *acquire(SinkRequest request) {
   if (const RangeSink *sink = getCachedSink().load(std::memory_order_acquire))
@@ -81,7 +97,7 @@ const RangeSink *acquire(SinkRequest request) {
 } // namespace
 
 void registerCurrentThreadSlow() {
-  // Only reachable while the recording gate is up, which implies this copy
+  // Only reachable while the recording gate is up, which implies some copy
   // attached a sink — read the lock-free cache, not the acquire path.
   if (const RangeSink *sink = getCachedSink().load(std::memory_order_acquire))
     sink->registerCurrentThread();
@@ -92,8 +108,11 @@ void registerCurrentThreadSlow() {
 
 void rangeBegin(std::string_view name, uint32_t color) {
   // Gate first (contract in Ranges.h): outside a live trace this is one
-  // predicted branch. The gate can only be up once this copy holds the
-  // sink, so the cache read below cannot miss a live trace.
+  // predicted branch. enable()-driven traces raise the gate only after
+  // acquire() stored the process-global sink, so the cache read below
+  // observes it; an externally driven raise can race the first attachment's
+  // store, in which case the null cache read drops the span (never a torn
+  // pair).
   if (!isRangeRecordingActive())
     return;
   if (const Detail::RangeSink *sink =
