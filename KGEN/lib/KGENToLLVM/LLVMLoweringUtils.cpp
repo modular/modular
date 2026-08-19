@@ -377,6 +377,16 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
           curAlignAndMember.first >= maxAlignAndType.first)
         maxAlignAndType = curAlignAndMember;
     }
+
+    // The LLVM alloc size of a converted member can be smaller than the KGEN
+    // alloc size of the member itself (e.g. `simd<N, bool>` is one byte per
+    // lane in KGEN, but converts to a bit-packed `vector<N x i1>`). All
+    // KGEN-level layout (sizeof, struct field offsets, the discriminant
+    // offset of `!kgen.variant`) follows the KGEN metric, so the union
+    // storage must be at least as large as KGEN says it is.
+    if (std::optional<int64_t> kgenSize = unionType.getTypeSize(getTarget()))
+      maxSize = std::max(maxSize, *kgenSize);
+
     if (maxSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
