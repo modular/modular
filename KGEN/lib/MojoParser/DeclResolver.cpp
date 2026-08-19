@@ -725,60 +725,6 @@ ASTDecl &DeclResolver::createImportOp(ASTDecl &dest, mlir::OpBuilder &builder,
   return importDecl;
 }
 
-LogicalResult DeclResolver::importModule(ASTDecl &dest, UnresolvedImportOp op,
-                                         PackageOp currentPackage, SMLoc loc,
-                                         SMLoc importNameLoc) {
-  ImportPathAttr modulePathAttr = op.getModulePathAttr();
-  StringAttr importName = op.getImportNameAttr();
-  auto modulePath = SharedState::ImportPath::fromAttr(modulePathAttr);
-  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
-  shared.notifyListenerOnModuleImport(module, modulePath, loc);
-  shared.notifyListenerOnRef(&module, importName, importNameLoc);
-
-  assert(op.getIsLeafBinding() && "Unexpected lazily-resolved absolute import");
-  // A *leaf-binding* import binds a single name. Two cases:
-  //  - The directory scan registers a package's submodules in the *package*
-  //    scope (`dest` is the PackageOp) as raw module bindings - the package's
-  //    own registry, read by the gate's lookups, never an expression base.
-  //  - A user alias (`import a.b.c as z`) binds a gate over the resolved
-  //    module, so component access through that name is gated like any other
-  //    import.
-  if (isa_and_nonnull<PackageOp>(dest.getIfOperation())) {
-    return aliasImportDecls(&module, importName, /*declName=*/StringAttr(),
-                            modulePathAttr, importNameLoc, dest, false);
-  }
-
-  ImportPathAttr gatePath = modulePathAttr;
-  if (modulePathAttr.getRelativeLevel() > 0) {
-    if (ImportPathAttr absolute = getAbsoluteModuleName(module))
-      gatePath = absolute;
-  }
-
-  // Remove the placeholder (this op, bound under `importName`) from the scope
-  // so a resolved ImportOp can be bound under that name instead.
-  auto removeUnresolvedImportOp = [&] {
-    if (!dest.declsInScope)
-      return;
-    auto it = dest.declsInScope->find(importName);
-    if (it == dest.declsInScope->end())
-      return;
-    llvm::erase_if(it->second, [&](ASTDecl *d) {
-      return d->getIfOperation() == op.getOperation();
-    });
-    if (it->second.empty())
-      dest.declsInScope->erase(it);
-  };
-
-  removeUnresolvedImportOp();
-
-  OpBuilder aliasBuilder(op);
-  createImportOp(dest, aliasBuilder, importName, gatePath, op->getLoc());
-  // The placeholder op is now superseded by the gate; mark it dead so it is
-  // erased after all resolution.
-  deadImportPlaceholders.insert(op.getOperation());
-  return success();
-}
-
 ImportPathAttr DeclResolver::getAbsoluteModuleName(ASTDecl &moduleDecl) {
   SymbolRefAttr ref = moduleDecl.getSymbolRef();
   if (!ref)

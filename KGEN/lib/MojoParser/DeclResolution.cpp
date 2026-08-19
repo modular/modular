@@ -5295,20 +5295,18 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
   if (!importNameLoc.isValid())
     importNameLoc = decl.getLoc();
 
-  // Check if we are importing a specific decl within the module, or the
-  // module itself.
-  if (auto declName = op.getDeclNameAttr()) {
-    SMLoc declNameLoc = shared.diags.convertLocToSMLoc(op.getDeclNameLocAttr());
-    if (!declNameLoc.isValid())
-      declNameLoc = decl.getLoc();
+  // Check that we are importing a specific decl within the module.
+  auto declName = op.getDeclNameAttr();
+  assert(declName && "Whole-package imports should be resolved by now");
 
-    return getDeclResolver().importDeclFromModule(
-        *decl.getParentDecl(), packageOp, op.getModulePathAttr(), declName,
-        op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
-        resolveTarget);
-  }
-  return getDeclResolver().importModule(*decl.getParentDecl(), op, packageOp,
-                                        decl.getLoc(), importNameLoc);
+  SMLoc declNameLoc = shared.diags.convertLocToSMLoc(op.getDeclNameLocAttr());
+  if (!declNameLoc.isValid())
+    declNameLoc = decl.getLoc();
+
+  return getDeclResolver().importDeclFromModule(
+      *decl.getParentDecl(), packageOp, op.getModulePathAttr(), declName,
+      op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
+      resolveTarget);
 }
 
 //===----------------------------------------------------------------------===//

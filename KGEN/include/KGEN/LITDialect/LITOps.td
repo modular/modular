@@ -1367,8 +1367,7 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
     SymbolNameAttr:$importName,
     OptionalAttr<SymbolNameAttr>:$declName,
     OptionalAttr<Builtin_LocationAttr>:$importNameLoc,
-    OptionalAttr<Builtin_LocationAttr>:$declNameLoc,
-    DefaultValuedAttr<BoolAttr, "false">:$isLeafBinding
+    OptionalAttr<Builtin_LocationAttr>:$declNameLoc
   );
   let assemblyFormat = [{
     $modulePath (`->` $declName^)? `as` $importName
