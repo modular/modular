@@ -7,6 +7,7 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_arch_predicates.mojo",
     "test_c_types_32bit.mojo",
     "test_compile_sanitize_address.mojo",
     "test_has_feature_unknown_warning.mojo",

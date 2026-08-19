@@ -87,6 +87,28 @@ def test_target_is_apple() raises:
         )
 
 
+def test_target_arch() raises:
+    # x86 and ARM are the only architectures the compiler can target, and they
+    # are mutually exclusive.
+    assert_true(
+        CompilationTarget.is_x86() != CompilationTarget.is_arm(),
+        "exactly one of is_x86() and is_arm() must hold",
+    )
+
+    # Neon implies ARM, but not the converse: 32-bit ARM can lack Neon.
+    if CompilationTarget.has_neon():
+        assert_true(
+            CompilationTarget.is_arm(),
+            "Target has Neon but is_arm() returned False",
+        )
+
+    if CompilationTarget.has_sse4():
+        assert_true(
+            CompilationTarget.is_x86(),
+            "Target has SSE4 but is_x86() returned False",
+        )
+
+
 def test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
     var _has_feature: Bool = CompilationTarget.has_avx()

@@ -623,6 +623,27 @@ kgen.generator @target_get_field() {
   kgen.return
 }
 
+// `triple_arch` is the triple's canonical architecture name, unlike `arch`
+// which is the target CPU.
+// CHECK-LABEL: kgen.generator @target_get_triple_arch()
+kgen.generator @target_get_triple_arch() {
+  kgen.param.declare aarch64: target = <#kgen.target<triple = "aarch64-unknown-linux-gnu", arch = "neoverse-n1", features = "", data_layout = "", simd_bit_width = 128>>
+  kgen.param.assert<identical(:string target_get_field(aarch64, "triple_arch"), "aarch64")>,
+                    "triple arch is aarch64"
+  kgen.param.assert<identical(:string target_get_field(aarch64, "arch"), "neoverse-n1")>,
+                    "target cpu is neoverse-n1"
+
+  // Spellings LLVM treats as equivalent collapse to one canonical name, so a
+  // caller can compare against a single value per architecture.
+  kgen.param.declare arm64: target = <#kgen.target<triple = "arm64-apple-macosx", arch = "apple-m4", features = "", data_layout = "", simd_bit_width = 128>>
+  kgen.param.assert<identical(:string target_get_field(arm64, "triple_arch"), "aarch64")>,
+                    "arm64 canonicalizes to aarch64"
+  kgen.param.declare i686: target = <#kgen.target<triple = "i686-unknown-linux-gnu", arch = "i686", features = "", data_layout = "", simd_bit_width = 128>>
+  kgen.param.assert<identical(:string target_get_field(i686, "triple_arch"), "i386")>,
+                    "i686 canonicalizes to i386"
+  kgen.return
+}
+
 
 // CHECK-LABEL: @pointer_param_ops
 kgen.generator @pointer_param_ops<ptr: pointer<index, 1>>() {
