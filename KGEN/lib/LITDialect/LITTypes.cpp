@@ -1603,7 +1603,7 @@ Type FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 
   // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  ImplicitOriginRefToNameRefRemapper remapper(originDecls, depthOffset);
+  NameToImplicitOriginRefRemapper remapper(originDecls, depthOffset);
   return remapper.replace(origType);
 }
 
