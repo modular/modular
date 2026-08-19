@@ -37,36 +37,33 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 )
 from max.experimental.cascade.pipelines.echo_textgen import EchoTextGenPipeline
 from max.pipelines.architectures import register_all_models
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineArgs
 
 
-def _config(model_path: str) -> PipelineConfig:
-    """Build an unresolved config for construction-only (no-download) tests."""
-    return PipelineConfig(
-        models=ModelManifest({"main": MAXModelConfig(model_path=model_path)})
-    )
+def _args(model_path: str) -> PipelineArgs:
+    """Build raw pipeline args for construction-only (no-download) tests."""
+    return PipelineArgs(model_path=model_path)
 
 
 @pytest.mark.asyncio
 async def test_build_pipeline_dummy_textgen() -> None:
-    pipeline = await all_pipelines.build_pipeline(_config("dummy_textgen"))
+    pipeline = await all_pipelines.build_pipeline(_args("dummy_textgen"))
     assert isinstance(pipeline, DummyTextGenPipeline)
 
 
 @pytest.mark.asyncio
 async def test_build_pipeline_dummy_imgen() -> None:
-    pipeline = await all_pipelines.build_pipeline(_config("dummy_imgen"))
+    pipeline = await all_pipelines.build_pipeline(_args("dummy_imgen"))
     assert isinstance(pipeline, DummyImageGenPipeline)
 
 
 @pytest.mark.asyncio
 async def test_build_pipeline_echo() -> None:
-    # An ``echo:`` model-path prefix skips architecture resolution entirely (no
-    # network), building an echo pipeline for the remaining tokenizer path.
+    # An ``echo:`` model-path prefix skips config construction and architecture
+    # resolution entirely (no network), building an echo pipeline for the
+    # remaining tokenizer path.
     pipeline = await all_pipelines.build_pipeline(
-        _config("echo:some-org/some-llm")
+        _args("echo:some-org/some-llm")
     )
     assert isinstance(pipeline, EchoTextGenPipeline)
     assert pipeline.tokenizer.model_path == "some-org/some-llm"
@@ -95,7 +92,7 @@ async def test_build_pipeline_uses_arch_factory(
             lambda: None,
         ),
     )
-    pipeline = await all_pipelines.build_pipeline(_config("some-org/some-llm"))
+    pipeline = await all_pipelines.build_pipeline(_args("some-org/some-llm"))
     assert isinstance(pipeline, CommonTextGenPipeline)
 
 
@@ -110,14 +107,13 @@ async def test_build_pipeline_arch_without_factory(
         all_pipelines, "_resolve_architecture", lambda config: stub_arch
     )
     with pytest.raises(NotImplementedError, match="no cascade"):
-        await all_pipelines.build_pipeline(_config("some-org/some-model"))
+        await all_pipelines.build_pipeline(_args("some-org/some-model"))
 
 
 @pytest.mark.asyncio
 async def test_build_pipeline_no_models() -> None:
-    config = PipelineConfig(models=ModelManifest({}))
     with pytest.raises(ValueError, match="No models specified"):
-        await all_pipelines.build_pipeline(config)
+        await all_pipelines.build_pipeline(PipelineArgs())
 
 
 @pytest.fixture(autouse=True)

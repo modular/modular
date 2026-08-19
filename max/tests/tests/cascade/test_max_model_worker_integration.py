@@ -31,9 +31,7 @@ from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
 )
 from max.pipelines.architectures import register_all_models
-from max.pipelines.lib import PipelineConfig, generate_local_model_path
-from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib import PipelineArgs, generate_local_model_path
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
@@ -50,34 +48,28 @@ def _model_path() -> str:
 async def _text_pipeline(model_path: str) -> CommonTextGenPipeline:
     """Build the cascade text pipeline for the test model (CPU, float32).
 
-    Goes through ``build_pipeline``, which resolves the config and builds/binds
-    the model factory exactly as the serve entrypoint does. Tests reuse this
-    single path -- including the ones that exercise ``MAXModelWorker.decode``
-    directly, via the pipeline's already-bound ``model`` worker -- rather than
-    re-implementing resolution/binding. A fresh config per call gives each test
-    its own instance.
+    Goes through ``build_pipeline``, which constructs the config from the raw
+    args and builds/binds the model factory exactly as the serve entrypoint
+    does. Tests reuse this single path -- including the ones that exercise
+    ``MAXModelWorker.decode`` directly, via the pipeline's already-bound
+    ``model`` worker -- rather than re-implementing construction/binding. A
+    fresh config per call gives each test its own instance.
     """
     # `build_pipeline` resolves the arch by name, so the registry has to be
     # populated first. Importing `max.pipelines.lib` alone does not do it.
     register_all_models()
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_path,
-                    device_specs=[DeviceSpec.cpu()],
-                    max_length=512,
-                    quantization_encoding="float32",
-                )
-            }
-        ),
+    args = PipelineArgs(
+        model_path=model_path,
+        device_specs=[DeviceSpec.cpu()],
+        max_length=512,
+        quantization_encoding="float32",
         runtime=PipelineRuntimeConfig(
             max_batch_size=8,
             enable_chunked_prefill=True,
             enable_in_flight_batching=False,
         ),
     )
-    pipeline = await build_pipeline(config)
+    pipeline = await build_pipeline(args)
     assert isinstance(pipeline, CommonTextGenPipeline)
     return pipeline
 
