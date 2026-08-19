@@ -79,7 +79,10 @@ class VisionCachePlan:
     """
 
     bytes_per_device: int
-    """Per-device byte grant, already rounded down to whole blocks."""
+    """Bytes reserved on each device for its shard of the pool, rounded
+    down to whole blocks. Total cache capacity is this value times the
+    device count.
+    """
 
     hidden_size: int
     """Width of one cached embedding row."""
@@ -150,8 +153,10 @@ def _owned_row_slice(src: Buffer, start: int, count: int) -> Buffer:
 class _VisionBlockPool:
     """Fixed-size block storage backing the vision encoder cache.
 
-    One preallocated ``[num_blocks * block_tokens, hidden]`` Buffer per
-    device, allocated at construction from the memory planner's row spec.
+    Storage is sharded: block ``b`` lives only on device ``b % n_devices``,
+    as one preallocated shard Buffer per device, allocated at construction
+    from the memory planner's row spec. A cached entry is stored once
+    across the shards and gathered to every device's output on a hit.
     Capacity is a byte budget: an entry maps to a span of blocks, so a
     video spans many blocks and an image a few.
     """
@@ -167,20 +172,20 @@ class _VisionBlockPool:
         assert budget_bytes_per_device > 0
         assert block_tokens > 0
         row_bytes = hidden_size * dtype.size_in_bytes
-        num_blocks = budget_bytes_per_device // (block_tokens * row_bytes)
-        if num_blocks <= 0:
+        blocks_per_shard = budget_bytes_per_device // (block_tokens * row_bytes)
+        if blocks_per_shard <= 0:
             raise ValueError(
                 f"Vision cache byte budget {budget_bytes_per_device} cannot "
                 f"fit one {block_tokens}-token block "
-                f"({block_tokens * row_bytes} bytes)."
+                f"({block_tokens * row_bytes} bytes) per device."
             )
         self._block_tokens = block_tokens
         self._hidden_size = hidden_size
         self._dtype = dtype
-        self._num_blocks = int(num_blocks)
+        self._num_blocks = int(blocks_per_shard) * len(devices)
         self._pools = [
             Buffer(
-                shape=[self._num_blocks * block_tokens, hidden_size],
+                shape=[int(blocks_per_shard) * block_tokens, hidden_size],
                 dtype=dtype,
                 device=device,
             )
@@ -225,19 +230,26 @@ class _VisionBlockPool:
     def free(self, block_ids: list[int]) -> None:
         self._free.extend(block_ids)
 
+    def host_device_index(self, block_id: int) -> int:
+        """Index of the device whose shard holds ``block_id``."""
+        return block_id % len(self._pools)
+
     def _spans(
         self, block_ids: Sequence[int], row_lo: int, row_hi: int
-    ) -> Iterator[tuple[int, int, int]]:
-        """Yield ``(pool_row, chunk_rows, slice_row)`` per overlapping block.
+    ) -> Iterator[tuple[int, int, int, int]]:
+        """Yield ``(device_idx, pool_row, chunk_rows, slice_row)`` per block.
 
-        ``slice_row`` is relative to ``row_lo``.
+        ``pool_row`` is within the hosting device's shard; ``slice_row`` is
+        relative to ``row_lo``.
         """
         bt = self._block_tokens
+        n = len(self._pools)
         slice_row = 0
         for i in range(row_lo // bt, -(-row_hi // bt)):
             lo = max(row_lo, i * bt)
             hi = min(row_hi, (i + 1) * bt)
-            yield block_ids[i] * bt + (lo - i * bt), hi - lo, slice_row
+            b = block_ids[i]
+            yield b % n, (b // n) * bt + (lo - i * bt), hi - lo, slice_row
             slice_row += hi - lo
 
     def write_rows(
@@ -247,17 +259,21 @@ class _VisionBlockPool:
         start: int,
         num_tokens: int,
     ) -> None:
-        """Copy ``src[d][start:start + num_tokens]`` into the given blocks."""
+        """Copy rows ``[start, start + num_tokens)`` into the given blocks.
+
+        Every model's vision encode returns one output copy per device, so
+        each block is written from its hosting device's local ``src`` —
+        stores never cross devices.
+        """
         assert self.matches(src[0]), (
             "vision encoder output does not match the memory planner's "
             "get_vision_cache_row_spec"
         )
         dsts: list[Buffer] = []
         srcs: list[Buffer] = []
-        for pool, s in zip(self._pools, src, strict=True):
-            for base, chunk, row in self._spans(block_ids, 0, num_tokens):
-                dsts.append(pool[base : base + chunk, :])
-                srcs.append(s[start + row : start + row + chunk, :])
+        for dev, base, chunk, row in self._spans(block_ids, 0, num_tokens):
+            dsts.append(self._pools[dev][base : base + chunk, :])
+            srcs.append(src[dev][start + row : start + row + chunk, :])
         batch_inplace_copy(dsts, srcs)
 
     def copy_out(
@@ -268,21 +284,29 @@ class _VisionBlockPool:
         row_lo: int,
         row_hi: int,
     ) -> None:
-        """Copy entry rows ``[row_lo, row_hi)`` to ``out[d]`` at ``out_row``."""
+        """Gather entry rows ``[row_lo, row_hi)`` to every ``out[d]``.
+
+        Rows on another device's shard arrive as peer copies; all pairs go
+        in one batched submission per destination device.
+        """
+        pairs = list(self._spans(block_ids, row_lo, row_hi))
         dsts: list[Buffer] = []
         srcs: list[Buffer] = []
-        for pool, o in zip(self._pools, out, strict=True):
-            for base, chunk, row in self._spans(block_ids, row_lo, row_hi):
+        for o in out:
+            for dev, base, chunk, row in pairs:
                 dsts.append(o[out_row + row : out_row + row + chunk, :])
-                srcs.append(pool[base : base + chunk, :])
+                srcs.append(self._pools[dev][base : base + chunk, :])
         batch_inplace_copy(dsts, srcs)
 
-    def rows_view(
-        self, device_idx: int, block_id: int, row_lo: int, row_hi: int
-    ) -> Buffer:
-        """Block-relative zero-copy view of rows ``[row_lo, row_hi)``."""
-        base = block_id * self._block_tokens
-        return self._pools[device_idx][base + row_lo : base + row_hi, :]
+    def rows_view(self, block_id: int, row_lo: int, row_hi: int) -> Buffer:
+        """Block-relative zero-copy view of rows ``[row_lo, row_hi)``.
+
+        The view lives on the block's hosting device
+        (:meth:`host_device_index`).
+        """
+        n = len(self._pools)
+        base = (block_id // n) * self._block_tokens
+        return self._pools[block_id % n][base + row_lo : base + row_hi, :]
 
 
 @dataclass
@@ -552,8 +576,8 @@ class VisionEncoderCache(Generic[VLMContextType]):
         Args:
             plan: Resolved block reservation from memory estimation;
                 ``None`` disables caching.
-            devices: Devices to allocate one pool on each. Required when a
-                plan is given.
+            devices: Devices to allocate one pool shard on each. Required
+                when a plan is given.
             block_tokens: Rows per fixed-size block.
 
         Raises:
@@ -1069,12 +1093,27 @@ class VisionEncoderCache(Generic[VLMContextType]):
             if row_lo // bt == (row_hi - 1) // bt:
                 block_id = entry.block_ids[row_lo // bt]
                 lo = row_lo % bt
-                return [
-                    self._pool.rows_view(
-                        d, block_id, lo, lo + (row_hi - row_lo)
+                view = self._pool.rows_view(
+                    block_id, lo, lo + (row_hi - row_lo)
+                )
+                if n_devices == 1:
+                    return [view]
+                host = self._pool.host_device_index(block_id)
+                outs: list[Buffer] = []
+                dsts: list[Buffer] = []
+                for d, base in enumerate(empty_embeddings):
+                    if d == host:
+                        outs.append(view)
+                        continue
+                    buf = Buffer(
+                        shape=[row_hi - row_lo, int(base.shape[1])],
+                        dtype=base.dtype,
+                        device=base.device,
                     )
-                    for d in range(n_devices)
-                ]
+                    outs.append(buf)
+                    dsts.append(buf)
+                batch_inplace_copy(dsts, [view] * len(dsts))
+                return outs
 
         total_rows = sum(hi - lo for _, lo, hi in spans)
         out = [

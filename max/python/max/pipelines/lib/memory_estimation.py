@@ -1284,7 +1284,10 @@ class MemoryEstimator:
         :class:`~max.pipelines.lib.vision_encoder_cache.VisionCachePlan`
         that pipeline construction hands to :class:`VisionEncoderCache`.
         Capacity is bytes — a video simply spans more blocks than an
-        image.
+        image. Storage is sharded: each entry is stored once across the
+        devices rather than replicated, so the per-device reservation is
+        ``1/n_devices`` of the capacity and the rest stays with the KV
+        cache.
 
         Returns:
             Total bytes reserved across devices, and the block-mode plan.
@@ -1295,23 +1298,22 @@ class MemoryEstimator:
         """
         hidden_size, dtype = row_spec
         utilization = pipeline_config.runtime.vision_cache_utilization
-        requested_bytes = int(available_memory * utilization)
+        requested_bytes = int(available_memory * utilization) // n_devices
         block_bytes = (
             DEFAULT_VISION_CACHE_BLOCK_TOKENS
             * hidden_size
             * dtype.size_in_bytes
-            * n_devices
         )
-        num_blocks = requested_bytes // block_bytes
+        num_blocks = requested_bytes // block_bytes // n_devices * n_devices
         if num_blocks == 0:
             raise ValueError(
                 f"vision_cache_utilization={utilization} reserves "
                 f"{to_human_readable_bytes(requested_bytes)} of the "
                 "KV cache pool, too small to fit one "
                 f"{DEFAULT_VISION_CACHE_BLOCK_TOKENS}-token block "
-                f"({to_human_readable_bytes(block_bytes)}). Increase "
-                "the fraction or set 0 to disable the vision encoder "
-                "cache."
+                f"({to_human_readable_bytes(block_bytes)}) per device. "
+                "Increase the fraction or set 0 to disable the vision "
+                "encoder cache."
             )
         total_bytes = num_blocks * block_bytes
         plan = VisionCachePlan(
@@ -1320,10 +1322,13 @@ class MemoryEstimator:
             dtype=dtype,
         )
         logger.info(
-            "Vision encoder cache: %d blocks x %d tokens, %s reserved.",
+            "Vision encoder cache: %d blocks x %d tokens sharded across "
+            "%d device(s), %s reserved (%s per device).",
             num_blocks,
             DEFAULT_VISION_CACHE_BLOCK_TOKENS,
+            n_devices,
             to_human_readable_bytes(total_bytes),
+            to_human_readable_bytes(total_bytes // n_devices),
         )
         return total_bytes, plan
 

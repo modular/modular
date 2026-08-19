@@ -184,6 +184,12 @@ This version is still a work in progress.
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and
   the values they produced are now available on `MemoryPlan`.
+- The block-based vision encoder cache now shards its storage across
+  devices instead of replicating every entry on each one. The same
+  `--vision-cache-utilization` fraction buys the same cache capacity while
+  reserving only `1/n_devices` of it per device; the remainder stays with
+  the KV cache. Cache hits gather rows to each device in one batched
+  submission.
 - Added opt-in token-balanced CE scheduling across data-parallel replicas.
   With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
   encoding requests wait in an unbound pool and are placed by a per-step
