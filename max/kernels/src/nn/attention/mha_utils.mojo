@@ -723,17 +723,14 @@ def get_start_and_end_for_partitions[
     return (start, end)
 
 
-comptime callback_fn_type = def[mask_t: MHAMask](
-    mask: mask_t
-) raises capturing -> None
+comptime callback_fn_type = def[mask_t: MHAMask](mask: mask_t) raises -> None
 
 
 @always_inline
 def dispatch_mask[
     mask_type: String,
-    callback_fn: callback_fn_type,
     local_window_size: Int = -1,
-]() raises -> None:
+](callback_fn: Some[callback_fn_type],) raises -> None:
     """Instantiate an `MHAMask` by name and invoke a callback with it.
 
     Resolves the mask string to one of the built-in `MHAMask` implementations
@@ -745,10 +742,12 @@ def dispatch_mask[
         mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
             `"sliding_window_causal"`). Must match one of the `MaskName`
             constants.
-        callback_fn: Parametric callback invoked with the resolved mask.
         local_window_size: Sliding-window or chunk size for masks that
             require it. Must be `-1` for masks that ignore it and positive
             for masks that require it.
+
+    Args:
+        callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:
         Compile-time assertion error if `mask_type` is unrecognised or if
@@ -756,8 +755,7 @@ def dispatch_mask[
     """
 
     @always_inline
-    @__parameter
-    def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
+    def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises {imm}:
         return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
@@ -794,9 +792,9 @@ def dispatch_materialized_mask[
     dtype: DType,
     layout: Layout,
     //,
-    callback_fn: callback_fn_type,
 ](
     mask_nd: LayoutTensor[mut=False, dtype, layout, _],
+    callback_fn: Some[callback_fn_type],
     start_pos_nd: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -814,11 +812,11 @@ def dispatch_materialized_mask[
     Parameters:
         dtype: Element type of the mask tensor.
         layout: Layout of the mask tensor.
-        callback_fn: Parametric callback invoked with the `MaterializedMask`.
 
     Args:
         mask_nd: The mask values tensor with shape `(batch, heads, q, k)` or
             compatible broadcast shape.
+        callback_fn: Parametric callback invoked with the `MaterializedMask`.
         start_pos_nd: Optional per-sequence start positions used to offset the
             key dimension.
     """
@@ -832,7 +830,6 @@ def dispatch_relative_logits_mask[
     dtype: DType,
     layout: Layout,
     //,
-    callback_fn: callback_fn_type,
     local_window_size: Int = -1,
 ](
     bias_nd: LayoutTensor[mut=False, dtype, layout, _],
@@ -842,6 +839,7 @@ def dispatch_relative_logits_mask[
     input_row_offsets: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
+    callback_fn: Some[callback_fn_type],
 ) raises -> None:
     """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
 
