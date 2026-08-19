@@ -1,6 +1,6 @@
 # Generative Kernel Compiler Design Overview
 
-Modular Confidential (obviously), May 14, 2022
+May 14, 2022, Chris Lattner
 
 NOTE: This is a very early design doc written before Mojo was even conceived.
 It is retained unchanged for historical significance and inspiration, but
