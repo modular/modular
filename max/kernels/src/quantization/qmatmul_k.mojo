@@ -506,7 +506,7 @@ def _pack_block_Q4_K[
             var q_mins_row_0_val = q_mins_row_0_ptr[n]
             var q_mins_row_1_val = q_mins_row_1_ptr[n]
 
-            comptime if CompilationTarget.is_x86():
+            comptime if CompilationTarget.has_sse4():
                 var reorder_idx = g * block_n + n * 2
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
@@ -759,7 +759,7 @@ def _matmul_group_stream[
     comptime assert b_width == SIMDLength(simd_width) * 4
     comptime assert b_count == tile_n * tile_k
 
-    comptime if CompilationTarget.is_x86():
+    comptime if CompilationTarget.has_sse4():
         return _matmul_group_stream_x86[group_size, tile_k=tile_k](
             a_q_bits_ptr, c_int32_group, stream_b_vals_fn
         )
@@ -839,7 +839,7 @@ def _apply_zero_point_correction[
     corrections.init()
 
     for g in range(0, group_count, 2):
-        comptime if CompilationTarget.is_x86():
+        comptime if CompilationTarget.has_sse4():
             # Use `pmaddwd` + `paddd' (optimized to `vpdpwssd` on processors
             # that support VNNI) to multiply/add a pair of minimum values with
             # a pair of group sums from matrix A.
@@ -1324,7 +1324,7 @@ def _matmul_Q6_K_tile[
 
         c_int32_group.init()
 
-        comptime if CompilationTarget.is_x86():
+        comptime if CompilationTarget.has_sse4():
             # Initialize the accumulators with the zero point correction
             # values. This is necessary for x86 as there are no VNNI
             # instructions for s8s8.

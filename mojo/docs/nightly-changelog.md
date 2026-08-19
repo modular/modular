@@ -87,6 +87,14 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
+  reports the architecture rather than SSE4 availability. Both read the
+  architecture from the target triple, so they no longer vary with
+  `--target-cpu`. This changes `is_x86()` on x86 targets without SSE4.1 — most
+  visibly the baseline `x86-64` CPU, where it used to return `False`. Use
+  `has_sse4()`, `has_avx2()`, and friends to gate code on a specific
+  instruction set.
+
 - `Bencher.bench_function()` now takes a raising closure.
 
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,

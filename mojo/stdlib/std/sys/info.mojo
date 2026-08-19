@@ -99,10 +99,12 @@ struct CompilationTarget[value: _TargetType = _current_target()](
     @always_inline("nodebug")
     @staticmethod
     def __arch() -> __mlir_type.`!kgen.string`:
-        """Get the target architecture string from the compilation target.
+        """Get the target processor string from the compilation target.
 
         Returns:
-            The architecture string (e.g., "x86_64", "aarch64").
+            The CPU model for a host target (e.g., "znver3", "neoverse-n1") or
+            the GPU architecture for an accelerator target (e.g., "sm_100a",
+            "gfx942"). For the host architecture, see `__triple_arch()`.
         """
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
@@ -113,23 +115,64 @@ struct CompilationTarget[value: _TargetType = _current_target()](
 
     @staticmethod
     def _is_arch[name: StaticString]() -> Bool:
-        """Helper function to check if the target architecture is the same as
-        given by the name.
+        """Helper function to check if the target processor is the same as given
+        by the name.
 
         NOTE: This function is needed so that we don't compare the strings at
         compile time using `==`, which would lead to a recursions due to SIMD
         (and potentially many other things) depending on architecture checks.
 
         Parameters:
-            name: The name to check against the target architecture.
+            name: The CPU model or GPU architecture to check against.
 
         Returns:
-            True if the target architecture is the same as the given name,
-            False otherwise.
+            True if the target processor is the same as the given name, False
+            otherwise.
         """
         return __mlir_attr[
             `#kgen.param.identical<`,
             Self.__arch(),
+            `, `,
+            _get_kgen_string[name](),
+            `> : !kgen.scalar<bool>`,
+        ]
+
+    @always_inline("nodebug")
+    @staticmethod
+    def __triple_arch() -> __mlir_type.`!kgen.string`:
+        """Get the architecture of the compilation target's triple.
+
+        Returns:
+            The canonical LLVM architecture name (e.g., "x86_64", "aarch64").
+            Equivalent spellings are canonicalized, so an `arm64-apple-darwin`
+            triple reports "aarch64" and an `i686-*` triple reports "i386".
+        """
+        return __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            Self.value,
+            `, "triple_arch" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+
+    @staticmethod
+    def _is_triple_arch[name: StaticString]() -> Bool:
+        """Helper function to check if the target's architecture is the same as
+        given by the name.
+
+        NOTE: As with `_is_arch`, the comparison happens in the parameter
+        expression rather than via `==` on strings, which would recurse through
+        SIMD.
+
+        Parameters:
+            name: The canonical LLVM architecture name to check against.
+
+        Returns:
+            True if the target's architecture is the same as the given name,
+            False otherwise.
+        """
+        return __mlir_attr[
+            `#kgen.param.identical<`,
+            Self.__triple_arch(),
             `, `,
             _get_kgen_string[name](),
             `> : !kgen.scalar<bool>`,
@@ -268,10 +311,36 @@ struct CompilationTarget[value: _TargetType = _current_target()](
     def is_x86() -> Bool:
         """Checks if the target is an x86 architecture.
 
+        This is an architecture check, not an instruction-set check: use
+        `has_sse4()`, `has_avx2()`, and friends to gate code on a specific
+        extension.
+
         Returns:
-            True if the target is x86, False otherwise.
+            True if the target is 32- or 64-bit x86, False otherwise.
         """
-        return Self.has_sse4()
+        return (
+            Self._is_triple_arch["x86_64"]() or Self._is_triple_arch["i386"]()
+        )
+
+    @staticmethod
+    def is_arm() -> Bool:
+        """Checks if the target is an ARM architecture.
+
+        This is an architecture check, not an instruction-set check: use
+        `has_neon()` and friends to gate code on a specific extension.
+
+        Returns:
+            True if the target is 32- or 64-bit ARM, False otherwise.
+        """
+        return (
+            Self._is_triple_arch["aarch64"]()
+            or Self._is_triple_arch["aarch64_be"]()
+            or Self._is_triple_arch["aarch64_32"]()
+            or Self._is_triple_arch["arm"]()
+            or Self._is_triple_arch["armeb"]()
+            or Self._is_triple_arch["thumb"]()
+            or Self._is_triple_arch["thumbeb"]()
+        )
 
     @staticmethod
     def is_apple_m1() -> Bool:

@@ -41,6 +41,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Mutex.h"
+#include "llvm/TargetParser/Triple.h"
 #include <numeric>
 
 using namespace M;
@@ -3699,8 +3700,9 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return {};
 
   Builder b(field.getContext());
-  if (llvm::is_contained<StringRef>(
-          {"triple", "os", "arch", "endianness", "stdlib_plugin"}, field))
+  if (llvm::is_contained<StringRef>({"triple", "triple_arch", "os", "arch",
+                                     "endianness", "stdlib_plugin"},
+                                    field))
     resultType = b.getType<StringType>();
   else
     resultType = b.getType<IndexType>();
@@ -3710,6 +3712,14 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
 
   if (field.getValue() == "triple") {
     return StringAttr::get(target.getTarget().getTriple().getTriple(),
+                           resultType);
+  }
+  if (field.getValue() == "triple_arch") {
+    // The canonical arch name rather than the raw triple component, so that
+    // spellings LLVM treats as equivalent ("arm64"/"aarch64", "i686"/"i386",
+    // "armv7"/"arm") collapse to a single value callers can compare against.
+    const llvm::Triple &triple = target.getTarget().getTriple();
+    return StringAttr::get(llvm::Triple::getArchTypeName(triple.getArch()),
                            resultType);
   }
   if (field.getValue() == "os")
