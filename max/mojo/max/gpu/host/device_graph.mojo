@@ -80,6 +80,17 @@ comptime _DeviceGraphPtr[
 ] = OptionalPointer[_DeviceGraphCpp, origin]
 
 
+struct _DeviceGraphMemoryPoolCpp:
+    pass
+
+
+comptime _DeviceGraphMemoryPoolPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+] = OptionalPointer[_DeviceGraphMemoryPoolCpp, origin]
+
+
 @fieldwise_init
 struct DeviceGraphNode[arena_origin: ImmOrigin](
     TrivialRegisterPassable, Writable
@@ -148,6 +159,77 @@ def _pack_dep_args[
     )
 
 
+@doc_hidden
+struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
+    """Owning handle to a device graph memory pool shared across graphs.
+
+    Every allocation a device graph records must stay reserved for the graph's
+    lifetime, since the graph bakes raw addresses into its nodes. By default
+    each builder creates a private pool, so graphs never share activation
+    memory; handing the same pool to several builders (via
+    `DeviceGraphCache.get_or_create_pool()`) lets their graphs reuse one
+    another's transient allocations instead.
+
+    Sharing is sound only while the graphs sharing a pool replay serially in
+    recording order and do not rely on transient allocations persisting across
+    replays.
+
+    Not re-exported from `max.gpu.host`: the HAL build shares that package's
+    `__init__.mojo` but swaps this module for a stub without this type.
+    """
+
+    var _handle: _DeviceGraphMemoryPoolPtr[mut=True]
+    var _ctx: DeviceContext
+
+    def __init__(out self, ctx: DeviceContext):
+        """Creates a fresh pool bound to the context's device.
+
+        Args:
+            ctx: The device context whose device the pool allocates from.
+        """
+        # DeviceGraphMemoryPool *AsyncRT_DeviceContext_createGraphMemoryPool(
+        #     DeviceContext *ctx)
+        self._handle = external_call[
+            "AsyncRT_DeviceContext_createGraphMemoryPool",
+            _DeviceGraphMemoryPoolPtr[mut=True],
+            _DeviceContextPtr[mut=True],
+        ](ctx._handle)
+        self._ctx = ctx
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy of an existing pool handle by incrementing its
+        reference count.
+
+        Args:
+            copy: The pool handle to copy.
+        """
+        # void AsyncRT_DeviceGraphMemoryPool_retain(DeviceGraphMemoryPool *pool)
+        external_call[
+            "AsyncRT_DeviceGraphMemoryPool_retain",
+            NoneType,
+            _DeviceGraphMemoryPoolPtr[mut=True],
+        ](copy._handle)
+        self._handle = copy._handle
+        self._ctx = copy._ctx
+
+    def __deinit__(deinit self):
+        """Releases this reference to the pool."""
+        # void AsyncRT_DeviceGraphMemoryPool_release(DeviceGraphMemoryPool *pool)
+        external_call[
+            "AsyncRT_DeviceGraphMemoryPool_release",
+            NoneType,
+            _DeviceGraphMemoryPoolPtr[mut=True],
+        ](self._handle)
+
+    def __eq__(self, other: DeviceGraphMemoryPool) -> Bool:
+        return self._handle == other._handle
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
+            "DeviceGraphCache(", self._handle, ", ", self._ctx.api(), ")"
+        )
+
+
 struct DeviceGraphCache(Movable):
     """Holds the device graphs a model has already built, keyed for reuse.
 
@@ -164,11 +246,20 @@ struct DeviceGraphCache(Movable):
     """
 
     var _cache: Dict[String, DeviceGraph]
+    var _pools: Dict[Int, DeviceGraphMemoryPool]
+    """Shared memory pools, one per device context the cache has seen, keyed
+    by the context's pointer identity. Each pool retains its C++ context, so a
+    key's referent stays alive for as long as its entry does."""
+
     var _lock: BlockingSpinLock
+    """Lock used to allow safe mutation of this structure in a concurrent
+    context. The general assumption this type makes is that locks are held for
+    a very short duration."""
 
     def __init__(out self):
         """Creates an empty cache."""
         self._cache = {}
+        self._pools = {}
         self._lock = BlockingSpinLock()
 
     @staticmethod
@@ -257,6 +348,36 @@ struct DeviceGraphCache(Movable):
             self._cache[key^] = graph
             return graph^
 
+    @doc_hidden
+    def get_or_create_pool(
+        mut self, ctx: DeviceContext
+    ) -> DeviceGraphMemoryPool:
+        """Returns the shared memory pool for a device context, creating it on
+        first use.
+
+        Graphs built through this cache allocate from one pool per context, so
+        they share activation memory instead of each reserving its own. The
+        graphs a model caches replay serially in recording order, which is
+        what makes the sharing sound (see `DeviceGraphMemoryPool`).
+
+        Args:
+            ctx: The device context whose pool to return.
+
+        Returns:
+            The pool shared by every graph this cache builds against `ctx`.
+        """
+        var key = Int(ctx._handle.unsafe_value())
+        # This is its own `_lock` acquisition: the lock is not reentrant, so
+        # this method must never be called from inside `lookup` or `cache`.
+        with BlockingScopedLock(self._lock):
+            var found = self._pools.find(key)
+            if found:
+                return found.take()
+
+            var pool = DeviceGraphMemoryPool(ctx)
+            self._pools[key] = pool
+            return pool^
+
 
 trait DeviceGraphInput(ImplicitlyCopyable):
     """A device graph input that contributes to the graph's cache key."""
@@ -309,7 +430,7 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         ...
 
 
-struct DeviceGraph(ImplicitlyCopyable):
+struct DeviceGraph(ImplicitlyCopyable, Writable):
     """Represents an instantiated device graph that can be replayed.
 
     A `DeviceGraph` captures a sequence of GPU operations (such as kernel
@@ -474,7 +595,10 @@ struct DeviceGraph(ImplicitlyCopyable):
             _logger.info("found existing device graph for key", key)
             return found.take()
 
-        var graph = Self.create(ctx, build)
+        # Graphs built through the cache draw from one pool per device
+        # context, so they share activation memory. Cached graphs replay
+        # serially in recording order, which is what makes sharing sound.
+        var graph = Self._create(ctx, build, cache[].get_or_create_pool(ctx))
         return cache[].cache(key^, graph^)
 
     @staticmethod
@@ -546,6 +670,57 @@ struct DeviceGraph(ImplicitlyCopyable):
             ](
                 Pointer(to=result),
                 ctx._handle,
+            )
+        )
+        var arena: Int = 0
+        var builder = DeviceGraphBuilder[origin_of(arena)](result, ctx)
+        build(builder)
+
+        return builder^.instantiate()
+
+    @staticmethod
+    def _create(
+        ctx: DeviceContext,
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        pool: DeviceGraphMemoryPool,
+    ) raises -> DeviceGraph:
+        """Builds and instantiates a device graph that allocates from a shared
+        memory pool.
+
+        Behaves like the public uncached overload, except the builder draws
+        its allocations from `pool` instead of a builder-private one, so the
+        resulting graph shares activation memory with every other graph built
+        against the same pool. Graphs sharing a pool must replay serially in
+        recording order (see `DeviceGraphMemoryPool`).
+
+        Args:
+            ctx: Device context for the target device.
+            build: Callback that adds nodes to the supplied builder.
+            pool: The shared memory pool to allocate from; must belong to
+                `ctx`'s device.
+
+        Returns:
+            The instantiated device graph.
+
+        Raises:
+            If graph builder creation, `build`, or instantiation fails.
+        """
+        var result: _DeviceGraphBuilderPtr[mut=True] = {}
+
+        # const char *AsyncRT_DeviceContext_createGraphBuilderWithPool(
+        #     DeviceGraphBuilder **result, DeviceContext *ctx,
+        #     DeviceGraphMemoryPool *pool)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createGraphBuilderWithPool",
+                _CString[],
+                Pointer[_DeviceGraphBuilderPtr[mut=True], origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                _DeviceGraphMemoryPoolPtr[mut=True],
+            ](
+                Pointer(to=result),
+                ctx._handle,
+                pool._handle,
             )
         )
         var arena: Int = 0
