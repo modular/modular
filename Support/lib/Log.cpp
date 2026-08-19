@@ -31,9 +31,12 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
+#include <string_view>
 #include <thread>
 
 namespace M::Log {
@@ -153,6 +156,90 @@ static llvm::SmallString<32> buildISOFormatString(LogRecord::Timestamp now,
   return result;
 }
 
+static bool isStringArg(const LogArg &arg) {
+  return arg.tag == LogArg::Type::SmallString ||
+         arg.tag == LogArg::Type::String;
+}
+
+// Valid only for SmallString- and String-tagged args. A SmallString that fills
+// the buffer has no null terminator, hence strnlen over strlen.
+static std::string_view argAsStringView(const LogArg &arg) {
+  if (arg.tag == LogArg::Type::SmallString)
+    return {arg.data.ssoStr.data(),
+            strnlen(arg.data.ssoStr.data(), arg.data.ssoStr.size())};
+  return {arg.data.str.ptr, arg.data.str.len};
+}
+
+static llvm::json::Value argAsJSON(const LogArg &arg) {
+  switch (arg.tag) {
+  case LogArg::Type::Bool:
+    return arg.data.b;
+  case LogArg::Type::Int64:
+    return arg.data.i64;
+  case LogArg::Type::UInt64:
+    return arg.data.ui64;
+  case LogArg::Type::Fp32:
+    return static_cast<double>(arg.data.fp32);
+  case LogArg::Type::Fp64:
+    return arg.data.fp64;
+  case LogArg::Type::SmallString:
+  case LogArg::Type::String: {
+    auto sv = argAsStringView(arg);
+    return llvm::StringRef(sv.data(), sv.size());
+  }
+  case LogArg::Type::Pointer:
+    return fmt::format("{}", fmt::ptr(arg.data.ptr));
+  }
+  llvm_unreachable("invalid LogArg::Type value");
+}
+
+static void appendArgText(std::string &out, const LogArg &arg) {
+  auto append = [&out](auto &&value) {
+    fmt::format_to(std::back_inserter(out), "{}", value);
+  };
+  switch (arg.tag) {
+  case LogArg::Type::Bool:
+    return append(arg.data.b);
+  case LogArg::Type::Int64:
+    return append(arg.data.i64);
+  case LogArg::Type::UInt64:
+    return append(arg.data.ui64);
+  case LogArg::Type::Fp32:
+    return append(arg.data.fp32);
+  case LogArg::Type::Fp64:
+    return append(arg.data.fp64);
+  case LogArg::Type::SmallString:
+  case LogArg::Type::String: {
+    auto sv = argAsStringView(arg);
+    out.append(sv.data(), sv.size());
+    return;
+  }
+  case LogArg::Type::Pointer:
+    return append(fmt::ptr(arg.data.ptr));
+  }
+  llvm_unreachable("invalid LogArg::Type value");
+}
+
+// Renders a key-value record as space-separated key=value tokens, the
+// non-JSON counterpart to buildJSONKVLogLine.
+static std::string renderKVRecord(const LogRecord &record) {
+  std::string out;
+  for (size_t i = 0; i + 1 < record.argCount; i += 2) {
+    // MLOG_KV static-asserts that keys are strings, but a hand-built record
+    // could carry something else, and reading an int64 as a pointer would
+    // fault on the consumer thread. Drop the pair rather than risk that.
+    if (!isStringArg(record.args[i]))
+      continue;
+    if (!out.empty())
+      out += ' ';
+    auto key = argAsStringView(record.args[i]);
+    out.append(key.data(), key.size());
+    out += '=';
+    appendArgText(out, record.args[i + 1]);
+  }
+  return out;
+}
+
 static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
                                                Channel::Channels channel,
                                                llvm::StringRef msg,
@@ -169,6 +256,32 @@ static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
     json.attribute("level", getLogLevelPrefix(level).trim());
     json.attribute("channel", getChannelName(channel));
     json.attribute("message", msg);
+  });
+  return jsonLogLine;
+}
+
+// Same envelope as buildJSONLogLine, but the record's pairs are promoted to
+// top-level fields in place of "message" so they land as Datadog facets. A key
+// colliding with an envelope field emits a duplicate JSON key; keep keys clear
+// of "timestamp", "level" and "channel".
+static llvm::SmallString<512> buildJSONKVLogLine(const LogRecord &record) {
+  auto timestamp =
+      buildISOFormatString(record.timestamp, /*includeMicroseconds=*/true);
+
+  llvm::SmallString<512> jsonLogLine;
+  llvm::raw_svector_ostream svOstream(jsonLogLine);
+  llvm::json::OStream json(svOstream);
+  json.object([&] {
+    json.attribute("timestamp", timestamp);
+    json.attribute("level", getLogLevelPrefix(record.level).trim());
+    json.attribute("channel", getChannelName(record.channel));
+    for (size_t i = 0; i + 1 < record.argCount; i += 2) {
+      if (!isStringArg(record.args[i]))
+        continue;
+      auto key = argAsStringView(record.args[i]);
+      json.attribute(llvm::StringRef(key.data(), key.size()),
+                     argAsJSON(record.args[i + 1]));
+    }
   });
   return jsonLogLine;
 }
@@ -450,17 +563,23 @@ void Logger::flush() {
 }
 
 void Logger::processRecord(const LogRecord &record) {
-  auto msg = renderRecord(record);
+  bool isKV = record.kind == RecordKind::KeyValue;
   auto level = record.level;
   llvm::SmallString<512> enhancedOrJSONMsg;
   if (formatState.emitJSON) {
     enhancedOrJSONMsg =
-        buildJSONLogLine(level, record.channel, msg, record.timestamp);
-  } else if (formatState.useEnhancedFormat) {
-    enhancedOrJSONMsg = buildLogPrefix(level, record.channel, record.timestamp);
-    enhancedOrJSONMsg += msg;
+        isKV ? buildJSONKVLogLine(record)
+             : buildJSONLogLine(level, record.channel, renderRecord(record),
+                                record.timestamp);
   } else {
-    enhancedOrJSONMsg = msg;
+    auto msg = isKV ? renderKVRecord(record) : renderRecord(record);
+    if (formatState.useEnhancedFormat) {
+      enhancedOrJSONMsg =
+          buildLogPrefix(level, record.channel, record.timestamp);
+      enhancedOrJSONMsg += msg;
+    } else {
+      enhancedOrJSONMsg = msg;
+    }
   }
   for (const auto &sink : sinks)
     sink->write(enhancedOrJSONMsg);
