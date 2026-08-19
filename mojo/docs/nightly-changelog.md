@@ -95,6 +95,17 @@ This version is still a work in progress.
   `has_sse4()`, `has_avx2()`, and friends to gate code on a specific
   instruction set.
 
+- `CompilationTarget` can now describe RISC-V targets: `is_riscv()`,
+  `is_rv32()`, and `is_rv64()` report the architecture, and
+  `has_riscv_extension["m"]()` reports a single ISA extension by its lowercase
+  LLVM name. An extension implied by another counts as present, so a target
+  built with `d` also reports `f`. It is always `False` on a non-RISC-V target,
+  and rejects an uppercase name at compile time.
+
+  Selecting a RISC-V CPU or ISA string now resolves the extensions it implies,
+  so `--target-cpu=sifive-e31` and `--march=rv32imac` both report `m`, `a`, and
+  `c`. Previously either one reported only the base integer ISA.
+
 - `Bencher.bench_function()` now takes a raising closure.
 
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,

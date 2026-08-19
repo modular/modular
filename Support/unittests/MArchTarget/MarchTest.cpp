@@ -100,6 +100,49 @@ TEST(ArchTarget, GetTargetInfoForExpandsFeatures) {
   EXPECT_TRUE(targetOff->hasFeature("avx2"));
 }
 
+// Both RISC-V spellings must reach hasFeature(), including the extensions each
+// one implies, or `CompilationTarget.has_riscv_extension()` is blind.
+TEST(ArchTarget, RISCVExpandsExtensions) {
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
+  ctx.loadDialect<MDialect>();
+
+  // sifive-e31 is RV32IMAC; the CPU name alone must yield its extensions.
+  auto fromCpu = M::getMArchFeatures(&ctx, "riscv32-unknown-none-elf", "",
+                                     "sifive-e31", "", "", llvm::Reloc::Static);
+  ASSERT_FALSE(fromCpu.isError()) << fromCpu.getError();
+  EXPECT_EQ(fromCpu->getTriple().str(), "riscv32-unknown-none-elf");
+  EXPECT_TRUE(fromCpu->hasFeature("i"));
+  EXPECT_TRUE(fromCpu->hasFeature("m"));
+  EXPECT_TRUE(fromCpu->hasFeature("a"));
+  EXPECT_TRUE(fromCpu->hasFeature("c"));
+  // Implied by M and A respectively.
+  EXPECT_TRUE(fromCpu->hasFeature("zmmul"));
+  EXPECT_TRUE(fromCpu->hasFeature("zaamo"));
+  EXPECT_FALSE(fromCpu->hasFeature("d"));
+
+  // An -march ISA string is the idiomatic RISC-V spelling.
+  auto fromMarch =
+      M::getMArchFeatures(&ctx, "riscv32-unknown-none-elf", "rv32i_zba_zbb", "",
+                          "", "", llvm::Reloc::Static);
+  ASSERT_FALSE(fromMarch.isError()) << fromMarch.getError();
+  EXPECT_EQ(fromMarch->getTriple().str(), "riscv32-unknown-none-elf");
+  EXPECT_TRUE(fromMarch->hasFeature("zba"));
+  EXPECT_TRUE(fromMarch->hasFeature("zbb"));
+  EXPECT_FALSE(fromMarch->hasFeature("m"));
+
+  // A bare RV64 CPU still reports the base ISA and nothing it lacks.
+  auto rv64 = M::getMArchFeatures(&ctx, "riscv64-unknown-none-elf", "",
+                                  "generic-rv64", "", "", llvm::Reloc::Static);
+  ASSERT_FALSE(rv64.isError()) << rv64.getError();
+  EXPECT_TRUE(rv64->hasFeature("i"));
+  EXPECT_FALSE(rv64->hasFeature("m"));
+}
+
 // stdlib_plugin is a string field on TargetInfoAttr, defaulting to
 // "default".
 TEST(ArchTarget, StdlibPlugin) {
