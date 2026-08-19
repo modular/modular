@@ -557,6 +557,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         buffer. The operation is asynchronous and will be executed in the stream associated
         with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             dst: The destination device buffer to copy data to.
 
@@ -606,6 +610,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         This method schedules a memory copy operation to this buffer from the source
         buffer. The operation is asynchronous and will be executed in the stream
         associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             src: The source device buffer to copy data from.
@@ -1746,6 +1754,10 @@ struct DeviceBuffer[dtype: DType](
         buffer. The operation is asynchronous and will be executed in the stream associated
         with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             dst: The destination host buffer to copy data to.
 
@@ -1763,6 +1775,10 @@ struct DeviceBuffer[dtype: DType](
         This method schedules a memory copy operation from this device buffer to the
         specified host memory location. The operation is asynchronous and will be
         executed in the stream associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             dst_ptr: Pointer to the destination host memory location.
@@ -1796,6 +1812,10 @@ struct DeviceBuffer[dtype: DType](
         buffer. The operation is asynchronous and will be executed in the stream
         associated with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             src: The source host buffer to copy data from.
 
@@ -1813,6 +1833,10 @@ struct DeviceBuffer[dtype: DType](
         This method schedules a memory copy operation to this device buffer from the
         specified host memory location. The operation is asynchronous and will be
         executed in the stream associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             src_ptr: Pointer to the source host memory location.
@@ -1834,6 +1858,10 @@ struct DeviceBuffer[dtype: DType](
         least as many elements as this buffer; this invariant is checked via
         `debug_assert`.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             src: The source span to copy data from. Must have at least as many
                 elements as this buffer.
@@ -1854,6 +1882,10 @@ struct DeviceBuffer[dtype: DType](
         the stream associated with this buffer's context. The span must contain
         at least as many elements as this buffer; this invariant is checked via
         `debug_assert`.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             dst: The destination span to copy data to. Must have at least as
@@ -5332,6 +5364,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The number of bytes copied is determined by the size of the
         device buffer.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5398,6 +5434,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.
@@ -5504,6 +5544,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The span must contain at least as many elements as the
         destination buffer; this invariant is checked via `debug_assert`.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5565,6 +5609,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The span must contain at least as many elements as the source
         buffer; this invariant is checked via `debug_assert` (debug builds
         only).
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.
@@ -5693,6 +5741,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5725,6 +5777,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.

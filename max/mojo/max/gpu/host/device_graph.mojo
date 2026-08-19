@@ -17,7 +17,10 @@ memory copies, and memsets) as a reusable graph that can be replayed at a lower
 overhead than re-enqueueing each operation individually. The main entry point
 is [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create),
 which hands a [`DeviceGraphBuilder`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/)
-to a scoped callback."""
+to a scoped callback.
+
+Graph capture is currently implemented for CUDA and HIP devices only.
+Creating a graph on any other device, such as an Apple GPU or a CPU, raises."""
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -316,6 +319,9 @@ struct DeviceGraph(ImplicitlyCopyable):
 
     To obtain a `DeviceGraph`, use
     [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create).
+
+    Graph capture is currently implemented for CUDA and HIP devices only.
+    Creating a graph on any other device, such as an Apple GPU or a CPU, raises.
     """
 
     var _handle: _DeviceGraphPtr[mut=True]
@@ -427,7 +433,8 @@ struct DeviceGraph(ImplicitlyCopyable):
             built.
 
         Raises:
-            If graph builder creation, `build`, or instantiation fails.
+            If `ctx` is on a device without graph support, or if graph builder
+            creation, `build`, or instantiation fails.
 
         Example:
 
@@ -487,6 +494,10 @@ struct DeviceGraph(ImplicitlyCopyable):
         Pass a `cache` to the overload above to reuse a previously built graph
         instead of recording one on every call.
 
+        Graph capture is currently implemented for CUDA and HIP devices only.
+        On any other device, such as an Apple GPU or a CPU, this raises before
+        `build` runs.
+
         Args:
             ctx: Device context for the target device.
             build: Callback that adds nodes to the supplied builder. It
@@ -498,7 +509,8 @@ struct DeviceGraph(ImplicitlyCopyable):
             The instantiated device graph.
 
         Raises:
-            If graph builder creation, `build`, or instantiation fails.
+            If `ctx` is on a device without graph support, or if graph builder
+            creation, `build`, or instantiation fails.
 
         Example:
 
