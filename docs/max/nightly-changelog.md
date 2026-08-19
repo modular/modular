@@ -417,15 +417,15 @@ This version is still a work in progress.
   with the weight adapter casting at load time.
 - Improved multi-device startup latency by batching replay preface copies
   into a single submission.
-- The vision encoder cache can store embeddings in fixed-size blocks,
-  enabled by setting the `MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION`
-  environment variable to a fraction in (0, 0.5] of the KV cache pool
-  budget (`0`, the default, keeps the entry-count cache) on
-  architectures whose memory planner reports a vision row spec (Gemma 4
-  and Kimi K2.5). Capacity is a byte budget carved into 128-token
-  blocks — a video spans many blocks and an image a few — so a
-  video-capable model no longer collapses the cache to a handful of
-  worst-case-video slots that starve image workloads.
+- The vision encoder cache now stores embeddings in fixed-size blocks.
+  Capacity is a byte budget carved into 128-token blocks — a video spans
+  many blocks and an image a few — so a video-capable model no longer
+  collapses the cache to a handful of worst-case-video slots that starve
+  image workloads. The budget is set with the new
+  `--vision-cache-utilization` flag, a fraction of the KV cache pool
+  budget (default `0.05`; `0` disables caching). The previous
+  entry-count cache and its `--max-vision-cache-entries` flag are
+  removed.
 - Vision embedding assembly during chunked prefill is now bounded by the
   active window: each step copies only the embedding rows whose
   placeholder tokens fall inside the chunk, with dense scatter indices,
@@ -690,6 +690,11 @@ This version is still a work in progress.
     speculative draft architecture, so programmatically constructed
     `PipelineArgs` behave the same as CLI invocations.
   - `PipelineRuntimeConfig` is now exported from `max.pipelines`.
+- `--max-vision-cache-entries` is replaced by `--vision-cache-utilization`,
+  a fraction of the KV cache pool budget for the vision encoder cache
+  (default `0.05`; `0` disables caching). The cache is block-based, so an
+  entry count no longer describes its capacity; configs setting the old
+  flag must convert to a pool fraction.
 
 - The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
   passed as graph inputs) is now the only supported LoRA implementation.

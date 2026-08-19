@@ -530,49 +530,37 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     Stores per-image encoder embeddings so the vision encoder runs once
     per unique image, regardless of how many chunks or requests
-    reference it.
+    reference it. Storage is a byte budget carved into fixed-size blocks
+    (:class:`_VisionBlockPool`): an entry maps to a span of blocks, a video
+    spans many and an image a few, and LRU eviction frees whole entries on
+    block demand.
 
-    Typical usage::
+    Typical usage is pipeline-owned, via the seam::
 
-        uncached = self._ve_cache.get_uncached_contexts(context_batch)
-        if uncached:
-            embeds = self._encode(uncached)   # skip cached images via lookup()
-            counts = [... per uncached image ...]
-        else:
-            embeds, counts = empty_embeddings, []
-
-        embeddings, indices = self._ve_cache.prepare_vision_outputs(
-            context_batch, uncached, embeds, counts,
-            n_devices=..., empty_embeddings=...,
-        )
+        result = cache.run_vision_encode(model, replica_batches, devices)
+        cache.finalize_vision_inputs(model, model_inputs, devices, result)
     """
 
     def __init__(
         self,
-        max_entries: int = 256,
-        n_devices: int = 1,
         plan: VisionCachePlan | None = None,
-        block_tokens: int = DEFAULT_VISION_CACHE_BLOCK_TOKENS,
         devices: Sequence[Device] | None = None,
+        block_tokens: int = DEFAULT_VISION_CACHE_BLOCK_TOKENS,
     ) -> None:
-        """Initializes the cache, allocating any block pool up front.
+        """Initializes the cache, allocating its block pool up front.
 
         Args:
-            max_entries: Entry cap for the legacy entry-count mode; ``0``
-                disables that mode.
-            n_devices: Device count when no ``devices`` list is given.
             plan: Resolved block reservation from memory estimation;
-                ``None`` keeps the legacy entry-count LRU.
-            block_tokens: Rows per fixed-size block.
+                ``None`` disables caching.
             devices: Devices to allocate one pool on each. Required when a
                 plan is given.
+            block_tokens: Rows per fixed-size block.
 
         Raises:
             ValueError: If a plan is given without ``devices``, or its
                 budget cannot fit one block.
         """
         self._cache: OrderedDict[int, VisionEncoderCacheEntry] = OrderedDict()
-        self._max_entries = max_entries
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
         self._empty_indices_cache: list[Buffer] | None = None
@@ -582,7 +570,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         if plan is not None:
             if devices is None:
                 raise ValueError(
-                    "A block-mode vision encoder cache requires devices."
+                    "An enabled vision encoder cache requires devices."
                 )
             self._pool = _VisionBlockPool(
                 plan.bytes_per_device,
@@ -591,7 +579,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 plan.dtype,
                 devices,
             )
-        self._n_devices = len(devices) if devices is not None else n_devices
+        self._n_devices = len(devices) if devices is not None else 1
 
         # Per-batch vision encoder metrics, populated during batch
         # preparation and drained by the scheduler once per iteration via
@@ -616,8 +604,8 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @property
     def enabled(self) -> bool:
-        """Whether caching is enabled (a block byte budget or max_entries > 0)."""
-        return self._pool is not None or self._max_entries > 0
+        """Whether caching is enabled (a positive block byte budget)."""
+        return self._pool is not None
 
     @traced
     def insert(
@@ -628,8 +616,8 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> VisionEncoderCacheEntry:
         """Insert a new cache entry. Returns existing entry if already cached.
 
-        When the cache is disabled (``max_entries=0``), creates a
-        transient entry without storing it.
+        When the cache is disabled (zero byte budget), creates a transient
+        entry without storing it.
         """
         if image_hash in self._cache:
             self._cache.move_to_end(image_hash)
@@ -640,15 +628,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
         )
         if not self.enabled:
             return entry
-        if self._pool is not None:
-            block_entry = self._store_blocks(embeddings, 0, num_tokens)
-            if block_entry is not None:
-                entry = block_entry
-            self._cache[image_hash] = entry
-            return entry
-        while len(self._cache) >= self._max_entries:
-            if not self._evict_lru():
-                break
+        block_entry = self._store_blocks(embeddings, 0, num_tokens)
+        if block_entry is not None:
+            entry = block_entry
         self._cache[image_hash] = entry
         return entry
 
@@ -677,21 +659,21 @@ class VisionEncoderCache(Generic[VLMContextType]):
     def release_request(self, request_id: RequestID) -> None:
         """Release all cache refs held by a request.
 
-        Also reconciles occupancy with capacity. ``insert`` never fails:
-        when every resident entry is ref-held (e.g. one request carrying
-        more images than ``max_entries``), it stores past capacity. Without
-        draining here, that excess would linger until the next cache miss
-        reaches ``insert`` -- indefinitely under cache-hit-only or text-only
-        traffic. Draining on release bounds the overshoot to the lifetime
-        of the requests that caused it.
+        Also reconciles occupancy with capacity. Storing never fails: when
+        the pool's blocks are all ref-held, an entry falls back to an owned
+        buffer outside the pool. Without draining here, that overshoot
+        would linger until the next cache miss reaches the store path --
+        indefinitely under cache-hit-only or text-only traffic. Draining on
+        release bounds it to the lifetime of the requests that caused it.
         """
         for h in self._request_refs.pop(request_id, set()):
             entry = self._cache.get(h)
             if entry is not None:
                 entry.ref_count = max(0, entry.ref_count - 1)
-        while len(self._cache) > self._max_entries:
-            if not self._evict_lru():
-                break
+        for key in list(self._cache.keys()):
+            entry = self._cache[key]
+            if entry.ref_count == 0 and entry.embeddings is not None:
+                del self._cache[key]
 
     def _evict_lru(self) -> bool:
         """Evict the least-recently-used entry with ref_count == 0."""
@@ -724,6 +706,8 @@ class VisionEncoderCache(Generic[VLMContextType]):
         or not enough blocks reclaimable behind referenced entries — and
         callers fall back to an owned entry so an active image is never
         dropped.
+        TODO(SERVOPT-1530): once the scheduler gates admission on
+        ``blocks_needed``, make this a hard error instead of a fallback.
         """
         pool = self._pool
         assert pool is not None
@@ -889,33 +873,19 @@ class VisionEncoderCache(Generic[VLMContextType]):
             # is output-neutral).
             if not img_hash:
                 continue
-            if self._pool is not None:
-                if img_hash in self._cache:
-                    self._cache.move_to_end(img_hash)
-                else:
-                    # Rows go straight from the encoder output into pool
-                    # blocks; no intermediate owned copy.
-                    entry = self._store_blocks(vision_outputs, start, count)
-                    if entry is None:
-                        entry = VisionEncoderCacheEntry(
-                            embeddings=[
-                                _owned_row_slice(dev_tensor, start, count)
-                                for dev_tensor in vision_outputs
-                            ],
-                            num_tokens=count,
-                        )
-                    self._cache[img_hash] = entry
-                self.acquire(req_id, img_hash)
-                continue
-            # Allocate owned copies rather than views so the cache entry does
-            # not pin the (variable-size) vision-encoder output buffer.  This
-            # prevents GPU allocator fragmentation caused by mismatched holes
-            # left behind when the output buffer is freed.
-            per_device = [
-                _owned_row_slice(dev_tensor, start, count)
-                for dev_tensor in vision_outputs
-            ]
-            self.insert(img_hash, per_device, count)
+            if img_hash in self._cache:
+                self._cache.move_to_end(img_hash)
+            else:
+                entry = self._store_blocks(vision_outputs, start, count)
+                if entry is None:
+                    entry = VisionEncoderCacheEntry(
+                        embeddings=[
+                            _owned_row_slice(dev_tensor, start, count)
+                            for dev_tensor in vision_outputs
+                        ],
+                        num_tokens=count,
+                    )
+                self._cache[img_hash] = entry
             self.acquire(req_id, img_hash)
 
     @traced

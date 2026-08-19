@@ -136,12 +136,6 @@ class MemoryPlan:
         return self.device_specs
 
 
-# Vision encoder cache and paged token KV share the same pre-KV memory pool
-# (see ``plan_from_sizes``). Without an explicit cap, reduction could
-# assign almost the entire pool to vision, leaving insufficient memory for even
-# one KV page. This bounds vision to a fraction so token KV always retains the rest.
-_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET = 0.20
-
 # The preprocessed-media caches hold host tensors in the API server process, so
 # unlike everything else this module sizes they never touch the device and are
 # invisible to the accounting above. They still have to fit somewhere: the image
@@ -1235,97 +1229,43 @@ class MemoryEstimator:
     ) -> tuple[int, VisionCachePlan | None]:
         """Estimate and reserve memory for the vision encoder cache.
 
-        Delegates to ``arch.memory_planner.estimate_vision_cache_entry_bytes()``.
+        Delegates to the arch's memory planner:
+        ``estimate_vision_cache_entry_bytes()`` sizes the requested budget and
+        ``get_vision_cache_row_spec()`` sets the block row shape.
         Non-VLM architectures whose planner returns ``0`` reserve no vision
         cache memory.
 
-        Vision cache is capped to at most a fraction of the shared KV+vision pool
-        (see ``_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET``) so token KV cache retains
-        the remainder. Entries may also be reduced when the pool is small.
-
         Returns:
             Bytes to reserve for the vision encoder cache (0 for non-VLM
-            models, or when caching is disabled: ``max_vision_cache_entries``
-            is 0 and ``experimental_vision_cache_utilization`` is unset),
-            and the block-mode plan (``None`` in entry-count mode).
+            models or when ``vision_cache_utilization`` is 0), and the
+            block-mode plan (``None`` when disabled).
         """
-        max_entries = pipeline_config.runtime.max_vision_cache_entries
-        if (
-            max_entries <= 0
-            and pipeline_config.runtime.experimental_vision_cache_utilization
-            <= 0
-        ):
+        if pipeline_config.runtime.vision_cache_utilization == 0:
             return 0, None
 
+        if not cls._has_vision_tower(model_config, arch_config, arch):
+            return 0, None
+
+        # Guaranteed by _has_vision_tower above.
+        assert arch is not None
+        assert arch.memory_planner is not None
         hf_config = model_config.huggingface_config
-
-        if arch is None:
-            return 0, None
-
-        if arch.memory_planner is None:
-            return 0, None
-
         planner = arch.memory_planner(arch_config)
-        per_entry_bytes = planner.estimate_vision_cache_entry_bytes(hf_config)
-        if per_entry_bytes <= 0:
-            return 0, None
-
         row_spec = planner.get_vision_cache_row_spec(hf_config)
-        if (
-            row_spec is not None
-            and pipeline_config.runtime.experimental_vision_cache_utilization
-            > 0
-        ):
-            return cls._reserve_vision_cache_blocks(
-                pipeline_config, row_spec, available_memory, len(devices)
+        if row_spec is None:
+            logger.warning(
+                "Disabling vision encoder cache: %s's memory planner reports "
+                "a per-entry estimate but no row spec "
+                "(get_vision_cache_row_spec); images will be re-encoded on "
+                "every request.",
+                arch.name,
             )
-
-        n_devices = len(devices)
-        per_replica_bytes = per_entry_bytes * n_devices
-        requested_bytes = max_entries * per_replica_bytes
-
-        max_vision_bytes = int(
-            available_memory * _VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET
-        )
-        max_entries_budget = max_vision_bytes // per_replica_bytes
-        effective_max_entries = min(max_entries, max_entries_budget)
-
-        if effective_max_entries == 0:
-            if max_entries > 0:
-                logger.warning(
-                    "Disabling vision encoder cache (requested %d entries, %s); "
-                    "KV pool is too small to reserve vision entries within %.0f%% "
-                    "of the pool (%s cap per entry %s).",
-                    max_entries,
-                    to_human_readable_bytes(requested_bytes),
-                    _VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET * 100,
-                    to_human_readable_bytes(max_vision_bytes),
-                    to_human_readable_bytes(per_replica_bytes),
-                )
-                pipeline_config.runtime.max_vision_cache_entries = 0
+            pipeline_config.runtime.vision_cache_utilization = 0.0
             return 0, None
 
-        total_bytes = effective_max_entries * per_replica_bytes
-
-        if effective_max_entries < max_entries:
-            logger.warning(
-                "Reduced vision encoder cache from %d (%s) to %d (%s) entries.",
-                max_entries,
-                to_human_readable_bytes(requested_bytes),
-                effective_max_entries,
-                to_human_readable_bytes(total_bytes),
-            )
-            pipeline_config.runtime.max_vision_cache_entries = (
-                effective_max_entries
-            )
-
-        logger.info(
-            "Vision encoder cache: %d entries, %s reserved.",
-            pipeline_config.runtime.max_vision_cache_entries,
-            to_human_readable_bytes(total_bytes),
+        return cls._reserve_vision_cache_blocks(
+            pipeline_config, row_spec, available_memory, len(devices)
         )
-
-        return total_bytes, None
 
     @classmethod
     def _reserve_vision_cache_blocks(
@@ -1337,25 +1277,24 @@ class MemoryEstimator:
     ) -> tuple[int, VisionCachePlan]:
         """Reserve a block-mode byte budget for the vision encoder cache.
 
-        ``experimental_vision_cache_utilization`` requests a fraction of
-        the device KV cache pool budget. The request is rounded down to
-        whole fixed-size blocks and returned as a
+        ``vision_cache_utilization`` requests a fraction of the device KV
+        cache pool budget (the 0.05 default auto-sizes a small slice). The
+        request is rounded down to whole fixed-size blocks and returned as
+        a
         :class:`~max.pipelines.lib.vision_encoder_cache.VisionCachePlan`
         that pipeline construction hands to :class:`VisionEncoderCache`.
-        Unlike the entry-count mode, capacity is bytes — a video simply
-        spans more blocks than an image.
+        Capacity is bytes — a video simply spans more blocks than an
+        image.
 
         Returns:
             Total bytes reserved across devices, and the block-mode plan.
 
         Raises:
-            ValueError: If the requested fraction is too small to fit a
-                single block.
+            ValueError: If the fraction is too small to fit a single
+                block.
         """
         hidden_size, dtype = row_spec
-        utilization = (
-            pipeline_config.runtime.experimental_vision_cache_utilization
-        )
+        utilization = pipeline_config.runtime.vision_cache_utilization
         requested_bytes = int(available_memory * utilization)
         block_bytes = (
             DEFAULT_VISION_CACHE_BLOCK_TOKENS
@@ -1366,12 +1305,13 @@ class MemoryEstimator:
         num_blocks = requested_bytes // block_bytes
         if num_blocks == 0:
             raise ValueError(
-                f"experimental_vision_cache_utilization={utilization} "
-                f"reserves {to_human_readable_bytes(requested_bytes)} of "
-                "the KV cache pool, too small to fit one "
+                f"vision_cache_utilization={utilization} reserves "
+                f"{to_human_readable_bytes(requested_bytes)} of the "
+                "KV cache pool, too small to fit one "
                 f"{DEFAULT_VISION_CACHE_BLOCK_TOKENS}-token block "
-                f"({to_human_readable_bytes(block_bytes)}). Increase the "
-                "fraction or set 0 to disable the vision encoder cache."
+                f"({to_human_readable_bytes(block_bytes)}). Increase "
+                "the fraction or set 0 to disable the vision encoder "
+                "cache."
             )
         total_bytes = num_blocks * block_bytes
         plan = VisionCachePlan(
