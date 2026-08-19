@@ -341,3 +341,22 @@ struct Outer[T: MyKey](Movable where False):
             deinit_func(key^)
 
         self._inner^.deinit_with(forward)
+
+# // -----
+
+# COM: Copy-capturing method `self`. Storage `__init__` already has a trailing
+# COM: byref-result named `self`; the capture argument must use a distinct
+# COM: spelling so the two origins do not alias.
+
+struct CaptureSelf(ImplicitlyCopyable, Movable):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+    # CHECK: lit.fn @"method
+    def method(self):
+        # CHECK: lit.call {{.*}}inner::__storage"::@"__init__
+    # CHECK-SAME: "__capture_self"
+        def inner() {var self}:
+            _ = self.x
