@@ -120,7 +120,6 @@ class TokenBudget(ABC):
         :class:`BudgetStatus`. Implementations may mutate ``context`` (for
         example, via chunking) but must not update :attr:`used`.
         """
-        pass
 
     @abstractmethod
     def add_to_budget(
@@ -136,7 +135,6 @@ class TokenBudget(ABC):
         :attr:`used` by the same effective token cost that was evaluated in
         :meth:`status_after_context`.
         """
-        pass
 
 
 class TokenBudgetCollection:

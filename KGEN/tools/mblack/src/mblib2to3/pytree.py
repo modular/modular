@@ -524,8 +524,7 @@ class BasePattern:
     """
 
     # Defaults for instance variables
-    type: int | None
-    type = None  # Node type (token if < 256, symbol if >= 256)
+    type: int | None = None  # Node type (token if < 256, symbol if >= 256)
     content: Any = None  # Optional content matching pattern
     name: str | None = None  # Optional name used to store match in results dict
 

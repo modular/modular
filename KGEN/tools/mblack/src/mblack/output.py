@@ -102,7 +102,7 @@ def color_diff(contents: str) -> str:
     """Inject the ANSI color codes to the diff."""
     lines = contents.split("\n")
     for i, line in enumerate(lines):
-        if line.startswith("+++") or line.startswith("---"):
+        if line.startswith(("+++", "---")):
             line = "\033[1m" + line + "\033[0m"  # bold, reset
         elif line.startswith("@@"):
             line = "\033[36m" + line + "\033[0m"  # cyan, reset

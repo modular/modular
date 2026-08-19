@@ -34,7 +34,7 @@ def _get_files() -> list[str]:
         file
         for file in all_files
         if (".github/workflows/" in file or ".github/actions/" in file)
-        and (file.endswith(".yaml") or file.endswith(".yml"))
+        and (file.endswith((".yaml", ".yml")))
     ]
 
     return action_files

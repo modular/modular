@@ -166,7 +166,7 @@ class ParserGenerator:
         state = dfa[0]
         totalset: dict[str, int] = {}
         overlapcheck = {}
-        for label, _next in state.arcs.items():
+        for label in state.arcs:
             if label in self.dfas:
                 if label in self.first:
                     fset = self.first[label]

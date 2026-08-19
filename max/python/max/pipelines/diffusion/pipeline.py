@@ -392,4 +392,3 @@ class PixelGenerationPipeline(
         Args:
             request_id: The request ID to release resources for.
         """
-        pass

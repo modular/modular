@@ -26,8 +26,6 @@ class InputError(ValueError):
     parameter combinations.
     """
 
-    pass
-
 
 class PromptTooLongError(InputError):
     """Raised when a prompt exceeds the model's maximum input length.

@@ -32,8 +32,6 @@ class ThreadSyncMode(enum.Enum):
 
     STRICT = 1
 
-    DEFAULT = 0
-
 class MemoryType(enum.Enum):
     DRAM = 0
 
@@ -41,7 +39,7 @@ class MemoryType(enum.Enum):
 
     BLK = 2
 
-    OBJ = 2
+    OBJ = 3
 
     FILE = 4
 

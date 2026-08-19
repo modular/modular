@@ -122,7 +122,7 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
 ) -> None:
     """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
@@ -136,7 +136,7 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
 def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     """With autoscale off, the recipe's device_specs are left untouched."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
@@ -153,7 +153,7 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     # MiniMaxAI/MiniMax-M2.7 has no MODEL_RECIPES entry anymore (retired from
     # CI), but the "minimax-m2" vLLM workaround this test targets is specific
@@ -179,7 +179,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
@@ -196,7 +196,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
@@ -217,7 +217,7 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
@@ -236,7 +236,7 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
 
 def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
@@ -258,7 +258,7 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     ``MODEL_RECIPES`` aliases.
     """
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
-    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", dict)
 
     alias = "microsoft/phi-4__modulev3"
     recipe_path = MODEL_RECIPES[alias]

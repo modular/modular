@@ -1591,9 +1591,7 @@ class Scheduler:
             if bi.use_shared_lib
             else bi.spec_instance.build
         )
-        effective_output_dir = (
-            bi.build_output_dir if bi.build_output_dir else bi.output_dir
-        )
+        effective_output_dir = bi.build_output_dir or bi.output_dir
         bi.build_output = build_fn(
             output_dir=effective_output_dir,
             build_opts=bi.build_opts,

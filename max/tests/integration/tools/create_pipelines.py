@@ -1099,7 +1099,7 @@ class GenericOracle(PipelineOracle):
         # instead of the weights repo (bartowski).
         config_kwargs = {
             "task": self.task,
-            "device_specs": device_specs if device_specs else None,
+            "device_specs": device_specs or None,
             "quantization_encoding": encoding,
             "model_path": model_path,
             "weight_path": [] if weight_path is None else [weight_filename],
@@ -1187,7 +1187,7 @@ class GenericOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        prompts = self._prompts or test_data.DEFAULT_PROMPTS
         if self._apply_chat_template:
             # Wrap each prompt in a chat message so the MAX tokenizer applies
             # the model's chat template, matching a templated reference golden.
@@ -1385,7 +1385,7 @@ class LoRAOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        prompts = self._prompts or test_data.DEFAULT_PROMPTS
         return [
             MockTextGenerationRequest(
                 prompt=prompt,

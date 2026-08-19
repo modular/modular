@@ -819,9 +819,7 @@ class OpenAIChatResponseGenerator(
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
-                                tool_calls=tool_call_chunks
-                                if tool_call_chunks
-                                else None,
+                                tool_calls=tool_call_chunks or None,
                             )
                         )
                     # finish_reason and logprobs belong on the final delta
@@ -2149,7 +2147,7 @@ async def openai_create_chat_completion(
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
-            prompt=prompt_token_ids if prompt_token_ids else None,
+            prompt=prompt_token_ids or None,
             messages=[] if prompt_token_ids else request_messages,
             images=request_images,
             decoded_images=request_decoded_images,

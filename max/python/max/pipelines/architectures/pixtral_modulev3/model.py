@@ -205,9 +205,7 @@ class PixtralModel(
         vision_state_dict: dict[str, WeightData] = {}
         language_state_dict: dict[str, WeightData] = {}
         for k, v in state_dict.items():
-            if k.startswith("vision_encoder.") or k.startswith(
-                "multi_modal_projector."
-            ):
+            if k.startswith(("vision_encoder.", "multi_modal_projector.")):
                 # Remap vision_encoder.X -> X since PixtralVision owns
                 # these components directly (no VisionEncoder sub-module).
                 if k.startswith("vision_encoder."):
