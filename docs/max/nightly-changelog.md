@@ -711,6 +711,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- On Apple Silicon, a missing Metal Toolchain (a separate download since
+  Xcode 16) now surfaces `xcrun`'s own error, which names the fix
+  (`xcodebuild -downloadComponent MetalToolchain`), instead of the opaque
+  "Please submit a bug report." message.
+
 - Fixed tool-call requests failing with HTTP 400 (`anyOf branch and base
   schema both set "description"`) on models whose grammar compiles in strict
   mode (GLM-5.x, Gemma 4). The xgrammar JSON-schema converter's `anyOf`
