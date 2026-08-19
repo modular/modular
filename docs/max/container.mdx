@@ -1,7 +1,7 @@
 ---
 title: MAX container
 sidebar_label: Container
-description: Learn more about the provided Docker container for MAX deployment
+description: Learn more about the provided Docker container for MAX deployment.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -22,7 +22,7 @@ API](/rest-api/).
 
 :::note Linux only
 
-The MAX container is currently not compatible with macOS.
+The MAX container isn't currently compatible with macOS.
 
 :::
 
@@ -196,32 +196,32 @@ to control features of the endpoint.
 ### Docker options
 
 - `--gpus`: If your system includes a compatible NVIDIA GPU, you must add the
-[`--gpus`
-option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
-order for the container to access it. It doesn't hurt to include this even if
-your system doesn't have a [GPU compatible with
-MAX](/packages#gpu-compatibility).
+  [`--gpus`
+  option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
+  order for the container to access it. It doesn't hurt to include this even if
+  your system doesn't have a [GPU compatible with
+  MAX](/packages#gpu-compatibility).
 
 - `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
-the GPUs to use. For example, to use four available GPUs, you should include the
-following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all` to use
-every visible GPU, or `--devices cpu` to run on CPU. If you omit `--devices`,
-MAX uses the model or config default.
+  the GPUs to use. For example, to use four available GPUs, include the
+  following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all`
+  to use every visible GPU, or `--devices cpu` to run on CPU. If you omit
+  `--devices`, MAX uses the model or config default.
 
 - `-v`: We use the [`-v`
-option](https://docs.docker.com/reference/cli/docker/container/run/#volume) to
-save a cache of Hugging Face and MAX models to your local disk that we can
-reuse across containers. You can optionally export a `MODULAR_MAX_CACHE_DIR`
-environment variable to change the MAX cache directory location.
+  option](https://docs.docker.com/reference/cli/docker/container/run/#volume)
+  to save a cache of Hugging Face and MAX models to your local disk that we can
+  reuse across containers. You can optionally export a `MODULAR_MAX_CACHE_DIR`
+  environment variable to change the MAX cache directory location.
 
 - `-p`: We use the [`-p`
-option](https://docs.docker.com/reference/cli/docker/container/run/#publish) to
-specify the exposed port for the endpoint.
+  option](https://docs.docker.com/reference/cli/docker/container/run/#publish)
+  to specify the exposed port for the endpoint.
 
 You also might need some environment variables (set with `--env`):
 
 - `HF_TOKEN`: This is required to access gated models on Hugging Face
-(after your account is granted access). For example:
+  (after your account is granted access). For example:
 
   ```sh
   docker run \
@@ -253,13 +253,13 @@ page](/cli/serve), because the MAX container is basically a
 wrapper around that tool.
 
 - `--model`: This is required to specify the model you want to
-deploy. To find other GenAI models that are compatible with MAX, check out
-our [supported models](/models/).
+  deploy. To find other GenAI models that are compatible with MAX, check out
+  our [supported models](/models/).
 
 - `--max-length`: Specifies the maximum length of the text sequence (including
-the input tokens). We mention this one here because it's often necessary to
-adjust the max length when you have trouble running a large model on a machine
-with limited memory.
+  the input tokens). We mention this one here because it's often necessary to
+  adjust the max length when you have trouble running a large model on a machine
+  with limited memory.
 
 For the rest of the `max serve` options, see the [`max` CLI
 page](/cli/serve).
@@ -276,8 +276,8 @@ There are multiple MAX container options, including:
 
 ### Full container
 
-The full MAX container (`max-full`) is a hardware-agnostic container that's
-built to deploy the latest version of MAX on both AMD and NVIDIA GPUs.
+The full MAX container (`max-full`) is a hardware-agnostic container that
+deploys the latest version of MAX on both AMD and NVIDIA GPUs.
 
 You can run the container on either NVIDIA or AMD as follows:
 
@@ -334,8 +334,8 @@ The AMD MAX container (`max-amd`) is great if you want an AMD-specific
 deployment without NVIDIA or CUDA dependencies. The AMD MAX container is
 available in two flavors:
 
-- `max-amd` includes all ROCm and PyTorch GPU dependencies
-- `max-amd-base` includes minimal dependencies, ROCm, and the AMD Driver
+- `max-amd` includes all ROCm and PyTorch GPU dependencies.
+- `max-amd-base` includes minimal dependencies, ROCm, and the AMD Driver.
 
 You can run the AMD container as follows:
 
@@ -364,9 +364,9 @@ Hub.
 
 The NVIDIA MAX container is available in two flavors:
 
-- `max-nvidia-full` includes all CUDA and PyTorch GPU dependencies
+- `max-nvidia-full` includes all CUDA and PyTorch GPU dependencies.
 - `max-nvidia-base` includes minimal dependencies, PyTorch CPU, and the NVIDIA
-Driver (excludes CUDA)
+  Driver (excludes CUDA).
 
 You can run the NVIDIA container as follows:
 
@@ -508,6 +508,31 @@ Here are all the available metrics:
 - `maxserve_num_requests_running`: Number of requests currently running.
 - `maxserve_model_load_time_milliseconds`: Histogram of model-worker startup
   duration, in milliseconds.
+- `maxserve_dp_active_token_occupancy`: Histogram of per-batch data-parallel
+  balance, measured as the mean/max of per-rank active-token load as a
+  percentage. 100% means perfectly balanced ranks. Recorded only when
+  `data_parallel_degree > 1`.
+- `maxserve_dp_context_token_occupancy`: Histogram of per-batch data-parallel
+  balance, measured as the mean/max of per-rank context-token (KV/attention)
+  load as a percentage. 100% means perfectly balanced ranks. Recorded only when
+  `data_parallel_degree > 1`.
+- `maxserve_vision_images_encoded_total`: Total images run through the vision
+  encoder (cache misses).
+- `maxserve_vision_images_cached_total`: Total images served from the vision
+  encoder cache (cache hits).
+- `maxserve_vision_patches_encoded_total`: Total image patches fed to the
+  vision encoder.
+- `maxserve_vision_tokens_encoded_total`: Total merged vision tokens produced
+  by the vision encoder.
+- `maxserve_vision_cache_hit_rate`: Histogram of per-batch vision encoder cache
+  hit rate (0–100%).
+- `maxserve_tool_call_conformance_errors_total`: Count of generated tool calls
+  that failed the observability-only schema-conformance check, split by
+  `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`).
+- `maxserve_structured_output_grammar_rejections_total`: Count of
+  structured-output requests rejected at admission (HTTP 400) because the
+  grammar backend couldn't compile the schema, split by `kind` label
+  (`tool_grammar`, `json_schema`).
 
 ### Telemetry
 
@@ -558,7 +583,7 @@ docker run modular/max-nvidia-full:latest \
 
 ## License
 
-The NVIDIA MAX container is released under the
+The NVIDIA MAX container uses the
 [NVIDIA Deep Learning Container license](https://developer.download.nvidia.com/licenses/NVIDIA_Deep_Learning_Container_License.pdf).
 
 ## Next steps
