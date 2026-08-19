@@ -3060,12 +3060,6 @@ static SymbolRefAttr getOptionalTypeSymbolRef(Type type) {
   return {};
 }
 
-static TypedAttr stripUpcast(TypedAttr a) {
-  while (auto u = sugarDynCast<UpcastAttr>(a))
-    a = u.getInputTypeValue();
-  return a;
-}
-
 static Type getTypeValueAsType(TypedAttr a) {
   if (auto tp = dyn_cast<TypeParamAttr>(a))
     return tp.getTypeValue();
@@ -3106,7 +3100,7 @@ public:
   /// The type this operand denotes, null where it denotes something else.
   Type getTypeValue() {
     if (!typeValue)
-      typeValue = getTypeValueAsType(stripUpcast(canonical));
+      typeValue = getTypeValueAsType(stripIdentityWrappers(canonical));
     return *typeValue;
   }
   Type getCanonicalTypeValue() {
@@ -5303,6 +5297,18 @@ bool KGEN::isEqualCanon(TypedAttr ta1, TypedAttr ta2) {
   if (ta1 == ta2)
     return true;
   return getCanonicalAttr(ta1) == getCanonicalAttr(ta2);
+}
+
+TypedAttr KGEN::stripIdentityWrappers(TypedAttr attr) {
+  while (true) {
+    TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
+    stripped = UpcastAttr::strip(stripped);
+    stripped = DowncastAttr::strip(stripped);
+    stripped = ExtensionAttr::strip(stripped);
+    if (stripped == attr)
+      return attr;
+    attr = stripped;
+  }
 }
 
 //===----------------------------------------------------------------------===//
