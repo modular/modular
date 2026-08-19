@@ -298,6 +298,24 @@ def truncation_stats(
     return len(truncated_rows), mean_finished, p50_finished
 
 
+def finish_stats(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Counts finish reasons and the stop-ratio over completed rows.
+
+    ``stop_ratio`` is the share of completed responses that finished with
+    ``stop`` rather than by hitting the token cap (``length``), mirroring how
+    the vendor reference reports it. Rows that errored have no finish reason
+    and stay out of the ratio.
+    """
+    stop = sum(1 for r in results if r.get("finish_reason") == "stop")
+    length = sum(1 for r in results if r.get("finish_reason") == "length")
+    completed = stop + length
+    return {
+        "finish_stop": stop,
+        "finish_length": length,
+        "stop_ratio": round(stop / completed, 4) if completed else None,
+    }
+
+
 def exact_match_score(
     results: list[dict[str, Any]], total: int, errors: int
 ) -> dict[str, Any]:
@@ -321,6 +339,7 @@ def exact_match_score(
         "truncated": truncated,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
+        **finish_stats(results),
     }
 
 
@@ -363,6 +382,36 @@ def enforce_error_budget(summary: dict[str, Any]) -> None:
     raise SystemExit(1)
 
 
+#: Minimum share of completed responses that finish with ``stop`` rather than
+#: the token cap. Nothing sets this yet; floors are dataset-specific, so each
+#: dataset opts in via its workflow env. Parsed at import so typos fail fast.
+_MIN_STOP_RATIO_ENV = os.environ.get("EVAL_MIN_STOP_RATIO") or ""
+MIN_STOP_RATIO = float(_MIN_STOP_RATIO_ENV) if _MIN_STOP_RATIO_ENV else None
+
+
+def enforce_stop_ratio(summary: dict[str, Any]) -> None:
+    """Exits nonzero when too many responses hit the token cap to trust the run.
+
+    Off unless ``EVAL_MIN_STOP_RATIO`` is set, and skipped for summaries that
+    report no usable ``stop_ratio``.
+    """
+    if MIN_STOP_RATIO is None:
+        return
+    ratio = summary.get("stop_ratio")
+    if not isinstance(ratio, (int, float)):
+        return
+    floor = MIN_STOP_RATIO
+    if ratio >= floor:
+        return
+    print(
+        f"::error::stop_ratio {ratio:.4f} is below the {floor:.4f} floor: "
+        f"{summary.get('finish_length')} of "
+        f"{summary.get('finish_stop', 0) + summary.get('finish_length', 0)} "
+        f"completed responses hit the token cap instead of stopping."
+    )
+    raise SystemExit(1)
+
+
 def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
     """Writes ``score.json`` (pretty-printed) into ``out_dir``.
 
@@ -373,6 +422,7 @@ def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
     with open(os.path.join(out_dir, "score.json"), "w") as f:
         json.dump(summary, f, indent=2)
     enforce_error_budget(summary)
+    enforce_stop_ratio(summary)
 
 
 def append_github_env(

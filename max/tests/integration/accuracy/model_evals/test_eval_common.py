@@ -113,3 +113,68 @@ def test_gated_loader_propagates_unrelated_errors() -> None:
 
     with pytest.raises(ValueError):
         eval_common.load_gated(broken, label="GPQA", dataset_id="some/dataset")
+
+
+# A run where a quarter of completed responses hit the token cap. Below any
+# reasonable floor, but must pass while the gate is off (the default).
+LOW_STOP = {
+    "total": 100,
+    "errors": 0,
+    "finish_stop": 75,
+    "finish_length": 25,
+    "stop_ratio": 0.75,
+}
+
+
+def test_finish_stats_counts_and_ratio() -> None:
+    rows = (
+        [{"finish_reason": "stop"}] * 3
+        + [{"finish_reason": "length"}]
+        + [{"error": "boom"}]  # errored rows carry no finish reason
+    )
+    s = eval_common.finish_stats(rows)
+    assert s == {"finish_stop": 3, "finish_length": 1, "stop_ratio": 0.75}
+
+
+def test_finish_stats_with_nothing_completed() -> None:
+    assert eval_common.finish_stats([{"error": "x"}])["stop_ratio"] is None
+
+
+def test_stop_ratio_gate_is_off_by_default() -> None:
+    eval_common.enforce_stop_ratio(LOW_STOP)
+
+
+def test_stop_ratio_gate_rejects_below_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(eval_common, "MIN_STOP_RATIO", 0.9)
+    with pytest.raises(SystemExit):
+        eval_common.enforce_stop_ratio(LOW_STOP)
+
+
+def test_stop_ratio_gate_passes_at_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(eval_common, "MIN_STOP_RATIO", 0.75)
+    eval_common.enforce_stop_ratio(LOW_STOP)
+
+
+def test_stop_ratio_gate_skips_summaries_without_the_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(eval_common, "MIN_STOP_RATIO", 0.9)
+    eval_common.enforce_stop_ratio({"total": 100, "errors": 0})
+    eval_common.enforce_stop_ratio({"stop_ratio": None})
+
+
+def test_exact_match_score_reports_stop_ratio() -> None:
+    rows = [
+        {"correct": True, "finish_reason": "stop", "completion_tokens": 10},
+        {"correct": False, "finish_reason": "length", "completion_tokens": 99},
+    ]
+    s = eval_common.exact_match_score(rows, total=2, errors=0)
+    assert (s["finish_stop"], s["finish_length"], s["stop_ratio"]) == (
+        1,
+        1,
+        0.5,
+    )
