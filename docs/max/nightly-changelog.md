@@ -760,6 +760,10 @@ This version is still a work in progress.
   BF16 branch now sets `dispatch_scale_dtype = float32` to match the kernel
   signature.
 
+- Fixed CPU `argmax`/`argmin` reductions returning a wrong index for reduce
+  axes of 256K+ elements, for example an argmax over a `[1, 2097152]` tensor,
+  where the row's reduction fans out across multiple CPU workers.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
