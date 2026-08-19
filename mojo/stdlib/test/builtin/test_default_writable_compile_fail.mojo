@@ -25,7 +25,7 @@ struct HasMLIRField(Writable):
     var _internal: __mlir_type.index
 
 
-# CHECK: Could not derive Writable for HasMLIRField - member field `_internal` does not implement Writable
+# CHECK: constraint failed: Could not derive Writable for HasMLIRField - member field `_internal` does not implement Writable
 def main():
     var s = HasMLIRField(x=1, _internal=__mlir_attr[`0 : index`])
     print(s)

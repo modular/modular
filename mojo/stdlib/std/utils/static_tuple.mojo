@@ -19,14 +19,20 @@ from std.utils import StaticTuple
 ```
 """
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.builtin.rebind import downcast
 from std.reflection import reflect
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
 
-comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _StaticTupleTraits = ImplicitlyCopyable & Deinitable & RegisterPassable
 """The required trait conformances for a StaticTuple's element type."""
 
 
@@ -40,15 +46,15 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
       size: The number of elements.
     """
     comptime assert (
-        T.__move_ctor_is_trivial
-        and T.__copy_ctor_is_trivial
-        and T.__del__is_trivial
+        IsTriviallyMovable[T]
+        and IsTriviallyCopyable[T]
+        and IsTriviallyDeinitable[T]
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
             " constructor and destructor: "
         ),
-        reflect[T]().name(),
+        reflect[T].name(),
     )
     comptime assert (
         size >= 0
@@ -66,16 +72,34 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.element_type, `>`
+        `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
-    comptime device_type: AnyType = Self
-    """The device-side type for this `StaticTuple`."""
+
+    comptime _DeviceElementType: _StaticTupleTraits = downcast[
+        Self.element_type.device_type,
+        _StaticTupleTraits,
+    ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
+    """The device-side element type: the element's `device_type` when it is
+    `DevicePassable`, otherwise the element type itself."""
+
+    comptime device_type: AnyType = StaticTuple[
+        Self._DeviceElementType, Self.size
+    ]
+    """The device-side type for this `StaticTuple`.
+
+    Parametric over the elements' device types, so a tuple of a `DevicePassable`
+    element type encodes to the array of converted elements (and collapses to
+    `Self` for identity elements)."""
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        # Encode element-wise so a `DevicePassable` element runs its own
+        # `_to_device_type` conversion rather than being byte-copied wholesale.
+        encoder.encode_static_tuple(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -86,7 +110,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return String(
             "StaticTuple[",
-            reflect[Self.element_type]().name(),
+            reflect[Self.element_type].name(),
             ", ",
             Self.size,
             "]",
@@ -119,7 +143,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
@@ -214,16 +238,17 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type=Self.element_type,
-            index=index._int_mlir_index(),
+            index=index.__mlir_index__(),
         ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx._int_mlir_index()
+            Pointer(to=self._mlir_value)._get_kgen_pointer(),
+            idx.__mlir_index__(),
         )
-        return UnsafePointer[origin=origin_of(self)](ptr)[]
+        return Pointer[origin=origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline("nodebug")
     def _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -243,16 +268,17 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         var array = __mlir_op.`pop.array.replace`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __eq__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -276,6 +302,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return True
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ne__[
         _E: Equatable & TrivialRegisterPassable, //
@@ -296,6 +323,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (self == other)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __lt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -321,6 +349,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
                 return False
         return False
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __le__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -342,6 +371,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return not (other < self)
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __gt__[
         _E: Comparable & TrivialRegisterPassable, //
@@ -362,6 +392,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return other < self
 
+    @__allow_legacy_custom_self_type
     @always_inline
     def __ge__[
         _E: Comparable & TrivialRegisterPassable, //

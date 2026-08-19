@@ -24,8 +24,10 @@ The module includes:
 from std.itertools import product
 from std.random import random_float64
 from std.sys import is_nvidia_gpu
+from layout.coord import Coord
 
-from .coord import Coord
+from .layout import Layout
+from .layout_tensor import LayoutTensor
 from .tile_layout import TensorLayout
 from .tile_tensor import TileTensor
 
@@ -123,13 +125,13 @@ def arange[
         from layout import Layout, LayoutTensor
         from layout._fillers import arange
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return (Scalar[dtype](i) * step + start) % end
 
@@ -187,14 +189,14 @@ def random[
         from layout import Layout, LayoutTensor
         from layout._fillers import random
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
     comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return random_float64(
             min.cast[DType.float64](), max.cast[DType.float64]()
@@ -295,13 +297,13 @@ def arange[
         from layout import Layout, LayoutTensor
         from layout._fillers import arange
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return (Scalar[dtype](i) * step + start) % end
 
@@ -362,14 +364,14 @@ def random[
         from layout import Layout, LayoutTensor
         from layout._fillers import random
 
-        var storage = InlineArray[Float32, 16](uninitialized=True)
+        var storage = Array[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
     comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return random_float64(
             min.cast[DType.float64](), max.cast[DType.float64]()

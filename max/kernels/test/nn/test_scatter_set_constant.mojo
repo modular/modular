@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
+from max.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_set_constant
-from std.runtime.asyncrt import DeviceContextPtr
 
 
 def test_scatter_set_constant() raises:
-    # TODO not sure why this doesn't work with InlineArray?
-    var data_stack = InlineArray[Float32, 9](uninitialized=True)
+    # TODO not sure why this doesn't work with Array?
+    var data_stack = Array[Float32, 9](uninitialized=True)
     var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
 
-    var array = InlineArray[Int32, 4 * 2](uninitialized=True)
+    var array = Array[Int32, 4 * 2](uninitialized=True)
     var indices = TileTensor(array, row_major[4, 2]())
 
     indices[0, 0] = 0
@@ -34,7 +34,7 @@ def test_scatter_set_constant() raises:
     indices[3, 1] = 0
 
     var fill_value: Float32 = 5.0
-    var expected_output_stack = InlineArray[Float32, 3 * 3](uninitialized=True)
+    var expected_output_stack = Array[Float32, 3 * 3](uninitialized=True)
     var expected_output = TileTensor(
         expected_output_stack, row_major[3, 3]()
     ).fill(0.0)
@@ -44,7 +44,7 @@ def test_scatter_set_constant() raises:
     expected_output[1, 3] = 5.0
     expected_output[2, 0] = 5.0
 
-    var ctx = DeviceContextPtr()
+    var ctx = DeviceContext(api="cpu")
 
     scatter_set_constant[target="cpu",](data, indices, fill_value, ctx)
 

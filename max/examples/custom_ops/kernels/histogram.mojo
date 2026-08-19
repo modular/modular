@@ -11,16 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import extensibility
+
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
-from std.gpu.host.info import is_cpu
-from std.gpu.host import DeviceBuffer
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    global_idx,
+    thread_idx,
+)
+from max.gpu.sync import barrier
+from max.gpu.host.info import is_cpu
+from max.gpu.host import DeviceBuffer
+from std.memory import unsafe_stack_allocation
+
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 
@@ -38,7 +45,7 @@ def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
 def _histogram_gpu(
     output: ManagedTensorSlice,
     input: ManagedTensorSlice,
-    ctx_ptr: DeviceContextPtr,
+    ctx_ptr: DeviceContext,
 ) raises:
     comptime bin_width = Int(UInt8.MAX) + 1
     comptime block_dim = bin_width
@@ -49,40 +56,46 @@ def _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
     def kernel(
-        output: UnsafePointer[Int64, MutAnyOrigin],
-        input: UnsafePointer[UInt8, MutAnyOrigin],
-        n: Int,
+        output: Pointer[Int64, MutAnyOrigin],
+        input: Pointer[UInt8, MutAnyOrigin],
+        n_dev: Int32,
     ):
+        var n = Int(n_dev)
         var tid = global_idx.x
 
         if tid >= n:
             return
 
         # Allocate shared memory for the histogram
-        var shared_mem = stack_allocation[
+        var shared_mem = unsafe_stack_allocation[
             bin_width, Int64, address_space=AddressSpace.SHARED
         ]()
 
         # Initialize the shared memory to 0
-        shared_mem[thread_idx.x] = 0
+        shared_mem[unsafe_offset=thread_idx.x] = 0
 
         # Synchronize all threads to ensure that the shared memory is initialized
         barrier()
 
         # Increment the shared memory for the current thread
-        _ = Atomic.fetch_add(shared_mem + Int(input[tid]), 1)
+        _ = Atomic.fetch_add(
+            shared_mem.unsafe_offset(Int(input[unsafe_offset=tid])), 1
+        )
 
         # Synchronize all threads to ensure that the shared memory is updated
         barrier()
 
         # Increment the output for the current thread
-        _ = Atomic.fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
+        _ = Atomic.fetch_add(
+            output.unsafe_offset(thread_idx.x),
+            shared_mem[unsafe_offset=thread_idx.x],
+        )
 
     var n = input.dim_size(0)
 
     var grid_dim = ceildiv(n, block_dim)
 
-    var ctx = ctx_ptr.get_device_context()
+    var ctx = ctx_ptr
 
     var output_device = output.to_device_buffer(ctx)
     var input_device = input.to_device_buffer(ctx)
@@ -90,16 +103,16 @@ def _histogram_gpu(
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_device,
         input_device,
-        n,
+        Int32(n),
         block_dim=block_dim,
         grid_dim=grid_dim,
     )
 
 
-@compiler.register("histogram")
+@extensibility.register("histogram")
 struct Histogram:
     @staticmethod
     def execute[
@@ -107,7 +120,7 @@ struct Histogram:
     ](
         output: OutputTensor[dtype=DType.int64, rank=1, ...],
         input: InputTensor[dtype=DType.uint8, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime if is_cpu[target]():
             _histogram_cpu(output, input)

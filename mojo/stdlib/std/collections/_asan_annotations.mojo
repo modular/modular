@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.sys.compile import SanitizeAddress
-from std.ffi import _CPointer, external_call
+from std.ffi import external_call
 
 
 @always_inline
 def __sanitizer_annotate_contiguous_container(
-    beg: _CPointer[NoneType, _],
-    end: _CPointer[NoneType, _],
-    old_mid: _CPointer[NoneType, _],
-    new_mid: _CPointer[NoneType, _],
+    beg: OptionalPointer[NoneType, MutUntrackedOrigin],
+    end: OptionalPointer[NoneType, MutUntrackedOrigin],
+    old_mid: OptionalPointer[NoneType, MutUntrackedOrigin],
+    new_mid: OptionalPointer[NoneType, MutUntrackedOrigin],
 ):
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h

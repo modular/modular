@@ -14,7 +14,7 @@
 from std.math import ceildiv
 
 from std.gpu import block_dim, global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_false
@@ -45,7 +45,7 @@ def scatter_nd_gpu[
 
     var element_counts_and_input_dims = TileTensor(
         element_counts_and_input_dims_ptr,
-        row_major(Idx(last_index_dimension * 2)),
+        row_major(last_index_dimension * 2),
     )
 
     var data_offset = 0
@@ -196,7 +196,7 @@ def scatter_nd[
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
-    var input_strides = InlineArray[Int64, data_rank](uninitialized=True)
+    var input_strides = Array[Int64, data_rank](uninitialized=True)
     for i in range(data_rank):
         var total_stride = 1
         for j in range(i + 1, data_rank):
@@ -232,7 +232,7 @@ def scatter_nd[
     var num_updates_elements = count_copy
     comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,

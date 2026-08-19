@@ -21,7 +21,6 @@ from std.testing.prop import Rng, Strategy
 from std.testing.prop.strategy.simd_strategy import *
 from std.testing.prop.strategy.string_strategy import *
 from std.testing.prop.strategy.list_strategy import *
-from std.sys.intrinsics import _type_is_eq
 from std.collections.string._utf8 import _is_valid_utf8
 
 

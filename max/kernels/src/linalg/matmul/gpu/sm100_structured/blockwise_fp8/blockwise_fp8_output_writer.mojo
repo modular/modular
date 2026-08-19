@@ -25,9 +25,9 @@ Supports two write modes:
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
-from std.gpu.sync import named_barrier
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import fence_async_view_proxy
+from max.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
@@ -79,7 +79,23 @@ struct BlockwiseFP8TileWriter[
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
 ]:
-    """Write register accumulators to GMEM via SMEM and TMA."""
+    """Write register accumulators to GMEM via SMEM and TMA.
+
+    Parameters:
+        c_type: Element type of the C output tensor.
+        c_smem_dim0: M dimension of the C shared-memory tile.
+        c_smem_dim1: N dimension of the C shared-memory tile.
+        accum_type: Element type of the accumulator registers.
+        accum_num_stages: Number of accumulator pipeline stages to drain.
+        accum_num_elements: Number of elements per accumulator fragment set.
+        block_tile_shape: Block tile shape as (BM, BN, BK).
+        mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
+        is_lower_frag_required: Whether the lower register fragment is populated.
+        cta_group: Number of CTAs cooperating per output tile.
+        num_output_stages: Number of SMEM buffer stages for the output epilogue.
+        num_output_warps: Number of warps participating in the output epilogue.
+        c_swizzle: TMA swizzle pattern applied to the C shared-memory tile.
+    """
 
     # ========== Layout from dimensions ==========
     comptime c_smem_layout = row_major[Self.c_smem_dim0, Self.c_smem_dim1]()
@@ -151,6 +167,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -158,7 +175,20 @@ struct BlockwiseFP8TileWriter[
         ],
         c_coord: Tuple[Int, Int],
     ):
-        """Write accumulated register tiles to GMEM via double-buffered SMEM."""
+        """Write accumulated register tiles to GMEM via double-buffered SMEM.
+
+        Parameters:
+            c_rank: Rank of the C output tensor.
+            c_tile_shape: Tile shape of the C output tensor.
+            c_desc_shape: Descriptor shape of the C output tensor.
+            cluster_size: Size of the threadblock cluster for the matmul.
+
+        Args:
+            accum: Blockwise FP8 accumulator holding upper and lower register tiles.
+            c_tiles: Double-buffered SMEM tile array for C output.
+            c_tma_op: TMA tensor tile descriptor for the C store.
+            c_coord: (M, N) tile coordinate of this C tile in the output tensor.
+        """
         Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
@@ -181,6 +211,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -194,10 +225,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -205,10 +236,10 @@ struct BlockwiseFP8TileWriter[
             # Cast from accum_type to c_type in SIMD chunks of at
             # least 4 bytes for efficient hardware cast instructions.
             comptime frag_size = Self.epc.fragment_size * Self.repeats
-            var upper_st = InlineArray[Scalar[Self.c_type], frag_size](
+            var upper_st = Array[Scalar[Self.c_type], frag_size](
                 uninitialized=True
             )
-            var lower_st = InlineArray[Scalar[Self.c_type], frag_size](
+            var lower_st = Array[Scalar[Self.c_type], frag_size](
                 uninitialized=True
             )
 
@@ -227,8 +258,8 @@ struct BlockwiseFP8TileWriter[
                     upper_st[offset + _j] = casted_u[_j]
                     lower_st[offset + _j] = casted_l[_j]
             smem_writer.write_fragments[Self.repeats](
-                rebind[InlineArray[Scalar[Self.c_type], frag_size]](upper_st),
-                rebind[InlineArray[Scalar[Self.c_type], frag_size]](lower_st),
+                rebind[Array[Scalar[Self.c_type], frag_size]](upper_st),
+                rebind[Array[Scalar[Self.c_type], frag_size]](lower_st),
                 c_smem_tile,
             )
 
@@ -288,6 +319,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -297,6 +329,12 @@ struct BlockwiseFP8TileWriter[
         c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
+
+        Parameters:
+            c_tensor_layout: Layout of the C output tensor in GMEM used for
+                bounds-checked element stores.
+            cluster_size: Number of CTAs in the threadblock cluster for the
+                matmul.
 
         Args:
             accum: Blockwise FP8 accumulator with upper/lower register tiles.
@@ -325,6 +363,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -346,10 +385,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             # Apply expert scale
@@ -370,9 +409,9 @@ struct BlockwiseFP8TileWriter[
             ](0, 0)
             # Cast in SIMD chunks of at least 4 bytes for efficient
             # hardware cast instructions.
-            var upper_st = InlineArray[
-                Scalar[Self.c_type], Self.fragments_per_stage
-            ](uninitialized=True)
+            var upper_st = Array[Scalar[Self.c_type], Self.fragments_per_stage](
+                uninitialized=True
+            )
 
             comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
             comptime for _chunk in range(
@@ -393,7 +432,7 @@ struct BlockwiseFP8TileWriter[
             ](1, 0)
 
             comptime if Self.is_lower_frag_required:
-                var lower_st = InlineArray[
+                var lower_st = Array[
                     Scalar[Self.c_type], Self.fragments_per_stage
                 ](uninitialized=True)
 
@@ -495,7 +534,7 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(
                 zipped.shape_types[1].element_types[0].static_value
             ):
-                var input_crd = Coord(Idx(UInt32(thread_idx.x)), Idx[j]())
+                var input_crd = Coord(UInt32(thread_idx.x), Idx[j])
                 var linear_idx = zipped[linear_idx_type=DType.uint32](
                     input_crd
                 ) * UInt32(simd_size)
@@ -512,18 +551,20 @@ struct BlockwiseFP8TileWriter[
                 if global_i < m_end:
                     # Compute destination pointer via TileTensor layout
                     var dst_offset = c_tensor.layout(
-                        Coord(Idx(Int(global_i)), Idx(Int(global_j)))
+                        Coord(Int(global_i), Int(global_j))
                     )
-                    var dst_ptr = c_tensor.ptr + Int(dst_offset)
+                    var dst_ptr = c_tensor._storage + Int(dst_offset)
 
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src_ptr = c_smem_split._storage + swizzle(
+                            linear_idx
+                        )
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
-                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()

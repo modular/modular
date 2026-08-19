@@ -48,15 +48,15 @@ EOF
 cat > "$WORKDIR/test-gpu.mojo" <<'GPUEOF'
 """Minimal GPU kernel for compilation-target testing."""
 
-from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from std.memory import Pointer
+from max.gpu.host import DeviceContext
 
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
 
 def kernel(
-    value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    value: Pointer[Scalar[DType.int32], MutAnyOrigin],
 ):
     value[0] = `✅`
 
@@ -65,7 +65,7 @@ def main() raises:
     with DeviceContext() as ctx:
         var out = ctx.enqueue_create_buffer[DType.int32](1)
         out.enqueue_fill(`❌`)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out, grid_dim=1, block_dim=1
         )
         with out.map_to_host() as out_host:

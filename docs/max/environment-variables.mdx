@@ -47,24 +47,30 @@ Environment variables must use the exact names documented below.
 These variables configure the MAX model serving behavior.
 
 For more information on serving a model with MAX, explore the
-[text to text](/max/inference/text-to-text) and
-[image and video to text](/max/inference/image-to-text) guides.
+[text to text](/serve/text-to-text) and
+[image and video to text](/serve/image-to-text) guides.
 
-| Variable                          | Description                                                                                                                                                                                                                | Values                | Default             |
-|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|---------------------|
-| `MAX_SERVE_HOST`                  | Hostname for the MAX server                                                                                                                                                                                                | String                | `0.0.0.0`           |
-| `MAX_SERVE_PORT`                  | Port for serving MAX                                                                                                                                                                                                       | Integer               | `8000`              |
-| `MAX_SERVE_METRICS_ENDPOINT_PORT` | Port for the Prometheus metrics endpoint                                                                                                                                                                                   | Integer               | `8001`              |
-| `MAX_SERVE_ALLOWED_IMAGE_ROOTS`   | Allowed root directories for `file://` URI access                                                                                                                                                                          | Comma-separated paths | Empty               |
-| `MAX_SERVE_MAX_LOCAL_IMAGE_BYTES` | Maximum size in bytes for local image files                                                                                                                                                                                | Integer               | `20971520` (20 MiB) |
-| `MAX_SERVE_API_TYPES`             | Configures which API types MAX serve exposes. Accepts a JSON array of API type strings (e.g., `'["responses"]'`). Use this to enable the [Responses API](/max/inference/image-generation) for tasks like image generation. | JSON array string     | None                |
+| Variable                                | Description                                                                                                                                                                                                        | Values                | Default             |
+|-----------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|---------------------|
+| `MAX_SERVE_HOST`                        | Hostname for the MAX server                                                                                                                                                                                        | String                | `0.0.0.0`           |
+| `MAX_SERVE_PORT`                        | Port for serving MAX                                                                                                                                                                                               | Integer               | `8000`              |
+| `MAX_SERVE_METRICS_ENDPOINT_PORT`       | Port for the Prometheus metrics endpoint                                                                                                                                                                           | Integer               | `8001`              |
+| `MAX_SERVE_ALLOWED_IMAGE_ROOTS`         | Allowed root directories for `file://` URI access                                                                                                                                                                  | Comma-separated paths | Empty               |
+| `MAX_SERVE_MAX_LOCAL_IMAGE_BYTES`       | Maximum size in bytes for local image files                                                                                                                                                                        | Integer               | `20971520` (20 MiB) |
+| `MAX_SERVE_MAX_BYTES`                   | Server-level maximum size in bytes for media resolved from `http(s)://` or `data:` URIs. MAX applies it on top of any per-model cap, and the smaller of the two wins. Set to `0` to disable the server-level cap.  | Integer               | `0`                 |
+| `MAX_SERVE_MEDIA_KIND`                  | Default media kind used in size-limit error messages when a resolver caller doesn't specify one                                                                                                                    | `image`, `video`      | `image`             |
+| `MAX_SERVE_API_TYPES`                   | Configures which API types MAX serve exposes. Accepts a JSON array of API type strings (e.g., `'["responses"]'`). Use this to enable the [Responses API](/serve/image-generation) for tasks like image generation. | JSON array string     | None                |
+| `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` | Seconds to wait for in-flight requests to finish after `SIGTERM` before canceling them and exiting                                                                                                                 | Integer               | `5`                 |
+| `MAX_SERVE_STREAM_MIN_CHUNK_TOKENS`     | Minimum number of tokens per streamed server-sent events (SSE) chunk. Larger values coalesce streaming output into bigger chunks without affecting time to first token                                             | Integer               | `1`                 |
+| `MODULAR_DKV_TENANT_ID`                 | Tenant identity for the dKV external KV cache tier. Required when using the dKV connector                                                                                                                          | String                | None                |
+| `MODULAR_DKV_DISABLE_G0_TOUCH`          | Disable recency refresh (touch) of an external KV cache tier when a request's prefix is served from the on-GPU cache                                                                                               | `0`, `1`              | `0`                 |
 
 ## Logging
 
 These variables control logging behavior and verbosity.
 
 You can read more about logs when using the
-[MAX container](/max/container#logs).
+[MAX container](/container#logs).
 
 | Variable                       | Description                                                    | Values                                          | Default |
 |--------------------------------|----------------------------------------------------------------|-------------------------------------------------|---------|
@@ -78,14 +84,15 @@ You can read more about logs when using the
 These variables control telemetry collection and metrics reporting.
 
 For more information, read about
-[MAX container telemetry](/max/container#telemetry).
+[MAX container telemetry](/container#telemetry).
 
-| Variable                      | Description                                                       | Values                      | Default |
-|-------------------------------|-------------------------------------------------------------------|-----------------------------|---------|
-| `MAX_SERVE_DISABLE_TELEMETRY` | Disable remote telemetry collection                               | `0`, `1`                    | `0`     |
-| `MODULAR_USER_ID`             | User identifier for telemetry (e.g., your company name)           | String                      | None    |
-| `MAX_SERVE_DEPLOYMENT_ID`     | Deployment identifier for telemetry (e.g., your application name) | String                      | None    |
-| `MAX_SERVE_METRIC_LEVEL`      | Level of detail in metrics emitted                                | `NONE`, `BASIC`, `DETAILED` | `BASIC` |
+| Variable                          | Description                                                                                                                                                                 | Values       | Default |
+|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|---------|
+| `MAX_SERVE_DISABLE_TELEMETRY`     | Disable remote telemetry collection                                                                                                                                         | `0`, `1`     | `0`     |
+| `MODULAR_USER_ID`                 | User identifier for telemetry (e.g., your company name)                                                                                                                     | String       | None    |
+| `MAX_SERVE_DEPLOYMENT_ID`         | Deployment identifier for telemetry (e.g., your application name)                                                                                                           | String       | None    |
+| `MAX_SERVE_OTLP_METRICS_ENDPOINT` | Push a self-calibrating exponential-histogram shadow (`<metric>.exponential`) of every histogram metric to an OTLP endpoint, alongside the Prometheus `/metrics` histograms | Endpoint URL | None    |
+| `MAX_SERVE_EPLB_PROFILE`          | Enable expert-parallel load balancing (EPLB) statistics profiling in `max serve`                                                                                            | `0`, `1`     | `0`     |
 
 ## Debugging
 
@@ -99,24 +106,32 @@ export MODULAR_DEBUG=nan-check,assert-level=all
 
 This table includes all options you can add to `MODULAR_DEBUG`:
 
-| Option                     | Description                                                  | Type    | Accepted values                                          | Default   |
-|----------------------------|--------------------------------------------------------------|---------|----------------------------------------------------------|-----------|
-| `sensible`                 | Enable a curated default debugging set                       | Boolean | N/A                                                      | `false`   |
-| `nan-check`                | Insert NaN/Inf checks after each fused set of ops            | Boolean | N/A                                                      | `false`   |
-| `uninitialized-read-check` | Detect reads of uninitialized memory                         | Boolean | N/A                                                      | `false`   |
-| `device-sync-mode`         | Force synchronous GPU execution for debugging                | Boolean | N/A                                                      | `false`   |
-| `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                     | Boolean | N/A                                                      | `false`   |
-| `stack-trace-on-crash`     | Show Mojo stack traces on crashes                            | Boolean | N/A                                                      | `false`   |
-| `source-tracebacks`        | Include Python source locations in error messages            | Boolean | N/A                                                      | `false`   |
-| `op-log-level`             | Log level for op-level execution tracing                     | String  | `trace`, `debug`, `info`, `warning`, `error`, `critical` | `off`     |
-| `assert-level`             | Assertion level for the Mojo standard library                | String  | `none`, `warn`, `safe`, `all`                            | `none`    |
-| `print-style`              | Output format for tensor debug printing                      | String  | `compact`, `full`, `binary`, `binary_max_checkpoint`     | `compact` |
-| `ir-output-dir`            | Directory where MAX dumps intermediate compiler IR           | Path    | Filesystem path                                          | `unset`   |
+| Option                     | Description                                                                                                   | Type    | Accepted values                                          | Default   |
+|----------------------------|---------------------------------------------------------------------------------------------------------------|---------|----------------------------------------------------------|-----------|
+| `sensible`                 | Enable a curated default debugging set                                                                        | Boolean | N/A                                                      | `false`   |
+| `nan-check`                | Insert NaN/Inf checks on a sampled subset of floating-point kernel outputs (see `nan-check-stride`)           | Boolean | N/A                                                      | `false`   |
+| `nan-check-stride`         | When `nan-check` is enabled, check one of every N floating-point kernel outputs. Set to `1` for full coverage | Integer | Positive integer (≥1)                                    | `20`      |
+| `uninitialized-read-check` | Detect reads of uninitialized memory                                                                          | Boolean | N/A                                                      | `false`   |
+| `device-sync-mode`         | Force synchronous GPU execution for debugging                                                                 | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                                                                      | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-crash`     | Show Mojo stack traces on crashes                                                                             | Boolean | N/A                                                      | `false`   |
+| `source-tracebacks`        | Include Python source locations in error messages                                                             | Boolean | N/A                                                      | `false`   |
+| `op-log-level`             | Log level for op-level execution tracing                                                                      | String  | `trace`, `debug`, `info`, `warning`, `error`, `critical` | `off`     |
+| `assert-level`             | Assertion level for the Mojo standard library                                                                 | String  | `none`, `warn`, `safe`, `all`                            | `none`    |
+| `print-style`              | Output format for tensor debug printing                                                                       | String  | `compact`, `full`, `binary`, `binary_max_checkpoint`     | `compact` |
+| `ir-output-dir`            | Directory where MAX dumps intermediate compiler IR                                                            | Path    | Filesystem path                                          | `unset`   |
+
+The following variables control memory-allocation debugging:
+
+| Variable                                               | Description                                                                                                                                                                                                           | Values                | Default              |
+|--------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------|
+| `MODULAR_DEBUG_DEVICE_ALLOCATOR`                       | Comma-separated allocator debugging modes. `poison-all` fills every memory-manager allocation with a NaN-pattern byte; `uninitialized-poison` is enabled automatically by the `uninitialized-read-check` debug option | Comma-separated modes | None                 |
+| `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN` | Byte pattern written by the `poison-all` allocator mode                                                                                                                                                               | Byte (0–255)          | Built-in NaN pattern |
 
 ## Profiling
 
 For GPU profiling details, see
-[GPU profiling with Nsight Systems](/max/gpu-system-profiling).
+[GPU profiling with Nsight Systems](/gpu-system-profiling).
 
 | Variable                   | Description                          | Values                  | Default |
 |----------------------------|--------------------------------------|-------------------------|---------|
@@ -126,11 +141,40 @@ For GPU profiling details, see
 
 The following variables configure caching and memory behavior.
 
-| Variable                    | Description                                                                                    | Values          | Default        |
-|-----------------------------|------------------------------------------------------------------------------------------------|-----------------|----------------|
-| `MODULAR_MAX_CACHE_DIR`     | Directory to save MAX model cache for reuse                                                    | Path            | See note below |
-| `MODULAR_CACHE_DIR`         | Configure cache directory for all Modular filesystems                                          | Path            | See note below |
-| `MODULAR_MAX_SHM_WATERMARK` | Percentage of `/dev/shm` to allocate for shared memory. Set to `0.0` to disable shared memory. | Float (0.0–1.0) | `0.9`          |
+| Variable                                    | Description                                                                                                                                                                                                                                                                                                                                                                                        | Values                                       | Default                         |
+|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|---------------------------------|
+| `MODULAR_MAX_CACHE_DIR`                     | Directory to save MAX model cache for reuse                                                                                                                                                                                                                                                                                                                                                        | Path                                         | `$MODULAR_CACHE_DIR/.max_cache` |
+| `MODULAR_CACHE_DIR`                         | Configure cache directory for all MAX filesystems                                                                                                                                                                                                                                                                                                                                                  | Path                                         | See note below                  |
+| `MODULAR_MAX_SHM_WATERMARK`                 | Percentage of `/dev/shm` to allocate for shared memory. Set to `0.0` to disable shared memory.                                                                                                                                                                                                                                                                                                     | Float (0.0–1.0)                              | `0.9`                           |
+| `MAX_EAGER_OP_PRECOMPILE`                   | Controls how the eager interpreter compiles its built-in op targets. The default compiles each target lazily on its first dispatch, which avoids a long cold-cache compile when a program touches only a few targets. Set to `1` to precompile the full (device, dtype) matrix at import so steady-state dispatch never recompiles. MAX reads the value when the sweep runs rather than at import. | `0`, `1`                                     | `0`                             |
+| `MAX_EAGER_EXECUTOR`                        | Select the eager execution backend                                                                                                                                                                                                                                                                                                                                                                 | `composite`, `jit`, `interpreter`, `compile` | `composite`                     |
+| `MAX_EAGER_ALLOW_LAZY_COMPILE`              | Allow `max serve` to compile eager interpreter models on demand instead of requiring a warm cache from `max warm-interpreter-cache`                                                                                                                                                                                                                                                                | `0`, `1`                                     | `0`                             |
+| `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM` | Toggle the VMM defragmenting allocator, which avoids external-fragmentation OOMs. Enabled by default on NVIDIA GPUs; opt in on AMD MI300-series GPUs with `1`                                                                                                                                                                                                                                      | `0`, `1`                                     | `1` (NVIDIA), `0` (AMD)         |
+| `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE`      | Set to `0` to opt out of the split-K decode attention kernel on Apple GPUs (paged KV cache MHA and GQA decode)                                                                                                                                                                                                                                                                                     | `0`, `1`                                     | `1`                             |
+
+:::note
+
+The default search paths take the following precedence:
+
+1. When the `MODULAR_HOME` environment variable is set `$MODULAR_HOME/cache` is
+   used.
+2. If `$HOME/.modular` exists then `$HOME/.modular` is used.
+3. Follow the [XDG Base Directory
+   Specification](https://specifications.freedesktop.org/basedir/latest/). When
+   `XDG_CACHE_HOME` is set, `$XDG_CACHE_HOME/modular` is used; otherwise the
+   default value `$HOME/.cache/modular` is used.
+
+:::
+
+## Weight loading
+
+The following variables control how MAX handles model weights when loading
+from a checkpoint.
+
+| Variable                    | Description                                                                                                                                                                                                                                                             | Values          | Default                 |
+|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------|-------------------------|
+| `MODULAR_AUTO_CAST_WEIGHTS` | Auto-cast loaded weights between `float32` and `bfloat16` when checkpoint and module dtypes mismatch (shape must match). Other dtype mismatches still raise.                                                                                                            | `true`, `false` | `true`                  |
+| `APPLE_FLUX2_INT8_W8A8`     | On Apple M5 GPUs, controls int8 W8A8 quantization for FLUX.2 checkpoints: FLUX.2-klein bf16 checkpoints default to int8 W8A8 (set `0` to opt out); NVFP4 checkpoints opt into an int8 W8A8 requant at load with `1`. The old name `FLUX2_KLEIN_INT8_W8A8` is deprecated | `0`, `1`        | `1` (FLUX.2-klein bf16) |
 
 ## Hugging Face
 
@@ -142,5 +186,5 @@ Configure your Hugging Face integration with the following environment variable:
 
 ## Related resources
 
-- [MAX container](/max/container) - Deploy MAX with Docker
-- [`max serve` CLI](/max/cli/serve) - Command-line options for serving
+- [MAX container](/container) - Deploy MAX with Docker
+- [`max serve` CLI](/cli/serve) - Command-line options for serving

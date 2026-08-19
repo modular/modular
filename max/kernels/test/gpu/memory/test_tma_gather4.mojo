@@ -41,25 +41,24 @@ from std.math import ceildiv
 from std.sys.info import size_of
 
 from std.gpu import block_dim, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import (
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_2d_gather4,
     external_memory,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.random import rand, randn, seed
 from std.utils.index import IndexList
 
@@ -103,7 +102,9 @@ def gather4_raw_smoke_kernel[
         alignment=128,
     ]()
 
-    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
+    var mbar = unsafe_stack_allocation[
+        1, Int64, address_space=AddressSpace.SHARED
+    ]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
@@ -139,9 +140,9 @@ def gather4_raw_smoke_kernel[
 def _verify_gathered_rows[
     dtype: DType, row_width: Int
 ](
-    h_out: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    h_source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    h_indices: UnsafePointer[Int32, MutAnyOrigin],
+    h_out: UnsafePointer[mut=False, Scalar[dtype], _],
+    h_source: UnsafePointer[mut=False, Scalar[dtype], _],
+    h_indices: UnsafePointer[mut=False, Int32, _],
     num_rows: Int,
 ) raises:
     """Verifies gathered output rows match the source buffer at the expected
@@ -211,7 +212,7 @@ def test_raw_smoke[
     var shared_mem_bytes = 4 * row_width * size_of[dtype]()
 
     comptime kernel = gather4_raw_smoke_kernel[dtype, row_width]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tma_desc,
         d_out,
         r0,
@@ -368,7 +369,7 @@ def _run_paged_gather4_test[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -548,7 +549,7 @@ def test_continuous_kv_cache[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -632,7 +633,7 @@ def test_device_buffer_overload[
         type_of(kv_tile).desc_shape,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -718,7 +719,7 @@ def gather4_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -839,7 +840,7 @@ def test_wide_gather4_device_buffer[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -985,7 +986,7 @@ def test_wide_gather4_paged_kv[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1124,7 +1125,7 @@ def test_wide_gather4_continuous_kv[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1272,7 +1273,7 @@ def test_wide_gather4_mha_operand[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1377,7 +1378,7 @@ def test_non_divisible_width[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1556,7 +1557,7 @@ def test_gather4_tile_api[
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         g4t_tma,
         d_indices,
         out_device,
@@ -1753,7 +1754,7 @@ def test_gather4_tile_api_paged[
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         g4t_tma,
         d_indices,
         out_device,

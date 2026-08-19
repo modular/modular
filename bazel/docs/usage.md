@@ -104,8 +104,8 @@ built and tested. There are a few common rules that are used.
 
 ### `mojo_library`
 
-To produce a `mojopkg` that can be consumed by other Mojo code, you can
-use the `mojo_library` rule. For example:
+To produce a precompiled Mojo file (`.mojoc`) that can be consumed by other
+Mojo code, you can use the `mojo_library` rule. For example:
 
 ```bzl
 load("//bazel:api.bzl", "mojo_library")
@@ -245,7 +245,7 @@ In this case when the output contains `A100` we map it to `a100`. Then
 update the `supported_gpus` dictionary where the key is the human
 readable name, and the value is the `--target-accelerator` value passed
 to Mojo compiles. You can fetch this value with `gpu-query` which ships
-as part of `pip install modular`:
+as part of MAX:
 
 ```sh
 % gpu-query --target-accelerator

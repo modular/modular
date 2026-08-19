@@ -23,6 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import Tracer, traced
 
@@ -56,11 +59,14 @@ class VaeWrapper:
 
         vae_config_entry = manifest["vae"]
         config_dict = vae_config_entry.huggingface_config.to_dict()
-        encoding = vae_config_entry.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(vae_config_entry)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(vae_config_entry.device_specs)
 
         # Load the VAE using the existing ComponentModel.
-        paths = vae_config_entry.resolved_weight_paths()
+        paths = vae_config_entry.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         self._vae = AutoencoderKLWanModel(
             config=config_dict,
@@ -312,11 +318,15 @@ class VaeWrapper:
             x = g.inputs[0].tensor
             # Upcast to f32 before the *255 so bf16 rounding doesn't shift
             # pixel values; matches the flux2 VAE decoder precision path.
+            # Round before the uint8 cast so the truncating cast doesn't bias
+            # every pixel down by ~0.5; diffusers' image processor does
+            # `(x * 255).round().astype(uint8)`.
             x = ops.cast(x, DType.float32)
             x = x * 0.5 + 0.5
             x = ops.max(x, 0.0)
             x = ops.min(x, 1.0)
             x = x * 255.0
+            x = ops.round(x)
             x = ops.cast(x, DType.uint8)
             # (B, C, T, H, W) -> (B, T, H, W, C).
             x = ops.permute(x, [0, 2, 3, 4, 1])

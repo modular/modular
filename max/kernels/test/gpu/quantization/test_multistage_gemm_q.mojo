@@ -19,13 +19,13 @@ from std.sys import align_of, argv, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -45,7 +45,7 @@ from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
 from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -101,7 +101,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -179,7 +179,9 @@ def repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        var q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            warp_x, warp_y
+        )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
@@ -408,7 +410,7 @@ struct _block_Q4_0:
     comptime group_size = 32
 
     var base_scale: Float16
-    var q_bits: InlineArray[UInt8, Self.group_size // 2]
+    var q_bits: Array[UInt8, Self.group_size // 2]
 
 
 def test_repack_Q4_0_for_sm8x[
@@ -416,7 +418,7 @@ def test_repack_Q4_0_for_sm8x[
 ](ctx: DeviceContext, n: NType, k: KType) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
+    def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     def build_b_buffer(
@@ -445,9 +447,6 @@ def test_repack_Q4_0_for_sm8x[
     comptime _dequan_dim1 = NType.static_value
 
     var dynamic_gguf_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
-    var dynamic_repacked_b_shape = IndexList[2](
-        N, (K // group_size) * group_bytes
-    )
     var dynamic_dequan_shape = IndexList[2](K, N)
 
     var gguf_b_size = N * ((K // group_size) * group_bytes)
@@ -554,7 +553,7 @@ def test_repack_Q4_0_for_sm8x[
         DType.bfloat16,
     ]
 
-    ctx.enqueue_function[repack, repack](
+    ctx.enqueue_function[repack](
         gguf_b_tensor,
         repacked_b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -574,7 +573,7 @@ def test_repack_Q4_0_for_sm8x[
         pack_factor,
     ]
 
-    ctx.enqueue_function[dequan, dequan](
+    ctx.enqueue_function[dequan](
         repacked_b_tensor,
         repacked_dequan_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -635,10 +634,8 @@ def test_quantized[
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
 
-    var dynamic_a_shape = IndexList[2](M, K)
     var dynamic_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
     var dynamic_b_ref_shape = IndexList[2](N, K)
-    var dynamic_c_shape = IndexList[2](M, N)
 
     var a_size = M * K
     var b_size = N * ((K // group_size) * group_bytes)
@@ -707,14 +704,14 @@ def test_quantized[
     comptime BN = config.block_tile_shape[1]
 
     # Create TileTensors for the matmul operands
-    var a_tt_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_tt_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_tt_shape = row_major(
         Coord(
-            Idx[NType.static_value](),
-            Idx[(KType.static_value // group_size) * group_bytes](),
+            Idx[NType.static_value],
+            Idx[(KType.static_value // group_size) * group_bytes],
         )
     )
-    var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var c_dev_tt = TileTensor(c_device, c_tt_shape)
     var a_dev_tt = TileTensor(a_device, a_tt_shape)
@@ -729,7 +726,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
@@ -785,7 +782,7 @@ def test_quantized[
         pack_factor,
     ]
 
-    ctx.enqueue_function[dequan, dequan](
+    ctx.enqueue_function[dequan](
         b_tensor,
         b_ref_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -798,9 +795,9 @@ def test_quantized[
 
     comptime kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     comptime config_ref = kernels_ref.ampere_128x128_4
-    var c_ref_tt_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_ref_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
     var b_ref_tt_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
     var c_ref_tt = TileTensor(c_device_ref, c_ref_tt_shape)
     var b_ref_tt = TileTensor(b_device_ref, b_ref_tt_shape)
@@ -837,26 +834,16 @@ def main() raises:
     with DeviceContext() as ctx:
         test_repack_Q4_0_for_sm8x(
             ctx,
-            Idx[4096](),
-            Idx[4096](),
+            Idx[4096],
+            Idx[4096],
         )
-        test_quantized[DType.uint8](ctx, Idx[482](), Idx[6144](), Idx[4096]())
-        test_quantized[DType.uint8](ctx, Idx[482](), Idx[4096](), Idx[4096]())
-        test_quantized[DType.uint8](ctx, Idx[482](), Idx[28672](), Idx[4096]())
-        test_quantized[DType.uint8](ctx, Idx[482](), Idx[4096](), Idx[14336]())
-        test_quantized[DType.uint8](ctx, Idx[482](), Idx[128256](), Idx[4096]())
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[6144](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[4096](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[28672](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[4096](), Idx[14336]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[128256](), Idx[4096]()
-        )
+        test_quantized[DType.uint8](ctx, Idx[482], Idx[6144], Idx[4096])
+        test_quantized[DType.uint8](ctx, Idx[482], Idx[4096], Idx[4096])
+        test_quantized[DType.uint8](ctx, Idx[482], Idx[28672], Idx[4096])
+        test_quantized[DType.uint8](ctx, Idx[482], Idx[4096], Idx[14336])
+        test_quantized[DType.uint8](ctx, Idx[482], Idx[128256], Idx[4096])
+        test_quantized[DType.uint8](ctx, Int(482), Idx[6144], Idx[4096])
+        test_quantized[DType.uint8](ctx, Int(482), Idx[4096], Idx[4096])
+        test_quantized[DType.uint8](ctx, Int(482), Idx[28672], Idx[4096])
+        test_quantized[DType.uint8](ctx, Int(482), Idx[4096], Idx[14336])
+        test_quantized[DType.uint8](ctx, Int(482), Idx[128256], Idx[4096])

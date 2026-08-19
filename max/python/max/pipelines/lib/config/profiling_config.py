@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import cast, get_args
 
@@ -23,11 +22,9 @@ from max.engine import GPUProfilingMode
 from pydantic import Field, PrivateAttr, model_validator
 from typing_extensions import Self
 
-logger = logging.getLogger("max.pipelines")
-
 
 class ProfilingConfig(ConfigFileModel):
-    """Configuration for GPU profiling of pipeline models."""
+    """Configuration for the GPU (NVTX/Nsight) profiler."""
 
     gpu_profiling: GPUProfilingMode = Field(
         default="off",

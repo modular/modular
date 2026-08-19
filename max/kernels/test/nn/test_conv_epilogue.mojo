@@ -158,7 +158,7 @@ def test[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     @always_inline
-    @parameter
+    @__parameter
     def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
@@ -176,8 +176,7 @@ def test[
             output_ref,
             input,
             packed_filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
     else:
         ConvDirectNHWC[
@@ -193,8 +192,7 @@ def test[
             output_ref,
             input,
             filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
 
     # Add bias and activatiion separately.
@@ -220,10 +218,10 @@ def test[
 
     # Test epilogue
     @always_inline
-    @parameter
+    @__parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        def body1[width: Int](idx: Int) {read}:
+        def body1[width: Int](idx: Int) {imm}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -252,8 +250,7 @@ def test[
             output,
             input,
             packed_filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
     else:
         ConvDirectNHWC[
@@ -270,8 +267,7 @@ def test[
             output,
             input,
             filter,
-            # 30770
-            rebind[ConvShape[rank + 2 - 2]](conv_shape),
+            conv_shape,
         )
 
     # Check results, return on the first failed comparison.

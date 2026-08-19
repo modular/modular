@@ -22,8 +22,8 @@ Target: < 1 minute compile + run for debugging purposes.
 from std.math import ceildiv
 from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import (
     assert_almost_equal,
@@ -107,21 +107,19 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    var a_scales_shape = row_major(Coord(Idx(a_scales_shape_k), m))
-    var b_scales_shape = row_major(
-        Coord(Idx(b_scales_shape_n), Idx(b_scales_shape_k))
-    )
+    var a_scales_shape = row_major(Coord(a_scales_shape_k, m))
+    var b_scales_shape = row_major(Coord(b_scales_shape_n, b_scales_shape_k))
 
     # Allocate host memory
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
@@ -164,10 +162,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -220,12 +218,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -278,9 +279,9 @@ def main() raises:
             cta_group=1,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # ============================================================
@@ -309,9 +310,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -327,9 +328,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(4096),
-            Idx(1024),
+            Int(512),
+            Idx[4096],
+            Idx[1024],
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

@@ -22,7 +22,7 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.norm.layer_norm import LayerNorm
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
@@ -65,9 +65,9 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_token_indices = image_token_indices.to(self.language_model.mesh)
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
-        )
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
         kv_collection = PagedCacheValues.from_upstream(
             kv_collections, tokens.mapping
         )

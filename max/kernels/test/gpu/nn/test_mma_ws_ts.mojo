@@ -35,23 +35,23 @@ from std.memory import UnsafePointer, alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import (
+from std.gpu import thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -84,8 +84,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import bulk_mma_ws_ts
-from nn.attention.gpu.nvidia.sm100.attention_utils import elect
+from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws_ts, elect
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -236,20 +235,18 @@ def dense_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         OP_TYPE,
         Q_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](q_smem_ptr)
+    ](q_smem_ptr.as_unsafe_any_origin())
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + K_SMEM_OFFSET).bitcast[Scalar[OP_TYPE]]()
     var k_smem_tile = LayoutTensor[
         OP_TYPE,
         K_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](k_smem_ptr)
+    ](k_smem_ptr.as_unsafe_any_origin())
 
     # ---- Metadata region (after both SMEM tiles) ----
     var metadata_ptr = (smem_base + METADATA_OFFSET).bitcast[UInt32]()
@@ -517,10 +514,9 @@ def sparse_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         op_type,
         q_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](q_smem_ptr)
+    ](q_smem_ptr.as_unsafe_any_origin())
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + k_smem_offset).bitcast[Scalar[op_type]]()
@@ -606,10 +602,9 @@ def sparse_mma_ws_ts_kernel[
                 var smem_dst_tile = LayoutTensor[
                     op_type,
                     Layout.row_major(4, box_width),
-                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
                     alignment=128,
-                ](smem_dst_ptr)
+                ](smem_dst_ptr.as_unsafe_any_origin())
 
                 k_gather4_tma.async_copy_gather4(
                     smem_dst_tile,
@@ -741,7 +736,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         type_of(k_tma_op).tile_shape,
         type_of(k_tma_op).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_tma_op,
         p_out_buf.device_tensor(),
@@ -792,19 +787,19 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(P_REF_ROWS), Idx(P_REF_COLS))),
+        row_major(Coord(P_REF_ROWS, P_REF_COLS)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(ROWS), Idx(COLS))),
+        row_major(Coord(ROWS, COLS)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_device_ptr)
         ),
-        row_major(Coord(Idx(K_ROWS), Idx(K_COLS))),
+        row_major(Coord(K_ROWS, K_COLS)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -818,13 +813,13 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
-        P_REF_ROWS,  # m
-        P_REF_COLS,  # n
-        COLS,  # k
+        Int32(P_REF_ROWS),  # m
+        Int32(P_REF_COLS),  # n
+        Int32(COLS),  # k
         grid_dim=(
             ceildiv(P_REF_ROWS, NAIVE_BLOCK_DIM),
             ceildiv(P_REF_COLS, NAIVE_BLOCK_DIM),
@@ -1000,7 +995,7 @@ def test_sparse_mma_ws_ts[
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_gather4_tma,
         d_indices.unsafe_ptr(),
@@ -1039,19 +1034,19 @@ def test_sparse_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
+        row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1065,13 +1060,13 @@ def test_sparse_mma_ws_ts[
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
-        p_ref_rows,
-        p_ref_cols,
-        cols,
+        Int32(p_ref_rows),
+        Int32(p_ref_cols),
+        Int32(cols),
         grid_dim=(
             ceildiv(p_ref_rows, naive_block_dim),
             ceildiv(p_ref_cols, naive_block_dim),
@@ -1324,7 +1319,7 @@ def test_sparse_paged_mma_ws_ts[
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_gather4_tma,
         d_indices.unsafe_ptr(),
@@ -1363,19 +1358,19 @@ def test_sparse_paged_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
+        row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(topk), Idx(row_width))),
+        row_major(Coord(topk, row_width)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1389,13 +1384,13 @@ def test_sparse_paged_mma_ws_ts[
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
-        p_ref_rows,
-        p_ref_cols,
-        cols,
+        Int32(p_ref_rows),
+        Int32(p_ref_cols),
+        Int32(cols),
         grid_dim=(
             ceildiv(p_ref_rows, naive_block_dim),
             ceildiv(p_ref_cols, naive_block_dim),

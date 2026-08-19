@@ -20,6 +20,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,14 +28,14 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
-    structured_ping_pong_matmul as ping_pong_matmul,
+    amd_ping_pong_matmul as ping_pong_matmul,
 )
 from std.utils import IndexList
 
@@ -45,7 +46,7 @@ def _get_run_name[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String("(", dtype, ") : ")
     # M
@@ -114,13 +115,12 @@ def bench_matmul[
     cb_a.init_on_device(init_type, ctx)
     cb_b.init_on_device(init_type, ctx)
 
-    @parameter
+    @__parameter
     @__copy_capture(cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -131,18 +131,31 @@ def bench_matmul[
                 cb_c.offset_ptr(iteration), row_major(shape_c)
             )
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
-                width: Int,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
-                comptime assert tensor_c.flat_rank >= 2
+                # FIXME(mojo-compiler): restore the comptime-assert below
+                # once the Mojo `Int.__ge__` comptime-cycle bug is fixed.
+                # The assert is always true here (tensor_c is the 2D output
+                # TileTensor, so flat_rank == 2 by construction) but triggers
+                # a stdlib parse-order cycle: resolving Int.__ge__ from a
+                # comptime context inside this parametric capturing closure
+                # transitively requires the EqualityComparable.__eq__ default
+                # body, whose `comptime for i in range(...)` re-resolves
+                # Int.__ge__ via the range iterator's `nth`. Manifests as
+                # "attempt to resolve a recursive reference to declaration
+                # 'Int.__ge__'". `> 1` / `== 2` substitutions don't trigger;
+                # only `>=` in this comptime + parametric-capturing-closure
+                # combination does. See commit e65f549ada3 for the audit.
+                # comptime assert tensor_c.flat_rank >= 2
                 var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
                 var y = val * x
                 return y
@@ -187,7 +200,7 @@ def bench_matmul[
                         ctx,
                     )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -231,8 +244,8 @@ def create_matmul_bench[
     init_type: InitializationType,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -276,9 +289,9 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
+            M,
+            Idx[N],
+            Idx[K],
             init_type,
         )
 

@@ -29,7 +29,7 @@ And on the command line:
   mojo -D FLOAT32 main.mojo
 ```
 
-For more information, see the [Mojo build docs](https://www.mojolang.org/docs/cli/build.html#d-keyvalue).
+For more information, see the [Mojo build docs](https://mojolang.org/docs/cli/build/#d-keyvalue).
 The `mojo run` command also supports the `-D` option.
 
 
@@ -40,7 +40,7 @@ from std.sys import is_defined
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 
 
 def is_defined[name: StaticString]() -> Bool:
@@ -215,7 +215,9 @@ def get_defined_dtype[name: StaticString, default: DType]() -> DType:
     """
 
     comptime if is_defined[name]():
-        return DType._from_str(get_defined_string[name]())
+        comptime parsed = DType._from_str(get_defined_string[name]())
+        comptime assert parsed, "invalid DType define for '" + name + "'"
+        return parsed.value()
     else:
         return default
 
@@ -234,9 +236,9 @@ struct MojoVersion(ImplicitlyCopyable, TrivialRegisterPassable):
     def __init__(out self):
         """Initializes the version by reading it from the compiler at compile time.
         """
-        self.major = Int(value=__mlir_op.`lit.mojo.version.major`())
-        self.minor = Int(value=__mlir_op.`lit.mojo.version.minor`())
-        self.patch = Int(value=__mlir_op.`lit.mojo.version.patch`())
+        self.major = Int(mlir_value=__mlir_op.`lit.mojo.version.major`())
+        self.minor = Int(mlir_value=__mlir_op.`lit.mojo.version.minor`())
+        self.patch = Int(mlir_value=__mlir_op.`lit.mojo.version.patch`())
 
 
 comptime MOJO_VERSION = MojoVersion()

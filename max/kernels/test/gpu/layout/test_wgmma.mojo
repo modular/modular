@@ -14,10 +14,10 @@
 import linalg.matmul.vendor.blas as vendor_blas
 
 from std.math.uutils import udivmod
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import lane_id, thread_idx, warp_id
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
@@ -259,7 +259,7 @@ def wgmma_bf16_bf16_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

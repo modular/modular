@@ -14,6 +14,7 @@
 # Meant to be run on an AVX512 system
 
 from std.math import align_up
+from std.memory import dealloc
 from std.sys import align_of, prefetch, simd_width_of
 from std.sys.intrinsics import PrefetchOptions
 
@@ -25,6 +26,7 @@ from linalg.utils import (
 
 
 from layout import TileTensor, Coord, Idx, row_major
+from layout.tensor_storage import PointerStorage
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -42,7 +44,7 @@ comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
 def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
-    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(n)))
+    var a = TileTensor(a_ptr, row_major(m, n))
     for i in range(m):
         for j in range(n):
             print(a[i, j], end=" ")
@@ -50,9 +52,11 @@ def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
 
 
 def gemm_naive(
-    a: TileTensor[dtype, element_size=1, ...],
-    b: TileTensor[dtype, element_size=1, ...],
-    c: TileTensor[mut=True, dtype, element_size=1, ...],
+    a: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    b: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    c: TileTensor[
+        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
+    ],
     m: Int,
     n: Int,
     k: Int,
@@ -75,11 +79,11 @@ def kernel(
     k: Int,
     kc: Int,
 ):
-    var a = TileTensor(a_ptr, row_major(Idx(MR * k)))
-    var b = TileTensor(b_ptr, row_major(Idx(k * NR)))
-    var c = TileTensor(c_ptr, row_major(Idx(MR * n)))
+    var a = TileTensor(a_ptr, row_major(MR * k))
+    var b = TileTensor(b_ptr, row_major(k * NR))
+    var c = TileTensor(c_ptr, row_major(MR * n))
 
-    var c_stack = InlineArray[Scalar[dtype], align_up(MR * NR, alignment)](
+    var c_stack = Array[Scalar[dtype], align_up(MR * NR, alignment)](
         uninitialized=True
     )
     var c_local = TileTensor(c_stack, row_major[MR * NR]())
@@ -88,10 +92,8 @@ def kernel(
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c.load[width=simd_size](
-                Coord(Idx(n * idx0 + simd_size * idx1))
-            )
-            c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
+            var cv = c.load[width=simd_size](Coord(n * idx0 + simd_size * idx1))
+            c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
 
     for pr in range(kc):
         comptime for i in range(NR2):
@@ -103,20 +105,20 @@ def kernel(
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
                 var bv = b.load[width=simd_size](
-                    Coord(Idx(NR * pr + simd_size * idx1))
+                    Coord(NR * pr + simd_size * idx1)
                 )
                 var cv = c_local.load[width=simd_size](
-                    Coord(Idx(NR * idx0 + simd_size * idx1))
+                    Coord(NR * idx0 + simd_size * idx1)
                 )
                 cv += av * bv
-                c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
+                c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](
-                Coord(Idx(NR * idx0 + simd_size * idx1))
+                Coord(NR * idx0 + simd_size * idx1)
             )
-            c.store(Coord(Idx(n * idx0 + simd_size * idx1)), cv)
+            c.store(Coord(n * idx0 + simd_size * idx1), cv)
 
 
 def pack_B(
@@ -127,8 +129,8 @@ def pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
-    var bc = TileTensor(b2_ptr, row_major(Idx(k * n)))
+    var b = TileTensor(b_ptr, row_major(k * n))
+    var bc = TileTensor(b2_ptr, row_major(k * n))
     for pr in range(kc):
         for ir in range(nc // NR):
             for v in range(NR):
@@ -194,20 +196,31 @@ def main() raises:
     print("x", end="")
     print(k)
 
-    var a_ptr = alloc[Scalar[dtype]](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
-    var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
-    var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Idx(m * k)))
-    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
-    var b2 = TileTensor(b2_ptr, row_major(Idx(k * n)))
-    var c = TileTensor(c_ptr, row_major(Idx(m * n)))
-    var c2 = TileTensor(c2_ptr, row_major(Idx(m * n)))
+    var a_alloc = (
+        alloc[Scalar[dtype]].aligned[alignment](count=m * k).into_managed()
+    )
+    var b_alloc = (
+        alloc[Scalar[dtype]].aligned[alignment](count=k * n).into_managed()
+    )
+    var b2_alloc = (
+        alloc[Scalar[dtype]].aligned[alignment](count=k * n).into_managed()
+    )
+    var c_alloc = (
+        alloc[Scalar[dtype]].aligned[alignment](count=m * n).into_managed()
+    )
+    var c2_alloc = (
+        alloc[Scalar[dtype]].aligned[alignment](count=m * n).into_managed()
+    )
 
-    var am = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
-    var bm = TileTensor(b_ptr, row_major(Idx(k), Idx(n)))
-    var cm = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
+    var a = TileTensor(a_alloc.unsafe_ptr(), row_major(m * k))
+    var b = TileTensor(b_alloc.unsafe_ptr(), row_major(k * n))
+    var b2 = TileTensor(b2_alloc.unsafe_ptr(), row_major(k * n))
+    var c = TileTensor(c_alloc.unsafe_ptr(), row_major(m * n))
+    var c2 = TileTensor(c2_alloc.unsafe_ptr(), row_major(m * n))
+
+    var am = TileTensor(a_alloc.unsafe_ptr(), row_major(m, k))
+    var bm = TileTensor(b_alloc.unsafe_ptr(), row_major(k, n))
+    var cm = TileTensor(c_alloc.unsafe_ptr(), row_major(m, n))
 
     for i in range(m * k):
         a[i] = Scalar[dtype](i)
@@ -231,12 +244,11 @@ def main() raises:
     print(m * n, end="")
     print(" errors")
 
-    @parameter
-    def bench_gemm():
+    def bench_gemm() {var}:
         gemm(a.ptr, b2.ptr, c2.ptr, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * Float64(m) * Float64(n) * Float64(k) / time / 1e9
     print(time, end="")
     print(" seconds")
@@ -248,8 +260,8 @@ def main() raises:
     print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
-    a_ptr.free()
-    b_ptr.free()
-    b2_ptr.free()
-    c_ptr.free()
-    c2_ptr.free()
+    dealloc(a_alloc^)
+    dealloc(b_alloc^)
+    dealloc(b2_alloc^)
+    dealloc(c_alloc^)
+    dealloc(c2_alloc^)

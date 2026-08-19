@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
@@ -24,6 +25,7 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -31,11 +33,18 @@ from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
 
 @dataclass(kw_only=True)
 class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
     target: Llama3Config
     draft: Llama3Config
     speculative_config: SpeculativeConfig
     enable_structured_output: bool = False
     """When True, the graph accepts a bitmask input for grammar-constrained decoding."""
+    quantization_encoding: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
@@ -50,7 +59,9 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     def get_kv_params(self) -> KVCacheParamInterface:
         target_kv_params = self.target.get_kv_params()
         draft_kv_params = self.draft.get_kv_params()
-        return MultiKVCacheParams.from_params(target_kv_params, draft_kv_params)
+        return MultiKVCacheParams.from_params(
+            {"target": target_kv_params, "draft": draft_kv_params}
+        )
 
     @classmethod
     def initialize(

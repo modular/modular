@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.intrinsics import _type_is_eq
 
 from std.collections.list import _ListIter
 from std.testing import TestSuite, assert_true
 
 
 def test_iter() raises:
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     var it = iter(l)
-    assert_true(_type_is_eq[type_of(it), _ListIter[Int, origin_of(l)]]())
+    assert_true(type_of(it) == _ListIter[Int, origin_of(l)])
     # Check that iter(iter(l)) is the same as iter(l)
     var _it2 = iter(it)
-    assert_true(_type_is_eq[type_of(_it2), _ListIter[Int, origin_of(l)]]())
+    assert_true(type_of(_it2) == _ListIter[Int, origin_of(l)])
 
 
 def main() raises:

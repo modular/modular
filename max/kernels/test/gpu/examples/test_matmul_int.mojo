@@ -14,11 +14,12 @@
 from std.math import ceildiv
 from std.math.uutils import udivmod
 
-from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import block_idx, global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import (
-    memset_zero,
-    stack_allocation,
+    unsafe_memset_zero,
+    unsafe_stack_allocation,
 )
 from layout import Coord, Idx, TileTensor, row_major
 
@@ -31,13 +32,17 @@ def matmul(
     a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
+    var a = TileTensor(a_ptr, row_major(Coord(m, k)))
+    var b = TileTensor(b_ptr, row_major(Coord(k, n)))
+    var c = TileTensor(c_ptr, row_major(Coord(m, n)))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -49,7 +54,7 @@ def matmul(
     # NOTE: A and C are column major, B is row major.
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.int,
         address_space=AddressSpace.SHARED,
@@ -60,9 +65,9 @@ def matmul(
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
+    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.int]()
 
-    memset_zero(c_reg, TILE_SZ_B)
+    unsafe_memset_zero(c_reg, TILE_SZ_B)
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
@@ -131,13 +136,13 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function_experimental[matmul](
+    ctx.enqueue_function[matmul](
         a_device,
         b_device,
         c_device,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
     )

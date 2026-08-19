@@ -13,33 +13,33 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from max.gpu.host import DeviceContext
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord
+from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
+    var vector = Array[Scalar[DType.int], n](fill=-1)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {mut vector}:
         @always_inline
-        @parameter
-        def func[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            vector[idx[0]] = 42
+        @__parameter
+        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+            vector[Int(idx[0].value())] = 42
 
-        elementwise[func=func, simd_width=simd_width_of[DType.int]()](Index(n))
+        elementwise[func=func, simd_width=simd_width_of[DType.int]()](
+            Coord(IndexList[1](n)), DeviceContext(api="cpu")
+        )
 
-    b.iter[call_fn]()
-    _ = vector
+    b.iter(call_fn)
 
 
 def main() raises:

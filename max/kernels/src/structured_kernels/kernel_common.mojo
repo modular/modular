@@ -23,7 +23,7 @@ This module contains common components used by all SM100 matmul kernel variants:
 from std.gpu import thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu import block_id_in_cluster
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync_with_mask,
 )
@@ -123,41 +123,58 @@ struct WarpRole(TrivialRegisterPassable):
 # =============================================================================
 
 
-struct WarpRole1D1D[has_sfb: Bool = False](TrivialRegisterPassable):
+struct WarpRole1D1D[has_sfb: Bool = False, num_epi_warps: Int = 4](
+    TrivialRegisterPassable
+):
     """Warp role for 1D-1D kernels with warp specialization.
 
     Parameterized on `has_sfb` so the SFB TMA-load / TMEM-load warps (and the
-    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path.
+    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path, and
+    on `num_epi_warps` so kernels with heavier consumer phases can grow the
+    pool without affecting other kernels.
 
-    Base layout, `has_sfb = False` (224 threads with scheduler, MMA_N >= 64):
-    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
+    Default layout (`has_sfb=False, num_epi_warps=4`: 224 threads with
+    scheduler, MMA_N >= 64):
+    - Warps 0-3 (threads 0-127): Epilogue
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
     - Warp 6 (threads 192-223): Scheduler
 
-    Extended layout, `has_sfb = True` (384 threads with scheduler, MMA_N < 64):
-    - Warps 0-3 (threads 0-127):    Epilogue (4 warps)
+    Extended layout (`has_sfb=True, num_epi_warps=4`: 384 threads with
+    scheduler, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):    Epilogue
     - Warp 4 (threads 128-159):     TMA Load (A, B, SFA)
     - Warp 5 (threads 160-191):     MMA
-    - Warp 6 (threads 192-223):     SFB TMA Load (1 warp)
-    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps)
+    - Warp 6 (threads 192-223):     SFB TMA Load
+    - Warps 7-10 (threads 224-351): SFB TMEM Load
     - Warp 11 (threads 352-383):    Scheduler
 
-    The epilogue warps being at 0-3 is important because TMAStoreCoords
-    uses `warp_id == 0` for election.
+    The epilogue warps being at 0..NUM_EPILOGUE_THREADS-1 is important
+    because TMAStoreCoords uses `warp_id == 0` for election.
+
+    Parameters:
+        has_sfb: Whether SFB TMA-load and TMEM-load warps are present,
+            enabled on the MMA_N < 64 path (defaults to `False`).
+        num_epi_warps: Number of epilogue warps in the warp pool, grown
+            for kernels with heavier consumer phases (defaults to 4).
     """
 
-    comptime EPILOGUE_WARP_START = 0
-    comptime LOAD_WARP_START = 128
-    comptime MMA_WARP_START = 160
-    comptime SFB_TMA_LOAD_WARP_START = 192
-    comptime SFB_LOAD_WARP_START = 224
-
-    comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
+    comptime NUM_EPILOGUE_THREADS = Self.num_epi_warps * 32
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
     comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
     comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
+    comptime NUM_SCHEDULER_THREADS = 32
+
+    comptime EPILOGUE_WARP_START = 0
+    comptime LOAD_WARP_START = Self.NUM_EPILOGUE_THREADS
+    comptime MMA_WARP_START = (Self.LOAD_WARP_START + Self.NUM_LOAD_THREADS)
+    comptime SFB_TMA_LOAD_WARP_START = (
+        Self.MMA_WARP_START + Self.NUM_MMA_THREADS
+    )
+    comptime SFB_LOAD_WARP_START = (
+        Self.SFB_TMA_LOAD_WARP_START + Self.NUM_SFB_TMA_LOAD_THREADS
+    )
 
     # Scheduler warp sits right after the SFB warps when they exist, otherwise
     # directly after the MMA warp. Launching the SFB warps on MMA_N >= 64 would
@@ -166,11 +183,15 @@ struct WarpRole1D1D[has_sfb: Bool = False](TrivialRegisterPassable):
         Self.SFB_LOAD_WARP_START
         + Self.NUM_SFB_LOAD_THREADS if Self.has_sfb else Self.SFB_TMA_LOAD_WARP_START
     )
-    comptime NUM_SCHEDULER_THREADS = 32
 
-    comptime TOTAL_THREADS = 192
-    comptime TOTAL_THREADS_WITH_SFB = 352
-    # 384 when has_sfb else 224.
+    comptime TOTAL_THREADS = (
+        Self.NUM_EPILOGUE_THREADS + Self.NUM_LOAD_THREADS + Self.NUM_MMA_THREADS
+    )
+    comptime TOTAL_THREADS_WITH_SFB = (
+        Self.TOTAL_THREADS
+        + Self.NUM_SFB_TMA_LOAD_THREADS
+        + Self.NUM_SFB_LOAD_THREADS
+    )
     comptime TOTAL_THREADS_WITH_SCHED = (
         Self.SCHEDULER_WARP_START + Self.NUM_SCHEDULER_THREADS
     )
@@ -249,6 +270,14 @@ struct KernelContext[
     CLUSTER_N: Int,
 ](Copyable, Movable):
     """Shared kernel state: election vars, CTA coords, multicast masks, pipeline states.
+
+    Parameters:
+        num_clc_pipeline_stages: Number of CLC pipeline stages managed by
+            the scheduler work iterator.
+        cta_group: Number of CTAs that cooperate as a single group, either
+            1 or 2 for dual-CTA (2SM) mode.
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
     """
 
     # ===== Election Variables =====
@@ -277,7 +306,12 @@ struct KernelContext[
 
     @always_inline
     def __init__(out self, ptr_tmem_addr: SMemPtr[UInt32]):
-        """Initialize context from TMEM pointer; computes all derived state."""
+        """Initialize context from TMEM pointer; computes all derived state.
+
+        Args:
+            ptr_tmem_addr: Shared-memory pointer to the TMEM address used by
+                the epilogue warps.
+        """
         # Election variables
         self.warp_id = UInt32(get_warp_id())
         self.elect_one_warp = self.warp_id == 0
@@ -328,7 +362,12 @@ struct KernelContext[
 
     @always_inline
     def __init__(out self, tmem_addr: Self.TmemAddrArray):
-        """Initialize context from typed TMEM address array."""
+        """Initialize context from typed TMEM address array.
+
+        Args:
+            tmem_addr: Typed TMEM address array to initialize the context
+                from.
+        """
         self = Self(tmem_addr.ptr)
 
 
@@ -349,6 +388,20 @@ def compute_tma_tile_dims[
     AB_swapped: Bool = False,
 ]() -> StaticTuple[Int, 3]:
     """Compute TMA tile dimensions (a_tile_dim0, b_tile_dim0, c_tile_dim0).
+
+    Parameters:
+        BM: Block size along the M dimension of the matmul tile.
+        BN: Block size along the N dimension of the matmul tile.
+        MMA_M: M dimension of the MMA instruction shape, used to select
+            the output tile strategy.
+        OutputM: M dimension of the output tensor, used as the C tile
+            size when the MMA shape or CTA group allows it.
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2
+            for dual-CTA mode.
+        AB_swapped: Whether the A and B operands are swapped, selecting
+            the full-output tile path (defaults to `False`).
 
     Returns:
         StaticTuple of (a_tile_dim0, b_tile_dim0, c_tile_dim0).
@@ -372,6 +425,14 @@ def compute_clc_barrier_counts[
 ]() -> StaticTuple[Int, 4]:
     """Compute CLC barrier arrival counts.
 
+    Parameters:
+        SCHEDULER_THREADS: Number of scheduler threads.
+        TMA_LOAD_THREADS: Number of TMA load threads.
+        MMA_THREADS: Number of MMA threads.
+        EPILOGUE_THREADS: Number of epilogue threads.
+        CLUSTER_SIZE: Number of CTAs in the cluster.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
+
     Returns:
         StaticTuple of (producer, consumer, throttle_producer, throttle_consumer).
     """
@@ -393,6 +454,10 @@ def compute_accum_barrier_counts[
     cta_group: Int,
 ]() -> StaticTuple[Int, 2]:
     """Compute accumulator pipeline barrier arrival counts.
+
+    Parameters:
+        EPILOGUE_THREADS: Number of epilogue threads per CTA.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
 
     Returns:
         StaticTuple of (producer_arv_count, consumer_arv_count).
@@ -421,6 +486,14 @@ def compute_input_consumer_count[
     For standard kernels, consumers are the MMA warps across the cluster.
     For blockwise FP8 kernels, epilogue warps also consume input tiles
     (A-scales), so pass CLUSTER_SIZE and epilogue_threads to include them.
+
+    Parameters:
+        CLUSTER_M: Number of CTAs in the cluster along the M dimension.
+        CLUSTER_N: Number of CTAs in the cluster along the N dimension.
+        cta_group: Number of cooperating CTAs in a group, either 1 or 2.
+        CLUSTER_SIZE: Number of CTAs in the cluster (defaults to 0).
+        epilogue_threads: Number of epilogue threads that consume input
+            tiles, included when greater than 0 (defaults to 0).
     """
     comptime base = CLUSTER_M // cta_group + CLUSTER_N - 1
 
@@ -447,6 +520,28 @@ def init_core_barriers[
 
     Called inside the elect_one_warp && elect_one_thread guard.
     Handles the three barrier init steps shared by all SM100 kernels.
+
+    Parameters:
+        num_input_stages: Number of input pipeline stages to initialize
+            barriers for.
+        num_accum_stages: Number of accumulator pipeline stages to
+            initialize barriers for.
+
+    Args:
+        input_barriers_ptr: Shared-memory pointer to the input pipeline
+            barriers.
+        input_consumer_count: Number of consumer arrivals on each input
+            barrier.
+        accum_barriers_ptr: Shared-memory pointer to the accumulator
+            pipeline barriers.
+        accum_producer_arv_count: Number of producer arrivals on each
+            accumulator barrier.
+        accum_consumer_arv_count: Number of consumer arrivals on each
+            accumulator barrier.
+        tmem_dealloc_ptr: Shared-memory pointer to the TMEM deallocation
+            barrier.
+        tmem_dealloc_thread_count: Number of threads that arrive on the
+            TMEM deallocation barrier.
     """
     ProducerConsumerPipeline[num_input_stages](input_barriers_ptr).init_mbars(
         Int32(1), input_consumer_count
@@ -470,6 +565,20 @@ def init_clc_barriers[
 
     Called inside the elect_one_warp && elect_one_thread guard for
     CLC-enabled kernels (default, block_scaled, blockwise_fp8, grouped_2sm).
+
+    Parameters:
+        num_clc_stages: Number of CLC pipeline stages to initialize
+            barriers for.
+
+    Args:
+        clc_full_ptr: Shared-memory pointer to the CLC full barriers,
+            one per pipeline stage.
+        clc_empty_ptr: Shared-memory pointer to the CLC empty barriers,
+            one per pipeline stage.
+        clc_producer_arv_count: Number of arrivals the producer makes on
+            each CLC full barrier.
+        clc_consumer_arv_count: Number of arrivals the consumer makes on
+            each CLC empty barrier.
     """
     comptime for i in range(num_clc_stages):
         clc_full_ptr[i].init(clc_producer_arv_count)
@@ -499,7 +608,7 @@ def _to_batched_3d(
     return tensor.reshape(
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
             )

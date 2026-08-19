@@ -30,8 +30,8 @@ and only for bfloat16.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -48,13 +48,14 @@ def consumer_kernel[
 ](
     input: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    length: Int,
+    length_dev: Int32,
 ):
     """Consumer kernel that reads matmul output after PDL wait.
 
     Waits for dependent grids (matmul) before reading.
     Copies input to output (can verify output later on host).
     """
+    var length = Int(length_dev)
     wait_on_dependent_grids()
 
     var tid = thread_idx.x + block_idx.x * block_dim.x
@@ -114,15 +115,15 @@ def run_pdl_race_test[
     # Create TileTensors for matmul
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx[M](), Idx[K]())),
+        row_major(Coord(Idx[M], Idx[K])),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx[N](), Idx[K]())),
+        row_major(Coord(Idx[N], Idx[K])),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx[M](), Idx[N]())),
+        row_major(Coord(Idx[M], Idx[N])),
     )
 
     # Run multiple iterations to increase chance of catching race
@@ -142,10 +143,10 @@ def run_pdl_race_test[
         var num_threads = 256
         var num_blocks = ceildiv(M * N, num_threads)
         comptime kernel = consumer_kernel[dtype]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             result_device,
-            M * N,
+            Int32(M * N),
             grid_dim=num_blocks,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),

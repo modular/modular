@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import NonCallableMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.driver import (
@@ -27,24 +27,31 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVConnectorType,
+    MHAKVCacheParams,
+)
 from max.pipelines.lib import (
     KVCacheConfig,
     KVConnectorConfig,
     MAXModelConfig,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 
 
 @dataclass
 class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
     """Concrete implementation of ArchConfigWithAttentionKVCache for testing."""
+
+    DEFAULT_ENCODING = "bfloat16"
+    SUPPORTED_ENCODINGS = {"bfloat16"}
 
     # Required attributes can be implemented as dataclass fields.
     num_key_value_heads: int = 8
@@ -75,12 +82,23 @@ def create_mock_pipeline_config(
     mock_model.device_specs = []
     mock_model.max_length = max_length
 
+    # `initialize` resolves the encoding via `_select_quantization_encoding`,
+    # which reads the weight path and the HF repo's supported encodings. With
+    # no weight path and an empty repo, resolution keeps a given encoding and
+    # falls back to `DEFAULT_ENCODING` when unset.
+    mock_model.weight_path = []
+    mock_weight_repo = MagicMock()
+    mock_weight_repo.supported_encodings = []
+    mock_weight_repo.files_for_encoding.return_value = {}
+    mock_weight_repo.encoding_for_file.return_value = None
+    mock_model.huggingface_weight_repo = mock_weight_repo
+
     # Create mock kv_cache_config
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.kv_cache_page_size = kv_cache_page_size
     mock_kv_cache_config.enable_prefix_caching = enable_prefix_caching
     mock_kv_cache_config.kv_connector_config = kv_connector_config
-    mock_kv_cache_config.cache_dtype = DType.bfloat16
+    mock_kv_cache_config.kv_cache_format = None
 
     mock_model.kv_cache = mock_kv_cache_config
     mock_config.model = mock_model
@@ -144,17 +162,22 @@ def test_arch_config_with_cache_protocol_check() -> None:
 class TestArchConfigWithAttentionKVCache:
     """Tests for ArchConfigWithAttentionKVCache."""
 
-    def test_initialize_raises_error_when_quantization_encoding_is_none(
+    def test_initialize_resolves_default_encoding_when_none(
         self,
     ) -> None:
-        """Test that initialize raises ValueError when quantization_encoding is None."""
+        """Test that initialize falls back to DEFAULT_ENCODING when unset.
+
+        `quantization_encoding` is no longer required: with the raw value unset
+        and nothing to infer, `_select_quantization_encoding` resolves to the
+        architecture's `DEFAULT_ENCODING` (``bfloat16`` here).
+        """
         mock_config = create_mock_pipeline_config(quantization_encoding=None)
 
-        with pytest.raises(
-            ValueError,
-            match="Quantization encoding is required for ArchConfigWithAttentionKVCache",
-        ):
-            ConcreteArchConfig.initialize(mock_config)
+        result = ConcreteArchConfig.initialize(mock_config)
+        assert isinstance(result, ConcreteArchConfig)
+        assert result.quantization_encoding == "bfloat16"
+        assert result.dtype == DType.bfloat16
+        assert result.cache_dtype == DType.bfloat16
 
     def test_initialize_succeeds_with_valid_quantization_encoding(self) -> None:
         """Test that initialize succeeds with valid quantization encoding."""
@@ -172,7 +195,7 @@ class TestArchConfigWithAttentionKVCache:
         mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
-        assert result.cache_dtype == DType.bfloat16
+        assert result.cache_dtype == DType.float32
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:
@@ -240,7 +263,7 @@ class TestArchConfigWithAttentionKVCache:
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
             enable_prefix_caching=True,
-            kv_connector=KVConnectorType.local,
+            kv_connector=KVConnectorType.tiered,
             kv_connector_config=KVConnectorConfig(
                 host_kvcache_swap_space_gb=100.0,
             ),
@@ -255,13 +278,14 @@ class TestArchConfigWithAttentionKVCache:
         kv_params = config.get_kv_params()
 
         # Verify the KVCacheParams fields
+        assert isinstance(kv_params, MHAKVCacheParams)
         assert kv_params.dtype == DType.bfloat16
         assert kv_params.n_kv_heads == 8  # from ConcreteArchConfig
         assert kv_params.head_dim == 64  # from ConcreteArchConfig
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
         assert kv_params.enable_prefix_caching is True
-        assert kv_params.kv_connector == KVConnectorType.local
+        assert kv_params.kv_connector == KVConnectorType.tiered
         assert kv_params.host_kvcache_swap_space_gb == 100.0
         assert kv_params.data_parallel_degree == 2
 
@@ -327,3 +351,53 @@ class TestArchConfigWithAttentionKVCache:
             match=r"default value provided \(4096\) exceeds the upper bound \(2048\)",
         ):
             _ = config.get_max_seq_len()
+
+
+def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
+    """``to_params`` falls back to the config's allow_kv_head_replication.
+
+    The base Llama3/M2 ``construct_kv_params`` paths call ``to_params`` without
+    threading the flag, so architectures (e.g. MiniMax-M3) enable wide tensor
+    parallelism by setting it on the shared ``KVCacheConfig``.
+    """
+    kv_cache_config = KVCacheConfig(allow_kv_head_replication=True)
+    # 4 KV heads over 8 devices would normally fail the divisibility check; the
+    # config flag relaxes it so each head replicates across 2 devices.
+    params = kv_cache_config.to_params(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+    )
+    assert params.n_kv_heads_per_device == 1
+
+
+def test_to_params_replication_disabled_by_default() -> None:
+    """Without the config flag, wide TP still raises the strict error."""
+    kv_cache_config = KVCacheConfig()
+    with pytest.raises(
+        ValueError,
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
+    ):
+        kv_cache_config.to_params(
+            dtype=DType.bfloat16,
+            n_kv_heads=4,
+            head_dim=128,
+            num_layers=1,
+            devices=[DeviceRef.GPU(i) for i in range(8)],
+        )
+
+
+def test_to_params_explicit_arg_overrides_config() -> None:
+    """An explicit allow_kv_head_replication argument wins over the config."""
+    kv_cache_config = KVCacheConfig(allow_kv_head_replication=False)
+    params = kv_cache_config.to_params(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        allow_kv_head_replication=True,
+    )
+    assert params.n_kv_heads_per_device == 1
