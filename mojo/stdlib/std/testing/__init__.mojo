@@ -14,7 +14,7 @@
 
 The `testing` package provides a unit testing framework for Mojo code. It
 includes assertion functions for validating conditions and values, plus
-infrastructure for organizing and running test suites. The framework follows
+infrastructure for organizing and running test suites The framework follows 
 familiar patterns from other testing libraries, making it straightforward to
 write and maintain tests.
 
@@ -35,3 +35,4 @@ from .testing import (
 )
 
 from .suite import TestSuite
+from .assert_aborts import _assert_aborts

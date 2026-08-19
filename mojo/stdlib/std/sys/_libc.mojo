@@ -205,6 +205,11 @@ def dup(oldfd: c_int) -> c_int:
 
 
 @always_inline
+def dup2(oldfd: c_int, newfd: c_int) -> c_int:
+    return external_call["dup2", c_int](oldfd, newfd)
+
+
+@always_inline
 def execvp[
     origin: ImmOrigin,
     //,
