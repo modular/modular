@@ -825,49 +825,49 @@ def test_array_add_explicit_destroy_type() raises:
     assert_equal(destroyed, [0, 1, 2])
 
 
-def test_array_mul() raises:
+def test_array_repeat() raises:
     var a: Array[Int, 2] = [1, 2]
-    var b = (a^) * 3
+    var b = a^.repeat[3]()
     comptime assert type_of(b).length == 6
     for i in range(6):
         assert_equal(b[i], i % 2 + 1)
 
 
-def test_array_mul_by_one() raises:
+def test_array_repeat_by_one() raises:
     var a: Array[Int, 3] = [1, 2, 3]
-    var b = (a^) * 1
+    var b = a^.repeat[1]()
     comptime assert type_of(b).length == 3
     for i in range(3):
         assert_equal(b[i], i + 1)
 
 
-def test_array_mul_rvalue() raises:
+def test_array_repeat_rvalue() raises:
     def returns_array() -> Array[Int, 2]:
         return [1, 2]
 
-    var a = returns_array() * 2
+    var a = returns_array().repeat[2]()
     comptime assert type_of(a).length == 4
     for i in range(4):
         assert_equal(a[i], i % 2 + 1)
 
 
-def test_array_mul_string() raises:
+def test_array_repeat_string() raises:
     var a: Array[String, 2] = ["hi", "hello"]
-    var b = (a^) * 2
+    var b = a^.repeat[2]()
     assert_equal(b[0], "hi")
     assert_equal(b[1], "hello")
     assert_equal(b[2], "hi")
     assert_equal(b[3], "hello")
 
 
-def test_array_mul_runs_destructors_once() raises:
+def test_array_repeat_runs_destructors_once() raises:
     var destructor_recorder = List[Int]()
     var ptr = Pointer(to=destructor_recorder).as_imm()
     var a: Array[DelRecorder[ptr.origin], 2] = [
         DelRecorder(0, ptr),
         DelRecorder(1, ptr),
     ]
-    var b = (a^) * 3
+    var b = a^.repeat[3]()
     # The input's elements were copied/moved into `b`, not destroyed.
     assert_equal(len(destructor_recorder), 0)
     _ = b^
