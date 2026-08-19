@@ -883,8 +883,8 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
 
-Attribute NameRefToImplicitOriginRefAttrReplacer::tryReplace(Attribute attr,
-                                                             size_t depth) {
+Attribute ImplicitOriginToNameRefAttrReplacer::tryReplace(Attribute attr,
+                                                          size_t depth) {
   auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
   if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
     return nullptr;
@@ -907,15 +907,15 @@ Attribute NameRefToImplicitOriginRefAttrReplacer::tryReplace(Attribute attr,
 // OriginDeclRemapper
 //===----------------------------------------------------------------------===//
 
-ImplicitOriginRefToNameRefRemapper::ImplicitOriginRefToNameRefRemapper(
+NameToImplicitOriginRefRemapper::NameToImplicitOriginRefRemapper(
     ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
     : depthOffset(depthOffset) {
   for (auto [index, decl] : llvm::enumerate(originDecls))
     mapping.try_emplace(decl.getName(), index);
 }
 
-Attribute ImplicitOriginRefToNameRefRemapper::tryReplace(Attribute attr,
-                                                         size_t depth) {
+Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
+                                                      size_t depth) {
   auto ref = dyn_cast<ParamDeclRefAttr>(attr);
   if (!ref)
     return nullptr;

@@ -278,13 +278,13 @@ private:
 /// way up to the root scope of the walked value (see PSTIAIRAID) with
 /// references to explicitly *named* parameter-decls, creating one decl per
 /// distinct origin.
-class NameRefToImplicitOriginRefAttrReplacer
-    : public IndexParameterReplacer<NameRefToImplicitOriginRefAttrReplacer> {
+class ImplicitOriginToNameRefAttrReplacer
+    : public IndexParameterReplacer<ImplicitOriginToNameRefAttrReplacer> {
 public:
   /// Both containers stay owned by the caller: newly created decls are
   /// appended to `newOriginParamDecls`, and `implicitOriginToNewParamRef`
   /// records the origins that were already given a name.
-  NameRefToImplicitOriginRefAttrReplacer(MLIRContext *ctx) : ctx(ctx) {}
+  ImplicitOriginToNameRefAttrReplacer(MLIRContext *ctx) : ctx(ctx) {}
 
   std::vector<ParamDeclAttr> &getNewOriginParamDecls() {
     return newOriginParamDecls;
@@ -293,7 +293,7 @@ public:
 private:
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }
-  friend class IndexParameterReplacer<NameRefToImplicitOriginRefAttrReplacer>;
+  friend class IndexParameterReplacer<ImplicitOriginToNameRefAttrReplacer>;
 
   MLIRContext *ctx;
   std::vector<ParamDeclAttr> newOriginParamDecls;
@@ -308,16 +308,16 @@ private:
 /// The inverse of `ImplicitOriginRefAttrReplacer`: replaces references to the
 /// *named* implicit origin decls it was constructed with by index-based
 /// `ImplicitOriginRefAttr` references.
-class ImplicitOriginRefToNameRefRemapper
-    : public IndexParameterReplacer<ImplicitOriginRefToNameRefRemapper> {
+class NameToImplicitOriginRefRemapper
+    : public IndexParameterReplacer<NameToImplicitOriginRefRemapper> {
 public:
-  ImplicitOriginRefToNameRefRemapper(ArrayRef<ParamDeclAttr> originDecls,
-                                     size_t depthOffset);
+  NameToImplicitOriginRefRemapper(ArrayRef<ParamDeclAttr> originDecls,
+                                  size_t depthOffset);
 
 private:
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }
-  friend class IndexParameterReplacer<ImplicitOriginRefToNameRefRemapper>;
+  friend class IndexParameterReplacer<NameToImplicitOriginRefRemapper>;
 
   /// Subtracted from the depth of the created references, because we may be
   /// replacing the signature directly. Theories on what that means:
