@@ -527,6 +527,10 @@ _FILECHECK_TESTS = [
             # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
             # declared explicitly below.
             "attention/test_mha_sm100_nonws_partial_v_pages.mojo",
+            # Layout-E V-producer paged-LUT alignment regression: uses
+            # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
+            # declared explicitly below.
+            "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo",
             # Apple-only decode-attention correctness gate (needs the
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
@@ -577,6 +581,41 @@ mojo_test(
     size = "large",
     srcs = ["attention/test_mha_sm100_nonws_partial_v_pages.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 Layout-E V-PRODUCER PAGED-LUT ALIGNMENT. Regression for the
+# `_produce_v_e` `populate()` fast-arm bug at `page_size == config.BN` (256):
+# partition 1's V load silently reused partition 0's page (see the file's
+# module docstring). Auto-routes to Layout-E with no `-D FA4_FORCE_CONFIG`
+# copt (`num_q_heads=64`/`group=8` fails Layout-G's tile-fit gate at
+# `valid_length=8`, matching `test_mha_sm100_ws_bm32.mojo`'s documented
+# fallthrough). `enable_assertions = True` to match what the glob
+# comprehension gives every other sibling on non-AMD (this file is not in
+# either exclusion list) and so `PagedRowIndices.populate`'s
+# `base_kv_row % page_size == 0` debug_assert fires as a second signal
+# alongside the naive-oracle numeric diff. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_layout_e_v_alignment.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = True,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
