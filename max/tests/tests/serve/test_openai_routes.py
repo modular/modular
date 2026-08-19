@@ -265,7 +265,7 @@ def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
     num_threads = 10
     with SyncTestClient(app) as client:
         threads = []
-        for i in range(0, num_threads):
+        for i in range(num_threads):
             threads.append(Thread(target=execute_request, args=(client, i)))
             threads[i].start()
         for t in threads:

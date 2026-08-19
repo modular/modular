@@ -85,9 +85,7 @@ def _load_image(image_input: dict[str, Any]) -> Image.Image:
         image_obj = image
     elif isinstance(image, bytes):
         image_obj = Image.open(io.BytesIO(image))
-    elif isinstance(image, str) and (
-        image.startswith("http://") or image.startswith("https://")
-    ):
+    elif isinstance(image, str) and (image.startswith(("http://", "https://"))):
         with requests.get(image, stream=True) as response:
             response.raise_for_status()
             with BytesIO(response.content) as bio:

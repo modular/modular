@@ -154,4 +154,3 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
     def release(self, request_id: RequestID) -> None:
         """Releases resources for the request (no-op for embeddings)."""
         # Nothing to release.
-        pass

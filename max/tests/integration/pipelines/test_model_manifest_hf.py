@@ -266,7 +266,7 @@ class TestDiffusionMultiComponentHF:
     def test_each_component_has_same_model_path(
         self, registry: ModelManifest
     ) -> None:
-        for _role, cfg in registry.items():
+        for cfg in registry.values():
             assert cfg.model_path == self.REPO
 
     def test_each_component_has_subfolder(

@@ -170,7 +170,7 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         # max/min and the selected argmax/argmin value are representable
         # exactly, so both dtypes match to a tight absolute tolerance.
         return 1e-3, 0.0, 0.0
-    if op in ("reduce_sum",):
+    if op == "reduce_sum":
         return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
         return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)

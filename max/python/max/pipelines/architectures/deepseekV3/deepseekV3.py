@@ -925,7 +925,7 @@ class DeepseekV3(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            capture_hidden_states=eagle3_captured if eagle3_captured else None,
+            capture_hidden_states=eagle3_captured or None,
         )
 
     def input_types(

@@ -197,7 +197,7 @@ def _normalize_addr(addr: str) -> str:
     addr = addr.strip()
     if not addr:
         raise ValueError("bind address cannot be empty")
-    if addr.startswith("unix:") or addr.startswith("unix://"):
+    if addr.startswith(("unix:", "unix://")):
         return addr
     if "://" in addr:
         raise ValueError(f"Unsupported gRPC scheme in {addr!r}")

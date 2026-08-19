@@ -327,7 +327,6 @@ class RequestDriver(ABC):
         Returns:
             RequestFuncOutput containing the response data and metrics.
         """
-        pass
 
 
 class ProgressBarRequestDriver(RequestDriver):

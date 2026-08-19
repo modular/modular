@@ -462,5 +462,3 @@ class MiscTests(
     _WhileLoop,
 ):
     """Aggregates all misc op test classes for thin subclassing."""
-
-    pass

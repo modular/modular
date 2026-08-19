@@ -261,7 +261,7 @@ class StructuralTagToolParser(ABC):
     @property
     def _start_marker(self) -> str:
         """The marker that opens the tool-call region (section or call)."""
-        return self.SECTION_BEGIN if self.SECTION_BEGIN else self.CALL_BEGIN
+        return self.SECTION_BEGIN or self.CALL_BEGIN
 
     # ----- Public ToolParser protocol -----------------------------------
 

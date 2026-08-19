@@ -393,7 +393,7 @@ def load_intermediate_tensors(
                 normalize_device_specs_input(device_type)
             )
         ),
-        encoding_name=encoding_name if encoding_name else None,
+        encoding_name=encoding_name or None,
     )
     tensors_map: dict[str, torch.Tensor] = {}
     if framework == "torch":

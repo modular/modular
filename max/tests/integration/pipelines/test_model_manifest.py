@@ -228,7 +228,7 @@ class TestDiffusersAutoExpansion:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
-        for _role, component_cfg in registry.items():
+        for component_cfg in registry.values():
             assert component_cfg.model_path == "org/diffusion-model"
 
     def test_each_component_has_subfolder(
@@ -327,7 +327,7 @@ class TestRevisionPropagation:
                 "org/diffusion-model", revision="def456"
             )
 
-        for _role, cfg in registry.items():
+        for cfg in registry.values():
             assert cfg.huggingface_model_revision == "def456"
 
 

@@ -171,8 +171,9 @@ def convert_safetensor_vision_state_dict(
     new_state_dict: dict[str, WeightData] = {}
     for weight_name, value in state_dict.items():
         if not (
-            weight_name.startswith("model.encoder.vision_tower.")
-            or weight_name.startswith("model.encoder.embed_vision.")
+            weight_name.startswith(
+                ("model.encoder.vision_tower.", "model.encoder.embed_vision.")
+            )
         ):
             continue
         max_name = weight_name

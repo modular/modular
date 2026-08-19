@@ -628,7 +628,7 @@ def cli(
 
     # add documentation for spec: name/separated param-value pairs
     assert key in ["spec", "name"]
-    prefix = output_prefix if output_prefix else "img"
+    prefix = output_prefix or "img"
 
     cfg = PlotConfig(
         extension=extension,

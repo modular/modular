@@ -237,7 +237,7 @@ class _ResizeFamily(gc_compile.GCFamilySpec):
             module = Module()
         if device not in _CPU_DEVICES:
             return module
-        for _op_type, spec in _RESIZE_OPS.items():
+        for spec in _RESIZE_OPS.values():
             for dtype in _RESIZE_DTYPES:
                 for rank in _ranks_for(spec):
                     for variant in spec.variants:

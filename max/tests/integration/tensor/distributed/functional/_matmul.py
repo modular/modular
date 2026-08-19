@@ -524,5 +524,3 @@ class MatmulTests(
     _LayerNorm,
 ):
     """Aggregates all matmul/linalg test classes for thin subclassing."""
-
-    pass

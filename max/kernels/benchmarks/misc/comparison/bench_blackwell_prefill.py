@@ -677,7 +677,7 @@ if __name__ == "__main__":
     )
 
     if args.num_iters > 1 and not args.no_kineto:
-        met_sec, flops = result if result else [0, 0]
+        met_sec, flops = result or [0, 0]
         flops_per_sec = ThroughputMeasure(Bench.flops, flops)
         name = (
             f"MHA_Prefill/batch_size={args.batch_size}/q_len={args.q_len}/"

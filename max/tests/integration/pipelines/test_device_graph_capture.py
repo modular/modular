@@ -388,7 +388,7 @@ def test_warmup_records_and_captures(
     }
     assert runner._records == expected_keys
     assert set(runner.graph_entries) == set(expected_keys.values())
-    for _key, (_inputs, outputs) in runner.graph_entries.items():
+    for _inputs, outputs in runner.graph_entries.values():
         assert isinstance(outputs, expected_type)
 
 
@@ -460,7 +460,7 @@ def test_warmup_folded_sampler_peels_sampled_tokens() -> None:
     runner.warmup_pre_ready()
 
     assert runner.graph_entries
-    for _key, (_inputs, outputs) in runner.graph_entries.items():
+    for _inputs, outputs in runner.graph_entries.values():
         assert isinstance(outputs, ModelOutputs)
         # The first buffer maps onto logits; the trailing buffer is peeled off
         # into sampled_tokens rather than mis-mapped onto next_token_logits.
@@ -492,7 +492,7 @@ def test_warmup_fold_flag_with_single_output_model_keeps_logits() -> None:
     runner.warmup_pre_ready()
 
     assert runner.graph_entries
-    for _key, (_inputs, outputs) in runner.graph_entries.items():
+    for _inputs, outputs in runner.graph_entries.values():
         assert isinstance(outputs, ModelOutputs)
         # The single capture buffer maps onto logits; nothing is peeled.
         assert outputs.sampled_tokens is None
@@ -515,6 +515,6 @@ def test_warmup_without_fold_leaves_sampled_tokens_none() -> None:
     runner.warmup_pre_ready()
 
     assert runner.graph_entries
-    for _key, (_inputs, outputs) in runner.graph_entries.items():
+    for _inputs, outputs in runner.graph_entries.values():
         assert isinstance(outputs, ModelOutputs)
         assert outputs.sampled_tokens is None

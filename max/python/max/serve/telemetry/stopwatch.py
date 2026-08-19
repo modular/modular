@@ -81,7 +81,7 @@ class StopWatch:
     def elapsed_ns(self) -> int:
         if not self.start_ns:
             raise RuntimeError("Stopwatch not started")
-        end = self.exit_ns if self.exit_ns else self.time_ns()
+        end = self.exit_ns or self.time_ns()
         elapsed = end - self.start_ns
         return elapsed
 

@@ -140,7 +140,7 @@ def fetch_image(
         image_obj = image
     elif isinstance(image, bytes):
         image_obj = Image.open(io.BytesIO(image))
-    elif image.startswith("http://") or image.startswith("https://"):
+    elif image.startswith(("http://", "https://")):
         # fix memory leak issue while using BytesIO
         with requests.get(image, stream=True) as response:
             response.raise_for_status()

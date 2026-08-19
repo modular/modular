@@ -144,7 +144,6 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
         ModelWorkerProxy[BaseContextType, PipelineOutputType]
     ]:
         """Called by API worker to communicate with model worker"""
-        pass
 
     @abstractmethod
     def model_worker_queues(
@@ -153,4 +152,3 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
         WorkerQueues[BaseContextType, PipelineOutputType]
     ]:
         """Called by model worker to get work IO streams"""
-        pass

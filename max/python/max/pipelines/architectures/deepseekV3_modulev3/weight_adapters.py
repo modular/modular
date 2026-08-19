@@ -96,7 +96,7 @@ def _convert_bf16_state_dict(
         # checkpoints (e.g. `k_proj.k_scale`, `v_proj.v_scale`). MAX reads
         # KV cache scales from a separate configuration path, so these
         # keys would otherwise trigger a strict load_state_dict failure.
-        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+        if max_name.endswith((".k_scale", ".v_scale")):
             continue
         out[max_name] = value.data()
     return out
@@ -163,7 +163,7 @@ def _convert_fp8_state_dict(
                 # by routing to a debug path so the load layer can report.
                 max_name = f"{base}.weight_scale_inv"
 
-        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+        if max_name.endswith((".k_scale", ".v_scale")):
             continue
         data = value.data()
         # DeepSeek-V3.1-Terminus stores norm gammas (``model.norm.weight``,
@@ -208,7 +208,7 @@ def _convert_nvfp4_state_dict(
             max_name = _strip_weight_suffix_for_raw_mla(max_name)
 
         # Drop FP8 KV-cache static scales (see ``_convert_bf16_state_dict``).
-        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+        if max_name.endswith((".k_scale", ".v_scale")):
             continue
         out[max_name] = data
     return out

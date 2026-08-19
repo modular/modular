@@ -1233,5 +1233,3 @@ class ShapeTests(
     _SliceStore,
 ):
     """Aggregates all shape test classes for thin subclassing."""
-
-    pass

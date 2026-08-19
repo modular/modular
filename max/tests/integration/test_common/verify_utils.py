@@ -120,7 +120,7 @@ class ValidationResultCollection:
         """Returns a combined failure message for all entries in the collection."""
         message = ""
         num_failures = 0
-        for name, result in self._results.items():  # noqa: B007
+        for result in self._results.values():
             if result.success:
                 continue
 
@@ -170,7 +170,6 @@ class ValidatorBase(ABC):
         """The name to reference this validator in the CLI args.
         Must be unique per Validator.
         """
-        pass
 
     @staticmethod
     @abstractmethod

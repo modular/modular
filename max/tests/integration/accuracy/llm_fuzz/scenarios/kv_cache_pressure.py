@@ -374,7 +374,7 @@ class KVCachePressure(BaseScenario):
                         verdict,
                         status_code=resp.status,
                         elapsed_ms=resp.elapsed_ms,
-                        detail=f"~{n_tokens} tokens (page {ps}{'+' if offset > 0 else ''}{offset if offset else ''}): "
+                        detail=f"~{n_tokens} tokens (page {ps}{'+' if offset > 0 else ''}{offset or ''}): "
                         f"status {resp.status}, {resp.elapsed_ms:.0f}ms",
                     )
                 )

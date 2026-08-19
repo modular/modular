@@ -122,10 +122,8 @@ class EchoPipelineTokenizer(
         encoded_prompt = await self.encode(prompt, add_special_tokens=False)
 
         # Determine max tokens
-        max_new_tokens = (
-            request.sampling_params.max_new_tokens
-            if request.sampling_params.max_new_tokens
-            else len(encoded_prompt)
+        max_new_tokens = request.sampling_params.max_new_tokens or len(
+            encoded_prompt
         )
         max_length = len(encoded_prompt) + max_new_tokens
 

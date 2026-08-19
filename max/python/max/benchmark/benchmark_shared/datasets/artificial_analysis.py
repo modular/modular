@@ -101,7 +101,6 @@ class ArtificialAnalysisBenchmarkDataset(BenchmarkDataset):
 
     def fetch(self) -> None:
         """No-op: content is loaded lazily in :meth:`sample_requests`."""
-        pass
 
     def sample_requests(
         self,

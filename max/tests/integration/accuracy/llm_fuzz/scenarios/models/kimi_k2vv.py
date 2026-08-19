@@ -435,7 +435,7 @@ class KimiK2VV(BaseScenario):
                 finish_reason = r["finish_reason"]
                 predictions.append(finish_reason)
                 ref_fr = reference.get(idx)
-                ref_finish_reasons.append(ref_fr if ref_fr else finish_reason)
+                ref_finish_reasons.append(ref_fr or finish_reason)
 
                 # Track schema accuracy
                 if finish_reason == "tool_calls":

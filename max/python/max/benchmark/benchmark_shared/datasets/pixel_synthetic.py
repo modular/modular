@@ -34,7 +34,6 @@ class SyntheticPixelBenchmarkDataset(PixelBenchmarkDataset):
         Synthetic pixel prompts are generated in-memory and do not require a
         local file.
         """
-        pass
 
     def _get_placeholder_image_path(
         self,

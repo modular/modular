@@ -641,5 +641,3 @@ class ElementwiseTests(
     _MixedPlacement,
 ):
     """Aggregates all elementwise test classes for thin subclassing."""
-
-    pass

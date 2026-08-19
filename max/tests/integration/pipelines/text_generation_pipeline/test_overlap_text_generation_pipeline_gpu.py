@@ -127,7 +127,7 @@ def draw_span_rows(
     tick_line = [" "] * width
     label_line = [" "] * width
 
-    for val in range(0, max_tick + 1):
+    for val in range(max_tick + 1):
         pos = scale(float(val))
         tick_line[pos] = "|"
 
