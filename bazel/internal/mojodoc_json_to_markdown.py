@@ -99,7 +99,7 @@ def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
                             + "declared with @implicit but is not a constructor.",
                             file=sys.stderr,
                         )
-                        exit(1)
+                        sys.exit(1)
 
 
 def copyFieldTypesToValue(mojo_json) -> None:  # noqa: ANN001

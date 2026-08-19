@@ -444,7 +444,6 @@ def create_overlap_pipeline(
 
 def fake_cpu_pre_or_post_processing() -> None:
     time.sleep(CPU_SECONDS)
-    return
 
 
 def prime_host_buffer_cache() -> None:

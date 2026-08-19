@@ -53,7 +53,6 @@ def build_graph(device_ref: DeviceRef) -> Model:
 
 def expensive_cpu_preprocessing() -> None:
     time.sleep(CPU_WORK_DURATION_SEC)
-    return
 
 
 def expensive_cpu_postprocessing(array: np.ndarray, expected: int) -> None:

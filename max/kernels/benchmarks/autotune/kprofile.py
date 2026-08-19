@@ -647,7 +647,6 @@ def correlation_analysis(
     df_to_console_table(round(c, 2), index=True)
 
     draw_heatmap(c, "correlation.png")
-    return
 
 
 help_str = "Profile kbench output pickle"

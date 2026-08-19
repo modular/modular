@@ -13,6 +13,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from import_dependency_compare import check_dependencies_against_imports
@@ -120,4 +121,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
