@@ -1708,7 +1708,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "google/gemma-4-26B-A4B-it": GenericOracle(
         model_path="google/gemma-4-26B-A4B-it",
         config_params={
-            "max_vision_cache_entries": 256,
             "max_batch_size": 128,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
@@ -1716,7 +1715,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "google/gemma-4-31B-it": GenericOracle(
         model_path="google/gemma-4-31B-it",
         config_params={
-            "max_vision_cache_entries": 256,
             "max_batch_size": 128,
         },
         device_encoding_map={"gpu": ["bfloat16"]},

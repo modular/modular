@@ -48,6 +48,6 @@ speculative:
 # gemma4_31b_dspark.yaml; NVFP4 weights and the fp8 KV pool leave the
 # ladder even more headroom here than in the bfloat16 recipe.
 runtime:
-  max_vision_cache_entries: 0
+  vision_cache_utilization: 0
   max_batch_size: 64
   device_graph_capture: true

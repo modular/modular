@@ -184,7 +184,7 @@ def test_inputs_pack_finalized_vision_merge_buffers() -> None:
     assert inputs.vision_scatter_indices == []
 
     encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
-        n_devices=_N_DEVICES
+        devices=model.devices
     )
     encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
 
@@ -227,7 +227,7 @@ def test_inputs_pack_vision_and_bitmask_together() -> None:
     inputs = _bare_dflash_inputs(_N_DEVICES)
 
     encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
-        n_devices=_N_DEVICES
+        devices=model.devices
     )
     encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
     _fill_spec_decode_tail(inputs)

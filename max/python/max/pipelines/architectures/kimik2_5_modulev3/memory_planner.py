@@ -332,6 +332,23 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
 
         return activation_memory
 
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16."""
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        return (hidden, DType.bfloat16)
+
     def estimate_vision_cache_entry_bytes(
         self,
         huggingface_config: AutoConfig,

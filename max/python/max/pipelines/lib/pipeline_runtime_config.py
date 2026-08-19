@@ -462,29 +462,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    experimental_vision_cache_utilization: float = Field(
-        default=float(
-            os.environ.get("MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION", "0")
-        ),
+    vision_cache_utilization: float = Field(
+        default=0.05,
+        ge=0,
+        le=1,
         description=(
             "Fraction of the KV cache pool budget (not total device "
-            "memory) reserved for the experimental block-based vision "
-            "encoder cache; the remainder stays with the KV cache. "
-            "Greater than 0 activates block mode on architectures whose "
-            "memory planner reports a vision row spec; 0 (the default) "
-            "keeps the entry-count cache. Set via the "
-            "MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION environment "
-            "variable. Only used by VLMs."
-        ),
-    )
-
-    max_vision_cache_entries: int = Field(
-        default=256,
-        description=(
-            "Maximum number of images cached in the vision encoder cache. "
-            "Each entry stores the vision encoder output for one image, "
-            "avoiding re-encoding across chunks and requests. Set to ``0`` "
-            "to disable caching. Only used by VLMs."
+            "memory) reserved for the vision encoder cache, which stores "
+            "per-image encoder output to avoid re-encoding across chunks "
+            "and requests; the remainder stays with the KV cache. The "
+            "budget is carved into fixed-size blocks (a video spans many "
+            "blocks, an image a few). 0 disables caching; the default "
+            "reserves a small slice of the pool. Only used by VLMs."
         ),
     )
 

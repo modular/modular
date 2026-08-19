@@ -74,7 +74,7 @@ def mock_pipeline_config() -> MagicMock:
     model_config.kv_cache = kv_cache_config
 
     runtime_config = MagicMock()
-    runtime_config.max_vision_cache_entries = 0
+    runtime_config.vision_cache_utilization = 0.0
     runtime_config.max_vision_preprocess_cache_bytes = 0
     runtime_config.max_video_preprocess_cache_bytes = 0
     runtime_config.max_media_preprocess_cache_idle_seconds = 0.0

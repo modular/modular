@@ -148,7 +148,7 @@ def test_finalized_warmup_inputs_match_language_graph_arity() -> None:
     assert inputs.vision_scatter_indices == []
 
     encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
-        n_devices=_N_DEVICES
+        devices=model.devices
     )
     encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
     buffers = inputs.buffers
@@ -193,7 +193,7 @@ def test_eagle_inputs_pack_finalized_vision_merge_buffers(
     model = _fake_pipeline_model(cls, _N_DEVICES)
     inputs = model.prepare_initial_token_inputs([[]])
     encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
-        n_devices=_N_DEVICES
+        devices=model.devices
     )
     encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
     assert len(inputs.vision_embeddings) == _N_DEVICES

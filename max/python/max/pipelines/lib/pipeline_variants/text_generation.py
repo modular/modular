@@ -251,7 +251,6 @@ class TextGenerationPipeline(
         )
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
-                max_entries=pipeline_config.runtime.max_vision_cache_entries,
                 plan=memory_plan.vision_cache_plan,
                 devices=self._devices,
             )
