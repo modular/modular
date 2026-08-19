@@ -371,3 +371,8 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - `PythonObject` no longer leaks a CPython reference per positional argument
   when calling a Python object, nor when setting an item, attribute, or set
   literal element.
+
+- `atol()` (and therefore `Int(String)`) now raises for every value outside
+  the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
+  longer wrap silently, and `Int.MIN` parses correctly by design rather than
+  by wraparound.

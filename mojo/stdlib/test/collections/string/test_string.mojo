@@ -384,6 +384,23 @@ def test_atol() raises:
     ):
         _ = atol("9223372036854775832")
 
+    # Overflow detection must be exact at the Int boundaries: values one past
+    # Int.MAX / Int.MIN raise instead of silently wrapping.
+    with assert_raises(
+        contains="String expresses an integer too large to store in Int."
+    ):
+        _ = atol("9223372036854775808")
+
+    with assert_raises(
+        contains="String expresses an integer too large to store in Int."
+    ):
+        _ = atol("-9223372036854775809")
+
+    assert_equal(Int.MAX, atol("9223372036854775807"))
+    assert_equal(Int.MIN, atol("-9223372036854775808"))
+    assert_equal(Int.MAX, atol("0x7FFF_FFFF_FFFF_FFFF", 16))
+    assert_equal(Int.MIN, atol("-0x8000_0000_0000_0000", 16))
+
 
 def test_atol_base_0() raises:
     assert_equal(155, atol(" 155", base=0))

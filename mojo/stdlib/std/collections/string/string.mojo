@@ -2521,7 +2521,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     var ord_num_max: Int
 
     var ord_letter_max = (-1, -1)
-    var result = 0
+    var result = UInt(0)
     var is_negative: Bool
     var has_prefix: Bool
     var start: Int
@@ -2557,6 +2557,14 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     var found_valid_chars_after_start = False
     var has_space_after_number = False
 
+    # The largest magnitude that fits in `Int`: one more for negative results,
+    # since |Int.MIN| == Int.MAX + 1.
+    var limit = UInt(Int.MAX) + UInt(1 if is_negative else 0)
+    var mul_cutoff = limit // UInt(real_base)
+    comptime too_large = (
+        " String expresses an integer too large to store in Int."
+    )
+
     # Prefixed integer literals with real_base 2, 8, 16 may begin with leading
     # underscores under the conditions they have a prefix
     var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
@@ -2570,32 +2578,33 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
                 continue
         else:
             was_last_digit_underscore = False
+
+        var digit: UInt
         if ord_0 <= ord_current <= ord_num_max:
-            result += ord_current - ord_0
-            found_valid_chars_after_start = True
+            digit = UInt(ord_current - ord_0)
         elif ord_letter_min[0] <= ord_current <= ord_letter_max[0]:
-            result += ord_current - ord_letter_min[0] + 10
-            found_valid_chars_after_start = True
+            digit = UInt(ord_current - ord_letter_min[0] + 10)
         elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
-            result += ord_current - ord_letter_min[1] + 10
-            found_valid_chars_after_start = True
+            digit = UInt(ord_current - ord_letter_min[1] + 10)
         elif Codepoint(UInt8(ord_current)).is_posix_space():
             has_space_after_number = True
             start = pos + 1
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
+        found_valid_chars_after_start = True
+
+        if result > limit - digit:
+            raise Error(_str_to_base_error(base, str_slice), too_large)
+        result += digit
+
         if (
             pos + 1 < str_len
             and not Codepoint(buff[unsafe_offset=pos + 1]).is_posix_space()
         ):
-            var nextresult = result * real_base
-            if nextresult < result:
-                raise Error(
-                    _str_to_base_error(base, str_slice)
-                    + " String expresses an integer too large to store in Int."
-                )
-            result = nextresult
+            if result > mul_cutoff:
+                raise Error(_str_to_base_error(base, str_slice), too_large)
+            result *= UInt(real_base)
 
     if was_last_digit_underscore or (not found_valid_chars_after_start):
         raise Error(_str_to_base_error(base, str_slice))
@@ -2605,8 +2614,10 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
             if not Codepoint(buff[unsafe_offset=pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
-        result = -result
-    return result
+        if result == UInt(Int.MAX) + 1:
+            return Int.MIN
+        return -Int(result)
+    return Int(result)
 
 
 def _trim_and_handle_sign(
