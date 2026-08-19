@@ -529,11 +529,7 @@ def whitespace(
                 return NO
 
     elif p.type == syms.dotted_as_names:
-        if t == token.DOT:
-            if prev and prev.type == token.DOT:
-                return NO
-
-        elif t == token.NAME:
+        if t == token.DOT or t == token.NAME:
             if prev and prev.type == token.DOT:
                 return NO
 

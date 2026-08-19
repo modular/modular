@@ -3255,11 +3255,10 @@ async def load_lora_adapter(
             raise HTTPException(
                 status_code=409, detail=response.message
             )  # Conflict
-        elif response.status == LoRAStatus.LOAD_INVALID_PATH:
-            raise HTTPException(
-                status_code=400, detail=response.message
-            )  # Bad Request
-        elif response.status == LoRAStatus.LOAD_INVALID_ADAPTER:
+        elif response.status in (
+            LoRAStatus.LOAD_INVALID_PATH,
+            LoRAStatus.LOAD_INVALID_ADAPTER,
+        ):
             raise HTTPException(
                 status_code=400, detail=response.message
             )  # Bad Request
