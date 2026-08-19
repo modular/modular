@@ -55,7 +55,7 @@ _type_reprs: dict[int, str | int] = {}
 
 
 def type_repr(type_num: int) -> str | int:
-    global _type_reprs
+    global _type_reprs  # noqa: PLW0602 (FIXME)
     if not _type_reprs:
         from .pygram import python_symbols
 

@@ -75,7 +75,7 @@ def start_workers(
     settings: Settings,
     pipeline_args: PipelineArgs,
 ) -> None:
-    global _shutdown_event
+    global _shutdown_event  # noqa: PLW0602 (FIXME)
 
     async def run_workers() -> None:
         global _shutdown_event

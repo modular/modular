@@ -94,7 +94,7 @@ def _format_value(val: float | bool) -> str:
     # Note: bool is a subclass of int (not float), so isinstance(val, float)
     # correctly excludes booleans
     if isinstance(val, float):
-        if val != val:  # NaN check
+        if val != val:  # noqa: PLR0124 # NaN check
             return "nan"
         if val == float("inf"):
             return "inf"
