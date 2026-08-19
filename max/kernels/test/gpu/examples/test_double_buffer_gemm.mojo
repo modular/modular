@@ -16,9 +16,10 @@ from std.math.uutils import udivmod
 from std.sys import argv, simd_width_of
 from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import async_copy_wait_all
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.memory import async_copy_wait_all
 from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (
@@ -149,7 +150,7 @@ def sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
-    var a_reg: InlineArray[
+    var a_reg: Array[
         LayoutTensor[
             a_type,
             layout_a,
@@ -172,7 +173,7 @@ def sgemm_double_buffer[
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
-    var b_reg: InlineArray[
+    var b_reg: Array[
         LayoutTensor[
             b_type,
             layout_b,
@@ -324,10 +325,11 @@ def test(ctx: DeviceContext) raises:
     comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
     comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    ctx.synchronize()
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -369,9 +371,9 @@ def test(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[gemm](
+            ctx.enqueue_function[gemm](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -388,7 +390,7 @@ def test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function_experimental[gemm](
+    ctx.enqueue_function[gemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -403,23 +405,23 @@ def test(ctx: DeviceContext) raises:
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -431,13 +433,13 @@ def test(ctx: DeviceContext) raises:
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -455,11 +457,6 @@ def test(ctx: DeviceContext) raises:
     _ = c_device_ref
     _ = a_device
     _ = b_device
-
-    c_host.free()
-    c_host_ref.free()
-    a_host.free()
-    b_host.free()
 
 
 def main() raises:

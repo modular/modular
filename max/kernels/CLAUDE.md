@@ -25,10 +25,10 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw build //max/kernels/src/linalg:linalg
 
 # Build a specific benchmark
-./bazelw build //max/kernels/benchmarks/gpu/linalg:bench_matmul
+./bazelw build //max/kernels/benchmarks:gpu/linalg/bench_matmul
 
 # Build and run a benchmark
-./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
+./bazelw run //max/kernels/benchmarks:gpu/linalg/bench_matmul
 
 # Run a specific test
 ./bazelw test //max/kernels/test/linalg:test_matmul
@@ -37,7 +37,6 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw test //max/kernels/test/linalg/...
 
 # Run GPU tests with specific hardware
-./bazelw test --config=remote-h100 //max/kernels/test/gpu/...  # For H100 GPU
 ./bazelw test --config=remote-b200 //max/kernels/test/gpu/...  # For B200 GPU
 ./bazelw test --config=remote-mi355 //max/kernels/test/gpu/... # For MI355 GPU
 ```
@@ -51,7 +50,7 @@ source utils/start-modular.sh
 # Run a mojo test in this directory
 mojo /path/to/file.mojo
 
-# Alternaitve ways include
+# Alternative ways include
 ./bazelw run //KGEN/tools/mojo -- /path/to/file.mojo
 
 # Or use the bmojo alias (after sourcing start-modular.sh)
@@ -60,6 +59,18 @@ bmojo /path/to/file.mojo
 # Debug a Mojo file
 bd //KGEN/tools/mojo -- /path/to/file.mojo
 ```
+
+For kernel development (editing `max/kernels/src`), run
+`./bazelw run //:install-kernel-dev` so that `mojo file.mojo` picks up live
+source edits. It ships the same compiler, runtime, and standard library as
+`//:install` but omits the prebuilt kernel packages, which otherwise shadow
+`max/kernels/src` on the import path — so a plain `mojo file.mojo` under the
+default `//:install` silently imports the prebuilt kernel and ignores your
+source edits. With `//:install-kernel-dev`, kernel imports resolve from source,
+so there is no need to rebuild a kernel package after each edit (PR #87956).
+To confirm an edit reached codegen, round-trip a visible asm marker (for
+example an `s_sleep`/`s_setprio` instruction); comments and scheduler hints
+leave no asm trace.
 
 ## Code Architecture
 
@@ -96,7 +107,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 ```mojo
 from linalg.matmul import matmul
 from layout import TileTensor, row_major
-from gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 ```
 
 #### Test Files
@@ -136,10 +147,10 @@ If throttling is detected, switch to a different node before benchmarking.
 
 ```bash
 # Run benchmarks using the benchmarking framework
-./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
+./bazelw run //max/kernels/benchmarks:gpu/linalg/bench_matmul
 
 # Run benchmarks with compile-time defines
-./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
+./bazelw run //max/kernels/benchmarks:gpu/linalg/bench_matmul -- \
     get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools for performance analysis
@@ -183,7 +194,7 @@ Many benchmarks and tests use compile-time defines for configuration:
 Example:
 
 ```bash
-./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
+./bazelw run //max/kernels/benchmarks:gpu/linalg/bench_matmul -- \
     get_defined_int[M]=512 get_defined_bool[transpose_b]=true \
     get_defined_dtype[type]=float16
 ```
@@ -194,10 +205,10 @@ Example:
 
 ```bash
 # Debug with bazel
-bd //max/kernels/benchmarks/gpu/linalg:bench_matmul
+bd //max/kernels/benchmarks:gpu/linalg/bench_matmul
 
 # Debug in VSCode
-bd --vscode //max/kernels/benchmarks/gpu/linalg:bench_matmul
+bd --vscode //max/kernels/benchmarks:gpu/linalg/bench_matmul
 ```
 
 ### Common Debug Patterns

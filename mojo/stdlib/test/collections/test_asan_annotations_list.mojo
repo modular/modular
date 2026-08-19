@@ -46,90 +46,90 @@ def main() raises:
         # CHECK_2: AddressSanitizer: container-overflow on address
         # CHECK_2: READ of size 8 at
         # CHECK_2: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[29])
+        print(l.unsafe_ptr()[unsafe_offset=29])
     elif test == "3":
         var l = List[Int]([1, 2, 3, 4, 5])
         # CHECK_3: AddressSanitizer: heap-buffer-overflow on address
         # CHECK_3: READ of size 8 at
         # CHECK_3: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[30])
+        print(l.unsafe_ptr()[unsafe_offset=30])
     elif test == "4":
         var l = List[Int](unsafe_uninit_length=10)
-        l.unsafe_ptr()[0] = 1
-        l.unsafe_ptr()[9] = 1
+        l.unsafe_ptr()[unsafe_offset=0] = 1
+        l.unsafe_ptr()[unsafe_offset=9] = 1
         # note: above store and below store might be combined into something like stp, and then the
         # asan instramentation go around _that_ 16-byte write. This means we don't know what line
         # the error should point to. It may be the above or the below
         # CHECK_4: AddressSanitizer: heap-buffer-overflow on address
         # CHECK_4: WRITE of size {{.*}} at
         # CHECK_4: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}
-        l.unsafe_ptr()[10] = 1
+        l.unsafe_ptr()[unsafe_offset=10] = 1
     elif test == "5":
         var l = List[Int](capacity=10)
         l.extend([1, 2, 3, 4])
-        print(l.unsafe_ptr()[0])
-        print(l.unsafe_ptr()[3])
+        print(l.unsafe_ptr()[unsafe_offset=0])
+        print(l.unsafe_ptr()[unsafe_offset=3])
         # CHECK_5: AddressSanitizer: container-overflow on address
         # CHECK_5: READ of size 8 at
         # CHECK_5: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[4])
+        print(l.unsafe_ptr()[unsafe_offset=4])
     elif test == "6":
         var l = List[Int](length=1, fill=1)
         l.append(1)
-        print(l.unsafe_ptr()[1])
+        print(l.unsafe_ptr()[unsafe_offset=1])
         # CHECK_6: AddressSanitizer: heap-buffer-overflow on address
         # CHECK_6: READ of size 8 at
         # CHECK_6: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[2])
+        print(l.unsafe_ptr()[unsafe_offset=2])
     elif test == "7":
         var l = List[Int]()
         l.extend([1, 2, 3, 4])
-        print(l.unsafe_ptr()[0])
-        print(l.unsafe_ptr()[3])
+        print(l.unsafe_ptr()[unsafe_offset=0])
+        print(l.unsafe_ptr()[unsafe_offset=3])
         # CHECK_7: AddressSanitizer: heap-buffer-overflow on address
         # CHECK_7: READ of size 8 at
         # CHECK_7: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[4])
+        print(l.unsafe_ptr()[unsafe_offset=4])
     elif test == "8":
         var l = List[Int]([1, 2, 3, 4])
         _ = l.pop()
-        print(l.unsafe_ptr()[2])
+        print(l.unsafe_ptr()[unsafe_offset=2])
         # CHECK_8: AddressSanitizer: container-overflow on address
         # CHECK_8: READ of size 8 at
         # CHECK_8: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[3])
+        print(l.unsafe_ptr()[unsafe_offset=3])
     elif test == "9":
         var l = List[Scalar[DType.int64]](capacity=10)
         l.extend(SIMD[DType.int64, 2](1, 2))
-        print(l.unsafe_ptr()[0])
-        print(l.unsafe_ptr()[1])
+        print(l.unsafe_ptr()[unsafe_offset=0])
+        print(l.unsafe_ptr()[unsafe_offset=1])
         # CHECK_9: AddressSanitizer: container-overflow on address
         # CHECK_9: READ of size 8 at
         # CHECK_9: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[2])
+        print(l.unsafe_ptr()[unsafe_offset=2])
     elif test == "10":
         var l = List[Int]([1, 2, 3, 4])
         l.resize(2, 0)
-        print(l.unsafe_ptr()[1])
+        print(l.unsafe_ptr()[unsafe_offset=1])
         # CHECK_10: AddressSanitizer: container-overflow on address
         # CHECK_10: READ of size 8 at
         # CHECK_10: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[2])
+        print(l.unsafe_ptr()[unsafe_offset=2])
     elif test == "11":
         var l = List[Int]([1, 2, 3, 4])
         l.resize(unsafe_uninit_length=10)
-        print(l.unsafe_ptr()[1])
-        l.unsafe_ptr()[9] = 0
+        print(l.unsafe_ptr()[unsafe_offset=1])
+        l.unsafe_ptr()[unsafe_offset=9] = 0
         # CHECK_11: AddressSanitizer: heap-buffer-overflow on address
         # CHECK_11: READ of size 8 at
         # CHECK_11: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[10])
+        print(l.unsafe_ptr()[unsafe_offset=10])
     elif test == "12":
         var l = List[Int]([1, 2, 3, 4])
         l.shrink(2)
-        print(l.unsafe_ptr()[0])
-        l.unsafe_ptr()[1] = 0
+        print(l.unsafe_ptr()[unsafe_offset=0])
+        l.unsafe_ptr()[unsafe_offset=1] = 0
         # CHECK_12: AddressSanitizer: container-overflow on address
         # CHECK_12: READ of size 8 at
         # CHECK_12: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
-        print(l.unsafe_ptr()[3])
+        print(l.unsafe_ptr()[unsafe_offset=3])

@@ -6,9 +6,8 @@ description: Learn more about the provided Docker container for MAX deployment
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoMacWithGPU } from '../requirements';
+import { requirementsNoMacWithGPU } from './requirements';
 
 The MAX container is our official Docker container that simplifies the process
 to deploy a GenAI model with an OpenAI-compatible endpoint. The container
@@ -16,10 +15,10 @@ includes the latest version of MAX and it integrates with orchestration tools
 like Kubernetes.
 
 Alternatively, you can also experiment with MAX on a local endpoint using the
-[`max serve`](/max/cli/serve) command. The result is the same because
+[`max serve`](/cli/serve) command. The result is the same because
 the MAX container creates an isolated environment that also uses `max serve` to
 create an endpoint you can interact with using our OpenAI-compatible [REST
-API](/max/api/serve).
+API](/rest-api/).
 
 :::note Linux only
 
@@ -49,8 +48,8 @@ environment variable:
 
 3. Start the container and an endpoint for Gemma 3:
 
-    <Tabs>
-      <TabItem value="nvidia" label="NVIDIA">
+   <Tabs>
+   <TabItem value="nvidia" label="NVIDIA">
 
         ```bash
         docker run --gpus=1 \
@@ -58,11 +57,11 @@ environment variable:
           -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
           -p 8000:8000 \
           modular/max-nvidia-full:latest \
-          --model-path google/gemma-3-27b-it
+          --model google/gemma-3-27b-it
         ```
 
-      </TabItem>
-      <TabItem value="amd" label="AMD">
+   </TabItem>
+   <TabItem value="amd" label="AMD">
 
         ```bash
         docker run \
@@ -74,11 +73,11 @@ environment variable:
           --device /dev/kfd \
           --device /dev/dri \
           modular/max-amd:latest \
-          --model-path google/gemma-3-27b-it
+          --model google/gemma-3-27b-it
         ```
 
-      </TabItem>
-    </Tabs>
+   </TabItem>
+   </Tabs>
 
         It can take a few minutes to pull the container and then download and
         compile the model.
@@ -92,8 +91,8 @@ environment variable:
 4. Open a new terminal and send a request using the `openai` Python API or
 `curl`:
 
-    <Tabs>
-      <TabItem value="python" label="Python">
+   <Tabs>
+   <TabItem value="python" label="Python">
 
         1. Create a new virtual environment:
 
@@ -149,10 +148,10 @@ environment variable:
             It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
             ```
 
-      </TabItem>
-      <TabItem value="curl" label="cURL">
+   </TabItem>
+   <TabItem value="curl" label="cURL">
 
-        Run this command:
+   Run this command:
 
         ```sh
         curl -N http://0.0.0.0:8000/v1/chat/completions \
@@ -166,7 +165,7 @@ environment variable:
         }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
         ```
 
-        You should see results like this:
+   You should see results like this:
 
         ```output
         The **Los Angeles Dodgers** won the World Series in 2020!
@@ -176,14 +175,14 @@ environment variable:
         It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
         ```
 
-      </TabItem>
-    </Tabs>
+   </TabItem>
+   </Tabs>
 
 For details about the OpenAI-compatible endpoint, see [our Serve API
-docs](/max/api/serve).
+docs](/rest-api/).
 
-To run a different model, change the `--model-path` to something else from our
-[supported models](/max/models/).
+To run a different model, change the `--model` to something else from our
+[supported models](/models/).
 
 For information about the available containers, see the [Modular
 Docker Hub repositories](https://hub.docker.com/r/modular).
@@ -201,13 +200,13 @@ to control features of the endpoint.
 option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
 order for the container to access it. It doesn't hurt to include this even if
 your system doesn't have a [GPU compatible with
-MAX](/max/packages#gpu-compatibility).
+MAX](/packages#gpu-compatibility).
 
 - `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
 the GPUs to use. For example, to use four available GPUs, you should include the
-following: `--devices gpu:0,1,2,3`. When you don't specify a `--devices` option,
-MAX defaults to using the first available GPU it discovers (equivalent to
-`--devices gpu:0`). You can also optionally specify `--devices cpu`.
+following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all` to use
+every visible GPU, or `--devices cpu` to run on CPU. If you omit `--devices`,
+MAX uses the model or config default.
 
 - `-v`: We use the [`-v`
 option](https://docs.docker.com/reference/cli/docker/container/run/#volume) to
@@ -233,7 +232,7 @@ You also might need some environment variables (set with `--env`):
     # highlight-end
     -p 8000:8000 \
     modular/max-nvidia-full:latest \
-    --model-path google/gemma-3-27b-it
+    --model google/gemma-3-27b-it
   ```
 
   Learn more about
@@ -246,16 +245,16 @@ You also might need some environment variables (set with `--env`):
 ### MAX options
 
 Following the container name in the `docker run` command, you must specify a
-model with `--model-path`, but there are other options you might need
+model with `--model`, but there are other options you might need
 to configure the `max serve` behavior.
 
 To see all available options, see the [`max` CLI
-page](/max/cli/serve), because the MAX container is basically a
+page](/cli/serve), because the MAX container is basically a
 wrapper around that tool.
 
-- `--model-path`: This is required to specify the model you want to
+- `--model`: This is required to specify the model you want to
 deploy. To find other GenAI models that are compatible with MAX, check out
-our [supported models](/max/models/).
+our [supported models](/models/).
 
 - `--max-length`: Specifies the maximum length of the text sequence (including
 the input tokens). We mention this one here because it's often necessary to
@@ -263,17 +262,17 @@ adjust the max length when you have trouble running a large model on a machine
 with limited memory.
 
 For the rest of the `max serve` options, see the [`max` CLI
-page](/max/cli/serve).
+page](/cli/serve).
 
 ## Container contents
 
 There are multiple MAX container options, including:
 
-- [`max-full`](/max/container#full-container)
-- [`max-amd`](/max/container#amd-container)
-- [`max-amd-base`](/max/container#amd-container)
-- [`max-nvidia-full`](/max/container#nvidia-container)
-- [`max-nvidia-base`](/max/container#nvidia-container)
+- [`max-full`](/container#full-container)
+- [`max-amd`](/container#amd-container)
+- [`max-amd-base`](/container#amd-container)
+- [`max-nvidia-full`](/container#nvidia-container)
+- [`max-nvidia-base`](/container#nvidia-container)
 
 ### Full container
 
@@ -292,7 +291,7 @@ You can run the container on either NVIDIA or AMD as follows:
       --env "HF_TOKEN=${HF_TOKEN}" \
       -p 8000:8000 \
       modular/max-full:latest \
-      --model-path google/gemma-3-27b-it
+      --model google/gemma-3-27b-it
     ```
 
   </TabItem>
@@ -308,7 +307,7 @@ You can run the container on either NVIDIA or AMD as follows:
       --device /dev/dri \
       -p 8000:8000 \
       modular/max-full:latest \
-      --model-path google/gemma-3-27b-it
+      --model google/gemma-3-27b-it
     ```
 
   </TabItem>
@@ -350,7 +349,7 @@ docker run \
   --device /dev/dri \
   -p 8000:8000 \
   modular/max-amd:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 Or, to use the base container, replace `max-amd` with
@@ -378,7 +377,7 @@ docker run --gpus=1 \
   --env "HF_TOKEN=${HF_TOKEN}" \
   -p 8000:8000 \
   modular/max-nvidia-full:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 Or, to use the base container, replace `max-nvidia-full` with
@@ -391,9 +390,9 @@ container](https://hub.docker.com/r/modular/max-nvidia-base) on Docker Hub.
 ## Recommended cloud instances
 
 For best performance and compatibility with our
-[supported models](/max/models/), we recommend that you deploy the MAX container
+[supported models](/models/), we recommend that you deploy the MAX container
 on a cloud instance with a GPU that meets the
-[MAX system requirements](/max/packages#system-requirements).
+[MAX system requirements](/packages#system-requirements).
 
 The Modular Platform is hardware-agnostic and optimized for both the latest
 NVIDIA and AMD GPUs. To take full advantage of this flexibility, Modular
@@ -471,7 +470,7 @@ docker run --gpus=1 \
   --env "MODULAR_STRUCTURED_LOGGING=0" \
   # highlight-end
   modular/max-nvidia-full:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 ## Metrics
@@ -495,7 +494,10 @@ Here are all the available metrics:
 - `maxserve_output_processing_time_milliseconds`: Histogram of output
   generation time (OGT), in milliseconds.
 - `maxserve_time_to_first_token_milliseconds`: Histogram of time to first
-  token (TTFT), in milliseconds.
+  token (TTFT), in milliseconds. Measured from when the server received the
+  request, so it includes request parsing and validation.
+- `maxserve_time_per_output_token_milliseconds`: Histogram of mean
+  decode-phase latency per generated token (TPOT), in milliseconds.
 - `maxserve_num_input_tokens_total`: Total number of input tokens processed
   so far.
 - `maxserve_num_output_tokens_total`: Total number of output tokens processed
@@ -504,6 +506,8 @@ Here are all the available metrics:
 - `maxserve_output_tokens_per_request`: Histogram of output tokens per request.
 - `maxserve_request_count_total`: Total requests since start.
 - `maxserve_num_requests_running`: Number of requests currently running.
+- `maxserve_model_load_time_milliseconds`: Histogram of model-worker startup
+  duration, in milliseconds.
 
 ### Telemetry
 
@@ -562,10 +566,9 @@ The NVIDIA MAX container is released under the
 You can get started with container-based deployments or read more about our
 supported models.
 
-export const docs = [
-  '../deploy/local-to-cloud.mdx',
-  '../deploy/benchmark.mdx',
-  '../models.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark): Learn how to
+  use our benchmarking script to measure the performance of MAX.
+- [Supported models](/models): See all the model architectures supported
+  by MAX.

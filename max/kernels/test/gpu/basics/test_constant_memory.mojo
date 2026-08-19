@@ -12,27 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import ConstantMemoryMapping, DeviceContext
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import ConstantMemoryMapping, DeviceContext
+from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext) raises:
-    def alloc[
+    def _alloc[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        return stack_allocation[
+        return unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
-    assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())
+    assert_true(".const .align 4 .b8 " in _compile_code[_alloc[20]]())
     assert_true(
         "internal addrspace(4) global [20 x float]"
-        in _compile_code[alloc[20], emission_kind="llvm"]()
+        in _compile_code[_alloc[20], emission_kind="llvm"]()
     )
 
 
@@ -42,9 +42,9 @@ def test_constant_mem(ctx: DeviceContext) raises:
     def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
@@ -62,9 +62,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[16]
-    ctx.enqueue_function_experimental[kernel](
-        res_device, grid_dim=1, block_dim=16
-    )
+    ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
@@ -77,9 +75,9 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     def _fill_impl[
         n: Int
     ]() -> UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
@@ -89,7 +87,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     def static_constant_kernel[
         get_constant_memory: def() thin -> UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+            Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = get_constant_memory()
@@ -99,9 +97,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[_fill_impl[20]]
-    ctx.enqueue_function_experimental[kernel](
-        res_device, grid_dim=1, block_dim=16
-    )
+    ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
@@ -112,7 +108,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
     def static_constant_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
-        var static_constant = stack_allocation[
+        var static_constant = unsafe_stack_allocation[
             16,
             Float32,
             name=StaticString("static_constant"),
@@ -143,15 +139,21 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
     res_device.enqueue_fill(0)
 
+    var constant_memory_ptr: UnsafePointer[
+        constant_memory.T, origin_of(constant_memory)
+    ] = constant_memory.unsafe_ptr()
+
     comptime kernel = static_constant_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,
         constant_memory=[
             ConstantMemoryMapping(
                 "static_constant",
-                constant_memory.unsafe_ptr().bitcast[NoneType](),
+                constant_memory_ptr.bitcast[NoneType]().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
                 constant_memory.byte_length(),
             )
         ],

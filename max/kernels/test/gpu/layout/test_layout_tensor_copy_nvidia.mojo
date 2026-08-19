@@ -14,11 +14,10 @@
 from std.math import ceildiv
 from std.sys import simd_width_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
@@ -117,7 +116,7 @@ def test_dynamic_async_copy[
         num_rows,
     ]
 
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
@@ -243,7 +242,7 @@ def test_swizzle_copy[
         num_threads,
     ]
 
-    ctx.enqueue_function_experimental[copy](
+    ctx.enqueue_function[copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -357,7 +356,7 @@ def test_masked_async_copy[
         input_tensor.layout, M - skew_rows
     ]
 
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input_tensor,
         grid_dim=(1,),
         block_dim=(8,),
@@ -482,7 +481,7 @@ def test_masked_copy[
     comptime kernel_type = masked_copy_kernel[
         input_tensor.layout, M - skew_rows
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input_tensor, grid_dim=(1,), block_dim=(8,)
     )
 
@@ -597,7 +596,7 @@ def test_masked_copy_dram_to_local[
     comptime kernel_type = masked_copy_dram_to_local_kernel[
         layout, M - skew_rows
     ]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),

@@ -23,9 +23,8 @@ from std.utils import IndexList
 from std.hashlib.hasher import Hasher
 from std.sys import bit_width_of
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
-from std.builtin.variadics import Variadic
 import std.format._utils as fmt
 
 from .static_tuple import StaticTuple
@@ -232,7 +231,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    def __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__(out self, *elems: Int, __list_literal__: NoneType = None):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
@@ -326,6 +325,19 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         comptime for i in range(Self.size):
             res[i] = self.get[i]()
+        return res
+
+    def as_index_tuple(self) -> StaticTuple[SIMDLength, Self.size]:
+        """Converts this IndexList to a static tuple of mlir indexes.
+
+        Returns:
+            The corresponding StaticTuple object.
+        """
+        var res = StaticTuple[SIMDLength, Self.size]()
+
+        comptime for i in range(Self.size):
+            res[i] = self.get[i]()
+
         return res
 
     @always_inline("nodebug")
@@ -642,14 +654,15 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self.write_to(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[].write_to(w)
 
         fmt.FormatStruct(writer, "IndexList").params(
             Self.size,
             Self.element_type,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @always_inline
     def cast[
@@ -682,7 +695,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         comptime for i in range(Self.size):
             hasher.update(self.data[i])
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -690,7 +705,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         NOTE: This should only be called by `DeviceContext` during invocation
         of accelerator kernels.
         """
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -741,7 +756,9 @@ def Index[
 
 
 @always_inline
-def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
+def product[
+    size: Int
+](tuple: IndexList[size, element_type=_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -760,7 +777,7 @@ def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
 @always_inline
 def product[
     size: Int
-](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
+](tuple: IndexList[size, element_type=_], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 
     Parameters:

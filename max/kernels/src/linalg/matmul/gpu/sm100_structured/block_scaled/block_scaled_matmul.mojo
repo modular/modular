@@ -20,10 +20,10 @@ then launches the warp-specialized kernel.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
-from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
+from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
     Coord,
@@ -104,8 +104,8 @@ def _to_scales_5d_batched(
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
                 tensor.layout.shape[2](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         )
     )
@@ -123,11 +123,11 @@ def _to_scales_5d_non_batched(
     return tensor.reshape(
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         )
     )
@@ -146,7 +146,7 @@ def _create_tma_and_launch[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     a_3d: TileTensor,
@@ -208,7 +208,7 @@ def _create_tma_and_launch[
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         matmul_kernel.ATileLayout,
         matmul_kernel.ADescLayout,
         a_tma_tile_shape,
@@ -221,7 +221,7 @@ def _create_tma_and_launch[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         matmul_kernel.BTileLayout,
         matmul_kernel.BDescLayout,
         b_tma_tile_shape,
@@ -320,7 +320,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -360,7 +360,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,
@@ -447,7 +447,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,

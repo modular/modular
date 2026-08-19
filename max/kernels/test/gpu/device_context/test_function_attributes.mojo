@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.func_attribute import Attribute
 from std.testing import assert_equal
+
+from max.gpu.host import DeviceContext
+from max.gpu.host.func_attribute import Attribute
 
 
 def test_function_attributes() raises:
@@ -22,7 +23,7 @@ def test_function_attributes() raises:
         x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 

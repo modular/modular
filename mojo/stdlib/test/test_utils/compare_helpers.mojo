@@ -19,24 +19,22 @@
 
 def _minmax[
     dtype: DType, //
-](x: UnsafePointer[Scalar[dtype], _], N: Int) -> Tuple[
-    Scalar[dtype], Scalar[dtype]
-]:
-    var max_val = x[0]
-    var min_val = x[0]
+](x: Pointer[Scalar[dtype], _], N: Int) -> Tuple[Scalar[dtype], Scalar[dtype]]:
+    var max_val = x[unsafe_offset=0]
+    var min_val = x[unsafe_offset=0]
     for i in range(1, N):
-        if x[i] > max_val:
-            max_val = x[i]
-        if x[i] < min_val:
-            min_val = x[i]
+        if x[unsafe_offset=i] > max_val:
+            max_val = x[unsafe_offset=i]
+        if x[unsafe_offset=i] < min_val:
+            min_val = x[unsafe_offset=i]
     return (min_val, max_val)
 
 
 def compare[
     dtype: DType, verbose: Bool = True
 ](
-    x: UnsafePointer[Scalar[dtype], _],
-    y: UnsafePointer[Scalar[dtype], _],
+    x: Pointer[Scalar[dtype], _],
+    y: Pointer[Scalar[dtype], _],
     num_elements: Int,
     *,
     msg: String = "",
@@ -56,25 +54,23 @@ def compare[
     Returns:
         A SIMD vector containing [atol_min, atol_max, rtol_min, rtol_max].
     """
-    var atol = alloc[Scalar[dtype]](num_elements)
-    var rtol = alloc[Scalar[dtype]](num_elements)
+    var atol = List(length=num_elements, fill=Scalar[dtype](0))
+    var rtol = List(length=num_elements, fill=Scalar[dtype](0))
 
     for i in range(num_elements):
-        var d = abs(x[i] - y[i])
-        var e = abs(d / y[i])
+        var d = abs(x[unsafe_offset=i] - y[unsafe_offset=i])
+        var e = abs(d / y[unsafe_offset=i])
         atol[i] = d
         rtol[i] = e
 
-    var atol_minmax = _minmax(atol, num_elements)
-    var rtol_minmax = _minmax(rtol, num_elements)
+    var atol_minmax = _minmax(atol.unsafe_ptr(), num_elements)
+    var rtol_minmax = _minmax(rtol.unsafe_ptr(), num_elements)
     if verbose:
         if msg:
             print(msg)
         print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
         print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
         print("==========================================================")
-    atol.free()
-    rtol.free()
     return SIMD[dtype, 4](
         atol_minmax[0], atol_minmax[1], rtol_minmax[0], rtol_minmax[1]
     )

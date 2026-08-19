@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx, WARP_SIZE
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.math.uutils import ufloordiv
 from std.memory import UnsafePointer
 from std.sys.intrinsics import readfirstlane

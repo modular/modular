@@ -13,7 +13,14 @@
 """Qwen3-VL vision-language architecture for multimodal text generation."""
 
 from .arch import qwen3vl_arch, qwen3vl_moe_arch
-from .model import Qwen3VLModel
-from .model_config import Qwen3VLConfig
+from .model import Qwen3VLInputs, Qwen3VLModel
+from .model_config import Qwen3VLConfig, VisionConfig
 
-__all__ = ["Qwen3VLConfig", "Qwen3VLModel", "qwen3vl_arch", "qwen3vl_moe_arch"]
+__all__ = [
+    "Qwen3VLConfig",
+    "Qwen3VLInputs",
+    "Qwen3VLModel",
+    "VisionConfig",
+    "qwen3vl_arch",
+    "qwen3vl_moe_arch",
+]

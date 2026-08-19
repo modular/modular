@@ -11,10 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm import parallelize
+"""SHMEM runtime context and multi-GPU launch helper.
+
+Provides `SHMEMContext`, which wraps the SHMEM runtime lifecycle and exposes a
+`DeviceContext`-compatible interface for submitting kernels and managing
+symmetric-heap buffers. Use `shmem_launch` to run a per-GPU function across
+all attached GPUs.
+"""
+
+from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
-from std.builtin.variadics import Variadic
 from std.builtin.device_passable import DevicePassable
 from std.sys import (
     CompilationTarget,
@@ -23,7 +30,7 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -33,8 +40,8 @@ from std.gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from std.gpu.host.device_context import _DumpPath
-from std.gpu.host.launch_attribute import (
+from max.gpu.host.device_context import _DumpPath
+from max.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
@@ -47,9 +54,12 @@ from .shmem_api import (
     shmem_init,
     shmem_init_thread_tcp,
     shmem_init_thread_mpi,
+    shmem_module_finalize,
     shmem_module_init,
+    shmem_team_my_pe,
     shmem_team_t,
 )
+from .shmem_buffer import SHMEMBuffer
 
 
 def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
@@ -70,7 +80,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 
@@ -111,7 +121,7 @@ def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    def shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int):
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext(ctx) as shmem_ctx:
@@ -129,7 +139,7 @@ def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
     var npes_node = DeviceContext.number_of_devices()
 
     # Same number of tasks as worker threads
-    parallelize[shmem_error_wrapper](npes_node, npes_node)
+    parallelize(shmem_error_wrapper, npes_node, npes_node)
 
     # Cleanup MPI resources
     MPI_Finalize()
@@ -139,7 +149,7 @@ def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    def shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int):
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext[tcp=True](ctx) as shmem_ctx:
@@ -157,7 +167,7 @@ def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
     var npes_node = DeviceContext.number_of_devices()
 
     # Same number of tasks as worker threads
-    parallelize[shmem_error_wrapper](npes_node, npes_node)
+    parallelize(shmem_error_wrapper, npes_node, npes_node)
 
 
 struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
@@ -311,7 +321,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return self^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.
@@ -364,7 +374,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return SHMEMBuffer[dtype](self._ctx, size)
 
     @always_inline
-    @parameter
+    @__parameter
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -427,7 +437,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_experimental[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -437,8 +447,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function(
-            gpu_kernel,
+        gpu_kernel._call_with_pack_checked(
+            self._ctx,
             *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -451,13 +461,11 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_finalize(gpu_kernel)
 
     @always_inline
-    @parameter
+    @__parameter
     def enqueue_function_collective_checked[
-        func_type: TrivialRegisterPassable,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: func_type,
-        signature_func: def(* args: * declared_arg_types) thin -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -477,12 +485,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The dtype of the function to launch.
             declared_arg_types: The declared argument types from the function
                 signature (usually inferred).
             func: The function to launch.
-            signature_func: The kernel function, passed again for type checking.
-                Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -509,7 +514,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")
@@ -525,8 +530,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -535,7 +540,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         ), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
-            signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
@@ -597,8 +601,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function(
-            gpu_kernel,
+        gpu_kernel._call_with_pack_checked(
+            self._priority_stream,
             *args,
             grid_dim=Dim(grid_x, grid_y, grid_z),
             block_dim=block_dim,

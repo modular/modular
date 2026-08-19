@@ -119,11 +119,11 @@ The `comptime for` unrolls at compile time. Each `ScheduleEntry` carries an
 
 ### The dispatch function
 
-You write a `@parameter` function that maps `ScheduleEntry` tags to kernel
+You write a `@__parameter` function that maps `ScheduleEntry` tags to kernel
 primitives:
 
 ```mojo
-@parameter
+@__parameter
 @always_inline
 def dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == MyOps.LOAD_A.value:
@@ -283,7 +283,7 @@ comptime schedule = build_default_matmul_schedule[
     num_k_tiles=num_k_tiles, ...
 ]()
 
-@parameter
+@__parameter
 @always_inline
 def _bind[entry: ScheduleEntry]():
     comptime if entry.op.tag == LOAD_DRAM:
@@ -335,7 +335,7 @@ struct PingPongOps(ScheduleOps):
 
 ### Logical body
 
-The algorithm has two halves (for two LDS stages). Each half declares its
+The algorithm has two partitions (for two LDS stages). Each half declares its
 ops with explicit stage and K-offset metadata:
 
 ```mojo
@@ -358,7 +358,7 @@ def _logical_half[h: Int]() -> List[OpDesc]:
         return b.done()
 ```
 
-The full body combines both halves: 24 ops total (12 per half).
+The full body combines both partitions: 24 ops total (12 per partition).
 
 ### Three-step build_body
 
@@ -849,7 +849,7 @@ struct FA3InnerSchedule(PipelineSchedule):
             depth=1,          # single iteration in flight
             m_mmas=1,         # 1 "MMA block" per iteration
             n_mmas=1,
-            num_halves=1,
+            num_partitions=1,
             mma_serial=True,  # WGMMA groups serialize
             mma_latency=20,
             # ...
@@ -888,7 +888,7 @@ and the MMA resource model — the same analysis it does for `vmcnt` on AMD.
 The dispatch function maps to the existing WGMMA ceremony:
 
 ```mojo
-@parameter
+@__parameter
 @always_inline
 def inner_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3InnerOps.WGMMA_QK.value:
@@ -969,7 +969,7 @@ runs them, with barrier ops injected at the synchronization points.
 **Step 7 — Dispatch.** The dispatch function maps tags to NVIDIA primitives:
 
 ```mojo
-@parameter
+@__parameter
 @always_inline
 def producer_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3Ops.TMA_LOAD_K.value:
@@ -983,7 +983,7 @@ def producer_dispatch[entry: ScheduleEntry]():
         produced_mbar_kv[stage_idx].expect_bytes(tile_bytes)
         v_tma_op.async_copy(v_tile(stage_idx), produced_mbar_kv[stage_idx], coord)
 
-@parameter
+@__parameter
 @always_inline
 def consumer_dispatch[entry: ScheduleEntry]():
     comptime if entry.op.tag == FA3Ops.WGMMA_QK.value:
@@ -1057,23 +1057,23 @@ target-independent, the dispatch is target-specific.
 
 Key fields that every schedule must provide:
 
-| Field           | Type   | Description                                        |
-|-----------------|--------|----------------------------------------------------|
-| `depth`         | `Int`  | Buffer depth. 1 = single-buffer, 2 = double-buffer |
-| `prefetch`      | `Int`  | How many iterations to prefetch ahead              |
-| `drain_passes`  | `Int`  | Number of epilogue drain iterations                |
-| `prologue_fill` | `Int`  | Number of prologue fill iterations                 |
-| `m_mmas`        | `Int`  | MMA grid rows (M-dimension tiles)                  |
-| `n_mmas`        | `Int`  | MMA grid columns (N-dimension tiles)               |
-| `num_halves`    | `Int`  | 1 = single-sided, 2 = ping-pong (two LDS stages)   |
-| `mma_serial`    | `Bool` | True if MMA unit is serial (capacity 1)            |
-| `mma_latency`   | `Int`  | Cycles per MMA (for scheduling heuristics)         |
-| `vm_per_load_a` | `Int`  | `vmcnt` ticks consumed per A-channel global load   |
-| `vm_per_load_b` | `Int`  | `vmcnt` ticks consumed per B-channel global load   |
+| Field            | Type   | Description                                        |
+|------------------|--------|----------------------------------------------------|
+| `depth`          | `Int`  | Buffer depth. 1 = single-buffer, 2 = double-buffer |
+| `prefetch`       | `Int`  | How many iterations to prefetch ahead              |
+| `drain_passes`   | `Int`  | Number of epilogue drain iterations                |
+| `prologue_fill`  | `Int`  | Number of prologue fill iterations                 |
+| `m_mmas`         | `Int`  | MMA grid rows (M-dimension tiles)                  |
+| `n_mmas`         | `Int`  | MMA grid columns (N-dimension tiles)               |
+| `num_partitions` | `Int`  | 1 = single-sided, 2 = ping-pong (two LDS stages)   |
+| `mma_serial`     | `Bool` | True if MMA unit is serial (capacity 1)            |
+| `mma_latency`    | `Int`  | Cycles per MMA (for scheduling heuristics)         |
+| `vm_per_load_a`  | `Int`  | `vmcnt` ticks consumed per A-channel global load   |
+| `vm_per_load_b`  | `Int`  | `vmcnt` ticks consumed per B-channel global load   |
 
-Single-buffer pipelines set `depth=1`, `num_halves=1`, and rely on barriers
+Single-buffer pipelines set `depth=1`, `num_partitions=1`, and rely on barriers
 to gate read/write phases. Double-buffer pipelines set `depth=2`,
-`num_halves=2`, and interleave operations across two LDS stages.
+`num_partitions=2`, and interleave operations across two LDS stages.
 
 ## ScheduleConfig reference
 

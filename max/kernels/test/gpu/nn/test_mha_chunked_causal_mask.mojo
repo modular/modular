@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -48,7 +48,7 @@ def build_ChunkedCausalMask[
         for h in range(num_heads):
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
-                    start_pos = num_keys - seq_len
+                    var start_pos = num_keys - seq_len
                     var q_chunk_idx = (q_idx + start_pos) // local_window_size
                     var k_chunk_idx = k_idx // local_window_size
                     var chunk_masked = q_chunk_idx != k_chunk_idx
@@ -56,7 +56,9 @@ def build_ChunkedCausalMask[
                     var masked = chunk_masked or causal_masked
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
+                        Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
+                            mask.dtype
+                        ](0),
                     )
 
 
@@ -98,12 +100,15 @@ def test_attention[
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+
+    for i in range(o_size):
+        output_ptr[i] = Scalar[qkv_type](0)
 
     # Construct host mask buffer for initialization.
     comptime layout_4d = Layout.row_major[4]()
@@ -115,9 +120,9 @@ def test_attention[
     )
 
     # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
+    rand(q_ptr.as_span())
+    rand(k_ptr.as_span())
+    rand(v_ptr.as_span())
 
     # Initialize causal mask.
     build_ChunkedCausalMask[local_window_size](
@@ -142,10 +147,10 @@ def test_attention[
         q_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -153,10 +158,10 @@ def test_attention[
         k_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -164,10 +169,10 @@ def test_attention[
         v_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -175,10 +180,10 @@ def test_attention[
         mask_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx[num_heads](),
-                Idx(seq_len),
-                Idx(num_keys),
+                batch_size,
+                Idx[num_heads],
+                seq_len,
+                num_keys,
             )
         ),
     )
@@ -186,10 +191,10 @@ def test_attention[
         output_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -216,10 +221,10 @@ def test_attention[
         output_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -248,12 +253,12 @@ def test_attention[
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[DType.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
@@ -265,19 +270,12 @@ def test_attention[
     _ = mask_device_ptr
     _ = output_device_ptr
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-
 
 def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
     comptime for type_idx in range(len(types)):
-        comptime type = types[type_idx]
+        comptime type = rebind[DType](types[type_idx])
         # context encoding
         test_attention[
             type,
@@ -327,50 +325,60 @@ def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
-        mask.status(Index(0, 0), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 0), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(4, 4), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(2, 2), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 2), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(0, 2), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 2), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(2, 0), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 0), Index(4, 4)),
+        TileMaskStatus.PARTIAL_MASK,
     )
 
     assert_equal(
-        mask.status(Index(0, 4), Index(4, 4)), TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(0, 4), Index(4, 4)),
+        TileMaskStatus.FULL_MASK,
     )
     assert_equal(
-        mask.status(Index(4, 0), Index(4, 4)), TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(4, 0), Index(4, 4)),
+        TileMaskStatus.FULL_MASK,
     )
 
     # cases where tile_size >> local_window_size
     assert_equal(
-        mask.status(Index(100, 0), Index(128, 128)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(100, 0), Index(128, 128)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(0, 0), Index(100, 100)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(0, 0), Index(100, 100)),
+        TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(Index(50, 0), Index(100, 100)), TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(50, 0), Index(100, 100)),
+        TileMaskStatus.PARTIAL_MASK,
     )
 
     var bigger_mask = ChunkedCausalMask[local_window_size=256]()
     assert_equal(
-        bigger_mask.status(Index(256, 256), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(256, 256), Index(128, 128)),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        bigger_mask.status(Index(128, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(128, 0), Index(128, 128)),
         TileMaskStatus.NO_MASK,
     )
     assert_equal(
-        bigger_mask.status(Index(256, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), Index(256, 0), Index(128, 128)),
         TileMaskStatus.FULL_MASK,
     )
 

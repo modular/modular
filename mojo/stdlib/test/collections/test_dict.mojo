@@ -13,15 +13,23 @@
 
 from std.collections.dict import (
     Dict,
+    DictEntry,
     DictKeyError,
     EmptyDictError,
-    OwnedKwargsDict,
-    _GROUP_WIDTH,
+    StringDict,
 )
+from std.collections._swisstable import GROUP_WIDTH
 
-from std.hashlib import Hasher, default_comp_time_hasher
+from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 
-from test_utils import CopyCounter, DelCounter, check_write_to
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    ExplicitDestroy,
+    ExplicitDestroyKey,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import (
     assert_equal,
     assert_false,
@@ -36,11 +44,90 @@ def test_dict_construction() raises:
     _ = Dict[String, Int]()
 
 
+def test_dict_lazy_allocation() raises:
+    var d = Dict[Int, Int]()
+    assert_equal(d._reserved(), 0)
+    assert_equal(len(d), 0)
+    assert_false(d)
+
+    var d_zero = Dict[Int, Int](capacity=0)
+    assert_equal(d_zero._reserved(), 0)
+
+    # Empty dict literal `{}` constructs with capacity=0 and stays lazy.
+    var d_literal: Dict[Int, Int] = {}
+    assert_equal(d_literal._reserved(), 0)
+
+    # Lookups on a lazy dict must not deref the dangling buffer.
+    assert_false(1 in d)
+    assert_false(d.find(1))
+    with assert_raises(contains="DictKeyError"):
+        _ = d[1]
+
+    # `pop(key)` raises `DictKeyError` on a lazy dict.
+    with assert_raises(contains="DictKeyError"):
+        _ = d.pop(1)
+
+    # `pop(key, default)` returns the default without allocating.
+    assert_equal(d.pop(1, 42), 42)
+    assert_equal(d._reserved(), 0)
+
+    # `popitem` raises `EmptyDictError` on a lazy dict.
+    with assert_raises(contains="EmptyDictError"):
+        _ = d.popitem()
+
+    # Iteration over a lazy dict yields nothing — no buffer dereference.
+    var iter_count = 0
+    for _ in d:
+        iter_count += 1
+    assert_equal(iter_count, 0)
+
+    var keys_count = 0
+    for _ in d.keys():
+        keys_count += 1
+    assert_equal(keys_count, 0)
+
+    var values_count = 0
+    for _ in d.values():
+        values_count += 1
+    assert_equal(values_count, 0)
+
+    var items_count = 0
+    for _ in d.items():
+        items_count += 1
+    assert_equal(items_count, 0)
+
+    # Clearing a never-allocated dict is a no-op.
+    d.clear()
+    assert_equal(d._reserved(), 0)
+
+    # Copying a lazy dict yields another lazy dict.
+    var d_copy = d.copy()
+    assert_equal(d_copy._reserved(), 0)
+
+    # `setdefault` on a lazy dict allocates and inserts.
+    var d_sd = Dict[Int, Int]()
+    assert_equal(d_sd._reserved(), 0)
+    assert_equal(d_sd.setdefault(1, 99), 99)
+    assert_equal(d_sd._reserved(), 16)
+    assert_equal(d_sd[1], 99)
+
+    # First insertion triggers allocation at INITIAL_CAPACITY (16).
+    d[1] = 10
+    assert_equal(d._reserved(), 16)
+    assert_equal(d[1], 10)
+
+    # Removing the last entry must not regress to the lazy state — capacity
+    # is preserved so the next insert doesn't re-trigger the lazy path.
+    _ = d.pop(1)
+    assert_equal(len(d), 0)
+    assert_equal(d._reserved(), 16)
+
+
 def test_dict_literals() raises:
-    a = {"foo": 1, "bar": 2}
+    var a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
-    b = {1: 4, 2: 7, 3: 18}
+    var b = {1: 4, 2: 7, 3: 18}
     assert_equal(b[1], 4)
     assert_equal(b[2], 7)
     assert_equal(b[3], 18)
@@ -70,7 +157,7 @@ def test_dict_fromkeys_optional() raises:
         "b": None,
         "c": None,
     }
-    var dict = Dict[_, Int].fromkeys(materialize[keys]())
+    var dict = Dict[String, Optional[Int]].fromkeys(materialize[keys](), None)
 
     assert_equal(len(dict), len(expected_dict))
 
@@ -81,6 +168,43 @@ def test_dict_fromkeys_optional() raises:
         assert_false(v)
 
 
+def test_dict_fromkeys_duplicate_keys() raises:
+    # Duplicate keys in the input list collapse to a single entry (matching
+    # Python's `dict.fromkeys`), all sharing the given value.
+    comptime keys = [String("a"), "b", "a", "c", "b"]
+    var dict = Dict.fromkeys(materialize[keys](), 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
+def test_dict_fromkeys_iterable() raises:
+    # `fromkeys` accepts any borrowed `Iterable`, not just `List`. Duplicate
+    # keys collapse to a single entry.
+    var keys: Array[String, 4] = ["a", "b", "a", "c"]
+    var dict = Dict.fromkeys(keys, 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
+def test_dict_fromkeys_moving() raises:
+    # Transferring the iterable with `^` selects the move overload of
+    # `fromkeys`, consuming it and moving keys into the new dictionary.
+    # Duplicate keys collapse to a single entry.
+    var keys = [String("a"), "b", "a", "c"]
+    var dict = Dict.fromkeys(keys^, 7)
+
+    assert_equal(len(dict), 3)
+    assert_equal(dict["a"], 7)
+    assert_equal(dict["b"], 7)
+    assert_equal(dict["c"], 7)
+
+
 def test_basic() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
@@ -89,7 +213,7 @@ def test_basic() raises:
     assert_equal(1, dict["a"])
     assert_equal(2, dict["b"])
 
-    ptr = Pointer(to=dict["a"])
+    var ptr = Pointer(to=dict["a"])
     assert_equal(1, ptr[])
     ptr[] = 17
     assert_equal(17, dict["a"])
@@ -137,7 +261,7 @@ def test_dict_string_representation_string_int() raises:
     check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
+        expected="Dict[String, SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
         is_repr=True,
     )
 
@@ -147,7 +271,10 @@ def test_dict_string_representation_int_int() raises:
     check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
     check_write_to(
         d,
-        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
+        expected=(
+            "Dict[SIMD[DType.int, 1], SIMD[DType.int, 1]]({Int(1): Int(2),"
+            " Int(3): Int(4)})"
+        ),
         is_repr=True,
     )
 
@@ -194,15 +321,18 @@ def test_key_error() raises:
 
 def _test_iter_bounds[
     I: Iterator, //
-](var dict_iter: I, dict_len: Int,) raises:
+](
+    var dict_iter: I,
+    dict_len: Int,
+) raises where conforms_to(
+    I.Element, Deinitable
+):
     var iter = dict_iter^
     for i in range(dict_len):
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -305,6 +435,32 @@ def test_iter_take_items() raises:
     for i in range(3):
         with assert_raises(contains="KeyError"):
             _ = dict[i]
+
+
+def test_iter_take_items_owned() raises:
+    # Test that dict `take_items()` works with non-Copyable values
+    var dict = Dict[MoveOnly[Int], String]()
+    dict[MoveOnly(0)] = "a"
+    dict[MoveOnly(1)] = "b"
+    dict[MoveOnly(2)] = "c"
+
+    var values = String()
+    var keys = 0
+
+    for entry in dict.take_items():
+        keys += entry.key.data
+        values += entry.value
+
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
+    assert_equal(len(dict), 0)
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[MoveOnly(i)]
 
 
 def test_iter_take_items_empty() raises:
@@ -513,7 +669,7 @@ def test_mojo_issue_1729() raises:
         assert_equal(i, d[DummyKey(key)])
 
 
-def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]) raises:
+def _test_taking_owned_kwargs_dict(var **kwargs: Int) raises:
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -556,10 +712,50 @@ def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]) raises:
 
 
 def test_owned_kwargs_dict() raises:
-    var owned_kwargs = OwnedKwargsDict[Int]()
+    var owned_kwargs = StringDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
-    _test_taking_owned_kwargs_dict(owned_kwargs^)
+    _test_taking_owned_kwargs_dict(**owned_kwargs^)
+
+
+def test_string_dict_string_span_getitem() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("fruit", 8)
+    kwargs._insert("dessert", 9)
+
+    # Index with a plain `StringSpan`, no `String` allocation required.
+    assert_equal(kwargs[StringSpan("fruit")], 8)
+    assert_equal(kwargs[StringSpan("dessert")], 9)
+
+    # A view into a larger buffer resolves to the same entry as the `String`.
+    var buffer = StringSpan("fruitcake")
+    assert_equal(kwargs[buffer[byte=0:5]], kwargs[String("fruit")])
+
+    # A missing key still raises `DictKeyError`.
+    with assert_raises(contains="KeyError"):
+        _ = kwargs[StringSpan("salad")]
+
+
+def test_string_dict_write_to() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("a", 1)
+    kwargs._insert("b", 2)
+    check_write_to(kwargs, expected="{a: 1, b: 2}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
+        is_repr=True,
+    )
+
+
+def test_string_dict_write_to_empty() raises:
+    var kwargs = StringDict[Int]()
+    check_write_to(kwargs, expected="{}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({})",
+        is_repr=True,
+    )
 
 
 def test_find_get() raises:
@@ -695,8 +891,8 @@ def test_dict_repr_wrap() raises:
         repr(tmp_dict),
         (
             "Dict[String, SIMD[DType.float64, 1]]"
-            "({'one': SIMD[DType.float64, 1](1.0), "
-            "'two': SIMD[DType.float64, 1](2.0)})"
+            "({'one': Float64(1.0), "
+            "'two': Float64(2.0)})"
         ),
     )
 
@@ -721,8 +917,12 @@ def test_popitem_no_copies() raises:
 
 def test_dict_key_error_repr() raises:
     var e = DictKeyError[Int]()
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
-    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=False
+    )
+    check_write_to(
+        e, expected="DictKeyError[SIMD[DType.int, 1]]()", is_repr=True
+    )
 
 
 def test_empty_dict_error_repr() raises:
@@ -825,9 +1025,9 @@ def test_order_compaction() raises:
     for i in range(90):
         _ = d.pop(i)
     assert_equal(len(d), 10)
-    # Now insert new entries. Each insert calls _maybe_resize which checks
-    # compaction (len(_order) > 2 * _len). With 100 order entries and 10
-    # live, compaction should trigger on the next insert.
+    # Now insert new entries. Each insert calls _ensure_capacity which
+    # checks compaction (len(_order) > 2 * _len). With 100 order entries
+    # and 10 live, compaction should trigger on the next insert.
     d[1000] = 1000
     assert_equal(len(d), 11)
     # Verify all live entries are intact and iteration order is correct
@@ -897,12 +1097,14 @@ def test_reversed_items() raises:
 
 
 def test_minimum_capacity() raises:
-    """The minimum capacity is _GROUP_WIDTH (16) for SIMD correctness."""
+    """Once allocated, the minimum capacity is GROUP_WIDTH (16) for SIMD correctness.
+    """
     var d = Dict[Int, Int](capacity=16)
-    assert_true(d._capacity >= _GROUP_WIDTH)
-    # Default constructor also gets at least _GROUP_WIDTH capacity
+    assert_true(d._reserved() >= GROUP_WIDTH)
+    # Default constructor is lazy and allocates GROUP_WIDTH on first insertion.
     var d2 = Dict[Int, Int]()
-    assert_true(d2._capacity >= _GROUP_WIDTH)
+    d2[0] = 0
+    assert_true(d2._reserved() >= GROUP_WIDTH)
 
 
 def test_inplace_rehash() raises:
@@ -923,7 +1125,7 @@ def test_inplace_rehash() raises:
 
     assert_equal(len(d), keep)
 
-    # Next insert triggers _maybe_resize. Since _len <= capacity*7/16,
+    # Next insert triggers _ensure_capacity. Since _len <= capacity*7/16,
     # should rehash in-place, NOT double capacity.
     d[100] = 100
     assert_equal(d._reserved(), initial_cap)
@@ -1037,7 +1239,7 @@ def test_inplace_rehash_via_setdefault() raises:
     assert_equal(len(d), 4)
     var cap_before = d._reserved()
 
-    # setdefault calls _maybe_resize, should trigger in-place rehash
+    # setdefault calls _ensure_capacity, should trigger in-place rehash
     var val = d.setdefault(200, 200)
     assert_equal(val, 200)
     assert_equal(d._reserved(), cap_before)
@@ -1085,7 +1287,7 @@ def test_compile_time_dict_with_rehash() raises:
         # Delete most entries to create tombstones
         for i in range(max_load - keep):
             _ = d.pop(String(i), -1)
-        # This insert triggers _maybe_resize -> in-place rehash at compile time
+        # This insert triggers _ensure_capacity -> in-place rehash at compile time
         d["ct"] = 42
         return d^
 
@@ -1178,7 +1380,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDestructible):
+struct NonWritable(Copyable, Deinitable):
     pass
 
 
@@ -1188,16 +1390,43 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
+    # Owned iteration should work for any combination of non-Copyable K/V types
+    assert_true(conforms_to(Dict[MoveOnly[Int], Int], IterableOwned))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], IterableOwned))
+    assert_true(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], IterableOwned))
+
+    # Move-only key drops every copy-requiring conformance: each conditional
+    # clause on `Dict` includes `conforms_to(K, Copyable)`.
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Equatable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Hashable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Writable))
+
+    # Move-only value: only `Copyable` is dropped. `MoveOnly[Int]` is itself
+    # conditionally `Equatable`/`Hashable`/`Writable` when its payload is, so
+    # `Dict[Int, MoveOnly[Int]]` keeps those conformances (K is `Copyable`).
+    assert_false(conforms_to(Dict[Int, MoveOnly[Int]], Copyable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Equatable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Hashable))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], Writable))
+
+    # Both axes move-only: K-side `Copyable` failure drops everything.
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Writable))
+
 
 def test_dict_iter_owned() raises:
-    var d = Dict[String, Int]()
-    d["a"] = 1
-    d["b"] = 2
-    d["c"] = 3
+    # Test that owned iteration works, for non-Copyable types
+    var d = Dict[MoveOnly[String], Int]()
+    d[MoveOnly("a")] = 1
+    d[MoveOnly("b")] = 2
+    d[MoveOnly("c")] = 3
 
-    var keys = List[String]()
-    for key in d^:
-        keys.append(key)
+    var keys = List[MoveOnly[String]]()
+    for var key in d^:
+        keys.append(key^)
 
     assert_equal(len(keys), 3)
     assert_equal(keys[0], "a")
@@ -1207,7 +1436,7 @@ def test_dict_iter_owned() raises:
 
 def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var ptr = Pointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1222,7 +1451,7 @@ def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var ptr = Pointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1291,6 +1520,438 @@ def test_reserve_prevents_rehash() raises:
         d[i] = i
     assert_equal(d._reserved(), cap_after_reserve)
     assert_equal(len(d), 200)
+def test_dict_move_only_value() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Dict[K, V: Movable & Deinitable, H]`.
+    assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
+
+    var d = Dict[String, MoveOnly[Int]]()
+    d["a"] = MoveOnly[Int](1)
+    d["b"] = MoveOnly[Int](2)
+    d["c"] = MoveOnly[Int](3)
+    assert_equal(d["a"], MoveOnly[Int](1))
+    assert_equal(d["b"], MoveOnly[Int](2))
+    assert_equal(d["c"], MoveOnly[Int](3))
+    assert_equal(len(d), 3)
+    assert_true("a" in d)
+    assert_false("missing" in d)
+
+    # `pop` moves the value out.
+    var v = d.pop("a")
+    assert_equal(v, MoveOnly[Int](1))
+    assert_equal(len(d), 2)
+    assert_false("a" in d)
+
+    # `popitem` returns an owned entry, draining the dict.
+    var seen: Int = 0
+    while len(d) > 0:
+        var entry = d.popitem()
+        seen += 1
+        _ = entry^
+    assert_equal(seen, 2)
+    assert_equal(len(d), 0)
+
+
+def test_dict_move_only_key() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Dict[K: Movable & Hashable & Equatable, V, H]`
+    # where the key type is move-only.
+    assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
+
+    var d = Dict[MoveOnly[Int], Int]()
+    d[MoveOnly[Int](1)] = 10
+    d[MoveOnly[Int](2)] = 20
+    d[MoveOnly[Int](3)] = 30
+    assert_equal(d[MoveOnly[Int](1)], 10)
+    assert_equal(d[MoveOnly[Int](2)], 20)
+    assert_equal(d[MoveOnly[Int](3)], 30)
+    assert_equal(len(d), 3)
+    assert_true(MoveOnly[Int](1) in d)
+    assert_false(MoveOnly[Int](99) in d)
+
+    # Updating an existing key by `__setitem__` moves the new key in.
+    d[MoveOnly[Int](1)] = 100
+    assert_equal(d[MoveOnly[Int](1)], 100)
+    assert_equal(len(d), 3)
+
+    # `pop(key)` removes by key without copying the key.
+    var v = d.pop(MoveOnly[Int](2))
+    assert_equal(v, 20)
+    assert_equal(len(d), 2)
+    assert_false(MoveOnly[Int](2) in d)
+
+    # `popitem` returns an owned entry by moving the key out.
+    var seen: Int = 0
+    while len(d) > 0:
+        var entry = d.popitem()
+        seen += 1
+        _ = entry^
+    assert_equal(seen, 2)
+    assert_equal(len(d), 0)
+
+    # `setdefault` takes the key by `var`, so it moves a move-only key in.
+    d = Dict[MoveOnly[Int], Int]()
+    ref existing = d.setdefault(MoveOnly[Int](1), 10)
+    assert_equal(existing, 10)
+    assert_equal(len(d), 1)
+    ref already = d.setdefault(MoveOnly[Int](1), 999)
+    assert_equal(already, 10)
+    assert_equal(len(d), 1)
+
+    # `pop(key, default)` falls back to the default for missing keys.
+    assert_equal(d.pop(MoveOnly[Int](42), 7), 7)
+    assert_equal(len(d), 1)
+    assert_equal(d.pop(MoveOnly[Int](1), 7), 10)
+    assert_equal(len(d), 0)
+
+    # `__bool__` and `clear` on a move-only-keyed dict.
+    d[MoveOnly[Int](1)] = 1
+    assert_true(d.__bool__())
+    d.clear()
+    assert_false(d.__bool__())
+    assert_equal(len(d), 0)
+
+
+def test_dict_move_only_key_and_value() raises:
+    # Both K and V are move-only: confirms the orthogonal conditional
+    # conformance clauses on `Dict[K, V, H]` compose correctly.
+    assert_false(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], Copyable))
+
+    var d = Dict[MoveOnly[Int], MoveOnly[Int]]()
+    d[MoveOnly[Int](1)] = MoveOnly[Int](10)
+    d[MoveOnly[Int](2)] = MoveOnly[Int](20)
+    assert_equal(len(d), 2)
+    assert_equal(d[MoveOnly[Int](1)], MoveOnly[Int](10))
+    assert_true(MoveOnly[Int](2) in d)
+
+    var v = d.pop(MoveOnly[Int](1))
+    assert_equal(v, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
+
+    var entry = d.popitem()
+    _ = entry^
+    assert_equal(len(d), 0)
+
+    # `setdefault` moves both the key and the default value in.
+    ref inserted = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](10))
+    assert_equal(inserted, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
+    ref already = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](999))
+    assert_equal(already, MoveOnly[Int](10))
+    assert_equal(len(d), 1)
+
+
+def test_dict_conditional_implicitly_deletable() raises:
+    assert_true(conforms_to(Dict[Int, Int], Deinitable))
+
+    assert_false(conforms_to(Dict[Int, ExplicitDestroy], Deinitable))
+
+
+def test_dict_deinit_with() raises:
+    # `deinit_with` must hand every entry's key/value to the closure exactly
+    # once. Uses a deletable value type because populating a linear-valued dict
+    # isn't supported yet (tracked in the linear-usability follow-up).
+    var d = Dict[Int, Int]()
+    d[1] = 10
+    d[2] = 20
+    d[3] = 30
+
+    var destroyed = List[Int]()
+
+    def dispose(var key: Int, var value: Int) {mut}:
+        destroyed.append(value)
+
+    d^.deinit_with(dispose)
+
+    # Order follows slot layout, not insertion, so check membership.
+    assert_equal(len(destroyed), 3)
+    assert_true(10 in destroyed)
+    assert_true(20 in destroyed)
+    assert_true(30 in destroyed)
+
+
+def test_dict_deinit_with_empty() raises:
+    # `deinit_with` on an empty (linear-valued) dict must run and free the
+    # backing without invoking the closure — there are no entries.
+    var d = Dict[Int, ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var key: Int, var value: ExplicitDestroy) {mut}:
+        calls += 1
+        value^.destroy()
+
+    d^.deinit_with(dispose)
+    assert_equal(calls, 0)
+
+
+def test_dict_clear_with() raises:
+    # `clear_with` must hand every entry's key/value to the closure exactly
+    # once, empty the dict, and leave it reusable (capacity retained). Uses a
+    # deletable value type since the disposal path is what's under test.
+    var d = Dict[Int, Int]()
+    d[1] = 10
+    d[2] = 20
+    d[3] = 30
+
+    var cleared = List[Int]()
+
+    def dispose(var key: Int, var value: Int) {mut}:
+        cleared.append(value)
+
+    d.clear_with(dispose)
+
+    # Every entry disposed exactly once, and the dict is now empty.
+    assert_equal(len(cleared), 3)
+    assert_true(10 in cleared)
+    assert_true(20 in cleared)
+    assert_true(30 in cleared)
+    assert_equal(len(d), 0)
+
+    # Capacity is retained, so the dict is immediately reusable.
+    d[4] = 40
+    assert_equal(len(d), 1)
+    assert_equal(d[4], 40)
+
+
+def test_dict_clear_with_empty() raises:
+    var d = Dict[Int, ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var key: Int, var value: ExplicitDestroy) {mut}:
+        calls += 1
+        value^.destroy()
+
+    d.clear_with(dispose)
+    d^.deinit_with(dispose)
+    assert_equal(calls, 0)
+
+
+def test_dict_clear_with_linear() raises:
+    # `clear_with` on a populated linear `Dict` (neither key nor value is
+    # `Deinitable`). Populate via `insert`, then verify every entry
+    # reaches the closure once, the dict empties, and its capacity is reused.
+    var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
+    var disposed = List[Int]()
+    var disposed_keys = List[Int]()
+
+    def dispose_kv(
+        var key: ExplicitDestroyKey, var value: ExplicitDestroy
+    ) {mut}:
+        disposed.append(value.value)
+        disposed_keys.append(key.value)
+        key^.destroy()
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[
+            ExplicitDestroyKey, ExplicitDestroy, default_hasher
+        ]
+    ) {mut}:
+        entry^.deinit_with(dispose_kv)
+
+    d.insert(ExplicitDestroyKey(1), ExplicitDestroy(10)).deinit_with(
+        dispose_entry
+    )
+    d.insert(ExplicitDestroyKey(2), ExplicitDestroy(20)).deinit_with(
+        dispose_entry
+    )
+    d.insert(ExplicitDestroyKey(3), ExplicitDestroy(30)).deinit_with(
+        dispose_entry
+    )
+    var len_before_clear = len(d)
+
+    d.clear_with(dispose_kv)
+
+    var cleared_values = disposed.copy()
+    var cleared_keys = disposed_keys.copy()
+    var len_after_clear = len(d)
+
+    # Capacity is retained, so the emptied dict is reusable.
+    d.insert(ExplicitDestroyKey(4), ExplicitDestroy(40)).deinit_with(
+        dispose_entry
+    )
+    var len_after_reuse = len(d)
+
+    d^.deinit_with(dispose_kv)
+
+    assert_equal(len_before_clear, 3)
+    assert_equal(len_after_clear, 0)
+    assert_equal(len_after_reuse, 1)
+
+    assert_equal(len(cleared_values), 3)
+    assert_true(10 in cleared_values)
+    assert_true(20 in cleared_values)
+    assert_true(30 in cleared_values)
+
+    assert_equal(len(cleared_keys), 3)
+    assert_true(1 in cleared_keys)
+    assert_true(2 in cleared_keys)
+    assert_true(3 in cleared_keys)
+
+    assert_equal(len(disposed), 4)
+    assert_true(40 in disposed)
+
+
+def test_dict_insert_linear_key_and_value() raises:
+    # A linear `Dict` (and a linear `Optional[DictEntry]`) has no implicit
+    # destructor, so every linear value is consumed via `deinit_with` before
+    # any (raising) assert runs, per the linear-in-`raises` idiom.
+    var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
+    var disposed = List[Int]()
+    var disposed_keys = List[Int]()
+
+    def dispose_kv(
+        var key: ExplicitDestroyKey, var value: ExplicitDestroy
+    ) {mut}:
+        disposed.append(value.value)
+        disposed_keys.append(key.value)
+        key^.destroy()
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[
+            ExplicitDestroyKey, ExplicitDestroy, default_hasher
+        ]
+    ) {mut}:
+        entry^.deinit_with(dispose_kv)
+
+    # New keys: no displaced entry, so each returned `Optional` is empty.
+    var r1 = d.insert(ExplicitDestroyKey(1), ExplicitDestroy(10))
+    var r1_present = Bool(r1)
+    r1^.deinit_with(dispose_entry)
+
+    var r2 = d.insert(ExplicitDestroyKey(2), ExplicitDestroy(20))
+    var r2_present = Bool(r2)
+    r2^.deinit_with(dispose_entry)
+
+    var len_after_new = len(d)
+
+    # Overwrite an existing key: the displaced entry (old key 1, value 10)
+    # comes back — not the just-inserted value 99.
+    var r3 = d.insert(ExplicitDestroyKey(1), ExplicitDestroy(99))
+    var r3_present = Bool(r3)
+    r3^.deinit_with(dispose_entry)
+
+    # Snapshot what the overwrite disposed, before teardown adds survivors.
+    # A store/return swap (keep old, return new) would still leave the same
+    # {10, 20, 99} disposed overall, so the final membership checks alone
+    # can't catch it — pinning the displaced pair here can.
+    var overwrite_disposed_values = disposed.copy()
+    var overwrite_disposed_keys = disposed_keys.copy()
+
+    var len_after_overwrite = len(d)
+
+    # Tear down the linear dict explicitly, disposing the surviving entries.
+    d^.deinit_with(dispose_kv)
+
+    # All linear values consumed; asserts may raise freely now.
+    assert_false(r1_present)
+    assert_false(r2_present)
+    assert_true(r3_present)
+    assert_equal(len_after_new, 2)
+    assert_equal(len_after_overwrite, 2)
+
+    # 1. The overwrite displaced exactly the old pair: value 10, key 1.
+    assert_equal(len(overwrite_disposed_values), 1)
+    assert_equal(overwrite_disposed_values[0], 10)
+    assert_equal(len(overwrite_disposed_keys), 1)
+    assert_equal(overwrite_disposed_keys[0], 1)
+
+    # Displaced 10 (overwrite) + surviving 20 and 99 (teardown).
+    assert_equal(len(disposed), 3)
+    assert_true(10 in disposed)
+    assert_true(20 in disposed)
+    assert_true(99 in disposed)
+
+    # 2. Keys are explicitly destroyed too: old key 1 (displaced) plus the
+    # surviving keys 1 and 2 at teardown.
+    assert_equal(len(disposed_keys), 3)
+
+
+def _test_taking_owned_kwargs_dict_linear_popitem(
+    var **kwargs: ExplicitDestroy,
+) raises:
+    var disposed_keys = List[String]()
+    var disposed_vals = List[Int]()
+
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        disposed_keys.append(key)
+        disposed_vals.append(value.value)
+        value^.destroy()
+
+    while True:
+        try:
+            var entry = kwargs.popitem()
+            entry^.deinit_with(dispose_kwarg)
+        except e:
+            break  # EmptyDictError: kwargs is now empty
+
+    kwargs^.deinit_with(dispose_kwarg)  # empty container still needs teardown
+
+    assert_equal(len(disposed_vals), 2)
+    assert_true("linear_fruit" in disposed_keys)
+    assert_true("linear_dessert" in disposed_keys)
+    assert_true(8 in disposed_vals)
+    assert_true(9 in disposed_vals)
+
+
+def _test_taking_owned_kwargs_dict_linear_insert_pop(
+    var **kwargs: ExplicitDestroy,
+) raises:
+    var disposed = List[Int]()
+
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        disposed.append(value.value)
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[String, ExplicitDestroy, default_comp_time_hasher]
+    ) {mut}:
+        entry^.deinit_with(dispose_kwarg)
+
+    var popped_val: Int
+    var len_after_pop: Int
+    try:
+        var displaced = kwargs.insert("linear_dessert", ExplicitDestroy(12))
+        displaced^.deinit_with(dispose_entry)
+
+        var popped = kwargs.pop("linear_dessert")
+        popped_val = popped.value
+        popped^.destroy()
+
+        len_after_pop = len(kwargs)
+        kwargs^.deinit_with(dispose_kwarg)  # success: consume once
+    except e:
+        kwargs^.deinit_with(dispose_kwarg)  # error: consume once
+        raise e  # then bail
+
+    assert_equal(disposed[0], 9)  # displaced old dessert
+    assert_equal(popped_val, 12)  # popped the replacement value
+    assert_equal(len_after_pop, 1)  # started 2 (fruit, dessert), popped dessert
+
+
+def test_owned_kwargs_dict_linear() raises:
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        value^.destroy()
+
+    def dispose_val(
+        var entry: DictEntry[String, ExplicitDestroy, default_comp_time_hasher]
+    ) {mut}:
+        entry^.deinit_with(dispose_kwarg)
+
+    var kw1 = StringDict[ExplicitDestroy]()
+    var a1 = kw1.insert("linear_fruit", ExplicitDestroy(8))
+    a1^.deinit_with(dispose_val)
+    var a2 = kw1.insert("linear_dessert", ExplicitDestroy(9))
+    a2^.deinit_with(dispose_val)
+    _test_taking_owned_kwargs_dict_linear_popitem(**kw1^)
+
+    var kw2 = StringDict[ExplicitDestroy]()
+    var b1 = kw2.insert("linear_fruit", ExplicitDestroy(8))
+    b1^.deinit_with(dispose_val)
+    var b2 = kw2.insert("linear_dessert", ExplicitDestroy(9))
+    b2^.deinit_with(dispose_val)
+    _test_taking_owned_kwargs_dict_linear_insert_pop(**kw2^)
 
 
 def main() raises:

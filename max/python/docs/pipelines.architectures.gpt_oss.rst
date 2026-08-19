@@ -9,4 +9,5 @@ max.pipelines.architectures.gpt_oss
 
 .. automodule:: max.pipelines.architectures.gpt_oss
    :members:
+   :imported-members:
    :show-inheritance:

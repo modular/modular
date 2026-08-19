@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, warp_id, lane_id
 from std.gpu.intrinsics import threadfence
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -95,7 +95,7 @@ def wgmma_f16_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    c0 = bitcast[DType.float16, 4](c_reg)
+    var c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
@@ -228,7 +228,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         a_type=DType.float8_e4m3fn,
         b_type=DType.float8_e4m3fn,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -365,7 +365,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         b_type=DType.float8_e5m2,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -502,7 +502,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         b_type=DType.float8_e5m2,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -639,7 +639,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         b_type=DType.float8_e4m3fn,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

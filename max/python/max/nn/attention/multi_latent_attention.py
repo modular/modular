@@ -230,6 +230,7 @@ class LatentAttentionWithRope(Module, Shardable):
                 kv_collection,
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 self.BUFFER_TOK_SIZE,
+                max_chunks=1,  # we only do one-shot prefill now.
             )
         )
 
@@ -559,6 +560,10 @@ class LatentAttentionWithRope(Module, Shardable):
             assert kv_collection.attention_dispatch_metadata is not None
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
+            )
+            assert kv_collection.mla_num_partitions is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
             )
 
         if self.graph_mode == "prefill":

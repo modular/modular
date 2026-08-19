@@ -21,15 +21,20 @@ Architecture config
 
    ArchConfig
    ArchConfigWithAttentionKVCache
+   ArchConfigWithBoundedMaxSeqLen
    ArchConfigWithKVCache
+   ArchConfigWithPermissiveMaxSeqLen
+   ArchConfigWithStoredKVParams
+   ArchVLConfigWithTextSubconfig
 
-Diffusion
----------
+Batch processing
+----------------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   ComponentModel
-   DiffusionPipeline
+   BatchProcessor
+   BatchProcessorRuntime
+   RaggedBatchProcessor

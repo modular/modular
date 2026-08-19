@@ -15,7 +15,7 @@
 Inputs: [1.0, 2.0, 3.0, 4.0] / [0.0, 0.0, 1.0, 1.0]
 Expected output: [Inf, Inf, 3.0, 4.0]
 
-With MODULAR_MAX_NAN_CHECK=1, this should abort with an Inf diagnostic.
+With max-debug.nan-check enabled, this should abort with an Inf diagnostic.
 
 Set NAN_CHECK_TEST_DEVICE=gpu to run on GPU instead of CPU.
 """

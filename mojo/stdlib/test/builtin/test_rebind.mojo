@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.rebind import downcast
-from std.reflection import struct_field_types
 from std.testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
@@ -22,7 +21,7 @@ from test_utils import MoveCopyCounter, DelCounter
 # ===----------------------------------------------------------------------=== #
 
 
-def indirect_rebind_reg[X: SIMDSize](a: SIMD[DType.int32, X]) -> String:
+def indirect_rebind_reg[X: SIMDLength](a: SIMD[DType.int32, X]) -> String:
     return String(rebind[SIMD[DType.int32, 4]](a))
 
 
@@ -83,7 +82,7 @@ def test_rebind_var_does_not_copy_only_moves() raises:
 
 def test_rebind_does_not_call_del() raises:
     var n_dels = 0
-    var counter = DelCounter(UnsafePointer(to=n_dels))
+    var counter = DelCounter(Pointer(to=n_dels))
     var rebound = rebind_var[type_of(counter)](counter^)
     assert_equal(n_dels, 0)
     _ = rebound
@@ -110,13 +109,14 @@ struct TestStructForRebindDowncast:
 def test_rebind_downcasted_struct_field_type() raises:
     """Test that rebind accepts downcasted struct field types.
 
-    When using struct_field_types with downcast and then rebinding back to the
-    original type, the compiler should recognize that the downcasted type is
-    semantically equivalent to the original for rebind purposes.
+    When using `reflect[T].field_types()` with downcast and then rebinding
+    back to the original type, the compiler should recognize that the
+    downcasted type is semantically equivalent to the original for rebind
+    purposes.
     """
     comptime T = TestStructForRebindDowncast
     comptime TField = downcast[
-        struct_field_types[T]()[0], Defaultable & Movable
+        reflect[T].field_types()[0], Defaultable & Movable
     ]
 
     # Test rebind_var with downcasted type

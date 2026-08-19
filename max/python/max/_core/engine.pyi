@@ -18,13 +18,16 @@
 import enum
 import inspect
 import os
+import pathlib
 import types
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
+import max._core.mlrt
 from max._core.driver import Buffer
+from max._core.mlrt import AsyncValue
 from max._core_types.driver import DLPackArray
 
 InputType = DLPackArray | Buffer | int | float | bool
@@ -56,12 +59,120 @@ class TensorSpec:
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
+class ModelMetadata:
+    """Input and output metadata for a compiled model function."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def input_metadata(self) -> list[TensorSpec]: ...
+    @property
+    def output_metadata(self) -> list[TensorSpec]: ...
+
+class CompiledModels:
+    """A compiled model artifact containing one or more submodels."""
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> ModelMetadata: ...
+    def __iter__(self) -> Iterator[ModelMetadata]: ...
+    @property
+    def names(self) -> list[str]: ...
+    def export_mef(self, path: str) -> None:
+        """
+        Exports the compiled model as MEF bytes to the given file.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+
+def get_config_value(key: str) -> str:
+    """
+    Reads a config value.
+
+    Global overrides take priority, then the ``MODULAR_<KEY>``
+    environment variable, then ``modular.cfg``.
+
+    Raises:
+        KeyError: If the key is not set in any source.
+        RuntimeError: If the config fails to open.
+    """
+
+def get_global_value(key: str) -> str | None:
+    """
+    Returns the process-wide override for ``key``, or ``None`` if unset.
+
+    Ignores environment variables and ``modular.cfg``.
+    """
+
+def set_global_value(key: str, value: str) -> None:
+    """
+    Sets a process-wide config override.
+
+    Overrides take priority over environment variables and
+    ``modular.cfg`` for every consumer in the process. They are not
+    inherited by subprocesses.
+    """
+
+def unset_global_value(key: str) -> None:
+    """Removes an override set by :func:`set_global_value`."""
+
+def max_cache_dir() -> pathlib.Path | None:
+    """
+    Returns the directory the engine caches compiled models (``.mef``) in.
+
+    Resolved by the compiler itself.
+
+    Returns:
+        pathlib.Path | None: the cache directory, or None if unresolvable.
+    """
+
+@overload
+def read(path: str | os.PathLike) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from a file path.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the file is missing or is not a valid MEF
+        for this engine build.
+    """
+
+@overload
+def read(data: bytes) -> CompiledModels:
+    """
+    Reads a compiled-model artifact (``.mef``) from bytes.
+
+    Returns:
+        CompiledModels: the artifact, ready to be initialized on any
+        session via :meth:`InferenceSession._load_all`.
+
+    Raises:
+        RuntimeError: if the bytes are not a valid MEF for this
+        engine build.
+    """
+
 class Model:
     """
     A loaded model that you can execute.
 
     Do not instantiate this class directly. Instead, create it with
-    :obj:`InferenceSession`.
+    :meth:`InferenceSession.load` or :meth:`InferenceSession.init`.
+
+    A :class:`Model` is callable. Calling it directly (``model(inputs...)``)
+    accepts tensors as positional or keyword arguments and dispatches
+    to :meth:`execute`. You can also call :meth:`execute` directly, which
+    accepts positional arguments only.
+
+    When using keyword arguments, the names must match the model's input
+    metadata (see :attr:`input_metadata`). Calling the model raises
+    ``TypeError`` if a keyword argument doesn't match a model input, if a
+    positional and keyword argument refer to the same parameter, or if the
+    number of inputs doesn't match.
+
+    For supported input types and execution errors, see :meth:`execute`.
     """
 
     @property
@@ -117,6 +228,17 @@ class Model:
         """
 
     @property
+    def name(self) -> str:
+        """
+        The symbol name of this model.
+
+        Mirrors the ``sym_name`` of the model's ``mo.graph`` op, preserved
+        through MEF serialization. Used by
+        :meth:`InferenceSession.load_all` to key the returned dict by graph
+        name.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
@@ -132,92 +254,35 @@ class Model:
             model.execute(input_tensor)
 
         Args:
-            args:
-              A list of input tensors. We currently support :obj:`np.ndarray`,
-              :obj:`torch.Tensor`, and :obj:`max.driver.Buffer` inputs. All
-              inputs will be copied to the device that the model is resident on
+            args: A list of input tensors. The following input types are
+              supported:
+
+              * Any tensors implementing the DLPack protocol, such as
+                :obj:`np.ndarray` or :obj:`torch.Tensor`.
+              * Max Driver buffers, such as :obj:`max.driver.Buffer`.
+              * Scalar inputs, such as :obj:`bool`, :obj:`float`, :obj:`int`,
+                or :obj:`np.generic`.
+
+              All inputs are copied to the device that the model is resident on
               prior to executing.
 
-            output_device:
-              The device to copy output tensors to. Defaults to :obj:`None`, in
-              which case the tensors will remain resident on the same device as
-              the model.
-
         Returns:
-            A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device by default (you can change it with
-            the ``output_device`` argument).
+            A list of output tensors. The output tensors are resident on the
+            execution device.
 
         Raises:
-            RuntimeError: If the given input tensors' shape don't match what
+            RuntimeError: If the given input tensors' shapes don't match what
               the model expects.
 
-            TypeError: If the given input tensors' dtype cannot be cast to what
+            TypeError: If the given input tensors' dtype can't be cast to what
               the model expects.
 
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Buffer`.
+            ValueError: If positional inputs aren't one of the supported
+              types.
         """
 
     def __call__(self, *args: InputType, **kwargs: InputType) -> list[Buffer]:
-        """
-        Executes the model with the provided input and returns the outputs.
-
-        Models can be called with any mixture of positional and named inputs:
-
-        .. code-block:: python
-
-            model(a, b, d=d, c=c)
-
-        This function assumes that positional inputs cannot collide with any
-        named inputs that would be present in the same position. If we have a
-        model that takes named inputs `a`, `b`, `c`, and `d` (in that order),
-        the following is invalid.
-
-        .. code-block:: python
-
-            model(a, d, b=b, c=c)
-
-        The function will assume that input `d` will map to the same position as
-        input `b`.
-
-        Args:
-            args: A list of input tensors. We currently support the following
-              input types:
-
-              * Any tensors implementing the DLPack protocol, such as
-                :obj:`np.ndarray`, :obj:`torch.Tensor`
-              * Max Driver buffers, i.e. :obj:`max.driver.Buffer`
-              * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
-                :obj:`np.generic`
-
-            kwargs: Named inputs. We can support the same types supported
-              in :obj:`args`.
-
-        Returns:
-            A list of output tensors. The output tensors will be
-            resident on the execution device.
-
-        Raises:
-            RuntimeError: If the given input tensors' shape don't match what
-              the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to
-              what the model expects.
-
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Buffer`.
-
-            ValueError: If an input name does not correspond to what the model
-              expects.
-
-            ValueError: If any positional and named inputs collide.
-
-            ValueError: If the number of inputs is less than what the model
-              expects.
-        """
+        """Executes the model. See :class:`Model` for details."""
 
     def __repr__(self) -> str: ...
     def capture(
@@ -253,6 +318,19 @@ class Model:
             RuntimeError: If no graph captured or trace verification fails.
         """
 
+    def release_captured_graph(self, graph_keys: int | Sequence[int]) -> None:
+        """
+        Release a previously captured device graph.
+
+        Drops the device-side graph and its working memory once the last reference
+        held by the runtime is released. Releasing a key that was never captured
+        is a no-op.
+
+        Args:
+            graph_keys: Caller-provided graph key (or per-device keys) identifying
+                the captured graph to release.
+        """
+
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
@@ -277,6 +355,12 @@ class Model:
     ) -> None:
         """Debug verify replay against captured graph."""
 
+    def _await_device_graphs(self) -> None:
+        """Await all pending device graph instantiations."""
+
+    def _release_captured_graph(self, graph_keys: Sequence[int]) -> None:
+        """Release captured device graphs for the given keys."""
+
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.
@@ -286,6 +370,16 @@ class Model:
         """
 
     def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def release_weights(self) -> None:
+        """
+        Drops the host-side weight references held by this model.
+
+        Releases the weights registry and the owning references, so the host
+        weight memory can be freed once the caller drops its own references.
+        Safe only when every weight was copied to its execution device during
+        model init: reading a host weight after this call is undefined
+        behavior. ``reload`` remains usable afterwards.
+        """
 
 class DebugConfig:
     """
@@ -296,11 +390,8 @@ class DebugConfig:
     such as ``NaN`` checks, synchronous GPU execution, stack traces, and IR
     dumping.
 
-    You can configure debugging options three ways:
+    There are two ways to configure debugging options:
 
-    * Add a ``[max-debug]`` section to the ``modular.cfg`` configuration
-      file with the properties below in kebab case. For example,
-      ``nan-check = true`` or ``assert-level = all``.
     * Set the ``MODULAR_DEBUG`` environment variable to a list of
       kebab-case property names separated by commas. Boolean properties
       can be enabled with just the name; others use ``name=value`` form.
@@ -317,7 +408,7 @@ class DebugConfig:
     @property
     def nan_check(self) -> bool:
         """
-        When ``True``, inserts runtime checks after each compiled op that abort if any output contains NaN.  Takes effect at model build time.
+        A boolean that, when ``True``, triggers MAX to insert runtime checks after each compiled op that abort if any output contains ``NaN``. Takes effect at model build time.
         """
 
     @nan_check.setter
@@ -325,7 +416,7 @@ class DebugConfig:
     @property
     def uninitialized_read_check(self) -> bool:
         """
-        When ``True``, instruments buffer reads to detect reads of uninitialized memory.  Takes effect at model build time.
+        A boolean that, when ``True``, triggers MAX to instrument buffer reads to detect reads of uninitialized memory. Takes effect at model build time.
         """
 
     @uninitialized_read_check.setter
@@ -333,7 +424,7 @@ class DebugConfig:
     @property
     def device_sync_mode(self) -> bool:
         """
-        When ``True``, forces synchronous GPU execution so every device operation waits for completion.  Surfaces async errors at their call site but serializes the pipeline.  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to force synchronous GPU execution so every device operation waits for completion. This surfaces async errors at their call site but serializes the pipeline. Takes effect at run time.
         """
 
     @device_sync_mode.setter
@@ -341,7 +432,7 @@ class DebugConfig:
     @property
     def stack_trace_on_error(self) -> bool:
         """
-        When ``True``, prints a C++ stack trace whenever a runtime error is raised.  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace whenever a runtime error is raised. Takes effect at run time.
         """
 
     @stack_trace_on_error.setter
@@ -349,7 +440,7 @@ class DebugConfig:
     @property
     def stack_trace_on_crash(self) -> bool:
         """
-        When ``True``, prints a C++ stack trace on fatal signals (e.g. SIGSEGV, SIGABRT).  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace on fatal signals such as ``SIGSEGV`` or ``SIGABRT``. Takes effect at run time.
         """
 
     @stack_trace_on_crash.setter
@@ -357,7 +448,7 @@ class DebugConfig:
     @property
     def source_tracebacks(self) -> bool:
         """
-        When ``True``, captures Python source locations during graph construction so runtime errors can be traced back to user code.  Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
+        A boolean that, when ``True``, triggers MAX to capture Python source locations during graph construction so runtime errors can be traced back to user code. Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
         """
 
     @source_tracebacks.setter
@@ -365,7 +456,7 @@ class DebugConfig:
     @property
     def op_log_level(self) -> str:
         r"""
-        Log level for per-op tracing.  One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``.  Takes effect at model build time.
+        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.
         """
 
     @op_log_level.setter
@@ -373,21 +464,23 @@ class DebugConfig:
     @property
     def assert_level(self) -> str:
         r"""
-        Mojo assertion level for compiled kernels.  One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``.  Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost.  Takes effect at model build time.
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
         """
 
     @assert_level.setter
     def assert_level(self, arg: str, /) -> None: ...
     @property
     def print_style(self) -> PrintStyle:
-        """Format for tensor debug printing.  Takes effect at run time."""
+        """
+        A :obj:`PrintStyle` value that sets the format for tensor debug printing. Takes effect at run time.
+        """
 
     @print_style.setter
     def print_style(self, arg: PrintStyle, /) -> None: ...
     @property
     def ir_output_dir(self) -> str:
         """
-        Directory into which to dump intermediate compiler IR for inspection.  Empty string disables dumping.  Takes effect at model build time.
+        A string path to the directory into which MAX dumps intermediate compiler IR for inspection. Empty string disables dumping. Takes effect at model build time.
         """
 
     @ir_output_dir.setter
@@ -395,7 +488,7 @@ class DebugConfig:
     @property
     def sensible_mode(self) -> bool:
         """
-        When set to ``True``, enables a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``.  You can override the defaults using individual properties.
+        A boolean that, when ``True``, triggers MAX to enable a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``. You can override the defaults using individual properties.
         """
 
     @sensible_mode.setter
@@ -438,13 +531,16 @@ class InferenceSession:
         """
 
     def _load_all(
-        self, compiled: Model, weights_registry: Mapping[str, Any]
+        self,
+        compiled: AsyncValue[CompiledModels],
+        weights_registry: Mapping[str, Any],
     ) -> list[Model]: ...
-    def compile_from_path(
+    @overload
+    def compile(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
-    ) -> Model:
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from a file path.
 
@@ -453,15 +549,18 @@ class InferenceSession:
             custom_extension_paths: Paths to custom Mojo extension libraries.
 
         Returns:
-            Model: The compiled model ready for execution.
+            AsyncValue[CompiledModels]: handle to the compiled artifact,
+            ready to be initialized with weights via :meth:`_load_all`.
         """
 
-    def compile_from_object(
+    @overload
+    def compile(
         self,
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
-    ) -> Model:
+        tile_based_fusion: bool = False,
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
 
@@ -469,9 +568,22 @@ class InferenceSession:
             model: A capsule containing the compiled model object.
             custom_extensions: Paths to custom Mojo extension libraries.
             pipeline_name: Name identifier for the compiled pipeline.
+            tile_based_fusion: When ``True``, compile the graph under the
+                tile-based programming model. Defaults to ``False``.
 
         Returns:
-            Model: The compiled model ready for execution.
+            CompiledModels: The compiled artifact, ready to be initialized
+            with weights via :meth:`_load_all`.
+        """
+
+    def _wrap_compiled(
+        self, models: CompiledModels
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
+        """
+        Wraps an already-read ``CompiledModels`` in a resolved async handle.
+
+        Consumes ``models``. The handle is allocated on this session's
+        runtime and can be passed to :meth:`_load_all`.
         """
 
     def set_debug_print_options(

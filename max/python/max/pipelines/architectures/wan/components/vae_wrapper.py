@@ -21,10 +21,13 @@ import numpy as np
 from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ...autoencoders.autoencoder_kl_wan import (
     AutoencoderKLWanModel,
@@ -56,11 +59,14 @@ class VaeWrapper:
 
         vae_config_entry = manifest["vae"]
         config_dict = vae_config_entry.huggingface_config.to_dict()
-        encoding = vae_config_entry.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(vae_config_entry)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(vae_config_entry.device_specs)
 
         # Load the VAE using the existing ComponentModel.
-        paths = vae_config_entry.resolved_weight_paths()
+        paths = vae_config_entry.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         self._vae = AutoencoderKLWanModel(
             config=config_dict,
@@ -87,6 +93,11 @@ class VaeWrapper:
         # Compile denormalization graph.
         self._denorm_model = self._compile_denorm(z_dim)
 
+        # Compile GPU postprocess graph (scale, clip, cast uint8, permute).
+        self._postprocess_model = self._compile_postprocess(
+            int(self._vae.config.out_channels)
+        )
+
         # VAE scale factors.
         self.scale_factor_temporal = int(
             getattr(self._vae.config, "scale_factor_temporal", 4) or 4
@@ -112,29 +123,42 @@ class VaeWrapper:
             width: Target output width.
 
         Returns:
-            Decoded video as uint8 numpy array, shape ``(B*T, H, W, C)``.
+            Decoded output as uint8 numpy array.
+
+            - Multi-frame video requests return ``(B, C, T, H, W)`` so the
+              pixel-generation pipeline can emit ``OutputVideoContent``.
+            - Single-frame requests return ``(B, H, W, C)`` so they continue
+              through the image path.
         """
         logger.info("Decoding Wan output")
         # Denormalize: latents * std + mean, cast to model dtype.
-        denorm_result = self._denorm_model.execute(
-            latents, self._vae_std_buf, self._vae_mean_buf
-        )
-        denorm_latents = denorm_result[0]
+        with Tracer("vae_denormalize"):
+            denorm_result = self._denorm_model.execute(
+                latents, self._vae_std_buf, self._vae_mean_buf
+            )
+            denorm_latents = denorm_result[0]
 
-        # Decode through VAE.
-        decoded_video = self._vae.decode_5d(denorm_latents)
-        decoded_np = _buffer_to_numpy_f32(decoded_video)
-        target_num_frames = min(decoded_np.shape[2], num_frames)
-        decoded_np = decoded_np[:, :, :target_num_frames, :height, :width]
+        # Decode through VAE (framewise, has internal "wan_vae_decode" trace).
+        with Tracer("vae_decode_5d"):
+            decoded_video = self._vae.decode_5d(denorm_latents)
 
-        # (B, C, T, H, W) -> (B*T, H, W, C) and [-1, 1] -> uint8.
-        b, c, t, h, w = decoded_np.shape
-        decoded_np = np.transpose(decoded_np, (0, 2, 3, 4, 1))
-        decoded_np = decoded_np.reshape(b * t, h, w, c)
-        decoded_np = ((decoded_np * 0.5 + 0.5).clip(0.0, 1.0) * 255.0).astype(
-            np.uint8
-        )
-        return decoded_np
+        # GPU post-processing: scale to [0, 1], clip, scale to [0, 255], cast
+        # to uint8, permute to (B, T, H, W, C), and transfer to CPU. Running
+        # these on device means the DtoH DMA moves uint8 (1 byte/elem)
+        # instead of bf16 (2 bytes/elem).
+        with Tracer("vae_decode_postprocess"):
+            decoded_u8_buf = self._postprocess_model.execute(decoded_video)[0]
+            decoded_np = np.from_dlpack(decoded_u8_buf)
+            target_num_frames = min(decoded_np.shape[1], num_frames)
+            decoded_np = decoded_np[:, :target_num_frames, :height, :width, :]
+
+            if target_num_frames > 1:
+                video_batch = np.transpose(decoded_np, (0, 4, 1, 2, 3))
+                return np.ascontiguousarray(video_batch)
+
+            # Preserve image behavior for single-frame requests.
+            image_batch = decoded_np[:, 0, :, :, :]
+            return np.ascontiguousarray(image_batch)
 
     @traced(message="VaeWrapper.encode_i2v_condition")
     def encode_i2v_condition(
@@ -272,4 +296,40 @@ class VaeWrapper:
             latents, std, mean = (v.tensor for v in g.inputs)
             result = ops.cast(latents * std + mean, model_dtype)
             g.output(result)
+        return self._session.load(g)
+
+    def _compile_postprocess(self, out_channels: int) -> Model:
+        """Compile the VAE decoder postprocess graph.
+
+        Takes a decoded ``(B, C, T, H, W)`` tensor in the VAE dtype and
+        produces a host-side ``(B, T, H, W, C)`` uint8 tensor: upcast to
+        f32 for precision, scale from ``[-1, 1]`` to ``[0, 255]``, clip,
+        cast to uint8, permute, and transfer to CPU. Fusing the transfer
+        into the graph means the DtoH DMA moves 1 byte/elem instead of 2.
+        """
+        input_types = [
+            TensorType(
+                self._dtype,
+                ["batch", out_channels, "t", "h", "w"],
+                device=self._device,
+            ),
+        ]
+        with Graph("wan_vae_postprocess", input_types=input_types) as g:
+            x = g.inputs[0].tensor
+            # Upcast to f32 before the *255 so bf16 rounding doesn't shift
+            # pixel values; matches the flux2 VAE decoder precision path.
+            # Round before the uint8 cast so the truncating cast doesn't bias
+            # every pixel down by ~0.5; diffusers' image processor does
+            # `(x * 255).round().astype(uint8)`.
+            x = ops.cast(x, DType.float32)
+            x = x * 0.5 + 0.5
+            x = ops.max(x, 0.0)
+            x = ops.min(x, 1.0)
+            x = x * 255.0
+            x = ops.round(x)
+            x = ops.cast(x, DType.uint8)
+            # (B, C, T, H, W) -> (B, T, H, W, C).
+            x = ops.permute(x, [0, 2, 3, 4, 1])
+            x = ops.transfer_to(x, DeviceRef.CPU())
+            g.output(x)
         return self._session.load(g)

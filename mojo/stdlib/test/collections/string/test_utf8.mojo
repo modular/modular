@@ -29,15 +29,15 @@ from std.testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 
 
-comptime GOOD_SEQUENCES = [
+comptime GOOD_SEQUENCES: List[List[Byte]] = [
     List("a".as_bytes()),
-    List("\xc3\xb1".as_bytes()),
-    List("\xe2\x82\xa1".as_bytes()),
-    List("\xf0\x90\x8c\xbc".as_bytes()),
+    [0xC3, 0xB1],  # U+00F1 (ñ)
+    [0xE2, 0x82, 0xA1],  # U+20A1 (₡)
+    [0xF0, 0x90, 0x8C, 0xBC],  # U+1033C (𐌼)
     List("안녕하세요, 세상".as_bytes()),
-    List("\xc2\x80".as_bytes()),
-    List("\xf0\x90\x80\x80".as_bytes()),
-    List("\xee\x80\x80".as_bytes()),
+    [0xC2, 0x80],  # U+0080
+    [0xF0, 0x90, 0x80, 0x80],  # U+10000
+    [0xEE, 0x80, 0x80],  # U+E000
     List("very very very long string 🔥🔥🔥".as_bytes()),
     List(" τo".as_bytes()),
 ]
@@ -104,14 +104,14 @@ comptime BAD_SEQUENCES: List[List[Byte]] = [
 # ===----------------------------------------------------------------------=== #
 
 
-def validate_utf8[span: Span[Byte, ...]]() raises -> Bool:
+def validate_utf8[span: Span[Byte, _]]() raises -> Bool:
     comptime comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
 
 
-def validate_utf8(span: Span[Byte, ...]) raises -> Bool:
+def validate_utf8(span: Span[Byte, _]) raises -> Bool:
     var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
@@ -283,7 +283,7 @@ def test_count_utf8_continuation_bytes() raises:
 
     def _test(amnt: Int, items: List[UInt8]) raises:
         var p = items.unsafe_ptr()
-        var span = Span(ptr=p, length=len(items))
+        var span = Span(unsafe_ptr=p, length=len(items))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, [c, c, c, c, c])

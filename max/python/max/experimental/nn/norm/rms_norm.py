@@ -11,64 +11,101 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Root mean square layer normalization."""
+"""Provides root mean square normalization layers."""
 
 from __future__ import annotations
 
 from max.experimental import functional as F
+from max.experimental.sharding.rules import rms_norm_rule
 from max.experimental.tensor import Tensor
 from max.graph import Dim, ops
 
 from ..module import Module
 
-rms_norm = F.functional(ops.rms_norm)
-"""Applies Root Mean Square layer normalization to an input tensor.
-
-See :func:`max.graph.ops.rms_norm` for details.
-"""
+#: Functional form of RMS normalization for experimental tensors.
+#:
+#: See :func:`max.graph.ops.rms_norm` for the underlying op, including the
+#: ``weight_offset`` and ``multiply_before_cast`` knobs used to switch
+#: between Llama-style and Gemma-style normalization.
+rms_norm = F.functional(ops.rms_norm, rule=rms_norm_rule)
 
 
 class RMSNorm(Module[[Tensor], Tensor]):
-    """Computes the Root Mean Square normalization on inputs."""
+    """Root mean square normalization over the last dimension of the input.
+
+    Unlike :class:`LayerNorm`, the mean is not subtracted; only the
+    root-mean-square is used to rescale. See `Root Mean Square Layer
+    Normalization <https://arxiv.org/abs/1910.07467>`_ for the formulation.
+    For the Gemma variant that uses ``1 + weight`` and multiplies before
+    casting back, see :class:`GemmaRMSNorm`.
+
+    .. code-block:: python
+
+        from max.driver import Accelerator
+        from max.dtype import DType
+        from max.experimental.nn.norm import RMSNorm
+        from max.experimental.tensor import Tensor
+
+        device = Accelerator()
+        norm = RMSNorm(2048, eps=1e-6).to(device)
+        x = Tensor.ones([2, 4, 2048], dtype=DType.float32, device=device)
+        y = norm(x)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert y.shape == [2, 4, 2048]
+        # An all-ones input has RMS 1, so it normalizes back to ones.
+        assert np.allclose(y.to_numpy(), 1.0, atol=1e-3)
+
+
+    Args:
+        dim: The size of the last dimension of the input.
+        eps: A small positive constant added to the mean of squares for
+            numerical stability. Defaults to ``1e-6``.
+    """
 
     weight: Tensor
+    """The learned per-element scale of shape ``[dim]``."""
+
     eps: float
+    """The variance epsilon used for numerical stability."""
 
     def __init__(self, dim: int, eps: float = 1e-6) -> None:
-        """Constructs RMSNorm.
-
-        Args:
-            dim: Size of last dimension of the expected input.
-            eps: Value added to denominator for numerical stability.
-        """
         self.weight = Tensor.ones([dim])
         self.eps = eps
 
     @property
     def dim(self) -> Dim:
-        """Returns the embedding dimension."""
+        """The size of the last dimension over which normalization runs."""
         return self.weight.shape[0]
 
     def __rich_repr__(self):
-        """Repr matching the Linear constructor."""
+        """Yields fields for the rich debug repr."""
         yield "dim", self.dim
         yield "eps", self.eps, 1e-6
 
     def forward(self, x: Tensor) -> Tensor:
-        """Applies RMS normalization to the input."""
+        """Returns ``x`` normalized by its root-mean-square over the last axis."""
         return rms_norm(x, self.weight, self.eps)
 
 
 class GemmaRMSNorm(RMSNorm):
-    """Computes the Root Mean Square normalization on inputs.
+    """Gemma-style root mean square normalization.
 
-    Differences to traditional RMSNorm:
-    - x * (1 + w) instead of x * w.
-    - (x * w).to(orig_dtype) instead of x.to(orig_dtype) * w.
+    Subclasses :class:`RMSNorm` with two differences:
+
+    - Scales by ``1 + weight`` rather than ``weight``.
+    - Multiplies by the scale before casting back to the input dtype,
+      instead of after.
+
+    The constructor signature is identical to :class:`RMSNorm`. Used by
+    the Gemma model family.
     """
 
     def forward(self, x: Tensor) -> Tensor:
-        """Applies Gemma-style RMS normalization to the input."""
+        """Returns ``x`` normalized using the Gemma-style RMS variant."""
         return rms_norm(
             x,
             self.weight,

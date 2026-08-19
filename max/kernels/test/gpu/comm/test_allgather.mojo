@@ -16,9 +16,9 @@ from std.sys import size_of, has_amd_gpu_accelerator
 
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Idx,
     TileTensor,
@@ -39,13 +39,11 @@ def all_gather_test[
     # Create device buffers for all GPUs.
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -63,8 +61,9 @@ def all_gather_test[
         in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
 
         # Create host buffer with test data.
-        var host_buffer = alloc[Scalar[dtype]](length)
-        host_buffers.append(host_buffer)
+        var host_buffer = list_of_ctx[i].enqueue_create_host_buffer[dtype](
+            length
+        )
 
         # Initialize with unique values per device.
         for j in range(length):
@@ -78,11 +77,18 @@ def all_gather_test[
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
         # Copy to device.
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
+
+        host_buffers.append(host_buffer^)
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
@@ -95,28 +101,36 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Build TileTensor arrays directly.
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `Array` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(Idx(lengths[0]))).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
     )
-    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    var tt_in_bufs = Array[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(Idx(lengths[i]))
-        ).as_immut()
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(Idx(lengths[0])))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
-    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
-        uninitialized=True
-    )
+    var tt_out_bufs = Array[OutTileType, ngpus * ngpus](uninitialized=True)
     comptime for i in range(ngpus * ngpus):
         comptime device_idx = i // ngpus
         comptime input_idx = i % ngpus
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][input_idx],
-            row_major(Idx(lengths[input_idx])),
-        )
+            row_major(lengths[input_idx]),
+        ).as_unsafe_any_origin()
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
     var uniform = True
@@ -149,7 +163,7 @@ def all_gather_test[
     print("  Testing implementation with rank_sigs (P2P-capable)")
 
     for gpu_idx in range(ngpus):
-        var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+        var device_out = Array[OutTileType, ngpus](uninitialized=True)
         comptime for src_idx in range(ngpus):
             device_out[src_idx] = tt_out_bufs[gpu_idx * ngpus + src_idx]
         allgather(
@@ -162,10 +176,6 @@ def all_gather_test[
 
     # Verify results for new implementation.
     _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
-
-    # Clean up.
-    for i in range(ngpus):
-        host_buffers[i].free()
 
 
 def _verify_results[
@@ -182,7 +192,9 @@ def _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = alloc[Scalar[dtype]](length)
+            var host_output = list_of_ctx[
+                device_idx
+            ].enqueue_create_host_buffer[dtype](length)
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -212,7 +224,150 @@ def _verify_results[
                     )
                     raise e^
 
-            host_output.free()
+
+def grouped_all_gather_test[
+    dtype: DType, ngpus: Int, group_size: Int
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+    """Test allgather with two independent contiguous groups."""
+    comptime assert ngpus == 4, "grouped test expects 4 GPUs"
+    comptime assert group_size == 2, "grouped test expects groups of 2 GPUs"
+
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
+    var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+
+    for i in range(ngpus):
+        var length = lengths[i]
+        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
+
+        var host_buffer = list_of_ctx[i].enqueue_create_host_buffer[dtype](
+            length
+        )
+        for j in range(length):
+            host_buffer[j] = Scalar[dtype](i * 1000 + j)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+
+        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
+        host_buffers.append(host_buffer^)
+
+    for device_idx in range(ngpus):
+        var group_start = (device_idx // group_size) * group_size
+        var device_outputs = List[DeviceBuffer[dtype]](capacity=group_size)
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            device_outputs.append(
+                list_of_ctx[device_idx].create_buffer_sync[dtype](
+                    lengths[input_idx]
+                )
+            )
+        out_bufs_list.append(device_outputs^)
+
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `Array` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
+    comptime InTileType = type_of(
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
+    )
+    var tt_in_bufs = Array[InTileType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
+
+    comptime OutTileType = type_of(
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
+    )
+    var tt_out_bufs = Array[OutTileType, ngpus * group_size](uninitialized=True)
+    comptime for i in range(ngpus * group_size):
+        comptime device_idx = i // group_size
+        comptime local_idx = i % group_size
+        comptime group_start = (device_idx // group_size) * group_size
+        comptime input_idx = group_start + local_idx
+        tt_out_bufs[i] = TileTensor(
+            out_bufs_list[device_idx][local_idx],
+            row_major(lengths[input_idx]),
+        ).as_unsafe_any_origin()
+
+    comptime for group_idx in range(ngpus // group_size):
+        comptime group_start = group_idx * group_size
+        var group_in_bufs = Array[InTileType, group_size](uninitialized=True)
+        var group_rank_sigs = Array[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for local_idx in range(group_size):
+            group_in_bufs[local_idx] = tt_in_bufs[group_start + local_idx]
+            group_rank_sigs[local_idx] = rank_sigs[group_start + local_idx]
+
+        comptime for local_idx in range(group_size):
+            comptime device_idx = group_start + local_idx
+            var device_out = Array[OutTileType, group_size](uninitialized=True)
+            comptime for src_idx in range(group_size):
+                device_out[src_idx] = tt_out_bufs[
+                    device_idx * group_size + src_idx
+                ]
+
+            allgather[domain_id=group_size](
+                group_in_bufs,
+                device_out,
+                group_rank_sigs,
+                list_of_ctx[device_idx],
+                local_idx,
+            )
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    for device_idx in range(ngpus):
+        var group_start = (device_idx // group_size) * group_size
+        for local_idx in range(group_size):
+            var input_idx = group_start + local_idx
+            var length = lengths[input_idx]
+            var host_output = list_of_ctx[
+                device_idx
+            ].enqueue_create_host_buffer[dtype](length)
+            list_of_ctx[device_idx].enqueue_copy(
+                host_output, out_bufs_list[device_idx][local_idx]
+            )
+            list_of_ctx[device_idx].synchronize()
+
+            for j in range(length):
+                var expected = Scalar[dtype](input_idx * 1000 + j)
+                try:
+                    assert_equal(host_output[j], expected)
+                except e:
+                    print(
+                        "Grouped verification failed: device",
+                        device_idx,
+                        "local input",
+                        local_idx,
+                        "global input",
+                        input_idx,
+                    )
+                    raise e^
+
+    _ = host_buffers^
 
 
 def main() raises -> None:
@@ -254,4 +409,19 @@ def main() raises -> None:
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
         all_gather_test[DType.bfloat16, ngpus=num_gpus](
             ctx, materialize[lengths]()
+        )
+
+    if DeviceContext.number_of_devices() >= 4:
+        var ctx = List[DeviceContext]()
+        for i in range(4):
+            ctx.append(DeviceContext(device_id=i))
+        print("  Testing grouped allgather with 4 GPUs")
+        comptime grouped_lengths: List[Int] = [
+            8 * 1024,
+            4 * 1024,
+            6 * 1024,
+            2 * 1024,
+        ]
+        grouped_all_gather_test[DType.bfloat16, ngpus=4, group_size=2](
+            ctx, materialize[grouped_lengths]()
         )

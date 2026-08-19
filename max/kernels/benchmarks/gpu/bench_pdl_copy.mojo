@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from std.builtin._closure import __ownership_keepalive
 from std.gpu import (
@@ -20,22 +21,24 @@ from std.gpu import (
     block_idx,
     grid_dim,
     thread_idx,
+)
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
-from std.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.host import DeviceContext
 
 
 def copy1(
     a: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    n: Int32,
 ):
     var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         tmp += b[i]
@@ -44,7 +47,7 @@ def copy1(
 
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         b[i] = a[i] + tmp
@@ -54,12 +57,12 @@ def copy2(
     b: UnsafePointer[Float32, ImmutAnyOrigin],
     c: UnsafePointer[Float32, MutAnyOrigin],
     d: UnsafePointer[Float32, ImmutAnyOrigin],
-    n: Int,
+    n: Int32,
 ):
     var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         result += d[i]
@@ -68,7 +71,7 @@ def copy2(
 
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         c[i] = b[i] + result + 2.0
@@ -77,19 +80,19 @@ def copy2(
 def copy1_n(
     a: UnsafePointer[Float32, ImmutAnyOrigin],
     b: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    n: Int32,
 ):
     var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         tmp += b[i]
 
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         b[i] = a[i] + tmp
@@ -99,19 +102,19 @@ def copy2_n(
     b: UnsafePointer[Float32, ImmutAnyOrigin],
     c: UnsafePointer[Float32, MutAnyOrigin],
     d: UnsafePointer[Float32, ImmutAnyOrigin],
-    n: Int,
+    n: Int32,
 ):
     var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         result += d[i]
 
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x,
-        n,
+        Int(n),
         block_dim.x * grid_dim.x,
     ):
         c[i] = b[i] + result + 2.0
@@ -120,10 +123,10 @@ def copy2_n(
 @no_inline
 def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
-    var a_host = alloc[Scalar[dtype]](length)
-    var b_host = alloc[Scalar[dtype]](length)
-    var c_host = alloc[Scalar[dtype]](length)
-    var d_host = alloc[Scalar[dtype]](length)
+    var a_host = List(length=length, fill=Scalar[dtype](0))
+    var b_host = List(length=length, fill=Scalar[dtype](0))
+    var c_host = List(length=length, fill=Scalar[dtype](0))
+    var d_host = List(length=length, fill=Scalar[dtype](0))
 
     comptime grid_dim = 16
     comptime block_dim = 256
@@ -132,9 +135,6 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = Float32(i)
         d_host[i] = Float32(i)
-
-    for i in range(length):
-        c_host[i] = 0
 
     var a_device = context.enqueue_create_buffer[dtype](length)
     var b_device = context.enqueue_create_buffer[dtype](length)
@@ -147,36 +147,32 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @parameter
-    def run_func() raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
-            context.enqueue_function_experimental[copy1](
+            context.enqueue_function[copy1](
                 a_device,
                 b_device,
-                length,
+                Int32(length),
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
                 attributes=pdl_launch_attributes(),
             )
-            context.enqueue_function_experimental[copy2](
+            context.enqueue_function[copy2](
                 b_device,
                 c_device,
                 d_device,
-                length,
+                Int32(length),
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
                 attributes=pdl_launch_attributes(),
             )
 
-    @parameter
+    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        b.iter_custom[kernel_launch](context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("copy_pdl", input_id=String("length=", length)),
@@ -185,20 +181,19 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
-
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    d_host.free()
+    _ = a_host^
+    _ = b_host^
+    _ = c_host^
+    _ = d_host^
 
 
 @no_inline
 def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
-    var a_host = alloc[Scalar[dtype]](length)
-    var b_host = alloc[Scalar[dtype]](length)
-    var c_host = alloc[Scalar[dtype]](length)
-    var d_host = alloc[Scalar[dtype]](length)
+    var a_host = List(length=length, fill=Scalar[dtype](0))
+    var b_host = List(length=length, fill=Scalar[dtype](0))
+    var c_host = List(length=length, fill=Scalar[dtype](0))
+    var d_host = List(length=length, fill=Scalar[dtype](0))
 
     comptime grid_dim = 16
     comptime block_dim = 256
@@ -207,9 +202,6 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = Float32(i)
         d_host[i] = Float32(i)
-
-    for i in range(length):
-        c_host[i] = 0
 
     var a_device = context.enqueue_create_buffer[dtype](length)
     var b_device = context.enqueue_create_buffer[dtype](length)
@@ -222,34 +214,30 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @parameter
-    def run_func() raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
-            context.enqueue_function_experimental[copy1_n](
+            context.enqueue_function[copy1_n](
                 a_device,
                 b_device,
-                length,
+                Int32(length),
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
             )
-            context.enqueue_function_experimental[copy2_n](
+            context.enqueue_function[copy2_n](
                 b_device,
                 c_device,
                 d_device,
-                length,
+                Int32(length),
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
             )
 
-    @parameter
+    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        b.iter_custom[kernel_launch](context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("copy_n", input_id=String("length=", length)),
@@ -258,11 +246,10 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
-
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    d_host.free()
+    _ = a_host^
+    _ = b_host^
+    _ = c_host^
+    _ = d_host^
 
 
 def main() raises:

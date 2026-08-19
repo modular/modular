@@ -381,7 +381,7 @@ class DenseTypedElementsAttr(max._core.Attribute):
     dense<tensor<2xi32> : 10 : i32>
 
     // Type-first syntax: A tensor of 2 float32 elements.
-    dense<tensor<2xf32> : [10.0, 11.0]>
+    dense<tensor<2xf32> : [10.0 : f32, 11.0 : f32]>
     ```
 
     Note: The literal-first syntax is supported only for complex, float, index,
@@ -483,7 +483,12 @@ class IntegerAttr(max._core.Attribute):
     def type(self) -> max._core.Type | None: ...
     @property
     def value(self) -> int: ...
+    @overload
     def __init__(self, type: IntegerType, value: int = 0) -> None: ...
+    @overload
+    def __init__(self, type: IndexType, value: int = 0) -> None: ...
+    @overload
+    def __init__(self, value: int) -> None: ...
 
 class IntegerSetAttr(max._core.Attribute):
     """
@@ -1304,6 +1309,22 @@ class Float8E5M2FNUZType(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class Float8E5M3FNUType(max._core.Type):
+    """
+    An 8-bit floating point type with 0 sign bit, 5 bits exponent and 3 bits
+    mantissa. This is not a standard type as defined by IEEE-754, but it
+    follows similar conventions with the following characteristics:
+
+      * bit encoding: S0E5M3
+      * exponent bias: 15
+      * infinities: Not supported
+      * NaNs: Supported with all bits set to 1
+      * Zero: Supported
+      * denormals when exponent is 0
+    """
+
+    def __init__(self) -> None: ...
+
 class Float8E8M0FNUType(max._core.Type):
     """
     An 8-bit floating point type with no sign bit, 8 bits exponent and no
@@ -1837,6 +1858,24 @@ class RankedTensorType(max._core.Type):
     def element_type(self) -> max._core.Type | None: ...
     @property
     def encoding(self) -> max._core.Attribute | None: ...
+
+class TokenType(max._core.Type):
+    """
+    Syntax:
+
+    ```
+    token-type ::= `token`
+    ```
+
+    A use of a token SSA value is a pointer to an operation (in case of an
+    OpResult) or a pointer to a region (in case of an entry block argument).
+    A token carries no runtime data and cannot be forwarded. Tokens are
+    excluded from the `AnyType` type constraint. Operations must define
+    `TokenProducerTrait` to produce token results or token region entry block
+    arguments, and must define `TokenConsumerTrait` to consume token operands.
+    """
+
+    def __init__(self) -> None: ...
 
 class TupleType(max._core.Type):
     """

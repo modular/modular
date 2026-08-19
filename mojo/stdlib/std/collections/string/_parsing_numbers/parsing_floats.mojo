@@ -22,7 +22,7 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 
 import std.bit
 import std.memory
@@ -71,21 +71,24 @@ def _get_w_and_q_from_float_string(
     comptime ord_e = Byte(ord("e"))
     comptime ord_E = Byte(ord("E"))
 
-    additional_exponent = 0
-    exponent_multiplier = 1
+    var additional_exponent = 0
+    var exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-    significand = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    var exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    var significand = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
     comptime array_ptr = Pointer[
         type_of(exponent), origin_of(exponent, significand)
     ]
-    prt_to_array = array_ptr(to=exponent)
-    array_index = CONTAINER_SIZE
-    buffer = input_string.unsafe_ptr()
+    var prt_to_array = array_ptr(to=exponent)
+    var array_index = CONTAINER_SIZE
+    var buffer = input_string.as_bytes().unsafe_ptr()
 
-    if not (ord_0 <= buffer[0] <= ord_9) and buffer[0] != ord_dot:
+    if (
+        not (ord_0 <= buffer[unsafe_offset=0] <= ord_9)
+        and buffer[unsafe_offset=0] != ord_dot
+    ):
         raise Error(
             "The first character of '",
             input_string,
@@ -93,8 +96,12 @@ def _get_w_and_q_from_float_string(
         )
 
     if (
-        not (ord_0 <= buffer[input_string.byte_length() - 1] <= ord_9)
-        and buffer[input_string.byte_length() - 1] != ord_dot
+        not (
+            ord_0
+            <= buffer[unsafe_offset=input_string.byte_length() - 1]
+            <= ord_9
+        )
+        and buffer[unsafe_offset=input_string.byte_length() - 1] != ord_dot
     ):
         raise Error(
             "The last character of '",
@@ -102,7 +109,7 @@ def _get_w_and_q_from_float_string(
             "' should be a digit or dot to convert it to a float.",
         )
 
-    dot_or_e_found = False
+    var dot_or_e_found = False
 
     for i in range(input_string.byte_length() - 1, -1, -1):
         array_index -= 1
@@ -112,32 +119,34 @@ def _get_w_and_q_from_float_string(
                 input_string,
                 "'",
             )
-        if buffer[i] == ord_dot:
+        if buffer[unsafe_offset=i] == ord_dot:
             dot_or_e_found = True
             if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent.copy()
-                exponent = InlineArray[Byte, CONTAINER_SIZE](
-                    fill=Byte(ord("0"))
-                )
+                exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
                 prt_to_array = array_ptr(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
             # We don't want to progress in the significand array.
             array_index += 1
-        elif buffer[i] == ord_minus:
+        elif buffer[unsafe_offset=i] == ord_minus:
             # Next should be the E letter (or e), so we'll just continue.
             exponent_multiplier = -1
-        elif buffer[i] == ord_plus:
+        elif buffer[unsafe_offset=i] == ord_plus:
             # Next should be the E letter (or e), so we'll just continue.
             pass
-        elif buffer[i] == ord_e or buffer[i] == ord_E:
+        elif (
+            buffer[unsafe_offset=i] == ord_e or buffer[unsafe_offset=i] == ord_E
+        ):
             dot_or_e_found = True
             # We finished writing the exponent.
             prt_to_array = array_ptr(to=significand)
             array_index = CONTAINER_SIZE
-        elif (ord_0 <= buffer[i]) and (buffer[i] <= ord_9):
-            prt_to_array[][array_index] = buffer[i]
+        elif (ord_0 <= buffer[unsafe_offset=i]) and (
+            buffer[unsafe_offset=i] <= ord_9
+        ):
+            prt_to_array[][array_index] = buffer[unsafe_offset=i]
         else:
             raise Error(
                 "Invalid character(s) in the number: '", input_string, "'"
@@ -146,12 +155,12 @@ def _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent.copy()
-        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+        exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
-    exponent_as_integer = UInt64(exponent_multiplier) * to_integer(
+    var exponent_as_integer = UInt64(exponent_multiplier) * to_integer(
         exponent
     ) - UInt64(additional_exponent)
-    significand_as_integer = to_integer(significand)
+    var significand_as_integer = to_integer(significand)
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
@@ -182,18 +191,20 @@ def full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
     # That should speed things up.
-    result = UInt128(x) * UInt128(y)
+    var result = UInt128(x) * UInt128(y)
     return UInt128Decomposed(result)
 
 
 def get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     comptime bit_precision = MANTISSA_EXPLICIT_BITS + 3
-    index = 2 * (q - SMALLEST_POWER_OF_5)
-    first_product = full_multiplication(w, get_power_of_5(Int(index)))
+    var index = 2 * (q - SMALLEST_POWER_OF_5)
+    var first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
-    precision_mask = (UInt64(1) << bit_precision) - 1
+    var precision_mask = (UInt64(1) << bit_precision) - 1
     if (first_product.high & precision_mask) == precision_mask:
-        second_product = full_multiplication(w, get_power_of_5(Int(index + 1)))
+        var second_product = full_multiplication(
+            w, get_power_of_5(Int(index + 1))
+        )
         first_product.low = first_product.low + second_product.high
         if second_product.high > first_product.low:
             first_product.high = first_product.high + 1
@@ -206,9 +217,9 @@ def create_subnormal_float64(m: UInt64) -> Float64:
 
 
 def create_float64(m: UInt64, p: Int64) -> Float64:
-    m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
-    p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
-    representation_as_int = (m & m_mask) | p_shifted
+    var m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
+    var p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
+    var representation_as_int = (m & m_mask) | p_shifted
     return std.memory.bitcast[DType.float64](representation_as_int)
 
 
@@ -224,13 +235,13 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
         return FloatLiteral.infinity
 
     # Step 3
-    l = std.bit.count_leading_zeros(w)
+    var l = std.bit.count_leading_zeros(w)
 
     # Step 4
     w <<= l
 
     # Step 5
-    product = get_128_bit_truncated_product(w, q)
+    var product = get_128_bit_truncated_product(w, q)
 
     # Step 6
     # This step is skipped because it has been proven not necessary.
@@ -241,13 +252,18 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
 
     # Step 8
     # Comes before step 7 because we need the upper_bit
-    upper_bit = product.most_significant_bit()
+    var upper_bit = product.most_significant_bit()
 
     # Step 7
-    m = product.high >> (upper_bit + 9)
+    var m = product.high >> (upper_bit + 9)
 
     # Step 9
-    p = (((152170 + 65536) * q) >> 16) + 63 - Int64(l) + Int64(upper_bit)
+    var p: Int64 = (
+        (((Int64(152170) + Int64(65536)) * q) >> Int64(16))
+        + Int64(63)
+        - Int64(l)
+        + Int64(upper_bit)
+    )
 
     # Step 10
     if p <= (-1022 - 64):
@@ -256,8 +272,8 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # Step 11-15
     # Subnormal case
     if p < -1022:
-        s = -1022 - p
-        m = m // (2 ** UInt64(s))
+        var s = -1022 - p
+        m = m // (UInt64(2) ** UInt64(s))
         if m % 2 == 1:
             m += 1
         m >>= 1
@@ -296,11 +312,11 @@ comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 def _is_nan(stripped: StringSlice) -> Bool:
     comptime `n` = Byte(ord("n"))
     comptime `a` = Byte(ord("a"))
-    var ptr = stripped.unsafe_ptr()
+    var ptr = stripped.as_bytes().unsafe_ptr()
     return stripped.byte_length() == 3 and (
-        (ptr[0] | _ascii_lower == `n`)
-        and (ptr[1] | _ascii_lower == `a`)
-        and (ptr[2] | _ascii_lower == `n`)
+        (ptr[unsafe_offset=0] | _ascii_lower == `n`)
+        and (ptr[unsafe_offset=1] | _ascii_lower == `a`)
+        and (ptr[unsafe_offset=2] | _ascii_lower == `n`)
     )
 
 
@@ -311,9 +327,9 @@ def _is_inf(stripped: StringSlice) -> Bool:
     comptime `f` = Byte(ord("f"))
     comptime `t` = Byte(ord("t"))
     comptime `y` = Byte(ord("y"))
-    var ptr = stripped.unsafe_ptr()
-    var in_start = (ptr[0] | _ascii_lower == `i`) and (
-        ptr[1] | _ascii_lower == `n`
+    var ptr = stripped.as_bytes().unsafe_ptr()
+    var in_start = (ptr[unsafe_offset=0] | _ascii_lower == `i`) and (
+        ptr[unsafe_offset=1] | _ascii_lower == `n`
     )
     # f was removed previously
     var is_in = stripped.byte_length() == 2 and in_start
@@ -321,12 +337,12 @@ def _is_inf(stripped: StringSlice) -> Bool:
         is_in
         or (
             stripped.byte_length() == 8
-            and (ptr[2] | _ascii_lower == `f`)
-            and (ptr[3] | _ascii_lower == `i`)
-            and (ptr[4] | _ascii_lower == `n`)
-            and (ptr[5] | _ascii_lower == `i`)
-            and (ptr[6] | _ascii_lower == `t`)
-            and (ptr[7] | _ascii_lower == `y`)
+            and (ptr[unsafe_offset=2] | _ascii_lower == `f`)
+            and (ptr[unsafe_offset=3] | _ascii_lower == `i`)
+            and (ptr[unsafe_offset=4] | _ascii_lower == `n`)
+            and (ptr[unsafe_offset=5] | _ascii_lower == `i`)
+            and (ptr[unsafe_offset=6] | _ascii_lower == `t`)
+            and (ptr[unsafe_offset=7] | _ascii_lower == `y`)
         )
     )
 
@@ -348,20 +364,21 @@ def _atof(x: StringSlice) raises -> Float64:
     """
     if x == "" or x == ".":
         raise Error("String is not convertible to float: ", repr(x))
-    stripped = strip_unused_characters(x)
-    sign_and_stripped = get_sign(stripped)
-    sign = sign_and_stripped[0]
+    var stripped = strip_unused_characters(x)
+    var sign_and_stripped = get_sign(stripped)
+    var sign = sign_and_stripped[0]
     stripped = sign_and_stripped[1]
     if _is_nan(stripped):
         return FloatLiteral.nan
     elif _is_inf(stripped):
         return FloatLiteral.infinity * sign
+    var w_and_q: Tuple[UInt64, Int64]
     try:
         w_and_q = _get_w_and_q_from_float_string(stripped)
     except e:
         raise Error("String is not convertible to float: ", repr(x), ". ", e)
-    w = w_and_q[0]
-    q = w_and_q[1]
+    var w = w_and_q[0]
+    var q = w_and_q[1]
 
     if can_use_clinger_fast_path(w, q):
         return clinger_fast_path(w, q) * sign

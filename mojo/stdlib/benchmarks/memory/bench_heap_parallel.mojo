@@ -24,7 +24,7 @@ Intended to stress multithreaded heap **placement**, **first-touch**, and
 malloc/free metadata.
 """
 
-from std.algorithm import parallelize
+from max.algorithm import parallelize
 from std.benchmark import (
     Bench,
     BenchConfig,
@@ -35,32 +35,31 @@ from std.benchmark import (
     keep,
 )
 from std.math import ceildiv
-from std.memory import alloc
+from std.memory import Allocation, alloc, dealloc
 from std.atomic import Atomic
 from std.sys.info import num_physical_cores
 
-# Elements per ``alloc[Int](...)`` slab; ``black_box`` keeps the count opaque.
+# Elements per allocated slab; ``black_box`` keeps the count opaque.
 comptime ELEMENTS_PER_ALLOC = 4096
 # Total heap allocations per timed ``call_fn`` (split across parallel tasks).
 comptime ALLOCS_PER_ITER = 2048
 
 
-@parameter
+@__parameter
 def bench_heap_alloc_parallel(mut b: Bencher) raises:
     @always_inline
-    @parameter
     def call_fn():
         var num_tasks = num_physical_cores()
         if num_tasks < 1:
             num_tasks = 1
 
         var per_task = ceildiv(ALLOCS_PER_ITER, num_tasks)
-        var checksum = Atomic[DType.int64](0)
+        var checksum = Atomic[Int64](0)
 
         @always_inline
         def task_body(
             task_id: Int,
-        ) unified {mut checksum, read per_task,}:
+        ) {mut checksum, imm per_task,}:
             var acc = Scalar[DType.int64](0)
             var j = 0
             while j < per_task:
@@ -68,22 +67,22 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                 if n_elems < 1:
                     n_elems = 1
 
-                var p = alloc[Int](n_elems)
+                var allocation = alloc[Int]({count = n_elems}).into_managed()
+                var p = allocation.unsafe_ptr()
                 var seed = Int(black_box(task_id + j))
 
                 var k = 0
                 while k < n_elems:
-                    p[k] = seed ^ k
+                    p[unsafe_offset=k] = seed ^ k
                     k += 1
 
                 var fold = Scalar[DType.int64](0)
                 k = 0
                 while k < n_elems:
-                    fold ^= Scalar[DType.int64](p[k])
+                    fold ^= Scalar[DType.int64](p[unsafe_offset=k])
                     k += 1
                 acc += fold
 
-                p.free()
                 j += 1
 
             _ = checksum.fetch_add(acc)
@@ -91,7 +90,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         parallelize(task_body, num_tasks)
         keep(checksum.load())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 def main() raises:

@@ -14,8 +14,8 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -42,7 +42,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from std.random import random_ui64
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -77,7 +77,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})"
-        t"  problem shape=({m.value()}, {n.value()}, {k.value()})"
+        t"  problem shape=({Int(m.value())}, {Int(n.value())},"
+        t" {Int(k.value())})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
         t" cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
@@ -85,26 +86,26 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     comptime assert (
         transpose_b
     ), "TileTensor migration only supports transpose_b=True for now"
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -118,29 +119,33 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
@@ -161,24 +166,26 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value()):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
-        for n in range(n.value()):
-            for k in range(k.value()):
-                comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = random_ui64(0, 1).cast[b_type]()
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value())):
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value())):
+                comptime assert b_host.flat_rank == 2
+                b_host[n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements())
-        rand(b_host.ptr, b_host.num_elements())
+        rand(a_host._storage, a_host.num_elements())
+        rand(b_host._storage, b_host.num_elements())
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for idx0 in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 < m.value() and idx1 < k.value():
+            if idx0 < Int(m.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(1, 3))
                     .cast[DType.float32]()
@@ -192,11 +199,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 < n.value() and idx1 < k.value():
+            if idx0 < Int(n.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(1, 3))
                     .cast[DType.float32]()
@@ -252,11 +261,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_any_origin(),
+        c_ref_tensor_lt.as_unsafe_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable().as_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_any_origin(),
+        a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+        b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -268,8 +277,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -277,12 +286,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -306,7 +309,11 @@ def main() raises:
                 comptime for mma_n in [
                     8,
                     16,
+                    24,
                     32,
+                    48,
+                    64,
+                    96,
                 ]:
                     comptime block_tile_shape = Index(
                         bm, mma_n // cta_group, BK
@@ -331,9 +338,9 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(1)),
-                        Idx(7168),
-                        Idx(16384),
+                        Int(1),
+                        Idx[7168],
+                        Idx[16384],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -351,9 +358,9 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -370,9 +377,9 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
-                        Idx(256),
-                        Idx(128),
+                        Int(999),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -389,9 +396,9 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -408,9 +415,9 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(1)),
-                        Idx(576),
-                        Idx(7168),
+                        Int(1),
+                        Idx[576],
+                        Idx[7168],
                     )
 
                     # swapAB tests
@@ -430,9 +437,9 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(16)),
-                        Idx(1024),
-                        Idx(1024 + 16),
+                        Int(16),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -450,7 +457,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(100),
+                        Idx[2560],
+                        Idx[8192],
                     )

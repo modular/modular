@@ -20,12 +20,10 @@ from std.hashlib.hasher import Hasher
 
 from std.python import (
     ConvertibleFromPython,
-    ConvertibleToPython,
     Python,
     PythonObject,
 )
 
-from std.builtin.rebind import trait_downcast
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
@@ -34,7 +32,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Boolable(ImplicitlyDestructible):
+trait Boolable:
     """The `Boolable` trait describes a type that can be explicitly converted to
     a `Bool` or evaluated as a boolean expression in `if` or `while` conditions.
 
@@ -64,12 +62,12 @@ trait Boolable(ImplicitlyDestructible):
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 @lldb_formatter_wrapping_type
 struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
@@ -84,7 +82,7 @@ struct Bool(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _mlir_value: __mlir_type.i1
+    var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
     """The underlying storage of the boolean value."""
 
     # ===-------------------------------------------------------------------===#
@@ -123,19 +121,20 @@ struct Bool(
         Args:
             value: The initial __mlir_type.i1 value.
         """
-        self._mlir_value = value
+        self._mlir_value = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](value)
 
     @doc_hidden
     @always_inline("builtin")
-    def __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
-        """Construct a Bool value given a `!pop.scalar<bool>` value.
+    @implicit
+    def __init__(out self, mlir_value: __mlir_type.`!kgen.scalar<bool>`):
+        """Construct a Bool value given a `!kgen.scalar<bool>` value.
 
         Args:
             mlir_value: The initial value.
         """
-        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
-            _type=__mlir_type.i1
-        ](mlir_value)
+        self._mlir_value = mlir_value
 
     @always_inline("nodebug")
     def __init__[T: Boolable, //](out self, value: T):
@@ -179,8 +178,8 @@ struct Bool(
 
     @doc_hidden
     @always_inline("builtin")
-    def __mlir_i1__(self) -> __mlir_type.i1:
-        """Convert this Bool to __mlir_type.i1.
+    def __mlir_bool__(self) -> __mlir_type.`!kgen.scalar<bool>`:
+        """Convert this Bool to __mlir_type.`!kgen.scalar<bool>`.
 
         This method is a special hook used by the compiler to test boolean
         objects in control flow conditions.  It should be implemented by Bool
@@ -192,6 +191,18 @@ struct Bool(
         """
         return self._mlir_value
 
+    @doc_hidden
+    @always_inline("builtin")
+    def __mlir_i1__(self) -> __mlir_type.i1:
+        """Convert this Bool to __mlir_type.i1.
+
+        Returns:
+            The underlying value for the Bool as an __mlir_type.i1.
+        """
+        return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](
+            self._mlir_value
+        )
+
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
         """
@@ -201,7 +212,13 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        # `write_string` rather than `write` so the literal reaches the writer
+        # without becoming a `String`. The arms name `StaticString` because the
+        # two literals have distinct types, and a conditional over the bare
+        # literals unifies them through `String`.
+        writer.write_string(
+            StaticString("True") if self else StaticString("False")
+        )
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -223,16 +240,6 @@ struct Bool(
             1 if the Bool is True, 0 otherwise.
         """
         return select[Int](self, 1, 0)
-
-    @always_inline("builtin")
-    def __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        return self.__int__()
 
     @always_inline("nodebug")
     def __float__(self) -> Float64:
@@ -337,7 +344,10 @@ struct Bool(
         Returns:
             True if the object is false and False otherwise.
         """
-        return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
+        return __mlir_op.`pop.simd.xor`(
+            self._mlir_value,
+            __mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`,
+        )
 
     @always_inline("builtin")
     def __and__(self, rhs: Bool) -> Bool:
@@ -352,7 +362,7 @@ struct Bool(
         Returns:
             `self & rhs`.
         """
-        return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
+        return __mlir_op.`pop.simd.and`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     def __iand__(mut self, rhs: Bool):
@@ -388,7 +398,7 @@ struct Bool(
         Returns:
             `self | rhs`.
         """
-        return __mlir_op.`pop.or`(self._mlir_value, rhs._mlir_value)
+        return __mlir_op.`pop.simd.or`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     def __ior__(mut self, rhs: Bool):
@@ -424,7 +434,7 @@ struct Bool(
         Returns:
             `self ^ rhs`.
         """
-        return __mlir_op.`pop.xor`(self._mlir_value, rhs._mlir_value)
+        return __mlir_op.`pop.simd.xor`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     def __ixor__(mut self, rhs: Bool):
@@ -458,17 +468,6 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
-
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
@@ -492,7 +491,7 @@ def any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDestructible,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -507,9 +506,7 @@ def any[
     """
 
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if item:
             return True
     return False
@@ -537,7 +534,7 @@ def all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDestructible,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -551,9 +548,7 @@ def all[
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if not item:
             return False
     return True

@@ -25,7 +25,6 @@ from std.ffi import (
     external_call,
     get_errno,
     CStringSlice,
-    _CPointer,
 )
 from std.sys import CompilationTarget
 
@@ -35,7 +34,7 @@ from std.sys import CompilationTarget
 
 
 @always_inline
-def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
+def free(ptr: MutPointer[NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
@@ -47,18 +46,18 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
+def free(ptr: OptionalPointer[mut=True, NoneType, MutAnyOrigin]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    This overload accepts an `Optional[Pointer]` because it is valid in
     C to call `free` on a null pointer (it is a no-op).
 
     Args:
         ptr: A pointer to the memory to free.
     """
     free(
-        UnsafePointer(to=ptr).bitcast[
-            UnsafePointer[NoneType, ExternalOrigin[mut=True]]
+        Pointer(to=ptr).unsafe_bitcast[
+            Pointer[NoneType, UntrackedOrigin[mut=True]]
         ]()[]
     )
 
@@ -72,11 +71,11 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = _CPointer[NoneType, ExternalOrigin[mut=True]]
+comptime FILE_ptr = OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
-def fdopen(fd: c_int, mode: UnsafePointer[mut=False, c_char, _]) -> FILE_ptr:
+def fdopen(fd: c_int, mode: ImmPointer[c_char, _]) -> FILE_ptr:
     return external_call["fdopen", FILE_ptr](fd, mode)
 
 
@@ -92,8 +91,8 @@ def fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 def popen(
-    command: UnsafePointer[mut=False, c_char, _],
-    type: UnsafePointer[mut=False, c_char, _],
+    command: ImmPointer[c_char, _],
+    type: ImmPointer[c_char, _],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -106,7 +105,7 @@ def pclose(stream: FILE_ptr) -> c_int:
 @always_inline
 def setvbuf(
     stream: FILE_ptr,
-    buffer: UnsafePointer[mut=True, c_char, _],
+    buffer: MutPointer[c_char, _],
     mode: c_int,
     size: c_size_t,
 ) -> c_int:
@@ -133,30 +132,32 @@ struct BufferMode:
 
 @always_inline
 def posix_spawnp[
-    argv_origin: ImmutOrigin,
+    argv_origin: ImmOrigin,
     //,
 ](
-    pid: UnsafePointer[mut=True, c_pid_t, _],
+    pid: MutPointer[c_pid_t, _],
     file: CStringSlice[_],
-    argv: UnsafePointer[Optional[CStringSlice[argv_origin]], _],
-    envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
+    argv: Pointer[Optional[CStringSlice[argv_origin]], _],
+    envp: OptionalPointer[
+        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+    ],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
 
     Args:
-        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
-        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        pid: `Pointer` destination for the process id if spawned successfully.
+        file: NUL-terminated C string (`CStringSlice`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL (`None`) entry.
+        envp: The environment array; must be terminated with a NULL (`None`) entry.
     """
     # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
     # to allow full control of how process is spawned
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
+        OptionalPointer[NoneType, ImmUntrackedOrigin](),
+        OptionalPointer[NoneType, ImmUntrackedOrigin](),
         argv,
         envp,
     )
@@ -164,7 +165,7 @@ def posix_spawnp[
 
 @always_inline
 def _get_environ() -> (
-    _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
+    OptionalPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
 ):
     """Returns the process environment pointer (POSIX `environ`).
 
@@ -172,7 +173,7 @@ def _get_environ() -> (
         A pointer to the null-terminated array of environment strings,
         suitable for passing as the `envp` argument to `posix_spawnp`.
     """
-    comptime _EnvpType = _CPointer[
+    comptime _EnvpType = OptionalPointer[
         Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
     ]
     comptime if CompilationTarget.is_macos():
@@ -180,13 +181,13 @@ def _get_environ() -> (
         # a pointer to the `environ` variable.
         return external_call[
             "_NSGetEnviron",
-            _CPointer[_EnvpType, ExternalOrigin[mut=False]],
+            OptionalPointer[_EnvpType, ImmUntrackedOrigin],
         ]().value()[]
     elif CompilationTarget.is_linux():
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
         # RTLD_DEFAULT is ((void *)0) on Linux.
         return dlsym[_EnvpType](
-            _CPointer[NoneType, MutExternalOrigin](),
+            OptionalPointer[NoneType, MutUntrackedOrigin](),
             "environ".as_c_string_slice().unsafe_ptr(),
         ).value()[]
     else:
@@ -205,18 +206,18 @@ def dup(oldfd: c_int) -> c_int:
 
 @always_inline
 def execvp[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     //,
 ](
-    file: UnsafePointer[mut=False, c_char, _],
-    argv: UnsafePointer[mut=False, _CPointer[mut=False, c_char, origin], _],
+    file: ImmPointer[c_char, _],
+    argv: ImmPointer[OptionalPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
 
     Args:
-        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
-        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        file: NUL-terminated C string (`Pointer` to `c_char`) with the path to the executable.
+        argv: The argument array; must be terminated with a NULL pointer.
     """
     return external_call["execvp", c_int](file, argv)
 
@@ -246,7 +247,7 @@ def kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-def pipe(fildes: UnsafePointer[mut=True, c_int, _]) -> c_int:
+def pipe(fildes: MutPointer[c_int, _]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)
@@ -261,9 +262,7 @@ def close(fd: c_int) -> c_int:
 
 
 @always_inline
-def write(
-    fd: c_int, buf: OpaquePointer[mut=False, _], nbyte: c_size_t
-) -> c_int:
+def write(fd: c_int, buf: ImmOpaquePointer[_], nbyte: c_size_t) -> c_int:
     """[`write()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/write.html)
     — write to a file descriptor.
     """
@@ -285,7 +284,7 @@ struct WaitFlags:
 @always_inline
 def waitpid(
     pid: c_pid_t,
-    status: UnsafePointer[mut=True, c_int, _],
+    status: MutPointer[c_int, _],
     options: c_int,
 ) -> c_pid_t:
     """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
@@ -313,7 +312,11 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
     """[`fcntl()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html)
     — file control.
     """
-    return external_call["fcntl", c_int](fd, cmd, args)
+    # The pack is loaded so the variadic arguments are the values themselves
+    # rather than references to them.
+    return external_call["fcntl", c_int, num_fixed_args=2](
+        fd, cmd, args.get_loaded_kgen_pack()
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -322,21 +325,22 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
+def dlerror(out result: OptionalPointer[c_char, MutUntrackedOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 def dlopen(
-    filename: OptionalUnsafePointer[c_char, _], flags: c_int
-) -> _CPointer[NoneType, MutExternalOrigin]:
-    return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
-        filename, flags
-    )
+    filename: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin],
+    flags: c_int,
+) -> OptionalPointer[NoneType, MutUntrackedOrigin]:
+    return external_call[
+        "dlopen", OptionalPointer[NoneType, MutUntrackedOrigin]
+    ](filename, flags)
 
 
 @always_inline
-def dlclose(handle: _CPointer[mut=True, NoneType, _]) -> c_int:
+def dlclose(handle: OptionalPointer[mut=True, NoneType, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -345,19 +349,17 @@ def dlsym[
     # Default `dlsym` result is an OpaquePointer.
     result_type: AnyType = NoneType
 ](
-    handle: _CPointer[NoneType, _],
-    name: UnsafePointer[mut=False, c_char, _],
-    out result: _CPointer[result_type, MutExternalOrigin],
+    handle: OptionalPointer[NoneType, _],
+    name: ImmPointer[c_char, _],
+    out result: OptionalPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
 
 def realpath(
-    path: UnsafePointer[mut=False, c_char, _],
-    resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
-        c_char, MutExternalOrigin
-    ](),
-    out result: _CPointer[c_char, MutExternalOrigin],
+    path: CStringSlice[_],
+    resolved_path: MutPointer[c_char, _],
+    out result: OptionalPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
@@ -366,17 +368,14 @@ def realpath(
     pointed to by resolved_path.  The resulting path will have no symbolic link,
     /./ or /../ components.
 
-    If resolved_path is a NULL pointer, then realpath() uses malloc(3) to
-    allocate a buffer of up to PATH_MAX bytes to hold the resolved pathname, and
-    returns a pointer to this buffer. The caller is responsible for deallocating
-    the buffer in this scenario.
+    libc also accepts a NULL `resolved_path`, in which case it allocates the
+    result buffer itself. This binding does not expose that mode, so the caller
+    always owns the destination buffer.
 
     Args:
         path: The path to resolve.
-        resolved_path: The buffer to store the resolved path. If this is a NULL
-            pointer then libc will allocate a buffer of up to PATH_MAX bytes to
-            hold the resolved pathname. The caller is responsible for
-            deallocating the buffer in this scenario.
+        resolved_path: The buffer to store the resolved path. It must be at
+            least `PATH_MAX` bytes long.
 
     Returns:
         A pointer to the resolved path.

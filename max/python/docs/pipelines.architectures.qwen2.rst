@@ -9,4 +9,5 @@ max.pipelines.architectures.qwen2
 
 .. automodule:: max.pipelines.architectures.qwen2
    :members:
+   :imported-members:
    :show-inheritance:

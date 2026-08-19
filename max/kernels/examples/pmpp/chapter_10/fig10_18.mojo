@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx, block_dim, WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx, block_dim, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import shuffle_down
 from std.gpu.primitives.id import (
     lane_id,
@@ -52,7 +52,7 @@ def warp_reduce(val: Float32) -> Float32:
 
 
 def reduce_kernel(
-    input: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     N: UInt32,
 ):
@@ -71,7 +71,7 @@ def reduce_kernel(
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
-    var partial_sums_s = stack_allocation[
+    var partial_sums_s = unsafe_stack_allocation[
         BLOCK_DIM // WARP_SIZE,
         Float32,
         address_space=AddressSpace.SHARED,
@@ -93,8 +93,8 @@ def reduce_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_sum(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: Int,
 ):
     """CPU reference sum implementation.
@@ -148,7 +148,7 @@ def main() raises:
         ctx.enqueue_copy(d_output, h_output)
 
         # Launch kernel (multiple blocks)
-        ctx.enqueue_function_experimental[reduce_kernel](
+        ctx.enqueue_function[reduce_kernel](
             d_input,
             d_output,
             UInt32(N),

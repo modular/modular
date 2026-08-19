@@ -13,8 +13,6 @@
 
 """Figure 15.9 - Optimized matrix multiplication with register blocking."""
 
-from std.gpu.memory import AddressSpace
-
 comptime tM = 8
 comptime tN = 4
 

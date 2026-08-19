@@ -16,15 +16,16 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
 from std.gpu import warp_id, block_idx, thread_idx
-from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import external_memory, fence_async_view_proxy
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -92,8 +93,9 @@ def kernel_4[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -125,11 +127,11 @@ def kernel_4[
     ]()
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -149,28 +151,28 @@ def kernel_4[
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -191,21 +193,21 @@ def kernel_4[
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var c_smem = (b_smem + b_size).bitcast[Scalar[c_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
-    var c_smem_tile = c_smem_tile_t(c_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var c_smem_tile = c_smem_tile_t(c_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
+    var c_frag: Array[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
@@ -229,7 +231,7 @@ def kernel_4[
     # tensor memory allocation
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     comptime b_canonical_layout = tile_to_descriptor[
@@ -246,10 +248,10 @@ def kernel_4[
         b_type
     ]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         a_type,
         b_type,
@@ -269,13 +271,13 @@ def kernel_4[
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
                     (i * BK + k, block_idx.y * BM),
                 )
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
+                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
@@ -383,10 +385,9 @@ def kernel_4[
 
         var smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
-        c_tma_tile = LayoutTensor[
+        var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](smem_offset)
@@ -422,9 +423,9 @@ def blackwell_kernel_4[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -437,12 +438,14 @@ def blackwell_kernel_4[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](
+        ctx, a
+    )
+    var b_tma_op = create_tensor_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)
-    c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
+    var c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
 
     comptime smem_use = (
         BM * BK * size_of[a_type]()
@@ -475,11 +478,11 @@ def blackwell_kernel_4[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        K // BK,
+        Int32(K // BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
@@ -579,9 +582,9 @@ def test_blackwell_kernel_4[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -640,7 +643,7 @@ def test_blackwell_kernel_4[
         comptime num_warmup = 10
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_4[
                 transpose_b=transpose_b,
@@ -695,10 +698,6 @@ def test_blackwell_kernel_4[
             atol=0.0001,
             rtol=rtol,
         )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def main() raises:

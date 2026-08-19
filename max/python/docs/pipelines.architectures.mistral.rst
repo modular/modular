@@ -9,4 +9,5 @@ max.pipelines.architectures.mistral
 
 .. automodule:: max.pipelines.architectures.mistral
    :members:
+   :imported-members:
    :show-inheritance:

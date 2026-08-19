@@ -19,11 +19,11 @@ Provides compiler-registered operations for causal 1D convolution:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
-from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtr
+import extensibility
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
+from std.memory import unsafe_memcpy
+
 
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
@@ -33,7 +33,7 @@ from state_space.causal_conv1d import (
 )
 
 from std.utils.index import IndexList
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 # ============================================================================
@@ -41,7 +41,7 @@ from tensor import InputTensor, OutputTensor
 # ============================================================================
 
 
-@compiler.register("causal_conv1d")
+@extensibility.register("causal_conv1d")
 struct CausalConv1D[activation: StaticString]:
     """Causal 1D convolution operation with bias.
 
@@ -71,7 +71,7 @@ struct CausalConv1D[activation: StaticString]:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -128,10 +128,10 @@ struct CausalConv1D[activation: StaticString]:
                 out_l_stride,
                 bias_stride,
                 silu_activation,
-                ctx.get_optional_device_context(),
+                Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            var gpu_ctx: DeviceContext = ctx
             comptime kNThreads = 128
             comptime kNElts = 4
             if width == 1:
@@ -149,28 +149,15 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X,
                     W,
                     O,
@@ -207,28 +194,15 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X,
                     W,
                     O,
@@ -265,28 +239,15 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X,
                     W,
                     O,
@@ -323,28 +284,15 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X,
                     W,
                     O,
@@ -374,16 +322,34 @@ struct CausalConv1D[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@extensibility.register_shape_function("causal_conv1d")
+def causal_conv1d_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[rank]:
+    """Returns the output shape for the `causal_conv1d` op.
+
+    Causal 1D convolution preserves the input shape: output has the same
+    `(batch, channels, seqlen)` as `input`.
+
+    Parameters:
+        dtype: Element type of the input, weight, and bias tensors.
+        rank: Tensor rank of the input and output, expected to be 3.
+
+    Args:
+        input: Input tensor with shape `(batch, channels, seqlen)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        The output tensor shape, equal to `input.shape()`.
+    """
+    return input.shape()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -391,7 +357,7 @@ struct CausalConv1D[activation: StaticString]:
 # ===----------------------------------------------------------------------=== #
 
 
-@compiler.register("causal_conv1d_update")
+@extensibility.register("causal_conv1d_update")
 struct CausalConv1DUpdate[activation: StaticString]:
     """Incremental causal conv1d update for autoregressive decoding.
 
@@ -400,7 +366,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
     graph semantics (no in-place mutation).
 
     Parameters:
-        activation: "none" or "silu" - activation function to apply.
+        activation: Activation function to apply: `"none"` or `"silu"`.
 
     Tensor Shapes:
         Outputs:
@@ -425,7 +391,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -473,7 +439,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
-            memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
+            unsafe_memcpy(
+                dest=CS._storage, src=CS_IN._storage, count=total_state_elements
+            )
             causal_conv1d_update_cpu[
                 X.dtype,
                 CS.dtype,
@@ -505,8 +473,10 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 silu_activation,
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx.get_device_context()
-            gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
+            var gpu_ctx: DeviceContext = ctx
+            gpu_ctx.enqueue_copy(
+                CS._storage, CS_IN._storage, total_state_elements
+            )
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
@@ -521,29 +491,16 @@ struct CausalConv1DUpdate[activation: StaticString]:
                     W.LayoutType,
                     O.LayoutType,
                     B.LayoutType,
-                ],
-                causal_conv1d_update_gpu[
-                    X.dtype,
-                    CS.dtype,
-                    W.dtype,
-                    O.dtype,
-                    B.dtype,
-                    kNThreads,
-                    X.LayoutType,
-                    CS.LayoutType,
-                    W.LayoutType,
-                    O.LayoutType,
-                    B.LayoutType,
-                ],
+                ]
             ]()
             var silu_activation_int8 = Int8(silu_activation)
             gpu_ctx.enqueue_function(
                 compiled_func,
-                batch_size,
-                dim,
-                seqlen,
-                width,
-                state_len,
+                Int32(batch_size),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
+                Int32(state_len),
                 X,
                 CS,
                 W,
@@ -567,14 +524,37 @@ struct CausalConv1DUpdate[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[rank], IndexList[rank]]:
-        return (input.shape(), conv_state_in.shape())
+
+@extensibility.register_shape_function("causal_conv1d_update")
+def causal_conv1d_update_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[rank], IndexList[rank]]:
+    """Returns the output shapes for the `causal_conv1d_update` op.
+
+    The update produces two tensors: the convolution output for the new
+    token(s) and the updated convolution state.
+
+    Parameters:
+        dtype: Element type of the input, conv state, weight, and bias
+            tensors.
+        rank: Tensor rank of the input and conv state, expected to be 3.
+
+    Args:
+        input: New input tokens with shape `(batch, channels, seqlen)`.
+        conv_state_in: Previous convolution state with shape
+            `(batch, channels, state_len)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        A tuple `(output_shape, conv_state_shape)` where `output_shape`
+        matches `input.shape()` and `conv_state_shape` matches
+        `conv_state_in.shape()`.
+    """
+    return (input.shape(), conv_state_in.shape())

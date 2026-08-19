@@ -17,15 +17,15 @@ import std.format._utils as fmt
 
 
 @always_inline
-def _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
     var offset = 0
-    while ptr[offset]:
+    while ptr[unsafe_offset=offset]:
         offset += 1
     return offset
 
 
 struct TString[
-    origins: ImmutOrigin, //, format_string: StaticString, *Ts: Writable
+    origins: ImmOrigin, //, format_string: StaticString, *Ts: Writable
 ](Movable, Writable):
     """A template string that captures interpolated values at compile-time.
 
@@ -56,25 +56,25 @@ struct TString[
 
     @always_inline
     def _write_to_impl(
-        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte, _]
+        self, mut writer: Some[Writer], encoded_bytes: ImmSpan[Byte, _]
     ):
         var offset = 0
 
         @always_inline
-        def write_string() unified {
-            read encoded_bytes, read offset, mut writer
-        } -> Int:
-            var literal_start = encoded_bytes.unsafe_ptr() + offset
+        def write_string() {imm encoded_bytes, imm offset, mut writer} -> Int:
+            var literal_start = encoded_bytes.unsafe_ptr().unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
-                ptr=literal_start, length=literal_length
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=literal_start, length=literal_length
+                )
             )
             writer.write_string(string_literal)
             return literal_length
 
         # Alternate writing NUL terminated string-literal part, followed
         # by the interpolated replacement field.
-        comptime for i in range(Self.Ts.size):
+        comptime for i in range(Self.Ts.length):
             var length = write_string()
             offset += length + 1
             self._values[i].write_to(writer)
@@ -113,14 +113,19 @@ struct TString[
             writer: The writer to output the debug representation to.
         """
 
-        @parameter
-        def fields(mut writer: Some[Writer]):
-            self._values._write_to[is_repr=True](writer, start="", end="")
+        comptime assert Self.Ts.all_conforms_to[
+            Writable
+        ]()  # satisfy where clause.
+
+        var self_ptr = Pointer(to=self)
+
+        def fields(mut writer: Some[Writer]) {self_ptr}:
+            self_ptr[]._values._write_to[is_repr=True](writer, start="", end="")
 
         fmt.FormatStruct(writer, "TString").params(
             fmt.Repr(self.format_string),
             fmt.TypeNames[*Self.Ts](),
-        ).fields[FieldsFn=fields]()
+        ).fields(fields)
 
 
 @always_inline
@@ -129,7 +134,7 @@ def __make_tstring[
 ](
     *args: *Ts,
     out tstring: TString[
-        origins=ImmutOrigin(type_of(args).origin),
+        origins=ImmOrigin(type_of(args).origin),
         StaticString(format_string),
         *Ts,
     ],
@@ -162,7 +167,7 @@ def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
         # Extract at comptime and explicitly materialize to runtime, since
         # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
         # is only `Copyable`).
-        comptime value = result.take[List[Byte]]()
+        comptime value = result.unwrap[List[Byte]]()
         return materialize[value]()
 
 
@@ -224,9 +229,11 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
+    var immut_bytes = bytes.as_imm()
+
     @always_inline
-    def peek_next_is(byte: Byte) unified {read} -> Bool:
-        return i + 1 < len(bytes) and bytes[i + 1] == byte
+    def peek_next_is(byte: Byte) {imm} -> Bool:
+        return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
 
     while i < len(bytes):
         var byte = bytes[i]

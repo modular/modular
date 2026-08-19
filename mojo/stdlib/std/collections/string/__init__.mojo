@@ -23,7 +23,7 @@ Core features:
 
 Key components:
 
-- [`String`](/mojo/std/collections/string/string/String):
+- [`String`](/docs/std/collections/string/string/String/):
   Mutable and owning string
 
   - Uses a smart three-mode allocation strategy: static memory
@@ -36,7 +36,7 @@ Key components:
 
   - Mutable and grows dynamically as needed.
 
-- [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice):
+- [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/):
   Non-owning string view
 
   - Performs zero heap allocations: stores only a pointer and length
@@ -45,16 +45,16 @@ Key components:
   - Does not own the data pointed to, so it can't outlive the data it
   references.
 
-- [`StaticString`](/mojo/std/collections/string/string_slice/#staticstring):
+- [`StaticString`](/docs/std/collections/string/string_span/#staticstring):
   Compile-time constant (immutable) string reference
 
   - Performs zero heap allocations: stores a pointer and length to a
   compile-time constant or static program memory.
 
   - References data with a static lifetime that exists for the entire program
-  duration, unlike `StringSlice` which can reference temporary data.
+  duration, unlike `StringSpan` which can reference temporary data.
 
-- [`Codepoint`](/mojo/std/collections/string/codepoint/Codepoint):
+- [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint/):
   Unicode codepoint representation and operations
 
   - Represents a single Unicode codepoint as a 32-bit value.
@@ -62,7 +62,7 @@ Key components:
   - Enables iteration over string contents at the Unicode codepoint level
   rather than byte level for proper Unicode text processing.
 
-- [`format`](/mojo/std/collections/string/format/): Built-in string
+- [`format`](/docs/std/collections/string/format/): Built-in string
 formatting and interpolation utilities.
 
 :::note Note
@@ -78,4 +78,15 @@ fixed as time permits.
 
 from .codepoint import Codepoint
 from .string import String, ascii, atof, atol, chr, ord
-from .string_slice import CodepointsIter, StaticString, StringSlice
+from .string_span import (
+    BytesIter,
+    CodepointsIter,
+    GraphemeSliceIter,
+    ImmStringSpan,
+    ImmStringSlice,
+    MutStringSpan,
+    MutStringSlice,
+    StaticString,
+    StringSpan,
+    StringSlice,
+)

@@ -18,7 +18,7 @@ for several shapes and scale values. Target runtime: < 30s on H100.
 
 from std.math import ceildiv
 from std.memory import bitcast
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.fp4_utils import E2M1_TO_FLOAT32
@@ -100,9 +100,11 @@ def test_mxfp4_dequant[
     comptime out_size = num_rows * num_cols
 
     # Allocate and fill host input
-    var in_host = alloc[UInt8](in_size)
-    var scales_host = alloc[UInt8](scales_size)
-    var expected_host = alloc[Scalar[out_dtype]](out_size)
+    var in_host = ctx.enqueue_create_host_buffer[DType.uint8](in_size)
+    var scales_host = ctx.enqueue_create_host_buffer[DType.uint8](scales_size)
+    var expected_host = ctx.enqueue_create_host_buffer[out_dtype](out_size)
+    for i in range(scales_size):
+        scales_host[i] = scale_exp
 
     for row in range(num_rows):
         for col in range(packed_cols):
@@ -110,12 +112,13 @@ def test_mxfp4_dequant[
             var high = UInt8((col * 2 + 1) % 16)
             in_host[row * packed_cols + col] = _pack_fp4_pair(low, high)
 
-    for i in range(scales_size):
-        scales_host[i] = scale_exp
-
     # CPU reference
     _cpu_dequant_mxfp4[out_dtype](
-        expected_host, in_host, scales_host, num_rows, num_cols
+        expected_host.unsafe_ptr(),
+        in_host.unsafe_ptr(),
+        scales_host.unsafe_ptr(),
+        num_rows,
+        num_cols,
     )
 
     # Device buffers
@@ -134,9 +137,7 @@ def test_mxfp4_dequant[
     for i in range(in_size):
         in_host_buf[i] = in_host[i]
     for i in range(scales_size):
-        scales_host_buf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            scales_host[i]
-        )
+        scales_host_buf[i] = bitcast[DType.float8_e8m0fnu](scales_host[i])
 
     ctx.enqueue_copy(in_device, in_host_buf)
     ctx.enqueue_copy(scales_device, scales_host_buf)
@@ -186,10 +187,6 @@ def test_mxfp4_dequant[
                     exp,
                 )
             num_mismatches += 1
-
-    in_host.free()
-    scales_host.free()
-    expected_host.free()
 
     if num_mismatches > 0:
         print(

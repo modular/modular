@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a persistent tile scheduler for grouped matmul GPU kernels."""
+
 from std.math import ceildiv
 
 from std.gpu import block_idx, grid_dim
@@ -22,6 +24,8 @@ from layout import Layout, LayoutTensor
 
 @fieldwise_init
 struct RasterOrder(TrivialRegisterPassable):
+    """Represents the rasterization order used when traversing output tiles."""
+
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -38,6 +42,9 @@ struct RasterOrder(TrivialRegisterPassable):
 
 @fieldwise_init
 struct WorkInfo(TrivialRegisterPassable, Writable):
+    """Holds the coordinates and validity state of a single output tile assigned to a CTA.
+    """
+
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -86,6 +93,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
 struct TileScheduler[
+    group_offsets_origin: ImmOrigin,
     offsets_layout: Layout,
     //,
     *,
@@ -98,9 +106,27 @@ struct TileScheduler[
     swizzle: Bool = False,
     swapAB: Bool = True,
 ](TrivialRegisterPassable):
+    """Schedules output tiles across CTAs for a persistent grouped matmul kernel.
+
+    Parameters:
+        group_offsets_origin: Memory origin of `group_offsets` (inferred).
+        offsets_layout: Memory layout of `group_offsets` (inferred).
+        static_MN: Size of the static (non-reducing) output dimension. When
+            `swapAB` is true this is M, otherwise N.
+        tile_shape: Per-tile shape `(M, N, K)` of output tiles in the
+            original non-swapped AB orientation.
+        cluster: CTA cluster multicast shape `(M, N, K)`. Only the M
+            dimension is supported; `cluster[1]` and `cluster[2]` must be 1.
+        cta_group: CTAs cooperating per tile group along M. Must equal
+            `cluster[0]`.
+        swizzle: Whether to swizzle block indices for improved L2 reuse.
+        swapAB: Whether to swap A and B operands. When true, the static
+            dimension is M; when false, it is N.
+    """
+
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
+        DType.uint32, Self.offsets_layout, Self.group_offsets_origin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -125,7 +151,7 @@ struct TileScheduler[
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
+            DType.uint32, Self.offsets_layout, Self.group_offsets_origin
         ],
     ):
         comptime assert (
@@ -170,20 +196,18 @@ struct TileScheduler[
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )
-        var end_idx: UInt32 = 0
-        var num_dynamic_dim_blocks: UInt32 = 0
-        var current_dynamic_dim: UInt32 = 0
 
+        var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            end_idx = rebind[Scalar[DType.uint32]](
+            var end_idx = rebind[Scalar[DType.uint32]](
                 self.group_offsets[Int(self.current_group_idx + 1)]
             )
-            current_dynamic_dim = end_idx - start_idx
+            var current_dynamic_dim = end_idx - start_idx
             num_dynamic_dim_blocks = UInt32(
                 rebind[Scalar[Self.div_dynamic_block.uint_type]](
                     current_dynamic_dim
@@ -286,10 +310,8 @@ struct TileScheduler[
         )
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) % div_num_blocks_in_group
+            in_group_idx % div_num_blocks_in_group
         )
-        n_block_idx = UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) / div_num_blocks_in_group
-        )
+        n_block_idx = UInt32(in_group_idx / div_num_blocks_in_group)
 
         return (m_block_idx, n_block_idx)

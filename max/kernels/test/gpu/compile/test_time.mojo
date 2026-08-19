@@ -18,8 +18,8 @@ from std.time import (
     time_function,
 )
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import *
 from std.testing import *
 
@@ -116,7 +116,7 @@ def time_functions(some_value: Int) -> Int:
     var tmp = some_value
 
     @always_inline
-    def something() unified {mut tmp}:
+    def something() {mut tmp}:
         tmp += 1
 
     _ = time_function(something)

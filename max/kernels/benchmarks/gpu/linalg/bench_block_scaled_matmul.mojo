@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,7 @@ from std.sys import (
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,19 +28,23 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from linalg.fp4_quantization import block_scaled_matmul
+from linalg.block_scaled_quantization import block_scaled_matmul
 
 from layout import (
     CoordLike,
     Coord,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
     TileTensor,
+    UNKNOWN_VALUE,
     Idx,
     row_major,
 )
@@ -59,7 +64,7 @@ from linalg.fp4_utils import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 
 
 def _verify_buffers_gpu[
@@ -67,7 +72,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -91,7 +96,7 @@ def _verify_buffers_gpu[
     # Grid-stride loop
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
+    while i < Int(length):
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -135,9 +140,15 @@ def verify_matmul[
     shape_b: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = shape_c[0].value() * shape_c[1].value()
-    var a_size = shape_a[0].value() * shape_a[1].value()
-    var b_size = shape_b[0].value() * shape_b[1].value()
+    comptime assert shape_a.element_types[0].DTYPE.is_integral()
+    comptime assert shape_a.element_types[1].DTYPE.is_integral()
+    comptime assert shape_b.element_types[0].DTYPE.is_integral()
+    comptime assert shape_b.element_types[1].DTYPE.is_integral()
+    comptime assert shape_c.element_types[0].DTYPE.is_integral()
+    comptime assert shape_c.element_types[1].DTYPE.is_integral()
+    var c_size = Int(shape_c[0].value()) * Int(shape_c[1].value())
+    var a_size = Int(shape_a[0].value()) * Int(shape_a[1].value())
+    var b_size = Int(shape_b[0].value()) * Int(shape_b[1].value())
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(shape_a))
@@ -152,8 +163,8 @@ def verify_matmul[
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)
 
     # M, N, K dimensions for scales calculation
-    var M = shape_c[0].value()
-    var N = shape_c[1].value()
+    var M = Int(shape_c[0].value())
+    var N = Int(shape_c[1].value())
     comptime K = shape_a.element_types[
         1
     ].static_value * 2 if micro_scaling_mode == "nvfp4" else shape_a.element_types[
@@ -162,18 +173,18 @@ def verify_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(shape_a[0].value(), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -249,10 +260,10 @@ def verify_matmul[
     var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -261,7 +272,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -279,8 +290,6 @@ def verify_matmul[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     # Check zero/nonzero expectations
     var c_is_zeros = any_out_nz == 0
@@ -318,6 +327,7 @@ def verify_matmul[
         )
 
     print("\n=== TEST PASSED ===\n")
+    _ = result_host^
 
 
 def _get_run_name[
@@ -387,20 +397,27 @@ def bench_matmul[
     verify: Bool,
     run_benchmark: Bool,
 ) raises:
+    comptime assert shape_a.element_types[0].DTYPE.is_integral()
+    comptime assert shape_a.element_types[1].DTYPE.is_integral()
+    comptime assert shape_b.element_types[0].DTYPE.is_integral()
+    comptime assert shape_b.element_types[1].DTYPE.is_integral()
+    comptime assert shape_c.element_types[0].DTYPE.is_integral()
+    comptime assert shape_c.element_types[1].DTYPE.is_integral()
+
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
     def get_size(shape: Coord) -> Int:
-        return shape[0].value() * shape[1].value()
+        return Int(shape[0].value()) * Int(shape[1].value())
 
     # MXFP8 scale buffer allocation
     comptime scales_type = MXFP8_SF_DTYPE if micro_scaling_mode == "mxfp8" else NVFP4_SF_DTYPE
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE if micro_scaling_mode == "mxfp8" else NVFP4_SF_VECTOR_SIZE
 
     # M, N, K dimensions for scales calculation
-    var M = shape_c[0].value()
-    var N = shape_c[1].value()
+    var M = Int(shape_c[0].value())
+    var N = Int(shape_c[1].value())
     comptime K = shape_a.element_types[
         1
     ].static_value * 2 if micro_scaling_mode == "nvfp4" else shape_a.element_types[
@@ -409,18 +426,18 @@ def bench_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(shape_a[0].value(), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -453,7 +470,7 @@ def bench_matmul[
     cb_b_scales.init_scales_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    @parameter
+    @__parameter
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -474,9 +491,12 @@ def bench_matmul[
             c_row_major=True,
         )
 
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {
+        mut cb_a, mut cb_b, mut cb_c, mut cb_a_scales, mut cb_b_scales, imm
+    }:
         var a = TileTensor(cb_a.offset_ptr(iteration), row_major(shape_a))
         var b = TileTensor(cb_b.offset_ptr(iteration), row_major(shape_b))
         var c = TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c))
@@ -488,7 +508,7 @@ def bench_matmul[
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c)
         def test_lambda_add_coords_prod[
@@ -525,10 +545,10 @@ def bench_matmul[
                 ctx,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -597,8 +617,8 @@ def create_matmul_bench[
     run_benchmark: Bool,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -659,28 +679,28 @@ def bench_mxfp4_amd[
 ) raises:
     """Benchmark native MXFP4 block-scaled matmul on AMD CDNA4.
 
-    Uses mxfp4_block_scaled_matmul_amd with simple 2D scale tensors
+    Uses block_scaled_matmul_amd with simple 2D scale tensors
     [rows, K//32] in float8_e8m0fnu. Output is float32.
     """
-    from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+    from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 
     comptime K_ELEMS = KType.static_value
     comptime K_PACKED = K_ELEMS // 2
     comptime N_VAL = NType.static_value
     comptime K_SCALES = K_ELEMS // 32
 
-    var M = m.value()
+    var M = Int(m.value())
     var a_size = M * K_PACKED
     var b_size = N_VAL * K_PACKED
     var c_size = M * N_VAL
     var a_scales_size = M * K_SCALES
     var b_scales_size = N_VAL * K_SCALES
 
-    var a_shape = row_major(Coord(Idx(M), Idx[K_PACKED]()))
-    comptime b_shape = row_major(Coord(Idx[N_VAL](), Idx[K_PACKED]()))
-    var c_shape = row_major(Coord(Idx(M), Idx[N_VAL]()))
-    var sfa_shape = row_major(Coord(Idx(M), Idx[K_SCALES]()))
-    comptime sfb_shape = row_major(Coord(Idx[N_VAL](), Idx[K_SCALES]()))
+    var a_shape = row_major(Coord(M, Idx[K_PACKED]))
+    comptime b_shape = row_major(Coord(Idx[N_VAL], Idx[K_PACKED]))
+    var c_shape = row_major(Coord(M, Idx[N_VAL]))
+    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]))
+    comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[DType.uint8](a_size, simd_size, ctx)
@@ -698,9 +718,60 @@ def bench_mxfp4_amd[
     cb_sfa.init_scales_on_device(init_type, ctx)
     cb_sfb.init_scales_on_device(init_type, ctx)
 
-    @parameter
+    # 2D scale layouts for hipBLASLt. M is dynamic (UNKNOWN_VALUE),
+    # N and K_SCALES are comptime-known.
+    comptime sfa_layout = Layout.row_major(UNKNOWN_VALUE, K_SCALES)
+    comptime sfb_layout = Layout.row_major(N_VAL, K_SCALES)
+
+    # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
+    # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
+    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def run_vendor_blas(
+        ctx: DeviceContext,
+        c: TileTensor[mut=True, DType.float32, ...],
+        a: TileTensor[DType.uint8, ...],
+        b: TileTensor[DType.uint8, ...],
+        sfa: TileTensor[DType.float8_e8m0fnu, ...],
+        sfb: TileTensor[DType.float8_e8m0fnu, ...],
+    ) raises:
+        var sfa_lt = LayoutTensor[
+            DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin
+        ](
+            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
+                sfa.ptr
+            ),
+            RuntimeLayout[sfa_layout].row_major(
+                IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
+            ),
+        )
+        var sfb_lt = LayoutTensor[
+            DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin
+        ](
+            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
+                sfb.ptr
+            ),
+            RuntimeLayout[sfb_layout].row_major(
+                IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
+            ),
+        )
+        with ctx.push_context() as cur_ctx:
+            vendor_blas.matmul[scales_type=DType.float8_e8m0fnu](
+                cur_ctx,
+                vendor_blas._get_global_handle[DType.uint8](ctx),
+                c,
+                a,
+                b,
+                a_scales=sfa_lt,
+                b_scales=sfb_lt,
+                transpose_b=True,
+                c_row_major=True,
+            )
+
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
         var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)
         var c_tt = TileTensor[mut=True](cb_c.offset_ptr(iteration), c_shape)
@@ -710,12 +781,15 @@ def bench_mxfp4_amd[
         var sfb_tt = TileTensor[mut=False](
             cb_sfb.offset_ptr(iteration), sfb_shape
         )
-        mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+        comptime if use_vendor_blas:
+            run_vendor_blas(ctx, c_tt, a_tt, b_tt, sfa_tt, sfb_tt)
+        else:
+            block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -731,15 +805,104 @@ def bench_mxfp4_amd[
         M,
         N_VAL,
         K_ELEMS,
-        Coord(Idx(M), Idx[N_VAL]()),
-        Coord(Idx(M), Idx[K_PACKED]()),
-        Coord(Idx[N_VAL](), Idx[K_PACKED]()),
+        Coord(M, Idx[N_VAL]),
+        Coord(M, Idx[K_PACKED]),
+        Coord(Idx[N_VAL], Idx[K_PACKED]),
     )
 
     if run_benchmark:
         b.bench_function[bench_func](BenchId(run_name), [flops])
     else:
         kernel_launch(ctx, 0)
+
+    # Verify: run the FP4 kernel and hipBLASLt on the iter-0 buffers and
+    # compare via _verify_buffers_gpu. Skipped when the benchmark itself
+    # is hipBLASLt (nothing to verify against).
+    comptime if not use_vendor_blas:
+        if verify:
+            var a_tt0 = TileTensor[mut=False](cb_a.offset_ptr(0), a_shape)
+            var b_tt0 = TileTensor[mut=False](cb_b.offset_ptr(0), b_shape)
+            var sfa_tt0 = TileTensor[mut=False](cb_sfa.offset_ptr(0), sfa_shape)
+            var sfb_tt0 = TileTensor[mut=False](cb_sfb.offset_ptr(0), sfb_shape)
+            var c_tt0 = TileTensor[mut=True](cb_c.offset_ptr(0), c_shape)
+
+            # Fresh FP4 kernel run into iter-0 output slot.
+            block_scaled_matmul_amd(c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx)
+
+            # hipBLASLt reference into a separate buffer.
+            var c_ref_buf = ctx.enqueue_create_buffer[DType.float32](c_size)
+            var c_ref_tt = TileTensor[mut=True](c_ref_buf, c_shape)
+            run_vendor_blas(ctx, c_ref_tt, a_tt0, b_tt0, sfa_tt0, sfb_tt0)
+
+            # GPU-side element-wise comparison: per-block partial reduction.
+            comptime NUM_BLOCKS = 32
+            comptime BLOCK_SIZE = 256
+
+            var rtol = Float32(1.3e-6)
+            var atol = Float32(1e-5)
+            var result_device = ctx.enqueue_create_buffer[DType.float32](
+                NUM_BLOCKS * 5
+            )
+
+            comptime verify_kernel = _verify_buffers_gpu[
+                DType.float32, BLOCK_SIZE
+            ]
+            ctx.enqueue_function[verify_kernel](
+                c_tt0.ptr,
+                c_ref_tt.ptr,
+                Int32(c_size),
+                atol,
+                rtol,
+                result_device,
+                grid_dim=NUM_BLOCKS,
+                block_dim=BLOCK_SIZE,
+            )
+
+            var result_host = List(
+                length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0)
+            )
+            ctx.enqueue_copy(result_host, result_device)
+            ctx.synchronize()
+
+            var total_abs_diff: Float32 = 0
+            var total_abs_ref: Float32 = 0
+            var worst_violation = Float32.MIN_FINITE
+            var out_nz: Float32 = 0
+            var ref_nz: Float32 = 0
+            for bi in range(NUM_BLOCKS):
+                var base = bi * 5
+                total_abs_diff += result_host[base + 0]
+                total_abs_ref += result_host[base + 1]
+                worst_violation = max(worst_violation, result_host[base + 2])
+                out_nz = max(out_nz, result_host[base + 3])
+                ref_nz = max(ref_nz, result_host[base + 4])
+
+            if init_type != InitializationType.zero:
+                if out_nz == 0:
+                    raise "MXFP4 verify: kernel output is all zeros"
+                if ref_nz == 0:
+                    raise "MXFP4 verify: hipBLASLt reference is all zeros"
+
+            if total_abs_ref > 0:
+                var rel_diff = total_abs_diff / total_abs_ref
+                if rel_diff > 0.001:
+                    raise String(
+                        "MXFP4 verify failed (relative_difference): ",
+                        rel_diff,
+                        " > 0.001",
+                    )
+
+            if worst_violation > 0:
+                raise String(
+                    (
+                        "MXFP4 verify failed (element-wise tolerance):"
+                        " worst violation = "
+                    ),
+                    worst_violation,
+                )
+
+            print("\n=== MXFP4 verify PASSED ===\n")
+            _ = result_host^
 
 
 def main() raises:
@@ -771,9 +934,9 @@ def main() raises:
             ](
                 ctx,
                 m,
-                Idx(M),
-                Idx[N](),
-                Idx[get_defined_int["K", 2048]()](),
+                M,
+                Idx[N],
+                Idx[get_defined_int["K", 2048]()],
                 init_type,
                 verify,
                 run_benchmark,
@@ -796,9 +959,9 @@ def main() raises:
             ](
                 ctx,
                 m,
-                Idx(M),
-                Idx[N](),
-                Idx[K](),
+                M,
+                Idx[N],
+                Idx[K],
                 init_type,
                 verify,
                 run_benchmark,

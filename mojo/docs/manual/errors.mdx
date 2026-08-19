@@ -22,8 +22,8 @@ This page covers:
   — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
-- [**Parametric raises**](#parametric-raises) — Write generic functions that
-  propagate error types from their arguments.
+- [**Parametric raises**](#parametric-raises) — Write parameterized functions
+  that propagate error types from their arguments.
 - [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
   Work with code that uses both error styles.
 - [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
@@ -44,12 +44,12 @@ Unhandled exception caught during execution: record not found
 
 ## Raise an error
 
-The built-in [`Error`](/mojo/std/builtin/error/Error) type is the default error
+The built-in [`Error`](/docs/std/builtin/error/Error/) type is the default error
 type for most Mojo code. It carries a text message describing what went wrong,
 and it's the right choice for application-level error handling—simple,
 well-supported, and sufficient for the majority of use cases.
 
-You can raise an `Error` with the constructor or a string literal shorthand:
+You can raise an `Error` with the initializer or a string literal shorthand:
 
 ```mojo
 # These are equivalent
@@ -145,7 +145,7 @@ def main() raises:
             except e:
                 if "invalid" in String(e):
                     print("except  => fatal:", e)
-                    raise e^
+                    raise e
                 print("except  => handled:", e)
             else:
                 print("else    => success:", result)
@@ -183,37 +183,43 @@ Notice:
 - When `id` is 1001: `process_record()` raises an error. The `except` clause
   handles it and execution continues with the next iteration.
 - When `id` is -3: `process_record()` raises an "invalid" error. The `except`
-  clause re-raises it with `raise e^`, which transfers ownership of the error
-  to the outer `try`/`except`. The `finally` clause still runs before the error
-  propagates. Because the re-raise exits the loop, `id` 42 is never processed.
+  clause re-raises it, so it propagates to the outer `try`/`except`. The
+  `finally` clause still runs before the error propagates. Because the re-raise
+  exits the loop, `id` 42 is never processed.
 
 ### Re-raise an error
 
-To re-raise a caught error, use `raise` with the
-[transfer sigil](/mojo/manual/values/ownership/#transfer-arguments-var-and-)
-(`^`) to transfer ownership of the error value:
+To re-raise a caught error, pass it to `raise`:
 
 ```mojo
 try:
-    result = process_record(-1)
+    var result = process_record(-1)
 except e:
     print("Logging error:", e)
-    raise e^  # re-raise with ownership transfer
+    raise e  # re-raise
 ```
 
 You can also raise a different error from within an `except` clause.
+
+Re-raising copies the error, which is cheap because both its message and its
+optional stack trace are reference counted. To avoid the copy, transfer the
+error with the
+[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-):
+`raise e^`. A [custom error type](#typed-errors) that doesn't conform to
+[`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) requires the
+transfer sigil to re-raise.
 
 ## Typed errors
 
 For code that needs more than a string message—like standard library APIs,
 GPU abstractions, or situations where callers need structured error data—Mojo
-lets you define custom error types as [structs](/mojo/manual/structs).
+lets you define custom error types as [structs](/docs/manual/structs/).
 
 ### Define a custom error type
 
 In Mojo, any struct can serve as an error type—no special base class or trait
 is required. However, implementing the
-[`Writable`](/mojo/std/format/Writable) trait is recommended so the error
+[`Writable`](/docs/std/format/Writable/) trait is recommended so the error
 produces a readable message when printed or when the program terminates with an
 unhandled error:
 
@@ -227,7 +233,7 @@ struct ValidationError(Copyable, Writable):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 ```
 
-The [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator
+The [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/) decorator
 generates an `__init__()` method with an argument for each field, so you
 can construct errors like `ValidationError("username", "too short")` or with
 keyword arguments like `ValidationError(field="username", reason="too short")`.
@@ -236,7 +242,7 @@ keyword arguments like `ValidationError(field="username", reason="too short")`.
 
 Typed errors work on GPUs and embedded targets as long as you avoid
 heap-allocated types like `String`. For more on GPU programming, see
-[GPU fundamentals](/mojo/manual/gpu/fundamentals).
+[GPU fundamentals](https://docs.modular.com/gpu/fundamentals/).
 
 :::
 
@@ -323,8 +329,8 @@ except e:
 
 :::note
 
-If your error type implements the [`Writable`](/mojo/std/format/Writable) trait,
-you can also pass `e` directly to `print()`:
+If your error type implements the [`Writable`](/docs/std/format/Writable/)
+trait, you can also pass `e` directly to `print()`:
 
 ```mojo
 except e:
@@ -349,14 +355,14 @@ conditions within a single type. Mojo offers two approaches:
   Simpler and more efficient when you only need to distinguish between
   conditions.
 - **The `Variant` type** — The standard library
-  [`Variant`](/mojo/std/utils/variant/Variant) type with separate structs per
+  [`Variant`](/docs/std/utils/variant/Variant/) type with separate structs per
   condition. More flexible when each condition needs to carry different data.
 
 ### Enumerated error types
 
 A single struct can represent all error conditions using an integer `_variant`
 field and
-[`comptime` values](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values)
+[`comptime` values](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
 as named constants. The `write_to` method generates human-readable strings from
 the variant code:
 
@@ -384,7 +390,7 @@ struct FileError(Equatable, ImplicitlyCopyable, Writable):
 ```
 
 Because `FileError` has a single `Int` field and conforms to
-[`Equatable`](/mojo/std/builtin/comparable/Equatable/), the compiler
+[`Equatable`](/docs/std/builtin/comparable/Equatable/), the compiler
 auto-synthesizes `__eq__()`, so you can compare variants directly:
 
 ```mojo
@@ -417,7 +423,7 @@ Permission denied: FileError.permission_denied
 ### The `Variant` type
 
 When each error condition needs to carry different data, you can use the
-standard library [`Variant`](/mojo/std/utils/variant/Variant) type instead of
+standard library [`Variant`](/docs/std/utils/variant/Variant/) type instead of
 an integer-based enumeration. Define a separate struct for each condition, then
 combine them into a single error type with a `comptime` alias:
 
@@ -486,7 +492,7 @@ distinguish between conditions without carrying different data per condition.
 
 ## The `Never` type
 
-`Never` is a type with no constructors—it can't be instantiated. This makes
+`Never` is a type with no initializers. It can't be instantiated. This makes
 it useful in error-handling signatures to express two opposite guarantees:
 
 - `raises YourErrorType -> Never` — The function *always* raises and never
@@ -535,7 +541,7 @@ This equivalency is especially useful in combination with
 ## Parametric raises
 
 You can write
-[generic functions](/mojo/manual/parameters/#parameters-and-generics) that
+[parameterized functions](/docs/manual/parameters/#parameters-and-generics) that
 propagate the error type from a function argument to the caller. This uses a
 compile-time parameter for the error type:
 
@@ -649,7 +655,7 @@ ValidationError(value): cannot be negative
 ```
 
 The error message still shows `ValidationError` because the runtime preserves
-the original error's [`Writable`](/mojo/std/format/Writable) output. But the
+the original error's [`Writable`](/docs/std/format/Writable/) output. But the
 compiler sees only `Error`, so you lose access to structured fields. Always use
 `raises YourErrorType` to maintain type safety.
 
@@ -735,18 +741,14 @@ examples in this section all use `Error` intentionally.
 
 :::
 
-By default, Mojo generates a stack trace when your program hits a segmentation
-fault. You can disable this by setting the
-`MOJO_ENABLE_STACK_TRACE_ON_CRASH` environment variable to `0` or `false`
-(case-insensitive).
-
-However, Mojo *doesn't* generate a stack trace when your program raises an
-error—this avoids the additional runtime overhead. To enable stack traces for
-raised errors, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable
-to any value other than `0` or `false` (case-insensitive).
+Mojo generates a stack trace when your program hits a segmentation fault.
+However, by default Mojo *doesn't* generate a stack trace when your program
+raises an error—this avoids the additional runtime overhead. To enable stack
+traces for raised errors, set the `MODULAR_DEBUG` environment variable to
+`stack-trace-on-error`, as shown in the examples below.
 
 Keep in mind that when you compile your program with
-[`mojo build`](/mojo/cli/build/), the compiler optimizes and strips symbols by
+[`mojo build`](/docs/cli/build/), the compiler optimizes and strips symbols by
 default, so often your stack trace won't be very useful.
 
 Consider this program:
@@ -772,7 +774,7 @@ mojo build stacktrace_error.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error
 ```
 
 ```output
@@ -791,7 +793,7 @@ mojo build --debug-level full stacktrace_error.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error
 ```
 
 ```output
@@ -812,7 +814,7 @@ locations: `main()` → `func1()` → `func2()` → `Error.__init__()`.
 
 :::note
 
-Running your program directly with [`mojo run`](/mojo/cli/run) or
+Running your program directly with [`mojo run`](/docs/cli/run/) or
 `mojo` doesn't include debug symbols in the stack trace, even with
 `--debug-level full`. Use `mojo build` with `-g` and run the compiled binary
 for symbolicated stack traces.
@@ -823,7 +825,7 @@ for symbolicated stack traces.
 
 You can bind the `Error` instance to a variable in the `except` clause and
 call its
-[`get_stack_trace()`](/mojo/std/builtin/error/Error#get_stack_trace) method
+[`get_stack_trace()`](/docs/std/builtin/error/Error/#get_stack_trace) method
 to get the stack trace as an `Optional[String]`. The method returns `None` if
 stack trace collection was disabled or unavailable:
 
@@ -856,7 +858,7 @@ mojo build --debug-level full stacktrace_error_capture.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error_capture
 ```
 
 ```output
@@ -899,14 +901,14 @@ like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
-content = f.read()
+var f = open(input_file, "r")
+var content = f.read()
 # Process the content as needed
 # Close the file handle
 f.close()
 ```
 
-Calling [`close()`](/mojo/std/io/file/FileHandle#close) releases the
+Calling [`close()`](/docs/std/io/file/FileHandle/#close) releases the
 memory and other operating system resources associated with the opened file. If
 your program were to open many files without closing them, you could exhaust the
 resources available to your program and cause errors. The problem is even worse
@@ -916,24 +918,24 @@ program were to crash instead of exiting normally, that buffered data could be
 lost instead of being written to storage.
 
 The example above includes the call to `close()`, but it ignores the
-possibility that [`read()`](/mojo/std/io/file/FileHandle#read) could
+possibility that [`read()`](/docs/std/io/file/FileHandle/#read) could
 raise an error, which would prevent the `close()` from executing.
 To handle this scenario, you could rewrite the code to use `try` like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
+var f = open(input_file, "r")
 
 try:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 finally:
     # Ensure that the file handle is closed even if read() raises an error
     f.close()
 ```
 
-However, the [`FileHandle`](/mojo/std/io/file/FileHandle) struct
-returned by [`open()`](/mojo/std/io/file/open) is a context manager.
+However, the [`FileHandle`](/docs/std/io/file/FileHandle/) struct
+returned by [`open()`](/docs/std/io/file/open/) is a context manager.
 When used with Mojo's `with` statement, a context manager ensures that the
 resources it manages are properly released at the end of the block, even if an
 error occurs. In the case of a `FileHandle`, that means the call to `close()`
@@ -943,7 +945,7 @@ like this:
 
 ```mojo
 with open(input_file, "r") as f:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 ```
 
@@ -954,24 +956,24 @@ different file:
 
 ```mojo
 with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
-    input_text = f_in.read()
-    output_text = input_text.upper()
+    var input_text = f_in.read()
+    var output_text = input_text.upper()
     f_out.write(output_text)
 ```
 
 `FileHandle` is perhaps the most commonly used context manager. Other examples
 of context managers in the Mojo standard library are
-[`NamedTemporaryFile`](/mojo/std/tempfile/tempfile/NamedTemporaryFile),
-[`TemporaryDirectory`](/mojo/std/tempfile/tempfile/TemporaryDirectory),
-[`BlockingScopedLock`](/mojo/std/utils/lock/BlockingScopedLock), and
-[`assert_raises`](/mojo/std/testing/testing/assert_raises). You can also
+[`NamedTemporaryFile`](/docs/std/tempfile/tempfile/NamedTemporaryFile/),
+[`TemporaryDirectory`](/docs/std/tempfile/tempfile/TemporaryDirectory/),
+[`BlockingScopedLock`](/docs/std/utils/lock/BlockingScopedLock/), and
+[`assert_raises`](/docs/std/testing/testing/assert_raises/). You can also
 create your own custom context managers, as described in [Write a custom context
 manager](#write-a-custom-context-manager) below.
 
 ## Write a custom context manager
 
 Writing a custom context manager is a matter of defining a
-[struct](/mojo/manual/structs) that implements two special *dunder* methods
+[struct](/docs/manual/structs/) that implements two special *dunder* methods
 ("double underscore" methods): `__enter__()` and `__exit__()`:
 
 - `__enter__()` is called by the `with` statement to enter the runtime context.
@@ -1019,9 +1021,9 @@ struct Timer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -1094,9 +1096,9 @@ struct ConditionalTimer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -1130,7 +1132,7 @@ def main() raises:
                 print("continue executed")
                 continue
 
-            j = flaky_identity(i)
+            var j = flaky_identity(i)
             print("j =", j)
 
             print("Ending execution")
@@ -1166,7 +1168,7 @@ Unhandled exception caught during execution: really bad
 ### Handle typed errors in `__exit__()`
 
 The `__exit__(self, error: Error)` overload handles only `Error` values.
-To handle typed errors, implement a generic `__exit__()` method with a
+To handle typed errors, implement a parameterized `__exit__()` method with a
 compile-time error type parameter:
 
 ```mojo
@@ -1175,13 +1177,12 @@ def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
 
 This method receives the typed error directly, preserving its full type
 information. You can use
-[reflection](/mojo/manual/reflection/) to inspect the error
+[reflection](/docs/manual/metaprogramming/reflection/) to inspect the error
 type at compile time. For example, you can:
 
-- `get_type_name[ErrType]()` — Get the error type's name as a string.
+- `reflect[ErrType].name()` — Get the error type's name as a string.
 - `comptime if conforms_to(ErrType, Writable)` — Check if the error
-  implements `Writable`.
-- `trait_downcast[Writable](err)` — Access the error through its `Writable`
+  implements `Writable`, and if so, access the error through its `Writable`
   interface.
 
 The following `ResourceGuard` example demonstrates this pattern:
@@ -1213,12 +1214,12 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name, "(no error)")
 
     def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
-        comptime type_name = get_type_name[ErrType]()
+        comptime type_name = reflect[ErrType].name()
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 
         comptime if conforms_to(ErrType, Writable):
-            print("  Message:", trait_downcast[Writable](err))
+            print("  Message:", err)
 
         return self.suppress_errors
 ```

@@ -15,9 +15,9 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   lifecycle, API docstrings, and how to validate docstrings.
 
 - [docstring-style-guide.md](docstring-style-guide.md)—**Mojo docstring style guide**:
-  How to write API docs (docstrings) in Mojo: Markdown usage, code font,
-  Parameters and Constraints sections, and alignment with the Google Python
-  docstring style.
+  How to write API docs (docstrings) in Mojo: voice and tone, named sections
+  (including `Safety:`), formatting rules, and per-declaration-level conventions
+  for packages, modules, types, fields, aliases, and functions.
 
 - [faq.md](faq.md)—**Frequently asked questions**: Contributor-focused FAQ for
   the standard library (platform support, bug reporting, `AnyType` vs
@@ -27,9 +27,15 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
   governance structure**: Who leads the stdlib, how reviews and proposals work,
   and how the structure may evolve.
 
+- [adding-gpu-targets.md](adding-gpu-targets.md)—**Adding a new GPU target**:
+  Contributor guide for extending `std/gpu/host/info.mojo` with a new GPU
+  architecture, covering the MLIR target configuration and the `data_layout`
+  string format.
+
 ## Other docs
 
-- [`/mojo/docs`](/mojo/docs): Source docs for docs.modular.com/mojo.
+- [`oss/modular/mojo/docs`](https://www.mojolang.org/docs): Mojo user
+  documentation (published at www.mojolang.org).
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.

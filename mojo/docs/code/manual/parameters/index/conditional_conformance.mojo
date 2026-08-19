@@ -13,17 +13,18 @@
 
 
 @fieldwise_init
-struct Container[ElementType: Movable & ImplicitlyDestructible]:
+struct Container[ElementType: Movable & Deinitable]:
     var element: Self.ElementType
 
+    @__allow_legacy_custom_self_type
     def __str__[
-        StrElementType: Writable & Copyable, //
+        StrElementType: Writable & Copyable & Deinitable, //
     ](self: Container[StrElementType]) -> String:
         return String(self.element)
 
 
 def main():
-    float_container = Container(5.0)
-    string_container = Container("Hello")
+    var float_container = Container(5.0)
+    var string_container = Container("Hello")
     print(float_container.__str__())
     print(string_container.__str__())

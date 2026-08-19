@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
-from tensor import OutputTensor
+import extensibility
+from extensibility import OutputTensor
 
 
-@compiler.register("fails_to_elaborate")
+@extensibility.register("fails_to_elaborate")
 struct FailsToElaborate:
     @staticmethod
     def execute(

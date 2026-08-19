@@ -77,7 +77,6 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
-    tags = ["manual"],  # TODO: Disabled in CI - fix vectorization issue
 )
 
 custom_op_example_py_binary(
@@ -96,9 +95,8 @@ mojo_binary(
     srcs = ["benchmarks.mojo"],
     deps = [
         ":kernels",
-        "//max:compiler",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
         "@mojo//:std",
     ],
 )
@@ -108,9 +106,9 @@ mojo_library(
     srcs = [":kernel_sources"],
     validate_missing_docs = False,
     deps = [
-        "//max:compiler",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

@@ -15,8 +15,8 @@ from std.random import shuffle, seed
 from std.sys import align_of, size_of, argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -68,9 +68,9 @@ def test_matmul_sm100_epilogue[
     k: KType,
     is_benchmark: Bool = False,
 ) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -78,24 +78,24 @@ def test_matmul_sm100_epilogue[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_copy_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_copy_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -115,12 +115,12 @@ def test_matmul_sm100_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_prod[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -133,17 +133,17 @@ def test_matmul_sm100_epilogue[
         return y
 
     seed(1234)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
     for i in range(M):
         for j in range(N):
             shuffle(scales)
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](scales[0])
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](scales[0])
+            c_host_copy[i, j] = c_host[i, j]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -165,7 +165,7 @@ def test_matmul_sm100_epilogue[
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor, a_tensor, b_tensor)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -216,12 +216,12 @@ def test_matmul_sm100_epilogue[
 
         var c_host_copy_lt = c_host_copy.to_layout_tensor()
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c_host_copy_lt)
         def test_lambda_add_coords_prod_local[
             _dtype: DType,
-            width: Int,
+            width: SIMDLength,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -234,18 +234,15 @@ def test_matmul_sm100_epilogue[
             # alias compute_lambda = elementwise_compute_lambda_fn.value()
             for i in range(M):
                 for j in range(N):
-                    comptime assert c_host_ref.flat_rank >= 2
-                    c_host_ref[
-                        (Idx(i), Idx(j))
-                    ] = test_lambda_add_coords_prod_local(
-                        IndexList[2](i, j),
-                        c_host_ref[(Idx(i), Idx(j))],
+                    comptime assert c_host_ref.flat_rank == 2
+                    c_host_ref[i, j] = test_lambda_add_coords_prod_local(
+                        IndexList[2](i, j), c_host_ref[i, j]
                     )
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.ptr,
-            c_host_ref.ptr,
+            c_host._storage,
+            c_host_ref._storage,
             c_host.num_elements(),
             atol=0.0001,
             rtol=rtol,
@@ -253,11 +250,6 @@ def test_matmul_sm100_epilogue[
 
         print("\n=== TEST PASSED ===\n")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    c_host_copy_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -296,9 +288,9 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Int(100),
+                        Idx[2560],
+                        Idx[8192],
                         is_benchmark=is_bench,
                     )
 
@@ -315,9 +307,9 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(17)),
-                        Idx[1024](),
-                        Idx[1024](),
+                        Int(17),
+                        Idx[1024],
+                        Idx[1024],
                         is_benchmark=is_bench,
                     )
 
@@ -342,9 +334,9 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx[1024](),
-                        Idx[1024](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024],
                         is_benchmark=is_bench,
                     )
 
@@ -361,8 +353,8 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(512)),
-                        Idx[4096](),
-                        Idx[1024 + 16](),
+                        Int(512),
+                        Idx[4096],
+                        Idx[1024 + 16],
                         is_benchmark=is_bench,
                     )

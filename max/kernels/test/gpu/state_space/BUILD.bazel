@@ -1,8 +1,9 @@
 load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
-# TODO(GEX-3342): Metal GPU execution not supported for causal_conv1d kernels
+# TODO(GEX-3342): Metal GPU execution not supported for state_space kernels
 _EXTRA_CONSTRAINTS = {
     "test_causal_conv1d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -36,6 +37,18 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_gated_delta.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_gated_delta_conv1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+_GPU_MEMORY = {
+    "test_gated_delta.mojo": "3",
 }
 
 [
@@ -43,8 +56,9 @@ _EXTRA_CONSTRAINTS = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         exec_properties = {
-            "test.resources:gpu-memory": "2",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),

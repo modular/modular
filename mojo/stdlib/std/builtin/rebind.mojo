@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+import std.memory
+
 
 @always_inline("builtin")
 def rebind[
@@ -68,8 +70,8 @@ def rebind[
     Returns:
         A reference to the value rebound as `dest_type`.
     """
-    lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
+    var lit = __get_mvalue_as_litref(src)
+    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
     return __get_litref_as_mvalue(rebound)
 
 
@@ -102,8 +104,8 @@ def rebind_var[
         An owned value rebound as `dest_type`.
     """
     ref dest_ref = rebind[dest_type](src)
-    dest = UnsafePointer(to=dest_ref).take_pointee()
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
+    dest = Pointer(to=dest_ref).unsafe_take_pointee()
+    std.memory.forget_deinit(src^)
 
 
 comptime downcast[
@@ -116,70 +118,3 @@ Parameters:
     T: The type to downcast.
     _Trait: The trait type to downcast to.
 """
-
-
-@always_inline
-def trait_downcast[
-    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
-](var src: T) -> downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms the provided `Trait`. If `T`, after resolving
-    to a concrete type, does not actually conform to `Trait`, a compilation
-    error would occur.
-
-    Parameters:
-        T: The original type.
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    return rebind[downcast[T, Trait]](src)
-
-
-def trait_downcast_var[
-    T: Movable,
-    //,
-    Trait: type_of(Movable),
-](var src: T) -> downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms to the provided `Trait`. If `T`, after
-    resolving to a concrete type, does not actually conform to `Trait`, a
-    compilation error will occur.
-
-    Parameters:
-        T: The original type (inferred).
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    return rebind_var[downcast[T, Trait]](src^)
-
-
-@always_inline
-def trait_downcast[
-    T: AnyType, //, Trait: type_of(AnyType)
-](ref src: T) -> ref[src] downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms the provided `Trait`. If `T`, after resolving
-    to a concrete type, does not actually conform to `Trait`, a compilation
-    error would occur.
-
-    Parameters:
-        T: The original type.
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    return rebind[downcast[T, Trait]](src)

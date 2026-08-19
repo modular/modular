@@ -28,7 +28,7 @@ The benchmark reports:
 - Comparison ratio (SM100 / cuDNN)
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.conv.gpu.nvidia.sm100.conv2d import (
     conv2d_fprop,
@@ -147,13 +147,13 @@ def bench_conv2d[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
     # Initialize with random data
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -239,7 +239,7 @@ def bench_conv2d[
     ctx.synchronize()
 
     # ==================== Benchmark SM100 implicit im2col ====================
-    @parameter
+    @__parameter
     @__copy_capture(input_tt, filter_tt, output_sm100_tt)
     def sm100_implicit_kernel() raises:
         conv2d_fprop(output_sm100_tt, input_tt, filter_tt, problem, ctx)
@@ -249,7 +249,7 @@ def bench_conv2d[
     var sm100_tflops = Float64(flops) / (sm100_time_ms / 1000) / 1e12
 
     # ==================== Benchmark cuDNN ====================
-    @parameter
+    @__parameter
     @__copy_capture(
         input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
     )
@@ -270,8 +270,8 @@ def bench_conv2d[
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
-    var output_sm100_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_cudnn_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_sm100_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_cudnn_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
     ctx.enqueue_copy(output_sm100_host_ptr, output_sm100_dev)
     ctx.enqueue_copy(output_cudnn_host_ptr, output_cudnn_dev)
     ctx.synchronize()
@@ -284,9 +284,6 @@ def bench_conv2d[
         )
         if diff > max_diff:
             max_diff = diff
-
-    output_sm100_host_ptr.free()
-    output_cudnn_host_ptr.free()
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
@@ -316,16 +313,16 @@ def bench_conv2d[
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_sm100_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
+    _ = output_cudnn_host_ptr^
+    _ = output_sm100_host_ptr^
 
 
 def bench_all_configs[
@@ -389,12 +386,12 @@ def bench_all_configs[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -494,7 +491,7 @@ def bench_all_configs[
     ctx.synchronize()
 
     # Benchmark 1-SM
-    @parameter
+    @__parameter
     @__copy_capture(input_tt, filter_tt, output_1sm_tt)
     def kernel_1sm() raises:
         conv2d_fprop[config=config_1sm](
@@ -506,7 +503,7 @@ def bench_all_configs[
     var tflops_1sm = Float64(flops) / (time_1sm_ms / 1000) / 1e12
 
     # Benchmark 2-SM
-    @parameter
+    @__parameter
     @__copy_capture(input_tt, filter_tt, output_2sm_tt)
     def kernel_2sm() raises:
         conv2d_fprop[config=config_2sm](
@@ -518,7 +515,7 @@ def bench_all_configs[
     var tflops_2sm = Float64(flops) / (time_2sm_ms / 1000) / 1e12
 
     # Benchmark cuDNN
-    @parameter
+    @__parameter
     @__copy_capture(
         input_dev_tensor, filter_nchw_dev_tensor, output_cudnn_dev_tensor
     )
@@ -569,16 +566,15 @@ def bench_all_configs[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_1sm_dev^
     _ = output_2sm_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def bench_residual[
@@ -643,12 +639,12 @@ def bench_residual[
     )
 
     # Allocate
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var source_host_ptr = alloc[Scalar[dtype]](output_size)
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
-    rand(source_host_ptr, output_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var source_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
+    rand(source_host_ptr)
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -709,7 +705,7 @@ def bench_residual[
     ctx.synchronize()
 
     # Benchmark conv2d only
-    @parameter
+    @__parameter
     @__copy_capture(input_tt, filter_tt, output_tt)
     def kernel_conv() raises:
         conv2d_fprop[config=config_1sm](
@@ -721,7 +717,7 @@ def bench_residual[
     var tflops_conv = Float64(flops) / (time_conv_ms / 1000) / 1e12
 
     # Benchmark conv2d + fused residual
-    @parameter
+    @__parameter
     @__copy_capture(input_tt, filter_tt, output_res_tt, source_tt)
     def kernel_residual() raises:
         conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
@@ -765,15 +761,14 @@ def bench_residual[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    source_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = output_dev^
     _ = output_res_dev^
     _ = source_dev^
+    _ = source_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

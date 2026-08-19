@@ -23,7 +23,7 @@ on unvisited vertices are harmless as they all write the same level.
 """
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
 
@@ -43,11 +43,13 @@ def bfs_kernel(
     level: UnsafePointer[UInt32, MutAnyOrigin],
     prev_frontier: UnsafePointer[UInt32, MutAnyOrigin],
     curr_frontier: UnsafePointer[UInt32, MutAnyOrigin],
-    num_prev_frontier: Int,
+    num_prev_frontier_dev: Int32,
     num_curr_frontier: UnsafePointer[UInt32, MutAnyOrigin],
     curr_level: UInt32,
 ):
     """BFS kernel: frontier-based traversal with atomic operations."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_prev_frontier = Int(num_prev_frontier_dev)
     var i = block_idx.x * block_dim.x + thread_idx.x
 
     if i < num_prev_frontier:
@@ -129,13 +131,13 @@ def main() raises:
         if grid_size == 0:
             grid_size = 1
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
             d_level,
             d_prev_frontier,
             d_curr_frontier,
-            num_prev_frontier,
+            Int32(num_prev_frontier),
             d_num_curr_frontier,
             curr_level,
             grid_dim=(grid_size, 1, 1),

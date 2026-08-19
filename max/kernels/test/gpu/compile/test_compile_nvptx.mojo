@@ -15,11 +15,12 @@ from std.math import exp2
 from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.compile import _compile_code
-from std.gpu.host.info import A100
-from std.memory import stack_allocation
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.compile import _compile_code
+from max.gpu.host.info import A100
+from std.memory import unsafe_stack_allocation
 
 
 def kernel(x: Int) -> Int:
@@ -55,7 +56,7 @@ def test_compile_function() raises:
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[kernel, dump_asm=True]()
+        _ = ctx.compile_function[kernel, dump_asm=True]()
 
 
 def kernel_inlined_assembly():
@@ -72,9 +73,7 @@ def test_compile_function_with_assembly() raises:
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=True
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=True]()
 
 
 # CHECK-LABEL: test_compile_function_with_path
@@ -86,9 +85,7 @@ def test_compile_function_with_path() raises:
 
     with DeviceContext() as ctx:
         comptime out_file = Path("/tmp/my_file.ptx")
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=out_file
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=out_file]()
         print(out_file.read_text())
 
 
@@ -103,13 +100,11 @@ def test_compile_function_with_path_func() raises:
         var out_file_name = "my_file_2.ptx"
         comptime out_dir = Path("/tmp")
 
-        @parameter
+        @__parameter
         def dummy_fn() capturing -> Path:
             return out_dir / out_file_name
 
-        _ = ctx.compile_function_unchecked[
-            kernel_inlined_assembly, dump_asm=dummy_fn
-        ]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=dummy_fn]()
 
         var out_file = out_dir / out_file_name
         print(out_file.read_text())
@@ -120,7 +115,9 @@ def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
     def do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
-        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
+        var a = unsafe_stack_allocation[
+            20, Int32, address_space=AddressSpace.SHARED
+        ]()
         a[thread_idx.x] = src[0]
         barrier()
 
@@ -133,9 +130,7 @@ def test_short_nvptx_ptr() raises:
     # CHECK-NEXT: ld.global.b32
     # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
-        _ = ctx.compile_function_unchecked[
-            do_some_shared_mem_op, dump_asm=True
-        ]()
+        _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
 
 
 # CHECK-LABEL: test_exp2_compile

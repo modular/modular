@@ -52,9 +52,9 @@ def main() raises:
 """
 
 
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable
-from .struct_fields import offset_of
+from .reflect import reflect
 
 
 struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
@@ -162,27 +162,26 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
         writer.write(self._file_name, ":", self._line, ":", self._col)
 
     comptime _LineNiche = -1
-    comptime _LineByteOffset = offset_of[Self, name="_line"]()
+    comptime _LineByteOffset = reflect[Self].field_offset[name="_line"]()
 
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
-    ):
-        (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
-            Int
-        ]().init_pointee_move(Self._LineNiche)
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
+        memory.unsafe_bitcast[Byte]().unsafe_offset(
+            Self._LineByteOffset
+        ).unsafe_bitcast[Int]().write(Self._LineNiche)
 
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
-        return (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
-            Int
-        ]()[] == Self._LineNiche
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(Self._LineByteOffset)
+            .unsafe_bitcast[Int]()[]
+            == Self._LineNiche
+        )
 
 
 @always_inline("nodebug")
@@ -208,7 +207,7 @@ def source_location() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._int_mlir_index(),
+        inlineCount=Int(0).__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -217,8 +216,8 @@ def source_location() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(mlir_value=line),
-        Int(mlir_value=col),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )
 
@@ -272,7 +271,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=inline_count._int_mlir_index(),
+        inlineCount=inline_count.__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -281,7 +280,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(mlir_value=line),
-        Int(mlir_value=col),
+        Int(SIMDLength(mlir_value=line)),
+        Int(SIMDLength(mlir_value=col)),
         StaticString(file_name),
     )

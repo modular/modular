@@ -14,7 +14,7 @@
 
 import std.sys
 
-from std.gpu.host.compile import _compile_code, get_gpu_target
+from max.gpu.host.compile import _compile_code, get_gpu_target
 from layout import Coord, Idx
 from std.testing import assert_true
 
@@ -26,7 +26,7 @@ def kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
         v: Runtime value for dynamic indexing.
         ptr: Output pointer to store results.
     """
-    var l = Coord(Idx[1](), Coord(Idx(v), Idx[3]()))
+    var l = Coord(Idx[1], Coord(v, Idx[3]))
     ptr[0] = Int32(l[0].value())
     ptr[1] = Int32(l[1][0].value())
 

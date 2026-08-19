@@ -2,7 +2,6 @@
 title: Operators
 sidebar_label: Operators
 sidebar_position: 5
-id: operators
 description: >-
   Arithmetic, comparison, bitwise, boolean, and assignment
   operators in Mojo, with precedence and examples.
@@ -307,7 +306,7 @@ print("=" * 40)   # a line of 40 equals signs
 
 :::note
 When building a string from multiple values, the multi-argument
-`String()` constructor is more efficient than chaining `+`:
+`String()` initializer is more efficient than chaining `+`:
 
 ```mojo
 var result = String("Point (", x, ", ", y, ")")

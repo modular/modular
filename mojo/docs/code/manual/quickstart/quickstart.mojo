@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.python import Python, PythonObject
+from std.python.numpy import copy_to_numpy_array
 
 
 def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:
         raise Error("No temperature data")
 
-    var total: Float64 = 0.0
-    for index in range(len(temps)):
-        total += temps[index]
+    var total = 0.0
+    for temp in temps:
+        total += temp
     return total / Float64(len(temps))
 
 
@@ -30,11 +31,11 @@ def main():
     print("Recorded", len(temps), "temperatures")
 
     for index in range(len(temps)):
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {round(avg, 2)}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -44,8 +45,8 @@ def main():
             print("Status: Cool week")
 
         var np = Python.import_module("numpy")
-        var pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
-        print("Temperature standard deviation:", np.std(pytemps))
-        _ = pytemps^
+        var pytemps = copy_to_numpy_array(temps)
+        var std_dev = np.std(pytemps)
+        print("Temperature standard deviation:", std_dev)
     except e:
         print("Error:", e)

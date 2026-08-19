@@ -107,7 +107,7 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
 
         sampled_requests: list[SampledRequest] = []
         for i, prompt in enumerate(sampled_prompts):
-            prompt_len = len(tokenizer(prompt).input_ids)
+            prompt_len = len(tokenizer.encode(prompt))
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
                 SampledRequest(

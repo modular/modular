@@ -1,472 +1,299 @@
-# Nightly: v0.26.3
+---
+title: Mojo nightly
+---
 
 This version is still a work in progress.
 
-## ✨ Highlights
+## Highlights
+
+- Code that performs many implicit conversions, most visibly large collection
+  literals, compiles faster: the compiler no longer runs parameter inference on
+  constructors that cannot be used for an implicit conversion in the first
+  place. Files that are mostly data, such as the standard library's Unicode
+  lookup tables, compile about 1.3x faster.
 
 ## Documentation
 
 ## Language enhancements
 
-- The ternary `if/else` expression now coerces each element to its contextual
-  type when it is obvious. For example, this works instead of producing an
-  error about incompatible metatypes:
+- A `thin` function type can now carry trailing `where` clauses, constraining
+  the parameters it declares. This lets a generic algorithm state what it
+  promises the function it is handed, instead of leaving the constraint to be
+  restated at every binding site.
 
   ```mojo
-    comptime some_type: Movable = Int if cond else String
+  comptime Kernel = def[w: Int](Int) thin -> None where (
+      w > 0, "width must be positive"
+  )
+
+  def apply[F: Kernel](x: Int):
+      F[4](x)     # ok
+      F[0](x)     # error: violated constraint
   ```
 
-- Unified closures now accept default capturing conventions when there are
-  explicit captures already.
+  The clause binds to the innermost function type, so a declaration-level
+  `where` that follows a function-type result needs that result parenthesized:
 
   ```mojo
-  def captures_with_default_convention():
-    var a, b, c, d = ("a", "b", "c", "d")
-    def my_fn() unified {mut a, b, c^, read}:
-      # capture:
-      # `a` by mut reference
-      # `b` by immut reference
-      # `c` by moving
-      # `d` by immut reference (the default 'read' convention)
-      use(a, b, c, d)
-  ```
-
-- Added `abi("C")` as a function effect for declaring C calling convention on
-  function definitions and function pointer types. Functions marked with
-  `abi("C")` use the platform C ABI (System V x86-64 / ARM64 AAPCS) for
-  struct arguments and return values, enabling safe interop with C libraries:
-
-  ```mojo
-  # C-ABI function definition (safe as a callback into C code)
-  def add(a: Int32, b: Int32) abi("C") -> Int32:
-      return a + b
-
-  # C-ABI function pointer type (safe for use with DLHandle.get_function)
-  var f = handle.get_function[def(Float64) abi("C") -> Float64]("sqrt")
-  ```
-
-  `DLHandle.get_function[]` now enforces that the type parameter carries
-  `abi("C")`, preventing silent ABI mismatches when loading C symbols.
-
-- String literals now support `\uXXXX` and `\UXXXXXXXX` unicode escape
-  sequences, matching Python. The resulting code point is stored as UTF-8.
-  Invalid code points and surrogates are rejected at parse time.
-
-- Added support for conditional `RegisterPassable` conformance.
-
-- Variadic lists and packs can be forwarded through runtime calls with `*pack`
-  when the callee takes a compatible variadic list/pack.
-
-  ```mojo
-  def callee[*Ts: Writable](*args: *Ts):
-      comptime for i in range(args.__len__()):
-          print(args[i])
-
-  def forwarder[*Ts: Writable](*args: *Ts):
-      callee(*args)
-
-  forwarder(1, "hello", 3.14)  # prints each value on a separate line
-  ```
-
-- Heterogenous variadic packs can now be specified with a `SomeType` helper
-  function. These two are equivalent:
-
-  ```mojo
-  def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
-  def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+  def make[n: Int]() -> (def() thin -> None) where n > 0: ...
   ```
 
 ## Language changes
 
-- Variadic parameters lists are now passed instead of `ParameterList` and
-  `TypeList` instead of `!kgen.param_list`. This makes it much more ergonomic to
-  work with these types, e.g. simple logic just works:
+- Renamed the `@parameter` decorator on parametric closures to
+  `@__parameter`. The deprecated `@parameter if` / `@parameter for`
+  forms are unchanged; prefer `comptime if` / `comptime for` for
+  compile-time control flow.
 
-  ```mojo
-  def callee[*values: Int]():
-      var v = 0
-      for i in range(len(values)):
-          v += values[i]
-      for elt in values:
-          v += elt
-  ```
+- The module & package system:
 
-  Similarly, the `ParameterList`/`TypeList` structs have other methods for
-  transforming the value list. As such, a variety of values from the `Variadic`
-  struct have started moving over to being members of these types.
+  - Directories may now have "namespace" semantics; a single directory name may
+    resolve across distinct locations on disk which share that name.
 
-- All Mojo functions now has a unique "function literal type". In practice, it
-  means that:
+    ```mojo
+    # .
+    # ├── one
+    # │   └── foo
+    # │       └── bar.mojo
+    # └── two
+    #     └── foo
+    #         └── baz.mojo
+    #
+    # Compiles with -Ione -Itwo
+    import foo.bar
+    import foo.baz
+    ```
 
-  ```mojo
-  # type_of(foo) != type_of(bar)
+  - Importing functions with the same name from different modules, combining
+    them into one overload set, is now an error, following a period of
+    deprecation.
 
-  def foo(): pass
-  def bar(): pass
-  ```
+  - Intra-package accesses without explicit `import`s are now an error,
+    following a period of deprecation.
 
-- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
-  this will upgrade to an error in the future.
-
-- Import statements of the form `from pkg import ...` no longer make `pkg`
-  available to the module.
+## Library stabilizations
 
 ## Library changes
 
-- Atomic operations have moved to a dedicated `std.atomic` module. The
-  `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
-  member has been renamed to `RELAXED` to align with conventions used by
-  other languages. Update existing code as follows:
-
-  ```mojo
-  # Before
-  from std.os import Atomic
-  from std.os.atomic import Atomic, Consistency, fence
-
-  _ = atom.load[ordering=Consistency.MONOTONIC]()
-
-  # After
-  from std.atomic import Atomic, Ordering, fence
-
-  _ = atom.load[ordering=Ordering.RELAXED]()
-  ```
-
-- `assert_raises` now catches custom `Writable` error types, not just `Error`.
-
-- Variadics of types have been moved to the `TypeList` struct.
-  One can write operations such as:
-
-  ```mojo
-  comptime assert TypeList[Trait=AnyType, Int, String]().contains[Bool]
-  ```
-
-- `abort(message)` now includes the call site location in its output. The
-  location is automatically captured and printed alongside the message. You can
-  also pass an explicit `SourceLocation` to override it:
-
-  ```mojo
-  abort("something went wrong")
-  # prints: ABORT: path/to/file.mojo:42:5: something went wrong
-
-  var loc = current_location()
-  abort("something went wrong", location=loc)
-  ```
-
-- `abort(message)` now prints its message on Nvidia and AMDGPU, including
-  block and thread IDs. Previously, the message was silently suppressed on
-  these GPUs. On Apple GPU, the message is silently suppressed for now.
-
-- `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
-  Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
-
-- Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
-  use the caller-specified `width` parameter instead of `Self.element_size`.
-
-- Added uninitialized memory read detection for float loads. When compiled
-  with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, every float load is checked
-  against the debug allocator's poison patterns (0xFF host fill and canonical
-  qNaN device fill). A match triggers `abort()` with a descriptive message.
-  When disabled (the default), zero runtime overhead. For MAX pipelines, set
-  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
-  allocator and the load-time checks automatically.
-
-- Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
-  targets at compile time. `is_apple_silicon()` now includes M5 in its check.
-
-- Added Apple M5 MMA intrinsics (`apple_mma_load`, `apple_mma_store`,
-  `_mma_apple`) in `std.gpu.compute.arch.mma_apple`, enabling hardware matrix
-  multiply-accumulate on Apple GPU.
-
-- Standard library types now use conditional conformances, replacing previous
-  `_constrained_conforms_to` checks:
-  - `Span`: `Writable`, `Hashable`
-  - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
-  - `Variant`: `Copyable`, `ImplicitlyCopyable`
-
-- `Tuple` now conditionally conforms to `Defaultable`, so generic
-  `T: Defaultable` code can default-construct tuples when all element types are
-  `Defaultable`.
-
-- `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
-  instead of aborting when a symbol is not found. This allows callers to handle
-  missing symbols gracefully.
-
-- GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
-  `Int`.
-
-  This is part of a broader migration to standardize on the `Int` type for all
-  sizes and offsets in Mojo.
-
-  To provide a gradual migration path, explicitly typed aliases are
-  available temporarily.
-
-  | Base         | `UInt` Accessor   | `Int` Accessor    |
-  |--------------|-------------------|-------------------|
-  | `thread_idx` | `thread_idx_uint` | `thread_idx_int`  |
-  | `thread_dim` | `thread_dim_uint` | `thread_dim_int`  |
-  | `block_dim`  | `block_dim_uint`  | `block_dim_int`   |
-  | `grid_dim`   | `grid_dim_uint`   | `grid_dim_int`    |
-  | `global_idx` | `global_idx_uint` | `global_idx_int`  |
-  | `lane_id`    | `lane_id_uint`    | `lane_id_int`     |
-  | `warp_id`    | `warp_id_uint`    | `warp_id_int`     |
-
-  Code can preserve its prior behavior by using a renaming import of the
-  `thread_idx_uint` alias:
-
-  ```diff
-  - from std.gpu import thread_idx
-  + from std.gpu import thread_idx_uint as thread_idx
-  ```
-
-  Note that `thread_idx_uint` and the other `_*uint` aliases will eventually
-  be deprecated and removed as well.
-
-  After a temporary deprecation acting as a "speed bump" in the 2026-03-29
-  nightly release, `thread_idx` etc. have changed from `UInt` to `Int`.
-
-  Code built with a version where `thread_idx` is still `UInt`, can proactively
-  migrate to the eventual `Int` behavior using the `thread_idx_int` alias:
-
-  ```diff
-  - from std.gpu import thread_idx
-  + from std.gpu import thread_idx_int as thread_idx
-
-  # ... update file to reflect change from `UInt` to `Int` ...
-  ```
-
-- Added `IterableOwned` trait to the iteration module. Types conforming to
-  `IterableOwned` implement `__iter__(var self)`, which consumes the collection
-  and returns an iterator that owns the underlying elements.
-  - `List` now conforms to `IterableOwned`.
-  - `Optional` now conforms to `IterableOwned`.
-  - `Deque` now conforms to `IterableOwned`.
-  - `LinkedList` now conforms to `IterableOwned`.
-  - `Dict` now conforms to `IterableOwned`.
-  - `Set` now conforms to `IterableOwned`.
-  - `Counter` now conforms to `IterableOwned`.
-  - `InlineArray` now conforms to `IterableOwned`.
-  - `Span` now conforms to `IterableOwned` (conditional on `T: Copyable`).
-    The owned iterator yields copies of elements by value.
-  - Iterator adaptors (`enumerate`, `zip`, `map`, `peekable`, `take_while`,
-    `drop_while`, `product`, `cycle`, `count`, `repeat`) now conform to
-    `IterableOwned`.
-  - Added owned overloads of `enumerate()`, `zip()`, `map()`, `peekable()`,
-    `take_while()`, `drop_while()`, `product()`, and `cycle()` that consume the
-    input iterable.
-
-- `CStringSlice` can no longer represent a null pointer. To represent
-  nullability use `Optional[CStringSlice]` which is guaranteed to have the same
-  size and layout as `const char*`, where `NULL` is the empty `Optional`.
-
-- `external_call`'s `return_type`'s requirements has been relaxed from
-  `TrivialRegisterPassable` to `RegisterPassable`.
-
-- Negative indexing on all stdlib collections has been removed to enable cheap
-  CPU bounds checks by default:
-  - `List`
-  - `Span`
-  - `InlineArray`
-  - `String`
-  - `StringSlice`
-  - `LinkedList`
-  - `Deque`
-  - `IntTuple`
-
-  Using a negative `IntLiteral` for indexing will now trigger a compile-time
-  error, for example:
-
-  ```text
-  /tmp/main.mojo:3:12: note: call expansion failed with parameter value(s): (..., ...)
-          print(x[-1])
-              ^
-  constraint failed: negative indexing is not supported, use e.g. `x[len(x) - 1]` instead
-  ```
-
-  Update any `x[-1]` to `x[len(x) - 1]`, following the compiler errors to
-  your call sites as above.
-
-  This does not affect any MAX ops that support negative indexing.
-
-- Bounds checking is now on by default for all collections on CPU, and will show
-  you the call site in your code where you triggered the out of bounds access:
-
-  ```mojo
-  def main():
-      var x = [1, 2, 3]
-      print(x[3])
-  ```
-
-  ```text
-  At: /tmp/main.mojo:3:12: Assert Error: index 3 is out of bounds, valid range is 0 to 2
-  ```
-
-  Bounds checking is still off by default for GPU to avoid performance
-  penalties. To enable it for tests:
-
-  ```bash
-  mojo build -D ASSERT=all main.mojo
-  ```
-
-  To turn off all asserts, including CPU bounds checking:
-
-  ```bash
-  mojo build -D ASSERT=none main.mojo
-  ```
-
-- `alloc[T](count, alignment)` will now `abort` if the underlying allocation
-  failed.
-
-- Added `Variadic.contains_value` comptime alias to check whether a variadic
-  sequence contains a specific value at compile time.
-
-- `ArcPointer` now conditionally conforms to `Hashable` and `Equatable` when
-  its inner type `T` does. Both `__eq__` and `__hash__` delegate to the managed
-  value, matching C++ `shared_ptr` and Rust `Arc` semantics. This makes
-  `ArcPointer` usable as a `Dict` key or `Set` element with value-based
-  equality. Pointer identity is still available via the `is` operator.
-
-- `Path` now conforms to `Comparable`, enabling lexicographic ordering and use
-  with `sort()`.
-
-- `range()` overloads that took differently-typed arguments or arguments that
-  were `Intable`/`IntableRaising` but not `Indexer` have been removed. Callers
-  should ensure they're passing consistent integral argument types when calling
-  `range()`.
-
-- `Consistency` now has a default constructor that selects `RELEASE` ordering on
-  Apple GPU and `SEQUENTIAL` on all other targets. All `Atomic` methods and
-  `fence` use this platform-aware default instead of hard-coding `SEQUENTIAL`.
-
-- `NDBuffer` has been fully removed. Please migrate to `TileTensor`.
-
-- Added a generic `__contains__` method to `Span` for any element type
-  conforming to `Equatable`, not just `Scalar` types.
-
-- Fixed `blocked_product` in `tile_layout` to zip block and tiler dimensions
-  per mode, matching the legacy `blocked_product` behavior.
-
-- Added `Span`-based overloads for `enqueue_copy`, `enqueue_copy_from`, and
-  `enqueue_copy_to` on `DeviceContext`, `DeviceBuffer`, and `HostBuffer`,
-  providing a safer alternative to raw `UnsafePointer` for host-device memory
-  transfers.
-
-- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
-  or `String.count_codepoints()`.
-
-- Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
-  the contained value by applying a function, returning `Optional[To]`.
-  `and_then()` chains operations that themselves return an `Optional`, enabling
-  flat-mapping over fallible computations.
-
-  ```mojo
-  var o = Optional[Int](42)
-
-  def closure(n: Int) unified {} -> String:
-    return String(n + 1)
-
-  var mapped: Optional[String] = o.map[To=String](closure)
-  print(mapped) # Optional("43")
-  ```
-
-- `parallelize`, `parallelize_over_rows` (in
-  `std.algorithm.backend.cpu.parallelize`) and the `elementwise` overloads in
-  `std.algorithm.functional` now accept an optional trailing
-  `ctx: Optional[DeviceContext] = None` parameter. When supplied, the provided
-  CPU `DeviceContext` is forwarded to `sync_parallelize` so that parallel work
-  runs on that context; when omitted, the previous behavior is preserved. This
-  is a step toward running CPU ops on specific NUMA nodes.
-
-## Tooling changes
-
-- The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
-  plain values instead of `([0] = value)`, and elides internal `_mlir_value`
-  wrapper fields from struct display.
-
-- `mojo format` no longer supports the deprecated `fn` keyword, nor the
-  removed `owned` argument convention.
-
-- Comptime function calls now print more nicely in error messages and generated
-  documentation, not including `VariadicList`/`VariadicPack` and including
-  keyword argument labels when required.
+- `StringDict` now conforms to `Writable` when its value type is `Writable`,
+  matching the existing behavior of `Dict`. This lets you `print()` a
+  `StringDict` or convert it to a `String`.
+
+- The `chars` argument of `strip()`, `lstrip()` and `rstrip()` on `StringSpan`,
+  `String` and `StringLiteral` is now an `ImmStringSpan`, so a mutable string
+  is accepted as `chars`, including the string being stripped (`s.strip(s)`).
+
+- `StringDict.__getitem__()` now accepts a `StringSpan`, so you can index a
+  `StringDict` with a borrowed string view without first allocating a
+  `String` just to perform the lookup.
+
+- Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
+  `Ts`, standardizing the naming convention used across the standard library.
+  The old name, `element_types`, remains as a deprecated alias.
+
+- Added experimental `DType.float6_e2m3fn` and `DType.float6_e3m2fn`, the two
+  6-bit encodings from the
+  [Open Compute microscaling specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+  Both are finite-only, so neither has an inf nor a NaN encoding.
+
+  These are experimental storage formats for packed weights rather than
+  general-purpose numeric types, and standard library support is deliberately
+  partial. As with the existing `DType.float4_e2m1fn`, they are excluded from
+  `is_numeric()`, arithmetic is not implemented, and converting to or from
+  another floating-point type is unsupported on every target, so values cannot
+  be printed either.
+
+- `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
+
+- Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
+  `is_trivially_deletable()` in `std.memory` in favor of
+  `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and
+  `IsTriviallyDeinitable[T]` in `std.traits`. The replacements are `comptime`
+  predicates rather than functions, so drop the call parens at use sites, for
+  example `IsTriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
+
+- Renamed `UnsafeMaybeUninit` to `MaybeUninit`. It conforms to `Movable`,
+  `Copyable`/`ImplicitlyCopyable`, and `Deinitable` only when the contained
+  type's own move, copy, or implicit deinitializer is trivial, since
+  moving, copying, or destroying a `MaybeUninit` only touches its raw bits,
+  never the contained value's own lifecycle methods. Gating conformance this way
+  turns what would otherwise be silent memory-safety bugs into compile-time
+  errors.
+
+- `Atomic` is now parameterized on a value type `T` instead of a `DType`.
+  Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
+  atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
+  and so on) still only support `Scalar` types.
+
+- Added `Pointer[T].unsafe_write(def() -> T)`, which initializes the pointee
+  with the value returned by a closure, constructing it directly in place rather
+  than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
+  this does not require the pointee type to be `Movable`.
+
+- Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
+  `unsafe_write()` for types that are trivially deinitializable (for example
+  `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
+  through `write()` can't leak a resource, so it's callable without first
+  destroying the previous value. Prefer it over `unsafe_write()` whenever the
+  pointee type is trivially deinitializable.
+
+- `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
+  mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
+  is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+
+- The following APIs have been migrated to unified closures: `sort`,
+  `debug_assert`, `Span.apply`.
+
+- Uncaught exceptions now print to `stderr`, not `stdout`.
 
 ## GPU programming
 
-- Added support for AMD MI250X accelerators.
+## Tooling changes
 
-## ❌ Removed
+- `mojo doc` now reports the condition of a conditional trait conformance, and
+  the generated API docs show it alongside the trait. Previously the condition
+  was dropped, making a conditional conformance indistinguishable from an
+  unconditional one. Also fixed rendering of some `where` clauses.
 
-- The `escaping` function effect is no longer supported. Migrate
-  `def(...) escaping -> T` closures to `unified` closures.
+## Removed
 
-- The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
+This release completes the removal of APIs deprecated during the v1.0 cycle.
+
+- Removed the temporary `InlineArray` alias for `Array`, including its
+  re-exports from `std.collections` and the prelude. Use `Array` directly.
+
+- Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
+  It timed host wall-clock, not GPU work, and reported the elapsed time with the
+  operands reversed. Time a block of host code with
+  [`perf_counter_ns()`](/docs/std/time/time/perf_counter_ns/) directly, and use
+  a GPU profiler such as Nsight Systems or `rocprof` for device timings.
+
+- Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
   instead.
 
-- Removed the `store_release`, `store_relaxed`, `load_acquire`, and
-  `load_relaxed` helpers from `std.gpu.intrinsics`. Use
-  [`Atomic[dtype, scope=...].store`](/mojo/std/atomic/atomic/Atomic/#store) and
-  [`Atomic[dtype, scope=...].load`](/mojo/std/atomic/atomic/Atomic/#load) with
-  the desired [`Ordering`](/mojo/std/atomic/atomic/Ordering/) instead:
+- Removed `String.set_byte_length()`, an internal helper that set the length
+  field without reserving capacity.
 
-  ```mojo
-  # Before
-  from std.gpu.intrinsics import store_release, load_acquire
-  store_release[scope=Scope.GPU](ptr, value)
-  var v = load_acquire[scope=Scope.GPU](ptr)
+- Removed the `validate` parameter from
+  [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
+  validates. Passing `validate=False` did not skip any work on valid input; it
+  only turned characters outside the base64 alphabet into silently corrupt
+  output bytes. Drop `[validate=True]` from existing calls; calls that relied on
+  the default now raise instead of returning garbage.
 
-  # After
-  from std.atomic import Atomic, Ordering
-  Atomic[dtype, scope="device"].store[ordering=Ordering.RELEASE](ptr, value)
-  var v = Atomic[dtype, scope="device"].load[ordering=Ordering.ACQUIRE](ptr)
-  ```
+- Removed the origin aliases left over from the `Immut` to `Imm` and
+  `External` to `Untracked` renames. Use the surviving spelling in each case:
+  `ImmOrigin` for `ImmutOrigin`, `ImmUnsafeAnyOrigin` for
+  `ImmutUnsafeAnyOrigin`, `ImmStaticOrigin` for `StaticConstantOrigin`,
+  `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
+  `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
+  `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
 
-## 🛠️ Fixed
+- Removed the pre-unification pointer aliases `MutUnsafePointer`,
+  `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
+  `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
+  `ImmOpaquePointer`, and `OptionalPointer` instead. `UnsafePointer` itself
+  remains available, but is deprecated in favor of `Pointer`.
 
-- Fixed pack inference failing with `could not infer type of parameter pack ...
-  given value with unresolved type` when passing list, dict, set, or slice
-  literals to a `*Ts`-bound variadic pack parameter (e.g.
-  `def foo[*Ts: Iterable](*args: *Ts)`). Pack inference now applies the same
-  default-type fallback that single-argument trait-bound parameters already
-  use, so `foo([1, 2, 3], [4, 5, 6])` resolves each literal to its default
-  type (e.g. `List[Int]`) before binding the pack.
+- Removed the raw memory functions superseded by their `unsafe_`-prefixed
+  spellings: `memcpy`, `memset`, `memset_zero`, `uninit_move_n`,
+  `uninit_copy_n`, and `destroy_n`. Use `unsafe_memcpy`, `unsafe_memset`,
+  `unsafe_memset_zero`, `unsafe_uninit_move_n`, `unsafe_uninit_copy_n`, and
+  `unsafe_destroy_n` instead.
 
-- Fixed `mojo` aborting at startup with `std::filesystem::filesystem_error`
-  when `$HOME` is not traversable by the running UID (common in containerized
-  CI where the image's build-time UID differs from the runtime UID). The
-  config search now treats permission errors as "not found" and falls through
-  to the next candidate.
-  ([Issue #6412](https://github.com/modular/modular/issues/6412))
+- Removed the `size` aliases left from the `size` to `length` rename:
+  `SIMD.size`, `Array.size`, `TypeList.size`, and the `SIMDSize` alias for
+  `SIMDLength`. Use `length` and `SIMDLength`.
 
-- Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.
-  The discovery script constructed the library filename without the ABI flags
-  suffix (e.g. looked for `libpython3.14.dylib` instead of
-  `libpython3.14t.dylib`).
-  ([Issue #6366](https://github.com/modular/modular/issues/6366))
-- Fixed `RTLD.LOCAL` having the wrong value on Linux. It was set to `4`
-  (`RTLD_NOLOAD`) instead of `0`, causing `dlopen` with `RTLD.NOW | RTLD.LOCAL`
-  to fail. ([Issue #6410](https://github.com/modular/modular/issues/6410))
+- Removed the `as_immutable()` and `get_immutable()` methods on `Pointer`,
+  `Span`, and `StringSpan`. Use `as_imm()`.
 
-- Fixed `mojo format` crashing after upgrading Mojo versions due to a stale
-  grammar cache. ([Issue #6144](https://github.com/modular/modular/issues/6144))
+- Removed the `ImmutSpan` alias. Use `ImmSpan`.
 
-- Fixed `atof` producing incorrect results for floats near the
-  normal/subnormal boundary (e.g., `Float64("4.4501363245856945e-308")`
-  returned half the correct value).
-  ([#6196](https://github.com/modular/modular/issues/6196))
+- Removed `String.as_string_slice()`. Construct a `StringSpan` from the string
+  instead: `StringSpan(my_string)`.
 
-- [Issue #5872](https://github.com/modular/modular/issues/5872): Fixed a
-  compiler crash ("'get_type_name' requires a concrete type") when using
-  default `Writable`, `Equatable`, or `Hashable` implementations on structs
-  with MLIR-type fields (e.g. `__mlir_type.index`). The compiler now correctly
-  reports that the field does not implement the required trait.
+- Removed the `ImplicitlyDestructible` and `ImplicitlyDeletable` aliases. Use
+  `Deinitable`.
 
-- Fixed `Atomic.store` silently dropping the requested `scope`. The previous
-  implementation lowered to `atomicrmw xchg` without forwarding `syncscope`,
-  so `Atomic[..., scope="device"].store(...)` was emitting a system-scope
-  store on NVPTX (extra L2/NVLink fences) and an over-synchronized store on
-  AMDGPU. `Atomic.store` now lowers via `pop.store atomic syncscope(...)`,
-  emitting `st.release.<scope>` on NVPTX and a properly-scoped LLVM atomic
-  store on AMDGPU. The Mojo API surface is unchanged.
+- Removed the deprecated ownership-transfer methods: `List.steal_data()` and
+  `OwnedPointer.steal_data()` are now `unsafe_take_allocation()`,
+  `OwnedPointer.take()` is `into_inner()`, and `Variant.take()` and
+  `Variant.unsafe_take()` are `unwrap()` and `unsafe_unwrap()`.
 
-- Fixed `Process.run()` not inheriting the parent's environment variables.
-  Child processes spawned via `Process.run()` now correctly receive the
-  parent's environment.
+- Removed the `Pointer` methods superseded by their `unsafe_`-prefixed
+  spellings: `as_noalias_ptr()`, `destroy_pointee()`, `destroy_pointee_with()`,
+  `init_pointee_move()`, `init_pointee_copy()`, and `init_pointee_move_from()`.
+  Use `unsafe_as_noalias()`, `unsafe_deinit_pointee()`,
+  `unsafe_deinit_pointee_with()`, `unsafe_write()`, and
+  `unsafe_write_move_from()`. The `Pointer.type` alias for `Pointer.T` is gone
+  as well.
+
+- Removed the `ConditionalType` type function and the `std.utils.type_functions`
+  module. Use the ternary expression `T if cond else U`.
+
+- Removed `trait_downcast()`. Constrain on the trait instead, with
+  `conforms_to(type_of(src), Trait)` in a `where` clause or a
+  `comptime assert`.
+
+- Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
+  an argument to `run(f)` instead, which accepts a unified closure.
+
+- Removed `AnyCoroutine`, `Coroutine` and `RaisingCoroutine` from the prelude,
+  and made the module that defines them private. Mojo's async support is
+  unfinished, and these types being globally visible led people to build on an
+  API that carries no stability guarantees. `async def` is unaffected: the
+  compiler still synthesizes these types for you, so they continue to appear in
+  inferred types and diagnostics. There is no supported way to name them
+  directly.
+
+- Removed the async task API from the public `std.runtime.asyncrt` module,
+  which is now private. `initialize_runtime()` and `parallelism_level()` are
+  unaffected and have moved up to the `std.runtime` package, so import them
+  from `std.runtime` instead of `std.runtime.asyncrt`.
+
+- Removed support for `.mojopkg` files after a period of deprecation. Use
+  `.mojoc` files instead.
+
+## Fixed
+
+- `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
+  files next to the host output file. Building a kernel that an earlier build
+  had already compiled could write them into the earlier build's output
+  directory, or skip them with no diagnostic.
+
+- Parametric `raises` now accepts any primary expression as the thrown type in
+  a function signature, matching the syntax positions where types otherwise
+  appear. This most notably fixes `raises Self.SomeAssocType` on trait and
+  struct methods, which would previously fail with an error. The parenthesized
+  workaround (`raises (Self.DriveErrorType)`) is no longer required.
+
+- An integer `range()` with a step of zero is now always empty. It previously
+  used to be an infinite loop - iterating forever at runtime, and hanging the
+  compiler at comptime.
+
+- Fixed `ceildiv()` returning `0` for unsigned operands near the type's
+  maximum value. The unsigned code path computed `numerator + denominator -
+  1`, which overflows and wraps for large operands; it now derives the
+  ceiling from the floor division and remainder instead.
+
+- `Counter.most_common(n)` now returns all elements when `n` exceeds the
+  number of unique elements, matching Python, instead of aborting.
+
+- `os.path.join()` now inserts separators based on the accumulated path rather
+  than the first argument, so `join("/", "a", "b")` returns `/a/b` (previously
+  `/ab`) and `join("a", "b/", "c")` returns `a/b/c` (previously `a/b//c`).
+
+- `base64.b64decode()` now raises an error when the input length is not
+  divisible by 4 instead of reading past the end of the input (or aborting
+  when asserts are enabled).
+
+- On macOS, `os.stat()` and `os.lstat()` no longer return a negative
+  `st_mode` for regular files. The underlying `mode_t` and `nlink_t` C type
+  aliases were declared as signed 16-bit integers, but macOS defines them as
+  unsigned, so any mode with the `S_IFREG` bit set (every regular file)
+  sign-extended into a negative `Int`.
+
+- `PythonObject` no longer leaks a CPython reference per positional argument
+  when calling a Python object, nor when setting an item, attribute, or set
+  literal element.

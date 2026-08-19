@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 from std.collections.string._utf8 import _is_valid_utf8
-from std.collections.string.string_slice import _split
+from std.collections.string.string_span import _split
 from std.os import abort
 from std.pathlib import _dir_of_current_file
 from std.random import seed
@@ -24,7 +24,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 @fieldwise_init
 struct NullWriter(Writer):
-    var array: InlineArray[Byte, 1024]
+    var array: Array[Byte, 1024]
 
     @always_inline
     def __init__(out self):
@@ -33,8 +33,11 @@ struct NullWriter(Writer):
     @always_inline
     def write_string(mut self, string: StringSlice):
         var bytes = string.as_bytes()
+        var array_ptr: Pointer[
+            Byte, origin_of(self.array)
+        ] = self.array.unsafe_ptr()
         for i in range(len(bytes)):
-            (self.array.unsafe_ptr() + i).store(bytes.unsafe_get(i))
+            array_ptr.unsafe_offset(i).unsafe_store(bytes.unsafe_get(i))
         keep(self.array)
 
 
@@ -51,10 +54,10 @@ def null_print(tstring: Some[Writable]):
     tstring.write_to(black_box(writer))
 
 
-@parameter
+@__parameter
 def bench_tstring_single_value(mut b: Bencher) raises:
     @always_inline
-    def call_fn() unified {}:
+    def call_fn():
         for _ in range(100):
             var a = NullWritable()
             null_print(t"{a}")
@@ -63,20 +66,20 @@ def bench_tstring_single_value(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_only_literal(mut b: Bencher) raises:
     @always_inline
-    def call_fn() unified {}:
+    def call_fn():
         for _ in range(100):
             null_print(t"The quick brown fox jumps over the lazy dog")
 
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_many_values_no_literals(mut b: Bencher) raises:
     @always_inline
-    def call_fn() unified {}:
+    def call_fn():
         for _ in range(100):
             var a = NullWritable()
             var b = NullWritable()
@@ -93,10 +96,10 @@ def bench_tstring_many_values_no_literals(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_long_literals(mut b: Bencher) raises:
     @always_inline
-    def call_fn() unified {}:
+    def call_fn():
         for _ in range(100):
             var a = NullWritable()
             var b = NullWritable()
@@ -114,10 +117,10 @@ def bench_tstring_long_literals(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_many_values_many_literals(mut b: Bencher) raises:
     @always_inline
-    def call_fn() unified {}:
+    def call_fn():
         for _ in range(100):
             var a = NullWritable()
             var b = NullWritable()

@@ -14,15 +14,15 @@
 
 from collections.abc import Callable
 
+from max._core import Operation
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
-from .constant import constant
 from .custom import custom
 from .validation import assert_same_device
 
@@ -56,86 +56,101 @@ def _accum_type(
 # Note: Keep alphabetized.
 
 
-def _elementwise_binary(op):  # noqa: ANN001, ANN202
+def _elementwise_binary(op_type: type[Operation], name: str):  # noqa: ANN202
     def elementwise_op(
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
         lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
         assert_same_device(lhs=lhs, rhs=rhs)
-        return Graph.current._add_op(op, lhs, rhs)[0].tensor
+        return Graph.current._add_op_generated(
+            op_type, input_x=lhs, input_y=rhs
+        )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
-add = _elementwise_binary(rmo.add)
-"""
-Adds two symbolic tensors.
+add = _elementwise_binary(rmo.AddOp, "add")
+add.__doc__ = """Adds two tensors element-wise.
 
-Creates a new op node to compute the addition of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
-
-The following shows an example of the `add()` function with two inputs:
 
 .. code-block:: python
 
-    def add_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("add_graph", input_types=(input_type, input_type)) as graph:
-            x = graph.inputs[0]
-            y = graph.inputs[1]
+    device = DeviceRef.CPU()
+    with Graph("add_example") as graph:
+        lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([4.0, 5.0, 6.0], DType.float32, device=device)
+        graph.output(ops.add(lhs, rhs))
 
-            out = ops.add(x, y)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
-        to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
-        same shape according to broadcasting rules` before the operation.
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [5.0, 7.0, 9.0])
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
-    location: An optional location for a more specific error message.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    A ``TensorValue`` representing the element-wise sums.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
 
 
 def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
-    """Divides two symbolic tensors using true division (Python operator `/`).
+    """Divides two tensors element-wise using true division (Python ``/``).
 
     For integer operands, this performs true division by promoting to float,
-    matching Python's `/` operator behavior. For floating-point operands,
+    matching Python's ``/`` operator behavior. For floating-point operands,
     this performs standard floating-point division.
 
-    Creates a new op node to compute the division of two symbol tensor values
-    and adds it to the graph, returning the symbolic result.
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("div_example") as graph:
+            lhs = ops.constant(
+                [6.0, 10.0, 18.0], DType.float32, device=device
+            )
+            rhs = ops.constant([2.0, 5.0, 6.0], DType.float32, device=device)
+            graph.output(ops.div(lhs, rhs))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.array_equal(result.to_numpy(), [3.0, 2.0, 3.0])
 
     Args:
-        lhs: The symbol to use as left side of the division.
-        rhs: The symbol to use as right side of the division.
+        lhs: The numerator input.
+        rhs: The denominator input.
 
     Returns:
-        A symbolic tensor value representing the output of the division. The
-          result will have:
-            - floating-point dtype for integer operands, promoted dtype for mixed types
-            - the same shape as the broadcast of the two input shapes.
+        A ``TensorValue`` with the broadcast shape representing ``lhs / rhs``
+        element-wise. The result has a floating-point dtype for integer
+        operands and the promoted dtype for mixed types.
 
     Raises:
-        Error: If the input values' shapes are not compatible for broadcasting.
-        Error: If one of the input values has an unsupported dtype.
+        Error: If the input shapes are not compatible for broadcasting.
+        Error: If one of the inputs has an unsupported dtype.
         Error: If the two symbols are parts of different graphs.
     """
     lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
@@ -146,424 +161,572 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         rhs = cast(rhs, float_dtype)
 
     assert_same_device(lhs, rhs)
-    return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
+    return Graph.current._add_op_generated(rmo.DivOp, input_x=lhs, input_y=rhs)[
+        0
+    ].tensor
 
 
-max = _elementwise_binary(rmo.max)
-"""
-Computes the elementwise maximum of two symbolic tensors.
+def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Divides two tensors element-wise using floor division (Python ``//``).
 
-Creates a new op node to compute the maximum of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
+    The result is rounded toward negative infinity for all operands, matching
+    Python's ``//``. Integer operands stay in the integer domain: the divide
+    truncates toward zero, then a floor correction is applied for signed
+    integers (a no-op for unsigned or non-negative operands). Floating-point
+    operands compute ``floor(lhs / rhs)``.
 
-.. code-block:: python
+    Unlike :obj:`div`, integer operands are never promoted to ``float64``. This
+    matters on backends without native 64-bit floating-point support (for
+    example, Apple/Metal GPUs), where an ``f64`` intermediate fails to compile.
 
-    def maximum_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    .. code-block:: python
 
-        with Graph("maximum_graph", input_types=(input_type, input_type)) as graph:
-            out = ops.max(graph.inputs[0], graph.inputs[1])
-            graph.output(out)
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+        device = DeviceRef.CPU()
+        with Graph("floor_div_example") as graph:
+            lhs = ops.constant([7, 10, 18], DType.int32, device=device)
+            rhs = ops.constant([2, 5, 6], DType.int32, device=device)
+            graph.output(ops.floor_div(lhs, rhs))
 
-Args:
-    lhs: The symbol to use as left side of the maximum operation.
-    rhs: The symbol to use as right side of the maximum operation.
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
 
-Returns:
-    A symbolic tensor value representing the output of the maximum operation.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    .. invisible-code-block: python
 
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-min = _elementwise_binary(rmo.min)
-"""
-Computes the elementwise minimum of two symbolic tensors.
+        import numpy as np
 
-Creates a new op node to compute the minimum of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
+        assert np.array_equal(result.to_numpy(), [3, 2, 3])
 
-.. code-block:: python
+    Args:
+        lhs: The numerator input.
+        rhs: The denominator input.
 
-    def min_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    Returns:
+        A ``TensorValue`` with the broadcast shape representing the element-wise
+        floor division of ``lhs`` by ``rhs``.
 
-        with Graph("min_graph", input_types=(input_type, input_type)) as graph:
-            out = ops.min(graph.inputs[0], graph.inputs[1])
-            graph.output(out)
+    Raises:
+        Error: If the input shapes are not compatible for broadcasting.
+        Error: If one of the inputs has an unsupported dtype.
+        Error: If the two symbols are parts of different graphs.
+    """
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    assert_same_device(lhs, rhs)
+    if lhs.dtype.is_integral() and rhs.dtype.is_integral():
+        # Integer division stays in the integer domain, mirroring `mod`
+        # (`rmo.ModOp`), so there is no `float64` promotion like `div` does.
+        # `rmo.DivOp` truncates toward zero.
+        quotient = Graph.current._add_op_generated(
+            rmo.DivOp, input_x=lhs, input_y=rhs
+        )[0].tensor
+        if lhs.dtype.is_signed_integral():
+            # Truncation toward zero and floor division differ by one when the
+            # exact quotient is negative (operand signs differ) and the divide
+            # leaves a nonzero remainder. Correct so the result matches `//`.
+            remainder = mod(lhs, rhs)
+            quotient = quotient - (
+                (remainder != 0) & ((lhs < 0) ^ (rhs < 0))
+            ).cast(quotient.dtype)
+        return quotient
+    return floor(div(lhs, rhs))
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
 
-Args:
-    lhs: The symbol to use as left side of the minimum operation.
-    rhs: The symbol to use as right side of the minimum operation.
-
-Returns:
-    A symbolic tensor value representing the output of the minimum operation.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
-
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-mod = _elementwise_binary(rmo.mod)
-"""
-Computes the elementwise modulus of two symbolic tensors.
-
-Creates a new op node to compute the modulus of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
-
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
-
-Args:
-    lhs: The symbol to use as left side of the modulus operation.
-    rhs: The symbol to use as right side of the modulus operation.
-
-Returns:
-    A symbolic tensor value representing the output of the modulus operation.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
-
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-mul = _elementwise_binary(rmo.mul)
-"""
-Computes the elementwise multiplication of two symbolic tensors.
-
-Creates a new op node to compute the multiplication of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
-
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
-
-Args:
-    lhs: The symbol to use as left side of the multiplication.
-    rhs: The symbol to use as right side of the multiplication.
-
-Returns:
-    A symbolic tensor value representing the output of the multiplication.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
-
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-pow = _elementwise_binary(rmo.pow)
-"""
-Computes the elementwise exponentiation of two symbolic tensors.
-
-Creates a new op node to compute the exponentiation of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
-
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
-
-Args:
-    lhs: The symbol to use as left side of the exponentiation.
-    rhs: The symbol to use as right side of the exponentiation.
-
-Returns:
-    A symbolic tensor value representing the output of the exponentiation.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
-
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-sub = _elementwise_binary(rmo.sub)
-"""
-Computes the elementwise subtraction of two symbolic tensors.
-
-Creates a new op node to compute the subtraction of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
+max = _elementwise_binary(rmo.MaxOp, "max")
+max.__doc__ = """
+Computes the element-wise maximum of two tensors.
 
 .. code-block:: python
 
-    def sub_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("sub_graph", input_types=(input_type, input_type)) as graph:
-            x = graph.inputs[0]  # Minuend (number being subtracted from)
-            y = graph.inputs[1]  # Subtrahend (number being subtracted)
+    device = DeviceRef.CPU()
+    with Graph("max_example") as graph:
+        lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([4.0, 2.0, 6.0], DType.float32, device=device)
+        graph.output(ops.max(lhs, rhs))
 
-            out = ops.sub(x, y)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [4.0, 5.0, 6.0])
 
 Args:
-    lhs: The symbol to use as left side of the subtraction.
-    rhs: The symbol to use as right side of the subtraction.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the subtraction.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    A ``TensorValue`` representing the maximum value at each position.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-equal = _elementwise_binary(rmo.equal)
-"""
-Computes the elementwise equality comparison between two symbolic tensors.
 
-Creates a new op node to compute the equality comparison of two symbol
-tensor values and adds it to the graph, returning the symbolic result.
+min = _elementwise_binary(rmo.MinOp, "min")
+min.__doc__ = """
+Computes the element-wise minimum of two tensors.
 
 .. code-block:: python
 
-    def equal_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(3,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("equal_graph", input_types=(input_type, input_type)) as graph:
-            x = graph.inputs[0]  # First input
-            y = graph.inputs[1]  # Second input
+    device = DeviceRef.CPU()
+    with Graph("min_example") as graph:
+        lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([4.0, 2.0, 6.0], DType.float32, device=device)
+        graph.output(ops.min(lhs, rhs))
 
-            out = ops.equal(x, y)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [1.0, 2.0, 3.0])
 
 Args:
-    lhs: The symbol to use as left side of the equality comparison.
-    rhs: The symbol to use as right side of the equality comparison.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the equality comparison.
-    The result will have:
-    - the same dtype as the type promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    A ``TensorValue`` representing the minimum value at each position.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-greater = _elementwise_binary(rmo.greater)
-"""
-Computes the elementwise greater than comparison between two symbolic tensors.
 
-Creates a new op node to compute the greater than comparison of two symbol
-tensor values and adds it to the graph, returning the symbolic result.
+mod = _elementwise_binary(rmo.ModOp, "mod")
+mod.__doc__ = """
+Computes the element-wise modulus of two tensors.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("mod_example") as graph:
+        lhs = ops.constant([10.0, 7.0, 5.0], DType.float32, device=device)
+        rhs = ops.constant([3.0, 2.0, 4.0], DType.float32, device=device)
+        graph.output(ops.mod(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [1.0, 1.0, 1.0])
+
+Args:
+    lhs: The dividend.
+    rhs: The divisor.
+
+Returns:
+    A ``TensorValue`` representing ``lhs % rhs`` element-wise.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+mul = _elementwise_binary(rmo.MulOp, "mul")
+mul.__doc__ = """
+Multiplies two tensors element-wise.
 
 
 .. code-block:: python
 
-    def greater_than_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("greater_graph", input_types=(input_type, input_type)) as graph:
-            x = graph.inputs[0]  # Left hand side
-            y = graph.inputs[1]  # Right hand side
+    device = DeviceRef.CPU()
+    with Graph("mul_example") as graph:
+        lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([4.0, 5.0, 6.0], DType.float32, device=device)
+        graph.output(ops.mul(lhs, rhs))
 
-            out = ops.greater(x, y)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+.. invisible-code-block: python
 
-Args:
-    lhs: The symbol to use as left side of the greater than comparison.
-    rhs: The symbol to use as right side of the greater than comparison.
+    import numpy as np
 
-Returns:
-    A symbolic tensor value representing the output of the greater than comparison.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
-
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
-greater_equal = _elementwise_binary(rmo.greater_equal)
-"""
-Computes the elementwise greater-or-equal comparison between two symbolic tensors.
-
-Creates a new op node to compute the equality comparison of two symbol
-tensor values and adds it to the graph, returning the symbolic result.
-
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+    assert np.array_equal(result.to_numpy(), [4.0, 10.0, 18.0])
 
 Args:
-    lhs: The symbol to use as left side of the greater-or-equal comparison.
-    rhs: The symbol to use as right side of the greater-or-equal comparison.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the greater-or-equal comparison.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    A ``TensorValue`` representing the element-wise products.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-not_equal = _elementwise_binary(rmo.not_equal)
-"""
-Computes the elementwise inequality comparison between two symbolic tensors.
 
-Creates a new op node to compute the inequality comparison of two symbol
-tensor values and adds it to the graph, returning the symbolic result.
+pow = _elementwise_binary(rmo.PowOp, "pow")
+pow.__doc__ = """
+Raises elements of one tensor to the power of another element-wise.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("pow_example") as graph:
+        lhs = ops.constant([2.0, 3.0, 4.0], DType.float32, device=device)
+        rhs = ops.constant([3.0, 2.0, 0.5], DType.float32, device=device)
+        graph.output(ops.pow(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [8.0, 9.0, 2.0], atol=1e-3)
+
+Args:
+    lhs: The base tensor.
+    rhs: The exponent tensor.
+
+Returns:
+    A ``TensorValue`` with the broadcast shape representing ``lhs ** rhs`` element-wise.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+sub = _elementwise_binary(rmo.SubOp, "sub")
+sub.__doc__ = """
+Subtracts two tensors element-wise.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("sub_example") as graph:
+        lhs = ops.constant([5.0, 7.0, 9.0], DType.float32, device=device)
+        rhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        graph.output(ops.sub(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [4.0, 5.0, 6.0])
+
+Args:
+    lhs: The minuend (left-hand side).
+    rhs: The subtrahend (right-hand side).
+
+Returns:
+    A ``TensorValue`` representing the result of ``lhs - rhs`` element-wise.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+equal = _elementwise_binary(rmo.EqualOp, "equal")
+equal.__doc__ = """Tests element-wise equality between two tensors.
 
 
 .. code-block:: python
 
-    def not_equal_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("not_equal_graph", input_types=(input_type, input_type)) as graph:
-            x = graph.inputs[0]  # Left hand side
-            y = graph.inputs[1]  # Right hand side
+    device = DeviceRef.CPU()
+    with Graph("equal_example") as graph:
+        lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        graph.output(ops.equal(lhs, rhs))
 
-            out = ops.not_equal(x, y)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [True, False, True])
 
 Args:
-    lhs: The symbol to use as left side of the inequality comparison.
-    rhs: The symbol to use as right side of the inequality comparison.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the inequality comparison.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs == rhs``.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_and = _elementwise_binary(rmo.and_)
-"""
-Computes the logical and between two symbolic tensors.
+greater = _elementwise_binary(rmo.GreaterOp, "greater")
+greater.__doc__ = """Tests element-wise whether one tensor is greater than another.
 
-Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
-they will be broadcast to the same shape according to broadcasting rules
-before the operation.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("greater_example") as graph:
+        lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([1.0, 2.0, 4.0], DType.float32, device=device)
+        graph.output(ops.greater(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, False])
 
 Args:
-    lhs: The symbol to use as left side of the logical and.
-    rhs: The symbol to use as right side of the logical and.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the and operation.
-    The result will be a boolean tensor with the shape determined by
-    broadcasting the two input shapes.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs > rhs``.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_or = _elementwise_binary(rmo.or_)
-"""
-Computes the logical or between two symbolic tensors.
+greater_equal = _elementwise_binary(rmo.GreaterEqualOp, "greater_equal")
+greater_equal.__doc__ = """Tests element-wise whether one tensor is greater than or equal to another.
 
-Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
-they will be broadcast to the same shape according to broadcasting rules
-before the operation.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("greater_equal_example") as graph:
+        lhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([1.0, 2.0, 4.0], DType.float32, device=device)
+        graph.output(ops.greater_equal(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [True, True, False])
 
 Args:
-    lhs: The symbol to use as left side of the logical or.
-    rhs: The symbol to use as right side of the logical or.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the or operation.
-    The result will be a boolean tensor with the shape determined by
-    broadcasting the two input shapes.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs >= rhs``.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_xor = _elementwise_binary(rmo.xor)
-"""
-Computes the logical xor between two symbolic tensors.
+not_equal = _elementwise_binary(rmo.NotEqualOp, "not_equal")
+not_equal.__doc__ = """Tests element-wise inequality between two tensors.
 
-Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
-they will be broadcast to the same shape according to broadcasting rules
-before the operation.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("not_equal_example") as graph:
+        lhs = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        rhs = ops.constant([1.0, 5.0, 3.0], DType.float32, device=device)
+        graph.output(ops.not_equal(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, False])
 
 Args:
-    lhs: The symbol to use as left side of the logical xor.
-    rhs: The symbol to use as right side of the logical xor.
+    lhs: The left-hand side input.
+    rhs: The right-hand side input.
 
 Returns:
-    A symbolic tensor value representing the output of the xor operation.
-    The result will be a boolean tensor with the shape determined by
-    broadcasting the two input shapes.
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise result
+    of ``lhs != rhs``.
 
 Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+logical_and = _elementwise_binary(rmo.AndOp, "logical_and")
+logical_and.__doc__ = """Computes the element-wise logical AND of two boolean tensors.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("logical_and_example") as graph:
+        lhs = ops.constant([True, True, False], DType.bool, device=device)
+        rhs = ops.constant([True, False, True], DType.bool, device=device)
+        graph.output(ops.logical_and(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [True, False, False])
+
+Args:
+    lhs: The left-hand side boolean tensor.
+    rhs: The right-hand side boolean tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    AND of ``lhs`` and ``rhs``.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+logical_or = _elementwise_binary(rmo.OrOp, "logical_or")
+logical_or.__doc__ = """Computes the element-wise logical OR of two boolean tensors.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("logical_or_example") as graph:
+        lhs = ops.constant([True, False, False], DType.bool, device=device)
+        rhs = ops.constant([False, True, False], DType.bool, device=device)
+        graph.output(ops.logical_or(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [True, True, False])
+
+Args:
+    lhs: The left-hand side boolean tensor.
+    rhs: The right-hand side boolean tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    OR of ``lhs`` and ``rhs``.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
+logical_xor = _elementwise_binary(rmo.XorOp, "logical_xor")
+logical_xor.__doc__ = """Computes the element-wise logical XOR of two boolean tensors.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("logical_xor_example") as graph:
+        lhs = ops.constant([True, False, True], DType.bool, device=device)
+        rhs = ops.constant([True, True, False], DType.bool, device=device)
+        graph.output(ops.logical_xor(lhs, rhs))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, True])
+
+Args:
+    lhs: The left-hand side boolean tensor.
+    rhs: The right-hand side boolean tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype representing the element-wise logical
+    XOR of ``lhs`` and ``rhs``.
+
+Raises:
+    Error: If the input shapes are not compatible for broadcasting.
+    Error: If one of the inputs has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
 
@@ -574,815 +737,1061 @@ Raises:
 # Note: Keep alphabetized.
 
 
-def _elementwise_unary(op):  # noqa: ANN001, ANN202
+def _elementwise_unary(op_type: type[Operation], name: str):  # noqa: ANN202
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
-        return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
+        return Graph.current._add_op_generated(
+            op_type,
+            result=x.type,
+            input=x,
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
+        )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
 def _elementwise_unary_predicate(
-    op,  # noqa: ANN001
+    op_type: type[Operation], name: str
 ) -> Callable[[TensorValueLike], TensorValue]:
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
-        return Graph.current._add_op(
-            op,
-            TensorType(
-                dtype=DType.bool, shape=x.shape, device=x.device
-            ).to_mlir(),
-            x,
+        return Graph.current._add_op_generated(
+            op_type,
+            result=TensorType(dtype=DType.bool, shape=x.shape, device=x.device),
+            input_x=x,
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
-abs = _elementwise_unary(rmo.mo_abs)
-"""
-Computes the elementwise absolute value of a symbolic tensor.
+def _activation(x: TensorValueLike, op_type: type[Operation]) -> TensorValue:
+    """Builds a single fused activation op of the given type.
 
-Creates a new op node to compute the elementwise absolute value of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+    Each elementwise activation function (``relu``, ``gelu`` and its
+    approximations, ``sigmoid``, ``silu``) has its own dedicated op, backed by a
+    hardware-optimized fused Mojo kernel, rather than a Python-level composition
+    of ``exp``/``erf``/etc.
+    """
+    x = dtype_promotion._restrict_to_strong_dtypes(x)
+    return Graph.current._add_op_generated(
+        op_type,
+        result=x.type,
+        input=x,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
 
-The following demonstrates how to compute the absolute value using the :obj:`abs()` function:
+
+abs = _elementwise_unary(rmo.MoAbsOp, "abs")
+abs.__doc__ = """Computes the absolute value of a tensor element-wise.
 
 .. code-block:: python
 
-    def abs_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("abs_graph", input_types=(input_type,)) as graph:
-            x = graph.inputs[0]
+    device = DeviceRef.CPU()
+    with Graph("abs_example") as graph:
+        x = ops.constant([-1.0, 2.0, -3.0], DType.float32, device=device)
+        graph.output(ops.abs(x))
 
-            out = ops.abs(x)
-            graph.output(out)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [1.0, 2.0, 3.0])
 
 Args:
-    value: The symbolic tensor to use as the input to the absolute value
-        computation.
+    x: The input tensor.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    absolute value of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor.
 """
-exp = _elementwise_unary(rmo.mo_exp)
-exp.__doc__ = """
-Computes the elementwise exp (exponential) function of a symbolic tensor.
 
-Creates a new op node to compute the elementwise exponential function of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-The exp function is fundamental in neural networks, used in attention
-mechanisms, activation functions, and probability distributions.
+exp = _elementwise_unary(rmo.MoExpOp, "exp")
+exp.__doc__ = """Computes the exponential of a tensor element-wise.
+
+This applies ``exp(x) = e^x``, where ``e`` is Euler's number.
 
 .. code-block:: python
 
-    import max.experimental.functional as F
-    from max.experimental.tensor import Tensor
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    # Create input tensor
-    x = Tensor.constant([0.0, 1.0, 2.0])
+    device = DeviceRef.CPU()
+    with Graph("exp_example") as graph:
+        x = ops.constant([0.0, 1.0, 2.0], DType.float32, device=device)
+        graph.output(ops.exp(x))
 
-    # Compute exponential
-    result = F.exp(x)
-    print(result)
-    # Output: [1.0, 2.718..., 7.389...]
-    # (e^0 = 1, e^1 ≈ 2.718, e^2 ≈ 7.389)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-``exp`` is defined as ``exp(x) = e^x``, where ``e`` is Euler's number.
+.. invisible-code-block: python
 
-Args:
-    value: The symbolic tensor to use as the input to the exp function
-        computation.
+    import numpy as np
 
-Returns:
-    A new symbolic tensor value representing the output of the exp
-        value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-erf = _elementwise_unary(rmo.mo_erf)
-"""
-Computes the elementwise error function of a symbolic tensor.
-
-Creates a new op node to compute the elementwise error function of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-The error function ``erf`` is defined as the probability that a randomly
-sampled normal distribution falls within a given range.
+    assert np.allclose(result.to_numpy(), [1.0, 2.718, 7.389], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the error function
-           computation.
+    x: The input to the exponential function. Must have a floating-point
+        dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the error function
-    value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing ``e``
+    raised to the power of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input does not represent a tensor or has a non-floating-point dtype.
 """
 
+erf = _elementwise_unary(rmo.MoErfOp, "erf")
+erf.__doc__ = """Computes the error function of a tensor element-wise.
 
-def _gelu_exact(x: TensorValue):  # noqa: ANN202
-    r"""Computes the elementwise gelu function of a symbolic tensor.
+The error function ``erf`` is the probability that a randomly sampled
+normal distribution falls within a given range.
 
-    Creates a new op node to compute the elementwise gelu function of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+.. code-block:: python
 
-    ``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$`` is the
-    cumulative distribution function of the Gaussian distribution.
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    Args:
-        x: The symbolic tensor to use as the input to the gelu function.
+    device = DeviceRef.CPU()
+    with Graph("erf_example") as graph:
+        x = ops.constant([-1.0, 0.0, 1.0], DType.float32, device=device)
+        graph.output(ops.erf(x))
 
-    Returns:
-        A new symbolic tensor value representing the output of the gelu computation.
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-    Raises:
-        Error: If the symbol doesn't represent a tensor value.
-    """
-    sqrt2 = 1.4142135623730951
-    x_cast = x.cast(_accum_type(x))
-    return (0.5 * x_cast * (1 + erf(x_cast / sqrt2))).cast(x.dtype)
+.. invisible-code-block: python
 
+    import numpy as np
 
-def _gelu_quick(x: TensorValue):  # noqa: ANN202
-    """Computes the elementwise quick gelu of a symbolic tensor.
+    assert np.allclose(result.to_numpy(), [-0.842, 0.0, 0.842], atol=1e-3)
 
-    Creates a new op node to compute the elementwise quick gelu of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+Args:
+    x: The input to the error function. Must have a floating-point dtype.
 
-    ``quick gelu`` is defined as ``gelu_quick(x) = sigmoid(1.702 * x) * x``.
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the error
+    function applied to each element of ``x``.
 
-    References:
-        - https://github.com/hendrycks/GELUs
-        - https://arxiv.org/abs/1606.08415
-
-    Args:
-        x: The symbolic tensor to use as the input to the quick gelu computation.
-
-    Returns:
-        A new symbolic tensor value representing the output of the quick gelu computation.
-
-    Raises:
-        Error: If the symbol doesn't represent a tensor value.
-    """
-    x_cast = x.cast(_accum_type(x))
-    return (x_cast * sigmoid(x_cast * 1.702)).cast(x.dtype)
-
-
-def _gelu_tanh(x: TensorValue):  # noqa: ANN202
-    """Computes the elementwise gelu of a symbolic tensor.
-
-    Creates a new op node to compute the elementwise gelu of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    Args:
-        x: The symbolic tensor to use as the input to the gelu computation.
-
-    Returns:
-        A new symbolic tensor value representing the output of the tanh computation.
-
-    Raises:
-        Error: If the symbol doesn't represent a tensor value.
-    """
-    x_cast = x.cast(_accum_type(x))
-    return (
-        x_cast
-        * 0.5
-        * (1.0 + tanh(0.7978845608028654 * (x_cast + 0.044715 * x_cast**3)))
-    ).cast(x.dtype)
+Raises:
+    Error: If the input is not a tensor or has a non-floating-point dtype.
+"""
 
 
 def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
-    """Computes the elementwise gelu of a symbolic tensor.
+    """Applies the GELU (Gaussian Error Linear Unit) activation element-wise.
 
-    Creates a new op node to compute the elementwise gelu of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+    For ``approximate == "none"``, MAX computes the exact GELU function.
 
-    For ``approximate == "none"``, the exact gelu function is computed.
+    For ``approximate == "tanh"``, MAX uses the approximation:
 
-    For ``approximate == "tanh"``, the approximation:
-
-    .. math::
+    .. code:: text
 
         gelu(x) = 0.5 * x * (1.0 + tanh(0.7978845608028654 * (x + 0.044715 * x**3)))
 
-    is used.
+    For ``approximate == "quick"``, MAX uses the approximation:
 
-    For ``approximate == "quick"``, the approximation:
-
-
-    .. math::
+    .. code:: text
 
         gelu(x) = sigmoid(1.702 * x) * x
 
-    is used.
-
     Args:
-        x: The symbolic tensor to use as the input to the gelu computation.
-        approximate: One of ``none``, ``tanh``, or ``quick``.
+        x: The input to the GELU computation. Must have a floating-point
+            dtype.
+        approximate: One of ``"none"``, ``"tanh"``, or ``"quick"``. Defaults
+            to ``"none"``.
 
     Returns:
-        A new symbolic tensor value representing the output of the gelu computation.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        GELU activation applied to each element of ``x``.
 
     Raises:
-        Error: If the symbol doesn't represent a tensor value.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
         ValueError: If the approximation method is invalid.
     """
     if approximate == "none":
-        return _gelu_exact(x)
+        return _activation(x, rmo.MoGeluOp)
     if approximate == "tanh":
-        return _gelu_tanh(x)
+        return _activation(x, rmo.MoGeluTanhOp)
     if approximate == "quick":
-        return _gelu_quick(x)
+        return _activation(x, rmo.MoGeluQuickOp)
 
     raise ValueError(f"Invalid approximation method: {approximate}")
 
 
-log = _elementwise_unary(rmo.mo_log)
+log = _elementwise_unary(rmo.MoLogOp, "log")
 log.__doc__ = """
-Computes the elementwise natural logarithm of a symbolic tensor.
+Computes the natural logarithm of a tensor element-wise.
 
-Creates a new op node to compute the elementwise natural logarithm of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-The natural logarithm is used in loss functions, normalization, and
-probability calculations in machine learning.
+This applies ``log(x)``. It is the inverse of the exponential
+function ``x = e^y``, where ``e`` is Euler's number.
+Note that ``log(x)`` is undefined for ``x <= 0`` and complex numbers
+are not currently supported.
 
 .. code-block:: python
 
-    import max.experimental.functional as F
-    from max.experimental.tensor import Tensor
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    # Create input tensor (positive values only)
-    x = Tensor.constant([1.0, 2.718, 7.389, 20.0])
+    device = DeviceRef.CPU()
+    with Graph("log_example") as graph:
+        x = ops.constant(
+            [1.0, 2.718, 7.389, 20.0], DType.float32, device=device
+        )
+        graph.output(ops.log(x))
 
-    # Compute natural logarithm
-    result = F.log(x)
-    print(result)
-    # Output: [0.0, 1.0, 2.0, 2.996...]
-    # (log(1) = 0, log(e) = 1, log(e^2) = 2)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-The natural logarithm function ``log`` is defined as the inverse of the
-exponential function ``exp()``. In other words, it computes the value ``y`` in
-the equation ``x = e^y`` where ``e`` is Euler's number.
+.. invisible-code-block: python
 
-``log(x)`` is undefined for ``x <= 0`` for real numbers. Complex numbers
-are currently unsupported.
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [0.0, 1.0, 2.0, 2.996], atol=1e-3)
+
 
 Args:
-    value: The symbolic tensor to use as the input to the natural logarithm
-        computation.
+    x: The input to the log computation. Must contain positive values only.
+        Must have a floating-point dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the natural logarithm
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    natural logarithm of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-log1p = _elementwise_unary(rmo.mo_log1p)
-"""
-Computes the elementwise logarithm of 1 plus a symbolic tensor.
+log1p = _elementwise_unary(rmo.MoLog1pOp, "log1p")
+log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
 
-Creates a new op node to compute the elementwise log1p of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+Note that ``log(1 + x)`` is undefined for ``x <= -1`` and complex
+numbers are not currently supported.
 
-The ``log1p`` function is defined as ``log1p(x) = log(1 + x)``, where ``log()``
-is the natural logarithm.
+.. code-block:: python
 
-Using ``log1p(x)`` rather than computing ``log(1 + x)`` can give greater
-numerical precision results.
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-``log(x)`` is undefined for ``x <= 0`` for real numbers. Complex numbers
-are currently unsupported.
+    device = DeviceRef.CPU()
+    with Graph("log1p_example") as graph:
+        x = ops.constant([0.0, 1.0, 9.0], DType.float32, device=device)
+        graph.output(ops.log1p(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [0.0, 0.693, 2.302], atol=1e-3)
+
 
 Args:
-    value: The symbolic tensor to use as the input to the log1p
-        computation.
+    x: The input to the log computation. Must have a floating-point dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the log1p
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing
+    ``log(1 + x)`` for each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
 
-def _softmax_like(op):  # noqa: ANN001, ANN202
+def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
     def softmax_like_op(value: TensorValueLike, axis: int = -1) -> TensorValue:
         value = TensorValue(value)
 
         axis = value.rank - 1 if axis == -1 else axis
         value = dtype_promotion._restrict_to_strong_dtypes(value)
-        return Graph.current._add_op(
-            op,
-            value._mlir_value.type,
-            value,
-            constant(axis, DType.int64, DeviceRef.CPU()),
+        return Graph.current._add_op_generated(
+            op_type,
+            result=value.type,
+            input=value,
+            axis=builtin.IntegerAttr(builtin.IndexType(), axis),
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
-    softmax_like_op.__name__ = op.__name__
+    softmax_like_op.__name__ = name
     return softmax_like_op
 
 
-logsoftmax = _softmax_like(rmo.mo_reduce_logsoftmax)
-"""
-Computes the elementwise logsoftmax of a symbolic tensor.
-
-Creates a new op node to compute the elementwise logsoftmax of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-Args:
-    value: The symbolic tensor to use as the input to the logsoftmax
-        computation.
-    axis: The axis along which to compute the softmax, by default
-        the final axis is used.
-Returns:
-    A new symbolic tensor value representing the output of the logsoftmax
-        value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-relu = _elementwise_unary(rmo.mo_relu)
-relu.__doc__ = """
-Computes the elementwise ReLU (Rectified Linear Unit) of a symbolic tensor.
-
-Creates a new op node to compute the elementwise ReLU of a symbolic tensor
-and adds it to the graph, returning the symbolic result. ReLU is defined as
-``relu(x) = max(0, x)``, setting all negative values to zero while leaving
-positive values unchanged.
-
-ReLU is one of the most common activation functions in neural networks due to
-its computational efficiency and effectiveness in addressing the vanishing
-gradient problem.
+logsoftmax = _softmax_like(rmo.MoReduceLogsoftmaxOp, "logsoftmax")
+logsoftmax.__doc__ = """Computes the log-softmax of a tensor along an axis.
 
 .. code-block:: python
 
-    import max.experimental.functional as F
-    from max.experimental.tensor import Tensor
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    # Create input with negative and positive values
-    x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+    device = DeviceRef.CPU()
+    with Graph("logsoftmax_example") as graph:
+        x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        graph.output(ops.logsoftmax(x))
 
-    # Apply ReLU activation
-    result = F.relu(x)
-    print(result)
-    # Output: [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]
-    # Negative values become 0, positive values unchanged
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(
+        result.to_numpy(), [-2.407, -1.407, -0.407], atol=1e-3
+    )
 
 Args:
-    value: The symbolic tensor to use as the input to the relu
-        computation.
+    value: The input to the log-softmax computation. Must have a
+        floating-point dtype.
+    axis: The axis along which to compute the log-softmax. Defaults to the
+        final axis (``-1``).
 
 Returns:
-    A new symbolic tensor value representing the output of the relu
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``value`` representing the
+    log-softmax of ``value`` computed along ``axis``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input is not a tensor or has a non-floating-point dtype.
+"""
+
+relu = _elementwise_unary(rmo.MoReluOp, "relu")
+relu.__doc__ = """Applies the ReLU (Rectified Linear Unit) activation element-wise.
+
+ReLU is defined as ``relu(x) = max(0, x)``, meaning negative values are set to zero
+while positive values are unchanged.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("relu_example") as graph:
+        x = ops.constant(
+            [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
+            DType.float32,
+            device=device,
+        )
+        graph.output(ops.relu(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(
+        result.to_numpy(), [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]
+    )
+
+Args:
+    x: The input to the ReLU computation.
+
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing ``x`` with
+    its negative elements replaced by ``0``.
+
+Raises:
+    Error: If the input doesn't represent a tensor.
 """
 
 
 def sigmoid(x: TensorValue) -> TensorValue:
-    """Computes the elementwise sigmoid activation of a symbolic tensor.
+    """Applies the sigmoid activation function element-wise.
 
-    Creates a new op node to compute the elementwise sigmoid of a symbolic
-    tensor and adds it to the graph, returning the symbolic result. Sigmoid
-    is defined as ``sigmoid(x) = 1 / (1 + exp(-x))``, mapping all input values
-    to the range (0, 1).
-
-    The sigmoid function is commonly used for binary classification tasks and
-    as an activation function in neural networks, particularly in output layers
-    for probability prediction.
+    Computes ``sigmoid(x) = 1 / (1 + exp(-x))``, mapping all values to the
+    range ``(0, 1)``.
 
     .. code-block:: python
 
-        import max.experimental.functional as F
-        from max.experimental.tensor import Tensor
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
-        # Create input tensor
-        x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+        device = DeviceRef.CPU()
+        with Graph("sigmoid_example") as graph:
+            x = ops.constant(
+                [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.sigmoid(x))
 
-        # Apply sigmoid activation
-        result = F.sigmoid(x)
-        print(result)
-        # Output: [[0.119, 0.269, 0.5], [0.731, 0.881, 0.953]]
-        # All values mapped to range (0, 1)
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(),
+            [[0.119, 0.269, 0.5], [0.731, 0.881, 0.953]],
+            atol=1e-3,
+        )
 
     Args:
-        x: The symbolic tensor to use as the input to the sigmoid computation.
+        x: The input to the sigmoid computation. Must have a floating-point
+            dtype.
 
     Returns:
-        A new symbolic tensor value representing the output of the sigmoid computation.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+        element of ``x`` mapped to the range ``(0, 1)``.
 
     Raises:
-        Error: If the symbol doesn't represent a tensor value.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
-    x_cast = x.cast(_accum_type(x))
-    return (1 / (1 + exp(-x_cast))).cast(x.dtype)
+    return _activation(x, rmo.MoSigmoidOp)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
-    """Computes the elementwise silu of a symbolic tensor.
+    """Applies the SiLU (Swish) activation function element-wise.
 
-    Creates a new op node to compute the elementwise silu of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+    Computes ``silu(x) = x * sigmoid(x)``.
 
-    ``silu`` is defined as ``silu(x) = x * sigmoid(x)``.
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("silu_example") as graph:
+            x = ops.constant(
+                [-2.0, 0.0, 1.0, 3.0], DType.float32, device=device
+            )
+            graph.output(ops.silu(x))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(), [-0.238, 0.0, 0.731, 2.857], atol=1e-3
+        )
 
     Args:
-        x: The symbolic tensor to use as the input to the silu computation.
+        x: The input to the SiLU computation. Must have a floating-point
+            dtype.
 
     Returns:
-        A new symbolic tensor value representing the output of the silu computation.
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        SiLU activation applied to each element of ``x``.
 
     Raises:
-        Error: If the symbol doesn't represent a tensor value.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
-    x_cast = x.cast(_accum_type(x))
-    return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
+    return _activation(x, rmo.MoSiluOp)
 
 
-softmax = _softmax_like(rmo.mo_reduce_softmax)
-"""
-Computes the elementwise softmax of a symbolic tensor.
+softmax = _softmax_like(rmo.MoReduceSoftmaxOp, "softmax")
+softmax.__doc__ = """Computes the softmax of a tensor along an axis.
 
-Creates a new op node to compute the elementwise softmax of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-Args:
-    value: The symbolic tensor to use as the input to the softmax
-        computation.
-    axis: The axis along which to compute the softmax, by default
-        the final axis is used.
-
-Returns:
-    A new symbolic tensor value representing the output of the softmax
-        value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-cos = _elementwise_unary(rmo.mo_cos)
-"""
-Computes the elementwise cosine of a symbolic tensor.
-
-Creates a new op node to compute the elementwise cosine of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-Args:
-    value: The symbolic tensor to use as the input to the cos
-           computation. If it's not a floating-point DType, an exception will be
-           raised.
-
-Returns:
-    A new symbolic tensor value representing the output of the cosine
-    value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-floor = _elementwise_unary(rmo.mo_floor)
-"""
-Computes the elementwise floor of a symbolic tensor.
-
-Creates a new op node to compute the elementwise floor of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-
-Args:
-    value: The symbolic tensor to use as the input to the floor
-           computation. If it's not a floating-point DType, an exception will be
-           raised.
-
-Returns:
-    A new symbolic tensor value representing the output of the floor
-    value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-round = _elementwise_unary(rmo.mo_round)
-"""
-Computes the elementwise round of a symbolic tensor.
-
-
-Creates a new op node to compute the elementwise round of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
-Rounding is done with ties towards the nearest even number.
-
-For example, if the model has one input tensor:
+Normalizes the values along ``axis`` so that they sum to ``1``, with each
+output element representing the exponentiated input divided by the sum of
+exponentiated values along that axis.
 
 .. code-block:: python
 
-    def round_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(4,), device=DeviceRef.CPU())
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-        with Graph("round_graph_example", input_types=(input_type,)) as graph:
-            x = graph.inputs[0]
-            out = ops.round(x)
-            graph.output(out)
+    device = DeviceRef.CPU()
+    with Graph("softmax_example") as graph:
+        x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+        graph.output(ops.softmax(x))
 
-Args:
-    value: The symbolic tensor to use as the input to the round
-           computation. If it's not a floating-point DType, an exception will be
-           raised.
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-Returns:
-    A new symbolic tensor value representing the output of the round
-    value computation.
+.. invisible-code-block: python
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
+    import numpy as np
 
-rsqrt = _elementwise_unary(rmo.mo_rsqrt)
-"""
-Computes the elementwise inverse-square-root of a symbolic tensor.
-
-Creates a new op node to compute the elementwise rsqrt of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+    assert np.allclose(result.to_numpy(), [0.090, 0.244, 0.665], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the rsqrt
-        computation. If it's not a floating-point DType, an exception will be raised.
+    value: The input to the softmax computation. Must have a floating-point
+        dtype.
+    axis: The axis along which to compute the softmax. Defaults to the
+        final axis (``-1``).
 
 Returns:
-    A new symbolic tensor value representing the output of the rsqrt
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``value`` representing the
+    softmax of ``value`` computed along ``axis``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-sqrt = _elementwise_unary(rmo.mo_sqrt)
-sqrt.__doc__ = """
-Computes the elementwise square root of a symbolic tensor.
-
-Creates a new op node to compute the elementwise square root of a symbolic
-tensor and adds it to the graph, returning the symbolic result. Square root
-is commonly used in normalization operations, distance calculations, and
-implementing mathematical operations like standard deviation.
+cos = _elementwise_unary(rmo.MoCosOp, "cos")
+cos.__doc__ = """Computes the cosine of a tensor element-wise.
 
 .. code-block:: python
 
-    import max.experimental.functional as F
-    from max.experimental.tensor import Tensor
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    # Create tensor with positive values
-    x = Tensor.constant([1.0, 4.0, 9.0, 16.0])
+    device = DeviceRef.CPU()
+    with Graph("cos_example") as graph:
+        x = ops.constant([0.0, 1.5707, 3.1415], DType.float32, device=device)
+        graph.output(ops.cos(x))
 
-    # Compute square root
-    result = F.sqrt(x)
-    print(result)
-    # Output: [1.0, 2.0, 3.0, 4.0]
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-    # Note: sqrt requires non-negative values
-    # For tensors with negative values, use abs first:
-    y = Tensor.constant([1.0, -4.0, 9.0, -16.0])
-    result2 = F.sqrt(F.abs(y))
-    print(result2)
-    # Output: [1.0, 2.0, 3.0, 4.0]
+.. invisible-code-block: python
 
-Args:
-    value: The symbolic tensor to use as the input to the sqrt
-        computation. If it's not a floating-point DType, an exception will be raised.
+    import numpy as np
 
-Returns:
-    A new symbolic tensor value representing the output of the sqrt
-        value computation.
-
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-sin = _elementwise_unary(rmo.mo_sin)
-"""
-Computes the elementwise sine of a symbolic tensor.
-
-Creates a new op node to compute the elementwise sine of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+    assert np.allclose(result.to_numpy(), [1.0, 0.0, -1.0], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the sin
-        computation. If it's not a floating-point DType, an exception will be raised.
+    x: The input interpreted as radians. Must have a floating-point
+        dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the sin
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the cosine
+    of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
-tanh = _elementwise_unary(rmo.mo_tanh)
-tanh.__doc__ = """
-Computes the elementwise tanh (hyperbolic tangent) of a symbolic tensor.
 
-Creates a new op node to compute the elementwise tanh of a symbolic tensor
-and adds it to the graph, returning the symbolic result. Tanh is defined as
-``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, mapping all input
-values to the range (-1, 1).
-
-The tanh function is commonly used as an activation function in recurrent
-neural networks (RNNs) and as a hidden layer activation in feedforward networks.
-Unlike sigmoid which maps to (0, 1), tanh is zero-centered, which can help
-with gradient flow during training.
+ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
+ceil.__doc__ = """Computes the ceiling of a tensor element-wise.
 
 .. code-block:: python
 
-    import max.experimental.functional as F
-    from max.experimental.tensor import Tensor
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
 
-    # Create input tensor
-    x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+    device = DeviceRef.CPU()
+    with Graph("ceil_example") as graph:
+        x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+        graph.output(ops.ceil(x))
 
-    # Apply tanh activation
-    result = F.tanh(x)
-    print(result)
-    # Output: [[-0.964, -0.762, 0.0], [0.762, 0.964, 0.995]]
-    # All values mapped to range (-1, 1)
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
 
-Args:
-    value: The symbolic tensor to use as the input to the tanh
-        computation. If it's not a floating-point DType, an exception will be raised.
+.. invisible-code-block: python
 
-Returns:
-    A new symbolic tensor value representing the output of the tanh
-        value computation.
+    import numpy as np
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
-
-atanh = _elementwise_unary(rmo.mo_atanh)
-"""
-Computes the elementwise atanh of a symbolic tensor.
-
-Creates a new op node to compute the elementwise tanh of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+    assert np.array_equal(result.to_numpy(), [2.0, -1.0, 3.0, -2.0])
 
 Args:
-    value: The symbolic tensor to use as the input to the tanh
-        computation. If it's not a floating-point DType, an exception will be raised.
+    x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the tanh
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded up toward positive infinity.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-trunc = _elementwise_unary(rmo.mo_trunc)
-"""
-Computes the elementwise truncation of a symbolic tensor.
+floor = _elementwise_unary(rmo.MoFloorOp, "floor")
+floor.__doc__ = """Computes the floor of a tensor element-wise.
 
-Creates a new op node to compute the elementwise truncation of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("floor_example") as graph:
+        x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+        graph.output(ops.floor(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [1.0, -2.0, 2.0, -3.0])
 
 Args:
-    value: The symbolic tensor to use as the input to the truncation
-        computation. If it's not a floating-point DType, an exception will be
-        raised.
+    x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    A new symbolic tensor value representing the output of the truncation
-        value computation.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded down toward negative infinity.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-is_nan = _elementwise_unary_predicate(rmo.mo_is_nan)
-"""
-Computes the elementwise is_nan of a symbolic tensor.
+round = _elementwise_unary(rmo.MoRoundOp, "round")
+round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
 
-Creates a new op node to compute the elementwise is_nan of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+Values exactly halfway between two integers round to the nearest even integer
+(for example, ``2.5`` rounds to ``2.0`` and ``3.5`` rounds to ``4.0``). All
+other values follow normal rounding to the nearest integer.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("round_example") as graph:
+        x = ops.constant([1.5, 2.5, 3.5, -1.5], DType.float32, device=device)
+        graph.output(ops.round(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [2.0, 2.0, 4.0, -2.0])
 
 Args:
-    value: The symbolic tensor to use as the input to the is_nan
-        computation.
+    x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    The result will have:
-        - element type ``bool``, true if the element at a given position
-            is NaN, false otherwise
-        - the same shape as the input value.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` rounded to the nearest integer.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
+rsqrt = _elementwise_unary(rmo.MoRsqrtOp, "rsqrt")
+rsqrt.__doc__ = """Computes the reciprocal square root of a tensor element-wise.
 
-is_inf = _elementwise_unary_predicate(rmo.mo_is_inf)
-"""
-Computes the elementwise :obj:`is_inf()` of a symbolic tensor.
+.. code-block:: python
 
-Creates a new op node to compute the elementwise :obj:`is_inf()` of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("rsqrt_example") as graph:
+        x = ops.constant([1.0, 4.0, 9.0, 16.0], DType.float32, device=device)
+        graph.output(ops.rsqrt(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [1.0, 0.5, 0.333, 0.25], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the :obj:`is_inf()`
-        computation.
+    x: The input tensor. Must have a floating-point dtype.
 
 Returns:
-    The result will have:
-        - element type ``bool``, true if the element at a given position
-            is plus or minus infinity, false otherwise
-        - the same shape as the input value.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    reciprocal square root of each element of ``x``.
 
 Raises:
-    Raises: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-logical_not = _elementwise_unary(rmo.mo_not)
-"""
-Computes the elementwise logical_not of a symbolic tensor.
+sqrt = _elementwise_unary(rmo.MoSqrtOp, "sqrt")
+sqrt.__doc__ = """Computes the square root of a tensor element-wise.
 
-Creates a new op node to compute the elementwise logical_not of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("sqrt_example") as graph:
+        x = ops.constant([1.0, 4.0, 9.0, 16.0], DType.float32, device=device)
+        graph.output(ops.sqrt(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [1.0, 2.0, 3.0, 4.0], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the logical_not
-        computation.
+    x: The input tensor. Must have a floating-point dtype. Negative values
+    produce ``NaN`` since MAX doesn't support complex numbers.
 
 Returns:
-    The result will have:
-        - element type ``bool``, true if the element at a given position
-            is plus or minus infinity, false otherwise
-        - the same shape as the input value.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the square
+    root of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-negate = _elementwise_unary(rmo.mo_negative)
-"""
-Computes the elementwise negation of a symbolic tensor.
+sin = _elementwise_unary(rmo.MoSinOp, "sin")
+sin.__doc__ = """Computes the sine of a tensor element-wise.
 
-Creates a new op node to compute the elementwise negation of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("sin_example") as graph:
+        x = ops.constant([0.0, 1.5707, 3.1415], DType.float32, device=device)
+        graph.output(ops.sin(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [0.0, 1.0, 0.0], atol=1e-3)
 
 Args:
-    value: The symbolic tensor to use as the input to the negation
-        computation.
+    x: The input interpreted as radians. Must have a floating-point
+        dtype.
 
 Returns:
-    The result will have:
-        - element type ``bool``, true if the element at a given position
-            is plus or minus infinity, false otherwise
-        - the same shape as the input value.
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the sine
+    of each element of ``x``.
 
 Raises:
-    Error: If the symbol doesn't represent a tensor value.
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
+tanh = _elementwise_unary(rmo.MoTanhOp, "tanh")
+tanh.__doc__ = """Computes the hyperbolic tangent of a tensor element-wise.
+
+This applies ``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, which maps
+all values to the range ``(-1, 1)``.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("tanh_example") as graph:
+        x = ops.constant(
+            [[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]],
+            DType.float32,
+            device=device,
+        )
+        graph.output(ops.tanh(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(
+        result.to_numpy(),
+        [[-0.964, -0.762, 0.0], [0.762, 0.964, 0.995]],
+        atol=1e-3,
+    )
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` mapped to the range ``(-1, 1)``.
+
+Raises:
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
+atanh = _elementwise_unary(rmo.MoAtanhOp, "atanh")
+atanh.__doc__ = """Computes the inverse hyperbolic tangent of a tensor element-wise.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("atanh_example") as graph:
+        x = ops.constant([-0.5, 0.0, 0.5], DType.float32, device=device)
+        graph.output(ops.atanh(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.allclose(result.to_numpy(), [-0.549, 0.0, 0.549], atol=1e-3)
+
+Args:
+    x: The input tensor, with values in the range ``(-1, 1)``. Must have a
+        floating-point dtype.
+
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    inverse hyperbolic tangent of each element of ``x``.
+
+Raises:
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
+trunc = _elementwise_unary(rmo.MoTruncOp, "trunc")
+trunc.__doc__ = """Truncates a tensor toward zero element-wise.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("trunc_example") as graph:
+        x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+        graph.output(ops.trunc(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [1.0, -1.0, 2.0, -2.0])
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing each
+    element of ``x`` truncated toward zero.
+
+Raises:
+    Error: If the input doesn't represent tensor or has a non-floating-point dtype.
+"""
+
+is_nan = _elementwise_unary_predicate(rmo.MoIsNanOp, "is_nan")
+is_nan.__doc__ = """Tests element-wise whether a tensor contains NaN values.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("is_nan_example") as graph:
+        x = ops.constant(
+            [1.0, float("nan"), 3.0], DType.float32, device=device
+        )
+        graph.output(ops.is_nan(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, False])
+
+Args:
+    x: The input tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing an element-wise NaN test. An element is ``True`` where ``x`` is
+    NaN.
+
+Raises:
+    Error: If the input doesn't represent a tensor.
+"""
+
+
+is_inf = _elementwise_unary_predicate(rmo.MoIsInfOp, "is_inf")
+is_inf.__doc__ = """Tests element-wise whether a tensor contains infinite values.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("is_inf_example") as graph:
+        x = ops.constant(
+            [1.0, float("inf"), 3.0], DType.float32, device=device
+        )
+        graph.output(ops.is_inf(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, False])
+
+Args:
+    x: The input tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing an element-wise infinity test. An element is ``True`` where
+    ``x`` is positive or negative infinity.
+
+Raises:
+    Error: If the input doesn't represent a tensor.
+"""
+
+logical_not = _elementwise_unary(rmo.MoNotOp, "logical_not")
+logical_not.__doc__ = """Computes the element-wise logical NOT of a boolean tensor.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("logical_not_example") as graph:
+        x = ops.constant([True, False, True], DType.bool, device=device)
+        graph.output(ops.logical_not(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [False, True, False])
+
+Args:
+    x: The input boolean tensor.
+
+Returns:
+    A ``TensorValue`` with ``bool`` dtype and the same shape as ``x``,
+    representing the element-wise logical NOT of ``x``.
+
+Raises:
+    Error: If the symbol doesn't represent a tensor.
+"""
+
+negate = _elementwise_unary(rmo.MoNegativeOp, "negate")
+negate.__doc__ = """Negates a tensor element-wise.
+
+.. code-block:: python
+
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, ops
+
+    device = DeviceRef.CPU()
+    with Graph("negate_example") as graph:
+        x = ops.constant([1.0, -2.0, 3.0], DType.float32, device=device)
+        graph.output(ops.negate(x))
+
+    model = InferenceSession().load(graph)
+    result = model.execute()[0]
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert np.array_equal(result.to_numpy(), [-1.0, 2.0, -3.0])
+
+Args:
+    x: The input tensor.
+
+Returns:
+    A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+    negation of each element of ``x``.
+
+Raises:
+    Error: If the input doesn't represent a tensor.
 """
 
 
 def acos(x: TensorValue) -> TensorValue:
-    """Computes the arccosine (inverse cosine) of the input tensor.
-
-    Returns values in the range [0, π] for inputs in [-1, 1].
-
-    Creates a new op node to compute the elementwise arccosine of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
+    """Computes the arccosine of a tensor element-wise.
 
     .. code-block:: python
 
-        def acos_graph():
-            input_type = TensorType(dtype=DType.float32, shape=(3,), device=DeviceRef.CPU())
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
-            with Graph("acos_graph", input_types=(input_type,)) as graph:
-                x = graph.inputs[0]
-                out = ops.acos(x)
-                graph.output(out)
+        device = DeviceRef.CPU()
+        with Graph("acos_example") as graph:
+            x = ops.constant(
+                [-1.0, 0.0, 0.5, 1.0], DType.float32, device=device
+            )
+            graph.output(ops.acos(x))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(), [3.141, 1.570, 1.047, 0.0], atol=1e-3
+        )
 
     Args:
-        x: Input tensor with values in [-1, 1]. If values are outside this
-           domain, they will be clamped to the valid range.
+        x: The input tensor with values in ``[-1, 1]``. For the ``float16``,
+            ``bfloat16``, and ``float32`` dtypes, values outside this domain
+            are clamped to the valid range. For ``float64``, they yield
+            ``NaN``. Must have a floating-point dtype.
 
     Returns:
-        Arccosine of the input in radians [0, π]. The result will have:
-        - the same dtype as the input
-        - the same shape as the input
+        A ``TensorValue`` of the same shape and dtype as ``x`` representing the
+        arccosine of each element of ``x``. Values range from ``[0, π]`` (radians).
 
     Raises:
-        Error: If the symbol doesn't represent a tensor value.
-        Error: If the input is not a floating-point dtype.
+        Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     device = x.device

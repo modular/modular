@@ -23,7 +23,14 @@ from std.benchmark.bencher import (
     Format,
     ThroughputMeasure,
 )
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_not_equal,
+    assert_raises,
+    assert_true,
+    assert_false,
+)
 from test_utils import check_write_to
 
 
@@ -32,7 +39,6 @@ def test_stopping_criteria() raises:
     # is reached
 
     @always_inline
-    @parameter
     def time_me():
         sleep(0.002)
         clobber_memory()
@@ -44,9 +50,12 @@ def test_stopping_criteria() raises:
     # stop after ub (max_runtime_secs)
     var max_iters_1 = 1000_000_000
 
-    def timer() raises unified {var lb, var ub, mut max_iters_1}:
-        var report = run[func4=time_me](
-            max_iters=max_iters_1, min_runtime_secs=lb, max_runtime_secs=ub
+    def timer() raises {var lb, var ub, mut max_iters_1}:
+        var report = run(
+            time_me,
+            max_iters=max_iters_1,
+            min_runtime_secs=lb,
+            max_runtime_secs=ub,
         )
         assert_true(report.mean() > 0)
         assert_true(report.iters() != max_iters_1)
@@ -58,8 +67,9 @@ def test_stopping_criteria() raises:
     var ub_big = 1  # 1s
     var max_iters_2 = 1
 
-    def timer2() raises unified {var ub_big, var lb, mut max_iters_2}:
-        var report = run[func4=time_me](
+    def timer2() raises {var ub_big, var lb, mut max_iters_2}:
+        var report = run(
+            time_me,
             max_iters=max_iters_2,
             min_runtime_secs=lb,
             max_runtime_secs=Float64(ub_big),
@@ -76,8 +86,9 @@ def test_stopping_criteria() raises:
     # stop on or before max_iters
     var max_iters_3 = 3
 
-    def timer3() raises unified {var ub_big, mut max_iters_3}:
-        var report = run[func4=time_me](
+    def timer3() raises {var ub_big, mut max_iters_3}:
+        var report = run(
+            time_me,
             max_iters=max_iters_3,
             min_runtime_secs=0,
             max_runtime_secs=Float64(ub_big),
@@ -118,7 +129,7 @@ def test_keep() raises:
     var val = SIMD[DType.int, 4](1, 2, 3, 4)
     keep(val)
 
-    var ptr = UnsafePointer(to=val)
+    var ptr = Pointer(to=val)
     keep(ptr)
 
     var s0 = SomeStruct()
@@ -133,19 +144,19 @@ def sleeper():
 
 
 def test_non_capturing() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean() > 0.001)
 
 
 def test_change_units() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean("ms") > 1.0)
     assert_true(report.mean("us") > 1_000)
     assert_true(report.mean("ns") > 1_000_000.0)
 
 
 def test_report() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
 
     var report_string = report.as_string()
     assert_true("Benchmark Report (s)" in report_string)
@@ -210,13 +221,53 @@ def test_bencher_iter_unified() raises:
     var count = 0
 
     @always_inline
-    def increment() unified {
+    def increment() {
         mut count,
     }:
         count += 1
 
     bencher.iter(increment)
     assert_equal(count, 3)
+
+
+def test_bencher_iter_unified_raising() raises:
+    """Tests Bencher.iter with a raising unified closure."""
+    var bencher = Bencher(3)
+
+    var count = 0
+    var data = [1, 2, 3]
+
+    @always_inline
+    def increment() raises {
+        mut count,
+        var data^,
+    }:
+        count += len(data)
+
+    # `data` is owned by the closure, so it stays alive for the whole measured
+    # loop; an implicit by-reference capture would not keep it alive.
+    bencher.iter(increment)
+    assert_equal(count, 9)
+
+
+def test_bencher_iter_unified_raising_propagates() raises:
+    """Tests Bencher.iter propagating an error out of a unified closure."""
+    var bencher = Bencher(3)
+
+    var count = 0
+
+    @always_inline
+    def fail_on_second() raises {
+        mut count,
+    }:
+        count += 1
+        if count == 2:
+            raise Error("boom")
+
+    with assert_raises(contains="boom"):
+        bencher.iter(fail_on_second)
+
+    assert_equal(count, 2)
 
 
 def test_bencher_iter_preproc_unified() raises:
@@ -227,13 +278,13 @@ def test_bencher_iter_preproc_unified() raises:
     var preproc_count = 0
 
     @always_inline
-    def work() unified {
+    def work() {
         mut count,
     }:
         count += 1
 
     @always_inline
-    def preproc() unified {
+    def preproc() {
         mut preproc_count,
     }:
         preproc_count += 1
@@ -248,7 +299,7 @@ def test_bencher_iter_custom_unified() raises:
     var bencher = Bencher(5)
 
     @always_inline
-    def custom_timer(num_iters: Int) unified {} -> Int:
+    def custom_timer(num_iters: Int) -> Int:
         return num_iters * 100
 
     bencher.iter_custom(custom_timer)
@@ -262,13 +313,13 @@ def test_bench_function_unified() raises:
     var call_count = 0
 
     @always_inline
-    def noop() unified {}:
+    def noop():
         pass
 
     @always_inline
     def my_bench(
         mut b: Bencher,
-    ) unified {mut call_count,}:
+    ) {mut call_count,}:
         call_count += 1
         b.iter(noop)
 
@@ -287,11 +338,11 @@ def test_bench_with_input_unified() raises:
     def my_bench(
         mut b: Bencher,
         input: Int,
-    ) unified {mut call_count,}:
+    ) {mut call_count,}:
         call_count += 1
 
         @always_inline
-        def noop() unified {}:
+        def noop():
             pass
 
         b.iter(noop)
@@ -308,13 +359,30 @@ def test_bench_function_no_arg_unified() raises:
     var count = 0
 
     @always_inline
-    def my_func() unified {
+    def my_func() {
         mut count,
     }:
         count += 1
 
     bench.bench_function(my_func, BenchId("test_noarg_unified"))
     assert_true(count > 0)
+
+
+def test_bench_id_hash() raises:
+    var bench_id1 = BenchId("foo()", "123")
+
+    assert_equal(hash(bench_id1), hash(bench_id1))
+    assert_not_equal(hash(bench_id1), hash(BenchId("bar()")))
+    assert_not_equal(hash(bench_id1), hash(BenchId("bar()", "123")))
+
+
+def test_bench_id_eq() raises:
+    var bench_id1 = BenchId("foo()", "123")
+
+    assert_equal(bench_id1, bench_id1)
+    assert_not_equal(bench_id1, BenchId("foo()", "456"))
+    assert_not_equal(bench_id1, BenchId("bar()"))
+    assert_not_equal(bench_id1, BenchId("bar()", "123"))
 
 
 def main() raises:

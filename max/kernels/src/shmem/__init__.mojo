@@ -10,16 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This module implements a subset of OpenSHMEM functionality for Mojo. It will
-abstract over both NVSHMEM and ROCSHMEM, exposing a similar API to DeviceContext
-with a symmetric heap that is accessible by inter-node and intra-node GPUs.
+"""Implements a subset of OpenSHMEM for multi-node GPU communication.
+
+This package abstracts over NVSHMEM (NVIDIA) and ROCSHMEM (AMD), exposing a
+`DeviceContext`-compatible API backed by a symmetric heap that is accessible by
+all GPUs in a job, both within a node and across nodes. It also includes
+expert-parallelism (EP) communication kernels for MoE token dispatch and
+combine operations.
+
+Use `SHMEMContext` as a context manager to initialize the SHMEM runtime and
+launch per-GPU threads, as shown below.
 
 ```mojo
 from std.testing import assert_equal
 from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 
-def simple_shift_kernel(destination: UnsafePointer[Int32, _]):
+def simple_shift_kernel(destination: Pointer[Int32, _]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -36,7 +43,7 @@ def main() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 

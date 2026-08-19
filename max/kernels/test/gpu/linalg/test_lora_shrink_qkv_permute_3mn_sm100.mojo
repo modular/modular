@@ -13,8 +13,8 @@
 
 import std.itertools
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -64,8 +64,8 @@ def test[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -83,16 +83,20 @@ def test[
     var b_size = num_experts * 3 * N * K
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](lora_c_size)
-    var c_ref_host_ptr = alloc[Scalar[c_type]](c_ref_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](lora_c_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_ref_size)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_experts + 1
+    )
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_experts
+    )
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -100,11 +104,11 @@ def test[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx[3](), Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N])),
     )
 
     # Setup offsets and expert ids
@@ -133,7 +137,7 @@ def test[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -141,17 +145,17 @@ def test[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(3), Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N])),
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
         row_major(
             Coord(
-                Idx(num_experts + 1),
+                num_experts + 1,
             )
         ),
     )
@@ -159,7 +163,7 @@ def test[
         expert_ids_dev_buffer,
         row_major(
             Coord(
-                Idx(num_experts),
+                num_experts,
             )
         ),
     )
@@ -199,7 +203,7 @@ def test[
     ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     for qkv_idx, m, n in std.itertools.product(
         range(3), range(total_num_tokens), range(N)
@@ -218,12 +222,6 @@ def test[
         )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_ref_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^

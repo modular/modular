@@ -19,9 +19,11 @@ communication in distributed inference scenarios.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -34,6 +36,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -46,6 +49,7 @@ from max.graph import (
     ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
+from numpy.typing import NDArray
 
 from .ep_config import (
     NUM_GROUPS,
@@ -90,6 +94,61 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
 
 
+@dataclass
+class EPCommBuffers:
+    """SHMEM communication buffers for one Expert Parallelism MoE forward pass.
+
+    Bundles the per-device send, receive, and synchronization tensors produced
+    by ``EPBatchManager.comm_buffers()`` into a single value so they can be
+    passed through the subgraph pytree machinery as one forward argument. The
+    ``__tree_flatten__`` / ``__tree_unflatten__`` hooks expose the
+    :class:`~max.experimental.tensor.Tensor` leaves to that machinery.
+    """
+
+    atomic_counters: list[list[Tensor]]
+    """Atomic synchronization counters, indexed as ``[group][device]``, used to
+    coordinate thread blocks during the dispatch and combine phases."""
+
+    send_buf_ptrs: list[Tensor]
+    """Per-group SHMEM send-buffer device pointers, one entry per buffer group.
+    Each tensor holds the per-device addresses of the staging buffers for
+    outgoing tokens."""
+
+    recv_buf_ptrs: list[Tensor]
+    """Per-group SHMEM receive-buffer device pointers, one entry per buffer
+    group. Each tensor holds the per-device addresses of the buffers for
+    incoming tokens from remote devices."""
+
+    recv_count_ptrs: list[Tensor]
+    """Per-group SHMEM receive-count device pointers, one entry per buffer
+    group. Each tensor holds the per-device addresses of the buffers that signal
+    transfer completion."""
+
+    eplb_log2phy: dict[int, Tensor] | None = None
+    """Per-device Expert Parallelism load-balancing (EPLB) logical-to-physical
+    expert map, keyed by device ID. Populated only when EPLB is enabled;
+    otherwise ``None``."""
+
+    eplb_logcnt: dict[int, Tensor] | None = None
+    """Per-device count of physical replicas per logical expert (EPLB), keyed by
+    device ID. Populated only when EPLB is enabled; otherwise ``None``."""
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[object, ...], tuple[str, ...]]:
+        """Exposes the Tensor leaves to the subgraph pytree machinery."""
+        names = tuple(f.name for f in dataclasses.fields(self))
+        children = tuple(getattr(self, name) for name in names)
+        return children, names
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, aux: tuple[str, ...], children: Sequence[Any]
+    ) -> EPCommBuffers:
+        """Rebuilds an :class:`EPCommBuffers` from flattened leaves."""
+        return cls(**dict(zip(aux, children, strict=True)))
+
+
 class EPBatchManager:
     """Batch manager for Expert Parallelism (EP).
 
@@ -119,26 +178,26 @@ class EPBatchManager:
     """Atomic synchronization counters. Shape: [NUM_GROUPS][n_gpus_per_node]
     of BufferValue. Used for inter-thread-block coordination."""
 
-    _src_info: dict[int, TensorValue | None] = {}
+    _src_info: dict[int, TensorValue | None]
     """Source routing information for combine phase. Each key is a device ID,
     and the value is a TensorValue with shape [max_recv_tokens, 2]. Maps expert
     outputs back to their source positions."""
 
-    _dispatch_dim: dict[int, Dim | None] = {}
+    _eplb_log2phy_per_device: dict[int, BufferValue]
+    """Per-device log2phy buffer. Shape: [num_moe_layer, num_experts_per_layer, max_replicas].
+    Populated by fetch_buffers when config.eplb_enabled is True."""
+
+    _eplb_logcnt_per_device: dict[int, BufferValue]
+    """Per-device logcnt buffer. Shape: [num_moe_layer, num_experts_per_layer]"""
+
+    _eplb_phy2log: NDArray[np.int64] | None
+    """Per-layer logical->physical map from EPLB. Shape [num_layers, num_phy].
+    Set once at startup before MoE.shard()."""
+
+    _dispatch_dim: dict[int, Dim | None]
     """Dictionary of device ID to dimension for the dispatch input tensor.
     Used to determine the shape of the combined output tensor.
     """
-
-    _input_x: dict[int, TensorValue | None] = {}
-    """Input tokens for the current device. If shared experts fusion is
-    enabled, this will be used to temporarily store the inputs of the MoE
-    module, and passed to the ep_dispatch_wait kernel.
-    """
-
-    _shared_expert_outputs: dict[int, TensorValue | None] = {}
-    """Shared expert outputs for the current device. If shared experts fusion is
-    enabled, this will be used to store the outputs of the shared experts from
-    the ep_combine kernel."""
 
     def __init__(self, config: EPConfig):
         """Initialize the EP batch manager.
@@ -147,6 +206,19 @@ class EPBatchManager:
             config: EP configuration.
         """
         self.config = config
+        # Per-instance state (two managers must not share these dicts).
+        self._src_info = {}
+        self._eplb_log2phy_per_device = {}
+        self._eplb_logcnt_per_device = {}
+        self._eplb_phy2log = None
+        self._dispatch_dim = {}
+        self._send_buf_ptrs = None
+        self._recv_buf_ptrs = None
+        self._recv_count_ptrs = None
+        self._atomic_counters = None
+
+        if getattr(config, "eplb_phy2log_plan", None) is not None:
+            self._eplb_phy2log = config.eplb_phy2log_plan
 
     def _common_grouped_matmul_metadata(self) -> TensorValue:
         """Common grouped matmul metadata for all devices. Shape: (2,). Contains
@@ -204,10 +276,15 @@ class EPBatchManager:
         Returns:
             list[BufferType]: List of buffer types for atomic counters.
         """
+        n_experts = (
+            self.config.n_experts // self.config.n_gpus_per_node
+            if self.config.use_allreduce
+            else self.config.n_experts
+        )
         return [
             BufferType(
                 DType.int32,
-                [get_ep_local_sync_counters_size(self.config.n_experts)],
+                [get_ep_local_sync_counters_size(n_experts)],
                 device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -238,9 +315,37 @@ class EPBatchManager:
             list[TensorType | BufferType]: List of input types for atomic
                                           counters and device pointers.
         """
-        return (
+        types: list[TensorType | BufferType] = (
             self._atomic_counters_input_types() + self._dev_ptrs_input_types()
         )
+
+        if self.config.eplb_enabled:
+            types += self._eplb_input_types()
+        return types
+
+    def _eplb_input_types(self) -> list[TensorType | BufferType]:
+        """Per-device log2phy + logcnt buffer types."""
+        num_moe_layers = self.config.num_moe_layers
+        num_experts_per_layer = self.config.num_logical_experts
+        max_replicas = self.config.max_replicas
+        n_gpus = self.config.n_gpus_per_node
+        log2phy: list[TensorType | BufferType] = [
+            BufferType(
+                DType.int32,
+                [num_moe_layers, num_experts_per_layer, max_replicas],
+                device=DeviceRef.GPU(i),
+            )
+            for i in range(n_gpus)
+        ]
+        logcnt: list[TensorType | BufferType] = [
+            BufferType(
+                DType.int32,
+                [num_moe_layers, num_experts_per_layer],
+                device=DeviceRef.GPU(i),
+            )
+            for i in range(n_gpus)
+        ]
+        return log2phy + logcnt
 
     def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
         """Extract and organize communication buffers from graph input values.
@@ -281,7 +386,83 @@ class EPBatchManager:
         self._recv_count_ptrs = [
             val.tensor for val in input_vals[start_idx:end_idx]
         ]
+
         start_idx = end_idx
+
+        # Next 2*NUM_GROUPS are EPLB log2phy + logcnt buffers
+        if self.config.eplb_enabled:
+            n_gpus = self.config.n_gpus_per_node
+            end_idx = start_idx + n_gpus
+            self._eplb_log2phy_per_device = {
+                i: input_vals[start_idx + i].buffer for i in range(n_gpus)
+            }
+            start_idx = end_idx
+            self._eplb_logcnt_per_device = {
+                i: input_vals[start_idx + i].buffer for i in range(n_gpus)
+            }
+            start_idx += n_gpus
+
+    def comm_buffers(self, input_vals: Iterable[Value[Any]]) -> EPCommBuffers:
+        """Fetches the EP buffers and wraps them as an :class:`EPCommBuffers`.
+
+        Args:
+            input_vals: Graph input values containing all buffer references,
+                in the same order as :meth:`input_types`.
+
+        Returns:
+            Dataclass containing the EP comm tensors.
+        """
+        self.fetch_buffers(input_vals)
+        eplb_log2phy: dict[int, Tensor] | None = None
+        eplb_logcnt: dict[int, Tensor] | None = None
+        if self.config.eplb_enabled:
+            eplb_log2phy = {
+                i: Tensor.from_graph_value(b)
+                for i, b in self._eplb_log2phy_per_device.items()
+            }
+            eplb_logcnt = {
+                i: Tensor.from_graph_value(b)
+                for i, b in self._eplb_logcnt_per_device.items()
+            }
+        return EPCommBuffers(
+            atomic_counters=[
+                [Tensor.from_graph_value(b) for b in group]
+                for group in self.atomic_counters
+            ],
+            send_buf_ptrs=[
+                Tensor.from_graph_value(v) for v in self.send_buf_ptrs
+            ],
+            recv_buf_ptrs=[
+                Tensor.from_graph_value(v) for v in self.recv_buf_ptrs
+            ],
+            recv_count_ptrs=[
+                Tensor.from_graph_value(v) for v in self.recv_count_ptrs
+            ],
+            eplb_log2phy=eplb_log2phy,
+            eplb_logcnt=eplb_logcnt,
+        )
+
+    def bind_comm_buffers(self, comm: EPCommBuffers) -> None:
+        """Rebinds the buffer fields from a threaded :class:`EPCommBuffers`.
+
+        Called at the top of the EP MoE forward so the kernel-dispatch helpers,
+        which read ``self._send_buf_ptrs`` etc., see the (subgraph-rebound)
+        buffer values passed in as a forward argument.
+        """
+        self._atomic_counters = [
+            [BufferValue(t) for t in group] for group in comm.atomic_counters
+        ]
+        self._send_buf_ptrs = [TensorValue(t) for t in comm.send_buf_ptrs]
+        self._recv_buf_ptrs = [TensorValue(t) for t in comm.recv_buf_ptrs]
+        self._recv_count_ptrs = [TensorValue(t) for t in comm.recv_count_ptrs]
+        if comm.eplb_log2phy is not None:
+            self._eplb_log2phy_per_device = {
+                i: BufferValue(t) for i, t in comm.eplb_log2phy.items()
+            }
+        if comm.eplb_logcnt is not None:
+            self._eplb_logcnt_per_device = {
+                i: BufferValue(t) for i, t in comm.eplb_logcnt.items()
+            }
 
     def ep_dispatch_async(
         self,
@@ -318,11 +499,6 @@ class EPBatchManager:
             input_scales=input_scales,
         )
 
-        if self.config.fused_shared_expert:
-            self._input_x[device_id] = input_tokens
-        else:
-            self._input_x[device_id] = None
-
     def ep_dispatch_wait(self, device_id: int) -> tuple[TensorValue, ...]:
         """Wait for Expert Parallelism token dispatch phase completion.
 
@@ -353,7 +529,9 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
-            self._input_x[device_id],
+            # Forward the per-rank input token dim so the kernel can pick
+            # a smaller grid when num_tokens is statically known (decode).
+            num_tokens=self._dispatch_dim.get(device_id),
         )
 
         # The last element is the src_info, we need to store it for the
@@ -386,7 +564,7 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_wait() first."
         )
 
-        self._shared_expert_outputs[device_id] = call_ep_combine_async(
+        call_ep_combine_async(
             input_tokens,
             src_info,
             self.atomic_counters[0][device_id],
@@ -394,7 +572,6 @@ class EPBatchManager:
             self.recv_buf_ptrs[COMBINE_GROUP],
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
-            self._dispatch_dim[device_id],
         )
 
         # reset src_info to None to avoid reusing it for the next batch
@@ -434,11 +611,6 @@ class EPBatchManager:
             dispatch_dim,
             router_weight,
         )
-
-        if self.config.fused_shared_expert:
-            shared_expert_outputs = self._shared_expert_outputs[device_id]
-            assert shared_expert_outputs is not None
-            results += shared_expert_outputs
 
         return results
 
@@ -490,7 +662,6 @@ class EPBatchManager:
 
         # Store the symbolic token numbers for the combine phase
         self._dispatch_dim[device_id] = input_tokens.shape[0]
-
         results = call_ep_dispatch(
             input_tokens,
             topk_ids,
@@ -622,6 +793,7 @@ class EPBatchManager:
         input_tokens: TensorValue,
         router_weight: TensorValue,
         device_id: int,
+        topk_ids: TensorValue | None = None,
     ) -> TensorValue:
         """Execute fused Expert Parallelism token combine (async + wait).
 
@@ -643,6 +815,8 @@ class EPBatchManager:
             router_weight: Router weights for the current device.
                 A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            topk_ids: Top-k expert IDs for the current device. Need to be
+                provided for allreduce mode.
 
         Returns:
             Final output tensor with shape (num_local_tokens, hidden_size).
@@ -671,6 +845,7 @@ class EPBatchManager:
             self.config,
             dispatch_dim,
             router_weight,
+            topk_ids=topk_ids,
         )
 
         # Reset src_info to None to avoid reusing it for the next batch
@@ -714,10 +889,13 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
-        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
-        self.atomic_counter_size = get_ep_local_sync_counters_size(
-            self.config.n_experts
+        n_experts = (
+            config.n_experts // config.n_gpus_per_node
+            if config.use_allreduce
+            else config.n_experts
         )
+        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
+        self.atomic_counter_size = get_ep_local_sync_counters_size(n_experts)
 
         # Create atomic counters for each GPU in each buffer group
         self.atomic_counters = [
@@ -870,6 +1048,8 @@ class EPCommInitializer:
         self.config.node_id = my_node_id[0]
 
         logger.info(f"Initialized EP for node {self.config.node_id}")
+        if self.config.use_allreduce:
+            logger.info("Using allreduce as the EP communication backend.")
 
     def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.

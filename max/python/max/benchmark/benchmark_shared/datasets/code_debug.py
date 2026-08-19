@@ -17,9 +17,9 @@ import random
 from collections.abc import Sequence
 
 import msgspec
-from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._hf_download import hf_hub_download_with_retry
 from .distribution import BaseDistribution, DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .types import (
@@ -61,7 +61,7 @@ class CodeDebugLine(msgspec.Struct):
 
 class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
     def fetch(self) -> None:
-        self.dataset_path = hf_hub_download(
+        self.dataset_path = hf_hub_download_with_retry(
             repo_id="xinrongzhang2022/InfiniteBench",
             filename="code_debug.jsonl",
             repo_type="dataset",
@@ -166,9 +166,9 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
             # Tokenize the prompts and completions.
             prompt = dataset[i][0]
-            prompt_token_ids = tokenizer(prompt).input_ids
+            prompt_token_ids = tokenizer.encode(prompt)
             completion = dataset[i][1]
-            completion_token_ids = tokenizer(completion).input_ids
+            completion_token_ids = tokenizer.encode(completion)
             prompt_len = len(prompt_token_ids)
             output_len = (
                 len(completion_token_ids)

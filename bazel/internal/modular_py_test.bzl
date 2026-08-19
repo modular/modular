@@ -1,28 +1,34 @@
 """A helper macro for running python tests with pytest"""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "get_resources_exec_properties", "get_resources_tags", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
 load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
-load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
+load(":py_imports.bzl", "compute_py_imports")
 load(":py_repl.bzl", "py_repl")
-load(":test_resources.bzl", "TEST_RESOURCES")
 
-def _get_resource_tags(use_resource_tags, name):
-    if not use_resource_tags:
+def _get_manual_srcs(tags, per_test_tags, srcs):
+    # Srcs that default builds skip, so mypy has to see them via a separate
+    # library. A no-mypy suppression opts out, at either granularity.
+    if "no-mypy" in tags:
         return []
-    resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name)
-    tags = []
-    if resources:
-        if "cpu" in resources:
-            tags.append("resources:cpu:{}".format(resources["cpu"]))
-        if "memory" in resources:
-            tags.append("resources:memory:{}".format(resources["memory"]))
-    return tags
+
+    if "manual" in tags or "postsubmit" in tags:
+        return srcs
+
+    result = []
+    for src in srcs:
+        src_tags = per_test_tags.get(src, [])
+        if "no-mypy" in src_tags:
+            continue
+        if "manual" in src_tags or "postsubmit" in src_tags:
+            result.append(src)
+
+    return result
 
 def modular_py_test(
         name,
@@ -40,8 +46,10 @@ def modular_py_test(
         gpu_constraints = [],
         main = None,
         imports = [],
-        use_resource_tags = False,
         per_test_tags = {},
+        test_name_prefix = "",
+        shard_count = None,
+        per_test_shard_count = {},
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -61,8 +69,10 @@ def modular_py_test(
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
-        use_resource_tags: If true, use pregenerated resource tags for the test.
         per_test_tags: A mapping of source files to extra tags to apply to that test file.
+        test_name_prefix: Prefix added to per-src py_test target names (multi-source only).
+        shard_count: Forwarded to the underlying test target.
+        per_test_shard_count: Forwarded to the underlying test target for the specified source(s).
         **kwargs: Extra arguments passed through to py_test
     """
 
@@ -71,6 +81,12 @@ def modular_py_test(
 
     if len(set(per_test_tags.keys()) - set(srcs)) != 0:
         fail("keys specified in per_test_tags that are not source files: {}".format(set(per_test_tags.keys()) - set(srcs)))
+
+    if len(set(per_test_shard_count.keys()) - set(srcs)) != 0:
+        fail("keys specified in per_test_shard_count that are not source files: {}".format(set(per_test_shard_count.keys()) - set(srcs)))
+
+    if "gpu" in tags and "enable-sanitizers" in tags:
+        fail("gpu + sanitizers are able to be run manually, but not in CI. remove `enable-sanitizers`.")
 
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
@@ -156,53 +172,66 @@ def modular_py_test(
     )
 
     if main:
-        kwargs |= {
-            "args": args,
-            "main": main,
-        }
+        final_args = args
+        final_main = main
     else:
-        kwargs |= {
-            "args": [native.package_name(), "-svv", "--color=yes", "--durations=3"] + args,
-            "main": "pytest_runner.py",
-        }
+        final_args = [native.package_name(), "-svv", "--color=yes", "--durations=3"] + args
+        final_main = "pytest_runner.py"
 
-    if "manual" in tags:
-        # TODO: Remove once we run mypy-style lints in a separate test target
-        modular_py_library(
+    manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
+    if manual_srcs:
+        # Non-test srcs are sibling helper modules the manual tests import, so
+        # mypy needs them here too (they're already in manual_srcs when the
+        # whole target is manual).
+        mypy_srcs = manual_srcs + [src for src in non_test_srcs if src not in manual_srcs]
+
+        # TODO: Remove once we run mypy-style lints in a separate test target.
+        # Raw py_library, not modular_py_library: the latter loads
+        # modular_py_test, so depending back on it would cycle.
+        py_library(
             name = name + ".mypy_library",
             data = data + extra_data,
-            toolchains = toolchains,
-            # Pydeps test is added below
             tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
             ],
             testonly = True,
-            srcs = srcs + ["//bazel/internal:pytest_runner"],
+            srcs = mypy_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
-            imports = imports,
-            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+            imports = compute_py_imports(native.package_name(), imports),
         )
 
     if len(test_srcs) > 1:
+        if shard_count:
+            fail("do not use shard_count when there are multiple tests, use per_test_shard_count")
+
         test_names = []
         for src in test_srcs:
-            test_name = src.replace(".py", "")
+            n_shards = per_test_shard_count.get(src)
+
+            # If a custom main is used, it is responsible for sharding via
+            # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.
+            use_shard_plugin = n_shards and not main
+            shard_args = ["-p", "pytest-shard"] if use_shard_plugin else []
+            test_name = test_name_prefix + src.replace(".py", "")
             test_names.append(test_name)
             py_test(
                 name = test_name,
                 data = data + extra_data,
+                main = final_main,
+                args = final_args + shard_args,
                 toolchains = toolchains,
                 env = env_for_available_tools() | extra_env | env,
                 deps = deps + [
                     requirement("pytest"),
                     "@rules_python//python/runfiles",
-                ],
+                ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
+                shard_count = n_shards,
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
-                exec_properties = default_exec_properties | exec_properties,
+                exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags + _get_resource_tags(use_resource_tags, test_name) + per_test_tags.get(src, []),
+                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []),
                 imports = imports,
                 **kwargs
             )
@@ -215,20 +244,32 @@ def modular_py_test(
     else:
         if per_test_tags:
             fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
+        if per_test_shard_count:
+            fail("do not use per_test_shard_count with only one test, use shard_count")
 
+        # If a custom main is used, it is responsible for sharding via
+        # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.
+        use_shard_plugin = shard_count and not main
+        shard_args = ["-p", "pytest-shard"] if use_shard_plugin else []
+
+        # test_name_prefix intentionally doesn't apply here: single-source
+        # collisions happen at the `name` arg, which callers pick themselves.
         py_test(
             name = name,
             data = data + extra_data,
             toolchains = toolchains,
             env = env_for_available_tools() | extra_env | env,
+            main = final_main,
+            args = final_args + shard_args,
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
-            ],
+            ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
+            shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
-            exec_properties = default_exec_properties | exec_properties,
+            exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + _get_resource_tags(use_resource_tags, name),
+            tags = tags + get_resources_tags(name),
             imports = imports,
             **kwargs
         )
@@ -244,6 +285,12 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             ignore_unresolved_imports = ignore_unresolved_imports,
+            target_compatible_with = select({
+                # No point in running these, causes "error replanting symlinks" failures
+                "//:asan": ["@platforms//:incompatible"],
+                "//:ubsan": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
             imports = imports,
             deps = deps + [
                 requirement("pytest"),

@@ -34,7 +34,7 @@ from std.math import ceildiv
 from std.random import randn, seed
 from std.sys import argv, has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -43,7 +43,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from std.memory import alloc
@@ -55,7 +54,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 
 
@@ -168,15 +167,18 @@ def run_test_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
+    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
 
     # Generate FP8 data: generate bf16 first, then cast to fp8.
     # Use small stddev to keep values in FP8 range.
-    var blocks_bf16 = alloc[Scalar[q_type]](block_elems)
-    randn[q_type](blocks_bf16, block_elems, mean=0.0, standard_deviation=0.3)
+    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    randn(
+        blocks_bf16.as_span(),
+        mean=0.0,
+        standard_deviation=0.3,
+    )
     for i in range(block_elems):
         blocks_host[i] = blocks_bf16[i].cast[kv_type]()
-    blocks_bf16.free()
 
     # -----------------------------------------------------------------------
     # Step 1b: Create the scales tensor on host with NON-UNIFORM per-block,
@@ -200,7 +202,9 @@ def run_test_blockwise_fp8[
         * head_dim_gran
     )
 
-    var scales_host = alloc[Scalar[DType.float32]](scales_elems)
+    var scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+        scales_elems
+    )
 
     # Assign non-uniform per-block, per-token scales.
     # scale(token_global, block_idx) = palette[(token_global * 7 + block_idx) % 9]
@@ -248,14 +252,19 @@ def run_test_blockwise_fp8[
     # Step 1c: Build lookup table and zero out unused token slots
     # -----------------------------------------------------------------------
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     # Match production: max_pages_per_batch covers cache_len + 1 tokens.
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, page_size)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        lut_size
+    )
+    # Zero-init: unused per-batch slots must be 0.
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
 
@@ -301,13 +310,15 @@ def run_test_blockwise_fp8[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, DEPTH])
     # -----------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -----------------------------------------------------------------------
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -316,7 +327,7 @@ def run_test_blockwise_fp8[
     # Step 4: Output tensor
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -385,21 +396,21 @@ def run_test_blockwise_fp8[
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -409,7 +420,7 @@ def run_test_blockwise_fp8[
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
         # Pass the scales tensor
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -422,17 +433,17 @@ def run_test_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -444,7 +455,7 @@ def run_test_blockwise_fp8[
         1,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA decode kernel (blockwise FP8)...")
 
@@ -460,7 +471,7 @@ def run_test_blockwise_fp8[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -496,7 +507,7 @@ def run_test_blockwise_fp8[
 
         # Extract dequantized K for this batch from paged blocks + scales.
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = alloc[Scalar[q_type]](k_b_size)
+        var k_b_host = ctx.enqueue_create_host_buffer[q_type](k_b_size)
 
         var page_base_b = 0
         for bi in range(b):
@@ -539,13 +550,13 @@ def run_test_blockwise_fp8[
 
         # Q for this batch: [1, 1, num_heads, depth]
         var q_b_size = 1 * num_heads * DEPTH
-        var q_b_host = alloc[Scalar[q_type]](q_b_size)
+        var q_b_host = ctx.enqueue_create_host_buffer[q_type](q_b_size)
         for i in range(q_b_size):
             q_b_host[i] = q_host[b * num_heads * DEPTH + i]
 
         # Reference output: [1, 1, num_heads, depth] (full depth)
         var ref_b_size = 1 * num_heads * DEPTH
-        var ref_b_host = alloc[Scalar[q_type]](ref_b_size)
+        var ref_b_host = ctx.enqueue_create_host_buffer[q_type](ref_b_size)
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[q_type](k_b_size)
@@ -603,10 +614,8 @@ def run_test_blockwise_fp8[
         var out_offset = b * num_heads * V_DEPTH
         for h in range(num_heads):
             for d in range(V_DEPTH):
-                var expect = ref_b_host.load(d + DEPTH * h).cast[
-                    DType.float64
-                ]()
-                var actual = out_host.load(out_offset + V_DEPTH * h + d).cast[
+                var expect = ref_b_host[d + DEPTH * h].cast[DType.float64]()
+                var actual = out_host[out_offset + V_DEPTH * h + d].cast[
                     DType.float64
                 ]()
                 var abs_err = abs(actual - expect)
@@ -618,10 +627,6 @@ def run_test_blockwise_fp8[
 
         total_checked += num_heads * V_DEPTH
 
-        # Cleanup per-batch buffers
-        k_b_host.free()
-        q_b_host.free()
-        ref_b_host.free()
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
@@ -634,15 +639,6 @@ def run_test_blockwise_fp8[
     )
 
     print("  PASS:", name, "\n")
-
-    # Cleanup
-    q_host.free()
-    out_host.free()
-    blocks_host.free()
-    scales_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    row_offsets_host.free()
 
     _ = blocks_device
     _ = scales_device
@@ -716,12 +712,15 @@ def run_bench_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    var blocks_bf16 = alloc[Scalar[q_type]](block_elems)
-    randn[q_type](blocks_bf16, block_elems, mean=0.0, standard_deviation=0.3)
+    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    randn(
+        blocks_bf16.as_span(),
+        mean=0.0,
+        standard_deviation=0.3,
+    )
     for i in range(block_elems):
         blocks_host[i] = blocks_bf16[i].cast[kv_type]()
-    blocks_bf16.free()
 
     # Scales tensor
     var scales_shape = IndexList[6](
@@ -740,10 +739,11 @@ def run_bench_blockwise_fp8[
         * kv_params.num_heads
         * head_dim_gran
     )
-    var scales_host = alloc[Scalar[DType.float32]](scales_elems)
     # Use uniform scale=1.0 for benchmark (perf is scale-value independent)
-    for i in range(scales_elems):
-        scales_host[i] = 1.0
+    var scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+        scales_elems
+    )
+    scales_host.enqueue_fill(Float32(1.0))
 
     var _tok_stride = kv_params.num_heads * kv_params.head_size
     var _page_stride = (
@@ -754,13 +754,18 @@ def run_bench_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, page_size)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        lut_size
+    )
+    # Zero-init: unused per-batch slots must be 0.
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
 
@@ -790,18 +795,20 @@ def run_bench_blockwise_fp8[
 
     # Step 2: Q tensor
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
 
     # Step 3: input_row_offsets
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
 
     # Step 4: Output tensor
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
 
     # Step 5: Copy to device
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
@@ -862,21 +869,21 @@ def run_bench_blockwise_fp8[
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -885,7 +892,7 @@ def run_bench_blockwise_fp8[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -898,17 +905,17 @@ def run_bench_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # Step 7: Pre-compute scalar args and benchmark
@@ -918,16 +925,16 @@ def run_bench_blockwise_fp8[
         1,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         out_tt,
         q_tt,
         kv_cache,
         row_offsets_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
@@ -942,7 +949,7 @@ def run_bench_blockwise_fp8[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             q_max_seq_len=q_max_seq_len,
         )
 
@@ -957,15 +964,6 @@ def run_bench_blockwise_fp8[
     var mstime = nstime / 1000000
     print("  ", nrun, "runs avg", mstime, "ms")
     print()
-
-    # Cleanup
-    q_host.free()
-    out_host.free()
-    blocks_host.free()
-    scales_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    row_offsets_host.free()
 
     _ = mla_args
     _ = blocks_device

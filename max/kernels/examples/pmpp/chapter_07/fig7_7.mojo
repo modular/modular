@@ -17,19 +17,19 @@
 from std.random import random_float64
 from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.itertools import product
 
 # ========================== KERNEL CODE ==========================
 
 
 def convolution_2D_basic_kernel(
-    N: UnsafePointer[Float32, MutAnyOrigin],
-    F: UnsafePointer[Float32, MutAnyOrigin],
+    N: UnsafePointer[Float32, ImmutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
     P: UnsafePointer[Float32, MutAnyOrigin],
-    r: Int,
-    width: Int,
-    height: Int,
+    r_dev: Int32,
+    width_dev: Int32,
+    height_dev: Int32,
 ):
     """Basic 2D convolution kernel.
 
@@ -37,10 +37,14 @@ def convolution_2D_basic_kernel(
         N: Input array (device).
         F: Filter/kernel array (device).
         P: Output array (device).
-        r: Filter radius (filter size = 2*r + 1).
-        width: Input width.
-        height: Input height.
+        r_dev: Filter radius (filter size = 2*r + 1).
+        width_dev: Input width.
+        height_dev: Input height.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var r = Int(r_dev)
+    var width = Int(width_dev)
+    var height = Int(height_dev)
     comptime BLOCK_DIM = 16
     var outCol = block_idx.x * BLOCK_DIM + thread_idx.x
     var outRow = block_idx.y * BLOCK_DIM + thread_idx.y
@@ -64,9 +68,9 @@ def convolution_2D_basic_kernel(
 
 
 def convolution_2d_basic(
-    h_in: UnsafePointer[Float32, MutAnyOrigin],
-    h_filter: UnsafePointer[Float32, MutAnyOrigin],
-    h_out: UnsafePointer[Float32, MutAnyOrigin],
+    h_in: UnsafePointer[mut=False, Float32, _],
+    h_filter: UnsafePointer[mut=False, Float32, _],
+    h_out: UnsafePointer[mut=True, Float32, _],
     r: Int,
     width: Int,
     height: Int,
@@ -104,13 +108,13 @@ def convolution_2d_basic(
     var grid_dim_y = ceildiv(height, BLOCK_DIM)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[convolution_2D_basic_kernel](
+    ctx.enqueue_function[convolution_2D_basic_kernel](
         d_in,
         d_filter,
         d_out,
-        r,
-        width,
-        height,
+        Int32(r),
+        Int32(width),
+        Int32(height),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -124,9 +128,9 @@ def convolution_2d_basic(
 
 
 def cpu_2d_conv(
-    inarr: UnsafePointer[Float32, MutAnyOrigin],
-    filter: UnsafePointer[Float32, MutAnyOrigin],
-    outarr: UnsafePointer[Float32, MutAnyOrigin],
+    inarr: UnsafePointer[mut=False, Float32, _],
+    filter: UnsafePointer[mut=False, Float32, _],
+    outarr: UnsafePointer[mut=True, Float32, _],
     r: Int,
     width: Int,
     height: Int,

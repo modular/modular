@@ -24,11 +24,25 @@ default namespace that makes Mojo code immediately usable without explicit
 imports.
 """
 
-from std.collections import Dict, InlineArray, KeyElement, List, Optional
+from std.collections import (
+    Dict,
+    Array,
+    KeyElement,
+    List,
+    Optional,
+    ImmSpan,
+    MutSpan,
+    Span,
+)
 from std.collections.string import (
     Codepoint,
+    ImmStringSpan,
+    ImmStringSlice,
+    MutStringSpan,
+    MutStringSlice,
     StaticString,
     String,
+    StringSpan,
     StringSlice,
     ascii,
     atof,
@@ -43,17 +57,13 @@ from std.io.file_descriptor import FileDescriptor
 from std.io.io import input, print
 
 from std.builtin.anytype import (
-    AnyType,
     Some,
     SomeTypeList,
-    ImplicitlyDestructible,
 )
 from std.builtin.bool import Bool, Boolable, all, any
 from std.builtin.breakpoint import breakpoint
 from std.builtin.builtin_slice import Slice, slice
 from std.builtin.comparable import Comparable, Equatable
-from std.builtin.constrained import constrained
-from std.builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from std.builtin.debug_assert import debug_assert
 from std.builtin.dtype import DType
 from std.builtin.error import Error
@@ -63,8 +73,6 @@ from std.builtin.format_int import bin, hex, oct
 from std.builtin.identifiable import Identifiable
 from std.builtin.int import (
     Indexer,
-    SIMDSize,
-    Int,
     Intable,
     IntableRaising,
     index,
@@ -84,13 +92,9 @@ from std.math.math import (
 )
 from std.builtin.none import NoneType
 from std.builtin.range import range
-from std.builtin.rebind import (
-    rebind,
-    rebind_var,
-    trait_downcast,
-    trait_downcast_var,
-)
+from std.builtin.rebind import rebind, rebind_var
 from std.builtin.reversed import ReversibleRange, reversed
+from std.builtin.simd_length import SIMDLength
 from std.builtin.simd import (
     SIMD,
     BFloat16,
@@ -103,6 +107,7 @@ from std.builtin.simd import (
     Float16,
     Float32,
     Float64,
+    Int,
     Int8,
     Int16,
     Int32,
@@ -122,32 +127,15 @@ from std.builtin.sort import partition, sort
 from std.builtin.string_literal import StringLiteral
 from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
-from std.builtin.type_aliases import (
-    AnyOrigin,
-    ImmutAnyOrigin,
-    ImmutOrigin,
-    MutAnyOrigin,
-    MutOrigin,
-    Never,
-    Origin,
-    OriginSet,
-    StaticConstantOrigin,
-    ExternalOrigin,
-    ImmutExternalOrigin,
-    MutExternalOrigin,
-)
+from std.builtin.type_aliases import Never
 from std.builtin.value import (
-    Copyable,
     Defaultable,
-    ImplicitlyCopyable,
-    Movable,
     materialize,
     RegisterPassable,
     TrivialRegisterPassable,
 )
 from std.builtin.variadics import (
     TypeList,
-    Variadic,
     ParameterList,
     VariadicList,
     VariadicPack,
@@ -167,13 +155,36 @@ from std.iter import (
 from std.memory import (
     alloc,
     AddressSpace,
-    ImmutOpaquePointer,
+    ImmOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
-    OptionalUnsafePointer,
+    OptionalPointer,
+    ImmPointer,
+    MutPointer,
     Pointer,
-    Span,
-    ImmutUnsafePointer,
-    MutUnsafePointer,
     UnsafePointer,
+)
+from std.origin import (
+    AnyOrigin,
+    ImmutAnyOrigin,
+    ImmOrigin,
+    MutAnyOrigin,
+    MutOrigin,
+    Origin,
+    OriginSet,
+    ImmStaticOrigin,
+    UntrackedOrigin,
+    ImmUntrackedOrigin,
+    MutUntrackedOrigin,
+    UnsafeAnyOrigin,
+    MutUnsafeAnyOrigin,
+    ImmUnsafeAnyOrigin,
+)
+from std.reflection import reflect
+from std.traits import (
+    AnyType,
+    Copyable,
+    Deinitable,
+    ImplicitlyCopyable,
+    Movable,
 )

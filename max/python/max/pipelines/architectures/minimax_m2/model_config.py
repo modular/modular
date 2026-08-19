@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -35,6 +38,12 @@ class MiniMaxM2Config(Llama3Config):
     Extends Llama3Config with MoE-specific parameters including sigmoid
     routing with expert score correction bias.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
 
     # MoE parameters
     num_local_experts: int = 256
@@ -55,6 +64,10 @@ class MiniMaxM2Config(Llama3Config):
     """Data type for the gate linear layer. Detected from state dict
     during finalize()."""
 
+    attn_dtype: DType | None = None
+    """Data type for attention weights. Detected from state dict
+    during finalize()."""
+
     ep_config: EPConfig | None = None
     """Expert parallelism configuration. None means no EP (single-GPU)."""
 
@@ -62,39 +75,6 @@ class MiniMaxM2Config(Llama3Config):
     partial_rotary_factor: float = 1.0
     """Fraction of head_dim used for rotary embeddings.
     For MiniMax-M2: rotary_dim/head_dim = 64/128 = 0.5."""
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Constructs KV cache parameters using explicit head_dim from config.
-
-        Args:
-            huggingface_config: The HuggingFace configuration object.
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: Devices to use for the KV cache.
-            kv_cache_config: Configuration for KV cache.
-            cache_dtype: Data type for the cache.
-
-        Returns:
-            KVCacheParams object with the correct head_dim from config.
-        """
-        # DP attention: each GPU processes a different batch shard with
-        # all attention heads. Set data_parallel_degree = num_devices so
-        # KV cache allocates all heads per device.
-        data_parallel_degree = len(devices)
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            num_layers=MiniMaxM2Config.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=data_parallel_degree,
-        )
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
@@ -163,7 +143,13 @@ class MiniMaxM2Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -228,4 +214,5 @@ class MiniMaxM2Config(Llama3Config):
             num_local_experts=num_local_experts,
             num_experts_per_tok=num_experts_per_tok,
             partial_rotary_factor=partial_rotary_factor,
+            quantization_encoding=quantization_encoding,
         )

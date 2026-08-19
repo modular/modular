@@ -15,9 +15,9 @@ from std.collections import Optional
 from std.sys import size_of
 from std.sys.intrinsics import readfirstlane
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from std.memory.unsafe import bitcast
@@ -139,7 +139,7 @@ struct ManagedLayoutTensor[
 
     def device_tensor[
         update: Bool = True
-    ](self) raises -> Self.layout_tensor_type:
+    ](mut self) raises -> Self.layout_tensor_type:
         assert (
             self.ctx.api() != "cpu"
         ), "device_tensor cannot be constructed for host only tensor."
@@ -149,11 +149,11 @@ struct ManagedLayoutTensor[
 
         comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.device_data.value().unsafe_ptr(),
+                self.device_data.value().unsafe_ptr().as_unsafe_any_origin(),
             )
         else:
             return Self.layout_tensor_type(
-                self.device_data.value().unsafe_ptr(),
+                self.device_data.value().unsafe_ptr().as_unsafe_any_origin(),
                 self.runtime_layout,
             )
 
@@ -182,7 +182,7 @@ struct ManagedLayoutTensor[
             self.ctx.synchronize()
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
 
@@ -193,7 +193,7 @@ def load_to_simd(
     comptime assert (
         tensor.layout.all_dims_known()
     ), "load_to_simd is supported only for tensors with known layout"
-    comptime size = type_of(res).size
+    comptime size = type_of(res).length
     return rebind[type_of(res)](
         tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )
@@ -244,16 +244,16 @@ def make_amd_buffer_resource(
 def _get_bounds(tensor: TileTensor) -> Int:
     """Computes buffer bounds from a rank-2 TileTensor.
 
-    Works with MixedLayout (RuntimeInt + ComptimeInt dimensions).
+    Works with MixedLayout (Scalar + ComptimeInt dimensions).
     Only dim[0] may be runtime; strides and dim[1] are typically comptime,
     so the compiler constant-folds everything except the valid_rows multiply.
     """
     var dim0 = Int(tensor.dim[0]())
     var dim1 = Int(tensor.dim[1]())
-    if dim0 == 0 or dim1 == 0:
+    if dim0 <= 0 or dim1 <= 0:
         return 0
-    var stride0 = tensor.layout.stride[0]().value()
-    var stride1 = tensor.layout.stride[1]().value()
+    var stride0 = Int(tensor.layout.stride[0]().value())
+    var stride1 = Int(tensor.layout.stride[1]().value())
     return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
 
 
@@ -264,7 +264,7 @@ def make_amd_buffer_resource(
     """Creates an AMD buffer resource descriptor from a TileTensor.
 
     Uses _get_bounds to compute the valid range. For TileTensors with
-    ComptimeInt strides, only the RuntimeInt dimension contributes
+    ComptimeInt strides, only the Scalar dimension contributes
     runtime register cost.
     """
     var size = _get_bounds(tensor)

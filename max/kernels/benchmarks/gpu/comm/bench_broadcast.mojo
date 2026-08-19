@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv
 from std.sys import (
     get_defined_bool,
@@ -28,11 +28,15 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
@@ -44,7 +48,7 @@ from std.testing import assert_true
 
 
 @always_inline
-@parameter
+@__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
@@ -113,7 +117,7 @@ def bench_broadcast[
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -124,12 +128,15 @@ def bench_broadcast[
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
-        out_multicast_buf = DeviceMulticastBuffer[dtype](
+        var out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
-        out_multicast_ptr = out_multicast_buf.multicast_buffer_for(
-            list_of_ctx[0]
-        ).unsafe_ptr()
+        out_multicast_ptr = (
+            out_multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
 
         comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back
@@ -147,7 +154,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
     else:
         comptime for gpu_idx in range(ngpus):
@@ -166,11 +176,14 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var host_buffer = List(length=cb_in.alloc_size(), fill=Scalar[dtype](0))
     for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
             host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
@@ -180,22 +193,23 @@ def bench_broadcast[
 
     # Create TileTensor wrappers for outputs
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
             # out_multicast_ptr is set when use_multimem == True
             out_tiles[i] = OutputTileType(
-                out_multicast_ptr.unsafe_value(), row_major(Idx(length))
+                out_multicast_ptr.unsafe_value(), row_major(length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
             out_tiles[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(), row_major(Idx(length))
+                out_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(length),
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -213,16 +227,15 @@ def bench_broadcast[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
-                cb_in.offset_ptr(cache_iter), row_major(Idx(length))
+                cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_immut()
 
             # Run broadcast - root's input goes to all outputs
@@ -243,11 +256,13 @@ def bench_broadcast[
                     ctx_inner,
                     root,
                     max_num_blocks,
+                    rank=ctx_idx,
                 )
 
-        bencher.iter_custom[call_fn](ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
-    b.bench_multicontext[bench_iter](
+    bench_multicontext[bench_iter](
+        b,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -285,7 +300,7 @@ def bench_broadcast[
 
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
-        cb_in.device_buffer(), row_major(Idx(length))
+        cb_in.device_buffer(), row_major(length)
     ).as_immut()
 
     # Run one broadcast for verification
@@ -307,6 +322,7 @@ def bench_broadcast[
                 list_of_ctx[i],
                 root,
                 max_num_blocks,
+                rank=i,
             )
 
     # Copy results back and verify - reuse host_buffer for each GPU
@@ -324,9 +340,9 @@ def bench_broadcast[
                 raise Error("Verification failed")
 
     # Cleanup
-    host_buffer.free()
     _ = signal_buffers^
     _ = cb_in^
+    _ = host_buffer^
 
 
 def main() raises:

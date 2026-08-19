@@ -32,202 +32,135 @@ then the virtualenvs are not needed.
 """
 
 import csv
-import json
 import logging
 import os
 import shlex
 import sys
-import time
-from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import DEVNULL, check_call, check_output
-from tempfile import TemporaryDirectory
-from typing import Any, TypedDict
+from typing import NamedTuple
 
 import click
-import requests
-from inference_server_harness import start_server
-
-DUMMY_2X2_IMAGE = (
-    "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
+import yaml
+from eval_runner import (
+    TEXT_TASK,
+    VISION_TASK,
+    build_eval_summary,
+    call_eval,
+    get_gpu_name_and_count,
+    print_samples,
+    resolve_canonical_repo_id,
+    safe_model_name,
+    test_single_request,
+    validate_hf_token,
+    write_github_output,
+    write_results,
 )
-IMAGE_PROMPT = {
-    "role": "user",
-    "content": [
-        {"type": "text", "text": "Say 'hello image'"},
-        {"type": "image_url", "image_url": {"url": DUMMY_2X2_IMAGE}},
-    ],
-}
-TEXT_PROMPT = {"role": "user", "content": "Say: 'hello world'"}
-URL = "http://127.0.0.1:8000/v1/chat/completions"
+from inference_server_harness import start_server
+from pydantic import BaseModel, ConfigDict, Field
+from requests.structures import CaseInsensitiveDict
 
-TEXT_TASK = "gsm8k_cot_llama"
-VISION_TASK = "chartqa"
+URL = "http://127.0.0.1:8000/v1/chat/completions"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-EvalResults = dict[str, Any]
-EvalSamples = list[dict[str, Any]]
+
+def _metrics_url(framework: str) -> str:
+    """Prometheus ``/metrics`` URL for the given framework (MAX uses port 8001, others 8000)."""
+    port = 8001 if framework in ("max", "max-ci", "max-nightly") else 8000
+    return f"http://127.0.0.1:{port}/metrics"
 
 
-class ModelAlias(TypedDict):
-    hf_model_path: str
-    max_serve_args: str
+# Maps alias model names to reusable MAX recipe configs. Aliases let the same
+# weights be tested under different configurations while keeping results
+# separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
+# prefix (same convention as the MAX CLI config loader). The smoke driver
+# resolves them from the checkout for YAML parsing; ``max serve`` still loads
+# the same paths from the installed package in ``.venv-serve``.
+#
+# Values are fully spelled-out so they can be copy-pasted into a CLI invocation:
+#   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
+# fmt: off
+MODEL_RECIPES = CaseInsensitiveDict({
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
+    "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V3.1-Terminus__modulev3": "max/pipelines/architectures/deepseekV3_modulev3/recipes/terminus_8x_b200.yaml",
+    "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
+    "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "google/gemma-4-31B-it__jenga": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_jenga.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
+    "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": "max/pipelines/architectures/llama3/recipes/llama31_8b_dflash.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
+    "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
+    "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
+    "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
+    "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
+})
+# fmt: on
 
 
-# Maps alias model names to their real HuggingFace model path and extra
-# MAX serve args. Aliases let the same weights be tested under different
-# configurations while keeping results separate in dashboards.
-# max_serve_args are only applied to MAX frameworks, not vllm/sglang.
-MODEL_ALIASES: dict[str, ModelAlias] = {
-    "google/gemma-4-26B-A4B-it__no_dgc": {
-        "hf_model_path": "google/gemma-4-26B-A4B-it",
-        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
-    },
-    "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
-        "hf_model_path": "meta-llama/Llama-3.2-1B-Instruct",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "unsloth/gpt-oss-20b-BF16__modulev3": {
-        "hf_model_path": "unsloth/gpt-oss-20b-BF16",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "microsoft/Phi-3.5-mini-instruct__modulev3": {
-        "hf_model_path": "microsoft/Phi-3.5-mini-instruct",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "microsoft/phi-4__modulev3": {
-        "hf_model_path": "microsoft/phi-4",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "google/gemma-3-4b-it__modulev3": {
-        "hf_model_path": "google/gemma-3-4b-it",
-        "max_serve_args": "--prefer-module-v3",
-    },
-    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": "--kv-cache-format float8_e4m3fn",
-    },
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": "--data-parallel-degree 1",
-    },
-    "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
-    },
-    "nvidia/Kimi-K2.5-NVFP4__no_vision": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
-    },
-    "meta-llama/Llama-3.1-8B-Instruct__eagle": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
-        "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
-            "--speculative-method eagle"
-        ),
-    },
-    # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
-        "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1"
-        ),
-    },
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": (
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 3"
-        ),
-    },
-    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": (
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
-        ),
-    },
-    "nvidia/Kimi-K2.5-NVFP4__eagle": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 3 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
-    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--data-parallel-degree 1 "
-            "--draft-data-parallel-degree 1 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 3 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
-}
+class RecipeConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    class KVCache(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        device_memory_utilization: float | None = None
+        kv_connector: str | None = None
+
+    class Model(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        model_path: str | None = None
+        device_specs: list[int] | None = None
+        data_parallel_degree: int = 1
+        kv_cache: RecipeConfig.KVCache = Field(
+            default_factory=lambda: RecipeConfig.KVCache()
+        )
+
+    class Runtime(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        ep_size: int | None = None
+        enable_chunked_prefill: bool | None = None
+
+    class Speculative(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        num_speculative_tokens: int | None = None
+
+    model: Model = Field(default_factory=Model)
+    draft_model: Model | None = None
+    runtime: Runtime = Field(default_factory=Runtime)
+    speculative: Speculative | None = None
+
+
+class ServerCommand(NamedTuple):
+    cmd: list[str]
+    env: dict[str, str]
 
 
 # TODO Refactor this to a model list/matrix specifying type of model
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(
-        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
-    ):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
+    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
         return False
     return any(
         kw in model
@@ -238,29 +171,15 @@ def is_vision_model(model: str) -> bool:
             "internvl",
             "kimi-k2",
             "kimi-vl",
+            "minimax-m3",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
+            "qwen3.5",
             "vision",
         )
     )
-
-
-def is_huge_moe(model: str) -> bool:
-    """Large MoE models that need expert parallelism instead of tensor parallelism."""
-    model = model.casefold()
-    if "deepseek" in model and "lite" not in model:
-        return True
-    return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
-
-
-def validate_hf_token() -> None:
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
 
 
 def _inside_bazel() -> bool:
@@ -281,48 +200,190 @@ def _load_hf_repo_lock() -> dict[str, str]:
     return db
 
 
-def test_single_request(model: str, task: str, disable_timeouts: bool) -> None:
-    is_vision = task == VISION_TASK
-    m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
-
-    # Initial req can be slow for huge models
-    connect_timeout, read_timeout = (
-        (None, None) if disable_timeouts else (30, 180)
-    )
-    r = requests.post(
-        URL,
-        json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(connect_timeout, read_timeout),
-    )
-    r.raise_for_status()
-    resp = r.json()["choices"][0]["message"]["content"]
-    logger.info(f"Test single request OK. Response: {resp}")
+def _resolve_recipe_path(recipe_path: str) -> str:
+    """Resolve a recipe path to an absolute file path.
+    Recipe paths use the ``max/pipelines/architectures/`` prefix and are
+    resolved by the shared config resolver against the installed package.
+    """
+    if not recipe_path.startswith("max/pipelines/architectures/"):
+        return recipe_path
+    max_dir = Path(__file__).resolve().parents[4]
+    resolved = max_dir / "python" / recipe_path
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"Built-in recipe not found: {recipe_path} (resolved to {resolved})"
+        )
+    return str(resolved)
 
 
 @cache
-def get_gpu_name_and_count() -> tuple[str, int]:
-    """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
-    amd = ["amd-smi", "static", "--json"]
-    nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
-    try:  # AMD path
-        env = os.environ.copy()
-        if _inside_bazel():
-            # Workaround to make amd-smi work inside bazel.
-            for k in list(env):
-                if k.startswith("PYTHON") or "RUNFILES" in k:
-                    del env[k]
-        result = check_output(amd, text=True, stderr=DEVNULL, env=env)
-        data = json.loads(result.strip())["gpu_data"]
-        return data[0]["asic"]["market_name"], len(data)
-    except Exception:
-        try:  # Nvidia path
-            lines = (
-                check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
+def _load_recipe(recipe_path: str) -> RecipeConfig:
+    with open(_resolve_recipe_path(recipe_path), encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return RecipeConfig.model_validate(data)
+
+
+def resolve_model_path(
+    model: str, recipe_path: str | None = None
+) -> tuple[str, str | None]:
+    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path:
+        recipe_model_path = _load_recipe(recipe_path).model.model_path
+        if recipe_model_path is None:
+            raise ValueError("Recipe model section must contain model_path.")
+        hf_model_path = recipe_model_path
+    else:
+        hf_model_path = model
+    return resolve_canonical_repo_id(hf_model_path), recipe_path
+
+
+def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
+    """Return (repo, revision) pairs to pre-cache for the given model.
+
+    Always includes the base repo (alias prefix before __), plus the
+    draft_model.model_path when the alias maps to a recipe with one.
+    Revisions come from hf-repo-lock.tsv; None means unpinned.
+    """
+    lock = _load_hf_repo_lock()
+    repos: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+
+    def add(repo: str) -> None:
+        # Local filesystem paths can't be downloaded from HF.
+        if repo.startswith(("/", "./", "../")):
+            return
+        key = repo.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        repos.append((repo, lock.get(key)))
+
+    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # input still resolves to the canonical casing the cache expects.
+    recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path is not None:
+        recipe = _load_recipe(recipe_path)
+        if recipe.model.model_path:
+            add(recipe.model.model_path)
+        if recipe.draft_model and recipe.draft_model.model_path:
+            add(recipe.draft_model.model_path)
+    add(model.split("__", 1)[0])
+    return repos
+
+
+def _recipe_gpu_overrides(recipe: RecipeConfig, gpu_count: int) -> list[str]:
+    """Builds smoke-test GPU overrides for a fixed-GPU recipe.
+
+    Recipes are reusable CLI presets with explicit device IDs and parallelism.
+    Smoke tests run on several GPU counts, so fields that equal the recipe's
+    device count are treated as scalable and overridden to match the local
+    machine. Fixed one-GPU recipes and intentional non-scaled parallelism values
+    are preserved.
+
+    Note that this may be removed in the future when we implement
+    flexible "auto" gpu args for max parallelism CLI and config.
+    """
+    if gpu_count <= 0:
+        return []
+
+    model_gpu_count = (
+        len(recipe.model.device_specs)
+        if recipe.model.device_specs is not None
+        else None
+    )
+    draft_gpu_count = (
+        len(recipe.draft_model.device_specs)
+        if recipe.draft_model is not None
+        and recipe.draft_model.device_specs is not None
+        else None
+    )
+    devices_arg = f"gpu:{','.join(str(i) for i in range(gpu_count))}"
+
+    args = []
+    if model_gpu_count != 1:
+        args += ["--devices", devices_arg]
+    if model_gpu_count is not None and model_gpu_count != 1:
+        if recipe.model.data_parallel_degree == model_gpu_count:
+            args += ["--data-parallel-degree", str(gpu_count)]
+        if recipe.runtime.ep_size == model_gpu_count:
+            args += ["--ep-size", str(gpu_count)]
+
+    if recipe.draft_model is not None:
+        if draft_gpu_count != 1:
+            args += ["--draft-devices", devices_arg]
+        if (
+            draft_gpu_count is not None
+            and draft_gpu_count != 1
+            and recipe.draft_model.data_parallel_degree == draft_gpu_count
+        ):
+            args += ["--draft-data-parallel-degree", str(gpu_count)]
+
+    return args
+
+
+def _revision_args(
+    framework: str,
+    model: str,
+    recipe: RecipeConfig | None = None,
+) -> list[str]:
+    revision = _load_hf_repo_lock().get(model.casefold())
+    args: list[str] = []
+    if revision:
+        if framework in ("max", "max-ci"):
+            args += [
+                "--model-override",
+                f"main.huggingface_model_revision={revision}",
+                "--model-override",
+                f"main.huggingface_weight_revision={revision}",
+            ]
+        else:  # vllm, sglang
+            args += ["--revision", revision]
+        logger.info(f"Pinned to revision {revision[:12]}")
+    else:
+        logger.warning(f"No locked revision for {model}")
+
+    if (
+        recipe is not None
+        and framework in ("max", "max-ci")
+        and recipe.draft_model is not None
+        and recipe.draft_model.model_path is not None
+        and (
+            draft_revision := _load_hf_repo_lock().get(
+                recipe.draft_model.model_path.casefold()
             )
-            return lines[0].strip(), len(lines)
-        except Exception:
-            logger.warning("nvidia-smi and amd-smi both failed")
-            return "N/A", 0
+        )
+    ):
+        args += [
+            "--model-override",
+            f"draft.huggingface_model_revision={draft_revision}",
+            "--model-override",
+            f"draft.huggingface_weight_revision={draft_revision}",
+        ]
+        logger.info(f"Pinned draft model to revision {draft_revision[:12]}")
+
+    return args
+
+
+def merge_serve_extra_args(args: list[str], extra: str) -> list[str]:
+    """Returns a copy of *args* with *extra* folded into ``--serve-extra-args``.
+
+    ``--serve-extra-args`` is a single-value option, so appending a second
+    occurrence would silently drop one of the two values. *extra* is instead
+    spliced in front of any caller-supplied value (later serve flags win, so
+    an explicit caller override of the same flag takes precedence); when the
+    caller passed no ``--serve-extra-args``, the flag is appended.
+    """
+    merged = list(args)
+    for i, arg in enumerate(merged):
+        if arg == "--serve-extra-args" and i + 1 < len(merged):
+            merged[i + 1] = f"{extra} {merged[i + 1]}"
+            return merged
+        if arg.startswith("--serve-extra-args="):
+            merged[i] = f"--serve-extra-args={extra} {arg.split('=', 1)[1]}"
+            return merged
+    return merged + ["--serve-extra-args", extra]
 
 
 def get_server_cmd(
@@ -330,71 +391,130 @@ def get_server_cmd(
     model: str,
     *,
     serve_extra_args: str = "",
-) -> list[str]:
-    gpu_model, gpu_count = get_gpu_name_and_count()
+    recipe_path: str | None = None,
+    autoscale_devices: bool = True,
+    gpu_spec: tuple[str, int],
+) -> ServerCommand:
+    gpu_model, gpu_count = gpu_spec
+    env: dict[str, str] = {}
+    if recipe_path is None:
+        recipe_path = MODEL_RECIPES.get(model)
+    recipe = _load_recipe(recipe_path) if recipe_path else None
+    recipe_config: tuple[str, RecipeConfig] | None = None
+    if (
+        recipe is not None
+        and recipe_path is not None
+        and framework in ["max-ci", "max"]
+    ):
+        recipe_config = (recipe_path, recipe)
+
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
-    SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
+    SGLANG = [
+        "sglang.launch_server",
+        "--attention-backend",
+        sglang_backend,
+        "--enable-metrics",
+    ]
     # limit-mm-per-prompt.video is for InternVL3 on B200
-    VLLM = "vllm.entrypoints.openai.api_server --max-model-len auto --limit-mm-per-prompt.video 0"
-    MAX = "max.entrypoints.pipelines serve"
+    VLLM = [
+        "vllm.entrypoints.openai.api_server",
+        "--max-model-len",
+        "auto",
+        "--limit-mm-per-prompt.video",
+        "0",
+    ]
+    # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
+    if "inkling" in model.casefold():
+        VLLM += ["--gpu-memory-utilization", "0.8"]
+    MAX = ["serve", "--pretty-print-config"]
 
-    is_huge_model = is_huge_moe(model)
-    if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
-        # resolve attention parallelism strategy
-        if "--data-parallel-degree 1" not in serve_extra_args:
-            # default to DP Attn + EP MoE strategy
-            MAX += f" --data-parallel-degree {gpu_count}"
-            VLLM += f" --data-parallel-size={gpu_count}"
-        else:
-            # TP Attn + EP MoE strategy
-            VLLM += f" --tensor-parallel-size={gpu_count}"
+    if gpu_count > 1:
+        if recipe is not None:
+            if (
+                recipe.runtime.ep_size is not None
+                and recipe.runtime.ep_size > 1
+            ):
+                VLLM += ["--enable-expert-parallel"]
+                SGLANG += ["--expert-parallel-size", str(gpu_count)]
 
-        # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
-        if "minimax-m2" in model:
-            os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
-            VLLM += " --attention-backend FLASH_ATTN"
-        # Have not been successful in getting SGLang to work with R1 yet
-    elif gpu_count > 1:
-        MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
-        VLLM += f" --tensor-parallel-size={gpu_count}"
-        SGLANG += f" --tp-size={gpu_count}"
+            if recipe.runtime.enable_chunked_prefill is not False:
+                VLLM += ["--enable-chunked-prefill"]
+            else:
+                SGLANG += ["--chunked-prefill-size", "-1"]
+
+            if recipe.model.kv_cache.device_memory_utilization is not None:
+                mem_cap = recipe.model.kv_cache.device_memory_utilization
+                VLLM += [
+                    "--gpu-memory-utilization",
+                    f"{mem_cap:g}",
+                ]
+                SGLANG += ["--mem-fraction-static", f"{mem_cap:g}"]
+
+            if recipe.model.data_parallel_degree > 1:
+                VLLM += [f"--data-parallel-size={gpu_count}"]
+                SGLANG += [
+                    f"--data-parallel-size={gpu_count}",
+                    "--enable-dp-attention",
+                ]
+            else:
+                VLLM += [f"--tensor-parallel-size={gpu_count}"]
+                SGLANG += [f"--tp-size={gpu_count}"]
+
+            # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
+            if "minimax-m2" in model.casefold():
+                env["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+                VLLM += ["--attention-backend", "FLASH_ATTN"]
+
+        else:  # gpu_count > 1 and recipe is None
+            MAX += [
+                "--devices",
+                f"gpu:{','.join(str(i) for i in range(gpu_count))}",
+            ]
+            SGLANG += [f"--tp-size={gpu_count}"]
+            VLLM += [f"--tensor-parallel-size={gpu_count}"]
+
+    if framework in ("max", "max-ci"):
+        # Force MAX to rely solely on the KVConnector for prefix cache hits to test
+        # cpu/disk KV offload code paths.
+        if "--kv-connector" in serve_extra_args or (
+            recipe is not None
+            and recipe.model.kv_cache.kv_connector is not None
+        ):
+            env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+
+        # Enable experimental Jenga KV cache allocator
+        if recipe_path is not None and "_jenga" in recipe_path.casefold():
+            env["MODULAR_USE_JENGA_KV_CACHE"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
-        cmd = [sys.executable, "-m", *MAX.split()]
+        cmd = [sys.executable, "-m", "max._entrypoints.pipelines", *MAX]
     else:
         assert framework != "max-ci", "max-ci must be run through bazel"
         interpreter = [".venv-serve/bin/python", "-m"]
         commands = {
-            "sglang": [*interpreter, *SGLANG.split()],
-            "vllm": [*interpreter, *VLLM.split()],
-            "max": [*interpreter, *MAX.split()],
+            "sglang": [*interpreter, *SGLANG],
+            "vllm": [*interpreter, *VLLM],
+            "max": [".venv-serve/bin/max", *MAX],
         }
         cmd = commands[framework]
 
-    cmd = cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+    cmd = cmd + ["--port", "8000"]
+    if recipe_config is not None:
+        config_file_path, recipe = recipe_config
+        cmd += ["--config-file", config_file_path]
+        if autoscale_devices:
+            cmd += _recipe_gpu_overrides(recipe, gpu_count)
+    else:
+        cmd += ["--trust-remote-code", "--model", model]
 
     # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
     # so we need to enable penalties on the server
-    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+    if "gpt-oss" in model.casefold() and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
-    revision = _load_hf_repo_lock().get(model.casefold())
-    if revision:
-        if framework in ("max", "max-ci"):
-            cmd += [
-                "--huggingface-model-revision",
-                revision,
-                "--huggingface-weight-revision",
-                revision,
-            ]
-        else:  # vllm, sglang
-            cmd += ["--revision", revision]
-        logger.info(f"Pinned to revision {revision[:12]}")
-    else:
-        logger.warning(f"No locked revision for {model}")
+    recipe = recipe_config[1] if recipe_config is not None else None
+    cmd += _revision_args(framework, model, recipe)
 
     if serve_extra_args:
         if framework in ["max-ci", "max"]:
@@ -403,193 +523,30 @@ def get_server_cmd(
             logger.warning(
                 "Ignoring --serve-extra-args for framework %s", framework
             )
-    return cmd
+    return ServerCommand(cmd, env)
 
 
-def safe_model_name(model: str) -> str:
-    return model.replace("/", "__")
+# Verified stock lm-eval tasks runnable unmodified (qa4+ intentionally excluded).
+VALID_STOCK_TASKS = {"babilong_qa1", "babilong_qa2", "babilong_qa3"}
 
 
-def call_eval(
-    model: str,
-    task: str,
-    *,
-    max_concurrent: int,
-    num_questions: int,
-    disable_timeouts: bool,
-) -> tuple[EvalResults, EvalSamples]:
-    extra_gen_kwargs = ""
-    is_reasoning_model = any(
-        kw in model
-        for kw in (
-            "academic-ds",
-            "deepseek-r1",
-            "deepseek-v3",
-            "gemma-4",
-            "gpt-oss",
-            "internvl3_5",
-            "qwen3",
-            "kimi-k2.5",
-        )
-    )
-    # Reasoning models needs extra tokens for .. reasoning
-    if is_reasoning_model:
-        extra_gen_kwargs = ",max_gen_toks=4096"
+def valid_tasks() -> set[str]:
+    """Return the allowlist of task names accepted by ``--override-tasks``.
 
-    # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
-    # in CI, we add a repetition penalty which helps prevent the loop
-    if "gpt-oss" in model:
-        extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
-
-    interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
-
-    model_args: dict[str, str] = {
-        "model": model,
-        "base_url": URL,
-        "num_concurrent": str(max_concurrent),
-        "max_retries": "1",
-    }
-    if disable_timeouts:
-        model_args["timeout"] = "86400"
-
-    include_path = str(Path(__file__).parent.resolve() / "tasks")
-    with TemporaryDirectory() as tempdir:
-        eval_cmd = [
-            "lm_eval",
-            f"--tasks={task}",
-            "--model=local-chat-completions",
-            "--log_samples",
-            f"--model_args={','.join(f'{k}={v}' for k, v in model_args.items())}",
-            "--apply_chat_template",
-            f"--output_path={tempdir}",
-            f"--limit={num_questions}",
-            "--seed=42",
-            f"--gen_kwargs=seed=42,temperature=0{extra_gen_kwargs}",
-            f"--include_path={include_path}",
-            "--fewshot_as_multiturn",
-        ]
-
-        args = [interpreter, "-m", *eval_cmd]
-        logger.info(f"Running eval with:\n {' '.join(args)}")
-        check_call(args, timeout=None if disable_timeouts else 600)
-
-        return parse_eval_results(Path(tempdir))
-
-
-def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
-    samples = []
-    for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
-        samples.append(json.loads(line))
-
-    results = json.loads(next(loc.glob("**/results*.json")).read_text("utf-8"))
-
-    return results, samples
-
-
-def write_github_output(key: str, value: str) -> None:
-    path = os.getenv("GITHUB_OUTPUT")
-    if path:
-        with open(path, "a") as f:
-            f.write(f"{key}={value}\n")
-
-
-@dataclass
-class EvalSummary:
-    gpu_name: str
-    gpu_count: int
-    startup_time_seconds: float
-    eval_task: str
-    task_type: str
-    accuracy: float
-    accuracy_stderr: float
-    total_evaluation_time_seconds: float
-    task_hash: str
-
-
-def build_eval_summary(
-    results: Sequence[Mapping[str, Any]],
-    startup_time_seconds: float,
-) -> list[EvalSummary]:
+    Combines the task names of our mirrored ``tasks/`` yamls (the ``task:``
+    field, parsed line-by-line rather than with ``yaml.safe_load`` since some
+    configs use lm-eval's ``!function`` tag) with the verified stock lm-eval
+    long-context tasks. Restricting to this set keeps arbitrary lm-eval tasks
+    out of the smoke test.
     """
-    Extract the metrics from the eval results and build a summary for each task.
-    """
-    summaries = []
-
-    for result in results:
-        task = next(iter(result["results"].keys()))
-        metrics = result["results"][task]
-        total_secs = float(result["total_evaluation_time_seconds"])
-
-        if VISION_TASK in task:
-            accuracy = metrics["relaxed_accuracy,none"]
-            accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
-            task_type = "vision"
-        elif task == TEXT_TASK:
-            accuracy = metrics["exact_match,flexible-extract"]
-            accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
-            task_type = "text"
-        else:
-            raise ValueError(f"Unknown task: {task}")
-
-        gpu_name, gpu_count = get_gpu_name_and_count()
-        summaries.append(
-            EvalSummary(
-                gpu_name=gpu_name,
-                gpu_count=gpu_count,
-                startup_time_seconds=round(startup_time_seconds, 2),
-                eval_task=task,
-                task_type=task_type,
-                accuracy=accuracy,
-                accuracy_stderr=accuracy_stderr,
-                total_evaluation_time_seconds=total_secs,
-                task_hash=result["task_hashes"][task],
-            )
-        )
-
-    return summaries
-
-
-def print_samples(samples: EvalSamples, print_cot: bool) -> None:
-    """
-    Print question and the model's responses to each sample
-    Assumes 'resps' is [[str]] (one decode) and GSM8K uses 'question',
-    ChartQA uses 'query'.
-    """
-    for item in samples:
-        doc = item.get("doc", {})
-        question = doc.get("question") or doc.get("query")
-
-        filt = item["filtered_resps"]
-        extracted = filt[0] if isinstance(filt, list) and filt else str(filt)
-
-        status = "✅" if item["exact_match"] == 1.0 else "❌"
-        prefix_q = "🧮" if "question" in doc else "📊"
-
-        logger.info(f"{prefix_q} {question}")
-        if print_cot:
-            logger.info(f"🤖💭 {item['resps'][0][0]}")
-        logger.info(f"{status} {extracted}")
-
-
-def write_results(
-    path: Path,
-    summary: list[EvalSummary],
-    results: list[EvalResults],
-    all_samples: list[EvalSamples],
-    tasks: list[str],
-) -> None:
-    summary_file = path / "eval_metrics.json"
-    summary_json = json.dumps([asdict(s) for s in summary], indent=2)
-    summary_file.write_text(summary_json, encoding="utf-8")
-    for result, samples, task in zip(results, all_samples, tasks, strict=True):
-        timestamp = time.strftime("%Y-%m-%dT%H-%M-%S")
-        result_fp = path / f"results_{task}_{timestamp}.json"
-        result_fp.write_text(json.dumps(result, indent=2), encoding="utf-8")
-
-        samples_fp = path / f"samples_{task}_{timestamp}.jsonl"
-        with open(samples_fp, "w", encoding="utf-8") as f:
-            for sample in samples:
-                f.write(json.dumps(sample, ensure_ascii=False) + "\n")
+    tasks_dir = Path(__file__).resolve().parent / "tasks"
+    names: set[str] = set(VALID_STOCK_TASKS)
+    for yaml_path in tasks_dir.glob("**/*.yaml"):
+        for line in yaml_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("task:"):
+                names.add(line.split(":", 1)[1].strip())
+                break
+    return names
 
 
 @click.command()
@@ -650,6 +607,40 @@ def write_results(
     default=False,
     help="Disable all timeouts. Useful when debugging hangs.",
 )
+@click.option(
+    "--recipe-path",
+    type=str,
+    default=None,
+    help="Recipe config YAML to serve instead of one looked up by model name.",
+)
+@click.option(
+    "--autoscale-devices/--no-autoscale-devices",
+    default=True,
+    help="Scale a recipe's device count to the local machine's GPU count.",
+)
+@click.option(
+    "--override-tasks",
+    "override_tasks",
+    multiple=True,
+    type=click.Choice(sorted(valid_tasks())),
+    help=(
+        "Run these eval task(s) instead of the model-derived defaults. "
+        "Repeatable (e.g. --override-tasks babilong_qa1 --override-tasks "
+        "babilong_qa3). Restricted to the verified task set; click validates "
+        "against it. When set, the TEXT/VISION default selection is bypassed."
+    ),
+)
+@click.option(
+    "--lm-eval-metadata",
+    "lm_eval_metadata",
+    type=str,
+    default=None,
+    help=(
+        "JSON passed verbatim to lm-eval's --metadata, merged into each task's "
+        "config to parameterize it at runtime. For example, "
+        '\'{"max_seq_lengths": "16k"}\' sets the babilong context length.'
+    ),
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -660,6 +651,10 @@ def smoke_test(
     num_questions: int,
     serve_extra_args: str,
     disable_timeouts: bool,
+    recipe_path: str | None,
+    autoscale_devices: bool,
+    override_tasks: tuple[str, ...],
+    lm_eval_metadata: str | None,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
@@ -682,52 +677,54 @@ def smoke_test(
     if output_path and build_workspace and not output_path.is_absolute():
         output_path = Path(build_workspace) / output_path
 
-    model = hf_model_path.strip().casefold()
-    model_aliases_lowercase = {
-        k.casefold(): v for k, v in MODEL_ALIASES.items()
-    }
-    alias = model_aliases_lowercase.get(model)
-    hf_model_path = (alias["hf_model_path"] if alias else model).casefold()
-    if alias and framework in ["max-ci", "max"]:
-        serve_extra_args = (
-            f"{serve_extra_args} {alias['max_serve_args']}".strip()
-        )
-    cmd = get_server_cmd(
+    model = hf_model_path.strip()
+    hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
         serve_extra_args=serve_extra_args,
+        recipe_path=recipe_path,
+        autoscale_devices=autoscale_devices,
+        gpu_spec=get_gpu_name_and_count(),
     )
 
-    tasks = [TEXT_TASK]
-    if is_vision_model(model):
-        tasks = [VISION_TASK] + tasks
+    if override_tasks:
+        tasks = list(override_tasks)
+    elif is_vision_model(model):
+        tasks = [VISION_TASK, TEXT_TASK]
+    else:
+        tasks = [TEXT_TASK]
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
-    elif is_huge_moe(hf_model_path):
+    else:
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
-    else:
-        timeout = 900
 
-    with start_server(cmd, timeout) as server:
+    metrics_url = _metrics_url(framework)
+    with start_server(cmd, timeout, env_overrides=server_env) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
             test_single_request(
-                hf_model_path, task, disable_timeouts=disable_timeouts
+                URL, hf_model_path, task, disable_timeouts=disable_timeouts
             )
             result, samples = call_eval(
+                URL,
                 hf_model_path,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
+                metrics_url=metrics_url,
+                model_alias=model if hf_model_path != model else None,
+                lm_eval_metadata=lm_eval_metadata,
             )
+
             if print_responses:
                 print_samples(samples, print_cot)
 

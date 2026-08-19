@@ -19,11 +19,11 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
+from max.experimental import functional as F
+from max.experimental.sharding.rules import ternary_rule
 from max.graph import TensorValue, ops
-from max.interfaces.pipeline_variants.text_generation import (
-    VLMTextGenerationContext,
-)
 from max.nn.kernels import scatter_nd_skip_oob_indices
+from max.pipelines.context import TextAndVisionContext
 
 
 def merge_multimodal_embeddings(
@@ -68,8 +68,53 @@ def merge_multimodal_embeddings(
     )
 
 
+# TODO(MXF-336): Use @F.functional decorator as the main entrypoint, instead of
+# creating a separate `F_` function, once all models are using ModuleV3.
+F_merge_multimodal_embeddings = F.functional(
+    merge_multimodal_embeddings, rule=ternary_rule
+)
+
+
+def compute_windowed_merge_indices(
+    batch: Sequence[TextAndVisionContext],
+) -> npt.NDArray[np.int32]:
+    """Compute dense scatter indices for image rows in each active window.
+
+    Emits one index per image-placeholder token inside its context's
+    window ``[processed_length, current_position)``, ordered to match the
+    window-bounded assembly, with no out-of-bounds sentinels. Use
+    :func:`compute_multimodal_merge_indices` when the paired embeddings
+    cover every image row of the batch.
+
+    Args:
+        batch: Sequence of VLM contexts.
+
+    Returns:
+        npt.NDArray[np.int32]: Dense multimodal merge indices.
+    """
+    parts: list[npt.NDArray[np.int32]] = []
+    total_active_tokens = 0
+
+    for ctx in batch:
+        if getattr(ctx, "needs_vision_encoding", False):
+            relative = (
+                np.asarray(ctx.image_token_indices, dtype=np.int64)
+                - ctx.tokens.processed_length
+            )
+            in_window = (relative >= 0) & (relative < ctx.tokens.active_length)
+            if in_window.any():
+                parts.append(
+                    (relative[in_window] + total_active_tokens).astype(np.int32)
+                )
+        total_active_tokens += ctx.tokens.active_length
+
+    if not parts:
+        return np.array([], dtype=np.int32)
+    return np.concatenate(parts)
+
+
 def compute_multimodal_merge_indices(
-    batch: Sequence[VLMTextGenerationContext],
+    batch: Sequence[TextAndVisionContext],
 ) -> npt.NDArray[np.int32]:
     """Compute scatter indices for merging vision embeddings into text embeddings.
 

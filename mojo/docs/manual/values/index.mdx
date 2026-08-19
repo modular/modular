@@ -11,16 +11,6 @@ writes data a bit differently—sometimes very differently. So in the following
 sections, we'll explain how Mojo manages memory in your programs and how this
 affects the way you write Mojo code.
 
-:::note
-
-For an alternate introduction to ownership in Mojo, check out our two-part blog
-post:
-[What ownership is really about: a mental model approach](https://www.modular.com/blog/what-ownership-is-really-about-a-mental-model-approach),
-and
-[Deep dive into ownership in Mojo](https://www.modular.com/blog/deep-dive-into-ownership-in-mojo).
-
-:::
-
 ## Stack and heap overview
 
 In general, all modern programming languages divide a running program's memory
@@ -56,7 +46,8 @@ managed automatically—the code to push and pop stack frames is added by the
 compiler. Heap memory, on the other hand, is managed by the programmer
 explicitly allocating and deallocating memory. You may do this indirectly—by
 using standard library types like `List` and `String`—or directly, using the
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) API.
+[`alloc()`](/docs/std/memory/alloc/alloc/) and
+[`Pointer`](/docs/std/memory/pointer/Pointer/) APIs.
 
 Values that need to outlive the lifetime of a function (such as
 an array that's passed between functions and should not be copied) are stored
@@ -110,4 +101,4 @@ syntax and a few rules about how to share access to memory within your program.
 
 But before we explain the rules and syntax for Mojo's value ownership model,
 you first need to understand [value
-semantics](/mojo/manual/values/value-semantics).
+semantics](/docs/manual/values/value-semantics).

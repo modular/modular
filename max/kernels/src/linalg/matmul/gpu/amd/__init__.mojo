@@ -13,11 +13,35 @@
 """Provides the AMD GPU backend implementations for matmuls."""
 
 from .mxfp4_dequant_matmul_amd import mxfp4_dequant_matmul_amd
-from .mxfp4_grouped_matmul_amd import mxfp4_grouped_matmul_amd
-from .mxfp4_matmul_amd import mxfp4_block_scaled_matmul_amd, MXFP4MatmulAMD
+from .block_scaled_matmul_amd import (
+    block_scaled_matmul_amd,
+    BlockScaledMatmulAMD,
+)
+from .block_scaled_grouped_matmul_amd import (
+    PreShuffledBGroupedGEMM,
+    block_scaled_grouped_matmul_amd,
+    block_scaled_grouped_matmul_amd_preb,
+)
+from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
+from .mxfp4_moe_matmul_amd import (
+    InputRowMode,
+    MXFP4MoERoutedMatmul,
+    mxfp4_moe_matmul_amd_routed,
+    mxfp4_moe_matmul_amd_routed_dispatch,
+)
+from .block_scaled_preshuffle_loaders import (
+    PreshuffledBLoader,
+    PreshuffledScaleLoader,
+)
+from .block_scaled_preshuffle_layouts import Shuffler
 from .amd_matmul import AMDMatmul
 from .amd_ping_pong_matmul import (
     AMDPingPongMatmul,
     KernelConfig,
-    structured_ping_pong_matmul,
+    amd_ping_pong_matmul,
+)
+from .amd_4wave_matmul import structured_4wave_matmul
+from .amd_4wave_split_k_matmul import (
+    amd_4wave_split_k_matmul,
+    SplitKWorkspace,
 )

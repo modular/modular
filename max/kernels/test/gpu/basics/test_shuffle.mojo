@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import has_amd_gpu_accelerator
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
@@ -54,9 +55,7 @@ def _kernel_launch_helper[
     ctx.enqueue_copy(device_ptr, host_ptr)
 
     comptime kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
-    ctx.enqueue_function_experimental[kernel](
-        device_ptr, grid_dim=1, block_dim=block_size
-    )
+    ctx.enqueue_function[kernel](device_ptr, grid_dim=1, block_dim=block_size)
 
     ctx.enqueue_copy(host_ptr, device_ptr)
     ctx.synchronize()
@@ -69,18 +68,18 @@ def _shuffle_idx_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         comptime src_lane = 0
         return shuffle_idx(val, src_lane)
 
     _kernel_launch_helper[dtype, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -88,8 +87,6 @@ def _shuffle_idx_launch_helper[
             assert_equal(
                 host_ptr[i * simd_width + j], Scalar[dtype](j) + constant_add
             )
-
-    host_ptr.free()
 
 
 def test_shuffle_idx_fp32(ctx: DeviceContext) raises:
@@ -116,6 +113,14 @@ def test_shuffle_idx_int64(ctx: DeviceContext) raises:
     _shuffle_idx_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_idx_int(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_idx_uint(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.uint, 1](ctx)
+
+
 def _shuffle_up_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
@@ -124,17 +129,17 @@ def _shuffle_up_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_up(val, UInt32(offset))
 
     _kernel_launch_helper[dtype, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -152,8 +157,6 @@ def _shuffle_up_launch_helper[
                     + constant_add
                     - Scalar[dtype]((offset * simd_width)),
                 )
-
-    host_ptr.free()
 
 
 def test_shuffle_up_fp32(ctx: DeviceContext) raises:
@@ -180,6 +183,14 @@ def test_shuffle_up_int64(ctx: DeviceContext) raises:
     _shuffle_up_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_up_int(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_up_uint(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.uint, 1](ctx)
+
+
 def _shuffle_down_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
@@ -188,17 +199,17 @@ def _shuffle_down_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_down(val, UInt32(offset))
 
     _kernel_launch_helper[dtype, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -216,8 +227,6 @@ def _shuffle_down_launch_helper[
                     host_ptr[idx],
                     Scalar[dtype](idx) + constant_add,
                 )
-
-    host_ptr.free()
 
 
 def test_shuffle_down_fp32(ctx: DeviceContext) raises:
@@ -244,6 +253,14 @@ def test_shuffle_down_int64(ctx: DeviceContext) raises:
     _shuffle_down_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_down_int(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_down_uint(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.uint, 1](ctx)
+
+
 def _shuffle_xor_launch_helper[
     dtype: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
@@ -252,17 +269,17 @@ def _shuffle_xor_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_xor(val, UInt32(offset))
 
     _kernel_launch_helper[dtype, simd_width, do_shuffle](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for i in range(block_size):
@@ -274,8 +291,6 @@ def _shuffle_xor_launch_helper[
                 + constant_add
             )
             assert_equal(host_ptr[i * simd_width + j], val)
-
-    host_ptr.free()
 
 
 def test_shuffle_xor_fp32(ctx: DeviceContext) raises:
@@ -302,6 +317,14 @@ def test_shuffle_xor_int64(ctx: DeviceContext) raises:
     _shuffle_xor_launch_helper[DType.int64, 1](ctx)
 
 
+def test_shuffle_xor_int(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.int, 1](ctx)
+
+
+def test_shuffle_xor_uint(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.uint, 1](ctx)
+
+
 def _warp_reduce_launch_helper[
     dtype: DType,
     simd_width: Int,
@@ -310,29 +333,27 @@ def _warp_reduce_launch_helper[
     comptime buffer_size = block_size * simd_width
     comptime offset = 1
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = 1
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return warp.reduce[shuffle_down, reduce_add](val)
 
     _kernel_launch_helper[dtype, simd_width, do_warp_reduce](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for i in range(simd_width):
         assert_equal(host_ptr[i], Scalar[dtype](block_size))
-
-    host_ptr.free()
 
 
 def test_warp_reduce_fp32(ctx: DeviceContext) raises:
@@ -359,16 +380,16 @@ def _warp_sum_launch_helper[
     dtype: DType,
 ](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
-    var host_ptr = alloc[Scalar[dtype]](block_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](block_size)
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
-    @parameter
+    @__parameter
     def do_warp_sum(val: SIMD[dtype, 1]) -> SIMD[dtype, 1]:
         return warp.sum(val)
 
     _kernel_launch_helper[dtype, 1, do_warp_sum](
-        host_ptr, block_size, block_size, ctx
+        host_ptr.unsafe_ptr(), block_size, block_size, ctx
     )
 
     # All lanes should have the full warp sum
@@ -377,8 +398,6 @@ def _warp_sum_launch_helper[
             host_ptr[i],
             Scalar[dtype](WARP_SIZE * (WARP_SIZE - 1) // 2),
         )
-
-    host_ptr.free()
 
 
 def test_warp_sum(ctx: DeviceContext) raises:
@@ -397,18 +416,18 @@ def _lane_group_sum_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
         return warp.lane_group_sum[num_lanes=num_lanes, stride=1](val)
 
     _kernel_launch_helper[dtype, simd_width, do_reduce](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     # For stride=1, thread t's group = {(t & ~(num_lanes-1)) + k : k in
@@ -421,8 +440,6 @@ def _lane_group_sum_broadcast_stride1_helper[
         )
         for i in range(simd_width):
             assert_equal(host_ptr[t * simd_width + i], expected)
-
-    host_ptr.free()
 
 
 def test_lane_group_sum_stride1(ctx: DeviceContext) raises:
@@ -459,18 +476,18 @@ def _lane_group_max_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
         return warp.lane_group_max[num_lanes=num_lanes, stride=1](val)
 
     _kernel_launch_helper[dtype, simd_width, do_reduce](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     # For stride=1, thread t's group max = group_base + num_lanes - 1
@@ -479,8 +496,6 @@ def _lane_group_max_broadcast_stride1_helper[
         var expected = Scalar[dtype](group_base + num_lanes - 1)
         for i in range(simd_width):
             assert_equal(host_ptr[t * simd_width + i], expected)
-
-    host_ptr.free()
 
 
 def test_lane_group_max(ctx: DeviceContext) raises:
@@ -513,18 +528,18 @@ def _lane_group_reduce_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
@@ -536,7 +551,7 @@ def _lane_group_reduce_launch_helper[
             ](val)
 
     _kernel_launch_helper[dtype, simd_width, do_lane_group_reduce](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     for lane in range(block_size // num_lanes):
@@ -548,8 +563,6 @@ def _lane_group_reduce_launch_helper[
                     (num_lanes // 2) * (2 * lane_ + (num_lanes - 1) * stride)
                 ),
             )
-
-    host_ptr.free()
 
 
 def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
@@ -593,18 +606,18 @@ def _lane_group_min_broadcast_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = alloc[Scalar[dtype]](buffer_size)
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
         return warp.lane_group_min[num_lanes=num_lanes, stride=stride](val)
 
     _kernel_launch_helper[dtype, simd_width, do_reduce](
-        host_ptr, buffer_size, block_size, ctx
+        host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
     )
 
     comptime if stride == 1:
@@ -624,8 +637,6 @@ def _lane_group_min_broadcast_helper[
             var expected = Scalar[dtype](group_base)
             for i in range(simd_width):
                 assert_equal(host_ptr[t * simd_width + i], expected)
-
-    host_ptr.free()
 
 
 def test_lane_group_min(ctx: DeviceContext) raises:
@@ -660,24 +671,32 @@ def main() raises:
         test_shuffle_idx_fp16(ctx)
         test_shuffle_idx_fp16_packed(ctx)
         test_shuffle_idx_int64(ctx)
+        test_shuffle_idx_int(ctx)
+        test_shuffle_idx_uint(ctx)
         test_shuffle_up_fp32(ctx)
         test_shuffle_up_bf16(ctx)
         test_shuffle_up_bf16_packed(ctx)
         test_shuffle_up_fp16(ctx)
         test_shuffle_up_fp16_packed(ctx)
         test_shuffle_up_int64(ctx)
+        test_shuffle_up_int(ctx)
+        test_shuffle_up_uint(ctx)
         test_shuffle_down_fp32(ctx)
         test_shuffle_down_bf16(ctx)
         test_shuffle_down_bf16_packed(ctx)
         test_shuffle_down_fp16(ctx)
         test_shuffle_down_fp16_packed(ctx)
         test_shuffle_down_int64(ctx)
+        test_shuffle_down_int(ctx)
+        test_shuffle_down_uint(ctx)
         test_shuffle_xor_fp32(ctx)
         test_shuffle_xor_bf16(ctx)
         test_shuffle_xor_bf16_packed(ctx)
         test_shuffle_xor_fp16(ctx)
         test_shuffle_xor_fp16_packed(ctx)
         test_shuffle_xor_int64(ctx)
+        test_shuffle_xor_int(ctx)
+        test_shuffle_xor_uint(ctx)
         test_warp_reduce_fp32(ctx)
         test_warp_reduce_bf16(ctx)
         test_warp_reduce_bf16_packed(ctx)

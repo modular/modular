@@ -15,16 +15,15 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.rebind import downcast
 from std.collections import Deque
 from std.collections.deque import _DequeIter
 from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from std.collections.list import _ListIter
-from std.collections.inline_array import _InlineArrayIter
+from std.collections.array import _ArrayIter
 from std.hashlib import Hasher
 
-from std.memory.span import Span, _SpanIter
-
-from .range import _StridedRange
+from std.collections.span import Span, _SpanIter
 
 # ===----------------------------------------------------------------------=== #
 #  Reversible
@@ -36,10 +35,11 @@ trait ReversibleRange:
     The `ReversibleRange` trait describes a range that can be reversed.
 
     Any type that conforms to `ReversibleRange` works with the builtin
-    [`reversed()`](/mojo/std/builtin/reversed.html) functions.
+    [`reversed()`](/docs/std/builtin/reversed/reversed/) functions.
 
     The `ReversibleRange` trait requires the type to define the `__reversed__()`
-    method.
+    method and a `ReversedType` iterator, so each conforming range can return
+    its own reversed iterator type instead of a single hard-coded one.
 
     **Note**: iterators are currently non-raising.
     """
@@ -48,7 +48,10 @@ trait ReversibleRange:
     # iterators currently check __len__() instead of raising an exception
     # so there is no ReversibleRaising trait yet.
 
-    def __reversed__(self) -> _StridedRange:
+    comptime ReversedType: Iterator
+    """The iterator type returned by `__reversed__()`."""
+
+    def __reversed__(self) -> Self.ReversedType:
         """Get a reversed iterator for the type.
 
         **Note**: iterators are currently non-raising.
@@ -64,7 +67,7 @@ trait ReversibleRange:
 # ===----------------------------------------------------------------------=== #
 
 
-def reversed[T: ReversibleRange](value: T) -> _StridedRange:
+def reversed[T: ReversibleRange](value: T) -> T.ReversedType:
     """Get a reversed iterator of the input range.
 
     **Note**: iterators are currently non-raising.
@@ -81,9 +84,7 @@ def reversed[T: ReversibleRange](value: T) -> _StridedRange:
     return value.__reversed__()
 
 
-def reversed[
-    T: Copyable
-](ref value: List[T, ...]) -> _ListIter[T, origin_of(value), False]:
+def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
     """Get a reversed iterator of the input list.
 
     **Note**: iterators are currently non-raising.
@@ -102,9 +103,7 @@ def reversed[
 
 def reversed[
     T: Copyable, size: Int
-](ref value: InlineArray[T, size]) -> _InlineArrayIter[
-    T, size, origin_of(value), False
-]:
+](ref value: Array[T, size]) -> _ArrayIter[T, size, origin_of(value), False]:
     """Get a reversed iterator of the input array.
 
     **Note**: iterators are currently non-raising.
@@ -123,7 +122,7 @@ def reversed[
 
 
 def reversed[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & Deinitable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
@@ -142,8 +141,8 @@ def reversed[
 
 
 def reversed[
-    K: KeyElement,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
@@ -167,8 +166,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
@@ -197,8 +196,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[

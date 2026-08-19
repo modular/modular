@@ -13,6 +13,7 @@
 
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
 )
 from std.builtin._closure import __ownership_keepalive
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
 from std.testing import assert_equal
 
@@ -31,10 +32,10 @@ def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len: Int32,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= Int(len):
         return
     output[tid] = in0[tid] + in1[tid]
 
@@ -44,13 +45,12 @@ def bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     comptime dtype = DType.float32
-    var in0_host = alloc[Scalar[dtype]](length)
-    var in1_host = alloc[Scalar[dtype]](length)
-    var out_host = alloc[Scalar[dtype]](length)
+    var in0_host = List(length=length, fill=Scalar[dtype](0))
+    var in1_host = List(length=length, fill=Scalar[dtype](2))
+    var out_host = List(length=length, fill=Scalar[dtype](0))
 
     for i in range(length):
         in0_host[i] = Float32(i)
-        in1_host[i] = 2
 
     var in0_device = context.enqueue_create_buffer[dtype](length)
     var in1_device = context.enqueue_create_buffer[dtype](length)
@@ -60,26 +60,20 @@ def bench_vec_add(
     context.enqueue_copy(in1_device, in1_host)
 
     @always_inline
-    @parameter
-    def run_func() raises:
-        context.enqueue_function_experimental[vec_func](
+    def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
+        context.enqueue_function[vec_func](
             in0_device,
             in1_device,
             out_device,
-            length,
+            Int32(length),
             grid_dim=(length // block_dim),
             block_dim=(block_dim),
         )
 
-    @parameter
+    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            run_func()
-
-        b.iter_custom[kernel_launch](context)
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, context)
 
     b.bench_function[bench_func](
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),
@@ -92,10 +86,9 @@ def bench_vec_add(
         assert_equal(Scalar[dtype](i + 2), out_host[i])
 
     __ownership_keepalive(in0_device, in1_device, out_device)
-
-    in0_host.free()
-    in1_host.free()
-    out_host.free()
+    _ = in0_host^
+    _ = in1_host^
+    _ = out_host^
 
 
 def main() raises:

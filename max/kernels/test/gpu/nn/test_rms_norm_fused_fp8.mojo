@@ -13,14 +13,14 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TileTensor,
     row_major,
 )
 from std.memory import bitcast
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.utils.index import Index, IndexList
 from std.math import rsqrt
 from std.utils.numerics import max_finite, min_finite
@@ -77,7 +77,7 @@ def compute_reference_dynamic_scaling[
     var fp8_min = Float32(min_finite[out_dtype]())
 
     # Allocate temporary storage for normalized values
-    var temp_storage = alloc[Scalar[DType.float32]](cols)
+    var temp_storage = List(length=cols, fill=Scalar[DType.float32](0))
 
     for row in range(rows):
         # Step 1: Compute mean square for RMSNorm
@@ -125,8 +125,6 @@ def compute_reference_dynamic_scaling[
             quantized = max(fp8_min, min(fp8_max, quantized))
             output_data[row * cols + col] = quantized.cast[out_dtype]()
 
-    temp_storage.free()
-
 
 def test_dynamic[
     in_dtype: DType,
@@ -145,35 +143,38 @@ def test_dynamic[
     var rows = input_size // cols
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[in_dtype]](input_size)
-    var out_host = alloc[Scalar[out_dtype]](input_size)
-    var gamma_host = alloc[Scalar[in_dtype]](cols)
-    var scales_host = alloc[Scalar[scales_dtype]](rows)
-    var expected_host = alloc[Scalar[out_dtype]](input_size)
-    var expected_scales_host = alloc[Scalar[scales_dtype]](rows)
+    var in_host = ctx.enqueue_create_host_buffer[in_dtype](input_size)
+    var out_host = ctx.enqueue_create_host_buffer[out_dtype](input_size)
+    var gamma_host = ctx.enqueue_create_host_buffer[in_dtype](cols)
+    var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
+    var expected_host = ctx.enqueue_create_host_buffer[out_dtype](input_size)
+    var expected_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        rows
+    )
 
     # Initialize with diverse values to avoid FP8 saturation
-    initialize_test_data(in_host, input_size)
+    initialize_test_data(in_host.unsafe_ptr(), input_size)
     for i in range(cols):
         # Gamma values between 0.5 and 1.5 to create variety after normalization
         gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
 
-    # Cast epsilon and weight_offset to in_dtype (matching kernel signature),
-    # then back to Float32 so reference and kernel see the same values.
-    var epsilon_id = Scalar[in_dtype](1e-5)
+    # epsilon is Float32 (the kernel signature), so the reference and kernel
+    # both consume it directly. weight_offset is cast to in_dtype (matching its
+    # kernel signature) and back to Float32 so reference and kernel see the
+    # same value.
+    var epsilon = Float32(1e-5)
     var weight_offset_id = Scalar[in_dtype](weight_offset)
-    var epsilon_f32 = epsilon_id.cast[DType.float32]()
     var weight_offset_f32 = weight_offset_id.cast[DType.float32]()
 
     # Compute reference
     compute_reference_dynamic_scaling[in_dtype, out_dtype](
-        in_host,
-        gamma_host,
-        expected_host,
-        expected_scales_host,
+        in_host.unsafe_ptr(),
+        gamma_host.unsafe_ptr(),
+        expected_host.unsafe_ptr(),
+        expected_scales_host.unsafe_ptr(),
         rows,
         cols,
-        epsilon_f32,
+        epsilon,
         weight_offset_f32,
         scale_ub,
     )
@@ -197,7 +198,7 @@ def test_dynamic[
 
     @__copy_capture(in_ptr)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -222,9 +223,9 @@ def test_dynamic[
         shape,
         out_tile,
         gamma_tensor,
-        epsilon_id,
+        epsilon,
         weight_offset_id,
-        DeviceContextPtr(ctx),
+        ctx,
         scale_ub,
         scale_tile,
     )
@@ -233,6 +234,15 @@ def test_dynamic[
     ctx.enqueue_copy(out_host, out_device)
     ctx.enqueue_copy(scales_host, scales_device)
     ctx.synchronize()
+
+    # `input_fn` captures only the raw `in_ptr`, not `in_device`, so without an
+    # explicit keep-alive Mojo's ASAP destruction frees `in_device` right after
+    # its last use (`unsafe_ptr()`) — before the kernel that reads it runs. The
+    # caching allocator masks the resulting use-after-free, but the sanitizer's
+    # 1:1 allocator (`--//:gpu_disable_memory_manager`) reports it as an OOB read
+    # of the input. Keep the buffer alive through the launch (mirrors the
+    # `_ = data_d` guard in test_rms_norm.mojo).
+    _ = in_device
 
     var num_mismatches = 0
     for i in range(input_size):
@@ -254,14 +264,6 @@ def test_dynamic[
         ") ",
         shape,
     )
-
-    # Cleanup
-    in_host.free()
-    out_host.free()
-    gamma_host.free()
-    scales_host.free()
-    expected_host.free()
-    expected_scales_host.free()
 
 
 def main() raises:

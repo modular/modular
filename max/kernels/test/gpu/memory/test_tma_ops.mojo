@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
+from max.gpu.memory import (
     CacheEviction,
     ReduceOp,
-    AddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_reduce,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     fence_proxy_tensormap_generic_sys_acquire,
     fence_proxy_tensormap_generic_sys_release,
@@ -107,17 +106,17 @@ def test_async_bulk_tensor_reduce_asm():
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
-        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
-            src_mem, tma_descriptor, Index(coords[0], coords[1])
-        )
-        cp_async_bulk_tensor_reduce[
+        cp_async_bulk_tensor_reduce_global_shared_cta[
+            reduction_kind=ReduceOp.ADD
+        ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
+        cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_FIRST,
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
-        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
-            src_mem, tma_descriptor, Index(coords[0])
-        )
-        cp_async_bulk_tensor_reduce[
+        cp_async_bulk_tensor_reduce_global_shared_cta[
+            reduction_kind=ReduceOp.ADD
+        ](src_mem, tma_descriptor, Index(coords[0]))
+        cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_LAST,
         ](src_mem, tma_descriptor, Index(coords[0]))

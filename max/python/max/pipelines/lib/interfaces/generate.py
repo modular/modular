@@ -23,17 +23,19 @@ import numpy.typing as npt
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
-from max.interfaces import (
+from max.pipelines.context import (
     GenerationStatus,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.modeling.types import (
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     RequestType,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
-from max.kv_cache.paged_kv_cache import PagedKVCacheManager
 
 from .pipeline_model import PipelineModelWithKVCache
 
@@ -45,7 +47,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -122,14 +124,12 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Use whatever replica the main models KVCache recommends.
             replica_idx = i % data_parallel_degree
             # Claim the slot for the KV cache manager
-            self.kv_manager.claim(req_id, replica_idx=replica_idx)
+            self.kv_manager.claim(context, replica_idx=replica_idx)
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
-        num_steps = self.pipeline_config.runtime.max_num_steps
         inputs = TextGenerationInputs(
             batches=batches,
-            num_steps=num_steps,
         )
 
         # Generate outputs until all requests are done.
@@ -140,12 +140,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             while done < len(context_batch):
                 for replica_batch in batches:
                     for ctx in replica_batch:
-                        replica_idx = batch_to_replica_idx[ctx.request_id]
-                        self.kv_manager.alloc(
-                            ctx,
-                            replica_idx=replica_idx,
-                            num_steps=num_steps,
-                        )
+                        self.kv_manager.alloc(ctx)
 
                 step_outputs = self.execute(inputs)
 
@@ -170,7 +165,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                         replica_batch = batches[replica_idx]
                         for idx, ctx in enumerate(replica_batch):
                             if ctx.request_id == request_id:
-                                replica_batch.pop(idx)
+                                done_ctx = replica_batch.pop(idx)
                                 break
                         else:
                             raise KeyError(
@@ -178,9 +173,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 f"{request_id}"
                             )
 
-                        self.kv_manager.release(
-                            request_id, replica_idx=replica_idx
-                        )
+                        self.kv_manager.release(done_ctx)
 
                 if outputs:
                     yield outputs
@@ -196,13 +189,5 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
                 for context in batch:
-                    if self.kv_manager.contains(
-                        context.request_id,
-                        batch_to_replica_idx[context.request_id],
-                    ):
-                        self.kv_manager.release(
-                            context.request_id,
-                            replica_idx=batch_to_replica_idx[
-                                context.request_id
-                            ],
-                        )
+                    if self.kv_manager.contains(context):
+                        self.kv_manager.release(context)
