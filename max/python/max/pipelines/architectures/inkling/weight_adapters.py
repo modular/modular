@@ -98,10 +98,21 @@ def _sink_down(data: WeightData, name: str) -> WeightData:
     )
 
 
+def _as_float32(data: WeightData) -> np.ndarray:
+    """Widens a float weight to float32 on the host.
+
+    Workaround: WeightData.astype is a no-op under virtual devices, and numpy
+    has no bfloat16, so bf16 bits are shifted into the high half of an fp32.
+    """
+    buf = data.to_buffer()
+    if data.dtype == DType.bfloat16:
+        bits = buf.view(DType.uint16).to_numpy().astype(np.uint32)
+        return (bits << 16).view(np.float32)
+    return buf.to_numpy().astype(np.float32)
+
+
 def _input_scale(data: WeightData, name: str) -> WeightData:
-    amax = np.from_dlpack(
-        Buffer.from_dlpack(data.astype(DType.float32).data)
-    ).reshape(-1)
+    amax = _as_float32(data).reshape(-1)
     # The graph declares a single input scale shared by every expert in a
     # stacked tensor; a checkpoint with per-expert amax values must not be
     # silently collapsed to expert 0's scale.
@@ -166,8 +177,7 @@ def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
             target = rest[: -len(suffix)] + house
             return {target: _rename(data, target)}
     if rest.endswith("global_scale"):
-        wide = data.astype(DType.float32)
-        return {rest: _rename(wide, rest)}
+        return {rest: WeightData.from_numpy(_as_float32(data), rest)}
     return {rest: _rename(data, rest)}
 
 
