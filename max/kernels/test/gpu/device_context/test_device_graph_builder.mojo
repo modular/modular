@@ -14,6 +14,7 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from max.gpu.host import DeviceContext
+from std.reflection import get_function_name
 from std.testing import (
     assert_equal,
     assert_false,
@@ -28,46 +29,54 @@ from max.gpu.host import (
     DeviceGraphCache,
     DeviceGraphInput,
 )
+from max.gpu.host.device_graph import DeviceGraphMemoryPool
 from max.runtime.async_value import AnyAsyncValueRef
 
 
-def vec_add(
-    output: Pointer[Float32, MutAnyOrigin],
-    in0: Pointer[Float32, ImmutAnyOrigin],
-    in1: Pointer[Float32, ImmutAnyOrigin],
-    length_dev: Int32,
-):
-    var length = Int(length_dev)
-    var tid = global_idx.x
-    if tid >= length:
-        return
-    output[unsafe_offset=tid] = in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
+# GPU kernels live as static methods rather than module-level functions:
+# `__functions_in_module()` in `main` materializes every module-level function
+# as a host function value.
+struct Kernels:
+    @staticmethod
+    def vec_add(
+        output: Pointer[Float32, MutAnyOrigin],
+        in0: Pointer[Float32, ImmutAnyOrigin],
+        in1: Pointer[Float32, ImmutAnyOrigin],
+        length_dev: Int32,
+    ):
+        var length = Int(length_dev)
+        var tid = global_idx.x
+        if tid >= length:
+            return
+        output[unsafe_offset=tid] = (
+            in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
+        )
 
+    @staticmethod
+    def fill_constant(
+        output: Pointer[Float32, MutAnyOrigin],
+        val_dev: Int32,
+        length_dev: Int32,
+    ):
+        var val = Int(val_dev)
+        var length = Int(length_dev)
+        var tid = global_idx.x
+        if tid >= length:
+            return
+        output[unsafe_offset=tid] = Float32(val)
 
-def fill_constant(
-    output: Pointer[Float32, MutAnyOrigin],
-    val_dev: Int32,
-    length_dev: Int32,
-):
-    var val = Int(val_dev)
-    var length = Int(length_dev)
-    var tid = global_idx.x
-    if tid >= length:
-        return
-    output[unsafe_offset=tid] = Float32(val)
-
-
-def add_in_place(
-    buf: Pointer[Float32, MutAnyOrigin],
-    delta_dev: Int32,
-    length_dev: Int32,
-):
-    var delta = Int(delta_dev)
-    var length = Int(length_dev)
-    var tid = global_idx.x
-    if tid >= length:
-        return
-    buf[unsafe_offset=tid] += Float32(delta)
+    @staticmethod
+    def add_in_place(
+        buf: Pointer[Float32, MutAnyOrigin],
+        delta_dev: Int32,
+        length_dev: Int32,
+    ):
+        var delta = Int(delta_dev)
+        var length = Int(length_dev)
+        var tid = global_idx.x
+        if tid >= length:
+            return
+        buf[unsafe_offset=tid] += Float32(delta)
 
 
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
@@ -84,7 +93,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
-    var func = ctx.compile_function[vec_add]()
+    var func = ctx.compile_function[Kernels.vec_add]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
@@ -132,7 +141,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
 
     # Pass `vec_add` directly as a parameter; the builder compiles it.
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
-        _ = builder.add_function[vec_add](
+        _ = builder.add_function[Kernels.vec_add](
             out_dev,
             in0_dev,
             in1_dev,
@@ -373,7 +382,7 @@ def test_add_output(ctx: DeviceContext) raises:
             in1_host[i] = Float32(length - i)
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
-        _ = builder.add_function[vec_add](
+        _ = builder.add_function[Kernels.vec_add](
             out_dev,
             in0_dev,
             in1_dev,
@@ -409,7 +418,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
     var buf_a = ctx.enqueue_create_buffer[DType.float32](length)
     var buf_b = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function[fill_constant]()
+    var func = ctx.compile_function[Kernels.fill_constant]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Sequence A on `buf_a`: write 1, then 2, then 3, internally chained
@@ -658,8 +667,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var fill = ctx.compile_function[fill_constant]()
-    var incr = ctx.compile_function[add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant]()
+    var incr = ctx.compile_function[Kernels.add_in_place]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5 (single kernel node, a graph root).
@@ -714,8 +723,8 @@ def test_region_passthrough_dependencies(
 
     var buf = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var fill = ctx.compile_function[fill_constant]()
-    var incr = ctx.compile_function[add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant]()
+    var incr = ctx.compile_function[Kernels.add_in_place]()
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Producer scope: fill `buf` with 5.
@@ -773,8 +782,8 @@ def test_as_context_kernel_chain(ctx: DeviceContext) raises:
 
     var buf = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var fill = ctx.compile_function[fill_constant]()
-    var incr = ctx.compile_function[add_in_place]()
+    var fill = ctx.compile_function[Kernels.fill_constant]()
+    var incr = ctx.compile_function[Kernels.add_in_place]()
 
     # Record fill(=5) then incr(+10) on the same buffer through the recording
     # context. The facade chains each enqueue after the previous one, so a
@@ -1126,30 +1135,90 @@ def test_cache_lookup_and_add(ctx: DeviceContext) raises:
     assert_false(Bool(cache.lookup("other")))
 
 
+def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
+    print("Test cached graph creations share one memory pool per context.")
+    comptime length = 64
+
+    var cache = DeviceGraphCache()
+
+    # The same context maps to the same pool handle on every lookup.
+    var p1 = cache.get_or_create_pool(ctx)
+    var p2 = cache.get_or_create_pool(ctx)
+    assert_equal(p1, p2)
+
+    # Each build allocates transient scratch through the builder -- that is,
+    # from the cache's shared pool -- memsets it, and copies it out to an
+    # externally owned buffer. The scratch handle dies inside the closure, so
+    # its block returns to the shared pool for the next cached build to reuse.
+    var buf_a = ctx.enqueue_create_buffer[DType.uint8](length)
+    var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    # Capture the address of the scratch allocations inside each graph build
+    # region. These pointers are not valid to access, outside the region and
+    # we only use it to test the allocator handed back the same address both
+    # times.
+    var scratch_addr_a = 0
+    var scratch_addr_b = 0
+
+    def build_a(
+        mut builder: DeviceGraphBuilder,
+    ) raises {imm, mut scratch_addr_a}:
+        var scratch = builder.create_buffer[DType.uint8](length, is_host=False)
+        scratch_addr_a = Int(scratch.unsafe_ptr())
+        var filled = builder.add_memset(scratch, UInt8(0x11))
+        _ = builder.add_copy(buf_a, scratch, dependencies=[filled])
+
+    def build_b(
+        mut builder: DeviceGraphBuilder,
+    ) raises {imm, mut scratch_addr_b}:
+        var scratch = builder.create_buffer[DType.uint8](length, is_host=False)
+        scratch_addr_b = Int(scratch.unsafe_ptr())
+        var filled = builder.add_memset(scratch, UInt8(0x22))
+        _ = builder.add_copy(buf_b, scratch, dependencies=[filled])
+
+    var graph_a = DeviceGraph.create(ctx, build_a, cache=Pointer(to=cache))
+    var graph_b = DeviceGraph.create(ctx, build_b, cache=Pointer(to=cache))
+
+    # Both graphs' scratch came from the shared pool: A's block was freed when
+    # its closure ended, so B's same-size request was handed the same address.
+    assert_equal(scratch_addr_a, scratch_addr_b)
+
+    # A's replay writes the scratch block B also uses; replaying serially in
+    # recording order is what keeps both outputs correct.
+    graph_a.replay()
+    graph_b.replay()
+    ctx.synchronize()
+
+    with buf_a.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x11))
+
+    with buf_b.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x22))
+
+
+comptime TestFunc = def(DeviceContext) thin raises -> None
+comptime TestFuncNoArgs = def() thin raises -> None
+
+
 def main() raises:
+    comptime funcs = __functions_in_module()
+
     with DeviceContext() as ctx:
-        test_vec_add_kernel_node(ctx)
-        test_as_context_kernel_chain(ctx)
-        test_parameterized_kernel_node(ctx)
-        test_capturing_parameterized_kernel_node(ctx)
-        test_closure_node(ctx)
-        test_add_copy_to_device(ctx)
-        test_add_copy_from_device(ctx)
-        test_add_copy_device_to_device(ctx)
-        test_add_memset(ctx)
-        test_add_output(ctx)
-        test_add_function_with_dependencies(ctx)
-        test_add_memset_with_dependencies(ctx)
-        test_add_copy_with_dependencies(ctx)
-        test_region(ctx)
-        test_region_empty(ctx)
-        test_region_with_dependencies(ctx)
-        test_region_passthrough_dependencies(ctx)
-        test_create_buffer(ctx)
-        test_cache_reuses_graph(ctx)
-        test_cache_distinguishes_inputs(ctx)
-        test_cache_without_cache_always_builds(ctx)
-        test_cache_lookup_and_add(ctx)
-        test_cache_key_separates_inputs()
-        test_add_input(ctx)
-        test_add_in_place_input(ctx)
+        comptime for i in range(len(funcs)):
+            comptime test_func = funcs[i]
+
+            comptime if get_function_name[test_func]().startswith("test_"):
+                comptime if type_of(test_func) == TestFunc:
+                    comptime func = rebind[TestFunc](test_func)
+                    func(ctx)
+                elif type_of(test_func) == TestFuncNoArgs:
+                    comptime func = rebind[TestFuncNoArgs](test_func)
+                    func()
+                else:
+                    comptime assert False, String(
+                        "test function '",
+                        get_function_name[test_func](),
+                        "' has a nonconforming signature",
+                    )
