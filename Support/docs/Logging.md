@@ -97,6 +97,33 @@ MLOG_KV(LogLevel::INFO, "a", 1, "b", 2,
 Emit a second record when a call site needs more than four fields; there is no
 continuation form.
 
+#### Timing a scope
+
+`SpanGuard`, from `Support/SpanGuard.h`, times a scope and reports it as a pair
+of `MLOG_KV` records sharing a `span_id`:
+
+```cpp
+{
+  M::Log::SpanGuard span("prefill");
+  runPrefill();
+}
+```
+
+```text
+event=span_start operation=prefill span_id=802754119...
+event=span_end operation=prefill span_id=802754119... duration_us=1423
+```
+
+The end record is emitted from the destructor, so an early return still closes
+the span. Durations come from `steady_clock`, so a wall-clock adjustment
+mid-span cannot skew them. The `operation` string is stored, not copied, so it
+must outlive the guard — pass a literal.
+
+Span ids are drawn per thread from a random 64-bit base, so they are distinct
+across threads without a shared counter. Records logged inside the scope do not
+pick up the `span_id` automatically; pass `span.getSpanId()` explicitly if a
+record needs to join the span.
+
 ### Mojo
 
 There is a Mojo interface wrapping the C++ Log library. It uses the same `fmt`

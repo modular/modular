@@ -1131,6 +1131,7 @@ modular_cc_library(
     hdrs = [
         "include/Support/Log.h",
         "include/Support/LogChannels.h",
+        "include/Support/SpanGuard.h",
     ],
     deps = [
         "Configuration",
