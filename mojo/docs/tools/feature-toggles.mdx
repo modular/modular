@@ -342,6 +342,8 @@ generation with:
 
 - `CompilationTarget.is_x86()`
 - `CompilationTarget.is_arm()`
+- `CompilationTarget.is_riscv()`, and `CompilationTarget.is_rv32()` or
+  `CompilationTarget.is_rv64()` for a specific register width
 - `CompilationTarget.is_apple_silicon()`
 - `CompilationTarget.is_apple_m1()` through
   `CompilationTarget.is_apple_m5()`
@@ -352,6 +354,12 @@ Detect target instruction set extensions with APIs such as:
 
 - `CompilationTarget.has_avx512f()`
 - `CompilationTarget.has_neon()`
+
+RISC-V has too many extensions for a predicate apiece, so name the extension
+instead, using its lowercase LLVM spelling:
+
+- `CompilationTarget.has_riscv_extension["m"]()`
+- `CompilationTarget.has_riscv_extension["zba"]()`
 
 ### GPU and accelerator detection
 

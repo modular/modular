@@ -24,6 +24,8 @@
 # `--print-supported-targets`.
 # RUN: mojo build --target-triple riscv32-unknown-none-elf --target-cpu=generic-rv32 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32
 # RUN: mojo build --target-triple riscv64-unknown-none-elf --target-cpu=generic-rv64 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV64
+# RUN: mojo build --target-triple riscv32-unknown-none-elf --target-cpu=sifive-e31 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_CPU
+# RUN: mojo build --target-triple riscv32-unknown-none-elf --march=rv32i_zba_zbb --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MARCH
 
 # CHECK_MACOS: target triple = "arm64-apple-macosx11.0"
 # CHECK_MACOS: "target-cpu"="apple-m1"
@@ -44,6 +46,14 @@
 # CHECK_RV64: target triple = "riscv64-unknown-none-elf"
 # CHECK_RV64: "target-cpu"="generic-rv64"
 # CHECK_RV64: "target-features"="+64bit,+i"
+
+# A RISC-V CPU model implies extensions that clang only derives from `-march`,
+# and an `-march` ISA string has to survive as more than the base ISA. Both
+# feed `CompilationTarget.has_riscv_extension()`, so both are pinned here.
+# CHECK_RV32_CPU: "target-cpu"="sifive-e31"
+# CHECK_RV32_CPU: "target-features"="+32bit,+a,+c,+i,+m,+zaamo,+zalrsc,+zca,+zicsr,+zifencei,+zmmul"
+
+# CHECK_RV32_MARCH: "target-features"="+32bit,+i,+zba,+zbb"
 
 
 def main():

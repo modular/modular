@@ -641,6 +641,15 @@ kgen.generator @target_get_triple_arch() {
   kgen.param.declare i686: target = <#kgen.target<triple = "i686-unknown-linux-gnu", arch = "i686", features = "", data_layout = "", simd_bit_width = 128>>
   kgen.param.assert<identical(:string target_get_field(i686, "triple_arch"), "i386")>,
                     "i686 canonicalizes to i386"
+
+  // RV32 and RV64 are distinct architectures in the triple, so a single
+  // "riscv" name never appears and each width is its own value.
+  kgen.param.declare rv32: target = <#kgen.target<triple = "riscv32-unknown-none-elf", arch = "sifive-e31", features = "", data_layout = "", simd_bit_width = 128>>
+  kgen.param.assert<identical(:string target_get_field(rv32, "triple_arch"), "riscv32")>,
+                    "triple arch is riscv32"
+  kgen.param.declare rv64: target = <#kgen.target<triple = "riscv64-unknown-linux-gnu", arch = "sifive-u54", features = "", data_layout = "", simd_bit_width = 128>>
+  kgen.param.assert<identical(:string target_get_field(rv64, "triple_arch"), "riscv64")>,
+                    "triple arch is riscv64"
   kgen.return
 }
 

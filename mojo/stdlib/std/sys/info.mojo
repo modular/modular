@@ -305,6 +305,44 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         """
         return Self.has_neon() and Self._has_feature["i8mm"]()
 
+    @staticmethod
+    def has_riscv_extension[name: StaticString]() -> Bool:
+        """Returns True if the target implements a RISC-V ISA extension.
+
+        RISC-V has too many extensions to give each one a predicate, so this
+        takes the extension name directly. Use the lowercase name LLVM gives the
+        extension, which is the ISA-string spelling without the `rv32`/`rv64`
+        prefix and without any version: `"m"`, `"a"`, `"f"`, `"d"`, `"c"`,
+        `"v"`, `"zba"`, `"zicsr"`, and so on. `"g"` is not an extension; query
+        its members individually.
+
+        An extension implied by another one counts as present, so a target built
+        with `d` also reports `f`, and one built with `a` also reports `zaamo`
+        and `zalrsc`.
+
+        Parameters:
+            name: The extension to check for.
+
+        Returns:
+            True if the target is RISC-V and implements the extension, False
+            otherwise. Always False on a non-RISC-V target.
+
+        Example:
+
+        ```mojo
+        from std.sys import CompilationTarget
+
+        def triple(x: Int32) -> Int32:
+            comptime if CompilationTarget.has_riscv_extension["m"]():
+                return x * 3
+            return (x << 1) + x
+        ```
+        """
+        comptime assert name.islower(), String(
+            "RISC-V extension names are lowercase, got: ", name
+        )
+        return Self.is_riscv() and Self._has_feature[name]()
+
     # Platforms
 
     @staticmethod
@@ -340,6 +378,42 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             or Self._is_triple_arch["armeb"]()
             or Self._is_triple_arch["thumb"]()
             or Self._is_triple_arch["thumbeb"]()
+        )
+
+    @staticmethod
+    def is_riscv() -> Bool:
+        """Checks if the target is a RISC-V architecture.
+
+        This is an architecture check, not an instruction-set check: use
+        `has_riscv_extension()` to gate code on a specific extension.
+
+        Returns:
+            True if the target is 32- or 64-bit RISC-V, False otherwise.
+        """
+        return Self.is_rv32() or Self.is_rv64()
+
+    @staticmethod
+    def is_rv32() -> Bool:
+        """Checks if the target is a 32-bit RISC-V architecture.
+
+        Returns:
+            True if the target is 32-bit RISC-V, False otherwise.
+        """
+        return (
+            Self._is_triple_arch["riscv32"]()
+            or Self._is_triple_arch["riscv32be"]()
+        )
+
+    @staticmethod
+    def is_rv64() -> Bool:
+        """Checks if the target is a 64-bit RISC-V architecture.
+
+        Returns:
+            True if the target is 64-bit RISC-V, False otherwise.
+        """
+        return (
+            Self._is_triple_arch["riscv64"]()
+            or Self._is_triple_arch["riscv64be"]()
         )
 
     @staticmethod

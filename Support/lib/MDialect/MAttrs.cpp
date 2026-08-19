@@ -1200,11 +1200,14 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
 
 bool M::isKnownTargetFeature(StringRef feature, StringRef targetTriple) {
   // LLVM has no combined feature table, so union the current target (covers
-  // whatever we compile for, GPU included) with host x86-64 + aarch64 (cover
-  // the cross-arch CPU queries the stdlib `has_*` wrappers make).  The
+  // whatever we compile for, GPU included) with host x86-64 + aarch64 + riscv64
+  // (cover the cross-arch CPU queries the stdlib `has_*` wrappers make).  The
   // OS/environment does not affect the feature table, so use `unknown-unknown`.
+  // riscv64 subsumes riscv32's extension names apart from the `32bit`/`64bit`
+  // pair, and `CompilationTarget` exposes those as `is_rv32()`/`is_rv64()`.
   static constexpr StringLiteral kUnionTriples[] = {"x86_64-unknown-unknown",
-                                                    "aarch64-unknown-unknown"};
+                                                    "aarch64-unknown-unknown",
+                                                    "riscv64-unknown-unknown"};
 
   static llvm::sys::SmartMutex<true> mu;
   // triple -> its full set of valid feature names. An entry that failed to

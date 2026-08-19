@@ -24,6 +24,9 @@
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/ARMTargetParser.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/RISCVISAInfo.h"
+#include "llvm/TargetParser/RISCVTargetParser.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/TargetParser/X86TargetParser.h"
 #include <cassert>
 #include <clang/Basic/LLVM.h>
@@ -91,6 +94,21 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
       opts->Features.push_back((f.getValue() ? "+" : "-") + f.getKey().str());
   }
 
+  // RISC-V CPU models are not expanded by `CreateTargetInfo` either: clang
+  // derives its extensions from `-march`, so a `-mcpu`-only invocation reports
+  // just the base ISA. Resolve the CPU's default march instead, which also
+  // pulls in the extensions it implies (`M` implies `Zmmul`, `D` implies `F`).
+  // TODO(#6918): `-march` should win over `-mcpu` as in the clang driver. The
+  // CPU defaults are unioned in twice -- here, and again by
+  // `getTargetInfoFor`'s delta merge -- and un-unioning them means teaching
+  // that shared merge to treat an explicit ISA string as complete. Until then,
+  // `--march=rv32i --mtune=sifive-e31` yields exactly the requested ISA.
+  if (llvm::Triple(opts->Triple).isRISCV()) {
+    SmallVector<std::string> cpuFeats;
+    llvm::RISCV::getFeaturesForCPU(cpu, cpuFeats, /*NeedPlus=*/true);
+    llvm::append_range(opts->Features, cpuFeats);
+  }
+
   // Concat the features together, only keeping included '+' features.
   for (StringRef feature : opts->Features) {
     if (feature.front() == '+')
@@ -98,6 +116,9 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   }
 
   llvm::sort(features);
+  // The per-architecture blocks above append what clang already resolved, so a
+  // CPU's base ISA can appear twice.
+  features.erase(llvm::unique(features), features.end());
 
   return features;
 }
@@ -235,6 +256,29 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
       opts->CPU = ARM::getDefaultCPU(triple.getArchName());
     else
       opts->CPU = mcpu;
+
+    // The triple already names the architecture and a RISC-V CPU name does not
+    // imply it, so unlike x86/ARM the triple is left alone.
+    // Extensions come from the `-march` ISA string when given, otherwise from
+    // the CPU's default march (resolved in `getFeaturesFromClang`).
+  } else if (triple.isRISCV()) {
+    opts->CPU = mcpu;
+    if (!march.empty()) {
+      // Experimental extensions are accepted without the driver's
+      // `-menable-experimental-extensions` opt-in: the audience for `-march` is
+      // firmware pinned to one core, and the ISA string still has to name the
+      // explicit version of anything experimental.
+      llvm::Expected<std::unique_ptr<RISCVISAInfo>> isaOr =
+          RISCVISAInfo::parseArchString(march,
+                                        /*EnableExperimentalExtension=*/true);
+      if (llvm::Error err = isaOr.takeError()) {
+        return Error("invalid RISC-V -march '" + march.str() +
+                     "': " + llvm::toString(std::move(err)));
+      }
+      // `CreateTargetInfo` resolves `FeaturesAsWritten` and overwrites
+      // `Features`, so the ISA string has to go in as written.
+      llvm::append_range(opts->FeaturesAsWritten, (*isaOr)->toFeatures());
+    }
 
   } else {
     triple.setArchName(march);
