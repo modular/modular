@@ -30,7 +30,7 @@ from collections.abc import AsyncIterator
 import numpy as np
 import numpy.typing as npt
 from max.experimental.cascade.core import Worker, worker_method
-from max.experimental.cascade.interfaces.textgen import GenerateRequest
+from max.experimental.cascade.interfaces.gen_ai import TextGenOptions
 from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 Int32Array = npt.NDArray[np.int32]
 
 
-def _sampling_params_input(req: GenerateRequest) -> SamplingParamsInput:
-    """Map a cascade :class:`GenerateRequest` onto ``SamplingParamsInput``.
+def _sampling_params_input(req: TextGenOptions) -> SamplingParamsInput:
+    """Map cascade :class:`TextGenOptions` onto ``SamplingParamsInput``.
 
     Forwards every request-configurable sampling field so a request routed
     through the cascade pipeline resolves the same parameters as one sent to
@@ -189,7 +189,7 @@ class MAXModelWorker(Worker):
 
     @worker_method()
     async def decode(
-        self, req: GenerateRequest, tokens: Int32Array
+        self, req: TextGenOptions, tokens: Int32Array
     ) -> AsyncIterator[Int32Array]:
         """Submit a decode request and stream generated token ids.
 
