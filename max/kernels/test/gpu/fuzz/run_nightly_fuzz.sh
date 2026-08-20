@@ -110,7 +110,7 @@ default_targets() {
       if [ "$FUZZ_VENDOR" = "amd" ]; then
         echo moe_router msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
       else
-        echo block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix
+        echo block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix topk_topp_masked_probs topk_topp_sampling_dist
       fi
       ;;
     # Held out until their live findings are fixed (else the notify lane is
