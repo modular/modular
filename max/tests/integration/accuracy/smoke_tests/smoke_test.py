@@ -32,6 +32,7 @@ then the virtualenvs are not needed.
 """
 
 import csv
+import json
 import logging
 import os
 import shlex
@@ -704,6 +705,11 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
+    result_dir = None
+    if output_path is not None:
+        result_dir = output_path / safe_model_name(model)
+        result_dir.mkdir(parents=True, exist_ok=True)
+
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cmd, server_env = get_server_cmd(
         framework,
@@ -762,12 +768,15 @@ def smoke_test(
             results, startup_time_seconds=server.startup_time
         )
 
-        if output_path is not None:
-            path = output_path / safe_model_name(model)
-            path.mkdir(parents=True, exist_ok=True)
-            write_results(path, summary, results, all_samples, tasks)
+        if result_dir is not None:
+            write_results(result_dir, summary, results, all_samples, tasks)
 
         logger.info(pformat(summary, indent=2))
+
+    if result_dir is not None:
+        (result_dir / "smoke_status.json").write_text(
+            json.dumps({"status": "FINISHED_OK"}) + "\n", encoding="utf-8"
+        )
 
 
 if __name__ == "__main__":
