@@ -280,9 +280,10 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
     from its components: the parameters declared by the generator (an array of
     `fn_gen_builder.param.decl`s), the argument types (a `param_list` of
-    `kgen.type`), the result type (a `kgen.type`), and the function metadata (a
-    `fn_metadata`). It folds into the generator type itself once all of its
-    components are constant.
+    `kgen.type`), the result type (a `kgen.type`), the function metadata (a
+    `fn_metadata`), and the implicit origin declarations (a `param_list` of
+    `kgen.string` names). It folds into the generator type itself once all of
+    its components are constant.
 
     Every component is a parameter expression, so a still-symbolic piece (e.g.
     an argument pack referenced by name) can be represented before elaboration.
@@ -297,7 +298,8 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
       #kgen<fn_gen_builder.param.decls[T : type]>,
       #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
       #kgen.fn_gen_builder.param.decl.ref<"T", type>,
-      #kgen.fn_metadata<[read], "none">>
+      #kgen.fn_metadata<[read], "none">,
+      #kgen.param_list<> : !kgen.param_list<!kgen.string>>
     ```
   }];
 
@@ -305,11 +307,13 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     "TypedAttr":$paramDecls,
     "TypedAttr":$argTypes,
     "TypedAttr":$resultType,
-    "TypedAttr":$metadata
+    "TypedAttr":$metadata,
+    "TypedAttr":$implicitOriginDecls
   );
 
   let assemblyFormat = [{
-    `<` $paramDecls `,` $argTypes `,` $resultType `,` $metadata `>`
+    `<` $paramDecls `,` $argTypes `,` $resultType `,` $metadata `,`
+      $implicitOriginDecls `>`
   }];
 
   let genVerifyDecl = 1;
@@ -323,14 +327,16 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     TypeBuilderWithInferredContext<(ins "TypedAttr":$paramDecls,
                                         "TypedAttr":$argTypes,
                                         "TypedAttr":$resultType,
-                                        "TypedAttr":$metadata), [{
+                                        "TypedAttr":$metadata,
+                                        "TypedAttr":$implicitOriginDecls), [{
       return get(paramDecls.getContext(), paramDecls, argTypes, resultType,
-                 metadata);
+                 metadata, implicitOriginDecls);
     }], "Type">,
 
     // Verbose form with MLIRContext, used by the generated parser.
     TypeBuilder<(ins "TypedAttr":$paramDecls, "TypedAttr":$argTypes,
-                     "TypedAttr":$resultType, "TypedAttr":$metadata),
+                     "TypedAttr":$resultType, "TypedAttr":$metadata,
+                     "TypedAttr":$implicitOriginDecls),
                 "", "Type">
   ];
 }

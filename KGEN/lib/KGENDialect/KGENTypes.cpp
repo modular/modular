@@ -509,14 +509,20 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 
 Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr argTypes, TypedAttr resultType,
-                                       TypedAttr metadata) {
-  auto cstParamDecls = dyn_cast<FnGenBuilderParamDeclArrayAttr>(paramDecls);
+                                       TypedAttr metadata,
+                                       TypedAttr implicitOriginDecls) {
+  auto cstParamDecls = dyn_cast<ParamListAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
+  auto cstImplicitOriginDecls = dyn_cast<ParamListAttr>(implicitOriginDecls);
 
   // If any of the components are not constants, skip.
-  if (!cstParamDecls || !cstArgTypes || !cstMetadata)
-    return Base::get(ctx, paramDecls, argTypes, resultType, metadata);
+  if (!cstParamDecls || !cstArgTypes || !cstMetadata || !cstImplicitOriginDecls)
+    return Base::get(ctx, paramDecls, argTypes, resultType, metadata,
+                     implicitOriginDecls);
+  assert(llvm::all_of(cstParamDecls.getValues(),
+                      llvm::IsaPred<FnGenBuilderParamDeclAttr>) &&
+         "malformed fn gen builder param decls");
 
   // We are going to introduce a new scope, adjust the depth of the existing
   // index ref by one. Don't adjust implicit origin reference depth (those are
@@ -529,17 +535,27 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
 
   SmallVector<Type> inputParamTypes;
   FnGenIndexRefRemapper remapper;
-  for (FnGenBuilderParamDeclAttr decl : cstParamDecls) {
-    auto remapped = remapper.replace(decl);
+  for (TypedAttr value : cstParamDecls.getValues()) {
+    auto remapped = cast<FnGenBuilderParamDeclAttr>(remapper.replace(value));
     remapper.appendParamDecl(remapped);
-    // record the parameter type.
-    inputParamTypes.push_back(remapped.getType());
+    // record the declared parameter type.
+    inputParamTypes.push_back(remapped.getDeclaredType());
   }
 
   cstParamDecls = remapper.replace(cstParamDecls);
   cstArgTypes = remapper.replace(cstArgTypes);
   resultType = remapper.replace(resultType);
-
+  if (cstMetadata.getMetadata()) {
+    SmallVector<StringAttr> names = llvm::map_to_vector(
+        cstImplicitOriginDecls.getValues(),
+        [](TypedAttr attr) -> StringAttr { return cast<StringAttr>(attr); });
+    // map implicit origin back to index refs.
+    cstArgTypes = cast<ParamListAttr>(
+        cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
+            names, cstArgTypes));
+    resultType = cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
+        names, resultType);
+  }
   SmallVector<Type> inputArgTypes =
       llvm::map_to_vector(cstArgTypes.getValues(), [](TypedAttr attr) -> Type {
         return ParamType::get(attr);
@@ -552,36 +568,50 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
           FunctionType::get(ctx, inputArgTypes, ParamType::get(resultType)),
           cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
           cstMetadata.getMetadata()),
-      nullptr);
+      // When it has a metadata, we need a empty pog list (instead of nullptr)
+      // to round trip, since the existence of the pog list might redirect the
+      // mlir parser/printer to a lit-specific format...
+      cstMetadata.getMetadata() ? PogListAttr::get(ctx) : PogListAttr(nullptr));
 }
 
 Type FuncGeneratorTypeBuilderType::getChecked(
     function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
     TypedAttr paramDecls, TypedAttr argTypes, TypedAttr resultType,
-    TypedAttr metadata) {
-  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata)))
+    TypedAttr metadata, TypedAttr implicitOriginDecls) {
+  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata,
+                    implicitOriginDecls)))
     return {};
-  return get(ctx, paramDecls, argTypes, resultType, metadata);
+  return get(ctx, paramDecls, argTypes, resultType, metadata,
+             implicitOriginDecls);
 }
 
 LogicalResult FuncGeneratorTypeBuilderType::verify(
     function_ref<InFlightDiagnostic()> emitError, TypedAttr paramDecls,
-    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata) {
+    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata,
+    TypedAttr implicitOriginDecls) {
 
   // NOTE:we can not easily verify that this is a list of type values (since
   // type expressions might in different forms between lit/kgen)
   if (!isa<ParamListType>(argTypes.getType()))
-    return emitError() << name << " expect to have !kgen.param_list type";
+    return emitError()
+           << " expect to have !kgen.param_list type for argument type list";
 
-  if (!isa<NonStructTypeType>(paramDecls.getType()))
-    return emitError() << "parameter declarations should have "
-                          "!kgen.non_struct_type type, not "
-                       << paramDecls.getType();
+  if (!isa<ParamListType>(paramDecls.getType()))
+    return emitError()
+           << " expect to have !kgen.param_list type for parameter decl list";
 
   if (!isa<NonStructTypeType>(metadata.getType()))
     return emitError()
            << "function metadata should have !kgen.non_struct_type type, not "
            << metadata.getType();
+
+  auto implicitOriginDeclsType =
+      dyn_cast<ParamListType>(implicitOriginDecls.getType());
+  if (!implicitOriginDeclsType ||
+      !isa<StringType>(implicitOriginDeclsType.getElementType()))
+    return emitError() << " expect to have !kgen.param_list<!kgen.string> "
+                          "type for implicit origin decl list, not "
+                       << implicitOriginDecls.getType();
 
   return success();
 }

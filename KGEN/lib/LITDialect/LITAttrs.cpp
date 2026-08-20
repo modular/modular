@@ -174,6 +174,13 @@ bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
          getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins();
 }
 
+TypedAttr FnMetaOriginDataAttr::remapNameToImplicitOriginIndexRef(
+    ArrayRef<StringAttr> names, TypedAttr toRemap) const {
+  NameToImplicitOriginRefRemapper<FnGenBuilderParamDeclRefAttr> remapper(names,
+                                                                         0);
+  return remapper.replace(toRemap);
+}
+
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
