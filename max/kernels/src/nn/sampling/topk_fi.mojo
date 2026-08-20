@@ -1629,6 +1629,10 @@ def TopKTopPSamplingFromProbKernel[
         var row_max = Float32(0.0)
         var min_p_thresh = Float32(0.0)
         var z = Float32(1.0)
+        # Mass of the min-p-masked working distribution -- what `load_dist`
+        # actually serves. Only the emitted distribution normalizes by it;
+        # the sampling budget stays `z`.
+        var masked_z = Float32(1.0)
 
         comptime if from_logits:
             var temp_val = Float32(1.0)
@@ -1654,12 +1658,30 @@ def TopKTopPSamplingFromProbKernel[
             # (unmasked) mass is used, matching the separate-softmax path
             # where probabilities are normalized before min-p masking.
             var thread_sum = Float32(0.0)
+            var thread_masked_sum = Float32(0.0)
             for i in range(tx, _d // vec_size, block_size):
                 var v = probs_row.load[width=vec_size](
                     (Idx[0], i * vec_size)
                 ).cast[DType.float32]()
-                thread_sum += exp((v - row_max) * inv_temp).reduce_add()
+                var e = exp((v - row_max) * inv_temp)
+                thread_sum += e.reduce_add()
+                comptime if emit_dist:
+                    if min_p_thresh > 0:
+                        comptime for j in range(vec_size):
+                            if e[j] < min_p_thresh:
+                                e[j] = 0
+                        thread_masked_sum += e.reduce_add()
             z = block.sum[block_size=block_size, broadcast=True](thread_sum)
+            comptime if emit_dist:
+                # `min_p_thresh` is block-uniform (one row per block), so
+                # every thread takes the same branch and the collective
+                # stays legal. Without a mask the masked total is `z`.
+                if min_p_thresh > 0:
+                    masked_z = block.sum[block_size=block_size, broadcast=True](
+                        thread_masked_sum
+                    )
+                else:
+                    masked_z = z
 
         @__parameter
         @always_inline
@@ -1963,9 +1985,14 @@ def TopKTopPSamplingFromProbKernel[
                     ) -> SIMD[DType.float32, vec_size]:
                         return load_dist[vec_size](offset)
 
+                    # The search needs `mass(> low)` over the masked working
+                    # distribution. A refined `q` came from `load_dist` sums
+                    # and is exactly that; the initial budget is the unmasked
+                    # `z`, which overstates it whenever min-p zeroed weight.
+                    var mass_above_low = q if low > 0 else masked_z
                     var refined = _topk_topp_cutoff_search[
                         vec_size, block_size, load_dist_vec
-                    ](_d, Int32(k), p_eff, low, accepted_e, q)
+                    ](_d, Int32(k), p_eff, low, accepted_e, mass_above_low)
                     cutoff = refined[0]
                     kept_mass = refined[1]
 

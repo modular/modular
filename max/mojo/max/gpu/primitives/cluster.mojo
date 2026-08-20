@@ -21,6 +21,7 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
+from std.bit import next_power_of_two
 from std.gpu import thread_idx
 from std.gpu.primitives.warp import _ReduceFn
 from std.memory import bitcast
@@ -733,3 +734,84 @@ def cluster_allreduce[
         comptime if need_tail_sync:
             cluster_sync()
         return acc
+
+
+@always_inline
+def cluster_allgather[
+    dtype: DType,
+    width: SIMDLength,
+    //,
+    cluster_size: Int,
+    need_tail_sync: Bool = True,
+](
+    slot: Pointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    vals: SIMD[dtype, width],
+) -> SIMD[dtype, width * next_power_of_two(cluster_size)]:
+    """Gathers one block-reduced vector from every CTA of a cluster.
+
+    `cluster_allreduce` folds the per-CTA vectors into one; this keeps them
+    apart, for callers that need each rank's contribution -- a prefix over
+    the ranks of a cluster, for example. The slot rules are the same: give
+    every CTA the same allocation and pass the allocation itself, never an
+    offset into one. The low `width` elements are what the peers read; the
+    elements above them carry the gathered table from thread 0 to the rest
+    of the block, which peers never touch.
+
+    `need_tail_sync` works as on `cluster_allreduce`: keep the default to
+    reuse one slot across consecutive calls, or drop it and alternate
+    between two slots.
+
+    Parameters:
+        dtype: Element type of the gathered vector; must be 32-bit.
+            Inferred.
+        width: Number of elements each CTA contributes. Inferred.
+        cluster_size: Number of CTAs in the cluster. With 1 the cross-CTA
+            traffic disappears and the call only publishes thread 0's values
+            to the rest of the block.
+        need_tail_sync: If True, retire the slot with a trailing sync.
+
+    Args:
+        slot: Cluster-invariant shared-memory scratch of
+            `width * (1 + next_power_of_two(cluster_size))` elements.
+        vals: This CTA's block-reduced values, valid in thread 0.
+
+    Returns:
+        The per-rank values in every thread, rank-major: element
+        `r * width + i` holds rank r's `vals[i]`. Elements for ranks at or
+        beyond `cluster_size` are zero.
+    """
+    comptime assert (
+        _is_sm_9x_or_newer()
+    ), "cluster_allgather requires an NVIDIA SM90+ GPU"
+
+    var out = SIMD[dtype, width * next_power_of_two(cluster_size)](0)
+    comptime if cluster_size == 1:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=width + i] = vals[i]
+        barrier()
+        comptime for i in range(width):
+            out[i] = slot[unsafe_offset=width + i]
+        comptime if need_tail_sync:
+            barrier()
+        return out
+    else:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=i] = vals[i]
+        cluster_sync()
+
+        if thread_idx.x == 0:
+            comptime for r in range(cluster_size):
+                var peer = load_cluster_smem[dtype, width](slot, UInt32(r))
+                comptime for i in range(width):
+                    slot[unsafe_offset=width + r * width + i] = peer[i]
+        barrier()
+        comptime for r in range(cluster_size):
+            comptime for i in range(width):
+                out[r * width + i] = slot[unsafe_offset=width + r * width + i]
+        comptime if need_tail_sync:
+            cluster_sync()
+        return out
