@@ -2220,10 +2220,12 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     }
     TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-    hasFinally = consumeIf(Token::kw_finally);
+    hasFinally = isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+                 consumeIf(Token::kw_finally);
   } else {
     SMLoc finallyLoc;
-    hasFinally = consumeIf(Token::kw_finally, &finallyLoc);
+    hasFinally = isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+                 consumeIf(Token::kw_finally, &finallyLoc);
     if (!hasFinally)
       return emitTokenError("expected 'except' or 'finally' block");
     // In a raising context, the default 'except' block just forwards the error.

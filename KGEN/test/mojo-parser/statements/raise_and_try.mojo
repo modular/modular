@@ -92,6 +92,36 @@ def tryFinally():
         pass
 
 
+# Regression test for https://github.com/modular/modular/issues/6718: a
+# nested try/except that is the last statement of an outer try-with-finally
+# body used to be misparsed, with the outer 'finally' wrongly attached to the
+# inner try, because the 'finally' keyword wasn't checked against the try's
+# own indentation before being consumed.
+# CHECK-LABEL: lit.fn @"tryExceptLastStmtOfTryFinally
+def tryExceptLastStmtOfTryFinally():
+    # CHECK: lit.try
+    try:
+        # CHECK: lit.try
+        try:
+            # CHECK-NEXT: lit.try.yield
+            pass
+        # CHECK-NEXT: except
+        except:
+            # CHECK-NEXT: lit.try.yield
+            pass
+        # CHECK-NEXT: else
+        # CHECK-NEXT: lit.try.yield
+        # CHECK-NEXT: finally
+        # CHECK-NEXT: lit.try.yield
+        # CHECK-NEXT: }
+        # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: except
+    # CHECK-NEXT: unreachable
+    # CHECK: finally
+    finally:
+        pass
+
+
 def maybeRaises() raises -> Int:
     return 0
 
