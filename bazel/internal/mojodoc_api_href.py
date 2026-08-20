@@ -53,6 +53,35 @@ def _is_private_api_path(path: str) -> bool:
     return any(segment.startswith("_") for segment in segments)
 
 
+def pad_backticks(value: str) -> str:
+    """Add space around strings that start or end with a backtick."""
+    if value.startswith("`") or value.endswith("`"):
+        return " " + value + " "
+    return value
+
+
+def create_api_link(
+    type_str: str,
+    path: str | None = None,
+    *,
+    hosted_on_mojolang: bool = False,
+    padding: bool = False,
+) -> str:
+    """Render a type as markdown, linking only when ``path`` resolves to a href."""
+    if padding:
+        inner = f"``{pad_backticks(type_str)}``"
+    else:
+        inner = f"`{type_str}`"
+
+    if not path:
+        return inner
+
+    href = resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
+    if href:
+        return f"[{inner}]({href})"
+    return inner
+
+
 def _mojo_docs_site_path(path: str) -> str:
     """Map ``mojo doc`` logical ``/mojo/...`` paths to the flat docsite layout."""
     assert path == "/mojo" or path.startswith("/mojo/")
@@ -78,7 +107,7 @@ def resolve_api_href(
     Returns:
         Empty string when ``path`` is empty; otherwise the resolved href.
     """
-    if path is None or path == "":
+    if not path:
         return ""
 
     fragment = ""
