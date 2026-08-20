@@ -71,7 +71,7 @@ def test_reusing_a_differently_shaped_graph_raises(tmp_path: Path) -> None:
     # A shape divergence is what a pipeline sizing itself from device memory
     # produces, and it must not be papered over with a stale artifact.
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    with pytest.raises(RuntimeError, match="does not match the precompiled"):
+    with pytest.raises(RuntimeError, match="no precompiled artifact"):
         session.load(_graph(width=8))
 
 
@@ -81,19 +81,60 @@ def test_reusing_a_renamed_graph_raises(tmp_path: Path) -> None:
     )
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    with pytest.raises(RuntimeError, match="does not match the precompiled"):
+    with pytest.raises(RuntimeError, match="no precompiled artifact"):
         session.load(_graph("something_else"))
 
 
-def test_compiling_more_graphs_than_were_exported_raises(
-    tmp_path: Path,
-) -> None:
+def test_compiling_a_graph_twice_reuses_one_artifact(tmp_path: Path) -> None:
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
+    assert len(list(tmp_path.glob("*.mef"))) == 1
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    for _ in range(2):
+        np.testing.assert_allclose(_execute(session.load(_graph())), np.ones(4))
+
+
+def test_a_graph_with_no_artifact_raises(tmp_path: Path) -> None:
     InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
     session.load(_graph())
-    with pytest.raises(RuntimeError, match="only 1 were precompiled"):
-        session.load(_graph())
+    with pytest.raises(RuntimeError, match="no precompiled artifact"):
+        session.load(_graph("a_graph_that_was_never_exported"))
+
+
+def test_artifacts_are_matched_regardless_of_order(tmp_path: Path) -> None:
+    # The consuming run rarely compiles in the producing run's order -- it may
+    # run a subset, or reach the same graphs by another path.
+    exporting = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    exporting.load(_graph("first"))
+    exporting.load(_graph("second", width=8))
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    np.testing.assert_allclose(
+        _execute(session.load(_graph("second", width=8)), width=8),
+        np.ones(8),
+    )
+    np.testing.assert_allclose(
+        _execute(session.load(_graph("first"))), np.ones(4)
+    )
+
+
+def test_same_name_different_shapes_get_their_own_artifacts(
+    tmp_path: Path,
+) -> None:
+    # What `Module.compile` produces: it names every graph after the module
+    # class, so one model compiled at several shapes shares one name.
+    exporting = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    exporting.load(_graph("shared", width=4))
+    exporting.load(_graph("shared", width=8))
+    assert len(list(tmp_path.glob("*.mef"))) == 2
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    np.testing.assert_allclose(
+        _execute(session.load(_graph("shared", width=8)), width=8),
+        np.ones(8),
+    )
 
 
 def test_reusing_a_directory_with_no_manifest_raises(tmp_path: Path) -> None:
@@ -166,9 +207,7 @@ def test_module_reusing_a_differently_shaped_graph_raises(
         _linear().compile(_module_input_type())
 
     with support.set_precompiled_mefs(tmp_path):
-        with pytest.raises(
-            RuntimeError, match="does not match the precompiled"
-        ):
+        with pytest.raises(RuntimeError, match="no precompiled artifact"):
             _linear().compile(_module_input_type(rows=8))
 
 
@@ -182,3 +221,35 @@ def test_setting_mef_dirs_is_undone_on_scope_exit(tmp_path: Path) -> None:
     _linear().compile(_module_input_type())
     after = json.loads((tmp_path / "manifest.json").read_text())["graphs"]
     assert after == recorded
+
+
+def _graph_adding(name: str, addend: float, *, width: int = 4) -> Graph:
+    """A graph whose name and signature say nothing about what it computes."""
+    dtype = TensorType(DType.float32, [width], device=DeviceRef.CPU())
+    with Graph(name, input_types=[dtype]) as graph:
+        graph.output(graph.inputs[0].tensor + addend)
+    return graph
+
+
+def test_exporting_one_graph_twice_is_allowed(tmp_path: Path) -> None:
+    # The other side of the collision guard: re-exporting a graph rewrites
+    # bytes that describe the same computation, which is what a caller reaching
+    # the same graph twice does and must keep being allowed to do.
+    session = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    session.load(_graph_adding("repeated", 1.0))
+    session.load(_graph_adding("repeated", 1.0))
+
+    assert len(list(tmp_path.glob("*.mef"))) == 1
+
+
+def test_exporting_two_graphs_under_one_name_raises(tmp_path: Path) -> None:
+    # Nothing makes a graph's name unique, so a name and signature can describe
+    # two different computations. Matching them by that pair would hand the
+    # consumer whichever artifact was written last -- silently the wrong one, on
+    # a path whose whole purpose is to avoid recompiling. Refuse instead, and
+    # let the caller tell them apart by naming them differently.
+    session = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    session.load(_graph_adding("collide", 1.0))
+
+    with pytest.raises(RuntimeError, match="already exported"):
+        session.load(_graph_adding("collide", 2.0))

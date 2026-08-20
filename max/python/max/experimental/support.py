@@ -135,9 +135,9 @@ def set_precompiled_mefs(
 
     Every graph the module-global session compiles after this -- whether through
     :meth:`~max.experimental.nn.Module.compile` or eager execution -- is matched
-    to an artifact by position and checked against the recorded name and
-    signature, so a divergence raises rather than quietly recompiling. The
-    consuming run therefore has to build the same graphs in the same order.
+    to an artifact by its name and signature, so a divergence raises rather than
+    quietly recompiling. The consuming run has to build the same graphs, but not
+    in the same order, and may build only some of them.
 
     Discards the cached session, so call this before compiling anything whose
     artifact should come from ``directory``. Passing :obj:`None` restores
