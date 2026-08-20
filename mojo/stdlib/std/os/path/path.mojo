@@ -671,6 +671,57 @@ def splitroot[
 
 
 # ===----------------------------------------------------------------------=== #
+# normpath
+# ===----------------------------------------------------------------------=== #
+
+
+def normpath[PathLike: stdPathLike, //](path: PathLike) -> String:
+    """Normalizes `path` by collapsing redundant separators, dropping `.`
+    components, and resolving `..` components where possible.
+
+    This is a purely lexical operation: it does not touch the filesystem, so
+    it does not resolve symlinks and may change the meaning of a path that
+    contains a symlinked directory.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to normalize.
+
+    Returns:
+        The normalized path.
+
+    Example:
+    ```mojo
+    from std.os.path import normpath
+
+    print(normpath("a//b/./c/../d"))  # "a/b/d"
+    print(normpath("../a/b"))  # "../a/b"
+    print(normpath(""))  # "."
+    ```
+    """
+    var _drive, root, tail = splitroot(path.__fspath__())
+
+    var parts = List[String]()
+    for comp_slice in tail.split(sep):
+        var comp = String(comp_slice)
+        if not comp or comp == ".":
+            continue
+        if (
+            comp != ".."
+            or (not root and not parts)
+            or (parts and parts[len(parts) - 1] == "..")
+        ):
+            parts.append(comp^)
+        elif parts:
+            _ = parts.pop()
+
+    var result = root + sep.join(parts)
+    return result if result else "."
+
+
+# ===----------------------------------------------------------------------=== #
 # expandvars
 # ===----------------------------------------------------------------------=== #
 
