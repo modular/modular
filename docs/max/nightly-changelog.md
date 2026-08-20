@@ -774,6 +774,13 @@ This version is still a work in progress.
   axes of 256K+ elements, for example an argmax over a `[1, 2097152]` tensor,
   where the row's reduction fans out across multiple CPU workers.
 
+- Fixed the distribution the top-k/top-p sampler emits for speculative
+  decoding (`emit_dist`) being under-normalized when a `min_p` mask removes
+  weight and the row passes top-p at the first trial: the row was scaled by
+  the unmasked softmax mass instead of the masked kept mass, so it summed to
+  less than one and skewed the rejection residual. The sampled token stream
+  was and remains unchanged.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
