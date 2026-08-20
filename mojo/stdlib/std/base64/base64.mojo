@@ -73,6 +73,27 @@ def _ascii_to_value(char: Byte) raises -> Byte:
         )
 
 
+@always_inline
+def _is_ascii_whitespace(char: Byte) -> Bool:
+    """Returns True if `char` is an ASCII whitespace byte.
+
+    Args:
+        char: A single ascii byte.
+
+    Returns:
+        True if the byte is a space, tab, newline, carriage return, form
+        feed, or vertical tab.
+    """
+    return (
+        char == Byte(ord(" "))
+        or char == Byte(ord("\t"))
+        or char == Byte(ord("\n"))
+        or char == Byte(ord("\r"))
+        or char == Byte(ord("\f"))
+        or char == Byte(ord("\v"))
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # b64encode
 # ===-----------------------------------------------------------------------===#
@@ -129,6 +150,11 @@ def b64encode(input_bytes: ImmSpan[Byte, _]) -> String:
 def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on the input string.
 
+    Whitespace (spaces, tabs, newlines, carriage returns, form feeds, and
+    vertical tabs) is ignored, matching the behavior of Python's
+    `base64.b64decode`. This allows decoding base64 text that has been
+    wrapped across multiple lines.
+
     Args:
         str: A base64 encoded string.
 
@@ -136,12 +162,17 @@ def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
         The decoded bytes.
 
     Raises:
-        If the input length is not divisible by 4, or the input contains a
-        character outside the base64 alphabet.
+        If the input length (excluding whitespace) is not divisible by 4, or
+        the input contains a non-whitespace character outside the base64
+        alphabet.
     """
     comptime `=` = Byte(ord("="))
-    var data = str.as_bytes()
-    var n = str.byte_length()
+
+    var data = List[Byte](capacity=str.byte_length())
+    for char in str.as_bytes():
+        if not _is_ascii_whitespace(char):
+            data.append(char)
+    var n = len(data)
 
     if n % 4 != 0:
         raise Error("ValueError: Input length '", n, "' must be divisible by 4")

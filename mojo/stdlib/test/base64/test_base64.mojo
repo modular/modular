@@ -74,8 +74,9 @@ def test_b64decode() raises:
 
     assert_equal(b64decode("QUJDREVGYWJjZGVm"), bytes_of("ABCDEFabcdef"))
 
+    # The two spaces are ignored, leaving 19 significant characters.
     with assert_raises(
-        contains="ValueError: Input length '21' must be divisible by 4"
+        contains="ValueError: Input length '19' must be divisible by 4"
     ):
         _ = b64decode("invalid base64 string")
 
@@ -86,9 +87,29 @@ def test_b64decode() raises:
         _ = b64decode("abc")
 
     with assert_raises(
-        contains="ValueError: Unexpected character ' ' encountered"
+        contains="ValueError: Unexpected character '!' encountered"
     ):
-        _ = b64decode("invalid base64 string!!!")
+        _ = b64decode("abc!")
+
+
+def test_b64decode_whitespace() raises:
+    # Whitespace is ignored, matching Python's `base64.b64decode`.
+    assert_equal(b64decode("Qm9 uam91cg=="), bytes_of("Bonjour"))
+
+    # Base64 text wrapped across multiple lines.
+    assert_equal(
+        b64decode("SGVsbG8g\nTW9qbyEh\nIQ=="), bytes_of("Hello Mojo!!!")
+    )
+
+    # A mix of tabs, newlines, carriage returns, and spaces.
+    assert_equal(b64decode("\t Y Q\r\n=\v=\f"), bytes_of("a"))
+
+    # Whitespace that makes the effective length not divisible by 4 must
+    # still raise.
+    with assert_raises(
+        contains="ValueError: Input length '3' must be divisible by 4"
+    ):
+        _ = b64decode("a b c")
 
 
 def test_b16encode() raises:
