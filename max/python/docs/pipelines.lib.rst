@@ -80,6 +80,7 @@ Utilities
    HuggingFaceRepo
    MemoryPlan
    ModelManifest
+   RetrievedPipeline
    VisionPreprocessCache
    WeightPathParser
 

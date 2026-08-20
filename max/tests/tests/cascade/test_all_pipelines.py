@@ -87,9 +87,9 @@ async def test_build_pipeline_uses_arch_factory(
     monkeypatch.setattr(
         all_pipelines.PIPELINE_REGISTRY,
         "retrieve_factory",
-        lambda config: (
-            SimpleNamespace(eos_token_ids=set()),
-            lambda: None,
+        lambda config: SimpleNamespace(
+            tokenizer=SimpleNamespace(eos_token_ids=set()),
+            factory=lambda: None,
         ),
     )
     pipeline = await all_pipelines.build_pipeline(_args("some-org/some-llm"))
