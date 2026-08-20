@@ -39,6 +39,4 @@ ALL_MAX_PYTHON_DEPS = ALL_ARCHITECTURES + [
     "//max/python/max/serve:debug",
     "//max/python/max/serve/mocks",
     "//max/python/max/support",
-    "//max/python/max/sys",
-    "//max/python/max/sys/_hal",
 ]
