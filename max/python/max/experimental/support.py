@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import threading
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from contextvars import ContextVar
 from pathlib import Path
 from types import TracebackType
@@ -35,7 +35,10 @@ _SESSION: engine.api.InferenceSession | None = None
 # or to record into. A session takes its store at construction, since the store
 # tracks its position through the graphs the session compiles, so setting either
 # of these discards the cached session rather than reconfiguring it.
-_PRECOMPILED_MEFS: Path | None = None
+# One directory or several: a large set of graphs is often split across
+# producers, since a build action has a time limit.
+_Dirs = tuple[Path, ...] | None
+_PRECOMPILED_MEFS: _Dirs = None
 _EXPORT_MEFS: Path | None = None
 
 
@@ -56,7 +59,7 @@ def _session() -> engine.api.InferenceSession:
         return _SESSION
 
 
-def _set_mef_dirs(precompiled: Path | None, export: Path | None) -> None:
+def _set_mef_dirs(precompiled: _Dirs, export: Path | None) -> None:
     global _PRECOMPILED_MEFS, _EXPORT_MEFS, _SESSION
     _PRECOMPILED_MEFS, _EXPORT_MEFS = precompiled, export
     with _SESSION_LOCK:
@@ -122,8 +125,8 @@ class SetterContext(Generic[T], contextlib.AbstractContextManager[T]):
 
 
 def set_precompiled_mefs(
-    directory: str | Path | None,
-) -> SetterContext[tuple[Path | None, Path | None]]:
+    directory: str | Path | Iterable[str | Path] | None,
+) -> SetterContext[tuple[_Dirs, Path | None]]:
     """Initializes graphs from artifacts in ``directory`` instead of compiling.
 
     Graph compilation does not need the accelerator it targets, only that
@@ -151,10 +154,15 @@ def set_precompiled_mefs(
         An undo handle restoring the previous directories.
     """
     previous = (_PRECOMPILED_MEFS, _EXPORT_MEFS)
-    resolved = Path(directory) if directory is not None else None
+    if directory is None:
+        resolved: _Dirs = None
+    elif isinstance(directory, (str, Path)):
+        resolved = (Path(directory),)
+    else:
+        resolved = tuple(Path(one) for one in directory)
     _set_mef_dirs(resolved, None)
 
-    def restore(dirs: tuple[Path | None, Path | None]) -> None:
+    def restore(dirs: tuple[_Dirs, Path | None]) -> None:
         _set_mef_dirs(*dirs)
 
     return SetterContext((resolved, None), previous, restore)
@@ -162,7 +170,7 @@ def set_precompiled_mefs(
 
 def set_export_mefs(
     directory: str | Path | None,
-) -> SetterContext[tuple[Path | None, Path | None]]:
+) -> SetterContext[tuple[_Dirs, Path | None]]:
     """Records every graph the module-global session compiles into ``directory``.
 
     The producing half of the split :func:`set_precompiled_mefs` describes: each
@@ -183,7 +191,7 @@ def set_export_mefs(
     resolved = Path(directory) if directory is not None else None
     _set_mef_dirs(None, resolved)
 
-    def restore(dirs: tuple[Path | None, Path | None]) -> None:
+    def restore(dirs: tuple[_Dirs, Path | None]) -> None:
         _set_mef_dirs(*dirs)
 
     return SetterContext((None, resolved), previous, restore)

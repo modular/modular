@@ -253,3 +253,67 @@ def test_exporting_two_graphs_under_one_name_raises(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="already exported"):
         session.load(_graph_adding("collide", 2.0))
+
+
+def test_reuses_artifacts_split_across_directories(tmp_path: Path) -> None:
+    # What a fragmented producer leaves behind: one directory per build action,
+    # each with its own manifest. Nothing merges them.
+    first, second = tmp_path / "a", tmp_path / "b"
+    InferenceSession(devices=[CPU()], export_mefs=first).load(_graph("first"))
+    InferenceSession(devices=[CPU()], export_mefs=second).load(
+        _graph("second", width=8)
+    )
+
+    session = InferenceSession(
+        devices=[CPU()], precompiled_mefs=[first, second]
+    )
+    np.testing.assert_allclose(
+        _execute(session.load(_graph("second", width=8)), width=8), np.ones(8)
+    )
+    np.testing.assert_allclose(
+        _execute(session.load(_graph("first"))), np.ones(4)
+    )
+
+
+def test_naming_no_directory_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="at least one directory"):
+        InferenceSession(devices=[CPU()], precompiled_mefs=[])
+
+
+def test_reusing_colliding_artifacts_from_two_directories_raises(
+    tmp_path: Path,
+) -> None:
+    # The same-name collision the exporting session refuses, but split across
+    # the per-action directories a fragmented producer leaves behind: neither
+    # export sees the other, so the clash only becomes visible when the
+    # manifests are unioned. Picking one silently would hand a graph the other
+    # graph's code.
+    first, second = tmp_path / "a", tmp_path / "b"
+    InferenceSession(devices=[CPU()], export_mefs=first).load(
+        _graph_adding("collide", 1.0)
+    )
+    InferenceSession(devices=[CPU()], export_mefs=second).load(
+        _graph_adding("collide", 2.0)
+    )
+
+    with pytest.raises(RuntimeError, match="describe different graphs"):
+        InferenceSession(devices=[CPU()], precompiled_mefs=[first, second])
+
+
+def test_one_graph_exported_to_two_directories_is_allowed(
+    tmp_path: Path,
+) -> None:
+    # Two build actions that both reach the same graph agree about it, so the
+    # union has nothing to disambiguate and the duplicate is just a duplicate.
+    first, second = tmp_path / "a", tmp_path / "b"
+    for directory in (first, second):
+        InferenceSession(devices=[CPU()], export_mefs=directory).load(
+            _graph_adding("shared", 1.0)
+        )
+
+    session = InferenceSession(
+        devices=[CPU()], precompiled_mefs=[first, second]
+    )
+    np.testing.assert_allclose(
+        _execute(session.load(_graph_adding("shared", 1.0))), np.ones(4)
+    )
