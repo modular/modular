@@ -108,6 +108,12 @@ This version is still a work in progress.
 
 - `Bencher.bench_function()` now takes a raising closure.
 
+- `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
+  of compile-time parameters, along with an explicit state value that is passed
+  mutably to both: the preprocessing function prepares the state before each
+  timed call of the benchmarked function, so state no longer has to be shuttled
+  through mutable captures.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.

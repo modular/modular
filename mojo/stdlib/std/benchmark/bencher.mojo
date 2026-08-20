@@ -1492,47 +1492,34 @@ struct Bencher(RegisterPassable):
         self.elapsed = Int(stop - start)
 
     def iter_preproc[
-        iter_fn: def() capturing[_] -> None,
-        preproc_fn: def() capturing[_] -> None,
-    ](mut self):
-        """Returns the total elapsed time by running a target function a particular
-        number of times.
+        T: AnyType,
+        //,
+        IterFn: def(mut T) -> None,
+        PreprocFn: def(mut T) -> None,
+    ](mut self, mut state: T, iter_fn: IterFn, preproc_fn: PreprocFn):
+        """Accumulates the total elapsed time of a target function over the
+        configured number of iterations, running a preprocess function to
+        prepare the state before each timed call.
+
+        Both functions receive `state` mutably; only the target function's
+        run time is measured.
 
         Parameters:
-            iter_fn: The target function to benchmark.
-            preproc_fn: The function to preprocess the target function.
-        """
-
-        @always_inline
-        def iter_unified() {}:
-            iter_fn()
-
-        @always_inline
-        def preproc_unified() {}:
-            preproc_fn()
-
-        self.iter_preproc(iter_unified, preproc_unified)
-
-    def iter_preproc[
-        IterFn: def() -> None,
-        PreprocFn: def() -> None,
-    ](mut self, iter_fn: IterFn, preproc_fn: PreprocFn):
-        """Returns the total elapsed time by running a target function a particular
-        number of times.
-
-        Parameters:
+            T: The type of the state passed to both functions.
             IterFn: The target function type.
             PreprocFn: The preprocess function type.
 
         Args:
-            iter_fn: The closure carrying the captured state of the target function.
-            preproc_fn: The closure carrying the captured state of the preprocess function.
+            state: The state prepared by the preprocess function and consumed
+                by the target function each iteration.
+            iter_fn: The target function to benchmark.
+            preproc_fn: The function preparing the state before each timed call.
         """
 
         for _ in range(self.num_iters):
-            preproc_fn()
+            preproc_fn(state)
             var start = std.time.perf_counter_ns()
-            iter_fn()
+            iter_fn(state)
             var stop = std.time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
