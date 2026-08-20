@@ -10,26 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a set of operating-system independent functions for manipulating
-file system paths."""
 
-from .path import (
-    abspath,
-    basename,
-    dirname,
-    exists,
-    expanduser,
-    expandvars,
-    getsize,
-    is_absolute,
-    isdir,
-    isfile,
-    islink,
-    join,
-    lexists,
-    normpath,
-    realpath,
-    split,
-    split_extension,
-    splitroot,
-)
+from std.os.path import abspath, join, normpath
+from std.pathlib import cwd
+
+from std.testing import TestSuite, assert_equal, assert_true
+
+
+def test_absolute_path_is_normalized_and_unchanged() raises:
+    assert_equal(abspath("/a/b/../c"), "/a/c")
+    assert_equal(abspath("/"), "/")
+
+
+def test_relative_path_resolves_against_cwd() raises:
+    var expected = normpath(join(String(cwd()), "foo/bar"))
+    assert_equal(abspath("foo/bar"), expected)
+
+
+def test_starts_with_root() raises:
+    assert_true(abspath(".").startswith("/"))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

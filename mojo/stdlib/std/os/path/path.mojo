@@ -722,6 +722,61 @@ def normpath[PathLike: stdPathLike, //](path: PathLike) -> String:
 
 
 # ===----------------------------------------------------------------------=== #
+# abspath
+# ===----------------------------------------------------------------------=== #
+
+
+def _getcwd() raises -> String:
+    """Returns the current working directory.
+
+    Raises:
+        If the current working directory could not be determined.
+    """
+    var string = String(capacity_bytes=MAX_PATH)
+    var res = external_call[
+        "getcwd", OptionalPointer[c_char, origin_of(string)]
+    ](
+        string.unsafe_as_bytes_mut().unsafe_ptr().unsafe_bitcast[c_char](),
+        MAX_PATH,
+    )
+    if not res:
+        raise Error("unable to query the current directory")
+
+    string._set_byte_length(Int(_unsafe_strlen(string.as_bytes().unsafe_ptr())))
+    string._set_nul_terminated()
+    return string^
+
+
+def abspath[PathLike: stdPathLike, //](path: PathLike) raises -> String:
+    """Returns a normalized, absolutized version of `path`. Relative paths
+    are resolved against the current working directory.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to absolutize.
+
+    Raises:
+        If the current working directory could not be determined.
+
+    Returns:
+        The absolute, normalized path.
+
+    Example:
+    ```mojo
+    from std.os.path import abspath
+
+    print(abspath("/already/absolute"))  # "/already/absolute"
+    ```
+    """
+    var fspath = path.__fspath__()
+    if not is_absolute(fspath):
+        fspath = join(_getcwd(), fspath)
+    return normpath(fspath)
+
+
+# ===----------------------------------------------------------------------=== #
 # expandvars
 # ===----------------------------------------------------------------------=== #
 
