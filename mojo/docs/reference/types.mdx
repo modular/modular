@@ -259,7 +259,7 @@ contiguous `List` slice yields a `Span` view; a strided slice yields a
 new `List`.
 
 ```mojo
-var items = [0, 1, 2, 3, 4, 5]
+var items: List[Int] = [0, 1, 2, 3, 4, 5]
 var middle = items[1:4]      # Span view, [1, 2, 3]
 var strided = items[::2]     # new List, [0, 2, 4]
 ```
