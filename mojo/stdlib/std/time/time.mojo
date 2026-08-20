@@ -53,17 +53,14 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 @fieldwise_init
 struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
-    var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
+    var tv_nsec: Int  # Nanoseconds
 
     def __init__(out self):
         self.tv_sec = 0
-        self.tv_subsec = 0
+        self.tv_nsec = 0
 
     def as_nanoseconds(self) -> Int:
-        comptime if CompilationTarget.is_linux():
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec
-        else:
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
+        return self.tv_sec * _NSEC_PER_SEC + self.tv_nsec
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
