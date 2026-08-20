@@ -57,7 +57,10 @@ def test_8xmi355_stays_opt_in() -> None:
     when a model is meant to run on it.
     """
     expected = {
-        "max-ci": {"MiniMaxAI/MiniMax-M3-MXFP8"},
+        "max-ci": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
         "max": set(),
         "vllm": set(),
         "sglang": set(),
