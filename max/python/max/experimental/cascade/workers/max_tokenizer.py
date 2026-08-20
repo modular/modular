@@ -21,7 +21,10 @@ from contextlib import asynccontextmanager
 import numpy as np
 import numpy.typing as npt
 from max.experimental.cascade.core import Worker, worker_method
-from max.experimental.cascade.interfaces.textgen import ChatMessages
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAITextChunk,
+)
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
@@ -31,6 +34,26 @@ Int32Array = npt.NDArray[np.int32]
 # Unicode replacement character; the HF tokenizer emits it when a byte-level
 # token sequence ends mid-multibyte-character.
 _REPLACEMENT_CHAR = "\ufffd"
+
+
+def flatten_message(message: ChatMessage) -> dict[str, str]:
+    """Render a message as the plain ``{role, content}`` a chat template wants.
+
+    Only text parts survive: HuggingFace chat templates take multimodal content
+    in a per-model layout, so a pipeline that accepts images has to build the
+    template input itself rather than going through here.
+
+    Raises:
+        ValueError: If the message carries a non-text content part.
+    """
+    text_parts: list[str] = []
+    for part in message.content:
+        if not isinstance(part, GenAITextChunk):
+            raise ValueError(
+                f"This tokenizer accepts text content only, got {part.type!r}"
+            )
+        text_parts.append(part.text)
+    return {"role": message.role, "content": "".join(text_parts)}
 
 
 class MAXTokenizer(Worker):
@@ -48,19 +71,18 @@ class MAXTokenizer(Worker):
         yield self
 
     @worker_method()
-    async def encode(self, prompt: str | ChatMessages) -> npt.NDArray[np.int32]:
-        """Tokenize plain text or chat messages into ``int32`` token ids."""
+    async def encode(
+        self, messages: list[ChatMessage]
+    ) -> npt.NDArray[np.int32]:
+        """Tokenize a conversation into ``int32`` token ids via the chat template."""
         assert self._tokenizer is not None, "MAXTokenizer must be deployed"
-        if isinstance(prompt, list):
-            token_ids = self._tokenizer.apply_chat_template(
-                prompt,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_dict=True,
-                return_tensors="np",
-            )["input_ids"][0]
-        else:
-            token_ids = self._tokenizer.encode(prompt, return_tensors="np")[0]
+        token_ids = self._tokenizer.apply_chat_template(
+            [flatten_message(message) for message in messages],
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="np",
+        )["input_ids"][0]
         return np.asarray(token_ids, dtype=np.int32)
 
     @worker_method()

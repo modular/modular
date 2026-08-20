@@ -24,9 +24,13 @@ import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
-from max.experimental.cascade.interfaces.imgen import (
-    ImageGenInterface,
-    ImageGenRequest,
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAIChunk,
+    GenAIImageChunk,
+    GenAIInterface,
+    GenAIRequest,
+    ImageGenOptions,
 )
 from max.pipelines.request.open_responses import (
     InputTextContent,
@@ -86,26 +90,44 @@ def _extract_prompt(body: _CascadeRequestBody) -> str:
     raise ValueError("OpenResponses image generation requires text input.")
 
 
-def _to_image_gen_request(body: _CascadeRequestBody) -> ImageGenRequest:
-    """Build an ``ImageGenRequest`` from the request body."""
+def _to_gen_ai_request(body: _CascadeRequestBody) -> GenAIRequest:
+    """Build a :class:`GenAIRequest` from the OpenResponses request body."""
     image_options = body.provider_options.image or ImageProviderOptions()
-    defaults = ImageGenRequest()
-    return ImageGenRequest(
-        height=image_options.height or defaults.height,
-        width=image_options.width or defaults.width,
-        num_steps=(
-            image_options.steps
-            if image_options.steps is not None
-            else defaults.num_steps
+    defaults = ImageGenOptions()
+    return GenAIRequest(
+        messages=[ChatMessage.text("user", _extract_prompt(body))],
+        image=ImageGenOptions(
+            height=image_options.height or defaults.height,
+            width=image_options.width or defaults.width,
+            num_steps=(
+                image_options.steps
+                if image_options.steps is not None
+                else defaults.num_steps
+            ),
+            guidance_scale=(
+                image_options.guidance_scale
+                if image_options.guidance_scale is not None
+                else defaults.guidance_scale
+            ),
+            seed=body.seed if body.seed is not None else defaults.seed,
+            output_format=image_options.output_format.upper(),
         ),
-        guidance_scale=(
-            image_options.guidance_scale
-            if image_options.guidance_scale is not None
-            else defaults.guidance_scale
-        ),
-        seed=body.seed if body.seed is not None else defaults.seed,
-        output_format=image_options.output_format.upper(),
     )
+
+
+async def _image_bytes(
+    chunk_iter: AsyncIterator[GenAIChunk],
+) -> AsyncIterator[bytes]:
+    """Keep only the generated images from a chunk stream.
+
+    A pipeline may interleave commentary with the images it generates; this
+    route's schema carries images alone, so anything else is dropped. A
+    URL-valued image chunk is passed over too -- this route inlines image data
+    and has nothing to fetch with.
+    """
+    async for chunk in chunk_iter:
+        if isinstance(chunk, GenAIImageChunk) and chunk.data is not None:
+            yield chunk.data
 
 
 def _build_response(
@@ -179,7 +201,7 @@ async def _stream_response(
     yield "[DONE]"
 
 
-def build_router(pipeline: ImageGenInterface) -> APIRouter:
+def build_router(pipeline: GenAIInterface) -> APIRouter:
     """Build OpenResponses routes for a cascade-backed image pipeline."""
     router = APIRouter(prefix="/v1")
 
@@ -188,19 +210,22 @@ def build_router(pipeline: ImageGenInterface) -> APIRouter:
         body: _CascadeRequestBody,
     ) -> ResponseResource | EventSourceResponse:
         image_options = body.provider_options.image or ImageProviderOptions()
-        gen_req = _to_image_gen_request(body)
-        prompt = _extract_prompt(body)
+        images = _image_bytes(pipeline.generate(_to_gen_ai_request(body)))
 
         if body.stream:
             return EventSourceResponse(
                 _stream_response(
-                    pipeline.generate_image_streaming(gen_req, prompt),
+                    images,
                     model=body.model,
                     output_format=image_options.output_format,
                 )
             )
 
-        image_bytes = await pipeline.generate_image(gen_req, prompt)
+        # The final frame is the finished image; earlier ones are intermediate
+        # denoising steps a non-streaming client never sees.
+        image_bytes = b""
+        async for frame in images:
+            image_bytes = frame
         return _build_response(
             image_bytes,
             model=body.model,

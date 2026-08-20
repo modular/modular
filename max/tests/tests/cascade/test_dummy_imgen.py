@@ -17,9 +17,14 @@ from __future__ import annotations
 import io
 from collections.abc import AsyncIterator
 
-import numpy as np
 import pytest
-from max.experimental.cascade import ImageGenRequest, LocalRuntime
+from max.experimental.cascade import (
+    ChatMessage,
+    GenAIImageChunk,
+    GenAIRequest,
+    ImageGenOptions,
+    LocalRuntime,
+)
 from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
@@ -32,25 +37,30 @@ async def runtime() -> AsyncIterator[LocalRuntime]:
         yield rt
 
 
+def _request(prompt: str, num_steps: int) -> GenAIRequest:
+    return GenAIRequest(
+        messages=[ChatMessage.text("user", prompt)],
+        image=ImageGenOptions(
+            width=64, height=64, num_steps=num_steps, output_format="JPEG"
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_imgen_pipeline(runtime: LocalRuntime) -> None:
     pipeline = await build_dummy_imgen_pipeline()
     await pipeline.deploy(runtime)
 
-    req = ImageGenRequest(
-        width=64,
-        height=64,
-        num_steps=3,
-        output_format="JPEG",
-    )
-    image_data = await pipeline.generate_image(req, "a beautiful sunset")
+    chunks = [
+        chunk
+        async for chunk in pipeline.generate(_request("a beautiful sunset", 3))
+    ]
 
-    raw = (
-        image_data.tobytes()
-        if isinstance(image_data, np.ndarray)
-        else image_data
-    )
-    image = Image.open(io.BytesIO(raw))
+    final = chunks[-1]
+    assert isinstance(final, GenAIImageChunk)
+    assert final.format == "JPEG"
+    assert final.data is not None
+    image = Image.open(io.BytesIO(final.data))
     assert image.size[0] > 0
     assert image.size[1] > 0
 
@@ -61,20 +71,14 @@ async def test_imgen_pipeline_streaming(runtime: LocalRuntime) -> None:
     await pipeline.deploy(runtime)
 
     num_steps = 3
-    req = ImageGenRequest(
-        width=64,
-        height=64,
-        num_steps=num_steps,
-        output_format="JPEG",
-    )
-
-    frames = [
-        frame async for frame in pipeline.generate_image_streaming(req, "a cat")
+    chunks = [
+        chunk async for chunk in pipeline.generate(_request("a cat", num_steps))
     ]
     # The denoiser emits one frame per denoising step and the downstream
     # streaming workers forward the stream verbatim.
-    assert len(frames) == num_steps
-    for frame in frames:
-        assert isinstance(frame, bytes)
-        image = Image.open(io.BytesIO(frame))
+    assert len(chunks) == num_steps
+    for chunk in chunks:
+        assert isinstance(chunk, GenAIImageChunk)
+        assert chunk.data is not None
+        image = Image.open(io.BytesIO(chunk.data))
         assert image.size == (64, 64)

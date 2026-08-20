@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
@@ -46,6 +46,9 @@ class InklingReasoningParser(ReasoningParser):
     ``<|content_model_end_sampling|>`` terminates the whole assistant turn
     and acts as a stop token rather than a delimiter.
     """
+
+    REASONING_START: ClassVar[str] = "<|content_thinking|>"
+    REASONING_END: ClassVar[str] = "<|end_message|>"
 
     def __init__(
         self,
@@ -167,9 +170,9 @@ class InklingReasoningParser(ReasoningParser):
     ) -> InklingReasoningParser:
         """Constructs a reasoning parser from a tokenizer."""
         thinking_start_id = await convert_token_to_id(
-            tokenizer, "<|content_thinking|>"
+            tokenizer, cls.REASONING_START
         )
-        end_message_id = await convert_token_to_id(tokenizer, "<|end_message|>")
+        end_message_id = await convert_token_to_id(tokenizer, cls.REASONING_END)
 
         if thinking_start_id is None or end_message_id is None:
             raise ValueError(
@@ -193,4 +196,4 @@ class InklingReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> int | None:
         """Returns the ``<|end_message|>`` token id that closes reasoning."""
-        return await convert_token_to_id(tokenizer, "<|end_message|>")
+        return await convert_token_to_id(tokenizer, cls.REASONING_END)

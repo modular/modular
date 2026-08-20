@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Cascade pipeline interfaces and shared request types.
 
-Holds the abstractions (``CascadePipeline`` base, the text/image-gen
-interfaces, and their request DTOs) that both ``workers`` and ``serve``
-depend on, keeping them decoupled from concrete pipeline implementations.
+Holds the abstractions (the ``CascadePipeline`` / ``GenAIPipeline`` bases, the
+modality-agnostic ``GenAIInterface``, and its request and chunk types) that both
+``workers`` and ``serve`` depend on, keeping them decoupled from concrete
+pipeline implementations.
 """

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Top-level pipeline dispatch helpers for cascade.
 
-Selects and builds the correct :class:`CascadePipeline` for a
+Selects and builds the correct :class:`GenAIPipeline` for a
 :class:`PipelineArgs` by constructing a :class:`PipelineConfig` via
 :meth:`PipelineConfig.from_args`, resolving the model's architecture against
 the MAX :obj:`~max.pipelines.PIPELINE_REGISTRY`, and building the cascade
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
 from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
@@ -46,7 +46,7 @@ from max.pipelines.lib.registry import SupportedArchitecture
 
 # Dummy pipelines are in-process test fixtures selected by an exact model-path
 # sentinel; they have no Hugging Face config and never hit the registry.
-_DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[CascadePipeline]]] = {
+_DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[GenAIPipeline]]] = {
     "dummy_textgen": build_dummy_textgen_pipeline,
     "dummy_imgen": build_dummy_imgen_pipeline,
 }
@@ -114,7 +114,7 @@ def _resolve_architecture(config: PipelineConfig) -> SupportedArchitecture:
 
 async def build_pipeline(
     args: PipelineArgs,
-) -> CascadePipeline:
+) -> GenAIPipeline:
     """Build the cascade pipeline described by *args*.
 
     Selection is driven entirely by the model path, read from the raw
@@ -174,5 +174,5 @@ async def build_pipeline(
         )
 
     pipeline = factory(config)
-    assert isinstance(pipeline, CascadePipeline)
+    assert isinstance(pipeline, GenAIPipeline)
     return pipeline

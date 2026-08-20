@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
@@ -39,6 +39,9 @@ class Qwen3_5ReasoningParser(ReasoningParser):
     implicitly when a tool call begins (``<tool_call>``) — the tool-call
     marker is left in the content region for the tool parser to consume.
     """
+
+    REASONING_START: ClassVar[str] = "<think>"
+    REASONING_END: ClassVar[str] = "</think>"
 
     def __init__(
         self,
@@ -172,8 +175,10 @@ class Qwen3_5ReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> Qwen3_5ReasoningParser:
         """Construct a reasoning parser from a tokenizer."""
-        think_start_id = await convert_token_to_id(tokenizer, "<think>")
-        think_end_id = await convert_token_to_id(tokenizer, "</think>")
+        think_start_id = await convert_token_to_id(
+            tokenizer, cls.REASONING_START
+        )
+        think_end_id = await convert_token_to_id(tokenizer, cls.REASONING_END)
 
         if think_start_id is None or think_end_id is None:
             raise ValueError(
@@ -194,4 +199,4 @@ class Qwen3_5ReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> int | None:
         """Returns the ``</think>`` token id that closes a reasoning span."""
-        return await convert_token_to_id(tokenizer, "</think>")
+        return await convert_token_to_id(tokenizer, cls.REASONING_END)

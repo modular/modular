@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Base class shared by all cascade-served pipelines."""
+"""Base classes shared by all cascade-served pipelines."""
 
 import asyncio
 
 from max.experimental.cascade.core import Runtime, Worker
+from max.experimental.cascade.interfaces.gen_ai import GenAIInterface
 
 
 class CascadePipeline:
@@ -36,3 +37,13 @@ class CascadePipeline:
         )
         for name, proxy in zip(workers, deployed, strict=True):
             setattr(self, name, proxy)
+
+
+class GenAIPipeline(CascadePipeline, GenAIInterface):
+    """A deployable cascade pipeline that answers generative-AI requests.
+
+    What ``build_pipeline`` returns and what the serving layer routes on. Kept
+    distinct from :class:`CascadePipeline`, which is only the worker-deployment
+    machinery -- serving-layer wrappers reuse that without generating anything
+    themselves.
+    """

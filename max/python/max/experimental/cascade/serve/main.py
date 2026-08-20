@@ -120,7 +120,13 @@ async def serve(
 
         logger.info("Serving OpenAI-compatible endpoint on %s:%d", host, port)
         app = CascadeFastAPI()
-        app.include_router(await build_router(pipeline, runtime))
+        app.include_router(
+            await build_router(
+                pipeline,
+                runtime,
+                pipeline_args.runtime.emit_reasoning_content,
+            )
+        )
 
         await app.serve(host, port)
 

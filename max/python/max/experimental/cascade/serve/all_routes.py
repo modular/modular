@@ -15,16 +15,16 @@
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 from max.experimental.cascade.core import Runtime
-from max.experimental.cascade.interfaces.imgen import ImageGenInterface
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
-from max.experimental.cascade.interfaces.textgen import TextGenInterface
+from max.experimental.cascade.interfaces.gen_ai import GenAIInterface, Modality
 from max.experimental.cascade.serve import chat_completions, open_responses
 
 
 async def build_router(
-    pipeline: CascadePipeline, runtime: Runtime
+    pipeline: GenAIInterface,
+    runtime: Runtime,
+    emit_reasoning_content: bool = False,
 ) -> APIRouter:
-    """Auto-configure routes based on the pipeline interfaces.
+    """Auto-configure routes based on what the pipeline can generate.
 
     ``runtime`` is the one ``pipeline`` was deployed on; routes that need
     serving-side workers of their own deploy them there.
@@ -39,12 +39,16 @@ async def build_router(
     async def health() -> str:
         return "OK"
 
-    if isinstance(pipeline, TextGenInterface):
+    output_modalities = pipeline.supported_output_modalities()
+
+    if Modality.TEXT in output_modalities:
         router.include_router(
-            await chat_completions.build_router(pipeline, runtime)
+            await chat_completions.build_router(
+                pipeline, runtime, emit_reasoning_content
+            )
         )
 
-    if isinstance(pipeline, ImageGenInterface):
+    if Modality.IMAGE in output_modalities:
         router.include_router(open_responses.build_router(pipeline))
 
     return router
