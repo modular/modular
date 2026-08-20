@@ -534,10 +534,11 @@ class InferenceSession:
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
-            earlier session's ``export_mefs``. Every graph this session loads is
-            initialized from its artifact instead of being compiled, which lets
-            the compiling and the executing run happen on different machines.
-            Raises if a graph does not match the artifact recorded for it.
+            earlier session's ``export_mefs``, or several of them -- a large set
+            of graphs is often split across producers. Every graph this session
+            loads is initialized from its artifact instead of being compiled,
+            which lets the compiling and the executing run happen on different
+            machines. Raises if a graph has no artifact.
         export_mefs: A directory to write a compiled-graph artifact into for
             every graph this session loads, alongside a manifest describing
             them. Pass the same directory as another session's
@@ -557,7 +558,7 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-        precompiled_mefs: str | Path | None = None,
+        precompiled_mefs: str | Path | Iterable[str | Path] | None = None,
         export_mefs: str | Path | None = None,
     ) -> None:
         if precompiled_mefs is not None and export_mefs is not None:

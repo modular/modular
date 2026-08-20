@@ -56,6 +56,7 @@ import hashlib
 import json
 import re
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -103,13 +104,17 @@ def _signature(graph: Graph) -> dict[str, list[str]]:
     }
 
 
+_KERNEL_PATHS = re.compile(r"_kernel_library_paths = \[[^\]]*\]")
+
+
 def _fingerprint(graph: Graph) -> str:
     """Digests what a graph computes, to tell two same-named graphs apart.
 
-    Only ever compared between graphs built by one exporting process, so unlike
-    a key -- which has to match across the separate trees that produce and
-    consume an artifact -- this can afford to hash the body as printed,
-    source locations and all.
+    Compared between graphs built by one exporting process, and between the
+    directories separate build actions leave behind, so it has to describe what
+    a graph computes and nothing about where it was built. The printed form
+    carries no source locations; the kernel-library paths it does carry point
+    into the tree that built the graph, so they are dropped.
 
     Args:
         graph: The graph to digest.
@@ -117,7 +122,8 @@ def _fingerprint(graph: Graph) -> str:
     Returns:
         A hex digest of the graph's body.
     """
-    return hashlib.sha256(repr(graph).encode()).hexdigest()
+    body = _KERNEL_PATHS.sub("_kernel_library_paths = []", repr(graph))
+    return hashlib.sha256(body.encode()).hexdigest()
 
 
 @dataclass
@@ -138,10 +144,13 @@ class MefStore:
     directly.
     """
 
-    directory: Path
+    directories: tuple[Path, ...]
     exporting: bool
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _entries: dict[str, _Entry] = field(default_factory=dict)
+    # Where each artifact actually lives, which is not derivable from the key
+    # once the artifacts come from more than one directory.
+    _artifacts: dict[str, Path] = field(default_factory=dict)
 
     @classmethod
     def for_export(cls, directory: str | Path) -> MefStore:
@@ -156,34 +165,73 @@ class MefStore:
         """
         path = Path(directory)
         path.mkdir(parents=True, exist_ok=True)
-        return cls(directory=path, exporting=True)
+        return cls(directories=(path,), exporting=True)
 
     @classmethod
-    def for_import(cls, directory: str | Path) -> MefStore:
-        """Returns a store that reads the artifacts in ``directory``.
+    def for_import(
+        cls, directories: str | Path | Iterable[str | Path]
+    ) -> MefStore:
+        """Returns a store that reads the artifacts in ``directories``.
+
+        Several are accepted because one producer often cannot compile every
+        graph: a build action has a time limit, so a large set is split across
+        actions, each writing its own directory. Since an artifact is named after
+        the graph it holds, the directories need no merging -- their manifests
+        union, and a key present in two of them usually describes the same graph
+        either way. When it does not, neither artifact can be matched back to a
+        graph, so the union raises rather than picking one.
 
         Args:
-            directory: A directory written by an exporting store.
+            directories: One directory written by an exporting store, or several.
 
         Returns:
             The store to pass as a session's ``precompiled_mefs``.
 
         Raises:
-            FileNotFoundError: If the directory holds no manifest, so was not
-                written by an exporting session.
+            ValueError: If no directory is named.
+            FileNotFoundError: If one holds no manifest, so was not written by a
+                session exporting precompiled MEFs.
+            RuntimeError: If two directories hold different graphs under one
+                key, which no artifact could tell apart.
         """
-        path = Path(directory)
-        manifest = path / _MANIFEST_NAME
-        if not manifest.is_file():
-            raise FileNotFoundError(
-                f"{path} has no {_MANIFEST_NAME}, so it was not written by a "
-                "session exporting precompiled MEFs"
-            )
-        entries = {
-            entry["key"]: _Entry(**entry)
-            for entry in json.loads(manifest.read_text())["graphs"]
-        }
-        return cls(directory=path, exporting=False, _entries=entries)
+        if isinstance(directories, (str, Path)):
+            directories = [directories]
+        paths = tuple(Path(directory) for directory in directories)
+        if not paths:
+            raise ValueError("name at least one directory of precompiled MEFs")
+
+        entries: dict[str, _Entry] = {}
+        artifacts: dict[str, Path] = {}
+        for path in paths:
+            manifest = path / _MANIFEST_NAME
+            if not manifest.is_file():
+                raise FileNotFoundError(
+                    f"{path} has no {_MANIFEST_NAME}, so it was not written by "
+                    "a session exporting precompiled MEFs"
+                )
+            for entry in json.loads(manifest.read_text())["graphs"]:
+                recorded = _Entry(**entry)
+                seen = entries.get(recorded.key)
+                if (
+                    seen is not None
+                    and seen.fingerprint != recorded.fingerprint
+                ):
+                    raise RuntimeError(
+                        f"{artifacts[recorded.key]} and {path / recorded.key}"
+                        " describe different graphs, so neither can be matched"
+                        f" back to {recorded.name!r}. Nothing makes a graph's"
+                        " name unique; give them different names to tell them"
+                        " apart."
+                    )
+                entries.setdefault(recorded.key, recorded)
+                artifacts.setdefault(recorded.key, path / recorded.key)
+
+        return cls(
+            directories=paths,
+            exporting=False,
+            _entries=entries,
+            _artifacts=artifacts,
+        )
 
     def claim_export(self, graph: Graph) -> Path:
         """Records ``graph`` and returns the path to write its artifact to.
@@ -222,7 +270,7 @@ class MefStore:
                     " names to tell them apart."
                 )
             self._entries[entry.key] = entry
-        return self.directory / entry.key
+        return self.directories[0] / entry.key
 
     def claim_import(self, graph: Graph) -> Path:
         """Returns the artifact for ``graph``, checking it is the right one.
@@ -244,7 +292,9 @@ class MefStore:
         if entry is None:
             raise RuntimeError(
                 f"no precompiled artifact for graph {graph.name!r} with "
-                f"signature {signature} in {self.directory}.\n"
+                f"signature {signature} in "
+                + ", ".join(str(path) for path in self.directories)
+                + ".\n"
                 "  precompiled: "
                 + (
                     ", ".join(sorted(e.name for e in self._entries.values()))
@@ -254,13 +304,13 @@ class MefStore:
                 "graphs; config derived from device memory (batch size, for "
                 "one) has to be pinned explicitly on both sides."
             )
-        return self.directory / entry.key
+        return self._artifacts[entry.key]
 
     def write_manifest(self) -> None:
         """Writes the manifest describing everything exported so far."""
         with self._lock:
             entries = sorted(self._entries.values(), key=lambda e: e.key)
-        (self.directory / _MANIFEST_NAME).write_text(
+        (self.directories[0] / _MANIFEST_NAME).write_text(
             json.dumps(
                 {
                     "graphs": [
@@ -268,6 +318,7 @@ class MefStore:
                             "key": entry.key,
                             "name": entry.name,
                             "signature": entry.signature,
+                            "fingerprint": entry.fingerprint,
                         }
                         for entry in entries
                     ]
