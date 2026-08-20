@@ -415,6 +415,38 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="initcheck",
     ),
+    "topk_topp_masked_probs": FuzzTarget(
+        name="topk_topp_masked_probs",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        description=(
+            "topk_topp_masked_probs: spec-decode target-side masked softmax"
+            " (cluster + single-block dispatch); ref validates the"
+            " tie-tolerant accept-predicate contract vs an f64 recompute"
+        ),
+        default_oracle="ref",
+    ),
+    "topk_topp_sampling_dist": FuzzTarget(
+        name="topk_topp_sampling_dist",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        description=(
+            "topk_topp_sampling_from_prob + emit_dist: spec-decode draft"
+            " sampler; token-in-nucleus / degenerate-row / emit-inertness"
+            " contracts, dist vs the accept predicate"
+        ),
+        default_oracle="ref",
+    ),
     "ep_combine": FuzzTarget(
         name="ep_combine",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_ep_combine.mojo.test"),
