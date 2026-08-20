@@ -801,8 +801,8 @@ class InferenceSession:
             The compiled artifact, ready for :meth:`init` or :meth:`init_all`.
 
         Raises:
-            RuntimeError: If reusing and ``model`` does not match the artifact
-                recorded in its position.
+            RuntimeError: If reusing and no recorded artifact matches
+                ``model``'s name and signature.
         """
         # See `_precompiled_mefs` for why a caller would want this: it lets the
         # compile happen somewhere that holds no accelerator.

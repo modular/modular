@@ -25,12 +25,25 @@ on the caller's behalf. A session constructed with ``export_mefs`` writes each
 graph it compiles into that directory; one constructed with ``precompiled_mefs``
 initializes those artifacts instead of compiling.
 
-Artifacts are matched by position and then verified against the graph's name and
-signature, rather than by a compile key. A compile key covers the host CPU
-target, kernel-package contents and the build configuration, which two different
-machines rarely agree on, and a key that fails to match falls back to compiling
-silently. Matching by path removes the key from the picture, and a mismatch
-raises instead -- a split that stops working needs to say so.
+Artifacts are matched by the graph's name and the signature of its inputs and
+outputs, rather than by a compile key. A compile key covers the host CPU target,
+kernel-package contents and the build configuration, which two different machines
+rarely agree on, and a key that fails to match falls back to compiling silently.
+Naming an artifact after what it holds removes the key from the picture, and a
+graph with no artifact raises instead -- a split that stops working needs to say
+so.
+
+Nothing depends on the order the graphs are compiled in, which matters because
+the compiling and the executing run rarely agree on it: the consumer may run a
+subset, or reach the same graphs by another path. Two graphs sharing a name are
+usually still distinguished, since most such pairs differ in signature too, and
+a graph compiled twice reuses one artifact -- which is what a caller wants.
+
+Nothing makes a graph's name unique, though, so a name and a signature can
+describe two different computations. That pair has to identify a graph for an
+artifact to be matched back to it, and exporting a second graph under one that
+is taken raises rather than overwriting: silently handing back the wrong
+artifact would defeat the point of a path that exists to skip compiling.
 
 The signature check is a guard, not a proof: it catches divergences visible in a
 graph's input and output types, not every way two graphs can differ. Reuse only
@@ -39,7 +52,9 @@ artifacts produced by the same code at the same revision.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +64,22 @@ if TYPE_CHECKING:
     from max.graph import Graph
 
 _MANIFEST_NAME = "manifest.json"
+
+
+def _key(name: str, signature: dict[str, list[str]]) -> str:
+    """Names the artifact for a graph called `name` with `signature`.
+
+    The digest is what distinguishes two graphs sharing a name, which
+    `Module.compile` produces routinely: it names every graph after the module
+    class, so one model compiled at several shapes yields one name and several
+    signatures. Truncated because it identifies an artifact within one directory
+    rather than guarding against a chosen collision.
+    """
+    digest = hashlib.sha256(
+        json.dumps(signature, sort_keys=True).encode()
+    ).hexdigest()[:12]
+    sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return f"{sanitized}-{digest}.mef"
 
 
 def _signature(graph: Graph) -> dict[str, list[str]]:
@@ -72,11 +103,31 @@ def _signature(graph: Graph) -> dict[str, list[str]]:
     }
 
 
+def _fingerprint(graph: Graph) -> str:
+    """Digests what a graph computes, to tell two same-named graphs apart.
+
+    Only ever compared between graphs built by one exporting process, so unlike
+    a key -- which has to match across the separate trees that produce and
+    consume an artifact -- this can afford to hash the body as printed,
+    source locations and all.
+
+    Args:
+        graph: The graph to digest.
+
+    Returns:
+        A hex digest of the graph's body.
+    """
+    return hashlib.sha256(repr(graph).encode()).hexdigest()
+
+
 @dataclass
 class _Entry:
     key: str
     name: str
     signature: dict[str, list[str]]
+    # Absent from the manifest, and so from every entry read back for import:
+    # it answers a question only the exporting process can ask.
+    fingerprint: str = ""
 
 
 @dataclass
@@ -84,15 +135,13 @@ class MefStore:
     """A directory of compiled-graph artifacts, being written or read.
 
     Construct with :meth:`for_export` or :meth:`for_import` rather than
-    directly. Tracks the position reached in the directory, so a store belongs to
-    one session.
+    directly.
     """
 
     directory: Path
     exporting: bool
     _lock: threading.Lock = field(default_factory=threading.Lock)
-    _entries: list[_Entry] = field(default_factory=list)
-    _next_index: int = 0
+    _entries: dict[str, _Entry] = field(default_factory=dict)
 
     @classmethod
     def for_export(cls, directory: str | Path) -> MefStore:
@@ -130,10 +179,10 @@ class MefStore:
                 f"{path} has no {_MANIFEST_NAME}, so it was not written by a "
                 "session exporting precompiled MEFs"
             )
-        entries = [
-            _Entry(**entry)
+        entries = {
+            entry["key"]: _Entry(**entry)
             for entry in json.loads(manifest.read_text())["graphs"]
-        ]
+        }
         return cls(directory=path, exporting=False, _entries=entries)
 
     def claim_export(self, graph: Graph) -> Path:
@@ -144,17 +193,36 @@ class MefStore:
 
         Returns:
             Where to export the compiled artifact.
+
+        Raises:
+            RuntimeError: If a different graph was already exported under the
+                same name and signature, which no artifact could tell apart.
         """
+        signature = _signature(graph)
+        entry = _Entry(
+            key=_key(graph.name, signature),
+            name=graph.name,
+            signature=signature,
+            fingerprint=_fingerprint(graph),
+        )
         with self._lock:
-            index = self._next_index
-            self._next_index += 1
-            entry = _Entry(
-                key=f"{index:03d}-{graph.name}.mef",
-                name=graph.name,
-                signature=_signature(graph),
-            )
-            self._entries.append(entry)
-            return self.directory / entry.key
+            # A graph compiled twice claims one artifact, and the second
+            # export rewrites bytes describing the same graph. Two *different*
+            # graphs landing on one key is the case no artifact can represent.
+            previous = self._entries.get(entry.key)
+            if (
+                previous is not None
+                and previous.fingerprint != entry.fingerprint
+            ):
+                raise RuntimeError(
+                    f"a different graph named {graph.name!r} was already"
+                    " exported with the same input and output types, so an"
+                    " artifact cannot say which of the two it holds. Nothing"
+                    " makes a graph's name unique, so give them different"
+                    " names to tell them apart."
+                )
+            self._entries[entry.key] = entry
+        return self.directory / entry.key
 
     def claim_import(self, graph: Graph) -> Path:
         """Returns the artifact for ``graph``, checking it is the right one.
@@ -166,38 +234,32 @@ class MefStore:
             The artifact to initialize in its place.
 
         Raises:
-            RuntimeError: If this session compiles more graphs than were
-                exported, or a graph does not match the artifact recorded in its
-                position.
+            RuntimeError: If no artifact was precompiled for this graph.
         """
-        with self._lock:
-            index = self._next_index
-            self._next_index += 1
-            if index >= len(self._entries):
-                raise RuntimeError(
-                    f"this session compiled {index + 1} graphs but only "
-                    f"{len(self._entries)} were precompiled into "
-                    f"{self.directory}; re-export with the same configuration"
-                )
-            entry = self._entries[index]
-
         signature = _signature(graph)
-        if entry.name != graph.name or entry.signature != signature:
+        key = _key(graph.name, signature)
+        with self._lock:
+            entry = self._entries.get(key)
+
+        if entry is None:
             raise RuntimeError(
-                f"graph {index} does not match the precompiled artifact "
-                f"{entry.key!r}, so it cannot be reused.\n"
-                f"  expected: {entry.name} {entry.signature}\n"
-                f"  building: {graph.name} {signature}\n"
-                "The exporting and importing runs must build the same graphs; "
-                "config derived from device memory (batch size, for one) has to "
-                "be pinned explicitly on both sides."
+                f"no precompiled artifact for graph {graph.name!r} with "
+                f"signature {signature} in {self.directory}.\n"
+                "  precompiled: "
+                + (
+                    ", ".join(sorted(e.name for e in self._entries.values()))
+                    or "(nothing)"
+                )
+                + "\nThe exporting and importing runs must build the same "
+                "graphs; config derived from device memory (batch size, for "
+                "one) has to be pinned explicitly on both sides."
             )
         return self.directory / entry.key
 
     def write_manifest(self) -> None:
         """Writes the manifest describing everything exported so far."""
         with self._lock:
-            entries = list(self._entries)
+            entries = sorted(self._entries.values(), key=lambda e: e.key)
         (self.directory / _MANIFEST_NAME).write_text(
             json.dumps(
                 {
