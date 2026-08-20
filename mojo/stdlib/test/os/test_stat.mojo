@@ -29,14 +29,15 @@ def test_stat() raises:
 def test_stat_mtime_ns_against_python() raises:
     var filename = source_location().file_name()
 
+    var st = stat(filename)
+
     var py_os = Python.import_module("os")
     var py_st = py_os.stat(filename.__fspath__())
-    var py_ns = Int(py=py_st.st_mtime_ns)
 
-    var st = stat(filename)
-    var ns = st.st_mtimespec.as_nanoseconds()
-
-    assert_equal(ns, py_ns, "Python.os.stat does not agree with std.stat")
+    assert_equal(st.st_atimespec.as_nanoseconds(), Int(py=py_st.st_atime_ns))
+    assert_equal(st.st_mtimespec.as_nanoseconds(), Int(py=py_st.st_mtime_ns))
+    assert_equal(st.st_ctimespec.as_nanoseconds(), Int(py=py_st.st_ctime_ns))
+    assert_equal(st.st_mtimespec.as_nanoseconds(), Int(py=py_st.st_mtime_ns))
 
 
 def test_stat_regular_file_mode_is_positive() raises:
