@@ -140,6 +140,7 @@ static int format(const State &state) {
   }
 
   // Check for additional options.
+  bool isCheck = args.hasArg(options::OPT_check);
   bool isQuiet = args.hasArg(options::OPT_quiet);
 
   // Assert that we've parsed all command line arguments.
@@ -159,6 +160,8 @@ static int format(const State &state) {
   llvm::append_range(mblackArgs, ArrayRef<StringRef>{"-t", "mojo"});
   if (isQuiet)
     mblackArgs.push_back("-q");
+  if (isCheck)
+    mblackArgs.push_back("--check");
   llvm::append_range(mblackArgs, inputs);
   return llvm::sys::ExecuteAndWait(mblack, mblackArgs);
 }

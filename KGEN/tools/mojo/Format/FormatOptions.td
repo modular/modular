@@ -26,6 +26,10 @@ defm line_length : CommandOption<["--", "-"], "line-length",
 def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<1>,
   MetaVarName<"INTEGER">, Alias<line_length>;
 
+def check : Flag<["--"], "check">, Group<FormatOptionGroup>,
+  Index<2>, HelpText<"Check the format without rewriting the files back.">;
+def : Flag<["-"], "c">, Group<FormatOptionGroup>, Index<0>, Alias<check>;
+
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
