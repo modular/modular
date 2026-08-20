@@ -533,6 +533,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- `max.experimental.nn.Module.compile` reuses precompiled MEFs when the session
+  has them, so a ModuleV3 model can be compiled where no accelerator is attached
+  and initialized where one is. `max.experimental.support.set_export_mefs`
+  records each compiled graph into a directory, and
+  `max.experimental.support.set_precompiled_mefs` initializes those artifacts
+  instead of compiling. `InferenceSession.compile_reusing_mefs` is the same
+  half-step for callers that trace a graph and initialize it themselves.
+
 - Eager mode tensors will use the JIT by default. This unlocks fusion and
   shape specialization optimizations even for eager code, beating PyTorch
   performance in eager in the common case.

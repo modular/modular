@@ -29,6 +29,9 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import support
+from max.experimental.nn import Module, module_dataclass
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
 
 
@@ -110,3 +113,72 @@ def test_exporting_and_reusing_at_once_raises(tmp_path: Path) -> None:
 def test_is_inert_by_default() -> None:
     model = InferenceSession(devices=[CPU()]).load(_graph())
     np.testing.assert_allclose(_execute(model), np.ones(4))
+
+
+def _linear() -> Module[[Tensor], Tensor]:
+    """A one-op ModuleV3 model, pinned to CPU as the rest of this file is."""
+
+    @module_dataclass
+    class Linear(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x @ self.weight.T
+
+    module = Linear(
+        weight=Tensor.zeros([4, 4], dtype=DType.float32, device=CPU())
+    )
+    module.to(CPU())
+    return module
+
+
+def _module_input(rows: int = 4) -> Tensor:
+    return Tensor.zeros([rows, 4], dtype=DType.float32, device=CPU())
+
+
+def _module_input_type(rows: int = 4) -> TensorType:
+    return TensorType(DType.float32, [rows, 4], device=DeviceRef.CPU())
+
+
+def test_module_exports_then_reuses_without_recompiling(
+    tmp_path: Path,
+) -> None:
+    # Module.compile keeps the artifact and the plumbing it derived rather than
+    # handing the graph to `load`, so it needs its own coverage: without the
+    # store wired into that path the export below writes nothing.
+    with support.set_export_mefs(tmp_path):
+        exported = _linear().compile(_module_input_type())
+        expected = exported(_module_input()).to_numpy()
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert len(manifest["graphs"]) == 1
+    assert (tmp_path / manifest["graphs"][0]["key"]).is_file()
+
+    with support.set_precompiled_mefs(tmp_path):
+        reused = _linear().compile(_module_input_type())
+        np.testing.assert_allclose(reused(_module_input()).to_numpy(), expected)
+
+
+def test_module_reusing_a_differently_shaped_graph_raises(
+    tmp_path: Path,
+) -> None:
+    with support.set_export_mefs(tmp_path):
+        _linear().compile(_module_input_type())
+
+    with support.set_precompiled_mefs(tmp_path):
+        with pytest.raises(
+            RuntimeError, match="does not match the precompiled"
+        ):
+            _linear().compile(_module_input_type(rows=8))
+
+
+def test_setting_mef_dirs_is_undone_on_scope_exit(tmp_path: Path) -> None:
+    with support.set_export_mefs(tmp_path):
+        _linear().compile(_module_input_type())
+    recorded = json.loads((tmp_path / "manifest.json").read_text())["graphs"]
+
+    # Back outside the scope the session records nothing, so the manifest is
+    # unchanged by a further compile.
+    _linear().compile(_module_input_type())
+    after = json.loads((tmp_path / "manifest.json").read_text())["graphs"]
+    assert after == recorded

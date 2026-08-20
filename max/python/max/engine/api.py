@@ -763,29 +763,68 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        # Reuse or produce artifacts when the session was constructed to, so a
-        # caller need not hold an accelerator to compile. See
-        # `_precompiled_mefs`.
+        compiled = self.compile_reusing_mefs(
+            model,
+            custom_extensions=custom_extensions,
+            tile_based_fusion=tile_based_fusion,
+        )
+        return self.init_all(compiled, weights_registry=weights_registry)
+
+    def compile_reusing_mefs(
+        self,
+        model: str | Path | Module | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
+    ) -> CompiledModel:
+        """Compiles ``model``, or reuses an artifact if the session has a store.
+
+        The compiling half of :meth:`load_all`, split out for callers that trace
+        a graph and initialize it themselves rather than handing it over -- a
+        :class:`~max.experimental.nn.Module`, for one, which keeps the compiled
+        artifact and the input/output plumbing it derived alongside it. Without
+        this they would call :meth:`compile` and silently bypass the session's
+        ``precompiled_mefs``/``export_mefs``.
+
+        Behaves exactly like :meth:`compile` on a session constructed with
+        neither, and only :class:`~max.graph.Graph` models participate: the store
+        identifies an artifact by a graph's name and signature.
+
+        Args:
+            model: As :meth:`compile`.
+            custom_extensions: As :meth:`compile`. Ignored when reusing an
+                artifact, which is already compiled.
+            tile_based_fusion: As :meth:`compile`. Ignored when reusing an
+                artifact.
+
+        Returns:
+            The compiled artifact, ready for :meth:`init` or :meth:`init_all`.
+
+        Raises:
+            RuntimeError: If reusing and ``model`` does not match the artifact
+                recorded in its position.
+        """
+        # See `_precompiled_mefs` for why a caller would want this: it lets the
+        # compile happen somewhere that holds no accelerator.
         store = self._mef_store
-        if store is not None and isinstance(model, Graph):
-            if store.exporting:
-                compiled = self.compile(
-                    model,
-                    custom_extensions=custom_extensions,
-                    tile_based_fusion=tile_based_fusion,
-                )
-                compiled.export_mef(store.claim_export(model))
-                store.write_manifest()
-            else:
-                compiled = self.compile(store.claim_import(model))
-            return self.init_all(compiled, weights_registry=weights_registry)
+        if store is None or not isinstance(model, Graph):
+            return self.compile(
+                model,
+                custom_extensions=custom_extensions,
+                tile_based_fusion=tile_based_fusion,
+            )
+
+        if not store.exporting:
+            return self.compile(store.claim_import(model))
 
         compiled = self.compile(
             model,
             custom_extensions=custom_extensions,
             tile_based_fusion=tile_based_fusion,
         )
-        return self.init_all(compiled, weights_registry=weights_registry)
+        compiled.export_mef(store.claim_export(model))
+        store.write_manifest()
+        return compiled
 
     def compile_async(
         self,

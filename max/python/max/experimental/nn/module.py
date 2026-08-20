@@ -1282,8 +1282,13 @@ class Module(Generic[_P, _R]):
                 # artifact is what backs `CompiledModel.export_mef`, and it
                 # remains usable even in virtual-device mode where `init`
                 # returns a mock model rather than a live one.
+                #
+                # `compile_reusing_mefs` rather than `compile` so a session
+                # configured to reuse precompiled artifacts, or to record them,
+                # covers this path too -- see
+                # `max.experimental.support.set_precompiled_mefs`.
                 session = _session()
-                compiled_artifact = session.compile(graph)
+                compiled_artifact = session.compile_reusing_mefs(graph)
                 session_model = session.init(
                     compiled_artifact, weights_registry=weights_registry
                 )
