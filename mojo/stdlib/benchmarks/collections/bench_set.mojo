@@ -192,23 +192,21 @@ def bench_set_intersection_update[size: Int](mut b: Bencher) raises:
     """
     var half = size // 2
     var s1 = make_int_set[size]()
-    var s1_orig = make_int_set[size]()
+    var s1_orig = s1.copy()
     var s2 = Set[Int]()
     for i in range(half, half + size):
         s2.add(i)
 
     @always_inline
-    @__parameter
-    def reset():
+    def reset(mut s1: Set[Int]) {imm s1_orig}:
         s1 = s1_orig.copy()
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn(mut s1: Set[Int]) {imm s2}:
         black_box(s1).intersection_update(black_box(s2))
         keep(len(s1))
 
-    b.iter_preproc[call_fn, reset]()
+    b.iter_preproc(s1, call_fn, reset)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -223,23 +221,21 @@ def bench_set_intersection_update_asymmetric[
     Exercises the iterate-smaller-side optimization.
     """
     var s1 = make_int_set[size]()
-    var s1_orig = make_int_set[size]()
+    var s1_orig = s1.copy()
     var s2 = Set[Int]()
     for i in range(10):
         s2.add(i)
 
     @always_inline
-    @__parameter
-    def reset():
+    def reset(mut s1: Set[Int]) {imm s1_orig}:
         s1 = s1_orig.copy()
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn(mut s1: Set[Int]) {s2}:
         black_box(s1).intersection_update(black_box(s2))
         keep(s1)
 
-    b.iter_preproc[call_fn, reset]()
+    b.iter_preproc(s1, call_fn, reset)
 
 
 # ===-----------------------------------------------------------------------===#
