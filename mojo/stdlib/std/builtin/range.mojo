@@ -52,8 +52,8 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def __init__(out self, end: Scalar[Self.dtype]):
-        self.curr = max(end, 0)
-        self.end = self.curr
+        self.curr = 0
+        self.end = max(end, 0)
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -62,10 +62,10 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
-        if curr == 0:
+        if curr == self.end:
             raise StopIteration()
-        self.curr = curr - 1
-        return self.end - curr
+        self.curr = curr + 1
+        return curr
 
     @always_inline
     def __has_next__(self) -> Bool:
@@ -73,7 +73,7 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def __len__(self) -> Int:
-        return _len_as_int(self.curr)
+        return _len_as_int(self.end - self.curr)
 
     @always_inline
     def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
@@ -97,7 +97,7 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _scalar_range_bounds(self.curr)
+        return _scalar_range_bounds(self.end - self.curr)
 
 
 struct _SequentialRange[dtype: DType = DType.int](
