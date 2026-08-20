@@ -348,6 +348,17 @@ public:
   ASTType getBuiltinTupleInstantiation(SMLoc loc, ArrayRef<Type> elements);
 
   //===--------------------------------------------------------------------===//
+  // Parametric closure trait helpers.
+
+  /// Create the universal parametric closure trait, a synthetic trait that
+  /// any fn signature can be adapted to
+  static ASTDecl *createParametricClosureTrait(SharedState &shared);
+
+  /// Bind the universal parametric closure trait's parameters to match the
+  /// given function signature, returning the resulting concrete `TraitType`.
+  TraitType bindParamsToClosureTraitFromSig(const ExprNode *expr,
+                                            FnTypeGeneratorType sig);
+  //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
   /// Emit the specified value into the current destination if present.  This

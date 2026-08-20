@@ -683,12 +683,14 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
-                   bool isThin, const ExprNode *thrownTypeExpr,
-                   const ExprNode *originExpr,
+                   bool isThin, bool isExperimentalParamTrait,
+                   const ExprNode *thrownTypeExpr, const ExprNode *originExpr,
+
                    ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        isThin(isThin), thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
+        isThin(isThin), isExperimentalParamTrait(isExperimentalParamTrait),
+        thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
         parsedConstraints(parsedConstraints), endLoc(endLoc) {}
 
   SMLoc baseLoc;
@@ -697,6 +699,7 @@ struct FunctionTypeNode final : public ExprNode {
   const ParsedArgument &resultArg;       // Result argument
   FnEffects effects;
   bool isThin;
+  bool isExperimentalParamTrait;
   const ExprNode *thrownTypeExpr;
   const ExprNode *originExpr;
   ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints

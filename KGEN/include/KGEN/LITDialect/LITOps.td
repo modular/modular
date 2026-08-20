@@ -784,6 +784,9 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
       return c == TypeConvention::RegisterPassableTrivial ||
        c == TypeConvention::RegisterPassable;
     }
+
+    TraitSymbolAttr bindReference(ArrayRef<TypedAttr> paramValues);
+
     bool isRegisterPassableTrivial() {
       return getConvention() == TypeConvention::RegisterPassableTrivial;
     }

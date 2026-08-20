@@ -884,13 +884,20 @@ def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
     ```
   }];
 
-  let parameters = (ins "SymbolRefAttr":$symbol);
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues
+  );
 
-  let assemblyFormat = "`<` $symbol `>`";
+  let assemblyFormat = "`<` $symbol `` custom<ParameterValues>($paramValues) `` `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return $_get(symbol.getContext(), symbol);
+      return $_get(symbol.getContext(), symbol, ArrayRef<TypedAttr>{});
+    }]>,
+
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol, "ArrayRef<TypedAttr>":$paramValues), [{
+      return $_get(symbol.getContext(), symbol, paramValues);
     }]>
   ];
 
@@ -902,6 +909,10 @@ def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
     StringAttr getFlattenedName() const {
       return StringAttr::get(getContext(), getFlattenedSymbolName(getSymbol()));
     }
+
+    /// Return true if the trait symbol is fully resolved, i.e. all its
+    /// parameters are constant.
+    bool isFullyResolved() const ;
   }];
 }
 

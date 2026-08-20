@@ -96,17 +96,20 @@ using FnGenIndexRefRemapper =
 // We recursively traverse attributes, replacing ParamIndexRefAttr with
 // ParamDeclRefAttr using a map from indices to parameter declarations.
 // The recursion terminates because MLIR attributes are directed acyclic graphs.
-struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
-  using Base = IndexParameterReplacer<ParamRefRemapper>;
-  ParamRefRemapper() = default;
-  ParamRefRemapper(ArrayRef<StringAttr> declNames) {
+template <typename NameRefT>
+struct IndexToNameRefRemapper
+    : public IndexParameterReplacer<IndexToNameRefRemapper<NameRefT>> {
+  using Base = IndexParameterReplacer<IndexToNameRefRemapper<NameRefT>>;
+  IndexToNameRefRemapper() = default;
+  IndexToNameRefRemapper(ArrayRef<StringAttr> declNames) {
     for (auto n : declNames)
       parameters.push_back(n);
   }
-  ParamRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
+  IndexToNameRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
     for (auto p : declarations)
       parameters.push_back(p.getName());
   }
+
   Attribute tryReplace(Attribute attr, size_t depth) {
     auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
     if (!indexRef || indexRef.getDepth() != depth)
@@ -116,11 +119,15 @@ struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
 
     StringAttr paramName = parameters[indexRef.getIndex()];
     Type mappedType = Base::replace(indexRef.getType());
-    return ParamDeclRefAttr::get(paramName.strref(), mappedType);
+    return NameRefT::get(paramName.strref(), mappedType);
   }
   Type tryReplace(Type t, size_t) { return {}; }
   SmallVector<StringAttr> parameters;
 };
+
+using ParamRefRemapper = IndexToNameRefRemapper<ParamDeclRefAttr>;
+using FnGenParamRefRemapper =
+    IndexToNameRefRemapper<FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // IndexDepthAdjuster

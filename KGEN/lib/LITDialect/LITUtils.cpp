@@ -685,7 +685,18 @@ void LIT::sortAndDeduplicateTraitSymbols(
       if (aSeg != bSeg)
         return aSeg.getValue() < bSeg.getValue();
     }
-    return aSegments.size() < bSegments.size();
+    if (aSegments.size() != bSegments.size())
+      return aSegments.size() < bSegments.size();
+
+    // Same symbol, then must have the same of parameter value, compare each
+    // parameter lexicographically.
+    assert(ta.getParamValues().size() == tb.getParamValues().size());
+    for (auto [aVal, bVal] :
+         llvm::zip_equal(ta.getParamValues(), tb.getParamValues())) {
+      if (aVal != bVal)
+        return ParameterAttr::compare(aVal, bVal);
+    }
+    return false;
   });
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
 }

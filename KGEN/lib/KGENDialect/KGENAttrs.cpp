@@ -809,6 +809,16 @@ FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
 }
 
 //===----------------------------------------------------------------------===//
+// TraitSymbolAttr
+//===----------------------------------------------------------------------===//
+
+bool TraitSymbolAttr::isFullyResolved() const {
+  return llvm::all_of(getParamValues(), [](TypedAttr paramValue) {
+    return ParameterAttr::isSimpleConstant(paramValue);
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 

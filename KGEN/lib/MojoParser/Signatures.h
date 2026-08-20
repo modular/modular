@@ -253,6 +253,8 @@ public:
 
   /// Tracks the Mojo-only `thin` effect on function types.
   bool isThin = false;
+
+  bool isExperimentalParamTrait = false;
   /// True if an explicit `abi(...)` effect was written on this function.
   /// Distinguishes `abi("Mojo")` (no-op on the type, but explicit) from the
   /// absence of any abi annotation.

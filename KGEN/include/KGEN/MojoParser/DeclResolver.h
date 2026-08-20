@@ -343,7 +343,10 @@ public:
   /// @Movable>) attributes {immediateParents = #M<symbols[@AnyType]>}
   LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
                                    SmallVector<TraitSymbolAttr> &parentTraits,
-                                   DenseSet<TraitSymbolAttr> &immediateParents);
+                                   DenseSet<TraitSymbolAttr> &immediateParents,
+                                   ArrayRef<ParamDeclAttr> parameters = {},
+                                   ArrayRef<PassingKind> passingKinds = {});
+
   // Populate the trait with methods it inherits from parents.
   void addParentDeclsToTrait(TraitDeclOp traitOp, ASTDecl &traitDecl);
 

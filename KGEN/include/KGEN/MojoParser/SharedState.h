@@ -50,6 +50,7 @@ struct Operand;
 class FileModuleOp;
 class FnOp;
 class FnTypeGeneratorType;
+class IREmitter;
 class LexerCursor;
 class LookupResult;
 class LookupAllResult;
@@ -689,6 +690,11 @@ public:
   ///         ...
   ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                    FnTypeGeneratorType sig);
+
+  /// Get or create the universal closure trait, we don't care about the
+  /// signatures and we can adapt the trait to any signature.
+  ASTDecl *getUniversalParametricClosureTrait();
+
   /// Get or create a struct that defines conformance of targetTrait in terms of
   /// sourceTrait.
   ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
