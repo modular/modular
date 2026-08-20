@@ -141,17 +141,15 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         num_groups=spec.num_groups,
     )
 
-    @__parameter
     @always_inline
     def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
-    ) raises:
+    ) raises {imm}:
         # Count the iteration to decide which input copy to use.
         var counter = 0
 
         @always_inline
-        @__parameter
-        def bench_fn():
+        def bench_fn() {mut counter, imm}:
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
@@ -197,9 +195,10 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
             keep(output.ptr)
 
-        b.iter[bench_fn]()
+        b.iter(bench_fn)
 
-    m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
+    m.bench_with_input(
+        bench_conv_wrapper,
         BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.

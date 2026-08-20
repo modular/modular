@@ -114,6 +114,10 @@ This version is still a work in progress.
   timed call of the benchmarked function, so state no longer has to be shuttled
   through mutable captures.
 
+- `Bencher.bench_with_input()` now takes its benchmark closure as a runtime
+  argument. Its register-passable overload accepts both non-raising and raising
+  closures.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
