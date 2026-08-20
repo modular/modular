@@ -683,10 +683,10 @@ Type TraitType::parse(AsmParser &p) {
   // Format: @TraitA, @TraitB where <constraint>, @TraitC
   if (failed(p.parseOptionalGreater())) {
     auto parseTrait = [&]() -> ParseResult {
-      SymbolRefAttr symbol;
-      if (p.parseAttribute(symbol))
+      TraitSymbolAttr symbol;
+      if (parseTraitSymbol(p, symbol))
         return failure();
-      symbols.push_back(TraitSymbolAttr::get(symbol));
+      symbols.push_back(symbol);
 
       // Check for optional "where <constraint>" after this symbol.
       if (succeeded(p.parseOptionalKeyword("where"))) {
@@ -731,7 +731,7 @@ void TraitType::print(AsmPrinter &p) const {
   for (size_t i = 0; i < symbols.size(); ++i) {
     if (i > 0)
       p << ", ";
-    p.printAttribute(symbols[i].getSymbol());
+    printTraitSymbol(p, symbols[i]);
     // Print "where <constraint>" for conditional conformance constraints.
     if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
       p << " where ";

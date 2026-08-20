@@ -399,6 +399,10 @@ struct SharedState::Impl {
   /// Closure traits have a unique generator type and are global to the module.
   /// Cache previously built traits.
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
+
+  /// The decl corresponding to the universal parametric closure trait.
+  ASTDecl *parametricClosureTrait = nullptr;
+
   /// Stateless closure extension structs, keyed by the (source trait,
   /// target trait) operation pair and the owning file module.
   DenseMap<std::pair<std::pair<Operation *, Operation *>, ASTDecl *>, ASTDecl *>
@@ -3063,6 +3067,16 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
     return result;
   }
   return ptr->second;
+}
+
+ASTDecl *SharedState::getUniversalParametricClosureTrait() {
+  if (!impl->parametricClosureTrait) {
+    auto *closureTrait = IREmitter::createParametricClosureTrait(*this);
+    assert(closureTrait && "internal error: failed to create closure trait");
+    impl->parametricClosureTrait = closureTrait;
+  }
+
+  return impl->parametricClosureTrait;
 }
 
 ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,

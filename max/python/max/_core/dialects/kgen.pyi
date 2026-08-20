@@ -2466,10 +2466,22 @@ class TraitSymbolAttr(max._core.Attribute):
     ) -> None: ...
     @overload
     def __init__(
-        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
     ) -> None: ...
     @property
     def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """

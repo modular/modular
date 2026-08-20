@@ -108,6 +108,10 @@ public:
                               unsigned numPrependedCaptures,
                               SMLoc nestedFunctionOrTypeLocation);
 
+  TraitType bindParamsToClosureTraitFromSig(IREmitter &emitter,
+                                            ASTType traitType,
+                                            FnTypeGeneratorType sig);
+
   struct PromotedClosureSelfArg {
     Type type;
     ArgConvention convention;
