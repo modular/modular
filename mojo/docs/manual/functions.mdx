@@ -7,20 +7,10 @@ description: Introduction to Mojo functions.
 <!-- markdownlint-disable MD033 -->
 
 Mojo uses the `def` keyword to define functions.
-Functions declared inside a [`struct`](/docs/manual/structs/) are called
-"methods," but they have all the same qualities as "functions" described here.
-
-:::caution
-
-The `fn` keyword is deprecated as of Mojo v26.2. Use `def` for all
-function declarations. The `fn` keyword will be removed in a future
-release.
-
-:::
 
 ## Anatomy of a function
 
-You'll find these elements in Mojo functions:
+A Mojo function declaration can include the following elements:
 
 <pre>
 <strong>def</strong> <var>function_name</var><strong>[
@@ -38,10 +28,10 @@ Functions can have:
 - Arguments: A function can also optionally take one or more run-time
   _arguments_.
 - Return value: A function can optionally return a value.
-- Function body: Statements that are executed when you call the function.
+- Function body: Statements that run when you call the function.
   Function definitions must include a body.
 
-All of the optional parts of the function can be omitted, so the minimal
+You can omit all of the optional parts of the function, so the minimal
 function is something like this:
 
 ```mojo
@@ -54,6 +44,14 @@ parentheses are always required.
 
 Although you can't leave out the function body, you can use the `pass` statement
 to define a function that does nothing.
+
+:::note Struct methods
+
+Functions declared inside a struct are called _methods_. They can include the
+same elements as regular functions, but follow a few extra rules. For more
+information, see the page on [structs](/docs/manual/structs/).
+
+:::
 
 ### Arguments and parameters
 
@@ -226,15 +224,16 @@ The variadic argument `values` here is a placeholder that accepts any number of
 passed positional arguments.
 
 You can define zero or more arguments before the variadic argument. When calling
-the function, any remaining positional arguments are assigned to the variadic
+the function, Mojo assigns any remaining positional arguments to the variadic
 argument, so any arguments declared **after** the variadic argument can only be
 specified by keyword (see
 [Positional-only and keyword-only arguments](#positional-only-and-keyword-only-arguments)).
 
-Variadic arguments can be divided into two categories:
+Variadic arguments fall into two categories:
 
 - Homogeneous variadic arguments, where all of the passed arguments are the same
-  type—all `Int`, or all `String`, for example.
+  type—all [`Int`](/docs/std/builtin/simd/#int), or all
+  [`String`](/docs/std/collections/string/string/String/), for example.
 - Heterogeneous variadic arguments, which can accept a set of different argument
   types.
 
@@ -351,7 +350,7 @@ generates the `ArgTypes` list itself.
 #### Variadic keyword arguments
 
 Mojo functions also support variadic keyword arguments (`**kwargs`). Variadic
-keyword arguments allow the user to pass an arbitrary number of keyword
+keyword arguments let you pass an arbitrary number of keyword
 arguments. To define a function that takes a variadic keyword argument, use the
 variadic keyword argument syntax <code>var **<var>kw_argument_name</var></code>:
 
@@ -386,20 +385,20 @@ There are currently a few limitations:
 
 - All the variadic keyword arguments must have the same type, and this
   determines the type of the argument dictionary. For example, if the argument
-  is `var **kwargs: Float64` then the argument dictionary will be a
+  is `var **kwargs: Float64` then the argument dictionary is a
   `StringDict[Float64]`.
 
 - The argument type must conform to the
   [`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
-- Dictionary unpacking is not supported yet:
+- Dictionary unpacking isn't supported yet:
 
   ```mojo
   def takes_dict(d: Dict[String, Int]):
     print_nicely(**d)  # Not supported yet.
   ```
 
-- Variadic keyword _parameters_ are not supported yet:
+- Variadic keyword _parameters_ aren't supported yet:
 
   ```mojo
   # Not supported yet.
@@ -446,7 +445,8 @@ For example:
 def sort(*values: Float64, ascending: Bool = True): ...
 ```
 
-In this example, the user can pass any number of `Float64` values, optionally
+In this example, you can pass any number of
+[`Float64`](/docs/std/builtin/simd/#float64) values, optionally
 followed by the keyword `ascending` argument:
 
 ```mojo
@@ -465,8 +465,8 @@ def kw_only_args(a1: Int, a2: Int, *, double: Bool) -> Int:
         return product
 ```
 
-Keyword-only arguments often have default values, but this is not required. If a
-keyword-only argument doesn't have a default value, it is a _required
+Keyword-only arguments often have default values, but this isn't required. If a
+keyword-only argument doesn't have a default value, it's a _required
 keyword-only argument_. It must be specified, and it must be specified by
 keyword.
 
@@ -507,15 +507,15 @@ you'll get a compiler error. That is, unless `Int` or `String` can implicitly
 cast the type into their own type. For example, `String` includes an overloaded
 version of its initializer (`__init__()`) that supports
 [implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion)
-from a `StringLiteral` value. Thus, you can also pass a `StringLiteral` to a
-function that expects a `String`.
+from a [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/) value.
+Thus, you can also pass a `StringLiteral` to a function that expects a `String`.
 
 When resolving an overloaded function call, the Mojo compiler picks the
 candidate that best fits the call according to the rules in
 [Overload resolution](#overload-resolution), or reports the call as
 ambiguous if no single candidate is best.
 
-:::note Overload Sets
+:::note Overload sets
 An "overload set" is a collection of function overloads that share
 the same name but different signatures.
 
@@ -533,8 +533,10 @@ When resolving an overloaded function, Mojo looks at:
 - The number, position, and keyword of each argument.
 - The type of each argument and each compile-time parameter.
 - The argument conventions on each argument.
-- Whether the candidate is an instance method or `@staticmethod`.
-- Whether an initializer is `@implicit`.
+- Whether the candidate is an instance method or
+  [static method](/docs/manual/structs/#static-methods).
+- Whether an initializer allows
+  [implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
 Mojo does **not** look at the return type, the `raises` effect, or any
 context surrounding the call. Two functions that differ only in return
@@ -710,7 +712,7 @@ def raises_error() raises:
 Mojo functions are _non-raising_ by default. To declare that a function can
 propagate an error to its caller, add the `raises` keyword to the function
 signature. A non-raising function that calls a raising function **must handle
-any possible errors.**
+any possible errors**.
 
 ```mojo
 # This function will not compile
@@ -729,7 +731,8 @@ def propagate_error() raises:
     raises_error()
 ```
 
-All of the examples above use the built-in `Error` type. Mojo also supports
+All of the examples above use the built-in
+[`Error`](/docs/std/builtin/error/Error/) type. Mojo also supports
 _typed errors_, where you specify a custom error type a function can raise:
 
 ```mojo

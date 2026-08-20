@@ -17,8 +17,9 @@ values from the outer scope (regardless of whether they are variables or
 parameters), and then use that closure as a parameter. For example:
 
 ```mojo
-def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
+def use_closure[func: def(Int) capturing[_] -> Int](num: Int) -> Int:
     return func(num)
+
 
 def create_closure():
     var x = 1
@@ -30,7 +31,9 @@ def create_closure():
     var y = use_closure[add](2)
     print(y)
 
-create_closure()
+
+def main():
+    create_closure()
 ```
 
 ```output
@@ -40,7 +43,7 @@ create_closure()
 Note the `[_]` in the function type:
 
 ```mojo
-def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
+def use_closure[func: def(Int) capturing[_] -> Int](num: Int) -> Int:
 ```
 
 This origin specifier represents the set of origins for the values that the
