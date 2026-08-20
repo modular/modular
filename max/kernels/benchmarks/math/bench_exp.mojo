@@ -86,22 +86,21 @@ def bench_unary[
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
         input_ptr.unsafe_offset(i).write(f)
 
-    @__parameter
-    def bench(mut b: Bencher, size: Int) raises:
-        @__parameter
-        def iter_fn():
+    def bench(mut b: Bencher, size: Int) raises {imm}:
+        def iter_fn() {imm}:
             apply[func](
                 TileTensor(input_ptr, row_major(Coord(_ri(size)))),
                 TileTensor(output_ptr, row_major(Coord(_ri(size)))),
             )
             keep(output_ptr)
 
-        b.iter[iter_fn]()
+        b.iter(iter_fn)
 
     var elements = ThroughputMeasure(
         BenchMetric.elements, size * size_of[dtype]()
     )
-    m.bench_with_input[Int, bench](
+    m.bench_with_input(
+        bench,
         BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.

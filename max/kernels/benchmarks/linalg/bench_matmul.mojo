@@ -71,9 +71,8 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
 
 def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
-    m.bench_with_input[
-        MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
-    ](
+    m.bench_with_input(
+        bench_matmul[spec.static_info],
         BenchId("matmul", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric
@@ -83,7 +82,7 @@ def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
 
 def bench_matmul[
     static: MatmulSpecStatic
-](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
+](mut bencher: Bencher, spec: MatmulSpec[static]) raises:
     comptime a_type = spec.static_info.a_type
     comptime b_type = spec.static_info.b_type
     comptime c_type = spec.static_info.c_type
@@ -127,9 +126,7 @@ def bench_matmul[
         pack_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
-    @__copy_capture(a, b, c, bp)
-    @__parameter
-    def bench_fn() raises:
+    def bench_fn() raises {var a, var b, var c, var bp}:
         comptime bench_matmul = matmul[
             transpose_b=False, b_packed=b_packed, saturated_vnni=False
         ]
@@ -139,7 +136,7 @@ def bench_matmul[
             bench_matmul(c, a, b)
         keep(c.ptr)
 
-    bencher.iter[bench_fn]()
+    bencher.iter(bench_fn)
     verify(a, b, c)
 
     dealloc(a_alloc^)

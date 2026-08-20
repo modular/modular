@@ -66,9 +66,8 @@ def bench_add[
         ](idx)
         output.store[width=simd_width](idx, val)
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
+    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises {imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             elementwise[simd_width=unroll_by, target="gpu"](
@@ -77,7 +76,8 @@ def bench_add[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_with_input[type_of(shape), bench_func](
+    b.bench_with_input(
+        bench_func,
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.

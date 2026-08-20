@@ -23,19 +23,17 @@ from std.utils.index import Index
 
 
 def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
-    @__parameter
     @always_inline
     def bench_scatter_wrapper(
         mut b: Bencher, concrete_spec: ScatterSpec
-    ) raises:
+    ) raises {}:
         bench_scatter(b, concrete_spec)
 
-    m.bench_with_input[ScatterSpec, bench_scatter_wrapper](
-        BenchId("scatter", String(spec)), spec
+    m.bench_with_input(
+        bench_scatter_wrapper, BenchId("scatter", String(spec)), spec
     )
 
 
-@__parameter
 def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
@@ -79,8 +77,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     )
 
     @always_inline
-    @__parameter
-    def bench_fn() raises:
+    def bench_fn() raises {mut output_tensor, imm}:
         @always_inline
         def reduce_fn[
             _dtype: DType, width: SIMDLength
@@ -98,7 +95,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
             DeviceContext(api="cpu"),
         )
 
-    bencher.iter[bench_fn]()
+    bencher.iter(bench_fn)
 
     _ = data_tensor
     _ = indices_tensor

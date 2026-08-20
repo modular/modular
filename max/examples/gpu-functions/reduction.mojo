@@ -104,11 +104,10 @@ struct SumKernelBenchmarkParams:
 
 
 # Benchmark function for sum_kernel
-@__parameter
 @always_inline
 def sum_kernel_benchmark(
     mut b: Bencher, input_data: SumKernelBenchmarkParams
-) capturing raises:
+) raises:
     @always_inline
     def kernel_launch_sum(ctx: DeviceContext) raises {imm}:
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
@@ -170,7 +169,8 @@ def main() raises:
 
         # Benchmark performance
         var bench = Bench(BenchConfig(max_iters=50000))
-        bench.bench_with_input[SumKernelBenchmarkParams, sum_kernel_benchmark](
+        bench.bench_with_input(
+            sum_kernel_benchmark,
             BenchId("sum_kernel_benchmark", "gpu"),
             SumKernelBenchmarkParams(out_ptr, a_ptr),
             [ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]())],
