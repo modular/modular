@@ -10,84 +10,98 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# test_reflection.mojo
+# tests.mojo
 # Tests for reflection.mdx code examples.
-# Skip: show_type (print-only), describe/explore_type (print-only,
-#        uses __mlir_type), show_layout (print-only),
-#        require/call_location (raises on purpose),
-#        source_location log (print-only, path-dependent).
+# Skip: show_type/show_layout/log print output (path-dependent),
+#        origin_of abort path (aborts by design),
+#        get_linkage_name exact value (mangled symbol),
+#        "no runtime cost" and "resolves at compile time" (codegen claims),
+#        "name-based lookup requires a concrete type" (needs a
+#        compile-failure test, not a runtime one),
+#        the claim that a non-`@always_inline` caller reports its own line
+#        (does not reproduce: a plain `def` also reports the call site, so
+#        the behavior is optimizer-dependent and not safe to pin),
+#        "print cleanly, without extra code" (compiling `Sensor` with a
+#        `Writable` conformance and no `write_to` is the proof; the derived
+#        rendering itself belongs to the compiler),
+#        the wording of `prefix()` output (stdlib owns that format string).
+#
+# `reflect`, `conforms_to`, `materialize`, `type_of`, and `origin_of` are
+# deliberately used without imports: the page claims they are built in, so
+# adding imports here would silently retire that check.
+from std.collections import Set
 from std.testing import assert_equal, assert_true
 from std.reflection import (
     source_location,
     call_location,
     get_function_name,
     get_linkage_name,
-    SourceLocation,
 )
+from std.os import abort
 
 
-# --- Inspecting a type: name, field_count, field_names, field_types ---
+# --- Why reflection? ---
 
 
 @fieldwise_init
-struct Point:
-    var x: Int
-    var y: Float64
+struct Sensor(Equatable, Hashable, Writable):
+    var id: Int
+    var label: String
+    var reading: Float64
 
 
-def test_reflect_name() raises:
-    """Returns the compiler-resolved type name."""
-    comptime name = reflect[Point].name()
-    assert_true(name.find("Point") >= 0)
+def test_sensor_equality() raises:
+    """Equatable auto-implemented via fieldwise reflection."""
+    var a = Sensor(1, "temp", 98.6)
+    var b = Sensor(1, "temp", 98.6)
+    var c = Sensor(2, "pressure", 14.7)
+    assert_true(a == b)
+    assert_true(a != c)
 
 
-def test_reflect_field_count() raises:
-    """Returns the number of fields."""
-    assert_equal(reflect[Point].field_count(), 2)
+def test_sensor_as_dict_key() raises:
+    """`Hashable` plus `Equatable` lets `Sensor` key a `Dict`."""
+    var d = Dict[Sensor, Int]()
+    d[Sensor(1, "temp", 98.6)] = 10
+    assert_equal(d[Sensor(1, "temp", 98.6)], 10)
 
 
-def test_reflect_field_names() raises:
-    """Returns field names in order."""
-    var names = materialize[reflect[Point].field_names()]()
-    assert_equal(String(names[0]), "x")
-    assert_equal(String(names[1]), "y")
+def test_sensor_as_set_element() raises:
+    """Equal sensors collapse to a single `Set` element."""
+    var s = Set[Sensor]()
+    s.add(Sensor(1, "temp", 98.6))
+    s.add(Sensor(1, "temp", 98.6))
+    s.add(Sensor(2, "pressure", 14.7))
+    assert_equal(len(s), 2)
 
 
-def test_reflect_field_types() raises:
-    """Returns field types iterable with reflect."""
-    comptime types = reflect[Point].field_types()
-    var first_type_name = reflect[types[0]].name()
-    assert_equal(first_type_name, "SIMD[DType.int, 1]")
+# --- Inspect a type ---
 
 
-# --- base_name ---
-
-
-def test_base_name_parameterized() raises:
-    """Strips parameters and module path."""
+def test_base_name() raises:
+    """Check `base_name()` strips parameters and module path."""
     assert_equal(reflect[List[Int]].base_name(), "List")
     assert_equal(reflect[Dict[String, Int]].base_name(), "Dict")
 
 
-def test_base_name_simple() raises:
-    """Returns simple name for non-parameterized type."""
-    assert_equal(reflect[Int].base_name(), "SIMD")
+def test_name_is_qualified_where_base_name_is_not() raises:
+    """`name()` adds the module path that `base_name()` strips."""
+    comptime full = reflect[Optional[Float64]].name()
+    comptime base = reflect[Optional[Float64]].base_name()
+    assert_true(full != base)
+    assert_true(full.find(base) >= 0)
+    assert_true(full.find(".") >= 0)
 
 
-# --- is_struct ---
-
-
-def test_is_struct_on_struct() raises:
-    """Returns True for Mojo struct types."""
-    assert_true(reflect[Point].is_struct())
-
-
-def test_is_struct_on_int() raises:
-    """Returns True for Int, a struct wrapping an MLIR primitive."""
-    assert_true(reflect[Int].is_struct())
-
-
-# --- Example: Finding what changed (diff_fields) ---
+def test_name_applies_parameters() raises:
+    """Distinct parameters yield distinct names; `base_name()` drops them."""
+    comptime int_name = reflect[Optional[Int]].name()
+    comptime float_name = reflect[Optional[Float64]].name()
+    assert_true(int_name != float_name)
+    assert_equal(
+        reflect[Optional[Int]].base_name(),
+        reflect[Optional[Float64]].base_name(),
+    )
 
 
 @fieldwise_init
@@ -98,57 +112,111 @@ struct Config(Equatable):
     var timeout: Float64
 
 
+def test_type_name() raises:
+    """Check `name()` returns the compiler-resolved name."""
+    comptime name = reflect[Config].name()
+    assert_true(name.find("Config") >= 0)
+
+
+def test_field_count() raises:
+    """Check `field_count()` counts the declared fields."""
+    assert_equal(reflect[Config].field_count(), 4)
+
+
+def test_field_names() raises:
+    """Check `field_names()` returns names in declaration order."""
+    var names = materialize[reflect[Config].field_names()]()
+    assert_equal(String(names[0]), "host")
+    assert_equal(String(names[3]), "timeout")
+
+
+def test_field_types() raises:
+    """Check each `field_types()` entry is usable as the field's own type."""
+    comptime types = reflect[Config].field_types()
+    comptime PortType = types[1]
+    var port: PortType = 8080
+    assert_equal(port, 8080)
+
+
+def test_field_by_name() raises:
+    """Check `field["host"]` gives a handle whose .T is usable."""
+    # `field[name]` returns a `Reflected` handle itself (here `Reflected[String]`),
+    # not the bare field type, so you can keep chaining reflection methods on it.
+    comptime host_handle = reflect[Config].field["host"]
+    var default_host: host_handle.T = "localhost"
+    assert_equal(default_host, "localhost")
+
+
+comptime DefaultItemCount = 10
+
+
+# `Movable & Deinitable` is the minimal bound `List[Self.T]` accepts: bare
+# `Movable` leaves the field non-`Deinitable`, bare `Deinitable` leaves it
+# non-`Movable`.
+struct ParameterizedStruct[
+    T: Movable & Deinitable, item_count: Int = DefaultItemCount
+]:
+    var list: List[Self.T]
+
+    def __init__(out self):
+        self.list = List[Self.T](capacity=Self.item_count)
+
+
+def test_reflect_parameterized_struct() raises:
+    """Index-based iteration works on a type that takes parameters."""
+    comptime P = ParameterizedStruct[String, item_count=5]
+    assert_equal(reflect[P].field_count(), 1)
+    var names = materialize[reflect[P].field_names()]()
+    assert_equal(String(names[0]), "list")
+
+
+def test_parameterized_name_applies_parameters() raises:
+    """Changing a parameter value changes the resolved name."""
+    comptime five = reflect[ParameterizedStruct[String, item_count=5]].name()
+    comptime ten = reflect[ParameterizedStruct[String, item_count=10]].name()
+    assert_true(five != ten)
+
+
+# --- Detect field-level changes ---
+
+
 def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
-    """From the page: returns names of fields that differ."""
     comptime names = reflect[T].field_names()
     comptime types = reflect[T].field_types()
     var diffs = List[String]()
 
     comptime for idx in range(reflect[T].field_count()):
-        comptime if not conforms_to(types[idx], Equatable):
-            continue
-
-        # TODO(MOCO-4206): Remove redundant assertion after type refinement
-        #   following early `continue` is fixed.
-        comptime assert conforms_to(types[idx], Equatable)
-
-        ref a_val = reflect[T].field_ref[idx](a)
-        ref b_val = reflect[T].field_ref[idx](b)
-
-        if a_val != b_val:
-            diffs.append(String(comptime (names[idx])))
+        comptime if conforms_to(types[idx], Equatable):
+            ref a_val = reflect[T].field_ref[idx](a)
+            ref b_val = reflect[T].field_ref[idx](b)
+            if a_val != b_val:
+                diffs.append(String(comptime (names[idx])))
 
     return diffs^
 
 
 def test_diff_fields_detects_changes() raises:
-    """Returns names of changed fields."""
     var old = Config("localhost", 8080, False, 30.0)
-    var new = Config("localhost", 9090, True, 30.0)
-    var changes = diff_fields(old, new)
+    var new_cfg = Config("localhost", 9090, True, 30.0)
+    var changes = diff_fields(old, new_cfg)
     assert_equal(len(changes), 2)
     assert_equal(changes[0], "port")
     assert_equal(changes[1], "verbose")
 
 
 def test_diff_fields_identical() raises:
-    """Returns empty list for identical instances."""
     var a = Config("localhost", 8080, False, 30.0)
     var b = Config("localhost", 8080, False, 30.0)
-    var changes = diff_fields(a, b)
-    assert_equal(len(changes), 0)
+    assert_equal(len(diff_fields(a, b)), 0)
 
 
 def test_diff_fields_all_different() raises:
-    """Returns all field differences."""
     var a = Config("localhost", 8080, False, 30.0)
     var b = Config("remote", 9090, True, 60.0)
-    var changes = diff_fields(a, b)
-    assert_equal(len(changes), 4)
+    assert_equal(len(diff_fields(a, b)), 4)
 
 
 def test_diff_fields_single_field() raises:
-    """Returns a single field difference."""
     var a = Config("localhost", 8080, False, 30.0)
     var b = Config("localhost", 8080, False, 99.0)
     var changes = diff_fields(a, b)
@@ -156,87 +224,29 @@ def test_diff_fields_single_field() raises:
     assert_equal(changes[0], "timeout")
 
 
-# --- conforms_to type refinement ---
-
-
-def test_conforms_to_positive() raises:
-    """Returns True for a conforming type."""
-    assert_true(conforms_to(Int, Equatable))
-
-
-def test_reflection_equality() raises:
-    """Enables trait operations on reflected fields."""
-    var p1 = Point(x=1, y=2.0)
-    var p2 = Point(x=1, y=2.0)
-    ref lhs = reflect[Point].field_ref[0](p1)
-    ref rhs = reflect[Point].field_ref[0](p2)
-    var equal = lhs == rhs
-    assert_true(equal)
-
-
-def test_reflection_inequality() raises:
-    """Detects differing field values."""
-    var p1 = Point(x=1, y=2.0)
-    var p2 = Point(x=1, y=9.0)
-    ref lhs = reflect[Point].field_ref[1](p1)
-    ref rhs = reflect[Point].field_ref[1](p2)
-    var equal = lhs == rhs
-    assert_true(not equal)
-
-
-struct ConditionalCopyableWrapper[T: Deinitable & Movable](
-    Copyable where conforms_to(T, Copyable),
-    Deinitable,
-    Movable,
-):
-    var value: Self.T
-
-    # Standard initializer
-    def __init__(out self, var value: Self.T):
-        self.value = value^
-
-    # Copy initializer
-    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.value = copy.value.copy()
-
-
-# All structs are inherently `Deinitable`
+# `Opaque` conforms to neither `Equatable` nor `Copyable`, so it exercises
+# the `conforms_to` guards that every all-conforming struct leaves dormant.
 @fieldwise_init
-struct NotCopyable(Movable):
-    pass
-
-
-def test_reflection_copy_constructor() raises:
-    """Rebind for conditional conformance."""
-    var i = ConditionalCopyableWrapper(42)
-    var i_copy = ConditionalCopyableWrapper(copy=i)
-    assert_equal(i.value, i_copy.value)
-
-
-# --- field_ref: access and mutation ---
+struct Opaque(Movable):
+    var tag: Int
 
 
 @fieldwise_init
-struct Container:
-    var id: Int
-    var name: String
+struct Mixed(Movable):
+    var n: Int
+    var blob: Opaque
 
 
-def test_field_ref_read() raises:
-    """Returns a reference to the field."""
-    var c = Container(id=42, name="test")
-    ref id_ref = reflect[Container].field_ref[0](c)
-    assert_equal(id_ref, 42)
+def test_diff_fields_skips_non_equatable() raises:
+    """Non-`Equatable` fields drop out of the comparison entirely."""
+    var a = Mixed(1, Opaque(100))
+    var b = Mixed(2, Opaque(999))
+    var changes = diff_fields(a, b)
+    assert_equal(len(changes), 1)
+    assert_equal(changes[0], "n")
 
 
-def test_field_ref_mutate() raises:
-    """Supports mutation through the reference."""
-    var c = Container(id=1, name="test")
-    reflect[Container].field_ref[0](c) = 99
-    assert_equal(c.id, 99)
-
-
-# --- Example: MakeCopyable trait ---
+# --- Write once reuse everywhere ---
 
 
 trait MakeCopyable:
@@ -244,17 +254,13 @@ trait MakeCopyable:
         comptime field_count = reflect[Self].field_count()
         comptime field_types = reflect[Self].field_types()
 
+        comptime Usable = Copyable & Deinitable
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
-            comptime if not conforms_to(field_type, Copyable & Deinitable):
-                continue
-
-            # TODO(MOCO-4206): Remove redundant assertion after type refinement
-            #   following early `continue` is fixed.
-            comptime assert conforms_to(field_type, Copyable & Deinitable)
-
-            ref p_value = reflect[Self].field_ref[idx](self)
-            reflect[Self].field_ref[idx](other) = p_value.copy()
+            comptime if conforms_to(field_type, Usable):
+                reflect[Self].field_ref[idx](other) = (
+                    reflect[Self].field_ref[idx](self).copy()
+                )
 
 
 @fieldwise_init
@@ -265,11 +271,11 @@ struct MultiType(MakeCopyable, Writable):
     var z: Float64
 
     def write_to[W: Writer](self, mut writer: W):
-        writer.write(t"[{self.w}, {self.x}, {self.y}, {self.z}]")
+        writer.write(String(t"[{self.w}, {self.x}, {self.y}, {self.z}]"))
 
 
 def test_copy_to_transfers_values() raises:
-    """Copies all Copyable fields from source to target."""
+    """Check `copy_to` duplicates all Copyable fields."""
     var original = MultiType("Hello", 1, True, 2.5)
     var target = MultiType("", 0, False, 0.0)
     original.copy_to(target)
@@ -280,7 +286,7 @@ def test_copy_to_transfers_values() raises:
 
 
 def test_copy_to_independent() raises:
-    """After copy_to, modifying original doesn't affect target."""
+    """Modifying original after copy_to doesn't affect target."""
     var original = MultiType("Hello", 1, True, 2.5)
     var target = MultiType("", 0, False, 0.0)
     original.copy_to(target)
@@ -288,105 +294,151 @@ def test_copy_to_independent() raises:
     assert_equal(target.x, 1)
 
 
-# --- Accessing fields by name ---
+def test_multitype_write_to() raises:
+    """`write_to` reaches every field, so the rendering is not empty."""
+    var rendered = String(MultiType("Hello", 1, True, 2.5))
+    assert_true(rendered.startswith("["))
+    assert_true(rendered.endswith("]"))
+    assert_true(rendered.find("Hello") >= 0)
 
 
-def test_field_by_name() raises:
-    """Returns a Reflected handle for the field; .T is usable."""
-    comptime host_handle = reflect[Config].field["host"]
-    var default_host: host_handle.T = "localhost"
-    assert_equal(default_host, "localhost")
+@fieldwise_init
+struct Pair(MakeCopyable):
+    var a: Int
+    var b: String
 
 
-def test_field_index_by_name() raises:
-    """Returns the zero-based index for a field name."""
-    comptime x_idx = reflect[Point].field_index["x"]()
-    comptime y_idx = reflect[Point].field_index["y"]()
-    assert_equal(x_idx, 0)
-    assert_equal(y_idx, 1)
+def test_copy_to_on_a_second_struct() raises:
+    """A differently shaped struct gets `copy_to` with no implementation."""
+    var src = Pair(7, "seven")
+    var dst = Pair(0, "")
+    src.copy_to(dst)
+    assert_equal(dst.a, 7)
+    assert_equal(dst.b, "seven")
+
+
+@fieldwise_init
+struct PartlyCopyable(MakeCopyable):
+    var n: Int
+    var blob: Opaque
+
+
+def test_copy_to_skips_non_copyable_field() raises:
+    """Fields outside `Copyable & Deinitable` are left untouched."""
+    var src = PartlyCopyable(5, Opaque(100))
+    var dst = PartlyCopyable(0, Opaque(999))
+    src.copy_to(dst)
+    assert_equal(dst.n, 5)
+    assert_equal(dst.blob.tag, 999)
 
 
 # --- Field layout ---
 
 
-struct Padded:
-    var a: UInt8
-    var b: UInt32
-    var c: UInt64
+struct Packet:
+    var flags: UInt8
+    var id: UInt32
+    var payload: UInt64
 
 
-def test_field_offset_first_field() raises:
+def test_field_offset_zero() raises:
     """First field is always at offset 0."""
-    comptime off = reflect[Padded].field_offset[index=0]()
-    assert_equal(off, 0)
+    assert_equal(reflect[Packet].field_offset[index=0](), 0)
+
+
+def test_field_offsets_exact() raises:
+    """Offsets are 0, 4, 8: three bytes of padding follow the UInt8."""
+    assert_equal(reflect[Packet].field_offset[index=0](), 0)
+    assert_equal(reflect[Packet].field_offset[index=1](), 4)
+    assert_equal(reflect[Packet].field_offset[index=2](), 8)
 
 
 def test_field_offset_alignment() raises:
-    """Returns the offset of a field, accounting for alignment padding."""
-    comptime off_b = reflect[Padded].field_offset[index=1]()
-    assert_true(off_b >= 4)
+    """UInt32 field is at offset >= 4 due to alignment padding after UInt8."""
+    comptime off = reflect[Packet].field_offset[index=1]()
+    assert_true(off >= 4)
 
 
 def test_field_offset_by_name() raises:
-    """Returns the offset of a field by name, matching the index-based offset.
-    """
-    comptime by_name = reflect[Point].field_offset[name="y"]()
-    comptime by_index = reflect[Point].field_offset[index=1]()
+    """Check `field_offset` accepts `name=` and agrees with `index=`."""
+    comptime by_name = reflect[Packet].field_offset[name="id"]()
+    comptime by_index = reflect[Packet].field_offset[index=1]()
     assert_equal(by_name, by_index)
 
 
-# --- Capturing types and origins: type_of ---
+# --- type_of ---
+
+
+def make_default[T: Defaultable]() -> T:
+    return T()
 
 
 def test_type_of() raises:
-    """Captures the type of an expression."""
+    """Check `type_of` captures the compile-time type of an expression."""
     var x = 42
-    var y: type_of(x) = 0
+    var y = make_default[type_of(x)]()
     assert_equal(y, 0)
     _ = x
 
 
-# --- Capturing types and origins: origin_of ---
+# --- origin_of ---
 
 
-def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
+def first_ref[T: Movable](ref list: List[T]) -> ref[list[0]] T:
+    if not list:
+        abort("empty list")
     return list[0]
 
 
 def test_origin_of_first_ref() raises:
-    """Ties the returned reference to the input's lifetime."""
+    """Check `first_ref` returns a reference tied to the list's origin."""
     var l: List = [1, 2, 3]
-    var x = first_ref(l)
+    ref x = first_ref(l)
     assert_equal(x, 1)
+    x += 10
+    assert_equal(l[0], 11)
+    assert_equal(l[1], 2)
+    assert_equal(l[2], 3)
 
 
 # --- Source locations ---
 
 
 def test_source_location_line() raises:
-    """Returns a positive line number."""
+    """Check `source_location` returns a positive line number."""
     var loc = source_location()
     assert_true(loc.line() > 0)
 
 
 def test_source_location_column() raises:
-    """Returns a positive column number."""
+    """Check `source_location` returns a positive column number."""
     var loc = source_location()
     assert_true(loc.column() > 0)
 
 
-def test_source_location_file() raises:
-    """Returns a non-empty file name."""
+def test_source_location_file_name() raises:
+    """Check `source_location` returns a non-empty file name."""
     var loc = source_location()
     assert_true(loc.file_name())
 
 
 def test_source_location_prefix() raises:
-    """Formats 'At file:line:col: msg'."""
+    """Check `prefix()` carries the message and prepends location context."""
     var loc = source_location()
     var msg = loc.prefix("test message")
-    assert_true(msg.find("At ") == 0)
-    assert_true(msg.find("test message") >= 0)
+    # A position past 0 means location context precedes the message.
+    assert_true(msg.find("test message") > 0)
+
+
+def helper_source_line() -> Int:
+    return source_location().line()
+
+
+def test_source_location_ignores_call_site() raises:
+    """`source_location` reports its own line, so two call sites agree."""
+    var first = helper_source_line()
+    var second = helper_source_line()
+    assert_equal(first, second)
 
 
 @always_inline
@@ -395,100 +447,163 @@ def get_caller_line() -> Int:
 
 
 def test_call_location() raises:
-    """Captures the caller's line, not its own."""
+    """Check `call_location` captures the immediate caller's line, not its own.
+    """
     var line = get_caller_line()
     assert_true(line > 0)
+
+
+def test_call_location_reports_caller_line() raises:
+    """The reported line is the call site, not the line inside the helper."""
+    var here = source_location().line()
+    var caller = get_caller_line()
+    assert_equal(caller, here + 1)
+
+
+def test_call_location_tracks_each_call_site() raises:
+    """Two call sites one line apart report lines one apart."""
+    var first = get_caller_line()
+    var second = get_caller_line()
+    assert_equal(second, first + 1)
+
+
+@always_inline
+def one_level_caller_line() -> Int:
+    return call_location().line()
+
+
+@always_inline
+def wrap_one_level() -> Int:
+    return one_level_caller_line()
+
+
+@always_inline
+def two_level_caller_line() -> Int:
+    return call_location[inline_count=2]().line()
+
+
+@always_inline
+def wrap_two_levels() -> Int:
+    return two_level_caller_line()
+
+
+def test_inline_count_default_stops_at_immediate_caller() raises:
+    """The default (1) reports the line inside the wrapper, so distinct call
+    sites agree."""
+    var first = wrap_one_level()
+    var second = wrap_one_level()
+    assert_equal(first, second)
+
+
+def test_inline_count_two_skips_a_level() raises:
+    """`inline_count=2` skips the wrapper and reports this call site."""
+    var here = source_location().line()
+    var line = wrap_two_levels()
+    assert_equal(line, here + 1)
+
+
+@always_inline
+def require(cond: Bool, msg: String = "requirement failed") raises:
+    if not cond:
+        raise Error(call_location().prefix(msg))
+
+
+def test_require_carries_the_caller_message() raises:
+    """`require` raises with the caller's message.
+
+    That the location is the caller's, not `require`'s, is checked directly
+    in `test_call_location_reports_caller_line` rather than by matching the
+    formatted error text.
+    """
+    var caught = String("")
+    try:
+        require(False, "x must be > 10")
+    except e:
+        caught = String(e)
+    assert_true(caught.find("x must be > 10") >= 0)
 
 
 # --- Function names ---
 
 
-def my_named_function():
+def process_data():
     pass
 
 
 def test_get_function_name() raises:
-    """Returns the source-level function name."""
-    comptime name = get_function_name[my_named_function]()
-    assert_equal(name, "my_named_function")
+    """Check `get_function_name` returns the source-level name."""
+    comptime name = get_function_name[process_data]()
+    assert_equal(name, "process_data")
 
 
 def test_get_linkage_name() raises:
-    """Returns a non-empty mangled symbol."""
-    comptime linkage = get_linkage_name[my_named_function]()
+    """Check `get_linkage_name` returns a non-empty mangled symbol."""
+    comptime linkage = get_linkage_name[process_data]()
     assert_true(linkage)
 
 
-def test_linkage_name_differs_from_source_name() raises:
-    """Linkage name includes mangling beyond the source name."""
-    comptime source = get_function_name[my_named_function]()
-    comptime linkage = get_linkage_name[my_named_function]()
+def test_linkage_name_is_mangled() raises:
+    """The linkage name is mangled, so it differs from the source name."""
+    comptime source = get_function_name[process_data]()
+    comptime linkage = get_linkage_name[process_data]()
     assert_true(source != linkage)
 
 
-# --- Iteration pattern: comptime for + conforms_to ---
+# --- Additional methods: conforms_to and where clause ---
 
 
-def count_equatable_fields[T: AnyType]() -> Int:
-    comptime types = reflect[T].field_types()
-    var count = 0
-    comptime for idx in range(reflect[T].field_count()):
-        comptime if conforms_to(types[idx], Equatable):
-            count += 1
-    return count
+def eq[T: AnyType](a: T, b: T) -> Bool where conforms_to(T, Equatable):
+    return a == b
 
 
-def test_count_equatable_fields_multi() raises:
-    """All four MultiType fields conform to Equatable."""
-    assert_equal(count_equatable_fields[MultiType](), 4)
+def test_eq_where_clause() raises:
+    """Check `where conforms_to(T, Equatable)` enables `==` operator."""
+    assert_true(eq(1, 1))
+    assert_true(not eq(1, 2))
+    assert_true(eq("hello", "hello"))
 
 
-def test_count_equatable_fields_point() raises:
-    """Both Point fields conform to Equatable."""
-    assert_equal(count_equatable_fields[Point](), 2)
+def test_conforms_to() raises:
+    """Check `conforms_to` checks compile-time trait conformance."""
+    assert_true(conforms_to(Int, Equatable))
+    assert_true(conforms_to(String, Equatable))
 
 
 def main() raises:
-    # Inspecting a type
-    test_reflect_name()
-    test_reflect_field_count()
-    test_reflect_field_names()
-    test_reflect_field_types()
+    # Why reflection?
+    test_sensor_equality()
+    test_sensor_as_dict_key()
+    test_sensor_as_set_element()
 
-    # base_name
-    test_base_name_parameterized()
-    test_base_name_simple()
+    # Inspect a type
+    test_base_name()
+    test_name_is_qualified_where_base_name_is_not()
+    test_name_applies_parameters()
+    test_type_name()
+    test_field_count()
+    test_field_names()
+    test_field_types()
+    test_field_by_name()
+    test_reflect_parameterized_struct()
+    test_parameterized_name_applies_parameters()
 
-    # is_struct
-    test_is_struct_on_struct()
-    test_is_struct_on_int()
-
-    # diff_fields
+    # Detect field-level changes
     test_diff_fields_detects_changes()
     test_diff_fields_identical()
     test_diff_fields_all_different()
     test_diff_fields_single_field()
+    test_diff_fields_skips_non_equatable()
 
-    # conforms_to type refinement
-    test_conforms_to_positive()
-    test_reflection_equality()
-    test_reflection_inequality()
-    test_reflection_copy_constructor()
-
-    # field_ref
-    test_field_ref_read()
-    test_field_ref_mutate()
-
-    # MakeCopyable
+    # Write once reuse everywhere
     test_copy_to_transfers_values()
     test_copy_to_independent()
-
-    # Accessing fields by name
-    test_field_by_name()
-    test_field_index_by_name()
+    test_multitype_write_to()
+    test_copy_to_on_a_second_struct()
+    test_copy_to_skips_non_copyable_field()
 
     # Field layout
-    test_field_offset_first_field()
+    test_field_offset_zero()
+    test_field_offsets_exact()
     test_field_offset_alignment()
     test_field_offset_by_name()
 
@@ -501,15 +616,21 @@ def main() raises:
     # Source locations
     test_source_location_line()
     test_source_location_column()
-    test_source_location_file()
+    test_source_location_file_name()
     test_source_location_prefix()
+    test_source_location_ignores_call_site()
     test_call_location()
+    test_call_location_reports_caller_line()
+    test_call_location_tracks_each_call_site()
+    test_inline_count_default_stops_at_immediate_caller()
+    test_inline_count_two_skips_a_level()
+    test_require_carries_the_caller_message()
 
     # Function names
     test_get_function_name()
     test_get_linkage_name()
-    test_linkage_name_differs_from_source_name()
+    test_linkage_name_is_mangled()
 
-    # Iteration patterns
-    test_count_equatable_fields_multi()
-    test_count_equatable_fields_point()
+    # Additional methods
+    test_eq_where_clause()
+    test_conforms_to()

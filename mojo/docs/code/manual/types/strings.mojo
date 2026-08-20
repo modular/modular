@@ -48,7 +48,7 @@ def template_1() raises:
     var template2 = t"Hello, {name}!"  # template creation
     assert_true(String(template2) == "Hello, Nate!")
 
-    var list = [1, 2, 3]
+    var list: List[Int] = [1, 2, 3]
     assert_true(String(t"{list[0] + list[1]}") == "3")
 
     # Literal braces use {{ and }}.

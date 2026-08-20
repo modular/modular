@@ -14,7 +14,7 @@ from std.python import Python
 
 
 def main() raises:
-    var states = [String("California"), "Hawaii", "Oregon"]
+    var states: List = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)
 
@@ -67,7 +67,7 @@ def main() raises:
     else:
         print("Finished executing 'for' loop")
 
-    var animals = ["cat", "aardvark", "hippopotamus", "dog"]
+    var animals: List = ["cat", "aardvark", "hippopotamus", "dog"]
     for animal in animals:
         if animal == "dog":
             print("Found a dog")
@@ -76,7 +76,7 @@ def main() raises:
         print("No dog found")
 
     # Using references to modify a list item in a loop
-    var values = [1, 4, 7, 3, 6, 11]
+    var values: List = [1, 4, 7, 3, 6, 11]
     for ref value in values:
         if value % 2 != 0:
             value -= 1

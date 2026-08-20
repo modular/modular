@@ -159,7 +159,7 @@ The middle value is evaluated once, not twice. This matters when the
 value comes from a function:
 
 ```mojo
-var short_item_list = [1, 2, 3, 4, 5]
+var short_item_list: List[Int] = [1, 2, 3, 4, 5]
 var ok = 0 < len(short_item_list) <= 10
 print(ok) # True
 ```
@@ -264,7 +264,7 @@ if name:
 The `in` operator checks whether a collection contains a value:
 
 ```mojo
-var colors = ["red", "green", "blue"]
+var colors: List[String] = ["red", "green", "blue"]
 print("red" in colors)         # True
 print("yellow" not in colors)  # True
 ```

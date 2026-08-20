@@ -62,7 +62,7 @@ cleanly, without extra code.
 ## Inspect a type
 
 Use the `reflect[T]` alias to inspect a type at compile time. Built into
-Mojo, it resolves to `Reflected[T]` — a handle type with static methods
+Mojo, it resolves to `Reflected[T]`, a handle type with static methods
 for querying a type.
 
 This code uses `reflect[T]` to inspect a type's structure:
@@ -94,8 +94,8 @@ struct MyStruct:
 comptime DefaultItemCount = 10
 
 struct ParameterizedStruct[
-    T: Copyable, item_count: Int = DefaultItemCount
-](Copyable):
+    T: Movable & Deinitable, item_count: Int = DefaultItemCount
+]:
     var list: List[Self.T]
     def __init__(out self):
         self.list = List[Self.T](capacity=Self.item_count)
@@ -112,26 +112,35 @@ The `comptime for` loop over fields resolves at compile time. At runtime,
 only the resulting `print()` calls execute:
 
 ```text
-struct test.MyStruct
+struct tests.MyStruct
 ├── var x: String
-└── var y: std.collections.optional.Optional[Int]
+└── var y: std.collections.optional.Optional[SIMD[DType.int, 1]]
 
 struct std.collections.optional.Optional[SIMD[DType.float64, 1]]
 └── var _value: std.utils.variant.Variant[<unprintable>, {}]
 
-struct std.collections.dict.Dict[Int, String, std.hashlib\
-    ._ahash.AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
-├── var _table: std.collections._swisstable\
-    .SwissTable[Int, String, std.hashlib._ahash\
-    .AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
+struct std.collections.dict.Dict[SIMD[DType.int, 1], String, \
+    std.hashlib._ahash.AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
+├── var _table: std.collections._swisstable.SwissTable[\
+    SIMD[DType.int, 1], String, std.hashlib._ahash.AHasher[\
+    [0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
 └── var _order: List[SIMD[DType.int32, 1]]
 
-struct test.ParameterizedStruct[String, 5]
+struct tests.ParameterizedStruct[String, 5 : SIMD[DType.int, 1]]
 └── var list: List[String]
 ```
 
-The output uses compiler-resolved names. Types appear fully qualified with
-parameters applied. If you only need the base type name, use `base_name()`:
+The output uses compiler-resolved names, and the exact rendering may drift
+as the compiler evolves.
+
+Names appear with their parameters applied. Some print bare and others carry
+a module path: `Int`, `Float64`, `Bool`, `String`, and `List` show no path,
+while `Dict`, `Optional`, and `Set` show theirs. Your own structs carry the
+name of the module that declares them. Aliases resolve to what they alias,
+so `Int` and `Float64` show up as the one-element SIMD types underneath.
+Parameter values print with their type attached.
+
+If you only need the base type name, use `base_name()`:
 
 ```mojo
 print(reflect[List[Int]].base_name())          # List
@@ -314,14 +323,14 @@ input's lifetime:
 from std.os import abort
 
 def first_ref[
-    T: Copyable
+    T: Movable
 ](ref list: List[T]) -> ref[list[0]] T:
     if not list:
         abort("empty list")
     return list[0]
 
 def main():
-    var l = [1, 2, 3]
+    var l: List[Int] = [1, 2, 3]
     ref x = first_ref(l)
     print(x)  # 1
     x += 10   # modifies the original list through the reference
@@ -358,11 +367,13 @@ def main() raises:
     # Error: At /path/to/file.mojo:10:5: x must be > 10
 ```
 
-The enclosing function must be `@always_inline` to capture the caller's
-location. Without this decorator, the location would point inside
-`require()`. `call_location()` accepts an optional `inline_count` parameter.
-The default (1) captures the immediate caller. Higher values skip
-additional levels of inlined calls.
+Mark the enclosing function `@always_inline` (or
+`@always_inline("nodebug")`). The decorator is what guarantees the location
+the function reports; without it, the result depends on whether the compiler
+inlined the call anyway. `call_location()` also accepts an optional
+`inline_count` parameter. The default (1) reports the immediate caller's
+call site. Higher values skip additional levels, and the compiler must
+inline every level in the chain.
 
 **`source_location()`** returns the location where `source_location()` is
 called. This is less useful for debugging because it reports the location of

@@ -99,7 +99,7 @@ def test_collections() raises:
 
 
 def test_loops() raises:
-    var nums = [0, 1, 2, 3, 4]
+    var nums: List = [0, 1, 2, 3, 4]
     var squares2: List[Int] = []
 
     for x in nums:
