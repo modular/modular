@@ -564,15 +564,17 @@ Now let's see how configuration flows from user input to a running pipeline.
 When you run a model, configuration flows through several layers:
 
 1. **Start with user arguments**: MAX collects CLI or API arguments into a
-   `PipelineConfig` object that specifies the model path, quantization settings,
+   `PipelineArgs` object that specifies the model path, quantization settings,
    and runtime parameters.
 
-2. **Load model metadata**: The registry fetches the model's Hugging Face config
-   to perform architecture lookup and extract hyperparameters like hidden size,
-   number of layers, and vocabulary size.
+2. **Resolve at construction**: `PipelineConfig.from_args()` reads the model's
+   Hugging Face config to look up the architecture, then resolves and validates
+   the quantization encoding, weight paths, and devices, and applies any
+   defaults the architecture declares. A model whose architecture isn't
+   registered fails here, before any weights are downloaded.
 
-3. **Validate compatibility**: The registry checks that the architecture
-   supports the requested encoding and KV cache strategy.
+3. **Plan memory**: The registry runs the architecture's memory planner to
+   size the KV cache and batch limits for the available devices.
 
 4. **Instantiate pipeline**: Finally, the registry constructs and returns the
    tokenizer and compiled pipeline ready for inference.
