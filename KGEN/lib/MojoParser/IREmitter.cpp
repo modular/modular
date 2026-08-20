@@ -1924,8 +1924,9 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
 
 TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
                                                      FnTypeGeneratorType sig) {
-  // We don't have scope for the FnGenBuilderParamDeclAttr, just make sure even
+  // We don't have scope for the FnGenBuilderParamDeclAttr, just make sure every
   // name we created is unique.
+  // FIXME: use a demangler here for a deterministic name.
   static size_t uniqueIdx = 0;
   uniqueIdx++;
 
@@ -1977,9 +1978,7 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
   TypedAttr metadata = sig.getFnMetadata();
   evaluator.setDeclBinding(traitSig.getParamName(3), metadata);
 
-  auto traitType = shared.getUniversalParametricClosureTrait()
-                       ->getTypeDeclSelf()
-                       .extractMetaType();
+  auto traitType = closureTraitDecl->getTypeDeclSelf().extractMetaType();
 
   traitType = evaluator.getReboundType(traitType);
   return cast<TraitType>(traitType);

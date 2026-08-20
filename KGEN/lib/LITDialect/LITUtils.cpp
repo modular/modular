@@ -688,8 +688,8 @@ void LIT::sortAndDeduplicateTraitSymbols(
     if (aSegments.size() != bSegments.size())
       return aSegments.size() < bSegments.size();
 
-    // Same symbol, then must have the same of parameter value, compare each
-    // parameter lexicographically.
+    // Same symbol, then must have the same number of parameter value, compare
+    // each parameter lexicographically.
     assert(ta.getParamValues().size() == tb.getParamValues().size());
     for (auto [aVal, bVal] :
          llvm::zip_equal(ta.getParamValues(), tb.getParamValues())) {
