@@ -42,7 +42,7 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
 )
-from std.sys.info import size_of
+from std.sys.info import has_apple_gpu_accelerator, size_of
 
 
 def bench_topk_batched[
@@ -865,54 +865,62 @@ def main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        if masked_probs:
-
-            @__parameter
-            def run_masked[in_dtype: DType]() raises:
-                bench_topk_topp_masked[in_dtype](
-                    ctx,
-                    m,
-                    test_case,
-                    fill_fn_name,
-                    top_p=top_p,
-                    logit_sigma=logit_sigma,
+        comptime if has_apple_gpu_accelerator():
+            if masked_probs or use_dist:
+                raise Error(
+                    "the masked_probs and topp_dist benchmarks require"
+                    " a non-Apple GPU"
                 )
+        else:
+            if masked_probs:
 
-            if in_dtype_name == "bfloat16":
-                run_masked[DType.bfloat16]()
-            else:
-                run_masked[DType.float32]()
-            m.dump_report()
-            return
+                @__parameter
+                def run_masked[in_dtype: DType]() raises:
+                    bench_topk_topp_masked[in_dtype](
+                        ctx,
+                        m,
+                        test_case,
+                        fill_fn_name,
+                        top_p=top_p,
+                        logit_sigma=logit_sigma,
+                    )
 
-        if use_dist:
-
-            @__parameter
-            def run_dist[in_dtype: DType, emit: Bool]() raises:
-                bench_topk_topp_dist[in_dtype, DType.int64, emit](
-                    ctx,
-                    m,
-                    test_case,
-                    fill_fn_name,
-                    top_p=top_p,
-                    logit_sigma=logit_sigma,
-                )
-
-            # The pipeline feeds this kernel f32 logits today; bf16 halves the
-            # bytes every pass of the search re-reads, so both are benchmarked.
-            @__parameter
-            def run_dist_emit[emit: Bool]() raises:
                 if in_dtype_name == "bfloat16":
-                    run_dist[DType.bfloat16, emit]()
+                    run_masked[DType.bfloat16]()
                 else:
-                    run_dist[DType.float32, emit]()
+                    run_masked[DType.float32]()
+                m.dump_report()
+                return
 
-            if emit_dist:
-                run_dist_emit[True]()
-            else:
-                run_dist_emit[False]()
-            m.dump_report()
-            return
+            if use_dist:
+
+                @__parameter
+                def run_dist[in_dtype: DType, emit: Bool]() raises:
+                    bench_topk_topp_dist[in_dtype, DType.int64, emit](
+                        ctx,
+                        m,
+                        test_case,
+                        fill_fn_name,
+                        top_p=top_p,
+                        logit_sigma=logit_sigma,
+                    )
+
+                # The pipeline feeds this kernel f32 logits today; bf16
+                # halves the bytes every pass of the search re-reads, so
+                # both are benchmarked.
+                @__parameter
+                def run_dist_emit[emit: Bool]() raises:
+                    if in_dtype_name == "bfloat16":
+                        run_dist[DType.bfloat16, emit]()
+                    else:
+                        run_dist[DType.float32, emit]()
+
+                if emit_dist:
+                    run_dist_emit[True]()
+                else:
+                    run_dist_emit[False]()
+                m.dump_report()
+                return
 
         comptime if use_fi:
             bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
