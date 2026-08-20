@@ -782,6 +782,70 @@ def test_list_iter_owned_bounds() raises:
         _ = iter.__next__()
 
 
+def test_list_drain() raises:
+    var list: List = [1, 2, 3]
+
+    var total = 0
+    for value in list.drain():
+        total += value
+
+    assert_equal(total, 6)
+    assert_equal(len(list), 0)
+
+    # The list is still usable (and empty) after being drained.
+    list.append(4)
+    var expected: List = [4]
+    assert_equal(list, expected)
+
+
+def test_list_drain_move_only() raises:
+    # Draining only requires `Movable & Deinitable`, not `Copyable`: each
+    # element is moved out of the list, not copied.
+    var list: List = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
+
+    var total = 0
+    for value in list.drain():
+        total += value.data
+
+    assert_equal(total, 3)
+    assert_equal(len(list), 0)
+
+
+def _drain_one(mut list: List[ObservableElement]) raises:
+    var it = list.drain()
+    var _ = it.__next__()
+
+
+def test_list_drain_destroys_elements_if_partially_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+
+    # Drain one of the two elements, then let the iterator go out of scope.
+    _drain_one(list)
+
+    # Each element is destroyed exactly once: the drained one when it is
+    # discarded, and the un-drained one when the iterator is destroyed.
+    assert_equal(dels, 2)
+    assert_equal(copies, 0)
+    assert_equal(len(list), 0)
+
+
+def test_list_drain_empty() raises:
+    var list = List[Int]()
+
+    var count = 0
+    for _ in list.drain():
+        count += 1
+
+    assert_equal(count, 0)
+    assert_equal(len(list), 0)
+
+
 def _test_list_iter_bounds[
     I: Iterator
 ](var list_iter: I, list_len: Int) raises where conforms_to(
