@@ -182,13 +182,15 @@ and a ready-to-use pipeline instance.
 ```python
 import asyncio
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
 
 # 1. Configure and retrieve the pipeline and tokenizer
-config = PipelineConfig.from_flat_kwargs(
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
-    max_length=512,
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+        max_length=512,
+    )
 )
 tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
@@ -307,11 +309,13 @@ You can interact with the registry directly to retrieve a model's tokenizer and
 compiled pipeline:
 
 ```python
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
 # Create configuration for a model
-config = PipelineConfig.from_flat_kwargs(
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+    )
 )
 
 # Retrieve tokenizer and compiled pipeline
@@ -574,17 +578,19 @@ When you run a model, configuration flows through several layers:
    tokenizer and compiled pipeline ready for inference.
 
 ```python
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineArgs, PipelineConfig
 
-config = PipelineConfig.from_flat_kwargs(
-    # Model specification (Hugging Face repo ID or local path)
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        # Model specification (Hugging Face repo ID or local path)
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
 
-    # Sequence limits
-    max_length=4096,
+        # Sequence limits
+        max_length=4096,
 
-    # Batching
-    max_batch_size=32,
+        # Batching
+        max_batch_size=32,
+    )
 )
 ```
 
