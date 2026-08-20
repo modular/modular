@@ -12,7 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.python import Python, PythonObject
-from std.python.numpy import from_numpy_array, copy_to_numpy_array
+from std.python.numpy import (
+    copy_to_numpy_array,
+    copy_to_numpy_tensor,
+    from_numpy_array,
+    from_numpy_tensor,
+    NumPyView,
+)
+from std.utils.coord import Coord, Idx
 from std.testing import (
     assert_almost_equal,
     assert_equal,
@@ -182,6 +189,180 @@ def test_from_numpy_array_read_only_borrow() raises:
     _ = array.setflags(write=False)
     var first = _first_via_read_borrow[DType.float64](array)
     assert_almost_equal(first, 0.0)
+    _ = array
+
+
+def _iota[dtype: DType](count: Int) -> List[Scalar[dtype]]:
+    var values = List[Scalar[dtype]](capacity=count)
+    for i in range(count):
+        values.append(Scalar[dtype](i))
+    return values^
+
+
+def test_copy_to_numpy_tensor_shape_and_order() raises:
+    var values = _iota[DType.float64](6)
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[3]))
+
+    assert_equal(Int(py=arr.ndim), 2)
+    assert_equal(Int(py=arr.shape[0]), 2)
+    assert_equal(Int(py=arr.shape[1]), 3)
+    assert_equal(String(py=arr.dtype), "float64")
+    # C order: the span's element `r * 3 + c` lands at `[r, c]`.
+    for r in range(2):
+        for c in range(3):
+            assert_almost_equal(Float64(py=arr[r][c]), Float64(r * 3 + c))
+
+
+def test_copy_to_numpy_tensor_dynamic_dim() raises:
+    var values = _iota[DType.float32](6)
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[3], Int(2)))
+    assert_equal(Int(py=arr.shape[0]), 3)
+    assert_equal(Int(py=arr.shape[1]), 2)
+    assert_equal(String(py=arr.dtype), "float32")
+
+
+def test_copy_to_numpy_tensor_rank3() raises:
+    var values = _iota[DType.int64](8)
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2], Idx[2]))
+    assert_equal(Int(py=arr.ndim), 3)
+    assert_equal(Int(py=arr.size), 8)
+    assert_equal(Int(py=arr[1][1][1]), 7)
+
+
+def test_copy_to_numpy_tensor_is_independent() raises:
+    var values = _iota[DType.float64](4)
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2]))
+    values[0] = 99.0
+    assert_almost_equal(Float64(py=arr[0][0]), 0.0)
+
+
+def test_copy_to_numpy_tensor_size_mismatch_raises() raises:
+    var values = _iota[DType.float64](6)
+    with assert_raises(contains="shape describes 4 elements"):
+        _ = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2]))
+
+
+def test_copy_to_numpy_tensor_zero_extent() raises:
+    var values = List[Float64]()
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[0], Idx[3]))
+    assert_equal(Int(py=arr.size), 0)
+    assert_equal(Int(py=arr.shape[0]), 0)
+    assert_equal(Int(py=arr.shape[1]), 3)
+
+
+def test_from_numpy_tensor_float64() raises:
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    var view = from_numpy_tensor[DType.float64, 2](array)
+
+    assert_equal(len(view.data), 6)
+    assert_equal(view.shape[0], 2)
+    assert_equal(view.shape[1], 3)
+    for r in range(2):
+        for c in range(3):
+            assert_almost_equal(view[r, c], Float64(r * 3 + c))
+    for i in range(6):
+        assert_almost_equal(view.data[i], Float64(i))
+    _ = array
+
+
+def test_from_numpy_tensor_aliases() raises:
+    var np = Python.import_module("numpy")
+    var array = np.zeros(Python.tuple(2, 2), dtype="float64")
+    var view = from_numpy_tensor[DType.float64, 2](array)
+    view[1, 1] = 5.0
+    assert_almost_equal(Float64(py=array[1][1]), 5.0)
+    _ = array
+
+
+def test_from_numpy_tensor_wrong_rank_raises() raises:
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    with assert_raises(contains="expected a 3-D array"):
+        _ = from_numpy_tensor[DType.float64, 3](array)
+    _ = array
+
+
+def test_from_numpy_tensor_non_contiguous_raises() raises:
+    var np = Python.import_module("numpy")
+    var array = np.arange(12, dtype="float64").reshape(3, 4)[:, ::2]
+    with assert_raises(contains="C-contiguous"):
+        _ = from_numpy_tensor[DType.float64, 2](array)
+    _ = array
+
+
+def test_from_numpy_tensor_dtype_mismatch_raises() raises:
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    with assert_raises(contains="dtype mismatch"):
+        _ = from_numpy_tensor[DType.int32, 2](array)
+    _ = array
+
+
+def test_numpy_tensor_roundtrip() raises:
+    var values = _iota[DType.int32](12)
+    var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[3], Int(4)))
+    var view = from_numpy_tensor[DType.int32, 2](arr)
+    assert_equal(view.shape[0], 3)
+    assert_equal(view.shape[1], 4)
+    assert_equal(len(view.data), len(values))
+    for i in range(len(values)):
+        assert_equal(view.data[i], values[i])
+    _ = arr
+
+
+def _sum_view[
+    dtype: DType, rank: Int, origin: Origin
+](view: NumPyView[dtype, rank, origin]) -> Scalar[dtype]:
+    var total = Scalar[dtype](0)
+    for value in view.data:
+        total += value
+    return total
+
+
+def test_numpy_view_passes_by_borrow() raises:
+    # The view crosses a function boundary without a copy or a `ref` rebind.
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    var view = from_numpy_tensor[DType.float64, 2](array)
+    assert_almost_equal(_sum_view(view), 15.0)
+    # The view is still usable after being borrowed.
+    assert_almost_equal(view[1, 2], 5.0)
+    _ = array
+
+
+def test_numpy_view_rank3_indexing() raises:
+    var np = Python.import_module("numpy")
+    var array = np.arange(24, dtype="int64").reshape(2, 3, 4)
+    var view = from_numpy_tensor[DType.int64, 3](array)
+    assert_equal(len(view.data), 24)
+    for i in range(2):
+        for j in range(3):
+            for k in range(4):
+                assert_equal(view[i, j, k], Int64(i * 12 + j * 4 + k))
+    _ = array
+
+
+def test_numpy_view_shape_feeds_copy() raises:
+    # A view's shape is a `Coord`, so it needs no conversion to go back.
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    var view = from_numpy_tensor[DType.float64, 2](array)
+    var copy = copy_to_numpy_tensor(view.data, view.shape)
+    assert_equal(Int(py=copy.shape[0]), 2)
+    assert_equal(Int(py=copy.shape[1]), 3)
+    assert_almost_equal(Float64(py=copy[1][2]), 5.0)
+    _ = array
+
+
+def test_from_numpy_array_equivalent_dtype() raises:
+    # `longlong` is a distinct NumPy dtype that compares equal to `int64`;
+    # the borrow must accept it.
+    var np = Python.import_module("numpy")
+    var array = np.arange(4, dtype="longlong")
+    var span = from_numpy_array[DType.int64](array)
+    assert_equal(len(span), 4)
+    assert_equal(span[3], 3)
     _ = array
 
 

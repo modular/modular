@@ -28,10 +28,14 @@ library such as `matplotlib`.
 """
 
 from std.memory import unsafe_memcpy
-from std.collections import Span
+from std.collections import Span, check_bounds
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 
 from .python import Python
 from .python_object import PythonObject
+
+comptime _PY_C_CONTIGUOUS = "C_CONTIGUOUS"
+comptime _PY_WRITEABLE = "WRITEABLE"
 
 
 def _numpy_dtype_name[dtype: DType]() -> Optional[StaticString]:
@@ -138,9 +142,189 @@ def copy_to_numpy_array[
     return arr
 
 
+def copy_to_numpy_tensor[
+    dtype: DType, origin: ImmOrigin, *shape_types: CoordLike
+](
+    data: Span[Scalar[dtype], origin], shape: Coord[*shape_types]
+) raises -> PythonObject:
+    """Builds an N-D NumPy array from a Mojo `Span` of scalars and a shape.
+
+    The span supplies the elements in C order (last axis varying fastest) and
+    `shape` supplies the extents, so `shape.product()` must equal `len(data)`.
+    The data is copied into a new, independent NumPy array, so the result
+    remains valid after `data` is later mutated or freed.
+
+    Example:
+
+    ```mojo
+    from std.python.numpy import copy_to_numpy_tensor
+    from std.utils.coord import Coord, Idx
+
+    var values = List[Float64](capacity=6)
+    for i in range(6):
+        values.append(Float64(i))
+
+    var arr = copy_to_numpy_tensor(values, Coord(Idx[2], Idx[3]))  # 2x3 array
+    ```
+
+    Dimensions may be compile-time (`Idx[N]`) or runtime (`Int`) in any mix.
+
+    Parameters:
+        dtype: The element dtype of the span (inferred).
+        origin: The origin of the span (inferred).
+        shape_types: The per-dimension types of `shape` (inferred).
+
+    Args:
+        data: The scalars to copy into a NumPy array, in C order.
+        shape: The extents of the result, one element per axis.
+
+    Constraints:
+        `dtype` must be one of the fixed-width numeric dtypes supported by
+        NumPy: `int8`-`int64`, `uint8`-`uint64`, `float16`, `float32`, or
+        `float64`. `shape` must be flat (no nested `Coord`) and must not
+        contain `All`.
+
+    Returns:
+        A NumPy `ndarray` of dtype `dtype` and shape `shape`.
+
+    Raises:
+        If `shape.product()` does not equal `len(data)`, if NumPy is
+        unavailable, or if the underlying NumPy calls fail.
+    """
+    comptime is_supported = _is_numpy_dtype[dtype]()
+    comptime assert is_supported, String(
+        "copy_to_numpy_tensor: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64). Note: `Int` is a machine-word integer",
+        " and is not supported here — use a fixed-width scalar such as",
+        " `Int64` (for example, `[Int64(i) for i in range(n)]`).",
+    )
+    comptime assert shape.is_flat, (
+        "copy_to_numpy_tensor: nested `Coord` shapes are not supported; pass"
+        " one element per axis."
+    )
+    comptime assert not shape.contains_slices, (
+        "copy_to_numpy_tensor: `All` is not a dimension; pass a concrete"
+        " extent for every axis."
+    )
+
+    var np = Python.import_module("numpy")
+    var dtype_str = _numpy_dtype_name[dtype]().value()
+
+    var dims = List[PythonObject](capacity=shape.rank)
+    comptime for i in range(shape.rank):
+        dims.append(PythonObject(Int(shape[i].value())))
+
+    var n = Int(shape.product())
+    if n != len(data):
+        raise Error(
+            String(
+                "copy_to_numpy_tensor: shape describes ",
+                n,
+                " elements but the span holds ",
+                len(data),
+                ".",
+            )
+        )
+
+    var arr = np.empty(Python.list(dims), dtype=dtype_str)
+
+    var dst = arr.ctypes.data.unsafe_get_as_pointer[dtype]()
+    unsafe_memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
+    return arr
+
+
 # ===----------------------------------------------------------------------=== #
 # from_numpy_array
 # ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct NumPyView[
+    mut: Bool, //, dtype: DType, rank: Int, origin: Origin[mut=mut]
+](ImplicitlyCopyable):
+    """A borrowed view of a C-contiguous NumPy array's buffer and shape.
+
+    `from_numpy_tensor` returns this rather than a bare `Span`, so the extents
+    needed to index the buffer travel with it. `shape` is a `Coord`, so it can
+    be handed straight back to `copy_to_numpy_tensor`.
+
+    Parameters:
+        mut: The mutability of the borrow.
+        dtype: The element dtype.
+        rank: The number of dimensions.
+        origin: The origin of the borrow.
+    """
+
+    var data: Span[Scalar[Self.dtype], Self.origin]
+    """The array's elements, in C order."""
+
+    var shape: DynamicCoord[DType.int, Self.rank]
+    """The extent of each axis. Subscript it with a compile-time index."""
+
+    def __getitem__[
+        *Ts: Intable
+    ](self, *idx: *Ts) -> ref[Self.origin] Scalar[Self.dtype]:
+        """Returns a reference to the element at `idx`.
+
+        Parameters:
+            Ts: The type of each index argument.
+
+        Args:
+            idx: One index per axis.
+
+        Constraints:
+            The number of indices must equal `rank`.
+
+        Returns:
+            A reference to the element, mutable if the view is.
+        """
+        comptime assert (
+            Ts.length == Self.rank
+        ), "NumPyView.__getitem__: expected one index per axis"
+
+        var offset = 0
+
+        comptime for i in range(Self.rank):
+            var extent = Int(self.shape[i].value())
+            var index = Int(idx[i])
+            check_bounds(index, extent)
+            offset = offset * extent + index
+
+        return self.data[offset]
+
+
+def _check_borrowable[
+    dtype: DType, mut: Bool
+](array: PythonObject, name: StaticString) raises:
+    """Raises unless `array` can back a `Span[Scalar[dtype]]` borrow.
+
+    Args:
+        array: The NumPy array to check.
+        name: The caller's name, used to prefix the error messages.
+
+    Raises:
+        If the dtype does not match, the array is not C-contiguous, or a
+        mutable borrow is requested for a read-only array.
+    """
+    var actual_dtype = String(py=array.dtype)
+    var expected_dtype = _numpy_dtype_name[dtype]().value()
+    if actual_dtype != expected_dtype:
+        raise Error(
+            t"{name}: dtype mismatch: array is '{actual_dtype}' but"
+            t" '{expected_dtype}' was requested"
+        )
+
+    if not Bool(py=array.flags[_PY_C_CONTIGUOUS]):
+        raise Error(t"{name}: array must be C-contiguous")
+
+    comptime if mut:
+        if not Bool(py=array.flags[_PY_WRITEABLE]):
+            raise Error(
+                t"{name}: a mutable borrow requires a writable array (bind"
+                t" `array` as a `read` argument to borrow a read-only array)"
+            )
 
 
 def from_numpy_array[
@@ -211,26 +395,7 @@ def from_numpy_array[
             String(t"from_numpy_array: expected a 1-D array, got ndim={ndim}")
         )
 
-    var actual_dtype = String(py=array.dtype)
-    var expected_dtype = String(_numpy_dtype_name[dtype]().value())
-    if actual_dtype != expected_dtype:
-        raise Error(
-            String(
-                t"from_numpy_array: dtype mismatch: array is '{actual_dtype}'"
-                t" but '{expected_dtype}' was requested"
-            )
-        )
-
-    if not Bool(py=array.flags["C_CONTIGUOUS"]):
-        raise Error("from_numpy_array: array must be C-contiguous")
-
-    comptime if mut:
-        if not Bool(py=array.flags["WRITEABLE"]):
-            raise Error(
-                "from_numpy_array: a mutable borrow requires a writable array"
-                " (bind `array` as a `read` argument to borrow a read-only"
-                " array)"
-            )
+    _check_borrowable[dtype, mut](array, "from_numpy_array")
 
     var n = Int(py=array.size)
     # `unsafe_get_as_pointer` yields a mutable `MutAnyOrigin` pointer (the
@@ -242,3 +407,84 @@ def from_numpy_array[
         unsafe_ptr=ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[origin](),
         length=n,
     )
+
+
+def from_numpy_tensor[
+    mut: Bool,
+    //,
+    dtype: DType,
+    rank: Int,
+    origin: Origin[mut=mut],
+](ref[origin] array: PythonObject) raises -> NumPyView[dtype, rank, origin]:
+    """Borrows an N-D C-contiguous NumPy array as a `NumPyView`.
+
+    This is the N-D counterpart of `from_numpy_array`: the view aliases the
+    array's whole buffer in C order (last axis varying fastest) and carries the
+    extents needed to index it. No bytes are copied, and the same aliasing
+    rules as `from_numpy_array` apply.
+
+    Example:
+
+    ```mojo
+    from std.python import Python
+    from std.python.numpy import from_numpy_tensor
+
+    var np = Python.import_module("numpy")
+    var array = np.arange(6, dtype="float64").reshape(2, 3)
+    var view = from_numpy_tensor[DType.float64, 2](array)
+    var value = view[1, 2]          # array[1, 2]
+    var flat = view.data            # the buffer as a `Span`, in C order
+    ```
+
+    Parameters:
+        mut: The mutability of the borrow, inferred from `array`.
+        dtype: The expected element dtype of the array.
+        rank: The expected number of dimensions.
+        origin: The origin of the borrow, inferred from `array`.
+
+    Args:
+        array: A C-contiguous NumPy `ndarray` of `rank` dimensions whose dtype
+            matches `dtype`.
+
+    Constraints:
+        `dtype` must be one of the fixed-width numeric dtypes supported by
+        NumPy. `rank` must be positive.
+
+    Returns:
+        A `NumPyView` of the array's buffer and shape, with the same
+        mutability and origin as the `array` binding.
+
+    Raises:
+        If `array.ndim` is not `rank`, is not C-contiguous, has a dtype that
+        does not match `dtype`, or is not writable when borrowed mutably.
+    """
+    comptime is_supported = _is_numpy_dtype[dtype]()
+    comptime assert is_supported, String(
+        "from_numpy_tensor: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64).",
+    )
+    comptime assert rank > 0, String(
+        "from_numpy_tensor: rank must be positive, got ", rank
+    )
+
+    var ndim = Int(py=array.ndim)
+    if ndim != rank:
+        raise Error(
+            t"from_numpy_tensor: expected a {rank}-D array, got ndim={ndim}"
+        )
+
+    _check_borrowable[dtype, mut](array, "from_numpy_tensor")
+    var np_shape = array.shape
+    var shape = DynamicCoord[DType.int, rank]()
+
+    comptime for i in range(rank):
+        shape[i] = rebind[type_of(shape[i])](Int(py=np_shape[i]))
+
+    var ptr = array.ctypes.data.unsafe_get_as_pointer[dtype]()
+    var span = Span[Scalar[dtype], origin](
+        unsafe_ptr=ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[origin](),
+        length=Int(py=array.size),
+    )
+    return NumPyView[dtype, rank, origin](span, shape)
