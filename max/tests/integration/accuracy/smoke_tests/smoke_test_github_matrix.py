@@ -97,6 +97,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     # AMD_XL. max-ci exercises the private M3 arch; sglang serves the HF
     # checkpoint as a reference. vLLM and released MAX are excluded.
     "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
+    "modularai/MiniMax-M3-MXFP6": NON_XL | {"8xB200", "max"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"8xMI355", "max"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | AMD_XL,
