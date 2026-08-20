@@ -232,9 +232,9 @@ async def _async_worker(
     settings: Settings,
 ) -> None:
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config
-    )
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
+    tokenizer = retrieved.tokenizer
+    model_factory = retrieved.factory
     model_name = pipeline_config.model.model_path
 
     # Start the model worker process.

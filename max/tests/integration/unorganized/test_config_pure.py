@@ -1107,7 +1107,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
         ),
     )
 
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
+    PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
 
 
 @prepare_registry

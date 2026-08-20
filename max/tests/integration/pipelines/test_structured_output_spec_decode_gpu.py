@@ -90,9 +90,11 @@ def test_eagle_structured_output_json_schema_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'David Smith is 35 years old.'"""
@@ -204,9 +206,11 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     # Request 1: Structured output with JSON schema
@@ -375,9 +379,11 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'Maria Garcia is 42 years old.'"""

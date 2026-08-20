@@ -713,6 +713,12 @@ This version is still a work in progress.
   overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
   closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
 
+- `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
+  dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
+  a `(tokenizer, factory)` tuple, so callers can reach the memory plan
+  computed during retrieval. Replace tuple unpacking with attribute access.
+  `PipelineRegistry.retrieve` is unchanged.
+
 ## Fixes
 
 - On Apple Silicon, a missing Metal Toolchain (a separate download since

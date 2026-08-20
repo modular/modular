@@ -87,10 +87,10 @@ def start_workers(
 
         # Load the Tokenizer and Pipeline Factory
         pipeline_config = PipelineConfig.from_args(pipeline_args)
-        _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_args.task,
-        )
+        ).factory
 
         try:
             async with AsyncExitStack() as exit_stack:

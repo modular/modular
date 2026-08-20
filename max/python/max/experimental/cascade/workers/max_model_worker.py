@@ -93,13 +93,11 @@ class MAXModelWorker(Worker):
         super().__init__(deploy_hints=["cpu"] if on_cpu else ["gpu"])
         self.pipeline_config = pipeline_config
 
-        tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
-            pipeline_config
-        )
+        retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
         # ``max_length`` is read off the resolved config in open().
         self.max_length: int | None = None
-        self._eos_token_ids: set[int] = set(tokenizer.eos_token_ids)
-        self._model_factory = model_factory
+        self._eos_token_ids: set[int] = set(retrieved.tokenizer.eos_token_ids)
+        self._model_factory = retrieved.factory
 
         # lazy import to avoid circular imports when defining
         # CascadePipelines in model arch.py layers

@@ -95,6 +95,7 @@ from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,
+    RetrievedPipeline,
     SupportedArchitecture,
 )
 from .tokenizer import (
@@ -148,6 +149,7 @@ __all__ = [
     "ProfilingConfig",
     "RaggedBatchProcessor",
     "RepoType",
+    "RetrievedPipeline",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
