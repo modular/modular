@@ -67,6 +67,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
+#include <string>
 
 #define DEBUG_TYPE "mojo-parser"
 
@@ -287,6 +288,23 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// ModuleOrigin
+//===----------------------------------------------------------------------===//
+
+/// One importable filesystem entity: a source file, a package directory, or a
+/// precompiled artifact whose single file holds many modules. Every binding
+/// that reads out of it points at this one record.
+struct SharedState::ModuleOrigin {
+  /// The canonical path. Also the key this origin is stored under.
+  std::string canonicalPath;
+
+  /// The dotted name of the binding that fixes the symbol path this origin's
+  /// contents are named by. Re-anchoring rewrites an artifact's references to
+  /// exactly one path, so only one binding can contribute to symbol paths.
+  std::string canonicalMount;
+};
+
+//===----------------------------------------------------------------------===//
 // SharedState
 //===----------------------------------------------------------------------===//
 
@@ -349,6 +367,14 @@ struct SharedState::Impl {
   /// The set of pre-existing source buffers within the source manager, used if
   /// importing a module whose file is already in the source manager.
   DenseMap<StringRef, int> existingSourceMgrBuffers;
+
+  /// Every origin, owned here so it outlives the states pointing at it.
+  SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
+
+  /// Origins by canonical path. One origin bound under two names is two
+  /// ModuleStates, and so two of every type it declares, which is why a
+  /// second differently-named binding is rejected rather than aliased.
+  llvm::StringMap<ModuleOrigin *> originsByCanonicalPath;
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
@@ -740,6 +766,11 @@ struct SharedState::ModuleState {
   /// and erroneous module states.
   std::optional<ModuleSpec> spec;
 
+  /// The entity this state reads out of, shared with every other binding of
+  /// the same one. Null for the top-level and erroneous states, and for a
+  /// namespace, which spans several directories and so has no single one.
+  ModuleOrigin *origin = nullptr;
+
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath() const {
     if (spec && !spec->isPrecompiled())
@@ -1097,6 +1128,12 @@ SharedState::ModuleSpec::classify(const std::filesystem::path &path,
   }
 
   return std::nullopt;
+}
+
+std::string SharedState::ModuleSpec::canonicalPath() const {
+  std::error_code ec;
+  std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
+  return (ec ? path.lexically_normal() : canonical).string();
 }
 
 /// Resolve the absolute path for a given module name within the provided
@@ -1520,6 +1557,50 @@ static constexpr StringLiteral kMovedStdlibSubpackages[] = {"runtime", "gpu",
 static constexpr StringLiteral kMovedStdlibNote =
     "many stdlib items recently moved to the `max` package, try `from "
     "max.<module>`";
+
+static std::string mountPathFor(StringRef boundName, ASTDecl &parentDecl) {
+  std::string mount;
+  if (SymbolRefAttr parent = parentDecl.getSymbolRef()) {
+    mount = parent.getRootReference().str();
+    for (FlatSymbolRefAttr nested : parent.getNestedReferences())
+      mount += ("." + nested.getValue()).str();
+    mount += ".";
+  }
+  mount += boundName;
+  return mount;
+}
+
+ErrorOr<SharedState::ModuleOrigin *>
+SharedState::getOrCreateModuleOrigin(const ModuleSpec &spec,
+                                     StringRef boundName, ASTDecl &parentDecl) {
+  // A namespace is several directories under different import roots, so there
+  // is no single entity for it to own.
+  if (!spec.isSourceModule() && !spec.isSourcePackage() &&
+      !spec.isPrecompiled())
+    return nullptr;
+
+  std::string canonicalPath = spec.canonicalPath();
+  std::string mount = mountPathFor(boundName, parentDecl);
+
+  auto it = impl->originsByCanonicalPath.find(canonicalPath);
+  if (it != impl->originsByCanonicalPath.end()) {
+    ModuleOrigin *existing = it->second;
+    if (existing->canonicalMount != mount) {
+      return Error(
+          Twine{spec.isSourceModule() ? "module" : "package"} +
+          " imported as '" + existing->canonicalMount +
+          "' must not also be imported as '" + mount +
+          "'; remove the duplicate import root or file that reaches it twice");
+    }
+    return existing;
+  }
+
+  impl->originAllocations.push_back(std::make_unique<ModuleOrigin>(
+      ModuleOrigin{canonicalPath, std::move(mount)}));
+  ModuleOrigin *origin = impl->originAllocations.back().get();
+  impl->originsByCanonicalPath[canonicalPath] = origin;
+  return origin;
+}
 
 SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc,
@@ -2047,17 +2128,28 @@ SharedState::ModuleState &SharedState::createFileModuleState(
     StringAttr declName, ModuleState &parentState, FileLineColLoc loc,
     llvm::SMLoc declLoc, LexerCursor cursor, LexerCursor endCursor,
     const ModuleSpec &spec) {
+  // A module's identity is its position, so one file bound under a second name
+  // declares a second copy of every type in it.
+  ErrorOr<ModuleOrigin *> originOrErr =
+      getOrCreateModuleOrigin(spec, declName.getValue(), *parentState.decl);
+  if (const char *originError = originOrErr.getError()) {
+    return createErrorModuleState(declLoc.isValid() ? declLoc
+                                                    : parentState.importLoc,
+                                  declName, *parentState.decl, originError);
+  }
+
+  auto moduleBuilder = parentState.decl->getDeclEndBuilder();
+  Operation *fileOp = FileModuleOp::create(moduleBuilder, loc, declName);
   // Use createUnlistedDecl (not addDecl) so the module is NOT added to
   // parentState.decl->declsInScope. This prevents "leaky imports"; the module
   // stays navigable via ModuleState::nestedModules.
-  auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  Operation *fileOp = FileModuleOp::create(moduleBuilder, loc, declName);
   ASTDecl &moduleDecl = declResolver->createUnlistedDecl(
       fileOp, declLoc, parentState.decl, cursor, endCursor, /*indentation=*/-1);
   declResolver->registerDeclSymbol(&moduleDecl);
 
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&moduleDecl, spec));
+  moduleState.origin = *originOrErr;
   impl->moduleStates[&moduleDecl] = &moduleState;
   return moduleState;
 }
@@ -2070,6 +2162,9 @@ SharedState::ModuleState &SharedState::createModuleState(
   ModuleState &moduleState = createFileModuleState(
       declName, parentState, loc, lexer.getToken().getLoc(), lexer.getCursor(),
       LexerCursor::getEOF(moduleBuffer), spec);
+  // An erroneous state carries no module body, so nothing below applies to it.
+  if (moduleState.decl->isErroneous())
+    return moduleState;
 
   // Auto-import the core language modules.
   if (LLVM_LIKELY(hasBuiltinModule()))
@@ -2137,6 +2232,17 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
   // parent package globally accessible. The package is still navigable via
   // ModuleState::nestedModules (populated by insertNestedModule below).
   assert(moduleSpec.isSourcePackageLike() && "Invalid package kind");
+
+  // A package's identity is its position, so the same directory bound under a
+  // second name declares a second, incompatible copy of every type in it. A
+  // namespace gets no origin, so it is exempt without a kind check here.
+  ErrorOr<ModuleOrigin *> originOrErr =
+      getOrCreateModuleOrigin(moduleSpec, moduleSpec.name, *parentState.decl);
+  if (const char *originError = originOrErr.getError()) {
+    return createErrorModuleState(importLoc, declName, *parentState.decl,
+                                  originError);
+  }
+
   auto loc = createLocation((moduleSpec.isSourcePackage()
                                  ? moduleSpec.path / "__init__.mojo"
                                  : moduleSpec.path)
@@ -2157,6 +2263,8 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl, moduleSpec));
   moduleState.importLoc = importLoc;
+  // Null for a namespace, which owns no single entity.
+  moduleState.origin = *originOrErr;
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
 
@@ -2200,6 +2308,13 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                      "as '" +
                      mountPath + "'");
   }
+
+  // One artifact bound under two names is two packages, and every type it
+  // declares exists twice over.
+  ErrorOr<ModuleOrigin *> originOrErr =
+      getOrCreateModuleOrigin(spec, spec.name, *parentState.decl);
+  if (const char *originError = originOrErr.getError())
+    return makeError(originError);
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(pathStr);
@@ -2321,6 +2436,7 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   // from this package is lazily materialized we use this to set its location
   // at the import site.
   moduleState.importLoc = loc;
+  moduleState.origin = *originOrErr;
   moduleState.bytecodeReader = std::move(bytecodeReader);
   // keep buffer alive for deferred materialize
   moduleState.sourceMgr = sourceMgr;
@@ -2715,6 +2831,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             // Record a nested module state for this decl, inheriting the
             // enclosing package's spec (kind and path) under its own name.
             auto childState = std::make_unique<ModuleState>(&decl);
+            // The child is a module inside the artifact's one file, so it
+            // shares the enclosing package's origin rather than owning one.
+            childState->origin = packageState->origin;
             if (packageState->spec) {
               childState->spec = *packageState->spec;
               childState->spec->name = name.getValue().str();
