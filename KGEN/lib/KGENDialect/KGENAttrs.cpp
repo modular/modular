@@ -151,11 +151,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 // FnGenBuilder-related attr
 //===----------------------------------------------------------------------===//
 
-Type FnGenBuilderParamDeclArrayAttr::getType() const {
-  // See the TODO on `ParamDeclArrayAttr::getType`.
-  return NonStructTypeType::get(getContext());
-}
-
+bool FnGenBuilderParamDeclAttr::isConstant() const { return false; }
 bool FnGenBuilderParamDeclRefAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
