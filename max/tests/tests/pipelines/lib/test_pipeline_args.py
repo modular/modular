@@ -99,6 +99,16 @@ def test_runtime_flags_survive_flat_kwargs_path() -> None:
     assert config.runtime.max_pending_futures == 2
 
 
+def test_sampling_flags_survive_flat_kwargs_path() -> None:
+    # gen-mef passes enable_structured_output as a flat kwarg at
+    # construction; dropping it on this path would silently export a
+    # grammar-incapable sampler MEF.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(enable_structured_output=True)
+    )
+    assert config.sampling.enable_structured_output is True
+
+
 def test_empty_models_kwarg_is_not_a_manifest_override() -> None:
     # The CLI generates a --models flag from PipelineConfig's models field,
     # so every invocation carries an empty-manifest default. It must not be
