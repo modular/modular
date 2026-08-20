@@ -27,7 +27,7 @@ from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
-from nn.topk_fi import topk_topp_sampling_from_prob
+from nn.sampling import topk_topp_sampling_from_prob
 
 
 def scrambled_logit(row: Int, col: Int) -> Float64:

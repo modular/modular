@@ -25,7 +25,7 @@ from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from std.math import exp
 from nn.topk import _top_k_cpu, _topk_topp_sampling_fi
-from nn.topk_fi import (
+from nn.sampling import (
     topk_mask_logits,
     topk_sampling_from_prob,
     topk_topp_sampling_from_prob,

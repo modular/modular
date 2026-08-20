@@ -56,7 +56,7 @@ from std.math import log2
 from std.memory import unsafe_stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
-from nn.topk_fi import topk_topp_sampling_from_prob
+from nn.sampling import topk_topp_sampling_from_prob
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product

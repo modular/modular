@@ -28,7 +28,10 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
 )
-from max.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    load_cluster_smem,
+)
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -57,7 +60,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     exp2_emulation,
     fma_ftz,
     llvm_opaque_tid,
-    load_cluster_smem,
     max_ftz,
     maximum,
     MBarType,

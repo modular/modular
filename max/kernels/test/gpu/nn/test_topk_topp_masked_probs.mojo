@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Correctness tests for `nn.topk_fi.topk_topp_masked_probs`.
+"""Correctness tests for `nn.sampling.topk_topp_masked_probs`.
 
 The kernel writes, per row, the joint top-k/top-p masked renormalized
 softmax: a token survives iff its weight `e_i = exp((logit_i - row_max) /
@@ -32,7 +32,7 @@ from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.testing import assert_almost_equal
 
-from nn.topk_fi import topk_topp_masked_probs
+from nn.sampling import topk_topp_masked_probs
 
 
 def scrambled_logit(row: Int, col: Int, d: Int) -> Float64:
@@ -259,6 +259,41 @@ def test_empty_batch(ctx: DeviceContext, d: Int) raises:
 def main() raises:
     with DeviceContext() as ctx:
         test_empty_batch(ctx, d=1024)
+        # Vocabularies far narrower than one cluster's thread count. At these
+        # widths a row does not even fill one block, so under a cluster most
+        # CTAs own no elements at all and contribute only reduction
+        # identities -- the shape `rejection_sampler.py` reaches with
+        # `vocab_size` 6 and 8.
+        run_probs(
+            ctx,
+            rows=4,
+            d=6,
+            filler=scrambled_logit,
+            k=-1,
+            top_p=0.9,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=4,
+            d=8,
+            filler=scrambled_logit,
+            k=3,
+            top_p=1.0,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=6,
+            d=8,
+            filler=ascending_logit,
+            k=-1,
+            top_p=0.5,
+            temperature=1.0,
+            exact_reference=True,
+        )
         # Mask disabled: the row is its plain softmax.
         run_probs(
             ctx,
@@ -338,6 +373,53 @@ def main() raises:
             ctx,
             rows=2,
             d=128256,
+            filler=scrambled_logit,
+            k=40,
+            top_p=1.0,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        # A batch wider than the SM count: the grid runs multiple waves of
+        # clusters.
+        run_probs(
+            ctx,
+            rows=200,
+            d=257,
+            filler=scrambled_logit,
+            k=-1,
+            top_p=0.9,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=200,
+            d=8,
+            filler=ascending_logit,
+            k=-1,
+            top_p=0.5,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        # A vocabulary in the two-CTA window: too wide for one CTA's staging
+        # budget, narrow enough to split across two.
+        run_probs(
+            ctx,
+            rows=2,
+            d=98304,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        # A vocabulary whose per-CTA slice does not fit the shared-memory
+        # budget: the launcher falls back to the single-block kernel, which
+        # is otherwise unexercised on cluster devices.
+        run_probs(
+            ctx,
+            rows=2,
+            d=249856,
             filler=scrambled_logit,
             k=40,
             top_p=1.0,

@@ -47,7 +47,7 @@ from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 # Rank-distinct value written by CTA `me` at word `i`: distinct across both rank

@@ -38,7 +38,7 @@ from std.gpu import block_idx, thread_idx
 from std.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from layout import Coord, TileTensor, row_major
-from nn.topk_fi import topk_sampling_from_prob, topk_topp_sampling_from_prob
+from nn.sampling import topk_sampling_from_prob, topk_topp_sampling_from_prob
 from std.testing import assert_true
 from std.utils import IndexList
 from std.utils.numerics import inf, nan, neg_inf
