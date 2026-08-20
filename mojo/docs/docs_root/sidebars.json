@@ -156,7 +156,6 @@
         "docs/reference/decorators/copy-capture",
         "docs/reference/decorators/deprecated",
         "docs/reference/decorators/doc-hidden",
-        "docs/reference/decorators/explicit-destroy",
         "docs/reference/decorators/export",
         "docs/reference/decorators/fieldwise-init",
         "docs/reference/decorators/implicit",
