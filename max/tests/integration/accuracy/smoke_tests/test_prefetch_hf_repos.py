@@ -100,7 +100,7 @@ def test_cache_path_treats_incomplete_snapshot_as_miss(
         "snapshot_download",
         lambda *args, **kwargs: str(snap),
     )
-    assert prefetch_hf_repos._cache_path("org/model", "0123456") is None
+    assert prefetch_hf_repos._cache_path("org/model") is None
 
 
 def test_cache_path_returns_complete_snapshot(
@@ -112,4 +112,4 @@ def test_cache_path_returns_complete_snapshot(
         "snapshot_download",
         lambda *args, **kwargs: str(snap),
     )
-    assert prefetch_hf_repos._cache_path("org/model", "0123456") == str(snap)
+    assert prefetch_hf_repos._cache_path("org/model") == str(snap)
