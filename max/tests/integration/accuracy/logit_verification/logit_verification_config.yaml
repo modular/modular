@@ -504,6 +504,17 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.1e-3
     kl_div_threshold: 7.1e-3
 
+  Qwen/Qwen3.8-27B-bfloat16:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only]
+    # Suggested by --find-tolerances on 1x B200: 3.4e-4 / 1.4e-3. Widened ~3x
+    # for cross-hardware headroom; re-confirm on the other agents.
+    cos_dist_threshold: 1.0e-3
+    kl_div_threshold: 5.0e-3
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-Embedding-0.6B"

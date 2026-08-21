@@ -30,7 +30,7 @@ from .weight_adapters import convert_qwen3_5_state_dict
 qwen3_5_arch = SupportedArchitecture(
     name="Qwen3_5ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3.5-27B"],
+    example_repo_ids=["Qwen/Qwen3.5-27B", "Qwen/Qwen3.8-27B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Qwen3_5Config.DEFAULT_ENCODING,
     supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
