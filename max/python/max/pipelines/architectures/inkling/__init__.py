@@ -17,6 +17,7 @@ from .model import InklingModel
 from .model_config import InklingConfig
 from .reasoning import InklingReasoningParser
 from .tokenizer import InklingTokenizer
+from .tool_parser import InklingToolParser
 
 __all__ = [
     "InklingConfig",
@@ -24,5 +25,6 @@ __all__ = [
     "InklingModel",
     "InklingReasoningParser",
     "InklingTokenizer",
+    "InklingToolParser",
     "inkling_arch",
 ]
