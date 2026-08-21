@@ -87,6 +87,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
