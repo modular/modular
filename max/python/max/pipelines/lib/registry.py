@@ -738,11 +738,14 @@ class PipelineRegistry:
         if arch.pipeline_cls is not None:
             pipeline_class = arch.pipeline_cls
 
-        arch_config = arch.config.initialize(pipeline_config)
-        max_length = arch_config.get_max_seq_len()
+        # The tokenizer bound is the memory plan's effective max_length; pixel
+        # generation resolves its own per-arch bounds below.
+        max_length = memory_plan.max_length
 
         # For pixel generation (diffusion models), we don't need HuggingFace transformers config
         if task == PipelineTask.PIXEL_GENERATION:
+            arch_config = arch.config.initialize(pipeline_config)
+            max_length = arch_config.get_max_seq_len()
             # Pixel generation pipelines use a different tokenizer with subfolder parameters
             # Check if there's a secondary tokenizer (tokenizer_2) in the manifest
             has_tokenizer_2 = "tokenizer_2" in pipeline_config.models

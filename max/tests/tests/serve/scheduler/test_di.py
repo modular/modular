@@ -35,7 +35,7 @@ from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
-from max.pipelines.lib import OverlapTextGenerationPipeline
+from max.pipelines.lib import MemoryPlan, OverlapTextGenerationPipeline
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
@@ -2019,12 +2019,12 @@ def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
             return_value=TextContext,
         ),
     ):
-        result = load_prefill_scheduler(pipeline, config, MagicMock())
+        result = load_prefill_scheduler(pipeline, config, MagicMock(), None)
 
     assert result is sentinel
     prefill_scheduler_cls.assert_called_once()
     from_pipeline_config.assert_called_once_with(
-        config, pipeline.max_batch_size
+        config, pipeline.max_batch_size, None
     )
 
 
@@ -2048,7 +2048,7 @@ def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
             return_value=TextContext,
         ),
     ):
-        load_prefill_scheduler(pipeline, config, MagicMock())
+        load_prefill_scheduler(pipeline, config, MagicMock(), None)
 
 
 # Overlap + speculative decoding on the prefill side: CE deferral and
@@ -2454,19 +2454,23 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     pipeline_config = MagicMock()
     pipeline_config.runtime.max_batch_size = 1
     pipeline_config.runtime.max_batch_input_tokens = 8192
-    pipeline_config.runtime.max_batch_total_tokens = 8192
     pipeline_config.runtime.enable_chunked_prefill = True
     pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
     pipeline_config.runtime.enable_in_flight_batching = False
     pipeline_config.runtime.dp_ce_balance_threshold = 0.8
     pipeline_config.runtime.decode_stall_timeout_s = None
     pipeline_config.runtime.decode_request_ttl_s = 42.0
-    pipeline_config.model.max_length = 2048
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.speculative = None
+    memory_plan = MemoryPlan(
+        max_batch_size=1,
+        footprint=0,
+        max_length=2048,
+        max_batch_total_tokens=8192,
+    )
 
     config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, max_batch_size=1
+        pipeline_config, max_batch_size=1, memory_plan=memory_plan
     )
 
     assert config.decode_request_ttl_s == 42.0

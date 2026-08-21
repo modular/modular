@@ -31,6 +31,7 @@ from max.pipelines.diffusion.pipeline import (
 )
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
+    MemoryPlan,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -74,6 +75,7 @@ def load_scheduler(
     pipeline_config: PipelineConfig,
     settings: Settings,
     worker_queues: WorkerQueues[BaseContextType, PipelineOutputType],
+    memory_plan: MemoryPlan | None,
 ) -> Scheduler:
     request_queue = worker_queues.request_queue
     response_queue = worker_queues.response_queue
@@ -140,6 +142,7 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
+            memory_plan=memory_plan,
             max_pending_requests=settings.max_pending_requests,
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
@@ -156,10 +159,13 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
             settings=settings,
+            memory_plan=memory_plan,
         )
     elif pipeline_config.runtime.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
-        return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
+        return load_prefill_scheduler(
+            text_pipeline, pipeline_config, settings, memory_plan
+        )
     else:
         raise ValueError(
             f"No scheduler support for pipeline_role ({pipeline_config.runtime.pipeline_role})."

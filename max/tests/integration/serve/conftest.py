@@ -117,6 +117,7 @@ def app(
         pipeline_config=pipeline_cfg,
         tokenizer=retrieved.tokenizer,
         task=pipeline_task,
+        memory_plan=retrieved.memory_plan,
     )
 
     settings = Settings(**settings_config)

@@ -119,6 +119,7 @@ async def test_build_pipeline_uses_arch_factory(
         lambda config: SimpleNamespace(
             tokenizer=SimpleNamespace(eos_token_ids=set()),
             factory=lambda: None,
+            memory_plan=None,
         ),
     )
     pipeline = await all_pipelines.build_pipeline(_args("some-org/some-llm"))

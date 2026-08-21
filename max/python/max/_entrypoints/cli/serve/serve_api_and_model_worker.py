@@ -90,8 +90,9 @@ def serve_api_server_and_model_worker(
     )
     tokenizer = retrieved.tokenizer
     pipeline_factory = retrieved.factory
-    log_basic_config(pipeline_config)
-    log_pipeline_info(pipeline_config)
+    memory_plan = retrieved.memory_plan
+    log_basic_config(pipeline_config, memory_plan=memory_plan)
+    log_pipeline_info(pipeline_config, memory_plan=memory_plan)
 
     # Dummy model is for diagnostics and overhead benchmarking
     if os.getenv("MAX_SERVE_DUMMY_MODEL"):
@@ -109,6 +110,7 @@ def serve_api_server_and_model_worker(
         reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
         temperature=pipeline_config.runtime.temperature,
         thinking_temperature=pipeline_config.runtime.thinking_temperature,
+        memory_plan=memory_plan,
     )
 
     # Initialize and serve webserver.

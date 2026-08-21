@@ -34,6 +34,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    MemoryPlan,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -740,10 +741,11 @@ def load_decode_scheduler(
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
     settings: Settings,
+    memory_plan: MemoryPlan | None,
 ) -> DecodeScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, pipeline.max_batch_size
+        pipeline_config, pipeline.max_batch_size, memory_plan
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.

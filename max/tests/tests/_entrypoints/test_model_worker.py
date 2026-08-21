@@ -75,6 +75,7 @@ async def test_model_worker_propagates_exception(
                 context_type=TextContext,
             ),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             raise ValueError("kaboom")
 
@@ -119,6 +120,7 @@ async def test_model_worker_propagates_construction_exception(
             ),
             metric_client=NoopClient(),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             pass
 
@@ -157,6 +159,7 @@ async def test_model_worker_start_timeout(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
             zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
         ):
             pass
 

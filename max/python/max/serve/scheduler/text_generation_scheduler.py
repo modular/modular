@@ -25,6 +25,7 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    MemoryPlan,
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
@@ -394,11 +395,12 @@ def load_text_generation_scheduler(
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
+    memory_plan: MemoryPlan | None,
     max_pending_requests: int | None = None,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, pipeline.max_batch_size
+        pipeline_config, pipeline.max_batch_size, memory_plan
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.
