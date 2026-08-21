@@ -45,7 +45,6 @@ comptime ELEMENTS_PER_ALLOC = 4096
 comptime ALLOCS_PER_ITER = 2048
 
 
-@__parameter
 def bench_heap_alloc_parallel(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -95,7 +94,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
 
 def main() raises:
     var m = Bench(BenchConfig())
-    m.bench_function[bench_heap_alloc_parallel](
-        BenchId("bench_heap_alloc_parallel")
+    m.bench_function(
+        bench_heap_alloc_parallel, BenchId("bench_heap_alloc_parallel")
     )
     m.dump_report()

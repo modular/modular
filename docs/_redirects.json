@@ -1,22 +1,17 @@
 [
   {
-    "source": "/max/",
-    "dest": "/",
-    "status": 302
-  },
-  {
-    "source": "/max",
-    "dest": "/",
+    "source": "/max/(.*)",
+    "dest": "/{0}",
     "status": 302
   },
   {
     "source": "/intro/",
-    "dest": "https://www.modular.com/open-source/max",
+    "dest": "/",
     "status": 302
   },
   {
     "source": "/faq/",
-    "dest": "https://www.modular.com/open-source/max",
+    "dest": "/",
     "status": 302
   },
   {
@@ -25,53 +20,18 @@
     "status": 302
   },
   {
-    "source": "/max/tutorials/custom-kernels-pytorch/",
+    "source": "/tutorials/custom-kernels-pytorch/",
     "dest": "/develop/custom-kernels-pytorch/",
     "status": 301
   },
   {
-    "source": "/max/graph/get-started",
+    "source": "/graph/get-started/",
     "dest": "/develop/modules/",
     "status": 301
   },
   {
-    "source": "/mojo/",
-    "dest": "https://mojolang.org",
-    "status": 301
-  },
-  {
-    "source": "/max/changelog",
+    "source": "/changelog/(.*)",
     "dest": "/releases/",
-    "status": 302
-  },
-  {
-    "source": "/max/changelog/",
-    "dest": "/releases/",
-    "status": 302
-  },
-  {
-    "source": "/max/changelog/v0.(.*)",
-    "dest": "/releases/v{0}",
-    "status": 302
-  },
-  {
-    "source": "/changelog/v0.(.*)",
-    "dest": "/releases/v{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/inference/(.*)",
-    "dest": "/serve/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/deploy/(.*)",
-    "dest": "/serve/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/graph/(.*)",
-    "dest": "/develop/{0}",
     "status": 302
   },
   {
@@ -85,208 +45,8 @@
     "status": 302
   },
   {
-    "source": "/graph/(.*)",
-    "dest": "/develop/{0}",
-    "status": 302
-  },
-  {
-    "source": "/max/api/kernels/(.*)",
-    "dest": "/api/mojo/{0}",
-    "status": 302
-  },
-  {
     "source": "/llms-kernels.txt",
     "dest": "/llms-accelerator-api.txt",
     "status": 302
-  },
-  {
-    "source": "/max/(.*)",
-    "dest": "/{0}",
-    "status": 302
-  },
-  {
-    "source": "/mojo/changelog/",
-    "dest": "https://mojolang.org/releases/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/manual/install/",
-    "dest": "https://mojolang.org/install/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/lib/",
-    "dest": "https://mojolang.org/docs/std/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/manual/decorators/(.*)",
-    "dest": "https://mojolang.org/docs/reference/decorators/{0}",
-    "status": 301
-  },
-  {
-    "source": "/mojo/reference/(.*)",
-    "dest": "https://mojolang.org/docs/reference/",
-    "status": 301
-  },
-  {
-    "source": "/mojo/(.*)",
-    "dest": "https://mojolang.org/docs/{0}",
-    "status": 301
-  },
-  {
-    "source": "/glossary/",
-    "dest": "https://handbook.modular.com/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/",
-    "dest": "https://handbook.modular.com/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/attention/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#the-attention-mechanism",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/attention-mask/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#the-attention-mask",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/autoregression/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#decode",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/batching/",
-    "dest": "https://handbook.modular.com/inference-optimization/static-dynamic-continuous-batching/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/context-encoding/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#prefill",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/continuous-batching/",
-    "dest": "https://handbook.modular.com/inference-optimization/static-dynamic-continuous-batching/#continuous-batching",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/disaggregated-inference/",
-    "dest": "https://handbook.modular.com/inference-optimization/prefill-decode-disaggregation/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/embedding/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#whats-inside-an-llm",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/flash-attention/",
-    "dest": "https://handbook.modular.com/kernel-optimization/flashattention/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/inference-routing/",
-    "dest": "https://handbook.modular.com/inference-optimization/inference-routing/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/kv-cache/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#what-is-kv-cache",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/padding-tokens/",
-    "dest": "https://handbook.modular.com/inference-optimization/static-dynamic-continuous-batching/#what-are-padding-tokens-in-llm-batching",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/paged-attention/",
-    "dest": "https://handbook.modular.com/inference-optimization/pagedattention/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/ragged-tensors/",
-    "dest": "https://handbook.modular.com/inference-optimization/static-dynamic-continuous-batching/#what-are-ragged-tensors-in-llm-inference",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/tokenization/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#what-are-tokens-and-tokenization",
-    "status": 301
-  },
-  {
-    "source": "/glossary/ai/transformer/",
-    "dest": "https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#whats-inside-an-llm",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/block-index/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/grid/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/kernel/",
-    "dest": "https://handbook.modular.com/kernel-optimization/kernel-optimization-for-llm-inference/#what-is-a-gpu-kernel",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/memory/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/occupancy/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/#occupancy",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/register/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/#registers",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/streaming-multiprocessor/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/thread/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#threads",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/thread-block/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/thread-index/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing",
-    "status": 301
-  },
-  {
-    "source": "/glossary/gpu/warp/",
-    "dest": "https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#warps",
-    "status": 301
-  },
-  {
-    "source": "/glossary/(.*)",
-    "dest": "https://handbook.modular.com/",
-    "status": 301
   }
 ]

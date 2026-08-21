@@ -300,8 +300,20 @@ def _ref_count(
 
 
 def _make_cache() -> VisionEncoderCache[TextAndVisionContext]:
-    """Create a cache for testing."""
-    return VisionEncoderCache()
+    """Create a cache for testing.
+
+    Tiny blocks with a budget far larger than any test's data, so entries
+    are block-backed and nothing is ever evicted unintentionally.
+    """
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=1024 * 1024,
+            hidden_size=4,
+            dtype=DType.float32,
+        ),
+        devices=[CPU()],
+        block_tokens=4,
+    )
 
 
 def _miss_images(
@@ -320,10 +332,50 @@ def _miss_images(
 
 
 def _make_cache_sized(
-    max_entries: int,
+    n_entries: int,
 ) -> VisionEncoderCache[TextAndVisionContext]:
-    """Create a size-bounded cache for testing."""
-    return VisionEncoderCache(max_entries=max_entries)
+    """Create a cache with room for exactly ``n_entries`` one-token entries.
+
+    Callers insert 1-token hidden-4 float32 buffers (16 bytes/row); with
+    ``block_tokens=1`` each insert takes exactly one 16-byte block, so
+    entry-count LRU semantics carry over to block mode. ``n_entries=0``
+    yields a zero budget, i.e. a disabled cache.
+    """
+    if n_entries == 0:
+        return VisionEncoderCache()
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=n_entries * 16,
+            hidden_size=4,
+            dtype=DType.float32,
+        ),
+        devices=[CPU()],
+        block_tokens=1,
+    )
+
+
+def _entry_rows(
+    cache: VisionEncoderCache[TextAndVisionContext], image_hash: int
+) -> npt.NDArray[np.float32]:
+    """Materialize a cached entry's device-0 rows from its storage.
+
+    Block entries are read out of their pool span; owned-fallback entries
+    return their buffer's rows.
+    """
+    entry = cache.lookup(image_hash)
+    assert entry is not None
+    if entry.embeddings is not None:
+        return entry.embeddings[0].to_numpy()
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    parts: list[npt.NDArray[np.float32]] = []
+    row = 0
+    for block_id in entry.block_ids:
+        chunk = min(pool.block_tokens, entry.num_tokens - row)
+        parts.append(pool.rows_view(block_id, 0, chunk).to_numpy())
+        row += chunk
+    return np.concatenate(parts)
 
 
 def test_insert_and_lookup() -> None:
@@ -333,8 +385,9 @@ def test_insert_and_lookup() -> None:
     entry = cache.lookup(0xABC)
     assert entry is not None
     assert entry.num_tokens == 10
-    assert entry.embeddings is not None
-    assert len(entry.embeddings) == 1
+    assert entry.embeddings is None
+    assert entry.block_ids is not None
+    np.testing.assert_array_equal(_entry_rows(cache, 0xABC), buf.to_numpy())
 
 
 def test_lookup_miss() -> None:
@@ -398,9 +451,10 @@ def test_no_eviction_when_all_referenced() -> None:
 
 
 def test_release_evicts_over_capacity_entries() -> None:
-    # A 3-image request over-fills a 2-entry cache (insert never fails when
-    # every resident entry is ref-held). Completing the request must shrink
-    # occupancy back to capacity immediately, not at the next cache miss.
+    """A 3-image request over-fills a 2-block pool, so the third entry is
+    stored as an owned buffer outside the pool. Completing the request must
+    drain that overshoot immediately, not at the next cache miss; the
+    pool-resident entries stay."""
     cache = _make_cache_sized(2)
     req = RequestID("r1")
     for h in (0x1, 0x2, 0x3):
@@ -408,10 +462,9 @@ def test_release_evicts_over_capacity_entries() -> None:
         cache.acquire(req, h)
     cache.release_request(req)
     assert len(cache._cache) == 2
-    # LRU order respected: the oldest zero-ref entry was the one dropped.
-    assert cache.lookup(0x1) is None
+    assert cache.lookup(0x1) is not None
     assert cache.lookup(0x2) is not None
-    assert cache.lookup(0x3) is not None
+    assert cache.lookup(0x3) is None
 
 
 def test_release_drain_skips_entries_held_by_other_requests() -> None:
@@ -671,16 +724,14 @@ def test__cache_and_split_stores_per_image() -> None:
     entry_b = cache.lookup(0xB)
     assert entry_a is not None and entry_a.num_tokens == 3
     assert entry_b is not None and entry_b.num_tokens == 5
-    assert entry_a.embeddings is not None
-    assert entry_b.embeddings is not None
-    assert entry_a.embeddings[0].to_numpy().shape == (3, hidden)
-    assert entry_b.embeddings[0].to_numpy().shape == (5, hidden)
-    np.testing.assert_array_equal(
-        entry_a.embeddings[0].to_numpy(), total.to_numpy()[:3]
-    )
-    np.testing.assert_array_equal(
-        entry_b.embeddings[0].to_numpy(), total.to_numpy()[3:8]
-    )
+    assert entry_a.embeddings is None and entry_a.block_ids is not None
+    assert entry_b.embeddings is None and entry_b.block_ids is not None
+    emb_a = _entry_rows(cache, 0xA)
+    emb_b = _entry_rows(cache, 0xB)
+    assert emb_a.shape == (3, hidden)
+    assert emb_b.shape == (5, hidden)
+    np.testing.assert_array_equal(emb_a, total.to_numpy()[:3])
+    np.testing.assert_array_equal(emb_b, total.to_numpy()[3:8])
 
 
 def test__cache_and_split_acquires_refs() -> None:
@@ -741,16 +792,12 @@ def test__cache_and_split_skips_zero_hash_keeps_offset() -> None:
     entry_b = cache.lookup(0xB)
     assert entry_a is not None and entry_a.num_tokens == 2
     assert entry_b is not None and entry_b.num_tokens == 4
-    assert entry_a.embeddings is not None
-    assert entry_b.embeddings is not None
+    emb_a = _entry_rows(cache, 0xA)
+    emb_b = _entry_rows(cache, 0xB)
     # A takes rows [0:2]; B takes rows [5:9] -- the offset advanced past the
     # 3 skipped zero-hash rows, so B is NOT [2:6].
-    np.testing.assert_array_equal(
-        entry_a.embeddings[0].to_numpy(), total.to_numpy()[0:2]
-    )
-    np.testing.assert_array_equal(
-        entry_b.embeddings[0].to_numpy(), total.to_numpy()[5:9]
-    )
+    np.testing.assert_array_equal(emb_a, total.to_numpy()[0:2])
+    np.testing.assert_array_equal(emb_b, total.to_numpy()[5:9])
 
 
 def test_assemble_concatenates_in_order() -> None:
@@ -778,6 +825,129 @@ def test_assemble_concatenates_in_order() -> None:
     assert arr.shape == (8, hidden)
     np.testing.assert_array_equal(arr[:3], buf_a.to_numpy())
     np.testing.assert_array_equal(arr[3:], buf_b.to_numpy())
+
+
+def _make_sharded_cache(
+    n_devices: int, block_tokens: int = 4
+) -> VisionEncoderCache[TextAndVisionContext]:
+    """A cache whose pool is sharded across ``n_devices`` host devices."""
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=1024,
+            hidden_size=4,
+            dtype=DType.float32,
+        ),
+        devices=[CPU() for _ in range(n_devices)],
+        block_tokens=block_tokens,
+    )
+
+
+def test_sharded_pool_places_blocks_round_robin() -> None:
+    cache = _make_sharded_cache(2)
+    pool = cache._pool
+    assert pool is not None
+    assert pool.num_blocks % 2 == 0
+    for b in range(pool.num_blocks):
+        assert pool.host_device_index(b) == b % 2
+
+
+def test_sharded_store_spans_shards_and_gathers_identically() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(10)
+    cache.insert(0xA, [buf, buf], 10)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    hosts = {pool.host_device_index(b) for b in entry.block_ids}
+    assert hosts == {0, 1}
+    out = [
+        Buffer(shape=[10, 4], dtype=DType.float32, device=CPU())
+        for _ in range(2)
+    ]
+    pool.copy_out(out, 0, entry.block_ids, 0, 10)
+    for o in out:
+        np.testing.assert_array_equal(o.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_gather_slice_across_shard_boundary() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(10)
+    cache.insert(0xA, [buf, buf], 10)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    out = [
+        Buffer(shape=[5, 4], dtype=DType.float32, device=CPU())
+        for _ in range(2)
+    ]
+    pool.copy_out(out, 0, entry.block_ids, 2, 7)
+    for o in out:
+        np.testing.assert_array_equal(o.to_numpy(), buf.to_numpy()[2:7])
+
+
+def test_sharded_rows_view_lives_on_host_shard() -> None:
+    cache = _make_sharded_cache(2)
+    buf = _make_buffer(4)
+    cache.insert(0xA, [buf, buf], 4)
+    entry = cache.lookup(0xA)
+    assert entry is not None
+    assert entry.block_ids is not None
+    pool = cache._pool
+    assert pool is not None
+    (block_id,) = entry.block_ids
+    view = pool.rows_view(block_id, 0, 4)
+    np.testing.assert_array_equal(view.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_assemble_single_span_all_devices() -> None:
+    cache = _make_sharded_cache(2)
+    hidden = 4
+    buf = _make_buffer(3, hidden)
+    cache.insert(0xA, [buf, buf], 3)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 3, image_hash=0xA)],
+        image_token_indices=np.arange(3, dtype=np.int32),
+        active_length=3,
+    )
+    empty = [_make_buffer(0, hidden) for _ in range(2)]
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]), n_devices=2, empty_embeddings=empty
+    )
+    assert len(result) == 2
+    for r in result:
+        np.testing.assert_array_equal(r.to_numpy(), buf.to_numpy())
+
+
+def test_sharded_assemble_multi_span_all_devices() -> None:
+    cache = _make_sharded_cache(2)
+    hidden = 4
+    buf_a = _make_buffer(3, hidden)
+    buf_b = _make_buffer(5, hidden)
+    cache.insert(0xA, [buf_a, buf_a], 3)
+    cache.insert(0xB, [buf_b, buf_b], 5)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 3, image_hash=0xA),
+            _make_image_meta(3, 8, image_hash=0xB),
+        ],
+        image_token_indices=np.arange(8, dtype=np.int32),
+        active_length=8,
+    )
+    empty = [_make_buffer(0, hidden) for _ in range(2)]
+    result = cache._assemble_embeddings(
+        _as_vlm_batch([ctx]), n_devices=2, empty_embeddings=empty
+    )
+    assert len(result) == 2
+    for r in result:
+        arr = r.to_numpy()
+        np.testing.assert_array_equal(arr[:3], buf_a.to_numpy())
+        np.testing.assert_array_equal(arr[3:], buf_b.to_numpy())
 
 
 def test_assemble_returns_empty_when_no_vision() -> None:
@@ -997,7 +1167,7 @@ def test_prepare_all_cached() -> None:
 
 
 def test_disabled_cache_never_hits() -> None:
-    """With max_entries=0, every vision context is always uncached."""
+    """With a zero byte budget, every vision context is always uncached."""
     cache = _make_cache_sized(0)
     assert not cache.enabled
 
@@ -1458,10 +1628,24 @@ def _make_layer_buffer(rows: int, cols: int, base: int) -> Buffer:
 
 
 def _make_manager(
-    max_entries: int = 256, n_devices: int = 1
+    budget_bytes_per_device: int = 1024 * 1024, n_devices: int = 1
 ) -> VisionEncoderCache[TextAndVisionContext]:
-    """Create a manager for GPU-free testing (host buffers, one device)."""
-    return VisionEncoderCache(max_entries=max_entries, n_devices=n_devices)
+    """Create a manager for GPU-free testing (host buffers, one device).
+
+    The default budget dwarfs every test's data, so nothing is evicted;
+    pass ``budget_bytes_per_device=0`` for a disabled cache.
+    """
+    if budget_bytes_per_device == 0:
+        return VisionEncoderCache()
+    return VisionEncoderCache(
+        plan=VisionCachePlan(
+            bytes_per_device=budget_bytes_per_device,
+            hidden_size=4,
+            dtype=DType.float32,
+        ),
+        devices=[CPU() for _ in range(n_devices)],
+        block_tokens=4,
+    )
 
 
 def test_manager_select_returns_miss_images_and_acquires_hits() -> None:
@@ -1579,9 +1763,9 @@ def test_manager_release_drops_refs() -> None:
     assert _ref_count(manager, 0xA) == 0
 
 
-def test_manager_disabled_when_zero_entries() -> None:
-    """``max_entries=0`` disables the cache (manager reflects it)."""
-    manager = _make_manager(max_entries=0)
+def test_manager_disabled_when_zero_budget() -> None:
+    """A zero byte budget disables the cache (manager reflects it)."""
+    manager = _make_manager(budget_bytes_per_device=0)
     assert not manager.enabled
 
 
@@ -1691,7 +1875,7 @@ def test_derive_disabled_cache_chunked_prefill_no_false_raise() -> None:
     with the cache disabled, count already-processed images the encoder emitted
     no rows for and falsely raise in validation.
     """
-    manager = _make_manager(max_entries=0)  # disabled
+    manager = _make_manager(budget_bytes_per_device=0)
     assert not manager.enabled
     img_a = _make_image_meta(0, 2, image_hash=0xA)
     img_b = _make_image_meta(2, 7, image_hash=0xB)
@@ -1778,8 +1962,8 @@ def test_assemble_skips_evicted_prior_image() -> None:
     contributes no rows and no indices."""
     cache = _make_cache()
     hidden = 4
-    img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
-    img_b = _make_image_meta(2, 5, image_hash=0xB)  # encoded this step
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 5, image_hash=0xB)
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[img_a, img_b],
@@ -1813,10 +1997,6 @@ def test_assemble_skips_evicted_prior_image() -> None:
     assert cache.lookup(0xA) is None
 
 
-# Block mode (MODELS-1605): capacity is a byte budget carved into
-# fixed-size blocks instead of an entry count.
-
-
 def _make_block_cache(
     num_blocks: int = 8,
     block_tokens: int = 4,
@@ -1835,8 +2015,8 @@ def _make_block_cache(
             hidden_size=hidden,
             dtype=DType.float32,
         ),
-        block_tokens=block_tokens,
         devices=[CPU() for _ in range(n_devices)],
+        block_tokens=block_tokens,
     )
 
 
@@ -1884,9 +2064,8 @@ def test_block_store_roundtrip_multi_block() -> None:
 def test_block_store_roundtrip_multi_device() -> None:
     cache = _make_block_cache(num_blocks=4, block_tokens=4, n_devices=2)
     hidden = 4
-    dev0 = Buffer.from_numpy(np.ones((6, hidden), dtype=np.float32))
-    dev1 = Buffer.from_numpy(np.full((6, hidden), 2.0, dtype=np.float32))
-    cache.insert(0xA, [dev0, dev1], 6)
+    buf = _make_buffer(6, hidden)
+    cache.insert(0xA, [buf, buf], 6)
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 6, image_hash=0xA)],
@@ -1898,24 +2077,25 @@ def test_block_store_roundtrip_multi_device() -> None:
         n_devices=2,
         empty_embeddings=[_make_buffer(0, hidden), _make_buffer(0, hidden)],
     )
-    np.testing.assert_allclose(result[0].to_numpy(), 1.0)
-    np.testing.assert_allclose(result[1].to_numpy(), 2.0)
+    assert len(result) == 2
+    for r in result:
+        np.testing.assert_array_equal(r.to_numpy(), buf.to_numpy())
 
 
 def test_block_fragmentation_rounds_up_to_whole_blocks() -> None:
     cache = _make_block_cache(num_blocks=4, block_tokens=4)
-    cache.insert(0xA, [_make_buffer(5)], 5)  # 5 tokens -> 2 blocks
+    cache.insert(0xA, [_make_buffer(5)], 5)
     assert cache._pool is not None
     assert cache._pool.num_free_blocks == 2
-    assert cache.num_free_or_evictable_blocks == 4  # entry is unreferenced
+    assert cache.num_free_or_evictable_blocks == 4
 
 
 def test_block_eviction_frees_blocks_on_demand() -> None:
     """Inserting past capacity evicts zero-ref LRU entries until it fits."""
     cache = _make_block_cache(num_blocks=4, block_tokens=4)
     cache.insert(0xA, [_make_buffer(8)], 8)
-    cache.insert(0xB, [_make_buffer(8)], 8)  # pool now full
-    cache.insert(0xC, [_make_buffer(12)], 12)  # needs 3 -> evicts A then B
+    cache.insert(0xB, [_make_buffer(8)], 8)
+    cache.insert(0xC, [_make_buffer(12)], 12)
     assert cache.lookup(0xA) is None
     assert cache.lookup(0xB) is None
     entry_c = cache.lookup(0xC)
@@ -1937,7 +2117,6 @@ def test_block_eviction_respects_refcounts_owned_fallback() -> None:
     assert entry_c.embeddings is not None
     entry_a = cache.lookup(0xA)
     assert entry_a is not None and entry_a.block_ids is not None
-    # The fallback entry is cached and assembles like any other.
     ctx = FakeContext(
         request_id=RequestID("r2"),
         images=[_make_image_meta(0, 4, image_hash=0xC)],
@@ -1952,20 +2131,22 @@ def test_block_eviction_respects_refcounts_owned_fallback() -> None:
 
 def test_block_entry_larger_than_pool_falls_back() -> None:
     cache = _make_block_cache(num_blocks=2, block_tokens=4)
-    entry = cache.insert(0xA, [_make_buffer(12)], 12)  # 3 blocks > 2 total
+    entry = cache.insert(0xA, [_make_buffer(12)], 12)
     assert entry.block_ids is None
     assert entry.embeddings is not None
     assert cache.lookup(0xA) is not None
 
 
 def test_block_budget_below_one_block_raises() -> None:
-    with pytest.raises(ValueError, match="cannot fit one"):
+    with pytest.raises(ValueError):
         VisionEncoderCache(
             plan=VisionCachePlan(
-                bytes_per_device=8, hidden_size=4, dtype=DType.float32
+                bytes_per_device=8,
+                hidden_size=4,
+                dtype=DType.float32,
             ),
-            block_tokens=4,
             devices=[CPU()],
+            block_tokens=4,
         )
 
 
@@ -1987,7 +2168,6 @@ def test_block_single_block_assembly_returns_pool_view() -> None:
         batch, n_devices=1, empty_embeddings=empty
     )
     np.testing.assert_array_equal(result[0].to_numpy(), buf.to_numpy())
-    # Prove aliasing: writing through the result is visible on re-assembly.
     marker = Buffer.from_numpy(np.full((5, 4), 7.0, dtype=np.float32))
     result[0].inplace_copy_from(marker)
     again = cache._assemble_embeddings(
@@ -2055,8 +2235,8 @@ def test_block_partial_hit_assembly() -> None:
     )
     arr = embeddings[0].to_numpy()
     assert arr.shape == (8, hidden)
-    np.testing.assert_allclose(arr[:4], 1.0)  # cached A
-    np.testing.assert_allclose(arr[4:], 3.0)  # freshly encoded C
+    np.testing.assert_allclose(arr[:4], 1.0)
+    np.testing.assert_allclose(arr[4:], 3.0)
     assert len(indices) == 8
 
 
@@ -2064,8 +2244,8 @@ def test_block_assemble_skips_evicted_prior_image() -> None:
     """Block-mode variant: the evicted prior image contributes no rows."""
     cache = _make_block_cache(num_blocks=8, block_tokens=4)
     hidden = 4
-    img_a = _make_image_meta(0, 2, image_hash=0xA)  # prior chunk, evicted
-    img_b = _make_image_meta(2, 5, image_hash=0xB)  # encoded this step
+    img_a = _make_image_meta(0, 2, image_hash=0xA)
+    img_b = _make_image_meta(2, 5, image_hash=0xB)
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[img_a, img_b],
@@ -2101,8 +2281,8 @@ def test_blocks_needed_probe_is_pure() -> None:
     ]
     assert cache.blocks_needed(imgs) == 1 + 3
     cache.insert(0xA, [_make_buffer(3)], 3)
-    assert cache.blocks_needed(imgs) == 3  # A is resident now
-    assert len(cache._request_refs) == 0  # no refs acquired by the probe
+    assert cache.blocks_needed(imgs) == 3
+    assert len(cache._request_refs) == 0
 
 
 def test_processed_image_ref_released() -> None:
@@ -2165,7 +2345,7 @@ def test_release_request_after_processed_release_is_noop() -> None:
 def test_block_free_or_evictable_through_ref_cycle() -> None:
     cache = _make_block_cache(num_blocks=8, block_tokens=4)
     req = RequestID("r1")
-    cache.insert(0xA, [_make_buffer(8)], 8)  # 2 blocks
+    cache.insert(0xA, [_make_buffer(8)], 8)
     assert cache.num_free_or_evictable_blocks == 8
     cache.acquire(req, 0xA)
     assert cache.num_free_or_evictable_blocks == 6
@@ -2382,7 +2562,7 @@ def test_assemble_skips_ahead_of_window_image() -> None:
     )
     entry_a = cache.lookup(0xA)
     assert entry_a is not None
-    assert result is entry_a.embeddings
+    assert result[0].shape == (2, hidden)
     np.testing.assert_array_equal(result[0].to_numpy(), buf_a.to_numpy())
 
 

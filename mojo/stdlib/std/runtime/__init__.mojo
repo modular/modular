@@ -59,11 +59,10 @@ def initialize_runtime():
     ) abi("C"):
         initialize_runtime()
 
-        @__parameter
         def fill(i: Int):
             data.unsafe_store(i, Int64(i * i))
 
-        parallelize[fill](len)
+        parallelize(fill, len)
     ```
     """
     _ensure_runtime_init()

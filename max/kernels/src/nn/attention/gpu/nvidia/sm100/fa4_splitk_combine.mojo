@@ -63,7 +63,7 @@ parameter:
     register-indexed (`divmod(p, WARP_SIZE)` folds at comptime).
   * `P_STATIC == 0`: an off-rung `P`. Reachable two ways -- a test force-knob,
     and `_bucket_ws` capping its bucketed value at `ws_p_ceiling`, which is
-    not itself a rung (e.g. B200's `sm_count // 4 == 37`). The same vectorized
+    not itself a rung (B200: 37 through the sweep, then decaying). The same vectorized
     + prefetched accumulation shape runs over a RUNTIME `num_partitions` bound,
     paying a dynamically-indexed `local_lse`. The array is sized at a fixed
     comptime ceiling (`_P_MAX`, covering every current-generation `sm_count`) so
@@ -472,8 +472,8 @@ def fa4_splitk_combine[
     # generic runtime-`P` kernel below.
     #
     # Note `_bucket_ws` can still return an OFF-rung `P`: it caps its bucketed
-    # value at `ws_p_ceiling`, and that ceiling (e.g. B200's `sm_count // 4 ==
-    # 37`) is not itself a rung. Those shapes legitimately land on the fallback.
+    # value at `ws_p_ceiling`, and that ceiling is not itself a rung (B200:
+    # 37 through the sweep, then decaying). Those shapes land on the fallback.
     comptime sm_count = ctx.default_device_info.sm_count
 
     @__parameter

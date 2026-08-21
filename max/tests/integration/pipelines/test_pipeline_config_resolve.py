@@ -46,13 +46,10 @@ from max.pipelines.lib.config.model_config import (
     _select_dtype_cast,
     _select_quantization_encoding,
 )
-from max.pipelines.lib.memory_estimation import _MemoryPlan
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.registry import (
-    SupportedArchitecture,
-    _run_memory_planning,
-)
+from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from test_common.fake_weights import (
@@ -175,18 +172,21 @@ def _pipeline_resolve_mocks(
         ),
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch(
-            "max.pipelines.lib.registry.load_devices",
+            "max.pipelines.lib.memory_estimation.load_devices",
             return_value=mock_devices,
         ),
         patch.object(
             MemoryEstimator,
-            "estimate_memory_footprint",
-            return_value=_MemoryPlan(max_batch_size=1, footprint=0),
-        ),
-        patch.object(
-            MemoryEstimator,
-            "max_supported_sequence_length",
-            return_value=None,
+            "plan_from_sizes",
+            side_effect=lambda pipeline_config, model_config, *a, **kw: (
+                MemoryPlan(
+                    max_batch_size=1,
+                    footprint=0,
+                    max_length=model_config.max_length,
+                    device_specs=tuple(model_config.device_specs),
+                    max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                )
+            ),
         ),
         patch(
             "max.pipelines.lib.config.config.accelerator_api",
@@ -239,9 +239,7 @@ def _resolve_config(config: PipelineConfig) -> None:
         _model(config), arch.default_encoding
     )
     _model(config).quantization_encoding = resolved_encoding
-    from max.pipelines.lib.registry import _run_memory_planning
-
-    _run_memory_planning(config, arch)
+    MemoryEstimator.plan(config, arch)
 
 
 def _make_pipeline_config(
@@ -669,6 +667,68 @@ class TestStructuredOutputBackendResolution:
             assert config.sampling.structured_output_backend == "llguidance"
 
 
+class TestStructuredOutputAnyWhitespaceResolution:
+    """Architecture default for ``sampling.structured_output_any_whitespace``."""
+
+    @prepare_registry
+    def test_any_whitespace_resolved_from_architecture(self) -> None:
+        """Arch's default_structured_output_any_whitespace applies when unset."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is True
+
+    @prepare_registry
+    def test_explicit_any_whitespace_value_wins(self) -> None:
+        """An explicit user value is never overridden by the arch default."""
+        arch = dataclasses.replace(
+            DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
+        )
+        PIPELINE_REGISTRY.register(arch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            config.sampling = SamplingConfig(
+                structured_output_any_whitespace=False
+            )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is False
+
+    @prepare_registry
+    def test_any_whitespace_defaults_to_compact(self) -> None:
+        """With no user value and no arch default, resolution pins False.
+
+        False (compact JSON) is today's behavior and the Gemma-4 runaway
+        mitigation (0c57a6bd331); the global default must not drift.
+        """
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            assert config.sampling.structured_output_any_whitespace is False
+
+
 # ---------------------------------------------------------------------------
 # Category G: Cache Dtype Resolution
 # ---------------------------------------------------------------------------
@@ -1071,7 +1131,7 @@ class TestMemoryPlanDevices:
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-                plan = _run_memory_planning(config, self._retrieve_arch(config))
+                plan = MemoryEstimator.plan(config, self._retrieve_arch(config))
             assert plan.device_specs == (GPU_DEVICE_SPEC,)
             # The plan crosses the model-worker process boundary inside the
             # pipeline factory; it must stay picklable.
@@ -1089,7 +1149,7 @@ class TestMemoryPlanDevices:
             )
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-                plan = _run_memory_planning(config, self._retrieve_arch(config))
+                plan = MemoryEstimator.plan(config, self._retrieve_arch(config))
             assert plan.device_specs == (DeviceSpec.cpu(),)
 
 

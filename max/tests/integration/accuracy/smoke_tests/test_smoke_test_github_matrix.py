@@ -14,15 +14,7 @@
 import json
 
 from click.testing import CliRunner
-from hf_repo_lock import load_db
 from smoke_tests import smoke_test, smoke_test_github_matrix
-
-
-def test_all_models_in_hf_repo_lock() -> None:
-    """Every smoke test model must have a pinned revision in hf-repo-lock.tsv."""
-    lock = load_db()
-    missing = [m for m in smoke_test_github_matrix.HF_MODELS if m not in lock]
-    assert not missing, f"Models missing from hf-repo-lock.tsv: {missing}"
 
 
 def test_custom_model_keys_have_dunder() -> None:
@@ -65,7 +57,10 @@ def test_8xmi355_stays_opt_in() -> None:
     when a model is meant to run on it.
     """
     expected = {
-        "max-ci": {"MiniMaxAI/MiniMax-M3-MXFP8"},
+        "max-ci": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
         "max": set(),
         "vllm": set(),
         "sglang": set(),

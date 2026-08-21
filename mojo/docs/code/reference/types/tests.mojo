@@ -125,7 +125,7 @@ def test_none_returns() raises:
 
 
 def test_slice_views() raises:
-    var items = List([0, 1, 2, 3, 4, 5])
+    var items: List = [0, 1, 2, 3, 4, 5]
     var middle = items[1:4]  # Span view, [1, 2, 3]
     assert_equal(len(middle), 3)
     assert_equal(middle[0], 1)

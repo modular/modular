@@ -48,7 +48,6 @@ def make_string[
     abort(String())
 
 
-@__parameter
 def bench_grapheme_iter_forward[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -64,7 +63,6 @@ def bench_grapheme_iter_forward[
     b.iter(call_fn)
 
 
-@__parameter
 def bench_grapheme_iter_reversed[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -80,7 +78,6 @@ def bench_grapheme_iter_reversed[
     b.iter(call_fn)
 
 
-@__parameter
 def bench_grapheme_iter_alternating[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -120,14 +117,17 @@ def main() raises:
         comptime for j in range(len(filenames)):
             comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", length, ",", fname, "]")
-            m.bench_function[bench_grapheme_iter_forward[length, fname]](
-                BenchId(String("forward", suffix))
+            m.bench_function(
+                bench_grapheme_iter_forward[length, fname],
+                BenchId(String("forward", suffix)),
             )
-            m.bench_function[bench_grapheme_iter_reversed[length, fname]](
-                BenchId(String("reversed", suffix))
+            m.bench_function(
+                bench_grapheme_iter_reversed[length, fname],
+                BenchId(String("reversed", suffix)),
             )
-            m.bench_function[bench_grapheme_iter_alternating[length, fname]](
-                BenchId(String("alternating", suffix))
+            m.bench_function(
+                bench_grapheme_iter_alternating[length, fname],
+                BenchId(String("alternating", suffix)),
             )
 
     print("")

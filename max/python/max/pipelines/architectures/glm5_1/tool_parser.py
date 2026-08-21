@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from max.pipelines.context.exceptions import InputError
@@ -335,6 +336,32 @@ class GlmToolParser(StructuralTagToolParser):
     CALL_BEGIN: ClassVar[str] = _TOOL_CALL_OPEN
     CALL_END: ClassVar[str] = _TOOL_CALL_CLOSE
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._stream_tool_schemas: dict[
+            str, tuple[dict[str, Any], dict[str, Any]]
+        ] = {}
+        self._active_params_schema: dict[str, Any] | None = None
+        self._active_defs: dict[str, Any] = {}
+        self._coerce_schema: dict[str, Any] | None = None
+        self._coerced: dict[str, tuple[object, object]] = {}
+
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """Stores per-tool ``parameters`` schemas for streaming coercion."""
+        self._stream_tool_schemas = {
+            name: (schema, _ref_index(schema))
+            for name, schema in schemas.items()
+        }
+
+    def reset(self) -> None:
+        super().reset()
+        self._active_params_schema = None
+        self._active_defs = {}
+        self._coerce_schema = None
+        self._coerced = {}
+
     # ----- Complete parsing --------------------------------------------
 
     def _parse_complete_section(
@@ -369,12 +396,20 @@ class GlmToolParser(StructuralTagToolParser):
         """
         key_idx = body.find(_ARG_KEY_OPEN)
         if key_idx >= 0:
-            name = body[:key_idx].strip()
-            return (name or None), body[key_idx:]
+            name = body[:key_idx].strip() or None
+            self._activate_schema(name)
+            return name, body[key_idx:]
         if is_complete:
-            name = body.strip()
-            return (name or None), ""
+            name = body.strip() or None
+            self._activate_schema(name)
+            return name, ""
         return None, None
+
+    def _activate_schema(self, name: str | None) -> None:
+        """Selects the schema and defs to coerce the in-progress call against."""
+        self._active_params_schema, self._active_defs = (
+            self._stream_tool_schemas.get(name or "", (None, {}))
+        )
 
     def _format_args_for_streaming(
         self, args_text: str, is_complete: bool
@@ -386,6 +421,28 @@ class GlmToolParser(StructuralTagToolParser):
         pair lands.
         """
         args = _parse_args(args_text)
+        schema = self._active_params_schema
+        if schema is not None and args:
+            if schema is not self._coerce_schema:
+                self._coerce_schema = schema
+                self._coerced = {}
+            coerced_args: dict[str, object] = {}
+            for key, value in args.items():
+                cached = self._coerced.get(key)
+                if (
+                    cached is not None
+                    and type(cached[0]) is type(value)
+                    and cached[0] == value
+                ):
+                    coerced_args[key] = cached[1]
+                    continue
+                out = _coerce_to_schema({key: value}, schema, self._active_defs)
+                coerced_value = (
+                    out[key] if isinstance(out, dict) and key in out else value
+                )
+                self._coerced[key] = (value, coerced_value)
+                coerced_args[key] = coerced_value
+            args = coerced_args
         if not args:
             return "{}" if is_complete else ""
         inner = ", ".join(

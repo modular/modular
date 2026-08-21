@@ -35,22 +35,19 @@ def make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_init(mut b: Bencher) raises:
     @always_inline
-    @__parameter
     def call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
             keep(d)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_insert[size: Int](mut b: Bencher) raises:
     """Insert 10 new items 100_000 times."""
     var items = make_dict[size]()
@@ -67,7 +64,6 @@ def bench_dict_insert[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_lookup[size: Int](mut b: Bencher) raises:
     """Lookup 10 items 100_000 times."""
     var items = make_dict[size]()
@@ -85,7 +81,6 @@ def bench_dict_lookup[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict contains
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_contains[size: Int](mut b: Bencher) raises:
     """Check if the dict contains 10 keys 100_000 times."""
     var items = make_dict[size]()
@@ -103,7 +98,6 @@ def bench_dict_contains[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup Miss
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
     """Lookup 10 missing keys 100_000 times."""
     var items = make_dict[size]()
@@ -121,7 +115,6 @@ def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert/Delete
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
     """Insert and immediately delete 10_000 times."""
     var items = make_dict[size]()
@@ -140,7 +133,6 @@ def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Iteration
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_iter[size: Int](mut b: Bencher) raises:
     """Iterate over all keys."""
     var items = make_dict[size]()
@@ -176,28 +168,34 @@ def total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
 def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=5))
-    m.bench_function[bench_dict_init](BenchId("bench_dict_init"))
+    m.bench_function(bench_dict_init, BenchId("bench_dict_init"))
     comptime sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
 
     comptime for i in range(len(sizes)):
         comptime size = rebind[Int](sizes[i])
-        m.bench_function[bench_dict_insert[size]](
-            BenchId(String("bench_dict_insert[", size, "]"))
+        m.bench_function(
+            bench_dict_insert[size],
+            BenchId(String("bench_dict_insert[", size, "]")),
         )
-        m.bench_function[bench_dict_lookup[size]](
-            BenchId(String("bench_dict_lookup[", size, "]"))
+        m.bench_function(
+            bench_dict_lookup[size],
+            BenchId(String("bench_dict_lookup[", size, "]")),
         )
-        m.bench_function[bench_dict_contains[size]](
-            BenchId(String("bench_dict_contains[", size, "]"))
+        m.bench_function(
+            bench_dict_contains[size],
+            BenchId(String("bench_dict_contains[", size, "]")),
         )
-        m.bench_function[bench_dict_lookup_miss[size]](
-            BenchId(String("bench_dict_lookup_miss[", size, "]"))
+        m.bench_function(
+            bench_dict_lookup_miss[size],
+            BenchId(String("bench_dict_lookup_miss[", size, "]")),
         )
-        m.bench_function[bench_dict_insert_delete[size]](
-            BenchId(String("bench_dict_insert_delete[", size, "]"))
+        m.bench_function(
+            bench_dict_insert_delete[size],
+            BenchId(String("bench_dict_insert_delete[", size, "]")),
         )
-        m.bench_function[bench_dict_iter[size]](
-            BenchId(String("bench_dict_iter[", size, "]"))
+        m.bench_function(
+            bench_dict_iter[size],
+            BenchId(String("bench_dict_iter[", size, "]")),
         )
 
     var results = Dict[String, Tuple[Float64, Int]]()

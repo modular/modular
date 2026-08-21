@@ -312,7 +312,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StringSlice(self).count_codepoints()
 
     @always_inline("nodebug")
-    def unsafe_ptr(
+    def ptr(
         self,
     ) -> Pointer[Byte, ImmStaticOrigin]:
         """Get a pointer to the underlying data.
@@ -329,6 +329,19 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   return type.
         return ptr.unsafe_bitcast[Byte]()
 
+    @doc_hidden
+    @always_inline("nodebug")
+    @deprecated(use=ptr)
+    def unsafe_ptr(
+        self,
+    ) -> Pointer[Byte, ImmStaticOrigin]:
+        """Get a pointer to the underlying data.
+
+        Returns:
+            The pointer to the data.
+        """
+        return self.ptr()
+
     @always_inline
     def as_c_string_slice(
         self,
@@ -339,9 +352,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The `CStringSlice` of the string.
         """
         # Safety: StringLiteral is guaranteed to be nul-terminated.
-        return CStringSlice(
-            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
-        )
+        return CStringSlice(unsafe_from_ptr=self.ptr().unsafe_bitcast[c_char]())
 
     @always_inline("nodebug")
     def as_string_slice(self) -> StaticString:
@@ -356,7 +367,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             unsafe_from_utf8=Span(
-                unsafe_ptr=self.unsafe_ptr(),
+                unsafe_ptr=self.ptr(),
                 length=self.byte_length(),
             )
         )
@@ -371,7 +382,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, ImmStaticOrigin](
-            unsafe_ptr=self.unsafe_ptr(), length=self.byte_length()
+            unsafe_ptr=self.ptr(), length=self.byte_length()
         )
 
     def write_to(self, mut writer: Some[Writer]):

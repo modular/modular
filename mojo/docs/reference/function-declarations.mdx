@@ -416,7 +416,7 @@ def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 def main():
-    var data = ["one", "two", "three"]
+    var data: List[String] = ["one", "two", "three"]
     ref first = get_first(data)  # mutable because `data` is mutable
     print(first)  # one
     first = "Первый"

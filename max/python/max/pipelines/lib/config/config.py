@@ -38,6 +38,7 @@ from max.pipelines.lib.pipeline_runtime_config import (
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.sampling import (
+    DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
 )
@@ -639,6 +640,28 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = (
                     "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
                 )
+        if target_archs[0] == "Qwen3_5ForConditionalGeneration":
+            # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
+            # there is no separate draft model. Qwen3.5 shares the arch name
+            # but ships no head; only override when the head exists. Unlike
+            # the other in-checkpoint MTP overrides this one also waits for an
+            # explicit `--speculative-method mtp`: the fused graph it selects
+            # is served by Mach rather than MAX, so a plain `max serve` of a
+            # Qwen3.8 checkpoint must keep landing on the base architecture.
+            text_config = getattr(
+                self.model.huggingface_config,
+                "text_config",
+                self.model.huggingface_config,
+            )
+            has_mtp = (
+                getattr(text_config, "mtp_num_hidden_layers", 0) or 0
+            ) > 0
+            if (
+                self.speculative.is_mtp()
+                and self.draft_model is None
+                and has_mtp
+            ):
+                target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
         if target_archs[0] == "GlmMoeDsaForCausalLM":
             # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
             # there is no separate draft model. GLM-5.1 shares the arch name
@@ -800,6 +823,33 @@ class PipelineConfig(ConfigFileModel):
             "--structured-output-backend.",
             DEFAULT_STRUCTURED_OUTPUT_BACKEND,
             arch.name if arch is not None else None,
+        )
+
+    def _resolve_default_structured_output_any_whitespace(
+        self, arch: Any = None
+    ) -> None:
+        """Resolve structured-output whitespace mode based on architecture."""
+        if self.sampling.structured_output_any_whitespace is not None:
+            # Explicit user configuration always wins.
+            return
+
+        if (
+            arch is not None
+            and arch.default_structured_output_any_whitespace is not None
+        ):
+            self.sampling.structured_output_any_whitespace = (
+                arch.default_structured_output_any_whitespace
+            )
+            logger.info(
+                "Using architecture default structured output any_whitespace %r"
+                " (%s).",
+                arch.default_structured_output_any_whitespace,
+                arch.name,
+            )
+            return
+
+        self.sampling.structured_output_any_whitespace = (
+            DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
         )
 
     def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
@@ -1063,6 +1113,7 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_reasoning_parser(arch=arch)
         self._resolve_default_tool_parser(arch=arch)
         self._resolve_default_structured_output_backend(arch=arch)
+        self._resolve_default_structured_output_any_whitespace(arch=arch)
         self._validate_synthetic_acceptance_with_constrained_decoding()
 
         if (

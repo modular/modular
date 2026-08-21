@@ -62,7 +62,7 @@ class TestServingSweepFields:
             extra = field_info.json_schema_extra
             if extra is None or not isinstance(extra, dict):
                 continue
-            if name in ["workload_config"]:
+            if name == "workload_config":
                 assert "group" in extra
                 assert extra["group"] == "Workload Configuration"
             elif name in [
@@ -80,10 +80,10 @@ class TestServingSweepFields:
             ]:
                 assert "group" in extra
                 assert extra["group"] == "Sweep Configuration"
-            elif name in ["max_concurrency"]:
+            elif name == "max_concurrency":
                 assert "group" in extra
                 assert extra["group"] == "Request Configuration"
-            elif name in ["request_rate"]:
+            elif name == "request_rate":
                 assert "group" in extra
                 assert extra["group"] == "Traffic Control"
 

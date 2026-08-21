@@ -139,7 +139,7 @@ class TimestepEmbedding(Module):
         sample_proj_bias: bool = True,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ):
         super().__init__()

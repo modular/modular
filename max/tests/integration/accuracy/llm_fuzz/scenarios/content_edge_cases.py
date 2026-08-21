@@ -104,7 +104,7 @@ class ContentEdgeCases(BaseScenario):
             "musical_symbols": msg("𝄞𝄢𝅗𝅥𝅘𝅥𝅘𝅥𝅮" * 20),
             "cuneiform": msg("".join(chr(c) for c in range(0x12000, 0x12050))),
             # --- Control characters ---
-            "ascii_control_chars": msg("".join(chr(c) for c in range(0, 32))),
+            "ascii_control_chars": msg("".join(chr(c) for c in range(32))),
             "null_byte_in_content": msg("hello\x00world"),
             "many_null_bytes": msg("\x00" * 1000),
             "bell_chars": msg("\x07" * 100),
