@@ -183,7 +183,9 @@ struct _ListDrainIter[T: Movable & Deinitable, origin: MutOrigin](
             self._src[].unsafe_ptr().unsafe_offset(self._index),
             count=len(self._src[]) - self._index,
         )
+        var old_size: Int = self._src[]._len
         self._src[]._len = 0
+        self._src[]._annotate_shrink(old_size)
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
