@@ -727,69 +727,69 @@ def test_array_with_explicit_destroy_type() raises:
     assert_equal(destroyed, [0, 1, 2])
 
 
-def test_array_add() raises:
+def test_array_concat() raises:
     var a: Array[Int, 2] = [1, 2]
     var b: Array[Int, 3] = [3, 4, 5]
-    var c = (a^) + (b^)
+    var c = a^.concat(b^)
     comptime assert type_of(c).length == 5
     for i in range(5):
         assert_equal(c[i], i + 1)
 
     var empty = Array[Int, 0](uninitialized=True)
     var d: Array[Int, 1] = [7]
-    var e = (empty^) + (d^)
+    var e = empty^.concat(d^)
     comptime assert type_of(e).length == 1
     assert_equal(e[0], 7)
 
 
-def test_array_add_list_literal_rhs() raises:
+def test_array_concat_list_literal_rhs() raises:
     # A list literal on the right-hand side materializes as an `Array`.
     var a: Array[Int, 2] = [1, 2]
-    var b = (a^) + [3, 4]
+    var b = a^.concat([3, 4])
     comptime assert type_of(b).length == 4
     for i in range(4):
         assert_equal(b[i], i + 1)
 
 
-def test_array_add_list_literal_to_rvalue() raises:
+def test_array_concat_list_literal_to_rvalue() raises:
     def returns_array() -> Array[Int, 2]:
         return [1, 2]
 
     # An rvalue array concatenates with a literal directly.
-    var a = returns_array() + [3, 4]
+    var a = returns_array().concat([3, 4])
     comptime assert type_of(a).length == 4
     for i in range(4):
         assert_equal(a[i], i + 1)
 
 
-def test_array_add_list_literal_lhs() raises:
+def test_array_concat_list_literal_lhs() raises:
     def returns_array() -> Array[Int, 2]:
         return [3, 4]
 
-    # A literal on the left-hand side also resolves to `Array.__add__`.
-    var a = [1, 2] + returns_array()
+    # A literal on the left-hand side also resolves to `Array.concat`.
+    var a = [1, 2].concat(returns_array())
     comptime assert type_of(a).length == 4
     for i in range(4):
         assert_equal(a[i], i + 1)
 
 
-def test_array_add_two_list_literals() raises:
+def test_array_concat_two_list_literals() raises:
     # Two literals with an `Array`-typed binding.
-    var a: Array[Int, 4] = [1, 2] + [3, 4]
+    var a: Array[Int, 4] = [1, 2].concat([3, 4])
     for i in range(4):
         assert_equal(a[i], i + 1)
 
 
-def test_array_add_string() raises:
+def test_array_concat_string() raises:
     var a: Array[String, 2] = ["hi", "hello"]
     var b: Array[String, 1] = ["hey"]
-    var c = (a^) + (b^)
+    var c = a^.concat(b^)
     assert_equal(c[0], "hi")
     assert_equal(c[1], "hello")
     assert_equal(c[2], "hey")
 
 
-def test_array_add_runs_destructors_once() raises:
+def test_array_concat_runs_destructors_once() raises:
     var destructor_recorder = List[Int]()
     var ptr = Pointer(to=destructor_recorder).as_imm()
     var a: Array[DelRecorder[ptr.origin], 2] = [
@@ -800,20 +800,20 @@ def test_array_add_runs_destructors_once() raises:
         DelRecorder(2, ptr),
         DelRecorder(3, ptr),
     ]
-    var c = (a^) + (b^)
+    var c = a^.concat(b^)
     # The inputs' elements were moved into `c`, not destroyed.
     assert_equal(len(destructor_recorder), 0)
     _ = c^
     assert_equal(destructor_recorder, [0, 1, 2, 3])
 
 
-def test_array_add_explicit_destroy_type() raises:
+def test_array_concat_explicit_destroy_type() raises:
     var a: Array[ExplicitDestroy, 1] = [ExplicitDestroy(0)]
     var b: Array[ExplicitDestroy, 2] = [
         ExplicitDestroy(1),
         ExplicitDestroy(2),
     ]
-    var c = (a^) + (b^)
+    var c = a^.concat(b^)
 
     var destroyed = List[Int]()
 
