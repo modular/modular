@@ -37,16 +37,21 @@ def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,
     x_origin: ImmOrigin,
+    XStorage: TensorStorage,
     OutLayout: TensorLayout,
     out_origin: MutOrigin,
+    OutStorage: TensorStorage,
     GridThwLayout: TensorLayout,
     grid_thw_origin: ImmOrigin,
+    GridThwStorage: TensorStorage,
     vec_width: Int,
     num_threads: Int,
 ](
-    x_tile: TileTensor[dtype, XLayout, x_origin],
-    out_tile: TileTensor[dtype, OutLayout, out_origin],
-    grid_thws: TileTensor[DType.int64, GridThwLayout, grid_thw_origin],
+    x_tile: TileTensor[dtype, XLayout, x_origin, Storage=XStorage],
+    out_tile: TileTensor[dtype, OutLayout, out_origin, Storage=OutStorage],
+    grid_thws: TileTensor[
+        DType.int64, GridThwLayout, grid_thw_origin, Storage=GridThwStorage
+    ],
     kH: Int32,
     kW: Int32,
     D: Int32,
@@ -68,10 +73,14 @@ def tpool_patch_merger_kernel[
         dtype: Element type of the input and output tensors.
         XLayout: Memory layout of the input tensor `x_tile`.
         x_origin: Immutable origin of the input tensor `x_tile`.
+        XStorage: Storage policy of the input tensor `x_tile`.
         OutLayout: Memory layout of the output tensor `out_tile`.
         out_origin: Mutable origin of the output tensor `out_tile`.
+        OutStorage: Storage policy of the output tensor `out_tile`.
         GridThwLayout: Memory layout of the grid dimensions tensor `grid_thws`.
         grid_thw_origin: Immutable origin of the grid dimensions tensor
+            `grid_thws`.
+        GridThwStorage: Storage policy of the grid dimensions tensor
             `grid_thws`.
         vec_width: SIMD vector width for loads and stores along the hidden
             dimension.
@@ -97,6 +106,9 @@ def tpool_patch_merger_kernel[
     comptime assert grid_thws.flat_rank >= 2
     comptime assert x_tile.flat_rank >= 2
     comptime assert out_tile.flat_rank >= 2
+    comptime assert x_tile.element_size == 1
+    comptime assert out_tile.element_size == 1
+    comptime assert grid_thws.element_size == 1
 
     var vid = block_idx.z
     var pat_idx = block_idx.y
@@ -143,7 +155,7 @@ def tpool_patch_merger_kernel[
         var acc = Scalar[dtype](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile[Coord(row, d)]
+            acc += x_tile[Coord(row, d)][0]
         acc /= Scalar[dtype](t)
         out_tile.store(Coord(out_offset + pat_idx, d), acc)
     else:
@@ -223,10 +235,13 @@ def tpool_patch_merger[
             dtype,
             x.LayoutType,
             ImmOrigin(x.origin),
+            x.Storage,
             output.LayoutType,
             output.origin,
+            output.Storage,
             bounds.LayoutType,
             ImmOrigin(bounds.origin),
+            bounds.Storage,
             simd_width,
             num_threads,
         ]
@@ -247,10 +262,13 @@ def tpool_patch_merger[
             dtype,
             x.LayoutType,
             ImmOrigin(x.origin),
+            x.Storage,
             output.LayoutType,
             output.origin,
+            output.Storage,
             bounds.LayoutType,
             ImmOrigin(bounds.origin),
+            bounds.Storage,
             1,
             num_threads,
         ]

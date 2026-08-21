@@ -34,7 +34,7 @@ from std.math import clamp, floor
 
 from std.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TensorStorage, TileTensor
 
 
 # ---------------------------------------------------------------------------
@@ -67,20 +67,33 @@ def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
     XLayoutType: TensorLayout,
     x_origin: ImmOrigin,
+    XStorage: TensorStorage,
     WeightLayoutType: TensorLayout,
     weight_origin: ImmOrigin,
+    WeightStorage: TensorStorage,
     GridLayoutType: TensorLayout,
     grid_origin: ImmOrigin,
+    GridStorage: TensorStorage,
     TimeLayoutType: TensorLayout,
     time_origin: ImmOrigin,
+    TimeStorage: TensorStorage,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    x: TileTensor[dtype, XLayoutType, x_origin],
-    weight: TileTensor[dtype, WeightLayoutType, weight_origin],
-    grid_thws: TileTensor[DType.int64, GridLayoutType, grid_origin],
-    time_weight: TileTensor[DType.float32, TimeLayoutType, time_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
+    x: TileTensor[dtype, XLayoutType, x_origin, Storage=XStorage],
+    weight: TileTensor[
+        dtype, WeightLayoutType, weight_origin, Storage=WeightStorage
+    ],
+    grid_thws: TileTensor[
+        DType.int64, GridLayoutType, grid_origin, Storage=GridStorage
+    ],
+    time_weight: TileTensor[
+        DType.float32, TimeLayoutType, time_origin, Storage=TimeStorage
+    ],
     N: Int32,
     dim: Int32,
     H: Int32,
@@ -114,6 +127,11 @@ def _gpu_kernel[
     comptime assert weight.flat_rank == 3
     comptime assert grid_thws.flat_rank == 2
     comptime assert time_weight.flat_rank == 2
+    comptime assert output.element_size == 1
+    comptime assert x.element_size == 1
+    comptime assert weight.element_size == 1
+    comptime assert grid_thws.element_size == 1
+    comptime assert time_weight.element_size == 1
 
     var pos_idx = block_idx.x
 
@@ -156,7 +174,7 @@ def _gpu_kernel[
     for d in range(thread_idx.x, _dim, block_dim.x):
         var pos_val: Float32
         if no_interp:
-            pos_val = Float32(weight[hh, ww, d])
+            pos_val = Float32(weight[hh, ww, d][0])
         else:
             var val: Float32 = 0
             comptime for i in range(4):
@@ -165,15 +183,15 @@ def _gpu_kernel[
                 comptime for j in range(4):
                     var xp = clamp(iw_floor + j - 1, 0, _W - 1)
                     var wx = _cubic_weight(Float32(j) - 1.0 - dx)
-                    val += Float32(weight[yp, xp, d]) * wy * wx
+                    val += Float32(weight[yp, xp, d][0]) * wy * wx
             pos_val = val
 
         var time_val: Float32 = 0
         if t > 1:
-            time_val = time_weight[tt, d]
+            time_val = time_weight[tt, d][0]
 
         output[pos_idx, d] = Scalar[dtype](
-            Float32(x[pos_idx, d]) + pos_val + time_val
+            Float32(x[pos_idx, d][0]) + pos_val + time_val
         )
 
 
@@ -227,14 +245,19 @@ def learnable_2d_interp_pos_emb[
         dtype,
         output.LayoutType,
         output.origin,
+        output.Storage,
         x.LayoutType,
         ImmOrigin(x.origin),
+        x.Storage,
         weight.LayoutType,
         ImmOrigin(weight.origin),
+        weight.Storage,
         grid_thws.LayoutType,
         ImmOrigin(grid_thws.origin),
+        grid_thws.Storage,
         time_weight.LayoutType,
         ImmOrigin(time_weight.origin),
+        time_weight.Storage,
     ]
     ctx.enqueue_function[kernel](
         output,
