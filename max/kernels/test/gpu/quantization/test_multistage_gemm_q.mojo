@@ -726,8 +726,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @always_inline
-        @__parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {imm}:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
             ](
@@ -750,7 +749,7 @@ def test_quantized[
                 ctx,
             )
 
-        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
+        var nstime = Float64(ctx.execution_time(run_func, nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         print(

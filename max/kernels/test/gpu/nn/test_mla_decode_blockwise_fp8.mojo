@@ -927,16 +927,17 @@ def run_bench_blockwise_fp8[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @always_inline
-    @__copy_capture(
-        out_tt,
-        q_tt,
-        kv_cache,
-        row_offsets_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var out_tt,
+        var q_tt,
+        var kv_cache,
+        var row_offsets_tt,
+        var scalar_args_buf_tt,
+        imm,
+    }:
         flare_mla_decoding[
             rank=3,
             config=MHAConfig[q_type](num_heads, DEPTH),
@@ -958,7 +959,7 @@ def run_bench_blockwise_fp8[
     # Warmup
     kernel_launch(ctx)
 
-    var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+    var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
         nrun
     )
     var mstime = nstime / 1000000

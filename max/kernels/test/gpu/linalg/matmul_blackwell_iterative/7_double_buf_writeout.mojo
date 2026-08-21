@@ -993,8 +993,7 @@ def test_blackwell_kernel_7[
         comptime num_warmup = 100
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             blackwell_kernel_7[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1016,7 +1015,7 @@ def test_blackwell_kernel_7[
         ctx.synchronize()
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12

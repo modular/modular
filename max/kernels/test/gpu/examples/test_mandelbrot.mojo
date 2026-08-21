@@ -97,8 +97,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
-    @__parameter
-    def run_mandelbrot(ctx: DeviceContext) raises:
+    def run_mandelbrot(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
@@ -108,7 +107,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        Float64(ctx.execution_time[run_mandelbrot](1)) / 1_000_000_000.0,
+        Float64(ctx.execution_time(run_mandelbrot, 1)) / 1_000_000_000.0,
     )
 
     ctx.enqueue_copy(out_host, out_device)

@@ -16,7 +16,6 @@ from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-@__parameter
 def _timed_iter_func(context: DeviceContext, iter: Int) raises:
     comptime length = 64
 
@@ -46,7 +45,6 @@ def _timed_iter_func(context: DeviceContext, iter: Int) raises:
         )
 
 
-@__parameter
 def _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
@@ -56,10 +54,10 @@ def test_timing() raises:
     print("Running test_timing(" + ctx.name() + "):")
 
     # Measure the time to run the function 100 times.
-    var elapsed_time = ctx.execution_time[_timed_func](100)
+    var elapsed_time = ctx.execution_time(_timed_func, 100)
     print("Elapsed time for _timed_func: ", Float64(elapsed_time) / 1e9, "s")
 
-    elapsed_time = ctx.execution_time_iter[_timed_iter_func](100)
+    elapsed_time = ctx.execution_time_iter(_timed_iter_func, 100)
     print(
         "Elapsed time for _timed_iter_func: ", Float64(elapsed_time) / 1e9, "s"
     )

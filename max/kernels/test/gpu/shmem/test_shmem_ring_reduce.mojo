@@ -167,8 +167,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        @__parameter
-        def benchmark() raises:
+        def benchmark() raises {imm}:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
@@ -182,7 +181,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             )
             ctx.barrier_all()
 
-        var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
+        var elapsed_ns = dev_ctx.execution_time(benchmark, iters) / iters
         var elapsed_ms = Float64(elapsed_ns) / 1e6
 
         ctx.synchronize()

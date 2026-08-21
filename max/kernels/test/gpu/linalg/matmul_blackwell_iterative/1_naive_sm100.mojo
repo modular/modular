@@ -119,8 +119,7 @@ def test_kernel_1[
         comptime num_warmup = 20
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
                 c.device_tensor[update=False](),
                 a.device_tensor[update=False](),
@@ -135,7 +134,7 @@ def test_kernel_1[
         print("finished warmup")
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12

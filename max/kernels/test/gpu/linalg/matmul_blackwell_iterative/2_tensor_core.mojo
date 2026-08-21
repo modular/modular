@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.sys import argv, size_of
 
@@ -574,8 +575,7 @@ def test_kernel_2[
         comptime num_warmup = 10
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             kernel_2[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16
@@ -594,7 +594,7 @@ def test_kernel_2[
         print("finished warmup")
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
@@ -625,6 +625,10 @@ def test_kernel_2[
             atol=0.0001,
             rtol=rtol,
         )
+
+    # `a_device_lt` / `b_device_lt` are raw pointer views, so past the copies
+    # above nothing else refers to the buffers backing them.
+    __ownership_keepalive(a_device, b_device)
 
 
 def main() raises:

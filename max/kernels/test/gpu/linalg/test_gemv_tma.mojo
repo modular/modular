@@ -372,8 +372,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @always_inline
-        @__parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {imm}:
             gemv_tma(
                 c_device,
                 c_tt,
@@ -391,7 +390,7 @@ def test_gemv_tma[
             run_func(ctx)
         ctx.synchronize()
 
-        var nstime = Float64(ctx.execution_time[run_func](num_runs)) / Float64(
+        var nstime = Float64(ctx.execution_time(run_func, num_runs)) / Float64(
             num_runs
         )
         var sectime = nstime * 1e-9

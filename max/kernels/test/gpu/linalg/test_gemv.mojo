@@ -74,8 +74,7 @@ def run_matvec[
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
-    @__parameter
-    def run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises {imm}:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
         ctx.enqueue_function[kernel](
@@ -90,8 +89,7 @@ def run_matvec[
         )
 
     @always_inline
-    @__parameter
-    def run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises {imm}:
         comptime kernel = gevm_kernel[
             c_type,
             a_type,
@@ -115,12 +113,12 @@ def run_matvec[
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = Float64(ctx.execution_time[run_func_gemv](iterations))
+        nstime = Float64(ctx.execution_time(run_func_gemv, iterations))
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = Float64(ctx.execution_time[run_func_gevm](iterations))
+        nstime = Float64(ctx.execution_time(run_func_gevm, iterations))
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
@@ -231,8 +229,7 @@ def run_matvec_with_epilogue_fn(
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
-    @__parameter
-    def run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = gemv_kernel[
             DType.float32,
             DType.float32,
@@ -253,8 +250,7 @@ def run_matvec_with_epilogue_fn(
         )
 
     @always_inline
-    @__parameter
-    def run_func_gevm(ctx: DeviceContext) raises:
+    def run_func_gevm(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = gevm_kernel[
             DType.float32,
             DType.float32,
@@ -282,12 +278,12 @@ def run_matvec_with_epilogue_fn(
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = Float64(ctx.execution_time[run_func_gemv](iterations))
+        nstime = Float64(ctx.execution_time(run_func_gemv, iterations))
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = Float64(ctx.execution_time[run_func_gevm](iterations))
+        nstime = Float64(ctx.execution_time(run_func_gevm, iterations))
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
@@ -308,8 +304,7 @@ def run_matvec_with_epilogue_fn(
     comptime BLOCK_DIM = 16
 
     @always_inline
-    @__parameter
-    def run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = matmul_kernel[
             DType.float32,
             DType.float32,
@@ -333,7 +328,7 @@ def run_matvec_with_epilogue_fn(
     run_func_naive(ctx)
     ctx.enqueue_copy(c_host_naive, c_device)
 
-    nstime = Float64(ctx.execution_time[run_func_naive](iterations))
+    nstime = Float64(ctx.execution_time(run_func_naive, iterations))
     var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
