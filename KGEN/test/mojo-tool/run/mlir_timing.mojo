@@ -28,6 +28,7 @@
 # change the output of the program.
 # RUN: rm -rf %t.off && env MODULAR_CACHE_DIR=%t.off %mojo %s 2>&1 | FileCheck %s --check-prefix=CHECK_OFF
 
+# CHECK_TIMING: MLIR pass timing (--mlir-timing)
 # CHECK_TIMING: Execution time report
 # CHECK_TIMING-DAG: Import Mojo
 # CHECK_TIMING-DAG: LowerLIT
@@ -36,6 +37,7 @@
 # The report appears once, not again when the command ends.
 # CHECK_TIMING-NOT: Execution time report
 
+# CHECK_LIST: MLIR pass timing (--mlir-timing)
 # CHECK_LIST: Execution time report
 # CHECK_LIST: root
 # CHECK_LIST-DAG: Import Mojo
@@ -45,6 +47,7 @@
 
 # CHECK_OFF: hello from the program
 # CHECK_OFF-NOT: Execution time report
+# CHECK_OFF-NOT: pass timing
 
 
 def main():

@@ -908,6 +908,12 @@ static int build(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
+  // Comes before the CPU device, because the option sets the thread count to
+  // one. Comes before the MLIR timing, so that the program deletes it later
+  // and the MLIR report is the first report.
+  LLVMPassTiming llvmTiming;
+  llvmTiming.configure(args, options::OPT_llvm_timing, options);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 

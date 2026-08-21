@@ -25,10 +25,12 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/IR/PassTimingInfo.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace M;
@@ -675,15 +677,82 @@ KGEN::PassManagerConfigOptions M::MLIRPassTiming::passManagerOptions() {
   return options;
 }
 
+/// The reports of MLIR and of LLVM are this many columns wide.
+static constexpr unsigned kTimingTitleWidth = 79;
+
+/// Writes a title above a timing report. MLIR and LLVM both write a report
+/// that does not name the tool that made it, and a command can ask for both
+/// reports. The title tells the two reports apart.
+static void printTimingReportTitle(StringRef title) {
+  // The title is one line. A report starts with a box of three lines, and a
+  // box above a box looks like one damaged box.
+  std::string prefix = ("===--- " + title + " ").str();
+  unsigned fill = prefix.size() < kTimingTitleWidth - 3
+                      ? kTimingTitleWidth - 3 - prefix.size()
+                      : 0;
+  llvm::errs() << "\n" << prefix << std::string(fill, '-') << "===\n\n";
+}
+
 void M::MLIRPassTiming::finish() {
   if (!manager.isEnabled())
     return;
-  // Stopping the root scope first keeps the total at the compilation, and
-  // leaves the scope empty so that later nesting records nothing.
+  // Stop the root scope first. Then the total covers the compilation, and the
+  // scope is empty, so a later nest operation records nothing.
   root.stop();
+  printTimingReportTitle("MLIR pass timing (--mlir-timing)");
   manager.print();
-  // The destructor prints as well. A manager that is off prints nothing.
+  // The destructor of the manager also prints. A manager that is off prints
+  // nothing.
   manager.setEnabled(false);
+}
+
+void M::LLVMPassTiming::configure(const llvm::opt::InputArgList &args,
+                                  llvm::opt::OptSpecifier timingId,
+                                  KGEN::CompilationOptions &options) {
+  if (!args.hasArg(timingId))
+    return;
+
+  enabled = true;
+  // The legacy pass manager that does the code generation reads this global
+  // variable. `StandardInstrumentations` also reads the variable when it makes
+  // the `TimePassesHandler` for the optimization pipeline. Both of them write
+  // to the same timer groups.
+  llvm::TimePassesIsEnabled = true;
+
+  // The timers of LLVM are global to the process, and a timer of a code
+  // generation region has one object for each name. Two threads that run the
+  // same region thus start one timer two times, and LLVM stops with an
+  // assertion. One thread also keeps one row for each pass, because the report
+  // does not merge the rows of the units that a parallel build makes.
+  options.numThreads = 1;
+}
+
+void M::LLVMPassTiming::finish() {
+  if (!enabled)
+    return;
+  enabled = false;
+  // Stop the collection before the report. Then no more times go into a
+  // report that no one prints.
+  llvm::TimePassesIsEnabled = false;
+
+  // `printAll` includes each group that a pass manager filled: the pass
+  // group, the analysis group, and the code generation groups for the register
+  // allocation and the instruction selection. Collect the groups into a
+  // string, because a group that has no times writes nothing. Then a run that
+  // gets all of its object code from the cache does not show an empty report
+  // below the title.
+  std::string report;
+  llvm::raw_string_ostream reportStream(report);
+  llvm::TimerGroup::printAll(reportStream);
+  // `printAll` does not clear the timers, and a group shows the values that
+  // stay in it when the process deletes the group. Clear the timers to keep
+  // the report to one copy.
+  llvm::TimerGroup::clearAll();
+
+  if (report.empty())
+    return;
+  printTimingReportTitle("LLVM pass timing (--llvm-timing)");
+  llvm::errs() << report;
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(

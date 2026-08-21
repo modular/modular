@@ -211,10 +211,9 @@ ErrorOrSuccess parseTargetOptions(
 /// pass manager gains timing instrumentation.
 class MLIRPassTiming {
 public:
-  // `passManagerOptions` gives the address of `root` to other code. A move
-  // ofExpand commentComment on line R214 this object makes that address
-  // invalid. A copy is also not correct, because each copy prints the same
-  // report again.
+  // `passManagerOptions` gives the address of `root` to other code. A move of
+  // this object makes that address invalid. A copy is also not correct,
+  // because each copy prints the same report again.
   MLIRPassTiming() = default;
   MLIRPassTiming(const MLIRPassTiming &) = delete;
   MLIRPassTiming &operator=(const MLIRPassTiming &) = delete;
@@ -249,10 +248,43 @@ public:
 private:
   mlir::DefaultTimingManager manager;
   // `root` comes after the manager in this declaration. Thus the program
-  // destroys `root` first. The manager prints the report when the program
   // destroys `root` first, and the manager sees a scope that is not active if
   // it prints from its own destructor.
   mlir::TimingScope root;
+};
+
+/// This class turns on the pass timing of LLVM for one compiler command.
+/// `StandardInstrumentations` and the legacy pass manager already install the
+/// instrumentation that collects the times. LLVM keeps the times in timer
+/// groups that are global to the process. Therefore this class only starts the
+/// collection and prints the report.
+class LLVMPassTiming {
+public:
+  // The destructor prints the report and changes state that is global to the
+  // process. A copy or a move of this object prints the report again.
+  LLVMPassTiming() = default;
+  LLVMPassTiming(const LLVMPassTiming &) = delete;
+  LLVMPassTiming &operator=(const LLVMPassTiming &) = delete;
+  LLVMPassTiming(LLVMPassTiming &&) = delete;
+  LLVMPassTiming &operator=(LLVMPassTiming &&) = delete;
+
+  /// Turns on the timing if the command has the `--llvm-timing` option. Also
+  /// sets the compilation to one thread, because the timers of LLVM are
+  /// global to the process and are not safe for more than one thread. Call
+  /// this before the program makes the CPU device from `options`.
+  void configure(const llvm::opt::InputArgList &args,
+                 llvm::opt::OptSpecifier timingId,
+                 KGEN::CompilationOptions &options);
+
+  /// Prints the report to stderr and clears the timers. Does nothing if the
+  /// timing is off. Does nothing on a second call. The destructor calls this
+  /// function for a command that ends with the compilation.
+  void finish();
+
+  ~LLVMPassTiming() { finish(); }
+
+private:
+  bool enabled = false;
 };
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,

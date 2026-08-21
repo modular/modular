@@ -146,6 +146,21 @@ def mlir_timing: Flag<["--", "-"], "mlir-timing">,
     "run, so a warm cache reports the parse and nothing else; point "
     "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">;
 
+def llvm_timing: Flag<["--", "-"], "llvm-timing">,
+  Group<CompilationOptionGroup>, Index<20>, Flags<[HelpHidden]>,
+  HelpText<
+    "Measures the time of each LLVM pass and analysis. Writes the LLVM report "
+    "to stderr when the compilation is complete. The timers of LLVM are "
+    "global to the process and are not safe for more than one thread. "
+    "Therefore this option makes the compiler use one thread, and it "
+    "overrides `--num-threads`. The report then shows the time that LLVM "
+    "uses, but it does not show the cost of a parallel build. LLVM does not "
+    "get the object code that the compilation cache keeps from an earlier "
+    "build. Therefore the report is empty if the cache has the object code. "
+    "Set `MODULAR_CACHE_DIR` to an empty directory to measure a full "
+    "pipeline. The report holds the passes of the host and the passes of "
+    "each `compile_offload` target together.">;
+
 defm mlir_timing_display: CommandOptionHidden<["--", "-"],
   "mlir-timing-display",
   CompilationOptionGroup, Index<19>, MetaVarName<"MODE">,

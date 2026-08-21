@@ -270,15 +270,14 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
-                         MLIRContext &context,
-                         const CompilationOptions &options,
-                         OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-                         ArrayRef<const char *> arguments,
-                         M::Context &maxContext,
-                         ArrayRef<std::string> additionalLibraries,
-                         MLIRPassTiming &timing) {
-  PassManagerConfigOptions pmOptions = timing.passManagerOptions();
+static int
+executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
+              MLIRContext &context, const CompilationOptions &options,
+              OwningOpRef<ModuleOp> module, TargetInfoAttr target,
+              ArrayRef<const char *> arguments, M::Context &maxContext,
+              ArrayRef<std::string> additionalLibraries,
+              MLIRPassTiming &mlirTiming, LLVMPassTiming &llvmTiming) {
+  PassManagerConfigOptions pmOptions = mlirTiming.passManagerOptions();
 
   // Compile the Mojo module to the end of the KGEN pipeline.
   KGENCompiler compiler(context, options, pmOptions);
@@ -333,7 +332,8 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
 
   // Compilation is over, so report the pass timings now: the program below
   // may run for a long time, and may never return here at all.
-  timing.finish();
+  mlirTiming.finish();
+  llvmTiming.finish();
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
@@ -373,6 +373,12 @@ static int run(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
+  // Comes before the CPU device, because the option sets the thread count to
+  // one. Comes before the MLIR timing, so that the program deletes it later
+  // and the MLIR report is the first report.
+  LLVMPassTiming llvmTiming;
+  llvmTiming.configure(args, options::OPT_llvm_timing, options);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
@@ -391,8 +397,6 @@ static int run(const State &subcommandState) {
                                           options.warningsAsErrors);
 
   // The timing shows the parse, the passes, and the code generation.
-  // `executeModule` prints the report once the compilation is over. The
-  // destructor covers the paths that end before that point.
   MLIRPassTiming timing;
   if (ErrorOrSuccess err = timing.configure(args, options::OPT_mlir_timing,
                                             options::OPT_mlir_timing_display))
@@ -451,7 +455,7 @@ static int run(const State &subcommandState) {
   int result = executeModule(
       state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
-      *ctx, additionalLibraries, timing);
+      *ctx, additionalLibraries, timing, llvmTiming);
   if (result != EXIT_SUCCESS)
     return result;
 
