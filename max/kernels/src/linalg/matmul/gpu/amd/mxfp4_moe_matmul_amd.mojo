@@ -44,7 +44,7 @@ from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor, PointerStorage
 from layout._utils import make_amd_buffer_resource
 from layout.tile_tensor import stack_allocation
 from layout.tile_layout import col_major, row_major
@@ -188,13 +188,15 @@ struct MXFP4MoERoutedMatmul[
         N: Int,
         N_padded_scale: Int,
     ](
-        c: TileTensor[mut=True, ...],
-        a_tt: TileTensor[DType.uint8, ...],
-        b_pre_tt: TileTensor[DType.uint8, ...],
-        sfa_pre_tt: TileTensor[DType.uint8, ...],
-        sfb_pre_tt: TileTensor[DType.uint8, ...],
-        sorted_token_ids: TileTensor[DType.uint32, ...],
-        expert_ids: TileTensor[DType.int32, ...],
+        c: TileTensor[mut=True, Storage=PointerStorage[], ...],
+        a_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        b_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        sfa_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        sfb_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        sorted_token_ids: TileTensor[
+            DType.uint32, Storage=PointerStorage[], ...
+        ],
+        expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
         num_tokens: Int32,
         size_expert_ids: Int32,
     ):

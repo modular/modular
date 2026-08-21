@@ -116,7 +116,7 @@ from std.sys import get_defined_bool, get_defined_int, size_of
 from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, PointerStorage
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 from layout._utils import make_amd_buffer_resource
@@ -417,7 +417,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
     def _load_q_lds_exact[
         layout: TensorLayout,
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
         q_lds: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         scale_log2e: Float32,

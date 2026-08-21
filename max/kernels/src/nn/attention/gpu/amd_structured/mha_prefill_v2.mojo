@@ -117,7 +117,7 @@ from std.sys.intrinsics import (
 )
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, PointerStorage
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
@@ -467,10 +467,10 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     def load_q[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
-    ) -> RegTile[
-        Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin
-    ]:
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
+    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin]:
         """Loads the warp's Q sub-tile from gmem into a row_l register
         tile via `RegTileLoader`.
 
@@ -569,7 +569,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     def _load_q_and_scale[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
         scale_log2e: Float32,
     ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin]:
         """Loads Q from gmem and (when `Self.prescale_q` is True) prescales
