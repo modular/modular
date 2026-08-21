@@ -639,6 +639,53 @@ ErrorOrSuccess M::parseTargetOptions(
   return success();
 }
 
+ErrorOrSuccess
+M::MLIRPassTiming::configure(const llvm::opt::InputArgList &args,
+                             llvm::opt::OptSpecifier timingId,
+                             llvm::opt::OptSpecifier displayModeId) {
+  StringLiteral kTree = "tree";
+  StringLiteral kList = "list";
+  // The code reads the display mode also when the timing is off. An argument
+  // that stays unclaimed makes `State::assertNoUnusedArguments` fail. An
+  // incorrect mode is also an error when the compiler does not use the mode.
+  StringRef displayMode = args.getLastArgValue(displayModeId, kTree);
+  if (!llvm::is_contained({kTree, kList}, displayMode)) {
+    return Error(llvm::formatv(
+        "invalid mlir-timing-display '{0}', expected one of: `{1}` (the "
+        "default value), or `{2}`",
+        displayMode, kTree, kList));
+  }
+
+  if (!args.hasArg(timingId))
+    return success();
+
+  manager.setEnabled(true);
+  if (displayMode == kList)
+    manager.setDisplayMode(mlir::DefaultTimingManager::DisplayMode::List);
+  root = manager.getRootScope();
+  return success();
+}
+
+KGEN::PassManagerConfigOptions M::MLIRPassTiming::passManagerOptions() {
+  KGEN::PassManagerConfigOptions options;
+  // The scope stays empty when the timing is off. Then `configurePassManager`
+  // uses the time-trace manager, which the trace builds need.
+  if (manager.isEnabled())
+    options.timingScope = &root;
+  return options;
+}
+
+void M::MLIRPassTiming::finish() {
+  if (!manager.isEnabled())
+    return;
+  // Stopping the root scope first keeps the total at the compilation, and
+  // leaves the scope empty so that later nesting records nothing.
+  root.stop();
+  manager.print();
+  // The destructor prints as well. A manager that is off prints nothing.
+  manager.setEnabled(false);
+}
+
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
@@ -647,6 +694,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
+    mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // Mutual exclusion check for fixit flags.
@@ -655,9 +703,11 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
                  "--experimental-export-fixit simultaneously");
   }
 
-  // We don't allow users to configure the time profiler.
-  mlir::DefaultTimingManager timingManager;
-  mlir::TimingScope timing = timingManager.getRootScope();
+  // A command with the `--mlir-timing` option holds the timing manager. Thus
+  // the report shows all of the compilation, not only the parse. The other
+  // commands use an empty scope, which records no data.
+  mlir::TimingScope disabledScope;
+  mlir::TimingScope &timing = timingScope ? *timingScope : disabledScope;
 
   DialectRegistry registry;
   registerAllKGENDialects(registry);

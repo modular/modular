@@ -137,6 +137,23 @@ defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
       "the depth of compile time recursion exceeds this value.">>;
 
+def mlir_timing: Flag<["--", "-"], "mlir-timing">,
+  Group<CompilationOptionGroup>, Index<18>, Flags<[HelpHidden]>,
+  HelpText<
+    "Times each MLIR pass and analysis, printing a report to stderr when "
+    "compilation finishes, which for `mojo run` is before the program starts. "
+    "Passes that the compilation cache serves from an earlier build never "
+    "run, so a warm cache reports the parse and nothing else; point "
+    "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">;
+
+defm mlir_timing_display: CommandOptionHidden<["--", "-"],
+  "mlir-timing-display",
+  CompilationOptionGroup, Index<19>, MetaVarName<"MODE">,
+  HelpText<
+    "How `--mlir-timing` groups its report. `tree` (the default) nests "
+    "timings by pipeline structure; `list` aggregates per pass name, sorted "
+    "by total time.">>;
+
 //===----------------------------------------------------------------------===//
 // Linker Options
 //===----------------------------------------------------------------------===//

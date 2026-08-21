@@ -276,9 +276,12 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
                          OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
                          M::Context &maxContext,
-                         ArrayRef<std::string> additionalLibraries) {
+                         ArrayRef<std::string> additionalLibraries,
+                         MLIRPassTiming &timing) {
+  PassManagerConfigOptions pmOptions = timing.passManagerOptions();
+
   // Compile the Mojo module to the end of the KGEN pipeline.
-  KGENCompiler compiler(context, options);
+  KGENCompiler compiler(context, options, pmOptions);
   if (ErrorOrSuccess err = compiler.runKGENPipeline(*module, target))
     return state.reportError(err.getError());
 
@@ -289,8 +292,9 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
     return state.reportError("module does not define a `main` function");
 
   // Create the object compiler and compile the module to an archive.
-  auto objCompilerOr = ObjectCompiler::create(kMojoCacheBaseDirName, options,
-                                              /*isJIT=*/true, context);
+  auto objCompilerOr =
+      ObjectCompiler::create(kMojoCacheBaseDirName, options,
+                             /*isJIT=*/true, context, pmOptions);
   if (failed(objCompilerOr))
     return state.reportError(objCompilerOr.getError());
   ObjectCompiler &objCompiler = **objCompilerOr;
@@ -326,6 +330,10 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
   ErrorOr<CompiledFunc> funcOr = engine.lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
+
+  // Compilation is over, so report the pass timings now: the program below
+  // may run for a long time, and may never return here at all.
+  timing.finish();
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
@@ -382,12 +390,20 @@ static int run(const State &subcommandState) {
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);
 
+  // The timing shows the parse, the passes, and the code generation.
+  // `executeModule` prints the report once the compilation is over. The
+  // destructor covers the paths that end before that point.
+  MLIRPassTiming timing;
+  if (ErrorOrSuccess err = timing.configure(args, options::OPT_mlir_timing,
+                                            options::OPT_mlir_timing_display))
+    return state.reportError(err.getError());
+
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
+      options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceManager, parserConfig, ts);
       });
@@ -435,7 +451,7 @@ static int run(const State &subcommandState) {
   int result = executeModule(
       state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
-      *ctx, additionalLibraries);
+      *ctx, additionalLibraries, timing);
   if (result != EXIT_SUCCESS)
     return result;
 
