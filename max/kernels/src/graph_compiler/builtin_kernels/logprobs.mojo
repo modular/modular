@@ -245,8 +245,7 @@ struct LogProbabilitiesRagged:
 
         comptime if is_cpu[target]():
 
-            @__parameter
-            def lp_idx_kernel(output_token_index: Int) -> None:
+            def lp_idx_kernel(output_token_index: Int) {imm} -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
@@ -259,8 +258,10 @@ struct LogProbabilitiesRagged:
                     lp_output_offsets=lp_output_offsets,
                 )
 
-            parallelize[lp_idx_kernel](
-                num_output_tokens, ctx=Optional[DeviceContext](ctx)
+            parallelize(
+                lp_idx_kernel,
+                num_output_tokens,
+                ctx=Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
 

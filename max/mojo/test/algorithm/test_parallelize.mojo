@@ -68,10 +68,8 @@ def test_parallelize() raises:
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @__parameter
-    @__copy_capture(vector, chunk_size)
     @always_inline
-    def parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int) {var vector, var chunk_size}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
@@ -81,36 +79,34 @@ def test_parallelize() raises:
 
         map(end - start, add_two)
 
-    parallelize[parallel_fn](num_work_items)
+    parallelize(parallel_fn, num_work_items)
 
 
-@__parameter
 def printme(i: Int):
     print(i, end="")
 
 
 def test_parallelize_no_workers() raises:
     # With ASSERT=warn, this prints a warning but doesn't abort.
-    parallelize[printme](10, 0)
+    parallelize(printme, 10, 0)
 
 
 def test_parallelize_negative_workers() raises:
     # With ASSERT=warn, this prints a warning but doesn't abort.
-    parallelize[printme](10, -1)
+    parallelize(printme, 10, -1)
 
 
 def test_parallelize_negative_work() raises:
     # This should do nothing
-    parallelize[printme](-1, 4)
+    parallelize(printme, -1, 4)
 
 
 def test_parallelize_over_rows_zero_work() raises:
     # This should do nothing
-    @__parameter
-    def noop(start: Int, end: Int):
+    def noop(start: Int, end: Int) {}:
         pass
 
-    parallelize_over_rows[noop](IndexList[1](0), 0, 1)
+    parallelize_over_rows(noop, IndexList[1](0), 0, 1)
 
 
 def test_parallelize_unified() raises:
@@ -206,13 +202,12 @@ def test_parallelize_over_rows() raises:
     for i in range(num_rows * row_size):
         data[i] = Scalar[DType.int](0)
 
-    @__parameter
-    def process_rows(start_row: Int, end_row: Int):
+    def process_rows(start_row: Int, end_row: Int) {imm}:
         for row in range(start_row, end_row):
             for col in range(row_size):
                 data[row * row_size + col] = Scalar[DType.int](row + 1)
 
-    parallelize_over_rows[process_rows](shape, 1, 1)
+    parallelize_over_rows(process_rows, shape, 1, 1)
 
     for row in range(num_rows):
         for col in range(row_size):

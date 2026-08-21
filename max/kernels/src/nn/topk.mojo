@@ -282,9 +282,7 @@ def _top_k_cpu[
     comptime assert k.T.flat_rank == 1
     var shape = coord_to_index_list(input.layout.shape_coord())
 
-    @__copy_capture(shape)
-    @__parameter
-    def process_rows(start_row: Int, end_row: Int):
+    def process_rows(start_row: Int, end_row: Int) {var shape, imm}:
         # Allocate the index list without initializing its elements.
         var idxs = List[Int64](unsafe_uninit_length=shape[axis])
 
@@ -378,8 +376,8 @@ def _top_k_cpu[
                     idxs[i]
                 )
 
-    parallelize_over_rows[process_rows](
-        shape, axis, parallelism_grain_size, ctx
+    parallelize_over_rows(
+        process_rows, shape, axis, parallelism_grain_size, ctx
     )
 
 

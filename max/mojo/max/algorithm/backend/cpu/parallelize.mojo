@@ -114,51 +114,6 @@ def sync_parallelize[
 
 @always_inline
 def parallelize[
-    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
-](num_work_items: Int, ctx: Optional[DeviceContext] = None):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
-    returns when all are complete.
-
-    Parameters:
-        origins: The capture origins.
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-        ctx: Optional CPU DeviceContext to execute the work on.
-    """
-
-    def func_unified(i: Int):
-        func(i)
-
-    _parallelize_impl(func_unified, num_work_items, parallelism_level(ctx), ctx)
-
-
-@always_inline
-def parallelize[
-    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
-](num_work_items: Int, num_workers: Int, ctx: Optional[DeviceContext] = None):
-    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
-    returns when all are complete.
-
-    Parameters:
-        origins: The capture origins.
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-        num_workers: The number of workers to use for execution.
-        ctx: Optional CPU DeviceContext to execute the work on.
-    """
-
-    def func_unified(i: Int):
-        func(i)
-
-    _parallelize_impl(func_unified, num_work_items, num_workers, ctx)
-
-
-@always_inline
-def parallelize[
     FuncType: def(Int) -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
@@ -271,32 +226,6 @@ def _get_num_workers(
 # ===-----------------------------------------------------------------------===#
 # parallelize_over_rows
 # ===-----------------------------------------------------------------------===#
-
-
-def parallelize_over_rows[
-    func: def(Int, Int) capturing[_] -> None
-](
-    shape: IndexList,
-    axis: Int,
-    grain_size: Int,
-    ctx: Optional[DeviceContext] = None,
-):
-    """Parallelize func over non-axis dims of shape.
-
-    Parameters:
-        func: Function to call on range of rows.
-
-    Args:
-        shape: Shape to parallelize over.
-        axis: Rows are slices along the axis dimension of shape.
-        grain_size: The minimum number of elements to warrant using an additional thread.
-        ctx: Optional CPU DeviceContext to execute the work on.
-    """
-
-    def func_unified(start: Int, end: Int):
-        func(start, end)
-
-    parallelize_over_rows(func_unified, shape, axis, grain_size, ctx)
 
 
 def parallelize_over_rows[
