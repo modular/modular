@@ -19,6 +19,7 @@ import functools
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -70,6 +71,25 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+
+
+@dataclass(frozen=True)
+class RetrievedPipeline:
+    """Everything :meth:`PipelineRegistry.retrieve_factory` resolves.
+
+    Carries the tokenizer, a factory that constructs the pipeline, and the
+    memory plan the pipeline was sized against.
+    """
+
+    tokenizer: PipelineTokenizer[Any, Any, Any]
+    """Tokenizer paired with the pipeline."""
+
+    factory: Callable[[], PipelineTypes]
+    """Zero-argument callable that constructs the pipeline instance."""
+
+    memory_plan: MemoryPlan
+    """Memory plan (batch size, sequence length, and cache budgets) the
+    pipeline was sized against."""
 
 
 def get_pipeline_for_task(
@@ -629,11 +649,8 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[
-        PipelineTokenizer[Any, Any, Any],
-        Callable[[], PipelineTypes],
-    ]:
-        """Retrieves the tokenizer and a factory that creates the pipeline instance."""
+    ) -> RetrievedPipeline:
+        """Retrieves the tokenizer, pipeline factory, and memory plan for the config."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
@@ -790,7 +807,11 @@ class PipelineRegistry:
                 tokenizer,
             )
 
-            return typed_tokenizer, pipeline_factory
+            return RetrievedPipeline(
+                tokenizer=typed_tokenizer,
+                factory=pipeline_factory,
+                memory_plan=memory_plan,
+            )
 
         # Load HuggingFace Config for text generation and other tasks
         huggingface_config = pipeline_config.model.huggingface_config
@@ -872,7 +893,11 @@ class PipelineRegistry:
                 "tokenizer.eos_token_ids is empty, tokenizer configuration is incomplete."
             )
 
-        return tokenizer, pipeline_factory
+        return RetrievedPipeline(
+            tokenizer=tokenizer,
+            factory=pipeline_factory,
+            memory_plan=memory_plan,
+        )
 
     def retrieve_context_type(
         self,
@@ -984,10 +1009,10 @@ class PipelineRegistry:
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
         """Retrieves the tokenizer and an instantiated pipeline for the args."""
-        tokenizer, pipeline_factory = self.retrieve_factory(
+        retrieved = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
-        return tokenizer, pipeline_factory()
+        return retrieved.tokenizer, retrieved.factory()
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""

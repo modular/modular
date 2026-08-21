@@ -640,7 +640,7 @@ var s = String(template) # explicitly construct a string
 `TString`s can add arbitrary expressions within the replacement fields:
 
 ```mojo
-var list = [1, 2, 3]
+var list: List[Int] = [1, 2, 3]
 print(t"{list[0] + list[1]}") # 3
 ```
 
@@ -803,7 +803,7 @@ integer literals, Mojo creates a `List[Int]`.
 
 ```mojo
 # Inferred type == List[Int]
-var l1 = [1, 2, 3, 4]
+var l1: List = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
@@ -833,7 +833,7 @@ ability to append to the list, pop items out of the list, and access list items
 using subscript notation.
 
 ```mojo
-var list = [2, 3, 5]
+var list: List[Int] = [2, 3, 5]
 list.append(7)
 list.append(11)
 print("Popping last item from list: ", list.pop())
@@ -855,7 +855,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
 
   ```mojo
   # List literal, element type infers to Int.
-  var nums = [2, 3, 5]
+  var nums: List = [2, 3, 5]
   ```
 
   You can also use an explicit type if you want a specific element type:
@@ -885,7 +885,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   item:
 
 ```mojo
-var list = [2, 3, 4]
+var list: List[Int] = [2, 3, 4]
 for item in list:
       print(item, end=", ")
 ```
@@ -898,7 +898,7 @@ If you would like to mutate the elements of the list, capture the reference to
 the element with `ref` instead of making a copy:
 
 ```mojo
-var list = [2, 3, 4]
+var list: List[Int] = [2, 3, 4]
 for ref item in list:     # Capture a ref to the list element
       print(item, end=", ")
       item = 0  # Mutates the element inside the list

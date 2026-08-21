@@ -6,11 +6,11 @@ description: Enable structured output with your GenAI deployments for predictabl
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-MAX supports the generation of structured output using
-[llguidance](https://github.com/guidance-ai/llguidance) as a backend. Structured
-output, also sometimes referred to as constrained decoding, allows users to
-enforce specific output formats, ensuring structured and predictable responses
-from a model.
+MAX supports structured output using
+[xgrammar](https://github.com/mlc-ai/xgrammar) as the default backend, and you
+can switch to [llguidance](https://github.com/guidance-ai/llguidance).
+Structured output, also called constrained decoding, lets you enforce specific
+output formats so a model returns structured, predictable responses.
 
 ## When to use structured output
 
@@ -35,6 +35,17 @@ max serve \
   --model "google/gemma-4-31B-it" \
   --enable-structured-output
 ```
+
+You can tune structured output behavior with the following options:
+
+- `--structured-output-backend`: Selects the grammar backend for constrained
+  decoding, either `xgrammar` (the default) or `llguidance`. Some architectures
+  declare their own default, but an explicit value on the command line
+  overrides it.
+- `--structured-output-any-whitespace`: Controls whether structured output
+  grammars accept whitespace between JSON tokens. The default, `false`,
+  constrains the model to compact JSON, which mitigates runaway output on some
+  models. Pass `true` to allow whitespace-tolerant JSON.
 
 :::note
 

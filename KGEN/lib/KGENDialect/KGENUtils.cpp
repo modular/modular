@@ -442,13 +442,16 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
 
 void KGEN::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
   p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
 }
 
 ParseResult KGEN::parseTraitSymbol(AsmParser &p, TraitSymbolAttr &trait) {
   SymbolRefAttr symbol;
-  if (p.parseAttribute(symbol))
+  SmallVector<TypedAttr> paramValues;
+  if (p.parseAttribute(symbol) || parseParameterValues(p, paramValues))
     return failure();
-  trait = TraitSymbolAttr::get(symbol);
+
+  trait = TraitSymbolAttr::get(symbol, paramValues);
   return success();
 }
 

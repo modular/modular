@@ -25,6 +25,7 @@
 #include "KGEN/MojoParser/MojoDiags.h"
 
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -49,6 +50,7 @@ struct Operand;
 class FileModuleOp;
 class FnOp;
 class FnTypeGeneratorType;
+class IREmitter;
 class LexerCursor;
 class LookupResult;
 class LookupAllResult;
@@ -484,6 +486,10 @@ public:
     bool isSourceModule() const {
       return kind == ModuleSpec::Kind::SourceModule;
     }
+
+    /// The canonical form of `path`, with symlinks resolved: the identity of
+    /// the entity this spec names.
+    std::string canonicalPath() const;
   };
 
   /// Resolve the absolute path for a given module name. Returns nullopt if the
@@ -684,6 +690,11 @@ public:
   ///         ...
   ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                    FnTypeGeneratorType sig);
+
+  /// Get or create the universal closure trait, we don't care about the
+  /// signatures and we can adapt the trait to any signature.
+  ASTDecl *getUniversalParametricClosureTrait();
+
   /// Get or create a struct that defines conformance of targetTrait in terms of
   /// sourceTrait.
   ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
@@ -759,6 +770,10 @@ public:
                                            ArrayRef<TypedAttr> paramValues);
 
 private:
+  /// The physical entity a module or package is read out of, shared by every
+  /// binding of it.
+  struct ModuleOrigin;
+
   /// The internal state of an imported module or package.
   struct ModuleState;
 
@@ -810,6 +825,20 @@ private:
   /// the module could not be found.
   ModuleState &importRelativeModuleState(const ImportPath &path,
                                          ASTDecl *parentDecl, llvm::SMLoc loc);
+
+  /// Returns the ModuleOrigin that the spec names, shared by every binding of
+  /// the same entity.
+  ///
+  /// The bound name is in the given parent decl's scope. An origin can carry
+  /// one symbol path only, since re-anchoring an artefact rewrites its
+  /// references to a single path. Binding one entity under two names is a
+  /// dual-mount error.
+  ///
+  /// Null is a success: a namespace spans several import roots, so names no
+  /// single entity.
+  ErrorOr<ModuleOrigin *> getOrCreateModuleOrigin(const ModuleSpec &spec,
+                                                  StringRef boundName,
+                                                  ASTDecl &parentDecl);
 
   /// Shared core of createModuleState and createDeferredModuleState: create the
   /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies

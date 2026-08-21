@@ -4921,6 +4921,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
+  argList.isExperimentalParamTrait = isExperimentalParamTrait;
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 
   TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,
@@ -4950,9 +4951,15 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       tcSignature.implicitOriginDecls);
 
   if (argList.isClosureFunctionType()) {
+    ASTDecl *moduleDecl =
+        emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>();
+    if (argList.isExperimentalParamTrait) {
+      TraitType traitType =
+          emitter.bindParamsToClosureTraitFromSig(this, signature);
+      return emitter.emitResult(ASTType(traitType), this, dest);
+    }
     ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
-        getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
-        signature);
+        getLoc(), *moduleDecl, signature);
     Type traitType = trait->getTypeDeclSelf().extractMetaType();
     return emitter.emitResult(ASTType(traitType), this, dest);
   }

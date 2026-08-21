@@ -11,11 +11,13 @@ modular_py_library(
     ),
     deps = [
         requirement("fastapi"),
+        requirement("openai"),
         requirement("pydantic"),
         requirement("sse-starlette"),
         requirement("uvicorn"),
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve/schemas",
     ],

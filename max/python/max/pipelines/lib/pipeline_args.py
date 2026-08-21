@@ -124,9 +124,12 @@ class PipelineArgs(ConfigFileModel):
 
     Call :meth:`PipelineConfig.from_args` to obtain a fully-constructed
     :class:`PipelineConfig` ready for architecture-driven resolution.
+
+    Instances are immutable: assigning to a field after construction raises
+    a pydantic ``ValidationError``.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     # ------------------------------------------------------------------ #
     # Top-level pipeline fields

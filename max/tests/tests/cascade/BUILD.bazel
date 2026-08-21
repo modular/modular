@@ -81,6 +81,48 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_chat_parser",
+    size = "medium",
+    srcs = ["test_chat_parser.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/experimental/cascade/pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_real_tool_parsers",
+    size = "medium",
+    srcs = ["test_real_tool_parsers.py"],
+    # Importing the Kimi/MiniMax tool parsers pulls max.pipelines.lib, which
+    # alone can blow the 300s budget on shared BuildBuddy macOS workers (times
+    # out in pytest collection)
+    # However we can't disable this on mac-os because mac-os is our primary developer platform for this code.
+    # TODO - find a different way to fix the BB macOS runner
+    deps = [
+        "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/minimax_m2",
+    ],
+)
+
+modular_py_test(
+    name = "test_cascade_tool_calling",
+    size = "small",
+    srcs = ["test_cascade_tool_calling.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/serve",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_open_responses",
     size = "small",
     srcs = ["test_open_responses.py"],
@@ -188,14 +230,17 @@ modular_py_test(
     name = "test_all_pipelines",
     size = "medium",
     srcs = ["test_all_pipelines.py"],
+    # Config construction must not reach the hub: these cases build a config
+    # for a placeholder repo. Linux CI passes HF_HUB_OFFLINE=1 for the whole
+    # invocation (ci/default/test.sh); the macOS lane does not, so pin it here.
+    env = {"HF_HUB_OFFLINE": "1"},
     tags = ["skip-external-ci"],
     # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
     # budget on the shared BuildBuddy macOS workers (times out in pytest
-    # collection).
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    # collection);
+    # However we can't disable this on mac-os because mac-os is our primary
+    # developer platform for this code.
+    # TODO - find a different way to make the BB macOS runner pretend to be green.
     deps = [
         # all_pipelines brings every architecture (llama3 resolves SmolLM at
         # runtime); pipelines provides the CommonTextGenPipeline class.
@@ -203,6 +248,7 @@ modular_py_test(
         "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("pytest-asyncio"),
     ],
 )
@@ -218,12 +264,10 @@ modular_py_test(
     ],
     # Importing the Llama architecture pulls max.pipelines.lib, which alone can
     # blow the 300s budget on the shared BuildBuddy macOS workers (times out in
-    # pytest collection); the layering invariant is platform-independent, so
-    # run on Linux only.
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    # pytest collection);
+    # However we can't disable this on mac-os because mac-os is our primary
+    # developer platform for this code.
+    # TODO - find a different way to make the BB macOS runner pretend to be green.
     deps = [
         "//max/python/max/pipelines/architectures/llama3",
     ],
@@ -259,7 +303,6 @@ modular_py_test(
     deps = [
         "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/cascade/pipelines",
-        requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
     ],

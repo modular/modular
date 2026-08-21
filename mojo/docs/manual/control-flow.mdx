@@ -254,7 +254,7 @@ The following shows an example of iterating over a Mojo
 [`List`](/docs/std/collections/list/List/).
 
 ```mojo
-var states = ["California", "Hawaii", "Oregon"]
+var states: List[String] = ["California", "Hawaii", "Oregon"]
 for state in states:
     print(state)
 ```
@@ -330,7 +330,7 @@ create a reference binding that matches the element reference.
 This can be useful if you want to mutate the value in the collection:
 
 ```mojo
-var values = [1, 4, 7, 3, 6, 11]
+var values: List[Int] = [1, 4, 7, 3, 6, 11]
 for ref value in values:
     if value % 2 != 0:
         value -= 1
@@ -430,7 +430,7 @@ terminates the `for` loop.
 ```mojo
 from std.collections import List
 
-var animals = ["cat", "aardvark", "hippopotamus", "dog"]
+var animals: List[String] = ["cat", "aardvark", "hippopotamus", "dog"]
 for animal in animals:
     if animal == "dog":
         print("Found a dog")

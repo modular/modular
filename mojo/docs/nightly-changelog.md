@@ -114,6 +114,37 @@ This version is still a work in progress.
   timed call of the benchmarked function, so state no longer has to be shuttled
   through mutable captures.
 
+- `Bencher.bench_with_input()` now takes its benchmark closure as a runtime
+  argument. Its register-passable overload accepts both non-raising and raising
+  closures.
+
+- `Bencher.iter_custom()` now only takes its closure as a runtime argument. The
+  compile-time parameter form has been removed.
+
+- `std.python.numpy` now handles multi-dimensional NumPy arrays, not just 1-D:
+
+  - `copy_to_numpy_tensor()` copies a `Span` into a new NumPy array of a given
+    shape. The shape is a `Coord`, so extents may be compile-time (`Idx[N]`) or
+    runtime (`Int`) in any mix.
+
+  - `from_numpy_tensor()` borrows an N-D C-contiguous array as a `NumPyView`,
+    which holds the buffer and its shape together and indexes as
+    `view[i, j]`.
+
+  ```mojo
+  from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
+  from std.utils.coord import Coord, Idx
+
+  var values: List[Float64] = [0, 1, 2, 3, 4, 5]
+  var arr = copy_to_numpy_tensor(values, Coord(Idx[2], Idx[3]))
+
+  var view = from_numpy_tensor[DType.float64, 2](arr)
+  var value = view[1, 2]
+  ```
+
+  The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
+  unchanged.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.

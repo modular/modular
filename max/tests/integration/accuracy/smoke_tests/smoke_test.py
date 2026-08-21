@@ -31,7 +31,7 @@ Note that if you're running this script inside bazel, only available for max-ci,
 then the virtualenvs are not needed.
 """
 
-import csv
+import json
 import logging
 import os
 import shlex
@@ -194,38 +194,6 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
-# The lock lives with the cache populator that consumes it, which is internal
-# and therefore absent from the open-source tree. Walking up from this file
-# finds it in a source checkout and in bazel runfiles alike (the internal
-# smoke-test target pulls it in as data); externally it is simply missing and
-# revisions go unpinned.
-_HF_REPO_LOCK_RELPATH = (
-    "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
-)
-
-
-def _find_hf_repo_lock() -> Path | None:
-    for base in Path(__file__).resolve().parents:
-        tsv = base / _HF_REPO_LOCK_RELPATH
-        if tsv.is_file():
-            return tsv
-    return None
-
-
-@cache
-def _load_hf_repo_lock() -> dict[str, str]:
-    """Read hf-repo-lock.tsv, return {lowercase_repo: revision} mapping."""
-    tsv = _find_hf_repo_lock()
-    if tsv is None:
-        logger.warning("hf-repo-lock.tsv not found, skipping revision pinning")
-        return {}
-    db = {}
-    with open(tsv) as f:
-        for row in csv.DictReader(f, dialect="excel-tab"):
-            db[row["hf_repo"].lower()] = row["revision"]
-    return db
-
-
 def _resolve_recipe_path(recipe_path: str) -> str:
     """Resolve a recipe path to an absolute file path.
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
@@ -265,15 +233,13 @@ def resolve_model_path(
     return resolve_canonical_repo_id(hf_model_path), recipe_path
 
 
-def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
-    """Return (repo, revision) pairs to pre-cache for the given model.
+def hf_repos_for_model(model: str) -> list[str]:
+    """Return the repos to pre-cache for the given model.
 
     Always includes the base repo (alias prefix before __), plus the
     draft_model.model_path when the alias maps to a recipe with one.
-    Revisions come from hf-repo-lock.tsv; None means unpinned.
     """
-    lock = _load_hf_repo_lock()
-    repos: list[tuple[str, str | None]] = []
+    repos: list[str] = []
     seen: set[str] = set()
 
     def add(repo: str) -> None:
@@ -284,7 +250,7 @@ def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
         if key in seen:
             return
         seen.add(key)
-        repos.append((repo, lock.get(key)))
+        repos.append(repo)
 
     # Recipe-derived paths win the casefold dedup, so a lowercased alias
     # input still resolves to the canonical casing the cache expects.
@@ -345,49 +311,6 @@ def _recipe_gpu_overrides(recipe: RecipeConfig, gpu_count: int) -> list[str]:
             and recipe.draft_model.data_parallel_degree == draft_gpu_count
         ):
             args += ["--draft-data-parallel-degree", str(gpu_count)]
-
-    return args
-
-
-def _revision_args(
-    framework: str,
-    model: str,
-    recipe: RecipeConfig | None = None,
-) -> list[str]:
-    revision = _load_hf_repo_lock().get(model.casefold())
-    args: list[str] = []
-    if revision:
-        if framework in ("max", "max-ci"):
-            args += [
-                "--model-override",
-                f"main.huggingface_model_revision={revision}",
-                "--model-override",
-                f"main.huggingface_weight_revision={revision}",
-            ]
-        else:  # vllm, sglang
-            args += ["--revision", revision]
-        logger.info(f"Pinned to revision {revision[:12]}")
-    else:
-        logger.warning(f"No locked revision for {model}")
-
-    if (
-        recipe is not None
-        and framework in ("max", "max-ci")
-        and recipe.draft_model is not None
-        and recipe.draft_model.model_path is not None
-        and (
-            draft_revision := _load_hf_repo_lock().get(
-                recipe.draft_model.model_path.casefold()
-            )
-        )
-    ):
-        args += [
-            "--model-override",
-            f"draft.huggingface_model_revision={draft_revision}",
-            "--model-override",
-            f"draft.huggingface_weight_revision={draft_revision}",
-        ]
-        logger.info(f"Pinned draft model to revision {draft_revision[:12]}")
 
     return args
 
@@ -538,9 +461,6 @@ def get_server_cmd(
     # so we need to enable penalties on the server
     if "gpt-oss" in model.casefold() and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
-
-    recipe = recipe_config[1] if recipe_config is not None else None
-    cmd += _revision_args(framework, model, recipe)
 
     if serve_extra_args:
         if framework in ["max-ci", "max"]:
@@ -704,6 +624,11 @@ def smoke_test(
         output_path = Path(build_workspace) / output_path
 
     model = hf_model_path.strip()
+    result_dir = None
+    if output_path is not None:
+        result_dir = output_path / safe_model_name(model)
+        result_dir.mkdir(parents=True, exist_ok=True)
+
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cmd, server_env = get_server_cmd(
         framework,
@@ -762,12 +687,15 @@ def smoke_test(
             results, startup_time_seconds=server.startup_time
         )
 
-        if output_path is not None:
-            path = output_path / safe_model_name(model)
-            path.mkdir(parents=True, exist_ok=True)
-            write_results(path, summary, results, all_samples, tasks)
+        if result_dir is not None:
+            write_results(result_dir, summary, results, all_samples, tasks)
 
         logger.info(pformat(summary, indent=2))
+
+    if result_dir is not None:
+        (result_dir / "smoke_status.json").write_text(
+            json.dumps({"status": "FINISHED_OK"}) + "\n", encoding="utf-8"
+        )
 
 
 if __name__ == "__main__":

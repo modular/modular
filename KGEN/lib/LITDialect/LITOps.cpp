@@ -2058,6 +2058,11 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   result.regions[0]->push_back(new Block());
 }
 
+TraitSymbolAttr TraitDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+  assert(paramValues.size() == this->getInputParams().size() - 1);
+  return TraitSymbolAttr::get(getFullyResolvedSymbolRef(*this), paramValues);
+}
+
 //===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//

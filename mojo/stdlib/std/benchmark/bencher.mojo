@@ -566,20 +566,19 @@ struct Bench(Writable):
     var shape = IndexList[2](1024, 1024)
     var bench = Bench(BenchConfig(max_iters=100))
 
-    @__parameter
     @always_inline
-    def example(mut b: Bencher, shape: IndexList[2]) capturing raises:
-        @__parameter
+    def example(mut b: Bencher, shape: IndexList[2]) raises:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
 
         var bench_ctx = DeviceContext()
-        b.iter_custom[kernel_launch](bench_ctx)
+        b.iter_custom(kernel_launch, bench_ctx)
 
-    bench.bench_with_input[IndexList[2], example](
+    bench.bench_with_input(
+        example,
         BenchId("top_k_custom", "gpu"),
         shape,
         [
@@ -694,36 +693,6 @@ struct Bench(Writable):
 
     def bench_with_input[
         T: AnyType,
-        bench_fn: def(mut Bencher, T) raises capturing[_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        measures: List[ThroughputMeasure] = {},
-    ) raises:
-        """Benchmarks an input function with input args of type AnyType.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        def input_closure(mut b: Bencher) raises:
-            bench_fn(b, input)
-
-        self.bench_function[input_closure](bench_id, measures)
-
-    def bench_with_input[
-        T: AnyType,
         FuncType: def(mut Bencher, T) raises -> None,
     ](
         mut self,
@@ -755,36 +724,6 @@ struct Bench(Writable):
 
     def bench_with_input[
         T: TrivialRegisterPassable,
-        bench_fn: def(mut Bencher, T) raises capturing[_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        measures: List[ThroughputMeasure] = {},
-    ) raises:
-        """Benchmarks an input function with input args of type TrivialRegisterPassable.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        def input_closure(mut b: Bencher) raises:
-            bench_fn(b, input)
-
-        self.bench_function[input_closure](bench_id, measures)
-
-    def bench_with_input[
-        T: TrivialRegisterPassable,
         FuncType: def(mut Bencher, T) -> None,
     ](
         mut self,
@@ -809,11 +748,41 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @__parameter
-        def input_closure(mut b: Bencher):
+        def input_closure(mut b: Bencher) {imm}:
             func(b, input)
 
-        self.bench_function[input_closure](bench_id, measures)
+        self.bench_function(input_closure, bench_id, measures)
+
+    def bench_with_input[
+        T: TrivialRegisterPassable,
+        FuncType: def(mut Bencher, T) raises -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        input: T,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks an input function with input args of type TrivialRegisterPassable.
+
+        Parameters:
+            T: Benchmark function input type.
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            input: Represents the target function's input arguments.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
+        """
+
+        def input_closure(mut b: Bencher) raises {imm}:
+            func(b, input)
+
+        self.bench_function(input_closure, bench_id, measures)
 
     @always_inline
     def bench_function[
@@ -1522,18 +1491,6 @@ struct Bencher(RegisterPassable):
             iter_fn(state)
             var stop = std.time.perf_counter_ns()
             self.elapsed += Int(stop - start)
-
-    def iter_custom[iter_fn: def(Int) raises capturing[_] -> Int](mut self):
-        """Times a target function with custom number of iterations.
-
-        Parameters:
-            iter_fn: The target function to benchmark.
-        """
-
-        try:
-            self.elapsed = iter_fn(self.num_iters)
-        except e:
-            abort(String(e))
 
     def iter_custom[
         FuncType: def(Int) -> Int,

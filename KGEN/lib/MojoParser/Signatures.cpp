@@ -1523,7 +1523,10 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "register_passable" || spelling == "abi" ||
-           spelling == "where";
+           spelling == "where" ||
+           // TODO: remove this after the parametric closure trait become
+           // default.
+           spelling == "__param_trait__";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1599,6 +1602,10 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                          "the duplicate");
       }
       isThin = true;
+    } else if (spelling == "__param_trait__") {
+      assert(kind == ArgListKind::kFnTypeArgList &&
+             "__param_trait__ must only be used on function types");
+      isExperimentalParamTrait = true;
     } else if (spelling == "register_passable") {
       p.emitWarning(loc)
           << "the 'register_passable' function effect is no longer supported; "

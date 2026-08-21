@@ -89,7 +89,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
 
   // Replace all `ImplicitOriginRefAttr` with `ParamRefDeclAttr`s that point to
   // explicitly *named* parameter-decls.
-  ImplicitOriginToNameRefAttrReplacer indexReplacer(ctx);
+  ImplicitOriginToNameRefAttrReplacer<ParamDeclRefAttr> indexReplacer(ctx);
 
   // The caller specifies all the input types, which means that all the input
   // reference types that carry implicit origins will already have them

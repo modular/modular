@@ -315,6 +315,12 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
+    def remap_name_to_implicit_origin_index_ref(
+        self,
+        arg0: Sequence[max._core.dialects.builtin.StringAttr],
+        arg1: max._core.dialects.builtin.TypedAttr,
+        /,
+    ) -> max._core.dialects.builtin.TypedAttr: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -796,35 +802,34 @@ class ExtensionAttr(max._core.Attribute):
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
-class FnGenBuilderParamDeclArrayAttr(max._core.Attribute):
-    @overload
-    def __init__(self, param_decl: FnGenBuilderParamDeclAttr) -> None: ...
-    @overload
-    def __init__(self, value: Sequence[FnGenBuilderParamDeclAttr]) -> None: ...
-    @property
-    def value(self) -> Sequence[FnGenBuilderParamDeclAttr]: ...
-
 class FnGenBuilderParamDeclAttr(max._core.Attribute):
     """
     This is the parameter-expression dual of `#kgen.param.decl`: it is a
     placeholder for a parameter of that is going to be built by a function
     generator type builder.
+
+    It declare a parameter to be built with `declaredType`, the attribute itself
+    always has the type `!kgen.type`.
     """
 
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        declared_type: max._core.Type,
     ) -> None: ...
     @overload
-    def __init__(self, name: str, type: max._core.Type) -> None: ...
+    def __init__(self, name: str, declared_type: max._core.Type) -> None: ...
     @overload
     def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        declared_type: max._core.Type,
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
-    def type(self) -> max._core.Type | None: ...
+    def declared_type(self) -> max._core.Type | None: ...
 
 class FnGenBuilderParamDeclRefAttr(max._core.Attribute):
     """
@@ -2466,10 +2471,22 @@ class TraitSymbolAttr(max._core.Attribute):
     ) -> None: ...
     @overload
     def __init__(
-        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
     ) -> None: ...
     @property
     def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
@@ -4700,9 +4717,10 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
     The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
     from its components: the parameters declared by the generator (an array of
     `fn_gen_builder.param.decl`s), the argument types (a `param_list` of
-    `kgen.type`), the result type (a `kgen.type`), and the function metadata (a
-    `fn_metadata`). It folds into the generator type itself once all of its
-    components are constant.
+    `kgen.type`), the result type (a `kgen.type`), the function metadata (a
+    `fn_metadata`), and the implicit origin declarations (a `param_list` of
+    `kgen.string` names). It folds into the generator type itself once all of
+    its components are constant.
 
     Every component is a parameter expression, so a still-symbolic piece (e.g.
     an argument pack referenced by name) can be represented before elaboration.
@@ -4717,7 +4735,8 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
       #kgen<fn_gen_builder.param.decls[T : type]>,
       #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
       #kgen.fn_gen_builder.param.decl.ref<"T", type>,
-      #kgen.fn_metadata<[read], "none">>
+      #kgen.fn_metadata<[read], "none">,
+      #kgen.param_list<> : !kgen.param_list<!kgen.string>>
     ```
     """
 
@@ -4728,6 +4747,7 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
+        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4736,6 +4756,7 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
+        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def param_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -4745,6 +4766,8 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
     def result_type(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def metadata(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def implicit_origin_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncLiteralType(max._core.Type):
     """

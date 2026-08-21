@@ -10,84 +10,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Chat-completion route adapter for cascade text generation."""
+"""Chat-completion HTTP route for cascade generative-AI pipelines.
+
+Binds :class:`OpenAIChatCompletionPipeline` to a FastAPI path. The pipeline owns
+the request and response translation, so this is only the HTTP surface.
+"""
 
 from __future__ import annotations
 
-import time
-from collections.abc import Mapping, Sequence
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from max.experimental.cascade.core import Runtime
-from max.experimental.cascade.interfaces.textgen import (
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
-)
+from max.experimental.cascade.interfaces.gen_ai import GenAIInterface
 from max.experimental.cascade.serve.openai_chat_pipeline import (
     OpenAIChatCompletionPipeline,
 )
-from max.serve.schemas.openai import (
-    ChatCompletionResponseChoice,
-    ChatCompletionResponseMessage,
-    CreateChatCompletionRequest,
-    CreateChatCompletionResponse,
-)
-
-
-def _convert_stop(stop: str | Sequence[str] | None) -> list[str] | None:
-    """Normalize the OpenAI ``stop`` field into a list of strings."""
-    if stop is None:
-        return None
-    if isinstance(stop, str):
-        return [stop]
-    return list(stop)
-
-
-def _normalize_message_content(
-    content: str | Sequence[Mapping[str, Any]],
-) -> str:
-    """Flatten a chat message content payload into plain text."""
-    if isinstance(content, str):
-        return content
-
-    text_parts: list[str] = []
-    unsupported_types: list[str] = []
-    for part in content:
-        if part.get("type") == "text" and part.get("text") is not None:
-            text_parts.append(part["text"])
-        else:
-            unsupported_types.append(part.get("type", "unknown"))
-
-    if unsupported_types:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported chat message content part types: "
-                + ", ".join(sorted(set(unsupported_types)))
-            ),
-        )
-
-    return "".join(text_parts)
+from max.serve.schemas.openai import CreateChatCompletionRequest
 
 
 async def build_router(
-    pipeline: TextGenInterface,
+    pipeline: GenAIInterface,
     runtime: Runtime,
+    emit_reasoning_content: bool = False,
 ) -> APIRouter:
-    """Build OpenAI-style chat-completion routes for a text generator.
+    """Build the OpenAI-style chat-completion route for a generative pipeline.
 
-    The routes pair ``pipeline`` with an :class:`OpenAIChatCompletionPipeline`
-    so the per-token SSE serialization runs on the CPU worker pool instead of
-    the API event loop. That wrapper is an implementation detail of this
-    adapter, so callers hand over a plain :class:`TextGenInterface`.
+    The route pairs ``pipeline`` with an :class:`OpenAIChatCompletionPipeline`,
+    which is an implementation detail of this adapter, so callers hand over a
+    plain :class:`GenAIInterface`.
 
-    ``runtime`` is the one ``pipeline`` is already deployed on; only the
-    wrapper's own formatter worker is deployed here.
+    Args:
+        pipeline: The deployed pipeline to serve.
+        runtime: The runtime ``pipeline`` is already deployed on; only the
+            wrapper's own formatter worker is deployed here.
+        emit_reasoning_content: Emit reasoning under ``reasoning_content``
+            instead of ``reasoning``. A server-wide choice, so it is fixed onto
+            the formatter worker at deploy time.
     """
-    chat = OpenAIChatCompletionPipeline(pipeline)
+    chat = OpenAIChatCompletionPipeline(pipeline, emit_reasoning_content)
     await chat.deploy(runtime)
 
     router = APIRouter()
@@ -95,76 +55,21 @@ async def build_router(
     @router.post("/v1/chat/completions", response_model=None)
     async def chat_completions(
         request: CreateChatCompletionRequest,
-    ) -> CreateChatCompletionResponse | StreamingResponse:
-        messages: ChatMessages = [
-            {
-                "role": message.get("role", ""),
-                "content": _normalize_message_content(
-                    message.get("content") or ""
-                ),
-            }
-            for message in request.messages
-        ]
-        # Forward every request-configurable text-gen field OpenAI exposes.
-        # The passthrough fields share ``GenerateRequest``'s ``None`` defaults,
-        # so forwarding them verbatim leaves unset ones on the model default.
-        req = GenerateRequest(
-            ignore_eos=request.ignore_eos,
-            top_k=request.top_k,
-            top_p=request.top_p,
-            min_p=request.min_p,
-            thinking_temperature=request.thinking_temperature,
-            seed=request.seed,
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            repetition_penalty=request.repetition_penalty,
-            stop=_convert_stop(request.stop),
-            stop_token_ids=request.stop_token_ids,
-        )
-        # Fields whose ``GenerateRequest`` default differs from "unset" are only
-        # overridden when the client supplies a value. ``max_completion_tokens``
-        # supersedes the legacy ``max_tokens``.
-        max_new_tokens = (
-            request.max_completion_tokens
-            if request.max_completion_tokens is not None
-            else request.max_tokens
-        )
-        if max_new_tokens is not None:
-            req.num_tokens = max_new_tokens
-        if request.min_tokens is not None:
-            req.min_new_tokens = request.min_tokens
-        if request.temperature is not None:
-            req.temperature = request.temperature
-        if request.stream:
-            # The wrapper emits fully-framed OpenAI SSE bytes (formatting is
-            # offloaded to a worker), so the route just forwards them.
-            return StreamingResponse(
-                chat.stream_chat_sse(
-                    req,
-                    messages,
-                    request.model,
-                    "chatcmpl-cascade",
-                    int(time.time()),
-                ),
-                media_type="text/event-stream",
-            )
-
-        chunks = [chunk async for chunk in chat.generate_text(req, messages)]
-        return CreateChatCompletionResponse(
-            id="chatcmpl-cascade",
-            created=int(time.time()),
-            model=request.model,
-            object="chat.completion",
-            choices=[
-                ChatCompletionResponseChoice(
-                    index=0,
-                    message=ChatCompletionResponseMessage(
-                        role="assistant",
-                        content="".join(chunks),
-                    ),
-                    finish_reason="stop",
+    ) -> Response | StreamingResponse:
+        # Awaiting before building the response is what keeps a rejected
+        # request a 400: a StreamingResponse commits the status line as soon as
+        # it starts.
+        try:
+            if request.stream:
+                return StreamingResponse(
+                    await chat.chat_completion_sse(request),
+                    media_type="text/event-stream",
                 )
-            ],
-        )
+            return Response(
+                content=await chat.chat_completion(request),
+                media_type="application/json",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return router

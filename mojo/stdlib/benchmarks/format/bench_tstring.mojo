@@ -10,153 +10,170 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Microbenchmarks for t-string interpolation and `Writable` dispatch cost,
+written through `DispatchSink`, a null writer, to isolate that cost from
+real I/O.
 
-from std.collections import Optional
-from std.collections.string._utf8 import _is_valid_utf8
-from std.collections.string.string_span import _split
-from std.os import abort
-from std.pathlib import _dir_of_current_file
-from std.random import seed
-from std.sys import stderr
+Interpolated values are `black_box`-ed at the call site so the compiler
+can't fold the formatting away as a compile-time constant.
+"""
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 @fieldwise_init
-struct NullWriter(Writer):
-    var array: Array[Byte, 1024]
+struct DispatchSink(Writer):
+    """`Writer` that checksums every byte instead of discarding it. `keep()`
+    on a bare `StringSlice` only preserves the `{ptr, len}` descriptor, not
+    the bytes, so the compiler can skip producing them.
+    """
 
-    @always_inline
-    def __init__(out self):
-        self.array = {uninitialized = True}
+    var checksum: UInt64
 
     @always_inline
     def write_string(mut self, string: StringSlice):
-        var bytes = string.as_bytes()
-        var array_ptr: Pointer[
-            Byte, origin_of(self.array)
-        ] = self.array.unsafe_ptr()
-        for i in range(len(bytes)):
-            array_ptr.unsafe_offset(i).unsafe_store(bytes.unsafe_get(i))
-        keep(self.array)
+        for byte in string.bytes():
+            self.checksum = self.checksum * 31 + UInt64(byte)
 
 
 @fieldwise_init
 struct NullWritable(Writable):
+    var string: StaticString
+
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
-        writer.write_string(black_box(StaticString("null")))
+        writer.write_string(self.string)
 
 
 @always_inline
-def null_print(tstring: Some[Writable]):
-    var writer = NullWriter()
-    tstring.write_to(black_box(writer))
+def dispatch_print(tstring: Some[Writable]):
+    var writer = DispatchSink(0)
+    tstring.write_to(writer)
+    keep(writer.checksum)
 
 
-def bench_tstring_single_value(mut b: Bencher) raises:
+def bench_tstring_single_value_dispatch(mut b: Bencher) raises:
     @always_inline
     def call_fn():
-        for _ in range(100):
-            var a = NullWritable()
-            null_print(t"{a}")
-            keep(a)
+        var a = NullWritable("The quick brown fox")
+        dispatch_print(t"{black_box(a)}")
 
     b.iter(call_fn)
 
 
-def bench_tstring_only_literal(mut b: Bencher) raises:
+def bench_tstring_only_literal_dispatch(mut b: Bencher) raises:
     @always_inline
     def call_fn():
-        for _ in range(100):
-            null_print(t"The quick brown fox jumps over the lazy dog")
+        dispatch_print(t"The quick brown fox jumps over the lazy dog")
 
     b.iter(call_fn)
 
 
-def bench_tstring_many_values_no_literals(mut b: Bencher) raises:
+def bench_tstring_many_values_no_literals_dispatch(mut b: Bencher) raises:
     @always_inline
     def call_fn():
-        for _ in range(100):
-            var a = NullWritable()
-            var b = NullWritable()
-            var c = NullWritable()
-            var d = NullWritable()
-            var e = NullWritable()
-            null_print(t"{a}{b}{c}{d}{e}")
-            keep(a)
-            keep(b)
-            keep(c)
-            keep(d)
-            keep(e)
+        var a = NullWritable("abcdef")
+        var b = NullWritable("ghijklm")
+        var c = NullWritable("nopqrstuvwxyz")
+        var d = NullWritable("123")
+        var e = NullWritable("4567890")
+        dispatch_print(
+            t"{black_box(a)}{black_box(b)}{black_box(c)}{black_box(d)}{black_box(e)}"
+        )
 
     b.iter(call_fn)
 
 
-def bench_tstring_long_literals(mut b: Bencher) raises:
+def bench_tstring_long_literals_dispatch(mut b: Bencher) raises:
     @always_inline
     def call_fn():
-        for _ in range(100):
-            var a = NullWritable()
-            var b = NullWritable()
-            # fmt: off
-            null_print(
-                t"Lorem ipsum dolor sit amet, consectetur adipiscing elit. {a}"
-                t" Sed do eiusmod tempor incididunt ut labore et dolore magna"
-                t" aliqua. Ut enim ad minim veniam, quis nostrud {b}"
-                t" exercitation ullamco laboris nisi ut aliquip."
-            )
-            # fmt: on
-            keep(a)
-            keep(b)
+        var a = NullWritable("I'm short")
+        var b = NullWritable("I'm on the other hand a very long string")
+        # fmt: off
+        dispatch_print(
+            t"Lorem ipsum dolor sit amet, consectetur adipiscing elit. {black_box(a)}"
+            t" Sed do eiusmod tempor incididunt ut labore et dolore magna"
+            t" aliqua. Ut enim ad minim veniam, quis nostrud {black_box(b)}"
+            t" exercitation ullamco laboris nisi ut aliquip."
+        )
+        # fmt: on
 
     b.iter(call_fn)
 
 
-def bench_tstring_many_values_many_literals(mut b: Bencher) raises:
+def bench_tstring_many_values_many_literals_dispatch(mut b: Bencher) raises:
     @always_inline
     def call_fn():
-        for _ in range(100):
-            var a = NullWritable()
-            var b = NullWritable()
-            var c = NullWritable()
-            var d = NullWritable()
-            var e = NullWritable()
-            var f = NullWritable()
-            var g = NullWritable()
-            var h = NullWritable()
-            null_print(t"a={a} b={b} c={c} d={d} e={e} f={f} g={g} h={h}")
-            keep(a)
-            keep(b)
-            keep(c)
-            keep(d)
-            keep(e)
-            keep(f)
-            keep(g)
-            keep(h)
+        var a = NullWritable("abcdef")
+        var b = NullWritable("ghijklm")
+        var c = NullWritable("nopqrstuvwxyz")
+        var d = NullWritable("123")
+        var e = NullWritable("4567890")
+        var f = NullWritable("🔥")
+        var g = NullWritable("🔥🔥🔥🔥🔥🔥🔥🔥")
+        var h = NullWritable("🐮")
+        dispatch_print(
+            t"a={black_box(a)} b={black_box(b)} c={black_box(c)}"
+            t" d={black_box(d)} e={black_box(e)} f={black_box(f)}"
+            t" g={black_box(g)} h={black_box(h)}"
+        )
+
+    b.iter(call_fn)
+
+
+def bench_tstring_mixed_sizes_dispatch(mut b: Bencher) raises:
+    @always_inline
+    def call_fn():
+        var id = NullWritable("7")
+        var status = NullWritable("ok")
+        var user = NullWritable("🔥")
+        var message = NullWritable(
+            "a moderately long status message describing what happened"
+        )
+        var trace = NullWritable(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do"
+            " eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut"
+            " enim ad minim veniam, quis nostrud exercitation ullamco laboris"
+            " nisi ut aliquip ex ea commodo consequat."
+        )
+        # fmt: off
+        dispatch_print(
+            t"[{black_box(id)}] Lorem ipsum dolor sit amet, consectetur"
+            t" adipiscing elit, sed do eiusmod tempor incididunt ut labore et"
+            t" dolore magna aliqua user={black_box(user)} status={black_box(status)}"
+            t" Ut enim ad minim veniam, quis nostrud exercitation ullamco"
+            t" laboris nisi ut aliquip ex ea commodo consequat"
+            t" message={black_box(message)} trace={black_box(trace)} done."
+        )
+        # fmt: on
 
     b.iter(call_fn)
 
 
 def main() raises:
-    seed()
-
-    var m = Bench(BenchConfig(num_repetitions=1))
+    var m = Bench(BenchConfig(min_runtime_secs=0.01, num_repetitions=5))
     m.bench_function(
-        bench_tstring_single_value, BenchId("bench_tstring_single_value")
+        bench_tstring_single_value_dispatch,
+        BenchId("bench_tstring_single_value_dispatch"),
     )
     m.bench_function(
-        bench_tstring_only_literal, BenchId("bench_tstring_only_literal")
+        bench_tstring_only_literal_dispatch,
+        BenchId("bench_tstring_only_literal_dispatch"),
     )
     m.bench_function(
-        bench_tstring_many_values_no_literals,
-        BenchId("bench_tstring_many_values_no_literals"),
+        bench_tstring_many_values_no_literals_dispatch,
+        BenchId("bench_tstring_many_values_no_literals_dispatch"),
     )
     m.bench_function(
-        bench_tstring_long_literals, BenchId("bench_tstring_long_literals")
+        bench_tstring_long_literals_dispatch,
+        BenchId("bench_tstring_long_literals_dispatch"),
     )
     m.bench_function(
-        bench_tstring_many_values_many_literals,
-        BenchId("bench_tstring_many_values_many_literals"),
+        bench_tstring_many_values_many_literals_dispatch,
+        BenchId("bench_tstring_many_values_many_literals_dispatch"),
+    )
+    m.bench_function(
+        bench_tstring_mixed_sizes_dispatch,
+        BenchId("bench_tstring_mixed_sizes_dispatch"),
     )
     print(m)

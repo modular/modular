@@ -57,9 +57,11 @@ def test_smollm_with_structured_output_gpu(
         runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """
@@ -173,9 +175,11 @@ def test_multistep_structured_output_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'Alice Smith is 30 years old.'"""
@@ -263,9 +267,11 @@ def test_multi_step_guided_decoding_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Return JSON: 'Bob Jones is 25.'"""
@@ -337,9 +343,11 @@ def test_overlap_pipeline_structured_output_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract name and age from: 'Charlie Brown is 8 years old.'"""
@@ -443,9 +451,11 @@ def test_heterogeneous_batch_structured_output_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     # Request 1: Structured output with JSON schema

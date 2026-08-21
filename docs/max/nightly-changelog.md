@@ -159,7 +159,32 @@ This version is still a work in progress.
     two are mutually exclusive and both off by default.
 - Expanded Qwen support:
   - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Added `Qwen/Qwen3.8-27B` support in bfloat16 on the existing
+    `Qwen3_5ForConditionalGeneration` architecture, covered by logit
+    verification against the torch reference.
+  - `Qwen3_5ForConditionalGeneration` now serves across multiple GPUs.
+    Tensor parallelism splits the attention heads, the gated-DeltaNet key and
+    value heads, and the per-device linear-attention state pools; both mixers
+    reject a device count that would not divide their head counts evenly.
+  - `Qwen3_5ForConditionalGeneration` now supports device graph capture.
+  - Added multi-token prediction (MTP) speculative decoding for Qwen3.8
+    (`UnifiedMTPQwen3_5ForConditionalGeneration`), fusing the target, the
+    baked-in MTP head and a recurrent-state rollback into one graph, selected
+    for Qwen3.5-family checkpoints that ship an MTP head with
+    `--speculative-method mtp`. Rejecting a speculated token cannot be undone
+    by rewinding a KV length pointer when the layer is recurrent, so the graph
+    snapshots the gated-DeltaNet conv and recurrent pools before verifying and
+    replays the two state kernels over the accepted rows. The graph is served
+    through the Mach engine; MAX compiles and exports it but does not run it.
   - Fixed a `Qwen3EmbeddingModel` crash.
+- Added `--state-pool-dtype`, which overrides the storage dtype of a hybrid
+  model's recurrent state pools (SSM and linear-attention conv and recurrent
+  state). It defaults to the model's compute dtype. `float32` makes a
+  speculated generation follow the same state trajectory as an unspeculated
+  one -- the recurrence rounds to the pool dtype at each call boundary, so a
+  lossy pool makes the trajectory depend on how speculation chunked the
+  sequence -- at roughly double the per-request state memory (Qwen3.8-27B:
+  74.8 to 149.6 MiB per seated request).
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
   with `LoRAManager.apply` swapping target layers in a model.
@@ -533,6 +558,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- `max.experimental.nn.Module.compile` reuses precompiled MEFs when the session
+  has them, so a ModuleV3 model can be compiled where no accelerator is attached
+  and initialized where one is. `max.experimental.support.set_export_mefs`
+  records each compiled graph into a directory, and
+  `max.experimental.support.set_precompiled_mefs` initializes those artifacts
+  instead of compiling. `InferenceSession.compile_reusing_mefs` is the same
+  half-step for callers that trace a graph and initialize it themselves.
+
 - Eager mode tensors will use the JIT by default. This unlocks fusion and
   shape specialization optimizations even for eager code, beating PyTorch
   performance in eager in the common case.
@@ -655,6 +688,14 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
+  top-level fields after construction raises a pydantic `ValidationError`.
+  Construct it with the values you need. Its sub-configs (`runtime`,
+  `sampling`, etc.) are unchanged for now.
+
+- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
+  now immutable (pydantic `frozen=True`); assigning to a field after
+  construction raises a `ValidationError`. Construct with the desired values.
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
@@ -713,6 +754,12 @@ This version is still a work in progress.
   overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
   closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
 
+- `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
+  dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
+  a `(tokenizer, factory)` tuple, so callers can reach the memory plan
+  computed during retrieval. Replace tuple unpacking with attribute access.
+  `PipelineRegistry.retrieve` is unchanged.
+
 ## Fixes
 
 - On Apple Silicon, a missing Metal Toolchain (a separate download since
@@ -767,6 +814,13 @@ This version is still a work in progress.
 - Fixed CPU `argmax`/`argmin` reductions returning a wrong index for reduce
   axes of 256K+ elements, for example an argmax over a `[1, 2097152]` tensor,
   where the row's reduction fans out across multiple CPU workers.
+
+- Fixed the distribution the top-k/top-p sampler emits for speculative
+  decoding (`emit_dist`) being under-normalized when a `min_p` mask removes
+  weight and the row passes top-p at the first trial: the row was scaled by
+  the unmasked softmax mass instead of the masked kept mass, so it summed to
+  less than one and skewed the rejection residual. The sampled token stream
+  was and remains unchanged.
 
 ## Mojo language
 

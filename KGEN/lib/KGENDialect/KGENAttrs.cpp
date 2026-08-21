@@ -151,11 +151,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 // FnGenBuilder-related attr
 //===----------------------------------------------------------------------===//
 
-Type FnGenBuilderParamDeclArrayAttr::getType() const {
-  // See the TODO on `ParamDeclArrayAttr::getType`.
-  return NonStructTypeType::get(getContext());
-}
-
+bool FnGenBuilderParamDeclAttr::isConstant() const { return false; }
 bool FnGenBuilderParamDeclRefAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
@@ -806,6 +802,16 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
   return Base::get(ctx, typeValue, getResultType(ctx));
+}
+
+//===----------------------------------------------------------------------===//
+// TraitSymbolAttr
+//===----------------------------------------------------------------------===//
+
+bool TraitSymbolAttr::isFullyResolved() const {
+  return llvm::all_of(getParamValues(), [](TypedAttr paramValue) {
+    return ParameterAttr::isSimpleConstant(paramValue);
+  });
 }
 
 //===----------------------------------------------------------------------===//
