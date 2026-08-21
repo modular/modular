@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import override
@@ -102,6 +103,7 @@ class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -112,6 +114,7 @@ class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 

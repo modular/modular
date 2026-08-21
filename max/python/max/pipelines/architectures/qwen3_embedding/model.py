@@ -41,6 +41,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
@@ -112,6 +113,7 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         """Initialize the Qwen3 embedding pipeline model.
 
@@ -133,6 +135,7 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 

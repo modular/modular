@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -111,6 +112,7 @@ class UnifiedDflashLlama3Model(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         # The drafter's trained width, resolved from the draft checkpoint;
         # exposed for the overlap pipeline's spec-decode buffers.
@@ -127,6 +129,7 @@ class UnifiedDflashLlama3Model(
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 

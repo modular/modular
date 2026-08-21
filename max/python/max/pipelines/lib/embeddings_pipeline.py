@@ -100,6 +100,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
                 weights_format(weight_paths), None
             ),
             return_logits=ReturnLogits.ALL,
+            memory_plan=memory_plan,
         )
 
     @property

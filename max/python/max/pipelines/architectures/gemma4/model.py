@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 
@@ -150,6 +151,7 @@ class Gemma3_MultiModalModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -160,6 +162,7 @@ class Gemma3_MultiModalModel(
             weights,
             adapter,
             return_logits,
+            memory_plan=memory_plan,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property

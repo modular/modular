@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
@@ -91,6 +92,7 @@ class Gemma3MultiModalModelV3(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -101,6 +103,7 @@ class Gemma3MultiModalModelV3(
             weights,
             adapter,
             return_logits,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model()

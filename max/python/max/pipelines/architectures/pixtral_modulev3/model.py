@@ -39,6 +39,7 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
     upper_bounded_default,
@@ -118,6 +119,7 @@ class PixtralModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -128,6 +130,7 @@ class PixtralModel(
             weights,
             adapter,
             return_logits,
+            memory_plan=memory_plan,
         )
 
         if self.pipeline_config.model.enable_echo:

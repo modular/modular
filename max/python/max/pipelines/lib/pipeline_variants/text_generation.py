@@ -234,6 +234,7 @@ class TextGenerationPipeline(
             if self._pipeline_config.model.enable_echo
             else ReturnLogits.LAST_TOKEN,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         available_cache_memory = memory_plan.available_cache_memory

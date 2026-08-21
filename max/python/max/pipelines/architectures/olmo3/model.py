@@ -30,6 +30,7 @@ from max.pipelines.lib import (
     ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Olmo3BatchProcessor
 from .model_config import Olmo3Config
@@ -82,6 +83,7 @@ class Olmo3Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         """
         Args:
@@ -106,6 +108,7 @@ class Olmo3Model(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model = self.load_model()

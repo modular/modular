@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     ModuleV3PipelineModel,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
@@ -94,6 +95,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -103,6 +105,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             weights,
             adapter,
             return_logits,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model()
 

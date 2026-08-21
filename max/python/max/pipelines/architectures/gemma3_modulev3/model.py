@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3ModuleV3BatchProcessor
@@ -84,6 +85,7 @@ class Gemma3Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -94,6 +96,7 @@ class Gemma3Model(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         # Detect multimodal models by presence of text_config
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")

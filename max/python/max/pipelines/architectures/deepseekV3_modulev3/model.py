@@ -38,6 +38,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
@@ -99,6 +100,7 @@ class DeepseekV3Model(DeepseekV2Model):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         # Capture the session so _init_distributed_runtime() can initialize EP
         # communication, and default the EP buffers so execute() works without EP.
@@ -112,6 +114,7 @@ class DeepseekV3Model(DeepseekV2Model):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     def _build_ep_config(

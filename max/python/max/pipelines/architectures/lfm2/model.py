@@ -29,6 +29,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from typing_extensions import override
 
@@ -215,6 +216,7 @@ class LFM2Model(LlamaModelBase):
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -226,6 +228,7 @@ class LFM2Model(LlamaModelBase):
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         num_conv_layers = sum(
             1 for t in self._model_config.layer_types if t != "full_attention"

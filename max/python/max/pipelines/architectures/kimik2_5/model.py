@@ -64,6 +64,7 @@ from max.pipelines.lib.eplb_stats import (
     EplbStatsMetadata,
     EplbStatsSnapshot,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.weights.block_scaled_preshuffle import (
@@ -191,6 +192,7 @@ class KimiK2_5Model(
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -207,6 +209,7 @@ class KimiK2_5Model(
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model(session)

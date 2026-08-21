@@ -42,6 +42,7 @@ from max.pipelines.lib import (
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -143,6 +144,7 @@ class UnifiedMTPGemma4Model(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -154,6 +156,7 @@ class UnifiedMTPGemma4Model(
             adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            memory_plan=memory_plan,
         )
 
         # Force signal buffer initialization.

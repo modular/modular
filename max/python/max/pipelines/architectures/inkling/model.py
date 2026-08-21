@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     SupportsSSMStateWarmup,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from typing_extensions import override
 
@@ -68,6 +69,7 @@ class InklingModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -79,6 +81,7 @@ class InklingModel(
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self._state_cache: InklingConvStateCache | None = None
         # The vision tower is only ever called through the batch processor,

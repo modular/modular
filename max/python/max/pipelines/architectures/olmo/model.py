@@ -20,6 +20,7 @@ from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from ..llama3.model import LlamaModelBase
 
@@ -39,6 +40,7 @@ class OlmoModel(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -49,4 +51,5 @@ class OlmoModel(LlamaModelBase):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )

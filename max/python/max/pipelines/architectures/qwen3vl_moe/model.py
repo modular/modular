@@ -49,6 +49,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Qwen3VLMoeBatchProcessor
 from .context import Qwen3VLTextAndVisionContext
@@ -156,6 +157,7 @@ class Qwen3VLModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -166,6 +168,7 @@ class Qwen3VLModel(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model_config = None

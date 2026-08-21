@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     ModuleV3PipelineModel,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel
@@ -72,6 +73,7 @@ class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -82,6 +84,7 @@ class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model()
 
