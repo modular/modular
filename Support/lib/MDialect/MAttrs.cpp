@@ -911,14 +911,11 @@ ErrorOrSuccess DataLayout::parse() {
     case 'v':
     case 'f':
     case 'a': {
-      if (specifier == 'a') {
-        // Skip aggregate specifier.
-        break;
-      }
-
       // Bit size.
       unsigned size = 0;
       if (!tok.empty()) {
+        if (specifier == 'a')
+          return Error("incorrect aggregate alignment specification");
         auto sizeOr = getInt(tok);
         if (sizeOr.isError())
           return sizeOr.takeError();
@@ -941,6 +938,9 @@ ErrorOrSuccess DataLayout::parse() {
           return abiAlignOr.takeError();
         abiAlign = std::move(*abiAlignOr);
       }
+      // For aggregates, a value of zero means a one-byte alignment
+      if (specifier == 'a' && !abiAlign)
+        abiAlign = 1;
       if (!abiAlign)
         return Error("ABI alignment specification cannot be zero");
 
@@ -960,6 +960,9 @@ ErrorOrSuccess DataLayout::parse() {
         break;
       case 'v':
         setABIAlignment(vecAbiAlign, size, abiAlign);
+        break;
+      case 'a':
+        structAbiAlign = abiAlign;
         break;
       default:
         llvm_unreachable("unknown specifier");
@@ -1073,6 +1076,8 @@ int32_t DataLayout::getVectorABIAlign(int32_t numElts,
   // the size rounded up to the nearest byte.
   return llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
 }
+
+int32_t DataLayout::getStructABIAlign() const { return structAbiAlign; }
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr

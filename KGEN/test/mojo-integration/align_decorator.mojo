@@ -221,16 +221,7 @@ def test_generic_stack_allocation() raises:
 
 
 def test_array_alignment() raises:
-    """Test array allocation alignment behavior.
-
-    Note: @align(N) affects the alignment of allocations but does NOT pad the
-    struct size. This means arrays of aligned structs will have the base pointer
-    aligned, but subsequent elements use the natural struct size as stride.
-
-    To get each array element aligned, the struct must be explicitly padded
-    (e.g., by adding padding fields) so that size_of[T]() is a multiple of
-    align_of[T](). This matches how C++ alignas works with arrays.
-    """
+    """Test array allocation alignment behavior."""
     # Allocate array - base pointer should be 64-byte aligned
     var arr_alloc = alloc[CacheAligned]({count = 4}).into_managed()
     var arr: Pointer[
@@ -242,10 +233,9 @@ def test_array_alignment() raises:
         "CacheAligned array base should be 64-byte aligned",
     )
 
-    # Stride is size_of[CacheAligned]() = 8 (just one Int), not 64
-    # This is expected - @align doesn't pad struct size
+    # Elements should also be 64-byte apart; each element is 64-byte aligned.
     var stride = Int(arr.unsafe_offset(1)) - Int(arr)
-    assert_equal(stride, 8)
+    assert_equal(stride, 64)
 
     dealloc(arr_alloc^)
 
