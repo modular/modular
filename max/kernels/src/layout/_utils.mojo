@@ -259,7 +259,7 @@ def _get_bounds(tensor: TileTensor) -> Int:
 
 @always_inline
 def make_amd_buffer_resource(
-    tensor: TileTensor,
+    tensor: TileTensor[Storage=PointerStorage[], ...],
 ) -> AMDBufferResource:
     """Creates an AMD buffer resource descriptor from a TileTensor.
 
@@ -268,7 +268,9 @@ def make_amd_buffer_resource(
     runtime register cost.
     """
     var size = _get_bounds(tensor)
-    return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
+    return AMDBufferResource(
+        readfirstlane(tensor._storage), readfirstlane(size)
+    )
 
 
 @always_inline
@@ -295,8 +297,8 @@ def hash(tensor: LayoutTensor) -> Int:
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
             var val = tensor[i, j]
-            var addr = UnsafePointer(to=val)
-            var addr_int = addr.bitcast[Int16]()
-            var val_int = addr_int[0]
+            var addr = ImmPointer(to=val)
+            var addr_int = addr.unsafe_bitcast[Int16]()
+            var val_int = addr_int[]
             hash_value = ((hash_value << 5) + hash_value) + Int(val_int)
     return hash_value

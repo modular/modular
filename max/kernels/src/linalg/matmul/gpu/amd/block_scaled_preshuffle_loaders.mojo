@@ -30,7 +30,7 @@ from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
-from layout import Coord, Idx, TileTensor
+from layout import Coord, Idx, TileTensor, PointerStorage
 from layout._utils import make_amd_buffer_resource
 
 from .block_scaled_preshuffle_layouts import Shuffler
@@ -67,7 +67,10 @@ struct PreshuffledBLoader[
     var bc: AMDBufferResource
 
     @always_inline
-    def __init__(out self, b_gmem_tile: TileTensor[DType.uint8, ...]):
+    def __init__(
+        out self,
+        b_gmem_tile: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+    ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
         Args:
@@ -133,7 +136,10 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     var bc: AMDBufferResource
 
     @always_inline
-    def __init__(out self, scale_gmem_tile: TileTensor[DType.uint8, ...]):
+    def __init__(
+        out self,
+        scale_gmem_tile: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+    ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 
         Args:
