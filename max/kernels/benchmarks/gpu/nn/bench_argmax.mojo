@@ -65,23 +65,22 @@ def bench_argmax[
     var num_bytes = batch * num_elements * size_of[Scalar[dtype]]()
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
 
-    @__parameter
     @always_inline
-    def bench_streaming(mut b: Bencher):
+    def bench_streaming(mut b: Bencher) raises {imm}:
         @always_inline
         def launch(ctx: DeviceContext) raises {imm}:
             argmax_gpu(ctx, in_tensor, out_tensor)
 
         bencher_iter_custom(b, launch, ctx)
 
-    m.bench_function[bench_streaming](
+    m.bench_function(
+        bench_streaming,
         BenchId(String("argmax-streaming", suffix)),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
-    @__parameter
     @always_inline
-    def bench_topk_k1(mut b: Bencher):
+    def bench_topk_k1(mut b: Bencher) raises {imm}:
         @always_inline
         def launch(ctx: DeviceContext) raises {imm}:
             topk_gpu[sampling=False, largest=True](
@@ -90,7 +89,8 @@ def bench_argmax[
 
         bencher_iter_custom(b, launch, ctx)
 
-    m.bench_function[bench_topk_k1](
+    m.bench_function(
+        bench_topk_k1,
         BenchId(String("argmax-topk-k1", suffix)),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
@@ -123,12 +123,12 @@ def bench_argmax[
             input_fn, output_fn, in_shape, ctx
         )
 
-    @__parameter
     @always_inline
-    def bench_rowwise(mut b: Bencher) raises:
+    def bench_rowwise(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, launch_rowwise, ctx)
 
-    m.bench_function[bench_rowwise](
+    m.bench_function(
+        bench_rowwise,
         BenchId(String("argmax-rowwise", suffix)),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )

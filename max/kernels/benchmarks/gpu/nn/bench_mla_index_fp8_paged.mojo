@@ -274,17 +274,17 @@ def execute_mla_indexer_paged[
             launch_ctx,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _run_name[num_heads, depth, page_size, top_k, scores_budget_bytes](
                 batch_size, seq_len, cache_len, frozen_cache_len
             )
-        )
+        ),
     )
 
     _ = q_device

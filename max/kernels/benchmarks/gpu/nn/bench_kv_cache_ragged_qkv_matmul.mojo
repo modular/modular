@@ -249,16 +249,17 @@ def execute_kv_cache_ragged_matmul[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @__parameter
-    @__copy_capture(
-        hidden_state_device,
-        prefix_sums_device,
-        k_cache_device,
-        v_cache_device,
-        output_device,
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
+    def bench_func(
+        mut b: Bencher,
+    ) raises {
+        var hidden_state_device,
+        var prefix_sums_device,
+        var k_cache_device,
+        var v_cache_device,
+        var output_device,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
@@ -273,7 +274,8 @@ def execute_kv_cache_ragged_matmul[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
                 seq_len,

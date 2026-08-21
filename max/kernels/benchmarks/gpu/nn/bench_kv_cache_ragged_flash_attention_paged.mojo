@@ -382,18 +382,19 @@ def execute_kv_cache_ragged_flash_attention[
 
     if run_benchmark:
 
-        @__parameter
-        @__copy_capture(
-            q_device_tensor,
-            k_cache_device,
-            v_cache_device,
-            output_device_tensor,
-            input_row_offsets_tensor,
-            kv_input_row_offsets_view,
-            sink_weights_view,
-        )
         @always_inline
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {
+            var q_device_tensor,
+            var k_cache_device,
+            var v_cache_device,
+            var output_device_tensor,
+            var input_row_offsets_tensor,
+            var kv_input_row_offsets_view,
+            var sink_weights_view,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 comptime if local_window_size > 0:
@@ -478,7 +479,8 @@ def execute_kv_cache_ragged_flash_attention[
             cache_len + seq_len,
             head_dim,
         )
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     dtype,

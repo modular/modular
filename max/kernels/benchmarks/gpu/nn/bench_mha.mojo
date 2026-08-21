@@ -92,10 +92,10 @@ def run_mha[
 
     if bench:
 
-        @__parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o)
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 # Construct device buffers with offsets.
@@ -161,7 +161,8 @@ def run_mha[
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha",
                 # fmt: off

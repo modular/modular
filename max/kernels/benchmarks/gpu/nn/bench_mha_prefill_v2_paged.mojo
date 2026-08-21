@@ -268,10 +268,10 @@ def run_mha_prefill_v2_paged[
 
     if bench:
 
-        @__parameter
         @always_inline
-        @__copy_capture(cb_q, cb_o, k_operand, v_operand)
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {var cb_q, var cb_o, var k_operand, var v_operand, imm}:
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
@@ -318,7 +318,8 @@ def run_mha_prefill_v2_paged[
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha_prefill_v2_paged",
                 # fmt: off

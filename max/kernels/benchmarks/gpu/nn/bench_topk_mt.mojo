@@ -198,13 +198,12 @@ def execute_topk_bitonic[
             rows,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
-        BenchId(_get_run_name(rows, N, K, dist, mode)), []
+    m.bench_function(
+        bench_func, BenchId(_get_run_name(rows, N, K, dist, mode)), []
     )
 
     _ = scores_buf

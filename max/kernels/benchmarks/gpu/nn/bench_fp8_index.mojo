@@ -119,18 +119,19 @@ def execute_fp8_index[
 
     if run_benchmark:
 
-        @__parameter
-        @__copy_capture(
-            q_device,
-            qs_device,
-            k_device,
-            ks_device,
-            o_device,
-            input_row_offsets_device,
-            cache_row_offsets_device,
-        )
         @always_inline
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {
+            var q_device,
+            var qs_device,
+            var k_device,
+            var ks_device,
+            var o_device,
+            var input_row_offsets_device,
+            var cache_row_offsets_device,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 fp8_index[num_heads, depth](
@@ -149,7 +150,8 @@ def execute_fp8_index[
 
             bencher_iter_custom(b, kernel_launch, ctx)
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[num_heads, depth](batch_size, seq_len, num_keys)
             ),
