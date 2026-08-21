@@ -27,7 +27,6 @@ from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnLogits
@@ -204,7 +203,7 @@ class Gemma3TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = F.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=CPU(),
