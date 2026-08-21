@@ -1492,18 +1492,6 @@ struct Bencher(RegisterPassable):
             var stop = std.time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    def iter_custom[iter_fn: def(Int) raises capturing[_] -> Int](mut self):
-        """Times a target function with custom number of iterations.
-
-        Parameters:
-            iter_fn: The target function to benchmark.
-        """
-
-        try:
-            self.elapsed = iter_fn(self.num_iters)
-        except e:
-            abort(String(e))
-
     def iter_custom[
         FuncType: def(Int) -> Int,
     ](mut self, func: FuncType):

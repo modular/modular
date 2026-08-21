@@ -118,6 +118,9 @@ This version is still a work in progress.
   argument. Its register-passable overload accepts both non-raising and raising
   closures.
 
+- `Bencher.iter_custom()` now only takes its closure as a runtime argument. The
+  compile-time parameter form has been removed.
+
 - `std.python.numpy` now handles multi-dimensional NumPy arrays, not just 1-D:
 
   - `copy_to_numpy_tensor()` copies a `Span` into a new NumPy array of a given
