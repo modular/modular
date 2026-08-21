@@ -6,8 +6,9 @@ layers can stack. A layer carries the underlying source `File`s (not a generated
 tree), so one layer target can feed both the symlink-tree and the
 precompile-into-a-dir consumer.
 
-Name staged paths via `srcs` + `strip_prefix` (bulk) and/or `file_map` (per-file
-rename); `file_map` wins on a collision.
+Name staged paths via `srcs` + `strip_prefix` (bulk), `dir_map` (whole directory
+tree relocation), and/or `file_map` (per-file rename); `file_map` wins on a
+collision, then `dir_map`, then `srcs`.
 """
 
 MojoOverlayLayerInfo = provider(
@@ -30,6 +31,25 @@ def _rel_from_strip(short_path, prefix):
             return short_path[idx + len(prefix):]
     return short_path
 
+def _rel_within_package(f, package_path):
+    """Return the path of `f` relative to `package_path`, using short_path."""
+    prefix = package_path + "/"
+    if f.short_path.startswith(prefix):
+        return f.short_path[len(prefix):]
+
+    # External-repo files appear as `../<canonical>/<package_path>/<rel>`.
+    if f.short_path.startswith("../") and package_path:
+        idx = f.short_path.find(prefix)
+        if idx >= 0:
+            return f.short_path[idx + len(prefix):]
+
+    # Falling back to the basename here would silently flatten the file into the
+    # staging prefix, surfacing much later as an unresolved import.
+    fail("mojo_overlay_layer dir_map file %s is not under package %s" % (
+        f.short_path,
+        package_path,
+    ))
+
 def _single_file(target):
     files = target[DefaultInfo].files.to_list()
     if len(files) != 1:
@@ -44,8 +64,16 @@ def _mojo_overlay_layer_impl(ctx):
     for f in ctx.files.srcs:
         entries[_rel_from_strip(f.short_path, ctx.attr.strip_prefix)] = f
 
-    # `file_map` is applied after `srcs` so an explicit rename shadows a bulk
-    # entry at the same staged path.
+    # `dir_map` relocates whole directory trees by stripping the target's package
+    # path and prepending the given prefix. Applied after `srcs` and before
+    # `file_map` so explicit per-file mappings always win.
+    for target, prefix in ctx.attr.dir_map.items():
+        package_path = target.label.package
+        for f in target[DefaultInfo].files.to_list():
+            entries[prefix + "/" + _rel_within_package(f, package_path)] = f
+
+    # `file_map` is applied last so an explicit rename shadows a bulk entry at
+    # the same staged path.
     for target, rel in ctx.attr.file_map.items():
         entries[rel] = _single_file(target)
 
@@ -66,10 +94,19 @@ mojo_overlay_layer = rule(
             doc = "Prefix stripped from each `srcs` short path to get its " +
                   "staged relative path.",
         ),
+        "dir_map": attr.label_keyed_string_dict(
+            doc = "Maps a target providing a directory tree of sources to the " +
+                  "staged prefix that tree should appear under. Each file is " +
+                  "placed at `<prefix>/<path relative to the target's " +
+                  "package>`, shadowing any `srcs` entry at that path. A file " +
+                  "outside the target's package is an error; use `file_map` " +
+                  "to place individual files.",
+        ),
         "file_map": attr.label_keyed_string_dict(
             allow_files = [".mojo"],
             doc = "Maps an individual source file to the staged relative path " +
-                  "it should occupy, shadowing any `srcs` entry at that path.",
+                  "it should occupy, shadowing any `srcs` or `dir_map` entry at " +
+                  "that path.",
         ),
     },
 )

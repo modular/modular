@@ -2,18 +2,25 @@ load("//bazel:api.bzl", "mojo_library", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
 
-# Also the base of the HAL overlay in //max/internal/driver/src:max_srcs_hal,
-# which the `//max:max_mojo` alias selects under --config=hal-device-context.
+# Base of the HAL overlay in //max/internal/driver/src:max_srcs; the
+# shipped `max` package is built from //max/internal/driver/src:max (the
+# //max:max_mojo default for non-plugin builds).
 filegroup(
     name = "max_srcs",
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
 )
 
+# Survives only to generate :max.docs (mojo doc coverage + docstring validation
+# for the unoverlaid `max` package) and the :max.docs_test lint target. The
+# `max_mojo` alias no longer selects this target, so it's `maybe-unused`; the
+# `_hal` and `machine` sources newly staged into the shipped `max` package are
+# deliberately private and get no `mojo doc` coverage.
 mojo_library(
     name = "max",
     srcs = [":max_srcs"],
     docs_base_path = "mojo",
+    tags = ["maybe-unused"],
     deps = [
         "//MLRT:Driver/DeviceContext",
         "@mojo//:std",
