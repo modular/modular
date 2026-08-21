@@ -37,11 +37,13 @@
 
 # These two passes are from the start and the end of the pipeline. Thus the
 # report shows more than the parse.
+# CHECK_TREE: MLIR pass timing (--mlir-timing)
 # CHECK_TREE: Execution time report
 # CHECK_TREE-DAG: Import Mojo
 # CHECK_TREE-DAG: LowerLIT
 # CHECK_TREE-DAG: LowerKGENToLLVM
 
+# CHECK_LIST: MLIR pass timing (--mlir-timing)
 # CHECK_LIST: Execution time report
 # CHECK_LIST: root
 # CHECK_LIST-DAG: Import Mojo
@@ -49,6 +51,7 @@
 # CHECK_LIST-DAG: LowerKGENToLLVM
 
 # CHECK_OFF-NOT: Execution time report
+# CHECK_OFF-NOT: pass timing
 
 # CHECK_BAD_MODE: error: invalid mlir-timing-display 'bogus', expected one of: `tree` (the default value), or `list`
 
