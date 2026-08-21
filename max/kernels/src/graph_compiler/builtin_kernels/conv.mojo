@@ -26,7 +26,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import IntTuple
+from layout import IntTuple, TileTensor, coord_to_index_list
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -39,7 +39,12 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, pool_shape, pool_shape_ceil
-from extensibility import InputTensor, OutputTensor
+from extensibility import (
+    InputTensor,
+    OutputTensor,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
@@ -80,11 +85,17 @@ struct ConvertE4M3FNToE4M3FNUZ:
 
 @extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
 def convert_e4m3fn_to_e4m3fnuz_shape(
-    input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
-) -> IndexList[2]:
+    input: Some[Tensor],
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
-    return IndexList[2](input.dim_size[0](), input.dim_size[1]())
+    comptime assert (
+        type_of(input).dtype == DType.float8_e4m3fn
+    ), "input dtype must be float8_e4m3fn"
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.avg_pool")
@@ -119,24 +130,35 @@ struct AvgPool:
 
 
 @extensibility.register_shape_function("mo.avg_pool")
-def avg_pool_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def avg_pool_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.avg_pool` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(strides).dtype
+    ), "filter dtype must match strides dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(dilations).dtype
+    ), "filter dtype must match dilations dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(paddings).dtype
+    ), "filter dtype must match paddings dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -174,25 +196,36 @@ struct AvgPoolCeilModeTrue:
 
 
 @extensibility.register_shape_function("mo.avg_pool_ceil_mode_true")
-def avg_pool_ceil_mode_true_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def avg_pool_ceil_mode_true_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.avg_pool_ceil_mode_true` graph op.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(strides).dtype
+    ), "filter dtype must match strides dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(dilations).dtype
+    ), "filter dtype must match dilations dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(paddings).dtype
+    ), "filter dtype must match paddings dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape_ceil(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -236,20 +269,24 @@ struct PadConstant:
 
 @extensibility.register_shape_function("mo.pad.constant")
 def pad_constant_shape[
-    dtype: DType,
-    rank: Int,
+    constant_dtype: DType,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-    constant: Scalar[dtype=dtype],
-) raises -> IndexList[rank]:
+    input: Some[TileTensorable],
+    padding: Some[TileTensorable],
+    # `constant` binds its own dtype parameter. The graph compiler's
+    # scalar-attribute binding cannot resolve a trait projection like
+    # `type_of(input).dtype`. The `comptime assert` below restores the tie.
+    constant: Scalar[dtype=constant_dtype],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.constant` graph op."""
-    # rebind is required because mojo can't figure out that
-    # input.static_spec.to_layout_tensor().rank == input.rank
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    comptime assert (
+        constant_dtype == type_of(input).dtype
+    ), "constant dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -276,18 +313,15 @@ struct PadRepeat:
 
 
 @extensibility.register_shape_function("mo.pad.repeat")
-def pad_repeat_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-) raises -> IndexList[rank]:
+def pad_repeat_shape(
+    input: Some[TileTensorable], padding: Some[TileTensorable]
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.repeat` graph op."""
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -314,18 +348,15 @@ struct PadReflect:
 
 
 @extensibility.register_shape_function("mo.pad.reflect")
-def pad_reflect_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-) raises -> IndexList[rank]:
+def pad_reflect_shape(
+    input: Some[TileTensorable], padding: Some[TileTensorable]
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.reflect` graph op."""
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -490,21 +521,24 @@ struct Conv:
 
 @extensibility.register_shape_function("mo.conv")
 def mo_conv_shape(
-    input: InputTensor,
-    filter: InputTensor,
-    strides: InputTensor[rank=1, ...],
-    dilations: InputTensor[rank=1, ...],
-    paddings: InputTensor[rank=1, ...],
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
     num_groups: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.conv` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         conv_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
             num_groups,
         )
     )
@@ -593,14 +627,20 @@ struct Conv2dResidualAdd:
 
 @extensibility.register_shape_function("conv2d_residual_add")
 def conv2d_residual_add_shape(
-    input: InputTensor[rank=4, ...],
-    filter: InputTensor[rank=4, ...],
-    source: InputTensor[rank=4, ...],
-    bias: InputTensor[rank=1, ...],
-) raises -> IndexList[4]:
+    input: Some[Tensor],
+    filter: Some[Tensor],
+    source: Some[Tensor],
+    bias: Some[Tensor],
+) raises -> IndexList[type_of(source).rank]:
     """Computes the output shape for the `conv2d_residual_add` graph op."""
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 4, "filter must be rank 4"
+    comptime assert type_of(source).rank == 4, "source must be rank 4"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
     # Output shape is the same as source shape (residual tensor).
-    return source.shape()
+    return rebind[IndexList[type_of(source).rank]](
+        coord_to_index_list(source.shape().tuple())
+    )
 
 
 @extensibility.register("mo.conv_transpose")
@@ -742,25 +782,32 @@ struct ConvTranspose:
 
 
 @extensibility.register_shape_function("mo.conv_transpose")
-def mo_conv_transpose_shape[
-    dtype: DType
-](
-    input: InputTensor[dtype=dtype, ...],
-    filter: InputTensor[dtype=dtype, ...],
-    strides: InputTensor[rank=1, ...],
-    dilations: InputTensor[rank=1, ...],
-    paddings: InputTensor[rank=1, ...],
-    output_paddings: InputTensor[rank=1, ...],
-) raises -> IndexList[input.rank]:
+def mo_conv_transpose_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+    output_paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.conv_transpose` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(output_paddings).rank == 1
+    ), "output_paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(input).dtype
+    ), "filter dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         conv_transpose_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output_paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor().bitcast[type_of(input).dtype](),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
+            output_paddings.to_tile_tensor(),
         )
     )
 
@@ -810,8 +857,6 @@ struct PackConvFilterShape:
 
 @extensibility.register_shape_function("pack_conv_filter_shape")
 def pack_conv_filter_shape_fn[
-    rank: Int,
-    filter_type: DType,
     input_shape: IntTuple,
     filter_shape: IntTuple,
     output_shape: IntTuple,
@@ -819,15 +864,11 @@ def pack_conv_filter_shape_fn[
     dilations: IntTuple,
     paddings: IntTuple,
     num_groups: Int,
-](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-    rank + 1
-]:
+](filter_buf: Some[TileTensorable]) -> IndexList[type_of(filter_buf).rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
     Parameters:
-        rank: Rank of the un-packed filter.
-        filter_type: Type of the filter.
         input_shape: NHWC layout.
         filter_shape: Filter shape.
         output_shape: NHWC layout.
@@ -843,9 +884,9 @@ def pack_conv_filter_shape_fn[
         The output shape.
     """
 
-    return rebind[IndexList[rank + 1]](
+    return rebind[IndexList[type_of(filter_buf).rank + 1]](
         pack_filter_shape_conv[
-            filter_type,
+            type_of(filter_buf).dtype,
             input_shape,
             filter_shape,
             output_shape,
@@ -853,7 +894,7 @@ def pack_conv_filter_shape_fn[
             dilations,
             paddings,
             num_groups,
-        ](filter_buf.to_tile_tensor[DType.int64]())
+        ](filter_buf.to_tile_tensor())
     )
 
 
