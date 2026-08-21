@@ -48,9 +48,8 @@ def bench_pad_gpu[
     var out_device = ctx.enqueue_create_buffer[dtype](output_size)
     var constant = Scalar[dtype](0)
 
-    @__parameter
     @always_inline
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {mut out_device, imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
             pad_constant(
@@ -68,7 +67,8 @@ def bench_pad_gpu[
     # Total memory traffic: read input + write output.
     var total_bytes = (input_size + output_size) * size_of[dtype]()
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "pad_constant",
             input_id=String(dtype, "/", shape, "/pad=", pad_size),

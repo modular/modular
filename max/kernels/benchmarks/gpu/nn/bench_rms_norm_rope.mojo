@@ -95,18 +95,18 @@ def bench_rms_norm_rope_gpu[
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
-    @__copy_capture(
-        shape,
-        gamma,
-        epsilon,
-        weight_offset,
-        input_fn,
-        cos_fn,
-        sin_fn,
-        output_fn,
-    )
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(
+        mut b: Bencher,
+    ) raises {
+        var gamma,
+        var epsilon,
+        var weight_offset,
+        var input_fn,
+        var cos_fn,
+        var sin_fn,
+        var output_fn,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             rms_norm_rope[
@@ -131,7 +131,8 @@ def bench_rms_norm_rope_gpu[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "rms_norm_rope",
             input_id=String(fn_name, "/", dtype, "/", shape),

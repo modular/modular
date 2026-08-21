@@ -71,12 +71,12 @@ def bench_softmax_gpu[
         )
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
-        BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape))
+    b.bench_function(
+        bench_fn,
+        BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape)),
     )
 
     # The `algorithm.rowwise` overload — what `mo.reduce.softmax` launches.
@@ -101,14 +101,14 @@ def bench_softmax_gpu[
         )
 
     @always_inline
-    @__parameter
-    def bench_fn_rowwise(mut b: Bencher) raises:
+    def bench_fn_rowwise(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch_rowwise, ctx)
 
-    b.bench_function[bench_fn_rowwise](
+    b.bench_function(
+        bench_fn_rowwise,
         BenchId(
             "softmax", input_id=String("softmax_rowwise/", dtype, "/", shape)
-        )
+        ),
     )
 
     ctx.synchronize()
@@ -148,15 +148,15 @@ def bench_softmax_with_temperature_gpu[
         softmax_with_temperature(ctx, data_buf, out_buf, temp)
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "softmax_with_temperature",
             input_id=String(fn_name, "/", dtype, "/", shape, "/T=", temp),
-        )
+        ),
     )
 
     ctx.synchronize()

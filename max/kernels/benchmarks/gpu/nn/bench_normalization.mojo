@@ -131,16 +131,16 @@ def bench_layer_norm_gpu[
             )
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "layer_norm",
             input_id=String(fn_name, shape_tag, dtype, shape, sep="/"),
-        )
+        ),
     )
 
     ctx.synchronize()
@@ -219,11 +219,11 @@ def bench_rms_norm_gpu[
         )
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId("rms_norm", input_id=String(fn_name, "/", dtype, "/", shape)),
     )
 
