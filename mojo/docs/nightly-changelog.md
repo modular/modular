@@ -16,6 +16,37 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now supports contextually inferred member references: a leading-dot form
+  such as `.red` or `.float64` resolves against the expected type of the
+  expression, so you can omit a redundant type name when context already
+  supplies it. Static methods, parametric static methods, parentheses, attribute
+  chains, and typed collection literals all work:
+
+  ```mojo
+  struct Color(ImplicitlyCopyable):
+      comptime red = Color(...)
+      comptime green = Color(...)
+
+      @staticmethod
+      def hsb_to_rgb(h: Int, s: Int, b: Int) -> Color:
+          return Color(...)
+
+      def opacity(self, amount: Float64) -> Color:
+          return Color(...)
+      def __init__(out self, ...):
+
+  def takes_color(c: Color):
+  def takes_colors(colors: List[Color]):
+
+  takes_color(.green)
+  takes_color(.hsb_to_rgb(120, 100, 50))
+  takes_color(.red.opacity(0.5))
+  var x: Color = .red
+  takes_colors([.red, .green])
+  ```
+
+  Without a contextual type, `.member` is an error.
+
 - A `thin` function type can now carry trailing `where` clauses, constraining
   the parameters it declares. This lets a generic algorithm state what it
   promises the function it is handed, instead of leaving the constraint to be
