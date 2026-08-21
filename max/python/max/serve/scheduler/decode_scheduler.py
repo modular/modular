@@ -51,12 +51,14 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
 )
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry.metrics import METRICS
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -96,6 +98,12 @@ class PendingDecodeRequest:
     phase: DecodeRequestPhase
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None
+    # Decode-clock receipt times for prefill's ping-back events, used to
+    # derive di_prefill_span / di_reply_rtt. None until the corresponding
+    # ping arrives (or forever, if MAX_SERVE_DI_LATENCY_PING is off at
+    # prefill).
+    arrived_ping_at: float | None = None
+    ce_done_ping_at: float | None = None
     # Cancelled while TRANSFERRING: releasing blocks immediately would free
     # memory the transfer is still writing into, racing a future allocation
     # that reuses the same blocks. Cleanup defers to
@@ -158,6 +166,11 @@ class DecodeScheduler(Scheduler):
             get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
+        # request_id -> time.monotonic() when a request first lands in
+        # self.pending_reqs, popped on successful admission (not on
+        # a re-insert after InsufficientBlocksError, so the eventual wait
+        # covers the full time including any failed-alloc retries).
+        self._admission_enqueue_time: dict[RequestID, float] = {}
         self._last_batch_activity: float = time.monotonic()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
@@ -179,6 +192,15 @@ class DecodeScheduler(Scheduler):
         pending = self.requests.get(request_id)
         if pending is None:
             return
+
+        postprocess_start = time.monotonic()
+        if pending.ce_done_ping_at is not None:
+            # Decode-clock span from prefill's "ce_done" ping to this real
+            # reply landing (reply construction + KV-transfer
+            # initiation + serialize + network, all on prefill's side).
+            METRICS.di_reply_rtt(
+                (postprocess_start - pending.ce_done_ping_at) * 1000
+            )
 
         # Update the context with the generated token
         context = pending.context
@@ -210,10 +232,37 @@ class DecodeScheduler(Scheduler):
         self.response_queue.put_nowait(
             {request_id: SchedulerResult.create(output)}
         )
+        # Decode-local postprocessing before the result leaves this
+        # process. Does not cover the subsequent API-process hop -- see
+        # maxserve.response_queue_time for the tail end of that on the API
+        # side.
+        METRICS.di_decode_postprocess_time(
+            (time.monotonic() - postprocess_start) * 1000
+        )
 
         pending.phase = DecodeRequestPhase.TRANSFERRING
         pending.phase_entered_at = time.monotonic()
         pending.transfer = message.transfer_metadata
+
+    def handle_prefill_progress_ping(
+        self, message: PrefillProgressPing
+    ) -> None:
+        """Handles a ping-back from prefill, timestamped on decode's own
+        clock so every derived interval is a same-clock diff.
+        """
+        pending = self.requests.get(message.id)
+        if pending is None:
+            # Cancelled or already resolved while the ping was in-flight.
+            return
+
+        now = time.monotonic()
+        if message.event == "arrived":
+            METRICS.di_dispatch_rtt((now - pending.phase_entered_at) * 1000)
+            pending.arrived_ping_at = now
+        elif message.event == "ce_done":
+            if pending.arrived_ping_at is not None:
+                METRICS.di_prefill_span((now - pending.arrived_ping_at) * 1000)
+            pending.ce_done_ping_at = now
 
     @traced
     def send_prefill_request(
@@ -261,6 +310,9 @@ class DecodeScheduler(Scheduler):
         ):
             dst_idxs[i] = -1
 
+        # Struct construction + msgspec serialization + ZMQ enqueue,
+        # decode-local -- no network transit included.
+        send_start = time.monotonic()
         self.dispatcher.send_request_nowait(
             PrefillRequest(
                 id=request_id,
@@ -271,21 +323,32 @@ class DecodeScheduler(Scheduler):
             ),
             data.target_endpoint,
         )
+        METRICS.di_decode_send_time((time.monotonic() - send_start) * 1000)
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
+        # max_batch_size is a per-replica limit (see TextBatchConstructor's
+        # docstring), but the in-flight counts below sum every replica --
+        # scale by DP degree so admission isn't capped at one replica's share.
+        total_max_batch_size = (
+            self.scheduler_config.max_batch_size
+            * self.scheduler_config.data_parallel_degree
+        )
         items = drain_queue(
             self.request_queue,
-            max_items=self.scheduler_config.max_batch_size * 2,
+            max_items=total_max_batch_size * 2,
         )
 
         for context in items:
             self.pending_reqs[context.request_id] = context
+            self._admission_enqueue_time.setdefault(
+                context.request_id, time.monotonic()
+            )
 
         while (
             self.pending_reqs
             and (len(self.batch_constructor.all_tg_reqs) + len(self.requests))
-            < self.scheduler_config.max_batch_size
+            < total_max_batch_size
             and (
                 self.kv_cache is None
                 or any(
@@ -326,10 +389,17 @@ class DecodeScheduler(Scheduler):
 
             # Send to the Prefill Node
             dst_idxs = self.kv_cache.get_req_blocks(context)
+            admitted_at = time.monotonic()
+            enqueued_at = self._admission_enqueue_time.pop(req_id, None)
+            if enqueued_at is not None:
+                METRICS.di_decode_admission_queue_wait_time(
+                    (admitted_at - enqueued_at) * 1000
+                )
             self.requests[req_id] = PendingDecodeRequest(
                 context=context,
                 replica_idx=replica_idx,
                 phase=DecodeRequestPhase.AWAITING_PREFILL,
+                phase_entered_at=admitted_at,
             )
             self.prefill_reqs_per_replica[replica_idx] += 1
             self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
@@ -568,6 +638,8 @@ class DecodeScheduler(Scheduler):
                 self.handle_transfer_engine_response(reply)
             elif isinstance(reply, PrefillResponse):
                 self.handle_prefill_response(reply)
+            elif isinstance(reply, PrefillProgressPing):
+                self.handle_prefill_progress_ping(reply)
             else:
                 raise ValueError(f"Invalid reply type: {reply}")
 
