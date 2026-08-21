@@ -2059,7 +2059,16 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // In order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
-  CValue baseVal = emitter.emitExprCValue(base, EC_AttributeRefBase);
+  AnyValue baseAny = emitter.emitExpr(base, EC_AttributeRefBase);
+  if (!baseAny)
+    return {};
+
+  // If the base is an inferred-base attribute (e.g. `.red.opacity`), defer the
+  // whole attribute reference until a contextual type is available.
+  if (baseAny.getIfInferredBaseAttrRef())
+    return emitter.emitResult(InferredBaseAttrRefUValue(this), this, dest);
+
+  CValue baseVal = emitter.emitCValue({baseAny, base}, EC_AttributeRefBase);
   if (!baseVal)
     return {};
 
@@ -2532,6 +2541,15 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   return {};
 }
 
+/// Emission for ".foo" expressions, which are inferred attribute references.
+auto InferredAttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
+                                         bool isSpeculative) const
+    -> ELVIITResult {
+  // Emission is trivial: we just wrap it in a UValue so type checking is
+  // deferred until we resolve the contextual type (or not).
+  return emitter.emitResult(InferredBaseAttrRefUValue(this), this, dest);
+}
+
 /// Decode a canonical `_type=` value (shared by the dot-syntax and f-string
 /// `__mlir_op` paths). The bare `__mlir_deferred_type` marker sets
 /// `forceDeferred` and adds no type; a `Tuple[...]` appends each element; any
@@ -2926,6 +2944,11 @@ AnyValue CallNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   AnyValue calleeVal = emitter.emitExpr(callee, EC_CallCalleeValue);
   if (!calleeVal)
     return {};
+
+  // If the callee is an inferred-base attribute (e.g. `.hsb_to_rgb`), defer the
+  // whole call until a contextual result type is available to resolve the base.
+  if (calleeVal.getIfInferredBaseAttrRef())
+    return emitter.emitResult(InferredBaseAttrRefUValue(this), this, dest);
 
   // If this is the invocation of an unbound MLIR operator, bind it into an
   // actual operator!
@@ -3353,6 +3376,11 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   auto baseAnyValue = emitter.emitExpr(base, EC_SubscriptBase);
   if (!baseAnyValue)
     return {};
+
+  // If the base is an inferred-base attribute (e.g. `.alpha_blended[42]`),
+  // defer the whole subscript until a contextual type is available.
+  if (baseAnyValue.getIfInferredBaseAttrRef())
+    return emitter.emitResult(InferredBaseAttrRefUValue(this), this, dest);
 
   OverloadSetUValue overloads = baseAnyValue.getIfOverloadSet();
 

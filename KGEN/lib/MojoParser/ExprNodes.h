@@ -278,6 +278,28 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
                                    ExprDest &dest, IREmitter &emitter);
 };
 
+/// An attribute reference with no explicit base, e.g. `.f64` in `foo(.f64)`.
+/// The base type is inferred from context (like Swift's leading-dot syntax).
+struct InferredAttributeRefNode final : public LValueCapableExprNode,
+                                        Identifier {
+  InferredAttributeRefNode(SMLoc dotLoc, StringRef spelling,
+                           bool isEscapedIdentifier = false)
+      : LValueCapableExprNode(kInferredAttributeRef),
+        Identifier(spelling, isEscapedIdentifier), dotLoc(dotLoc) {}
+
+  const SMLoc dotLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kInferredAttributeRef;
+  }
+  SMLoc getLoc() const override { return dotLoc; }
+  SourceRange getAttributeNameRange() const { return getIdentifierRange(); }
+  SourceRange getRange() const override { return {dotLoc, getIdentifierLoc()}; }
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
 /// Struct to represent a parsed expression passed as a parameter or argument
 /// operand, along with metadata to help overload resolution and call emission.
 struct Operand {

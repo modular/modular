@@ -263,6 +263,9 @@ CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (auto initValue = value.ir.getIfInitializer())
     return initValue->emitAsCValue(*this, dest);
 
+  if (auto inferredAttr = value.ir.getIfInferredBaseAttrRef())
+    return inferredAttr.emitAsCValue(*this, dest);
+
   llvm_unreachable("unknown UValue in emitCValue");
 }
 
