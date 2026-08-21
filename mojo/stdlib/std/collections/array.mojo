@@ -755,7 +755,7 @@ struct Array[T: AnyType, length: Int](
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline
-    def __add__(
+    def concat(
         deinit self,
         deinit rhs: Array[Self.T, _],
         out result: Array[Self.T, Self.length + rhs.length],
@@ -778,7 +778,7 @@ struct Array[T: AnyType, length: Int](
         ```mojo
         var a: Array[Int, 2] = [1, 2]
         var b: Array[Int, 3] = [3, 4, 5]
-        var c = (a^) + (b^)  # [1, 2, 3, 4, 5]
+        var c = a^.concat(b^)  # [1, 2, 3, 4, 5]
         ```
         """
         result = {uninitialized = True}
