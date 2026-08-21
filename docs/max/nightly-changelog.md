@@ -693,6 +693,9 @@ This version is still a work in progress.
   Construct it with the values you need. Its sub-configs (`runtime`,
   `sampling`, etc.) are unchanged for now.
 
+- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
+  now immutable (pydantic `frozen=True`); assigning to a field after
+  construction raises a `ValidationError`. Construct with the desired values.
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
