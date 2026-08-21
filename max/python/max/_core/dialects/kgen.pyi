@@ -1638,6 +1638,10 @@ class ParamListConcatAttr(max._core.Attribute):
 
     @overload
     def __init__(
+        self, param_lists: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
         self,
         type: ParamListType,
         param_lists: max._core.dialects.builtin.TypedAttr,

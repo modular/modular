@@ -695,6 +695,10 @@ public:
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
 
+  bool isUniversalParametricClosureTrait(ASTDecl *trait) {
+    return trait == getUniversalParametricClosureTrait();
+  }
+
   /// Get or create a struct that defines conformance of targetTrait in terms of
   /// sourceTrait.
   ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,

@@ -701,6 +701,29 @@ void LIT::sortAndDeduplicateTraitSymbols(
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
 }
 
+std::optional<ParameterEvaluator>
+LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
+                                   TraitDeclOp traitDecl) {
+  // No need to populate the evaluator if the trait symbol has no param values.
+  // This should be the common case before we expose parametric trait support to
+  // users.
+  // NOTE: Normally the signature should have at least one param for Self, but
+  // could be empty when the function is called when signature resolving the
+  // trait.
+  if (traitDecl.getSignature().getParamTypes().size() <= 1)
+    return std::nullopt;
+
+  // The decl has an extra Self type parameter.
+  assert(traitSymbol.getParamValues().size() + 1 ==
+         traitDecl.getSignature().getParamTypes().size());
+  ParameterEvaluator evaluator;
+  for (size_t i = 0; i < traitSymbol.getParamValues().size(); i++) {
+    evaluator.setDeclBinding(traitDecl.getSignature().getParamName(i),
+                             traitSymbol.getParamValues()[i]);
+  }
+  return evaluator;
+}
+
 void LIT::canonicalizeTraitCompositionSymbols(
     SmallVectorImpl<TraitSymbolAttr> &symbols,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
@@ -712,10 +735,15 @@ void LIT::canonicalizeTraitCompositionSymbols(
       continue;
 
     TraitDeclOp traitOp = traitDeclResolver(symbol.getSymbol());
+    auto paramEvaluator = populateTraitBindingEvaluator(symbol, traitOp);
+
+    TraitType canonTrait = traitOp.getCanonicalTrait();
+    if (paramEvaluator)
+      canonTrait = paramEvaluator->replace(canonTrait);
+
     // Only one level of parent lookup is needed because parentTypes always
     // include their entire ancestor chain.
-    ArrayRef<TraitSymbolAttr> parentSymbols =
-        traitOp.getCanonicalTrait().getSymbols();
+    ArrayRef<TraitSymbolAttr> parentSymbols = canonTrait.getSymbols();
     seen.insert(parentSymbols.begin(), parentSymbols.end());
   }
   symbols.assign(seen.begin(), seen.end());

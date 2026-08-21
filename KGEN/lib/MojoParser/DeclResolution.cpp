@@ -3208,13 +3208,41 @@ static ParseResult resolveConformanceList(
     DenseSet<TraitSymbolAttr> &immediateParents,
     SmallVectorImpl<ParsedTraitConstraint> *traitConstraints = nullptr,
     DenseSet<TraitSymbolAttr> *explicitTraits = nullptr) {
+
+  // Helper to emit an error for a non-trait type in a conformance list.
+  auto emitNonTraitTypeInConformanceListError = [&](Type type, SMLoc loc) {
+    bool isTrait = isa_and_nonnull<TraitDeclOp>(decl.getIfOperation());
+    if (sugarIsa<LIT::StructType>(type)) {
+      if (isTrait) {
+        shared.emitError(loc)
+            << "traits only refine other traits; remove the struct type "
+               "from the refinement list";
+      } else {
+        shared.emitError(loc)
+            << "structs only conform to traits or trait compositions; "
+               "remove the struct type from the conformance list";
+      }
+    } else if (sugarIsa<ParamType>(type)) {
+      if (isTrait)
+        shared.emitError(loc)
+            << "traits only refine other traits; remove the type parameter "
+               "from the refinement list";
+      else
+        shared.emitError(loc)
+            << "structs only conform to traits or trait compositions; "
+               "remove the type parameter from the conformance list";
+    } else {
+      shared.emitError(loc)
+          << "refinement and conformance lists may only contain traits";
+    }
+  };
+
   if (parsedConformances.empty())
     return success();
 
   DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *inheritedFrom =
       decl.getTraitConformanceLineage(/*createIfMissing=*/true);
 
-  bool isTrait = isa_and_nonnull<TraitDeclOp>(decl.getIfOperation());
   for (const ParsedConformanceEntry &conformance : parsedConformances) {
     IREmitter typeEmitter(declScope, EC_Type);
     ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
@@ -3225,33 +3253,9 @@ static ParseResult resolveConformanceList(
     // Reject non-trait types in refinement and conformance lists.
     auto traitType = sugarDynCast<TraitType>(type);
     if (!traitType) {
-      if (sugarIsa<LIT::StructType>(type)) {
-        if (isTrait) {
-          shared.emitError(conformance.loc)
-              << "traits only refine other traits; remove the struct type "
-                 "from the refinement list";
-        } else {
-          shared.emitError(conformance.loc)
-              << "structs only conform to traits or trait compositions; "
-                 "remove the struct type from the conformance list";
-        }
-      } else if (sugarIsa<ParamType>(type)) {
-        if (isTrait)
-          shared.emitError(conformance.loc)
-              << "traits only refine other traits; remove the type parameter "
-                 "from the refinement list";
-        else
-          shared.emitError(conformance.loc)
-              << "structs only conform to traits or trait compositions; "
-                 "remove the type parameter from the conformance list";
-      } else {
-        shared.emitError(conformance.loc)
-            << "refinement and conformance lists may only contain traits";
-      }
-      if (!traitType) {
-        declScope.setErroneous();
-        continue;
-      }
+      emitNonTraitTypeInConformanceListError(type, conformance.loc);
+      declScope.setErroneous();
+      continue;
     }
 
     // Emit optional where clause for conditional conformance.
@@ -3327,9 +3331,18 @@ static ParseResult resolveConformanceList(
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
               .getCanonicalTrait();
 
+      auto paramEvaluator = populateTraitBindingEvaluator(symbol, shared);
       for (TraitSymbolAttr ancestor : canonicalParent.getSymbols()) {
+        if (paramEvaluator)
+          ancestor = paramEvaluator->replace(ancestor);
+        // It is probably fine to relax `ancestor.isFullyResolved()` here, just
+        // to catch any unexpected behavior before exposing parametric traits to
+        // users. It is now impossible to inherit from a parametric trait.
+        assert(ancestor.isFullyResolved() || ancestor == symbol);
+
         inheritedFrom->try_emplace(ancestor,
                                    std::make_pair(symbol, conformance.loc));
+
         // Any immediate parent that is actually a parent of this `symbol` is no
         // longer an immediate parent.
         immediateParents.erase(ancestor);
@@ -3600,7 +3613,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SMLoc identifierLoc;
   SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
-  DenseSet<TraitSymbolAttr> explicitTraits;
+
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
@@ -3622,11 +3635,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
-  DenseSet<TraitSymbolAttr> immediateParents; // unused.
-  if (resolveConformanceList(parsedConformances, sigDecl, decl, shared,
-                             immediateParents, &parsedConstraints,
-                             &explicitTraits))
-    return failure();
+  DenseSet<TraitSymbolAttr> explicitTraits;
+  {
+    DenseSet<TraitSymbolAttr> immediateParents; // unused.
+    if (resolveConformanceList(parsedConformances, sigDecl, decl, shared,
+                               immediateParents, &parsedConstraints,
+                               &explicitTraits))
+      return failure();
+  }
 
   paramSignature.emitBodyConstraints();
 
@@ -3675,23 +3691,23 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setParamsAttr(paramsArrayAttr);
   structOp.setSignature(sig);
 
-  SmallVector<TraitSymbolAttr> parentTraits;
+  SmallVector<TraitSymbolAttr> traitConformed;
   if (auto *inheritedFrom = decl.getTraitConformanceLineage())
     for (auto [symbol, _] : *inheritedFrom)
-      parentTraits.push_back(symbol);
+      traitConformed.push_back(symbol);
 
   // Make every nominal struct type inherit from `AnyType`.
   if (anyTypeDecl)
-    parentTraits.push_back(TraitSymbolAttr::get(anyTypeDecl->getSymbolRef()));
+    traitConformed.push_back(TraitSymbolAttr::get(anyTypeDecl->getSymbolRef()));
 
   // Make every nominal struct type inherit from `Deinitable` and
   // `Movable`. May be overridden / narrowed by explicit conditional `where`
   // conformance.
   if (implicitDelDecl)
-    parentTraits.push_back(
+    traitConformed.push_back(
         TraitSymbolAttr::get(implicitDelDecl->getSymbolRef()));
   if (movableDecl)
-    parentTraits.push_back(TraitSymbolAttr::get(movableDecl->getSymbolRef()));
+    traitConformed.push_back(TraitSymbolAttr::get(movableDecl->getSymbolRef()));
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
@@ -3733,10 +3749,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // Build canonical trait with constraints for conditional conformance.
   SmallVector<ConstraintAttr> constraintsArray =
-      canonicalizeTraitSymbolsAndConstraints(shared, parentTraits,
+      canonicalizeTraitSymbolsAndConstraints(shared, traitConformed,
                                              traitConstraints);
   structOp.setCanonicalTrait(
-      TraitType::get(getContext(), parentTraits, constraintsArray));
+      TraitType::get(getContext(), traitConformed, constraintsArray));
 
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
