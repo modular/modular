@@ -769,6 +769,13 @@ This version is still a work in progress.
   computed during retrieval. Replace tuple unpacking with attribute access.
   `PipelineRegistry.retrieve` is unchanged.
 
+- The serving surface now reads the planned sequence length and batch token
+  budget from the memory plan instead of re-reading them from the pipeline
+  config. `TokenGenerationSchedulerConfig.from_pipeline_config`,
+  `start_model_worker`, the scheduler loaders, and the startup log helpers
+  (`log_basic_config`, `log_pipeline_info`) take the memory plan as a
+  parameter. Resolved values are unchanged.
+
 ## Fixes
 
 - On Apple Silicon, a missing Metal Toolchain (a separate download since

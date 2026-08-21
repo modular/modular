@@ -33,7 +33,7 @@ from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
-from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib import MemoryPlan, PipelineConfig, PipelineModel
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -222,6 +222,7 @@ class ModelWorker:
             BaseContextType, PipelineOutputType
         ],
         zmq_endpoint_base: str,
+        memory_plan: MemoryPlan | None,
         spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Runs a model worker process.
@@ -237,6 +238,8 @@ class ModelWorker:
             metric_client_factory: Factory function to create metric client
             zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
                 the API server process and this worker process.
+            memory_plan: The memory plan the pipeline was sized against,
+                consumed by the scheduler config.
             spawn_start_wall_ts: ``time.time()`` recorded in the parent just
                 before spawning this worker. Used to log how long the worker
                 process took to start (Python imports + driver init), which
@@ -406,6 +409,7 @@ class ModelWorker:
                 pipeline_config,
                 settings,
                 worker_queues,
+                memory_plan,
             )
 
             # Get the reset prefix cache backend.
@@ -535,6 +539,7 @@ class ModelWorker:
             BaseContextType, PipelineOutputType
         ],
         zmq_endpoint_base: str,
+        memory_plan: MemoryPlan | None,
         spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
@@ -562,6 +567,7 @@ class ModelWorker:
                     metric_client_factory,
                     model_worker_interface,
                     zmq_endpoint_base,
+                    memory_plan,
                     spawn_start_wall_ts,
                 )
             )
@@ -579,6 +585,7 @@ async def start_model_worker(
         BaseContextType, PipelineOutputType
     ],
     zmq_endpoint_base: str,
+    memory_plan: MemoryPlan | None,
 ) -> AsyncGenerator[ModelWorkerProxy[BaseContextType, PipelineOutputType]]:
     """Starts a model worker and associated process.
 
@@ -590,6 +597,8 @@ async def start_model_worker(
         model_worker_interface: Interface for communicating with the worker
         zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
             the API server process and the worker process.
+        memory_plan: The memory plan the pipeline was sized against,
+            consumed by the worker's scheduler config.
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -613,6 +622,7 @@ async def start_model_worker(
             metric_client.cross_process_factory(settings),
             model_worker_interface,
             zmq_endpoint_base,
+            memory_plan,
             spawn_start_wall_ts,
         )
 

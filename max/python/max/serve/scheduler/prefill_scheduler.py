@@ -28,6 +28,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    MemoryPlan,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -510,6 +511,7 @@ def load_prefill_scheduler(
     pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
+    memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
     # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
@@ -528,7 +530,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, pipeline.max_batch_size
+        pipeline_config, pipeline.max_batch_size, memory_plan
     )
 
     # Decode incoming prefill requests into the architecture's concrete

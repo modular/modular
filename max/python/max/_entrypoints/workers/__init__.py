@@ -87,10 +87,11 @@ def start_workers(
 
         # Load the Tokenizer and Pipeline Factory
         pipeline_config = PipelineConfig.from_args(pipeline_args)
-        pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        retrieved = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_args.task,
-        ).factory
+        )
+        pipeline_factory = retrieved.factory
 
         try:
             async with AsyncExitStack() as exit_stack:
@@ -116,6 +117,7 @@ def start_workers(
                             ),
                         ),
                         zmq_endpoint_base=zmq_endpoint_base,
+                        memory_plan=retrieved.memory_plan,
                     )
                 )
 

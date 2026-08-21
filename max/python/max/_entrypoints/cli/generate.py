@@ -149,7 +149,7 @@ def generate_text_for_pipeline(
     tokenizer = retrieved.tokenizer
     pipeline = retrieved.factory()
     assert isinstance(pipeline, Pipeline)
-    log_basic_config(pipeline_config)
+    log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
     logger.info("max_batch_size: %d", pipeline.max_batch_size)
 
     capture = OneShotCapture(top_n=profile_top_n) if profile else None

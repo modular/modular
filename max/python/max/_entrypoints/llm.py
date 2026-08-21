@@ -268,6 +268,7 @@ async def _async_worker(
             metric_client=metric_client,
             model_worker_interface=model_worker_interface,
             zmq_endpoint_base=zmq_endpoint_base,
+            memory_plan=retrieved.memory_plan,
         ) as model_worker,
     ):
         pipeline = TokenGeneratorPipeline(

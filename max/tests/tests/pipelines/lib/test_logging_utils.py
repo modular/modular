@@ -13,9 +13,9 @@
 """Tests for log_basic_config output.
 
 Guards against a regression where max_seq_len was missing from server startup
-logs because log_basic_config was called before pipeline_config.resolve() had
-populated model.max_length. (cache_memory now logs from the memory planner,
-where the KV budget is computed, rather than from this config logger.)
+logs. The value comes from the memory plan the caller passes in. (cache_memory
+now logs from the memory planner, where the KV budget is computed, rather than
+from this config logger.)
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
+    MemoryPlan,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
@@ -52,7 +53,9 @@ def _make_pipeline_config(max_length: int | None) -> PipelineConfig:
     )
 
 
-def _capture_log_basic_config(config: PipelineConfig) -> str:
+def _capture_log_basic_config(
+    config: PipelineConfig, memory_plan: MemoryPlan
+) -> str:
     """Call log_basic_config with mocked registry and return all logged lines."""
     arch = MagicMock()
     arch.name = "LlamaForCausalLM"
@@ -82,7 +85,7 @@ def _capture_log_basic_config(config: PipelineConfig) -> str:
                 return_value=pipeline_cls,
             ),
         ):
-            log_basic_config(config)
+            log_basic_config(config, memory_plan=memory_plan)
     finally:
         logger.removeHandler(capture)
         logger.setLevel(original_level)
@@ -96,7 +99,10 @@ class TestLogBasicConfigAfterResolve:
     def test_max_seq_len_present_after_resolve(self) -> None:
         """max_seq_len must show the resolved value, not None."""
         config = _make_pipeline_config(max_length=131072)
-        output = _capture_log_basic_config(config)
+        memory_plan = MemoryPlan(
+            max_batch_size=1, footprint=0, max_length=131072
+        )
+        output = _capture_log_basic_config(config, memory_plan)
         assert "131072" in output, (
             f"Expected max_seq_len=131072 in log output:\n{output}"
         )
