@@ -74,8 +74,9 @@ _TOOL = {
 
 # Structural marker fragments that should never appear verbatim in a
 # content delta after the streaming-tool-call fixes. Drawn from the
-# Gemma 4 and Kimi K2.5 vocabularies.
+# Gemma 4, Kimi K2.5 and Inkling vocabularies.
 _STRUCTURAL_LEAKS: tuple[str, ...] = (
+    "<|content_invoke_tool_json|>",
     "<|tool_call>",
     "<tool_call|>",
     "<|tool_response>",
