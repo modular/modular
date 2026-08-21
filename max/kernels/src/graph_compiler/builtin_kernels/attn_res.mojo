@@ -102,9 +102,13 @@ struct AttnResMix:
                     attn_res_mix_gpu[
                         dtype,
                         output_tt.LayoutType,
+                        output_tt.Storage,
                         candidates_tt.LayoutType,
+                        candidates_tt.Storage,
                         proj_tt.LayoutType,
+                        proj_tt.Storage,
                         norm_tt.LayoutType,
+                        norm_tt.Storage,
                         c,
                         BLOCK_SIZE,
                     ]

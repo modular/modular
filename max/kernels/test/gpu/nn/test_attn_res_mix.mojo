@@ -201,9 +201,13 @@ def _check[
         attn_res_mix_gpu[
             dtype,
             out_tt.LayoutType,
+            out_tt.Storage,
             v_tt.LayoutType,
+            v_tt.Storage,
             proj_tt.LayoutType,
+            proj_tt.Storage,
             norm_tt.LayoutType,
+            norm_tt.Storage,
             C,
             BLOCK,
         ]
@@ -371,9 +375,13 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
         attn_res_mix_gpu[
             DType.float32,
             out_tt.LayoutType,
+            out_tt.Storage,
             v_tt.LayoutType,
+            v_tt.Storage,
             proj_tt.LayoutType,
+            proj_tt.Storage,
             norm_tt.LayoutType,
+            norm_tt.Storage,
             C,
             BLOCK,
         ]
@@ -522,9 +530,13 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
             attn_res_mix_gpu[
                 DType.float32,
                 out_tt.LayoutType,
+                out_tt.Storage,
                 v_tt.LayoutType,
+                v_tt.Storage,
                 proj_tt.LayoutType,
+                proj_tt.Storage,
                 norm_tt.LayoutType,
+                norm_tt.Storage,
                 C,
                 BLOCK,
             ]

@@ -14,7 +14,14 @@
 
 from std.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
 
@@ -24,14 +31,26 @@ def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
     input_origin: ImmOrigin,
+    InputStorage: TensorStorage,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputStorage: TensorStorage,
     GridThwLayoutType: TensorLayout,
     grid_thw_origin: ImmOrigin,
+    GridThwStorage: TensorStorage,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    input: TileTensor[dtype, InputLayoutType, input_origin],
-    grid_thw: TileTensor[DType.int64, GridThwLayoutType, grid_thw_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
+    input: TileTensor[
+        dtype, InputLayoutType, input_origin, Storage=InputStorage
+    ],
+    grid_thw: TileTensor[
+        DType.int64,
+        GridThwLayoutType,
+        grid_thw_origin,
+        Storage=GridThwStorage,
+    ],
     batch_size: Int32,
     hidden_size: Int32,
     merge_size: Int32,
@@ -46,11 +65,14 @@ def spatial_merge_kernel[
         dtype: Element type of the input and output tensors.
         InputLayoutType: Compile-time `TensorLayout` of the input tensor.
         input_origin: Immutable origin of the input tensor.
+        InputStorage: Storage policy of the input tensor.
         OutputLayoutType: Compile-time `TensorLayout` of the output tensor.
         output_origin: Mutable origin of the output tensor.
+        OutputStorage: Storage policy of the output tensor.
         GridThwLayoutType: Compile-time `TensorLayout` of the `grid_thw`
             tensor.
         grid_thw_origin: Immutable origin of the `grid_thw` tensor.
+        GridThwStorage: Storage policy of the `grid_thw` tensor.
 
     Args:
         output: Output tensor.
@@ -64,6 +86,11 @@ def spatial_merge_kernel[
     var _hidden_size = Int(hidden_size)
     var _merge_size = Int(merge_size)
     comptime assert grid_thw.flat_rank == 2
+    # The `.ptr` arithmetic below addresses scalars, so the kernel only
+    # supports scalar-element tiles.
+    comptime assert input.element_size == 1
+    comptime assert output.element_size == 1
+    comptime assert grid_thw.element_size == 1
 
     # Global patch index.
     var patch_idx = block_idx.x
@@ -217,10 +244,13 @@ def spatial_merge[
         dtype,
         input.LayoutType,
         ImmOrigin(input.origin),
+        input.Storage,
         output.LayoutType,
         output.origin,
+        output.Storage,
         grid_thw.LayoutType,
         ImmOrigin(grid_thw.origin),
+        grid_thw.Storage,
     ]
 
     ctx.enqueue_function[kernel](
