@@ -2446,7 +2446,7 @@ def ascii(value: StringSlice) -> String:
     """
     comptime ord_squote = UInt8(ord("'"))
     # Worst case: every byte becomes \xNN (4 chars). Quotes added separately.
-    var result = String(capacity=value.byte_length() * 4)
+    var result = String(capacity_bytes=value.byte_length() * 4)
     var use_dquote = False
     var data = value.as_bytes()
 
