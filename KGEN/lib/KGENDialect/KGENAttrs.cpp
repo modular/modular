@@ -450,6 +450,30 @@ TypedAttr ParamListConcatAttr::getChecked(
   return get(type, variadics);
 }
 
+TypedAttr ParamListConcatAttr::get(ArrayRef<TypedAttr> paramLists) {
+  assert(!paramLists.empty());
+  auto retType = cast<ParamListType>(paramLists.front().getType());
+  return ParamListConcatAttr::get(
+      retType, ParamListAttr::get(paramLists, ParamListType::get(retType)));
+}
+
+TypedAttr
+ParamListConcatAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<TypedAttr> paramLists) {
+  if (paramLists.empty()) {
+    emitError() << "expected to concat a non-empty array of paramLists";
+    return {};
+  }
+  auto paramListsType = paramLists.front().getType();
+  if (isa<ParamListType>(paramListsType) &&
+      llvm::all_of(paramLists, [&](TypedAttr paramList) {
+        return paramListsType == paramList.getType();
+      })) {
+    return get(paramLists);
+  }
+  emitError() << "expected to concat param list with the same type";
+  return {};
+}
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//

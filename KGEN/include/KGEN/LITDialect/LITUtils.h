@@ -379,6 +379,10 @@ TraitType getTraitBoundFromAssumptions(
 /// Returns a null attr if no ParamDeclRefAttr can be extracted.
 ParamDeclRefAttr extractParamDeclRef(TypedAttr attr);
 
+std::optional<ParameterEvaluator>
+populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
+                              TraitDeclOp traitDecl);
+
 } // namespace LIT
 
 //===----------------------------------------------------------------------===//

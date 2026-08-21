@@ -68,7 +68,7 @@ collectMethodsWithNameFromDecls(ASTDecl &structDecl, StringAttr methodName,
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
 static std::pair<FnTypeGeneratorType, ParamBindings>
-getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
+getTraitFunctionSignature(ASTDecl &declScope, FnTypeGeneratorType fullSig,
                           ASTType structSelfType, TraitSymbolAttr traitSymbol,
                           const ExprNode *expr,
                           ParameterEvaluator &traitAliasReplacer) {
@@ -78,11 +78,13 @@ getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
       traitDecl, llvm::SMLoc());
   assert(result.succeeded() && "failed to resolve signature");
 
-  TraitType trait =
-      cast<TraitDeclOp>(traitDecl.getIfOperation()).getCanonicalTrait();
-  FnTypeGeneratorType signature = traitFn.getFullSignature();
+  auto traitDeclOp = cast<TraitDeclOp>(traitDecl.getIfOperation());
+  auto trait = traitDeclOp.getCanonicalTrait();
+  if (auto eva = populateTraitBindingEvaluator(traitSymbol, traitDeclOp))
+    trait = eva->replace(trait);
+
   SmallVector<TypedAttr> params;
-  ArrayRef<Type> paramTypes = signature.getInputParamTypes();
+  ArrayRef<Type> paramTypes = fullSig.getInputParamTypes();
 
   // Add trait's _Self param replacement.
   params.push_back(TypeParamAttr::get(structSelfType, trait));
@@ -96,7 +98,7 @@ getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
   for (Type type : paramTypes.drop_front())
     params.push_back(UnboundAttr::get(type));
 
-  FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
+  FnTypeGeneratorType newSignature = fullSig.getSpecializedGenerator(
       params, &declScope.getShared().getEvaluationContext());
 
   newSignature = traitAliasReplacer.replace(newSignature);
@@ -210,7 +212,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
-        structDecl, traitFn, structSelfType,
+        structDecl, traitFn.getFullSignature(), structSelfType,
         TraitSymbolAttr::get(traitDecl.getSymbolRef()), &syntheticNode,
         traitAliasReplacer);
 
@@ -575,6 +577,10 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
   auto traitSelfDecl =
       cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
   ParameterEvaluator traitAliasReplacer = shared.getParameterEvaluator();
+  for (size_t i = 0; i < parent.getParamValues().size(); i++) {
+    traitAliasReplacer.setDeclBinding(
+        traitDeclOp.getSignature().getParamName(i), parent.getParamValues()[i]);
+  }
   traitAliasReplacer.setDeclBinding(traitSelfDecl.getName(), structSelf);
 
   // Prepare an error. It will be abandoned if the check succeeds.
@@ -584,11 +590,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
 
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](StringAttr name, ASTDecl *traitFnDecl,
-                         FnOp traitFn) -> LogicalResult {
-    // Skip inherited methods, they're checked at a different time.
-    if (traitFn.getInheritedFrom())
-      return success();
-
+                         StringAttr fnSymName,
+                         FnTypeGeneratorType fullSig) -> LogicalResult {
     auto reportNotImplemented = [&]() -> LogicalResult {
       diag->attachNote(*traitFnDecl)
           << "required function '" + name.str() + "' is not implemented";
@@ -641,7 +644,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [traitSignature, bindings] =
-        getTraitFunctionSignature(conformanceDecl, traitFn, selfType, parent,
+        getTraitFunctionSignature(conformanceDecl, fullSig, selfType, parent,
                                   &syntheticNode, traitAliasReplacer);
 
     // Get the conformance constraint for checking method constraints.
@@ -746,7 +749,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
           structDecl, traitDecl, *selectedStructMethod, *traitFnDecl, shared);
     }
 
-    WitnessOp::create(b, traitFn.getSymNameAttr(), result.get());
+    WitnessOp::create(b, fnSymName, result.get());
     return success();
   };
 
@@ -925,30 +928,48 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
   //         pass
   // ```
   bool allMatchFound = true;
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      // Skip any children that aren't methods or aliases.
-      if (auto traitFn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
-        if (failed(checkMethod(name, decl, traitFn))) {
-          allMatchFound = false;
-          break;
-        }
-      }
-      if (AliasDeclOp traitAlias =
-              dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation())) {
-        if (failed(checkAlias(name, decl, traitAlias))) {
-          allMatchFound = false;
-          break;
-        }
-      }
-    }
+  if (shared.isUniversalParametricClosureTrait(&traitDecl)) {
+    assert(traitDecl.getDeclsInScope().size() == 1);
+    assert(traitDecl.getDeclsInScope().front().first == "__call__");
+    assert(traitDecl.getDeclsInScope().front().second.size() == 1);
 
-    // If we had signature resolution errors, don't try to check the
-    // conformance.
-    if (hadErrors) {
-      diag->abandon();
-      diag.reset();
-      return failure();
+    ASTDecl *decl = traitDecl.getDeclsInScope().front().second.front();
+    auto callAlias = cast<AliasDeclOp>(decl->getIfOperation());
+    auto evaluator = populateTraitBindingEvaluator(parent, shared);
+    auto fullSig =
+        cast<FnTypeGeneratorType>(evaluator->replace(callAlias.getType()));
+
+    auto name = StringAttr::get(shared.getContext(), "__call__");
+    allMatchFound = succeeded(checkMethod(name, decl, name, fullSig));
+  } else {
+    for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+      for (ASTDecl *decl : decls) {
+        // Skip any children that aren't methods or aliases.
+        if (auto traitFn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
+          // Skip inherited methods, they're checked at a different time.
+          if (traitFn.getInheritedFrom())
+            continue;
+          if (failed(checkMethod(name, decl, traitFn.getSymNameAttr(),
+                                 traitFn.getFullSignature()))) {
+            allMatchFound = false;
+            break;
+          }
+        }
+        if (AliasDeclOp traitAlias =
+                dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation())) {
+          if (failed(checkAlias(name, decl, traitAlias))) {
+            allMatchFound = false;
+            break;
+          }
+        }
+      }
+      // If we had signature resolution errors, don't try to check the
+      // conformance.
+      if (hadErrors) {
+        diag->abandon();
+        diag.reset();
+        return failure();
+      }
     }
   }
 
@@ -1108,11 +1129,6 @@ static TriState doesNominalTypeConformToUncached(
   const bool selfIsStruct =
       isa_and_nonnull<StructDeclOp>(self->getIfOperation());
 
-  // Collect all the symbols that the type explicitly provides.
-  TraitType providedCanonTrait = getDeclProvidedTrait(self);
-  if (providedCanonTrait == trait)
-    return TriState::yes();
-
   // Set up parameter evaluator if we have parameter bindings for constraint
   // evaluation. Uses the parser's evaluation context needed for folding
   // TypeConformsToTraitAttr.
@@ -1124,6 +1140,23 @@ static TriState doesNominalTypeConformToUncached(
       evaluator = shared.getParameterEvaluator(structOp.getInputParams(),
                                                paramBindings);
   }
+
+  TraitType declProvidedTrait = getDeclProvidedTrait(self);
+  // Collect all the symbols that the type explicitly provides, only re-evaluate
+  // the symbol, otherwise we might discard the error message on where clause.
+  //
+  // TODO: should we turn this into a util? getCanonicalSymbols should always
+  // going through the rebinding process for struct/trait symbols.
+  auto providedSymbols = llvm::map_to_vector(
+      declProvidedTrait.getSymbols(), [&](TraitSymbolAttr symbol) {
+        if (!symbol.isFullyResolved())
+          return cast<TraitSymbolAttr>(evaluator.replace(symbol));
+        return symbol;
+      });
+  TraitType providedCanonTrait = TraitType::get(
+      self->getContext(), providedSymbols, declProvidedTrait.getConstraints());
+  if (providedCanonTrait == trait)
+    return TriState::yes();
 
   ArrayRef<TraitSymbolAttr> providedSymbolsArr =
       providedCanonTrait.getSymbols();
@@ -1758,4 +1791,13 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
   // Create the new type value with the trait metatype.
   return UpcastAttr::get(trait, typePValue);
+}
+
+std::optional<ParameterEvaluator>
+LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
+                                   SharedState &shared) {
+  auto traitDecl = cast<TraitDeclOp>(
+      shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol())
+          .getIfOperation());
+  return populateTraitBindingEvaluator(traitSymbol, traitDecl);
 }

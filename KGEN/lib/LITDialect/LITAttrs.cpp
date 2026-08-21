@@ -176,6 +176,7 @@ bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
 
 TypedAttr FnMetaOriginDataAttr::remapNameToImplicitOriginIndexRef(
     ArrayRef<StringAttr> names, TypedAttr toRemap) const {
+  assert(names.size() == this->getNumImplicitOriginDecls());
   NameToImplicitOriginRefRemapper<FnGenBuilderParamDeclRefAttr> remapper(names,
                                                                          0);
   return remapper.replace(toRemap);
