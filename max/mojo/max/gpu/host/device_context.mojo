@@ -1391,7 +1391,7 @@ struct DevicePointer[
 
 
 @fieldwise_init
-struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
+struct DefaultDeviceTypeEncoder(Defaultable, DeviceTypeEncoder):
     """Provides a default implementation of the `DeviceTypeEncoder` trait."""
 
     @staticmethod
