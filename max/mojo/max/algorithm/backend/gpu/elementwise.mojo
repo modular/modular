@@ -359,9 +359,8 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @__parameter
     @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _ClcKernel[
             shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
@@ -383,7 +382,7 @@ def _elementwise_impl_gpu_clc[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](shape[rank - 1] % simd_width != 0)
+    unswitch(shape[rank - 1] % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -545,9 +544,8 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @__parameter
     @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _GridStrideKernel[
             shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
@@ -569,7 +567,7 @@ def _elementwise_impl_gpu_grid_stride[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](shape[rank - 1] % simd_width != 0)
+    unswitch(shape[rank - 1] % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -792,9 +790,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
         or Int(shape_1[rank - 1].value()) % simd_width != 0
     )
 
-    @__parameter
     @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _DualGridStrideKernel[
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
@@ -821,7 +818,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](any_unaligned)
+    unswitch(any_unaligned, launch)
 
 
 # ===-----------------------------------------------------------------------===#

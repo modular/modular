@@ -65,7 +65,7 @@ def custom(
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with the
-    [`@extensibility.register`](/mojo/manual/decorators/extensibility-register/)
+    [`@extensibility.register`](/api/mojo/extensibility/decorators/register/)
     decorator.
 
     Args:
@@ -128,7 +128,7 @@ def inplace_custom(
     """Creates a node to execute an in-place custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with the
-    [`@extensibility.register`](/mojo/manual/decorators/extensibility-register/)
+    [`@extensibility.register`](/api/mojo/extensibility/decorators/register/)
     decorator.
 
     Args:

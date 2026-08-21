@@ -54,4 +54,4 @@ configuration guide](benchmark_config.md) for the config-file form and details.
 > This benchmarking script is also available with the `max benchmark` command,
 > which you can get by installing `modular` with pip, uv, conda, or pixi
 > package managers. Try it now by following the detailed guide to [benchmark
-> MAX on GPUs](https://docs.modular.com/serve/benchmark/).
+> MAX on GPUs](https://max.modular.com/serve/benchmark/).

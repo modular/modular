@@ -283,7 +283,7 @@ def _Model_release_captured_graph(
 
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
-Model.__repr__ = _Model_repr  # type: ignore[method-assign]
+Model.__repr__ = _Model_repr  # type: ignore[assignment, method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
@@ -308,8 +308,8 @@ def _TensorSpec_repr(self: TensorSpec) -> str:
     )
 
 
-TensorSpec.__str__ = _TensorSpec_str  # type: ignore[method-assign]
-TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[method-assign]
+TensorSpec.__str__ = _TensorSpec_str  # type: ignore[assignment, method-assign]
+TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[assignment, method-assign]
 
 
 def _is_torch_tensor(obj: Any) -> bool:
@@ -534,10 +534,11 @@ class InferenceSession:
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
-            earlier session's ``export_mefs``. Every graph this session loads is
-            initialized from its artifact instead of being compiled, which lets
-            the compiling and the executing run happen on different machines.
-            Raises if a graph does not match the artifact recorded for it.
+            earlier session's ``export_mefs``, or several of them -- a large set
+            of graphs is often split across producers. Every graph this session
+            loads is initialized from its artifact instead of being compiled,
+            which lets the compiling and the executing run happen on different
+            machines. Raises if a graph has no artifact.
         export_mefs: A directory to write a compiled-graph artifact into for
             every graph this session loads, alongside a manifest describing
             them. Pass the same directory as another session's
@@ -557,7 +558,7 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-        precompiled_mefs: str | Path | None = None,
+        precompiled_mefs: str | Path | Iterable[str | Path] | None = None,
         export_mefs: str | Path | None = None,
     ) -> None:
         if precompiled_mefs is not None and export_mefs is not None:
@@ -763,29 +764,68 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        # Reuse or produce artifacts when the session was constructed to, so a
-        # caller need not hold an accelerator to compile. See
-        # `_precompiled_mefs`.
+        compiled = self.compile_reusing_mefs(
+            model,
+            custom_extensions=custom_extensions,
+            tile_based_fusion=tile_based_fusion,
+        )
+        return self.init_all(compiled, weights_registry=weights_registry)
+
+    def compile_reusing_mefs(
+        self,
+        model: str | Path | Module | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        tile_based_fusion: bool = False,
+    ) -> CompiledModel:
+        """Compiles ``model``, or reuses an artifact if the session has a store.
+
+        The compiling half of :meth:`load_all`, split out for callers that trace
+        a graph and initialize it themselves rather than handing it over -- a
+        :class:`~max.experimental.nn.Module`, for one, which keeps the compiled
+        artifact and the input/output plumbing it derived alongside it. Without
+        this they would call :meth:`compile` and silently bypass the session's
+        ``precompiled_mefs``/``export_mefs``.
+
+        Behaves exactly like :meth:`compile` on a session constructed with
+        neither, and only :class:`~max.graph.Graph` models participate: the store
+        identifies an artifact by a graph's name and signature.
+
+        Args:
+            model: As :meth:`compile`.
+            custom_extensions: As :meth:`compile`. Ignored when reusing an
+                artifact, which is already compiled.
+            tile_based_fusion: As :meth:`compile`. Ignored when reusing an
+                artifact.
+
+        Returns:
+            The compiled artifact, ready for :meth:`init` or :meth:`init_all`.
+
+        Raises:
+            RuntimeError: If reusing and no recorded artifact matches
+                ``model``'s name and signature.
+        """
+        # See `_precompiled_mefs` for why a caller would want this: it lets the
+        # compile happen somewhere that holds no accelerator.
         store = self._mef_store
-        if store is not None and isinstance(model, Graph):
-            if store.exporting:
-                compiled = self.compile(
-                    model,
-                    custom_extensions=custom_extensions,
-                    tile_based_fusion=tile_based_fusion,
-                )
-                compiled.export_mef(store.claim_export(model))
-                store.write_manifest()
-            else:
-                compiled = self.compile(store.claim_import(model))
-            return self.init_all(compiled, weights_registry=weights_registry)
+        if store is None or not isinstance(model, Graph):
+            return self.compile(
+                model,
+                custom_extensions=custom_extensions,
+                tile_based_fusion=tile_based_fusion,
+            )
+
+        if not store.exporting:
+            return self.compile(store.claim_import(model))
 
         compiled = self.compile(
             model,
             custom_extensions=custom_extensions,
             tile_based_fusion=tile_based_fusion,
         )
-        return self.init_all(compiled, weights_registry=weights_registry)
+        compiled.export_mef(store.claim_export(model))
+        store.write_manifest()
+        return compiled
 
     def compile_async(
         self,
@@ -1286,7 +1326,7 @@ class InferenceSession:
         Be aware that :meth:`gpu_profiling` overrides the
         ``MODULAR_ENABLE_PROFILING`` environment variable if also used.
 
-        Learn more in `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_.
+        Learn more in `GPU profiling with Nsight Systems </gpu-system-profiling>`_.
 
         .. note::
 

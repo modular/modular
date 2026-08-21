@@ -60,9 +60,11 @@ from verify import ModelModality as Modality
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
 
-# Encodings that cannot generate torch reference goldens locally.
-# These require pregenerated goldens from S3 (e.g. generated via vLLM).
-# When --no-aws is set, pipelines with these encodings are skipped.
+# Encodings that cannot generate torch reference goldens locally, because
+# ``transformers`` cannot load the checkpoint. These require pregenerated
+# goldens from S3 (e.g. generated via vLLM), unless the entry sets
+# ``torch_reference_is_unquantized_source``. When --no-aws is set, pipelines
+# with these encodings are otherwise skipped.
 TORCH_INCOMPATIBLE_ENCODINGS = frozenset({"float8_e4m3fn", "float4_e2m1fnx2"})
 
 
@@ -1416,7 +1418,11 @@ def main(
                         }
                     )
 
-        if no_aws and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS:
+        if (
+            no_aws
+            and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS
+            and not pipeline_config.torch_reference_is_unquantized_source
+        ):
             raise click.ClickException(
                 f"Pipeline {pipeline_name!r} uses encoding"
                 f" {pipeline_config.encoding!r}, which cannot generate torch"

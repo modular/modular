@@ -30,7 +30,7 @@ def risky() raises:
 def test_ref_writes_through() raises:
     # `ref` binds a name to a value it doesn't own; writing through it updates
     # the original.
-    var data = [1, 2, 3]
+    var data: List[Int] = [1, 2, 3]
     ref view = data[0]
     view = 99
     assert_equal(data[0], 99)

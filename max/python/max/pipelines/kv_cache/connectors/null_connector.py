@@ -21,17 +21,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVConnectorTransfer,
     TransferDirection,
 )
 
 
-class NullConnector:
+class NullConnector(KVConnector):
     """No-op connector for when external caching is disabled."""
 
     @property
@@ -54,45 +53,6 @@ class NullConnector:
     ) -> KVConnectorTransfer:
         return CompletedTransfer(TransferDirection.OFFLOAD)
 
-    def touch(
-        self,
-        block_hashes: Sequence[bytes],
-        replica_idx: int = 0,
-    ) -> None:
-        pass
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
-
-    def wait_for_loads(self) -> None:
-        pass
-
-    def wait_for_offloads(self) -> None:
-        pass
-
-    def shutdown(self) -> None:
-        pass
-
-    @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
-
-    @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
-
-    def reset_prefix_cache(self) -> None:
-        pass
-
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
-
-    def reset_metrics(self) -> None:
-        pass
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})

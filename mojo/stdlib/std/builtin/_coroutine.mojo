@@ -33,7 +33,7 @@ comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @always_inline
-def _suspend_async[body: def(AnyCoroutine) capturing -> None]():
+def _suspend_async(body: Some[def(AnyCoroutine) -> None]):
     __mlir_region await_body(hdl: __mlir_type.`!co.routine`):
         body(hdl)
         __mlir_op.`co.suspend.end`()

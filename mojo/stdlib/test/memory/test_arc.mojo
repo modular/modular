@@ -75,6 +75,19 @@ def test_count() raises:
     assert_equal(UInt64(1), a.count())
 
 
+def test_ptr() raises:
+    var p = ArcPointer(42)
+    assert_equal(42, p.ptr()[])
+
+    # `ptr()` observes mutations made through `[]`.
+    p[] = 99
+    assert_equal(99, p.ptr()[])
+
+    # Copies share the same allocation, so `ptr()` returns the same address.
+    var p2 = p
+    assert_equal(Int(p.ptr()), Int(p2.ptr()))
+
+
 def test_unsafe_take_allocation_and_construct_from_raw_ptr() raises:
     var deleted = False
     var leaked = ArcPointer(ObservableDel(Pointer(to=deleted)))

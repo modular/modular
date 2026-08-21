@@ -20,7 +20,11 @@ from .hf_utils import (
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from .quant import gptq_quant_config, parse_quant_config
+from .quant import (
+    gptq_quant_config,
+    parse_quant_config,
+    resolve_hf_quant_config,
+)
 from .weight_loading import AUTO_CAST_ENV_VAR, auto_cast_weights_from_env
 from .weight_path_parser import WeightPathParser
 
@@ -34,6 +38,7 @@ __all__ = [
     "gptq_quant_config",
     "is_diffusion_pipeline",
     "parse_quant_config",
+    "resolve_hf_quant_config",
     "try_to_load_from_cache",
     "validate_hf_repo_access",
 ]

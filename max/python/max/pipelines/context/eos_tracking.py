@@ -46,7 +46,7 @@ class EOSTracker(BaseModel):
     _max_eos_seq_len: int = PrivateAttr(default=1)
     _continuation_tail: str = PrivateAttr(default="")
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: Any) -> None:  # noqa: PYI063
         """Post-initialization hook to set the maximum stop length and continuation tail."""
         self._max_stop_length = max(
             (len(s) for s in self.eos_stop_strings), default=0

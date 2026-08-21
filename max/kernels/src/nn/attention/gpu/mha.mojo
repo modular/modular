@@ -3253,12 +3253,18 @@ def mha_single_batch[
     #       loop_over_kvcache[tile_size, True]
     #   ```
     # Only the last iteration is doing boundary check.
-    @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
+    ](kv_tile_start_row: Int, end: Int) {
+        var seq_len,
+        var num_keys,
+        var start_pos,
+        mut mask_warp_col,
+        mut k_smem_iter,
+        mut v_smem_iter,
+        imm,
+    }:
         if (
             mask.status(
                 UInt32(batch_idx),
@@ -3323,10 +3329,9 @@ def mha_single_batch[
         _ = p_reg_tile.fill(0)
 
         @always_inline
-        @__parameter
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
-        ):
+        ) {imm}:
             return {
                 tensor.ptr,
                 type_of(tensor.runtime_layout)(
@@ -3392,8 +3397,7 @@ def mha_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @__parameter
-        def _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]() {imm}:
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -3461,7 +3465,7 @@ def mha_single_batch[
                                 p_reg_vec2[mma_id, i],
                             )
 
-        unswitch[_apply_mask](
+        unswitch(
             mask.status(
                 UInt32(batch_idx),
                 Index[dtype=DType.uint32](
@@ -3470,7 +3474,8 @@ def mha_single_batch[
                 ),
                 Index[dtype=DType.uint32](BM, BN),
             )
-            == TileMaskStatus.PARTIAL_MASK
+            == TileMaskStatus.PARTIAL_MASK,
+            _apply_mask,
         )
 
         # Increment mask to next BM x BN block.
@@ -3601,7 +3606,7 @@ def mha_single_batch[
                 ufloordiv(BN, BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](0, num_keys)
+    tile_and_unswitch[[BN]](0, num_keys, loop_over_kvcache)
 
     # Apply softmax denumerator.
     comptime for m_mma in range(num_m_mmas):
@@ -3978,10 +3983,14 @@ def mha_single_batch_pipelined[
     #   ```
     # Only the last iteration is doing boundary check.
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
+    ](kv_tile_start_row: Int, end: Int) {
+        mut mask_warp_col,
+        mut is_first_iter,
+        mut k_smem_iter,
+        imm,
+    }:
         if (
             mask.status(
                 UInt32(batch_idx),
@@ -4122,8 +4131,7 @@ def mha_single_batch_pipelined[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @__parameter
-        def _apply_mask[masked: Bool]():
+        def _apply_mask[masked: Bool]() {imm}:
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
                     accum_type
@@ -4197,7 +4205,7 @@ def mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i],
                             )
 
-        unswitch[_apply_mask](
+        unswitch(
             mask.status(
                 UInt32(batch_idx),
                 Index[dtype=DType.uint32](
@@ -4206,7 +4214,8 @@ def mha_single_batch_pipelined[
                 ),
                 Index[dtype=DType.uint32](BM, BN),
             )
-            == TileMaskStatus.PARTIAL_MASK
+            == TileMaskStatus.PARTIAL_MASK,
+            _apply_mask,
         )
 
         # Increment mask to next BM x BN block.
@@ -4307,7 +4316,7 @@ def mha_single_batch_pipelined[
                 num_b_rows=num_b_rows,
             )
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](0, num_keys)
+    tile_and_unswitch[[BN]](0, num_keys, loop_over_kvcache)
 
     comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
@@ -5168,10 +5177,9 @@ def mha_decoding_single_batch[
     )
 
     @always_inline
-    @__parameter
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int
-    ) -> type_of(tensor):
+    ) {imm} -> type_of(tensor):
         return {
             tensor.ptr,
             {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
@@ -5203,10 +5211,9 @@ def mha_decoding_single_batch[
     )
 
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
+    ](kv_tile_start_row: Int, end: Int) {mut k_smem_iter, mut v_smem_iter, imm}:
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
@@ -5472,7 +5479,7 @@ def mha_decoding_single_batch[
                 ufloordiv(BN, BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](start, end)
+    tile_and_unswitch[[BN]](start, end, loop_over_kvcache)
 
     comptime if decoding_warp_split_k:
         var output_reg_vecs = output_reg_tile.tile[
@@ -5895,10 +5902,11 @@ def mha_decoding_single_batch_pipelined[
     )
 
     @always_inline
-    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, seq_len: Int):
+    ](kv_tile_start_row: Int, seq_len: Int) {
+        mut k_smem_iter, mut v_smem_iter, imm
+    }:
         var k_ptr = k.block_paged_ptr[BN](
             UInt32(batch_idx), UInt32(kv_tile_start_row), UInt32(kv_head_idx), 0
         )
@@ -6044,7 +6052,7 @@ def mha_decoding_single_batch_pipelined[
             num_b_rows=kv_tile_num_rows,
         )
 
-    tile_and_unswitch[loop_over_kvcache, [BN]](start, end)
+    tile_and_unswitch[[BN]](start, end, loop_over_kvcache)
 
     # Apply softmax denumerator.
 

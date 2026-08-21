@@ -37,7 +37,7 @@ def lookup_fn(count: Int):
 
 
 def lookup_fn2(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     var list = materialize[list_of_values]()
     for i in range(count):

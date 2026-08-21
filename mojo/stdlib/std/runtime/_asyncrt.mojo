@@ -260,15 +260,16 @@ struct Task[type: Deinitable, origins: OriginSet](Movable where False):
             A reference to the result value produced by the task.
         """
 
+        var ctx = self._handle._get_ctx[_AsyncContext]()
+
         @always_inline
-        @__parameter
-        def await_body(cur_hdl: AnyCoroutine):
+        def await_body(cur_hdl: AnyCoroutine) {var}:
             _async_and_then(
                 cur_hdl,
-                _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
+                _AsyncContext.get_chain(ctx),
             )
 
-        _suspend_async[await_body]()
+        _suspend_async(await_body)
         return self.get()
 
     def wait(self) -> ref[self.get()] Self.type:
@@ -423,15 +424,13 @@ struct RaisingTask[type: Movable, origins: OriginSet](
             If the underlying coroutine raised an error.
         """
 
-        @always_inline
-        @__parameter
-        def await_body(cur_hdl: AnyCoroutine):
-            _async_and_then(
-                cur_hdl,
-                _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
-            )
+        var ctx = self._handle._get_ctx[_AsyncContext]()
 
-        _suspend_async[await_body]()
+        @always_inline
+        def await_body(cur_hdl: AnyCoroutine) {var}:
+            _async_and_then(cur_hdl, _AsyncContext.get_chain(ctx))
+
+        _suspend_async(await_body)
         result = self^._into_result()
 
     def wait(deinit self, out result: Self.type) raises:
@@ -588,11 +587,10 @@ struct TaskGroup(Defaultable):
         """
 
         @always_inline
-        @__parameter
-        def await_body(cur_hdl: AnyCoroutine):
+        def await_body(cur_hdl: AnyCoroutine) {mut}:
             Self.await_body_impl(cur_hdl, self)
 
-        _suspend_async[await_body]()
+        _suspend_async(await_body)
 
     # FIXME: OriginSet isn't a first class type.  This API isn't very usable.
     def wait[origins: OriginSet = origin_of()._mlir_origin](mut self):

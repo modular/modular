@@ -18,10 +18,6 @@ from __future__ import annotations
 from max.driver import Device
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.config.model_config import (
-    _select_quantization_encoding,
-)
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
 from .model_config import Qwen3_5Config
@@ -89,12 +85,12 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
         kernel = getattr(text_config, "linear_conv_kernel_dim", 4)
 
         conv_dim = 2 * kd * nk + vd * nv
-        # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
-        encoding = _select_quantization_encoding(
-            pipeline_config.model, Qwen3_5Config.DEFAULT_ENCODING
-        )
-        state_dtype = supported_encoding_dtype(encoding)
-        dtype_bytes = state_dtype.size_in_bytes
+        # `state_dtype` is the one property every pool declarer reads: it
+        # carries the `state_pool_dtype` override and, absent one, the compute
+        # dtype. The encoding's storage dtype is 1-byte `uint8` for packed
+        # NVFP4 and would under-reserve by 2x, or 4x against a float32 pool.
+        assert isinstance(self._config, Qwen3_5Config)
+        dtype_bytes = self._config.state_dtype.size_in_bytes
         bytes_per_layer = (
             conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes
         )

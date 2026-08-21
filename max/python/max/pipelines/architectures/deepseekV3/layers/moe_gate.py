@@ -79,7 +79,7 @@ class DeepseekV3TopKRouter(MoEGate):
             linear_cls=linear_cls,
         )
 
-        if topk_method not in ["noaux_tc"]:
+        if topk_method != "noaux_tc":
             raise ValueError(f"Invalid topk_method: {topk_method}")
         assert correction_bias_dtype
 

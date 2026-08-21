@@ -24,6 +24,15 @@ graph serves every cache length that maps to the same dispatch key, and it is
 captured at the largest), so replay does metadata-proportional work no matter
 the batch's real lengths. Sweeping `frozen_cache_len` at a fixed actual
 `cache_len` measures exactly that gap.
+
+Prefill shapes exercise a second axis: past `scores_budget_mb` the op scores the
+matrix one row window at a time instead of materializing it, so the whole
+memory/latency trade shows up here. The cost tracks the ROWS PER CHUNK the budget
+works out to (`budget / (max_num_keys * 4)`), not the chunk count -- below ~500
+rows it collapses. Sweep it at a prefill shape, e.g.
+
+    ... -D scores_budget_mb=2048 -- --batch_size=8 --seq_len=512 \\
+        --cache_len=76000 --frozen_cache_len=76000
 """
 
 from std.random import rand, seed
@@ -42,14 +51,21 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.mla_index_fp8 import (
+    _SCORES_BUDGET_BYTES,
+    mla_indexer_ragged_float8_paged,
+)
 from nn.attention.mha_mask import MaskName
 from std.math import ceildiv
 from std.utils.index import IndexList
 
 
 def _run_name[
-    num_heads: Int, depth: Int, page_size: Int, top_k: Int
+    num_heads: Int,
+    depth: Int,
+    page_size: Int,
+    top_k: Int,
+    scores_budget_bytes: Int,
 ](
     batch_size: Int, seq_len: Int, cache_len: Int, frozen_cache_len: Int
 ) -> String:
@@ -63,7 +79,8 @@ def _run_name[
         "batch_size=", batch_size, ", ",
         "seq_len=", seq_len, ", ",
         "cache_len=", cache_len, ", ",
-        "frozen_cache_len=", frozen_cache_len,
+        "frozen_cache_len=", frozen_cache_len, ", ",
+        "scores_budget_mb=", scores_budget_bytes // (1024 * 1024),
     )
     # fmt: on
 
@@ -73,6 +90,7 @@ def execute_mla_indexer_paged[
     depth: Int,
     page_size: Int,
     top_k: Int,
+    scores_budget_bytes: Int,
 ](
     ctx: DeviceContext,
     mut m: Bench,
@@ -245,6 +263,7 @@ def execute_mla_indexer_paged[
             depth,
             top_k,
             MaskName.CAUSAL.name,
+            scores_budget_bytes,
         ](
             o_tile,
             q_tile,
@@ -262,7 +281,7 @@ def execute_mla_indexer_paged[
 
     m.bench_function[bench_func](
         BenchId(
-            _run_name[num_heads, depth, page_size, top_k](
+            _run_name[num_heads, depth, page_size, top_k, scores_budget_bytes](
                 batch_size, seq_len, cache_len, frozen_cache_len
             )
         )
@@ -285,6 +304,12 @@ def main() raises:
     comptime depth = get_defined_int["depth", 128]()
     comptime page_size = get_defined_int["page_size", 128]()
     comptime top_k = get_defined_int["top_k", 2048]()
+    # 0 = follow the op's own default, so this cannot drift from production when
+    # that default changes; nonzero overrides it to sweep the chunking.
+    comptime budget_mb = get_defined_int["scores_budget_mb", 0]()
+    comptime scores_budget_bytes = (
+        _SCORES_BUDGET_BYTES if budget_mb == 0 else budget_mb * 1024 * 1024
+    )
 
     var batch_size = arg_parse("batch_size", 8)
     # 1 + num_speculative_tokens: the MTP verify width GLM 5.2 decodes at.
@@ -298,16 +323,16 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         if frozen_cache_len != 0:
-            execute_mla_indexer_paged[num_heads, depth, page_size, top_k](
-                ctx, m, batch_size, seq_len, cache_len, frozen_cache_len
-            )
+            execute_mla_indexer_paged[
+                num_heads, depth, page_size, top_k, scores_budget_bytes
+            ](ctx, m, batch_size, seq_len, cache_len, frozen_cache_len)
         else:
             var frozen_sweep = [cache_len, 163840, 1048576]
             for frozen in frozen_sweep:
                 if frozen < cache_len:
                     continue
-                execute_mla_indexer_paged[num_heads, depth, page_size, top_k](
-                    ctx, m, batch_size, seq_len, cache_len, frozen
-                )
+                execute_mla_indexer_paged[
+                    num_heads, depth, page_size, top_k, scores_budget_bytes
+                ](ctx, m, batch_size, seq_len, cache_len, frozen)
 
     m.dump_report()

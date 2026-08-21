@@ -83,11 +83,13 @@ def serve_api_server_and_model_worker(
 
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
         task=pipeline_args.task,
         override_architecture=override_architecture,
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     log_basic_config(pipeline_config)
     log_pipeline_info(pipeline_config)
 

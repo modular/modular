@@ -43,8 +43,8 @@ struct _POpenHandle:
             raise Error("the mode specified `", mode, "` is not valid")
 
         self._handle = popen(
-            cmd.as_c_string_slice().unsafe_ptr(),
-            mode.as_c_string_slice().unsafe_ptr(),
+            cmd.as_c_string_slice(),
+            mode.as_c_string_slice(),
         )
 
         if not self._handle:

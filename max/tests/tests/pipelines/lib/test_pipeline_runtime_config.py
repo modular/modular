@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for PipelineRuntimeConfig."""
 
+import pytest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from pydantic import ValidationError
 
 
 def test_emit_reasoning_content_defaults_false() -> None:
@@ -26,3 +28,26 @@ def test_emit_reasoning_content_can_be_enabled() -> None:
         ).emit_reasoning_content
         is True
     )
+
+
+@pytest.mark.parametrize("utilization", [0, 0.05, 1])
+def test_vision_cache_utilization_accepts_in_range_values(
+    utilization: float,
+) -> None:
+    assert (
+        PipelineRuntimeConfig(
+            vision_cache_utilization=utilization
+        ).vision_cache_utilization
+        == utilization
+    )
+
+
+@pytest.mark.parametrize("utilization", [-0.01, -1, 1.01, 2, 100])
+def test_vision_cache_utilization_rejects_out_of_range_values(
+    utilization: float,
+) -> None:
+    """Out-of-range values must fail at config validation with a message
+    naming the field, not surface later as a confusing allocation failure
+    (a negative or over-100% byte budget) deep in memory estimation."""
+    with pytest.raises(ValidationError, match="vision_cache_utilization"):
+        PipelineRuntimeConfig(vision_cache_utilization=utilization)
