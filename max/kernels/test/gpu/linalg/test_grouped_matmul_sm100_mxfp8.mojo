@@ -478,22 +478,22 @@ def _test_kernel_impl[
         var expert_id = expert_ids_host_ptr[i]
 
         var c_slice = TileTensor(
-            c_ref_tensor._storage + start * c_row_stride,
+            c_ref_tensor.ptr + start * c_row_stride,
             row_major((end - start, Idx[expert_shape[0]])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor._storage + start * a_row_stride,
+            a_tensor.ptr + start * a_row_stride,
             row_major((end - start, Idx[expert_shape[1]])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor._storage + Int(expert_id) * b_expert_stride,
+            b_tensor.ptr + Int(expert_id) * b_expert_stride,
             row_major((Idx[expert_shape[0]], Idx[expert_shape[1]])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -509,7 +509,7 @@ def _test_kernel_impl[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
+            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),

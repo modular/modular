@@ -82,8 +82,10 @@ from layout import (
     Coord,
     Idx,
     Layout,
+    PointerStorage,
     RowMajorLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major,
 )
@@ -703,6 +705,11 @@ struct Grouped1D1DMatmulKernel[
     # cta_group=1 layout. False (default) keeps the cooperative
     # scatter path.
     swiglu_use_inplace: Bool = False,
+    c_device_storage: TensorStorage = PointerStorage[element_width=1],
+    offsets_storage: TensorStorage = PointerStorage[element_width=1],
+    a_scale_offsets_storage: TensorStorage = PointerStorage[element_width=1],
+    expert_ids_storage: TensorStorage = PointerStorage[element_width=1],
+    expert_scales_storage: TensorStorage = PointerStorage[element_width=1],
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 
@@ -757,6 +764,14 @@ struct Grouped1D1DMatmulKernel[
             register path that skips the `bfloat16` SMEM scratchpad via
             cross-lane shuffles; `False` (default) keeps the cooperative
             scatter path.
+        c_device_storage: Storage policy of the C `TileTensor`.
+        offsets_storage: Storage policy of the per-expert offsets
+            `TileTensor`.
+        a_scale_offsets_storage: Storage policy of the per-expert A-scale
+            offsets `TileTensor`.
+        expert_ids_storage: Storage policy of the expert-IDs `TileTensor`.
+        expert_scales_storage: Storage policy of the expert-scales
+            `TileTensor`.
     """
 
     # ========== Derived Constants ==========
@@ -960,6 +975,9 @@ struct Grouped1D1DMatmulKernel[
         cluster=Self.config.cluster_shape,
         cta_group=Self.cta_group,
         AB_swapped=Self.config.AB_swapped,
+        OffsetsStorage=Self.offsets_storage,
+        ExpertIdsStorage=Self.expert_ids_storage,
+        ExpertScalesStorage=Self.expert_scales_storage,
     ]
 
     # ========== TMA Load Size Constants ==========
@@ -1089,18 +1107,37 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     # 1D data TileTensor types (offsets, expert IDs, scales)
-    comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
-    comptime AScaleOffsetsTile = TileTensor[
-        DType.uint32, GMEMLayout1D, MutAnyOrigin
+    comptime OffsetsTile = TileTensor[
+        DType.uint32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.offsets_storage,
     ]
-    comptime ExpertIdsTile = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin]
+    comptime AScaleOffsetsTile = TileTensor[
+        DType.uint32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.a_scale_offsets_storage,
+    ]
+    comptime ExpertIdsTile = TileTensor[
+        DType.int32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.expert_ids_storage,
+    ]
     comptime ExpertScalesTile = TileTensor[
-        DType.float32, GMEMLayout1D, MutAnyOrigin
+        DType.float32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.expert_scales_storage,
     ]
 
     # C device tensor type (for bounds-checked stores)
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.c_device_layout, MutAnyOrigin
+        Self.c_type,
+        Self.c_device_layout,
+        MutAnyOrigin,
+        Storage=Self.c_device_storage,
     ]
 
     # TMA load size constants (from desc layout dimensions)
@@ -1343,7 +1380,7 @@ struct Grouped1D1DMatmulKernel[
         if use_group_cache:
             si = sched_group_offsets[Int(grp)]
         else:
-            si = a_offsets[Int(grp)]
+            si = a_offsets[Int(grp)][0]
 
         var found = False
         var s_m: UInt32 = 0
@@ -1361,8 +1398,8 @@ struct Grouped1D1DMatmulKernel[
                 ei = sched_group_offsets[Int(grp + 1)]
                 eid = sched_expert_ids[Int(grp)]
             else:
-                ei = a_offsets[Int(grp + 1)]
-                eid = expert_ids[Int(grp)]
+                ei = a_offsets[Int(grp + 1)][0]
+                eid = expert_ids[Int(grp)][0]
             var gs = ei - si
             if eid < 0 or gs <= 0:
                 grp += 1
@@ -1382,7 +1419,7 @@ struct Grouped1D1DMatmulKernel[
                 if use_group_cache:
                     s_scale = sched_expert_scales[Int(grp)]
                 else:
-                    s_scale = expert_scales[Int(eid)]
+                    s_scale = expert_scales[Int(eid)][0]
                 found = True
                 break
             grp += 1
@@ -2183,7 +2220,9 @@ struct Grouped1D1DMatmulKernel[
                     # Hoist loop-invariant SF coords outside k_tile loop.
                     # sfb_n_coord must be visible to ALL lanes (cp.async
                     # needs it per-lane), so compute outside elect_one_sync.
-                    var a_scale_offset = a_scale_offsets[Int(ctx.group_idx())]
+                    var a_scale_offset = a_scale_offsets[Int(ctx.group_idx())][
+                        0
+                    ]
                     var _sfa_coord: Int
                     var sfb_n_coord: Int
                     _sfa_coord, sfb_n_coord = Self._get_sf_coords(
@@ -2509,12 +2548,12 @@ struct Grouped1D1DMatmulKernel[
                 var sched_expert_scales = smem.sched_expert_scales()
                 var lane = Int(lane_id())
                 for i in range(lane, _num_active_experts + 1, WARP_SIZE):
-                    sched_group_offsets[i] = a_offsets[i]
+                    sched_group_offsets[i] = a_offsets[i][0]
                 for i in range(lane, _num_active_experts, WARP_SIZE):
-                    var eid = expert_ids[i]
+                    var eid = expert_ids[i][0]
                     sched_expert_ids[i] = eid
-                    sched_expert_scales[i] = expert_scales[
-                        Int(eid)
+                    sched_expert_scales[i] = expert_scales[Int(eid)][
+                        0
                     ] if eid >= 0 else Float32(1.0)
 
             # --- Steady-state: use SMEM cache (fast) ---
@@ -2865,7 +2904,7 @@ struct Grouped1D1DMatmulKernel[
 
                 # Scale factor load with offset
                 # TMA 4D now has TileTensor overload - pass tiles directly
-                var a_scale_offset = a_scale_offsets[Int(group_idx)]
+                var a_scale_offset = a_scale_offsets[Int(group_idx)][0]
 
                 var sfa_m_coord: Int
                 var sfb_n_coord: Int

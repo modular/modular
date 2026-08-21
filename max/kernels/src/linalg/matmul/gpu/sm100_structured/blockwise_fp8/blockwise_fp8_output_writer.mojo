@@ -326,7 +326,9 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
 
@@ -370,7 +372,9 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Internal implementation for bounds-checked register-to-GMEM write.
 
@@ -477,7 +481,9 @@ struct BlockwiseFP8TileWriter[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ],
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -549,11 +555,7 @@ struct BlockwiseFP8TileWriter[
 
                 # Bounds check: only store if within expert boundary
                 if global_i < m_end:
-                    # Compute destination pointer via TileTensor layout
-                    var dst_offset = c_tensor.layout(
-                        Coord(Int(global_i), Int(global_j))
-                    )
-                    var dst_ptr = c_tensor._storage + Int(dst_offset)
+                    var dst_crd = Coord(Int(global_i), Int(global_j))
 
                     comptime if size_of[Self.c_type]() == 2:
                         var src_ptr = c_smem_split._storage + swizzle(
@@ -562,10 +564,14 @@ struct BlockwiseFP8TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            dst_crd, src
+                        )
                     else:
                         var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            dst_crd, src
+                        )

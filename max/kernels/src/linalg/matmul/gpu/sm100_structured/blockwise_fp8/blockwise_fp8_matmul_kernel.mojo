@@ -42,7 +42,13 @@ from max.gpu.memory import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Layout, TensorLayout, TileTensor
+from layout import (
+    Layout,
+    PointerStorage,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -119,6 +125,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # B-scale N-direction block size (independent of BK_kernel).
     n_scale_granularity: Int = 128,
+    b_scales_storage: TensorStorage = PointerStorage[element_width=1],
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -140,6 +147,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             (defaults to `(1, 1, 1)`).
         n_scale_granularity: B-scales N-direction block size in elements
             (defaults to 128).
+        b_scales_storage: Storage policy of the B-scales `TileTensor`.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -278,7 +286,10 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # B-scales TileTensor type
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.b_scales_layout, ImmutAnyOrigin
+        Self.b_scales_type,
+        Self.b_scales_layout,
+        ImmutAnyOrigin,
+        Storage=Self.b_scales_storage,
     ]
 
     # ========== Shared Memory Type ==========

@@ -309,6 +309,11 @@ def grouped_matmul_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=swiglu_use_inplace,
+        c_device_storage=type_of(c_device).Storage,
+        offsets_storage=type_of(a_offsets).Storage,
+        a_scale_offsets_storage=type_of(a_scale_offsets).Storage,
+        expert_ids_storage=type_of(expert_ids).Storage,
+        expert_scales_storage=type_of(expert_scales).Storage,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -374,7 +379,7 @@ def grouped_matmul_block_scaled[
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
     var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales._storage),
+        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales.ptr),
         sfa_4d_layout,
     )
 
@@ -391,7 +396,7 @@ def grouped_matmul_block_scaled[
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
     var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales._storage),
+        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales.ptr),
         sfb_4d_layout,
     )
 
@@ -422,15 +427,21 @@ def grouped_matmul_block_scaled[
 
     def _to_1d[
         target_type: DType,
-    ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
+    ](t: TileTensor) -> TileTensor[
+        target_type,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=t.Storage,
+        address_space=t.address_space,
+    ]:
         var shape = Coord(Int64(t.layout.shape[0]().value()))
         var stride = Coord(Idx[1])
-        return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
-            ptr=Ptr[Scalar[target_type], MutAnyOrigin](
-                unsafe_from_address=Int(t.ptr_at_offset(Coord(0)))
-            ),
-            layout=GMEMLayout1D(shape, stride),
-        )
+        return {
+            t._unsafe_storage_cast[
+                to_dtype=target_type, to_origin=MutAnyOrigin
+            ](),
+            GMEMLayout1D(shape, stride),
+        }
 
     # When AB_swapped, swap A/B operands and their scale factors for TMA
     # and kernel launch. The @parameter if ensures compile-time branching.
@@ -500,7 +511,7 @@ def grouped_matmul_block_scaled[
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
             rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
-                a_scales._storage
+                a_scales.ptr
             ),
             Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
             Int32(Int(a_scales.layout.shape[1]().value())),
@@ -575,7 +586,7 @@ def grouped_matmul_block_scaled[
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
             rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
-                _b_scales._storage
+                _b_scales.ptr
             ),
             Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
             Int32(Int(_b_scales.layout.shape[2]().value())),
