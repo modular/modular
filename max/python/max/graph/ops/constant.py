@@ -146,7 +146,11 @@ def constant(
 
     type = TensorType(dtype, value.shape, device=device)
     attr = _graph.array_attr(value, type.to_mlir())
-    return Graph.current._add_op_generated(_mo.ConstantOp, type, attr)[0].tensor
+    # See constant_external() below for why constants never carry a
+    # profile_scope label.
+    return Graph.current._add_op_generated(
+        _mo.ConstantOp, type, attr, attach_profile_scopes=False
+    )[0].tensor
 
 
 def constant_external(
@@ -176,6 +180,10 @@ def constant_external(
         A ``TensorValue`` of the specified type, representing the weight value
         associated with the name at compile time.
     """
+    # Constants/weights are compile-time data that later passes are free to
+    # batch/dedupe/hoist; a shared allocation op inheriting one constant's
+    # scope label would misdirect anything that searches for "the first op
+    # tagged with scope S".
     return Graph.current._add_op_generated(
         _mo.ConstantExternalOp,
         result=type,
@@ -187,6 +195,7 @@ def constant_external(
         device=type.device,
         has_alias=False,
         is_placeholder=is_placeholder,
+        attach_profile_scopes=False,
     )[0]
 
 
