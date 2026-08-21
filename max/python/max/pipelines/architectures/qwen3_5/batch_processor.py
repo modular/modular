@@ -111,8 +111,19 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                     )
                     vision_datas.append(ctx.vision_data)
 
-            if vision_contexts:
-                np_indices = compute_multimodal_merge_indices(vision_contexts)
+            # Reuse the cached empties whenever there is nothing to merge
+            # (text-only prompts and every decode step). Beyond skipping a
+            # per-step allocation, graph-capture replay depends on it: the
+            # captured buffer is the cached empty, replay's input refresh
+            # skips only identical buffer objects, and the driver rejects a
+            # zero-length copy between distinct buffers
+            # (CUDA_ERROR_INVALID_VALUE).
+            np_indices = (
+                compute_multimodal_merge_indices(vision_contexts)
+                if vision_contexts
+                else None
+            )
+            if np_indices is not None and len(np_indices) > 0:
                 indices_host = Buffer.from_numpy(np_indices)
                 image_token_indices = [
                     indices_host.to(device) for device in self.runtime.devices

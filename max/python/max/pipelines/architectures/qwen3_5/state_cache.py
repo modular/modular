@@ -160,6 +160,7 @@ class GatedDeltaNetStateCache:
             * value_head_dim
             * elem_bytes
         )
+        self._bytes_per_slot = (conv_bytes + rec_bytes) // max_slots
         logger.info(
             f"GatedDeltaNet state pool: {max_slots} slots x {num_layers} layers"
             f" — conv {to_human_readable_bytes(conv_bytes)}"
@@ -177,6 +178,16 @@ class GatedDeltaNetStateCache:
     def num_active_slots(self) -> int:
         """Number of currently claimed slots."""
         return len(self._request_to_slot)
+
+    @property
+    def bytes_per_slot(self) -> int:
+        """Bytes one slot occupies on one device, across every layer.
+
+        Under tensor parallelism the recorded dimensions are already
+        per-device shard widths, so this is ``1 / num_devices`` of what a
+        request costs in total.
+        """
+        return self._bytes_per_slot
 
     @property
     def max_slots(self) -> int:

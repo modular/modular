@@ -613,7 +613,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # for every layer, plus its own copy of ``slot_idx``. Every block below
         # is device-major: ``[slot_idx x D, conv x D x L, recurrent x D x L]``.
         num_linear_layers = len(self.linear_layer_indices)
-        state_dtype = self.config.compute_dtype
+        state_dtype = self.config.state_dtype
         conv_dim = self._conv_dim // self.num_devices
         num_v_heads = self._num_v_heads // self.num_devices
         slot_idx_types: list[TensorType | BufferType] = [

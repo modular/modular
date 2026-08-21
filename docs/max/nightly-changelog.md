@@ -166,7 +166,16 @@ This version is still a work in progress.
     Tensor parallelism splits the attention heads, the gated-DeltaNet key and
     value heads, and the per-device linear-attention state pools; both mixers
     reject a device count that would not divide their head counts evenly.
+  - `Qwen3_5ForConditionalGeneration` now supports device graph capture.
   - Fixed a `Qwen3EmbeddingModel` crash.
+- Added `--state-pool-dtype`, which overrides the storage dtype of a hybrid
+  model's recurrent state pools (SSM and linear-attention conv and recurrent
+  state). It defaults to the model's compute dtype. `float32` makes a
+  speculated generation follow the same state trajectory as an unspeculated
+  one -- the recurrence rounds to the pool dtype at each call boundary, so a
+  lossy pool makes the trajectory depend on how speculation chunked the
+  sequence -- at roughly double the per-request state memory (Qwen3.8-27B:
+  74.8 to 149.6 MiB per seated request).
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
   with `LoRAManager.apply` swapping target layers in a model.
