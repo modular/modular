@@ -65,7 +65,7 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
-from ...utils import apply_epilogue, elementwise_epilogue_type
+from ...utils import elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import AMDMatmul
 
