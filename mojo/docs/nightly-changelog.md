@@ -87,6 +87,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `FileHandle` now supports `tell()` to query the current file position, similar
+  to Python's `file.tell()`.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
