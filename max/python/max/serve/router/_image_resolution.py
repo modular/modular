@@ -416,3 +416,74 @@ async def resolve_image_from_url(
         )
         return images_bytes
     raise ValueError(f"Invalid image ref '{image_ref}'")
+
+
+def _sniff_image_mime(image: Image.Image) -> str:
+    """Return the MIME type of a decoded image, from the format PIL reports.
+
+    Sniffing beats guessing from the URL: a ``.jpg`` URL that a host
+    content-negotiates to WebP would otherwise be re-encoded under a MIME type
+    that contradicts its own payload.
+    """
+    image_format = image.format
+    if not image_format:
+        raise InputError("invalid or unreadable image content")
+    # MPO is a multi-picture JPEG; every other format PIL names maps directly.
+    if image_format == "MPO":
+        return "image/jpeg"
+    return f"image/{image_format.lower()}"
+
+
+def _encode_data_uri(image_bytes: bytes) -> str:
+    """Fully validate image bytes, then inline them as a base64 ``data:`` URI.
+
+    Runs the same full-pixel decode as the chat path (see
+    :func:`decode_and_validate_images`), so truncated or otherwise undecodable
+    content fails here as a clean 400 rather than reaching the tokenizer's own
+    decode and surfacing as a 500. Unlike the chat path, nothing downstream
+    reuses this decode -- the responses path re-decodes from the ``data:`` URI
+    it is handed -- so the image is released as soon as its format is read.
+    """
+    image = decode_and_validate_images([image_bytes])[0]
+    try:
+        mime = _sniff_image_mime(image)
+    finally:
+        image.close()
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+async def fetch_media_data_uri(
+    url: str, settings: Settings, max_bytes: int | None = None
+) -> str:
+    """Fetch a web media URL and return it inlined as a base64 ``data:`` URI.
+
+    The ``/v1/responses`` input schema accepts ``data:`` URIs only (see
+    ``InputImageContent.validate_data_uri_only``), so a client-supplied
+    ``http(s)`` image must be fetched and inlined before the body validates.
+    Routing that through :func:`resolve_image_from_url` keeps the responses path
+    on the same fetch as chat completions: one byte cap, one error mapping, one
+    place where host validation lives, and the same full-decode validation,
+    rather than a second downloader that has to be hardened separately.
+
+    Args:
+        url: The client-supplied media URL.
+        settings: Server settings, supplying the server-level byte cap.
+        max_bytes: Optional additional cap; the smaller of the two wins.
+
+    Returns:
+        A ``data:<mime>;base64,<payload>`` URI.
+
+    Raises:
+        InputError: If the media is oversized, unfetchable, or not a decodable
+            image.
+    """
+    image_bytes = await resolve_image_from_url(
+        make_media_ref(url), settings, max_bytes=max_bytes, media_kind="image"
+    )
+    # Decoding for validation and base64-encoding are both CPU-bound, so a
+    # multi-MB image goes to a worker thread for the same reason the ``data:``
+    # decode does.
+    if len(image_bytes) > _DATA_URI_OFFLOAD_THRESHOLD:
+        return await asyncio.to_thread(_encode_data_uri, image_bytes)
+    return _encode_data_uri(image_bytes)

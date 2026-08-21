@@ -474,6 +474,16 @@ This version is still a work in progress.
 
 ### Inference server
 
+- `/v1/responses` now fetches client-supplied `input_image` URLs through the
+  same media resolver as `/v1/chat/completions`, so the two paths share one
+  byte cap and one error mapping. Previously the responses path had its own
+  downloader with no size limit, meaning an arbitrarily large image could be
+  fetched and base64-expanded in memory, and its failures echoed the
+  underlying network error back to the client. The inlined `data:` URI's MIME
+  type is now sniffed from the fetched bytes instead of guessed from the URL,
+  and content that is not a decodable image is rejected with a 400 rather than
+  inlined as an image.
+
 - GLM models now map `reasoning_effort` onto the two thinking levels their
   chat template can express, instead of forwarding it verbatim. The template
   reads only `high` as a distinct level and treats every other value as
