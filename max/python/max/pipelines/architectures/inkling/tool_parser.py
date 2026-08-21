@@ -20,12 +20,20 @@ import re
 from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    build_xgrammar_tool_grammar,
+)
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     generate_call_id,
     register,
 )
-from max.pipelines.modeling.types import ParsedToolCall, ParsedToolResponse
+from max.pipelines.modeling.types import (
+    ParsedToolCall,
+    ParsedToolResponse,
+    PipelineTokenizer,
+)
 
 from .tokenizer import TOOL_CALL_JSON_MARKER
 
@@ -131,6 +139,8 @@ class InklingToolParser(StructuralTagToolParser):
     """
 
     CALL_BEGIN: ClassVar[str] = TOOL_CALL_JSON_MARKER
+
+    XGRAMMAR_FORMAT: ClassVar[str] = "inkling"
 
     _declared_tool_names: tuple[str, ...] = ()
 
@@ -261,3 +271,26 @@ class InklingToolParser(StructuralTagToolParser):
             if content.endswith(name):
                 return len(name)
         return len(run)
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        backend: str = "xgrammar",
+        tool_choice: str | dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Builds the decode-time grammar that constrains tool calls."""
+        if backend != "xgrammar":
+            raise InputError(
+                "Inkling constrained tool calling requires the xgrammar "
+                "backend; run with --structured-output-backend=xgrammar."
+            )
+        normalized_choice = tool_choice if tool_choice is not None else "auto"
+        return build_xgrammar_tool_grammar(
+            InklingToolParser.XGRAMMAR_FORMAT,
+            tools or [],
+            normalized_choice,
+            response_format_schema=response_format_schema,
+        )

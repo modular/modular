@@ -109,6 +109,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_inkling_reasoning_toolarg_enforcement",
+    # Loading the real Inkling tokenizer (200k vocab) dominates the runtime
+    # when INKLING_TOKENIZER_DIR is set.
+    size = "medium",
+    srcs = [
+        "test_inkling_reasoning_toolarg_enforcement.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/inkling:grammar_harness",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_xgrammar_shim",
     size = "small",
     srcs = [

@@ -44,7 +44,11 @@ import numpy.typing as npt
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
 from max import _xgrammar as xgrammar
+from max._xgrammar.builtin_structural_tag import (
+    get_inkling_response_format_branch,
+)
 from max._xgrammar.structural_tag import (
+    Format,
     JSONSchemaFormat,
     OrFormat,
     StructuralTag,
@@ -653,7 +657,7 @@ def build_xgrammar_tool_grammar(
         reasoning=False,
     )
     if response_format_schema is not None:
-        json_branch = JSONSchemaFormat(
+        json_branch: Format = JSONSchemaFormat(
             json_schema=response_format_schema,
             any_whitespace=False,
             separators=(",", ":"),
@@ -661,6 +665,10 @@ def build_xgrammar_tool_grammar(
             # require_object_root/reject_unsupported default on for all models.
             reject_unsupported=model_format in ("gemma_4", "glm_4_7"),
         )
+        if model_format == "inkling":
+            # An Inkling turn is a sequence of framed messages; bare JSON is
+            # not something its parsers can read.
+            json_branch = get_inkling_response_format_branch(json_branch)
         tag = StructuralTag(format=OrFormat(elements=[tag.format, json_branch]))
     return tag.model_dump_json()
 
