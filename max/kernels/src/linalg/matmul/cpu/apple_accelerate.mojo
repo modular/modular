@@ -341,15 +341,15 @@ def apple_gemv[
     comptime simd_width = simd_width_of[c.dtype]()
 
     @always_inline
-    @__copy_capture(c, a, b, K)
-    @__parameter
-    def process_rows(start_row: Int, end_row: Int):
+    def process_rows(
+        start_row: Int, end_row: Int
+    ) {var c, var a, var b, var K, imm}:
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.dtype, simd_width]()
             var acc_scalar = Scalar[c.dtype]()
 
             @always_inline
-            def compute_fn[width: Int](k: Int) {a, b, c, mut}:
+            def compute_fn[width: Int](k: Int) {a, b, c, transposed_b, mut}:
                 var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
                     c.dtype
                 ]()
@@ -385,8 +385,8 @@ def apple_gemv[
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
-    parallelize_over_rows[process_rows](
-        IndexList[2](N, K), 1, parallelism_grain_size, ctx
+    parallelize_over_rows(
+        process_rows, IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
     _ = transposed_b_alloc^

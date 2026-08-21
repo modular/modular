@@ -218,8 +218,7 @@ def _shard_and_stack_single_device[
     var output_elements_per_input = outer_dims * segment_elements
 
     @no_inline
-    @__parameter
-    def process_task(input_idx: Int):
+    def process_task(input_idx: Int) {imm}:
         var input_tensor = dyn_inputs[input_idx]
 
         for tp_index in range(outputs.size):
@@ -249,7 +248,7 @@ def _shard_and_stack_single_device[
 
                 unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=segment_elements)
 
-    parallelize[process_task](inputs.size)
+    parallelize(process_task, inputs.size)
 
 
 def shard_and_stack[

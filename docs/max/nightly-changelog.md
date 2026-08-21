@@ -754,6 +754,15 @@ This version is still a work in progress.
   overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
   closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
 
+- Removed the parametric `max.algorithm.parallelize[func](num_work_items, ...)`
+  and `max.algorithm.parallelize_over_rows[func](shape, axis, grain_size, ...)`
+  overloads that took a `capturing` closure as a compile-time parameter. Pass
+  the body as a unified closure in the first runtime argument instead:
+  `parallelize(func, num_work_items, ...)` and
+  `parallelize_over_rows(func, shape, axis, grain_size, ...)`. Closure bodies
+  drop `@__parameter` / `@__copy_capture` in favor of an explicit capture list,
+  for example `def body(start: Int, end: Int) {imm}:`.
+
 - `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
   dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
   a `(tokenizer, factory)` tuple, so callers can reach the memory plan
