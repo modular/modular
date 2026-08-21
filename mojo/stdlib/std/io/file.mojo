@@ -33,7 +33,7 @@ with open("my_file.txt", "r") as f:
 
 from std.format._utils import _WriteBufferStack
 from std.os import PathLike as stdPathLike, abort, makedirs, remove
-from std.os import SEEK_SET, SEEK_END
+from std.os import SEEK_SET, SEEK_END, SEEK_CUR
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
 from std.sys import size_of
@@ -482,7 +482,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(f.tell())  # 10
         ```
         """
-        return self.seek(0, os.SEEK_CUR)
+        return self.seek(0, SEEK_CUR)
 
     def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.

@@ -755,7 +755,7 @@ def test_file_tell() raises:
         var saved = f.tell()
         _ = f.seek(0)
         assert_equal(f.tell(), 0)
-        _ = f.seek(saved)
+        _ = f.seek(Int(saved))
         assert_equal(f.tell(), saved)
 
 
