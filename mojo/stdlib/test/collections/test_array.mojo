@@ -558,6 +558,60 @@ def test_array_eq() raises:
     assert_true(g != i)
 
 
+def test_array_ordering() raises:
+    # Lexicographic ordering: the first differing element decides, so
+    # `[1, 5] < [2, 3]` even though `5 > 3`. This is the key behavioral
+    # difference from `IndexList`'s element-wise comparison.
+    var a: Array[Int, 2] = [1, 5]
+    var b: Array[Int, 2] = [2, 3]
+    assert_true(a < b)
+    assert_true(a <= b)
+    assert_false(a > b)
+    assert_false(a >= b)
+    assert_false(b < a)
+    assert_true(b > a)
+
+    # Equal arrays: strict comparisons are False, non-strict are True.
+    var c: Array[Int, 3] = [1, 2, 3]
+    var d: Array[Int, 3] = [1, 2, 3]
+    assert_false(c < d)
+    assert_true(c <= d)
+    assert_false(c > d)
+    assert_true(c >= d)
+
+    # First element decides when it differs.
+    var e: Array[Int, 3] = [1, 9, 9]
+    var f: Array[Int, 3] = [2, 0, 0]
+    assert_true(e < f)
+    assert_true(f > e)
+
+    # Difference in the last element.
+    var g: Array[Int, 3] = [1, 2, 3]
+    var h: Array[Int, 3] = [1, 2, 4]
+    assert_true(g < h)
+    assert_true(g <= h)
+    assert_true(h > g)
+    assert_true(h >= g)
+
+    # Single-element arrays.
+    var x: Array[Int, 1] = [1]
+    var y: Array[Int, 1] = [2]
+    assert_true(x < y)
+    assert_true(y > x)
+
+    # Ordering also works for non-`Int` `Comparable` elements.
+    var s1: Array[String, 2] = ["apple", "zebra"]
+    var s2: Array[String, 2] = ["banana", "aardvark"]
+    assert_true(s1 < s2)
+    assert_true(s2 > s1)
+
+    var s3: Array[String, 2] = ["hello", "world"]
+    var s4: Array[String, 2] = ["hello", "world"]
+    assert_true(s3 <= s4)
+    assert_true(s3 >= s4)
+    assert_false(s3 < s4)
+
+
 def test_array_hash() raises:
     var a: Array[Int, 3] = [1, 2, 3]
     var b: Array[Int, 3] = [1, 2, 3]
@@ -573,6 +627,10 @@ def test_array_hash() raises:
 def test_array_conditional_conformances() raises:
     assert_true(conforms_to(Array[Int, 3], Writable))
     assert_true(conforms_to(Array[Int, 3], Equatable))
+    assert_true(conforms_to(Array[Int, 3], Comparable))
+    # `NonWritable` is `Equatable`-less and not `Comparable`, so the array
+    # tracks the element and does not conform to `Comparable`.
+    assert_false(conforms_to(Array[NonWritable, 3], Comparable))
     assert_true(conforms_to(Array[Int, 3], Hashable))
     assert_true(conforms_to(Array[Int, 3], Copyable))
     assert_true(conforms_to(Array[Int, 3], Deinitable))

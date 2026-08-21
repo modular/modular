@@ -145,6 +145,10 @@ This version is still a work in progress.
   The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
   unchanged.
 
+- `Array` now conforms to `Comparable` when its element type does, adding `<`,
+  `<=`, `>`, and `>=`. The ordering is **lexicographic**: the first differing
+  element decides, so `[1, 5] < [2, 3]` is `True`.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
