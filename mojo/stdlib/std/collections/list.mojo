@@ -152,6 +152,62 @@ struct _ListIterOwned[T: Movable & Deinitable](
         return (iter_len, {iter_len})
 
 
+@fieldwise_init
+struct _ListDrainIter[T: Movable & Deinitable, origin: MutOrigin](
+    IterableOwned, Iterator, Movable
+):
+    """An iterator over a List's elements that moves them out of the list,
+    effectively draining the list.
+
+    Parameters:
+        T: The type of the elements in the list.
+        origin: The mutable origin of the List.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _src: Pointer[List[Self.T], Self.origin]
+    var _index: Int
+
+    def __init__(out self, ref[Self.origin] list: List[Self.T]):
+        self._src = Pointer(to=list)
+        self._index = 0
+
+    @always_inline
+    def __deinit__(deinit self):
+        # Destroy the elements that have not yet been drained, then mark the
+        # source list as empty. `_data`/`_capacity` are left untouched so the
+        # list's underlying allocation is freed normally when it deinits.
+        unsafe_destroy_n(
+            self._src[].unsafe_ptr().unsafe_offset(self._index),
+            count=len(self._src[]) - self._index,
+        )
+        var old_size: Int = self._src[]._len
+        self._src[]._len = 0
+        self._src[]._annotate_shrink(old_size)
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= len(self._src[]):
+            raise StopIteration()
+        self._index += 1
+        return (
+            self._src[]
+            .unsafe_ptr()
+            .unsafe_offset(self._index - 1)
+            .unsafe_take_pointee()
+        )
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len = len(self._src[]) - self._index
+        return (iter_len, {iter_len})
+
+
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `List` of"
     " non-`Deinitable` elements"
@@ -754,6 +810,31 @@ struct List[T: AnyType, /](
             ]().unsafe_origin_cast[origin_of(self)](),
             self._len,
         )
+
+    def drain(
+        mut self,
+    ) -> _ListDrainIter[Self.T, origin_of(self)] where conforms_to(
+        Self.T, Movable & Deinitable
+    ):
+        """Iterate over the list's elements and move them out of the list,
+        effectively draining the list.
+
+        Returns:
+            An iterator of owned elements that moves them out of the list.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3]
+
+        for value in my_list.drain():
+            print(value) # prints 1, then 2, then 3
+
+        print(len(my_list))
+        # prints 0
+        ```
+        """
+        return _ListDrainIter(self)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
