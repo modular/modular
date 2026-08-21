@@ -176,6 +176,7 @@ def blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[2]),
         ),
         n_scale_granularity=n_scale_granularity,
+        b_scales_storage=type_of(b_scales).Storage,
     ]
 
     # Create TMA descriptors using kernel's layout types

@@ -27,7 +27,7 @@ from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
 from std.gpu import block_idx, grid_dim
-from layout import TileTensor
+from layout import PointerStorage, TensorStorage, TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D
 
@@ -208,6 +208,9 @@ struct GroupedWorkIterator1D1D[
     cta_group: Int = 1,
     swizzle: Bool = False,
     AB_swapped: Bool = False,
+    OffsetsStorage: TensorStorage = PointerStorage[element_width=1],
+    ExpertIdsStorage: TensorStorage = PointerStorage[element_width=1],
+    ExpertScalesStorage: TensorStorage = PointerStorage[element_width=1],
 ](Copyable, Iterable, Iterator):
     """Work iterator for 1D-1D grouped block-scaled matmul.
 
@@ -234,6 +237,9 @@ struct GroupedWorkIterator1D1D[
             the M (token) dimension strides by `BN` and the N (weight)
             dimension strides by `BM`; otherwise M strides by `BM` and N
             strides by `BN` (defaults to False).
+        OffsetsStorage: Storage policy of the group-offsets `TileTensor`.
+        ExpertIdsStorage: Storage policy of the expert-IDs `TileTensor`.
+        ExpertScalesStorage: Storage policy of the expert-scales `TileTensor`.
 
     Usage:
         for ctx in work_iter:
@@ -247,10 +253,23 @@ struct GroupedWorkIterator1D1D[
     ]: Iterator = Self
 
     # 1D TileTensor types: dynamic shape, stride 1 (flat arrays)
-    comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
-    comptime ExpertIdsTile = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin]
+    comptime OffsetsTile = TileTensor[
+        DType.uint32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.OffsetsStorage,
+    ]
+    comptime ExpertIdsTile = TileTensor[
+        DType.int32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.ExpertIdsStorage,
+    ]
     comptime ExpertScalesTile = TileTensor[
-        DType.float32, GMEMLayout1D, MutAnyOrigin
+        DType.float32,
+        GMEMLayout1D,
+        MutAnyOrigin,
+        Storage=Self.ExpertScalesStorage,
     ]
 
     var num_active_experts: Int
@@ -340,7 +359,7 @@ struct GroupedWorkIterator1D1D[
         var info, m_end = self._fetch_next_work()
         var expert_scale: Float32 = 1.0
         if info.is_valid():
-            expert_scale = self.expert_scales[Int(info.expert_id)]
+            expert_scale = self.expert_scales[Int(info.expert_id)][0]
         return GroupedWorkContext1D1D(info, expert_scale, m_end)
 
     @always_inline
@@ -352,7 +371,7 @@ struct GroupedWorkIterator1D1D[
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             ufloordiv(grid_dim.x, Self.cta_group)
         ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
-        var start_idx = self.group_offsets[Int(self.current_group_idx)]
+        var start_idx = self.group_offsets[Int(self.current_group_idx)][0]
         var end_idx: UInt32 = 0
         var num_dynamic_dim_blocks: UInt32 = 0
         var current_dynamic_dim: UInt32 = 0
@@ -366,13 +385,15 @@ struct GroupedWorkIterator1D1D[
                     UInt32(0),
                 )
 
-            end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
+            end_idx = self.group_offsets[Int(self.current_group_idx + 1)][0]
 
             current_dynamic_dim = end_idx - start_idx
 
             # Fast-skip inactive experts (expert_id < 0) and groups with
             # zero tokens. No A, B, or scale-factor loads should happen.
-            var group_expert_id = self.expert_ids[Int(self.current_group_idx)]
+            var group_expert_id = self.expert_ids[Int(self.current_group_idx)][
+                0
+            ]
             if group_expert_id < 0 or current_dynamic_dim <= 0:
                 self.current_group_idx += 1
                 start_idx = end_idx
@@ -411,7 +432,7 @@ struct GroupedWorkIterator1D1D[
             )
 
         # Get expert_id for this group
-        var expert_id = self.expert_ids[Int(self.current_group_idx)]
+        var expert_id = self.expert_ids[Int(self.current_group_idx)][0]
 
         # Compute swizzled block indices
         var num_n_blocks = Self.num_static_dim_blocks
@@ -490,6 +511,4 @@ struct GroupedWorkIterator1D1D[
     @always_inline
     def current_expert_id(self) -> Int32:
         """Get the expert ID for the current group."""
-        return rebind[Scalar[DType.int32]](
-            self.expert_ids[Int(self.current_group_idx)]
-        )
+        return self.expert_ids[Int(self.current_group_idx)][0]

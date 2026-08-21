@@ -369,22 +369,22 @@ def _test_dispatch[
             continue
 
         var c_slice = TileTensor(
-            c_ref_tensor._storage + start * c_row_stride,
+            c_ref_tensor.ptr + start * c_row_stride,
             row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor._storage + start * a_row_stride,
+            a_tensor.ptr + start * a_row_stride,
             row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor._storage + Int(expert_id) * b_expert_stride,
+            b_tensor.ptr + Int(expert_id) * b_expert_stride,
             row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -400,7 +400,7 @@ def _test_dispatch[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
+            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),

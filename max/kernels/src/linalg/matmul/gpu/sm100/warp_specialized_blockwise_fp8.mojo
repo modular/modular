@@ -47,6 +47,7 @@ from layout import (
     Coord,
     Layout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major,
     stack_allocation,
@@ -913,6 +914,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_type: DType,
     b_scales_type: DType,
     b_scales_layout: TensorLayout,
+    b_scales_storage: TensorStorage,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
@@ -926,7 +928,12 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: Int32,
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type,
+        b_scales_layout,
+        ImmutAnyOrigin,
+        Storage=b_scales_storage,
+    ],
     problem_shape: StaticTuple[Int32, 3],
 ):
     """Implements the warp-specialized blockwise FP8 GEMM kernel for SM100 using TMA loads, UMMA tensor-core MMA, and a CLC tile scheduler.
@@ -952,6 +959,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type: Element type of the A blockwise scales (`float32`).
         b_scales_type: Element type of the B blockwise scales (`float32`).
         b_scales_layout: Memory layout of the B scales `TileTensor`.
+        b_scales_storage: Storage policy of the B scales `TileTensor`.
         transpose_b: Whether B is k-major (transposed); must be `True`.
         config: Static GEMM configuration holding tile, MMA, cluster,
             pipeline, and swizzle parameters.
@@ -1652,6 +1660,7 @@ def sm100_warp_specialized_blockwise_fp8[
         a_scales_type,
         b_scales_type,
         type_of(b_scales).LayoutType,
+        type_of(b_scales).Storage,
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,

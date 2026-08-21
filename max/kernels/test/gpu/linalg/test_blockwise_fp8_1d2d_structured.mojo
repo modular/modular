@@ -239,23 +239,21 @@ def test_blockwise_fp8_1d2d_structured[
     )
     from std.memory import UnsafePointer as NewPtr
 
-    var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
+    var a_offsets_tt = TileTensor(
         a_offsets_device_buffer,
         layout=GMEMLayout1D(
             Coord(Int64(num_active_experts + 1)),
             Coord(Idx[1]),
         ),
     )
-    var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
+    var expert_ids_tt = TileTensor(
         expert_ids_device_buffer,
         layout=GMEMLayout1D(
             Coord(Int64(num_active_experts)),
             Coord(Idx[1]),
         ),
     )
-    var expert_scales_tt = TileTensor[
-        DType.float32, GMEMLayout1D, MutAnyOrigin
-    ](
+    var expert_scales_tt = TileTensor(
         expert_scales_device_buffer,
         layout=GMEMLayout1D(
             Coord(Int64(num_experts)),

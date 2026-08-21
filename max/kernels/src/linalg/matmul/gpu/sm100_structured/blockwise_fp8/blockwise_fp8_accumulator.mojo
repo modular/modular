@@ -31,7 +31,9 @@ from max.gpu.sync import syncwarp
 from layout import (
     Coord,
     Idx,
+    PointerStorage,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major,
     stack_allocation,
@@ -208,13 +210,19 @@ struct BlockwiseFP8Accumulator[
         # Type parameters
         b_scales_dtype: DType,
         b_scales_layout: TensorLayout,
+        b_scales_storage: TensorStorage,
         a_scales_dtype: DType,
         # A-scales tile dimensions
         a_scales_dim0: Int,
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: TileTensor[b_scales_dtype, b_scales_layout, ImmutAnyOrigin],
+        b_scales: TileTensor[
+            b_scales_dtype,
+            b_scales_layout,
+            ImmutAnyOrigin,
+            Storage=b_scales_storage,
+        ],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
@@ -244,6 +252,7 @@ struct BlockwiseFP8Accumulator[
             b_scales_dtype: Element type of the B-scales tensor; must be
                 `float32`.
             b_scales_layout: Memory layout of the B-scales tensor.
+            b_scales_storage: Storage policy of the B-scales tensor.
             a_scales_dtype: Element type of the A-scales SMEM tiles; must
                 be `float32`.
             a_scales_dim0: Row count of each A-scales SMEM tile.

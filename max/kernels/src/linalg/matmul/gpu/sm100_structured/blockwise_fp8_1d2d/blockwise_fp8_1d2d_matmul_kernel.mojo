@@ -39,7 +39,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from max.gpu.sync import named_barrier, syncwarp
-from layout import TensorLayout, TileTensor
+from layout import PointerStorage, TensorLayout, TensorStorage, TileTensor
 from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
@@ -109,6 +109,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     static_K: Int,
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    b_scales_storage: TensorStorage = PointerStorage[element_width=1],
+    c_device_storage: TensorStorage = PointerStorage[element_width=1],
+    offsets_storage: TensorStorage = PointerStorage[element_width=1],
+    expert_ids_storage: TensorStorage = PointerStorage[element_width=1],
+    expert_scales_storage: TensorStorage = PointerStorage[element_width=1],
 ]:
     """Blockwise FP8 1D2D matmul kernel with register-based accumulation.
 
@@ -139,6 +144,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             B-scales row stride as `static_K // 128`.
         cluster_shape: Thread block cluster shape as a
             `StaticTuple[Int32, 3]` (defaults to `(1, 1, 1)`).
+        b_scales_storage: Storage policy of the B-scales `TileTensor`.
+        c_device_storage: Storage policy of the output C `TileTensor`.
+        offsets_storage: Storage policy of the per-expert offsets
+            `TileTensor`.
+        expert_ids_storage: Storage policy of the expert-IDs `TileTensor`.
+        expert_scales_storage: Storage policy of the expert-scales
+            `TileTensor`.
     """
 
     # ========== Derived Constants ==========
@@ -364,6 +376,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         tile_shape=Self.config.block_tile_shape,
         cluster=Self.config.cluster_shape,
         cta_group=Self.cta_group,
+        OffsetsStorage=Self.offsets_storage,
+        ExpertIdsStorage=Self.expert_ids_storage,
+        ExpertScalesStorage=Self.expert_scales_storage,
     ]
 
     # ========== Validation ==========
@@ -386,11 +401,24 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     # ========== Kernel Parameter TileTensor Types ==========
 
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.b_scales_layout, MutAnyOrigin
+        Self.b_scales_type,
+        Self.b_scales_layout,
+        MutAnyOrigin,
+        Storage=Self.b_scales_storage,
+    ]
+
+    # Same tile re-based on one expert's B-scale rows. Offsetting the storage
+    # handle can change the storage policy, so name the result type through
+    # `OffsetViewType` rather than assuming it is still `BScalesTile`.
+    comptime BScalesExpertTile = Self.BScalesTile.OffsetViewType[
+        TypeList.of[Scalar[Self.BScalesTile.linear_idx_type]]()
     ]
 
     comptime CDeviceTile = TileTensor[
-        Self.c_type, Self.c_device_layout, MutAnyOrigin
+        Self.c_type,
+        Self.c_device_layout,
+        MutAnyOrigin,
+        Storage=Self.c_device_storage,
     ]
 
     # ========== Static Helper Methods ==========
@@ -667,10 +695,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                     var expert_b_scale_offset = (
                         Int(ctx.expert_id()) * n_scale_blocks
                     )
-                    var b_scales_expert = Self.BScalesTile(
-                        ptr=b_scales._storage
-                        + expert_b_scale_offset * b_scales_k,
-                        layout=b_scales.layout,
+                    var b_scales_expert = Self.BScalesExpertTile(
+                        b_scales._offset_storage(
+                            Scalar[Self.BScalesTile.linear_idx_type](
+                                expert_b_scale_offset * b_scales_k
+                            )
+                        ),
+                        b_scales.layout,
                     )
 
                     # Convert absolute N to tile index for b_scales lookup

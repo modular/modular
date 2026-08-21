@@ -446,18 +446,18 @@ def run_one_case(
             var expert_id = Int(expert_ids_host_ptr[i])
 
             var c_slice = TileTensor(
-                c_ref_tensor._storage + start * N,
+                c_ref_tensor.ptr + start * N,
                 row_major((end - start, Idx[N])),
             )
             var a_slice = TileTensor(
-                a_tensor._storage + start * K, row_major((end - start, Idx[K]))
+                a_tensor.ptr + start * K, row_major((end - start, Idx[K]))
             )
             var b_slice = TileTensor(
-                b_tensor._storage + expert_id * b_expert_stride,
+                b_tensor.ptr + expert_id * b_expert_stride,
                 row_major((Idx[N], Idx[K])),
             )
             var b_scales_slice = TileTensor(
-                b_scales_tensor._storage + expert_id * b_expert_scale_count,
+                b_scales_tensor.ptr + expert_id * b_expert_scale_count,
                 row_major(
                     Coord(
                         Idx[n_groups],
@@ -472,7 +472,7 @@ def run_one_case(
                 a_scale_offsets_ptr[i]
             )
             var a_scales_slice = TileTensor(
-                a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
+                a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
                 row_major(
                     Coord(
                         ceildiv(end - start, SF_MN_GROUP_SIZE),

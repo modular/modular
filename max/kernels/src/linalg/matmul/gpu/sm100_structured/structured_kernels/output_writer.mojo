@@ -353,7 +353,9 @@ struct TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Write with absolute coordinates and bounds checking.
 
@@ -919,7 +921,9 @@ struct TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Internal implementation of write with absolute coordinates and bounds checking.
 
@@ -1172,7 +1176,9 @@ struct TileWriter[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ],
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -1274,25 +1280,19 @@ struct TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor._storage + c_tensor.layout(
-                            Coord(
-                                Int(global_i),
-                                Int(global_j),
-                            )
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            Coord(Int(global_i), Int(global_j)),
+                            src,
                         )
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
                     else:
                         var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        var dst_ptr = c_tensor._storage + c_tensor.layout(
-                            Coord(
-                                Int(global_i),
-                                Int(global_j),
-                            )
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            Coord(Int(global_i), Int(global_j)),
+                            src,
                         )
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
 
     @staticmethod
     @always_inline
@@ -1302,7 +1302,9 @@ struct TileWriter[
         c_smem_ptr: UnsafePointer[
             Scalar[Self.c_type], _, address_space=AddressSpace.SHARED
         ],
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -1363,11 +1365,10 @@ struct TileWriter[
                 chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
             ) * UInt32(simd_size)
             if global_token < m_end and global_weight < UInt32(cN):
-                (
-                    c_tensor._storage
-                    + global_token * UInt32(cN)
-                    + global_weight
-                ).store[alignment=smem_alignment](val_vec)
+                c_tensor.store[width=simd_size, alignment=smem_alignment](
+                    Coord(Int(global_token), Int(global_weight)),
+                    val_vec,
+                )
 
     # ========== Residual Add Support ==========
     # Methods for D = lambda(accum) + beta * C residual operations
