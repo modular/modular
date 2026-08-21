@@ -336,6 +336,10 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             weight_offset=1.0,
             multiply_before_cast=False,
         )
+        # Kept so the MTP draft head builds its norms from the same factory
+        # rather than a copy that could drift from the (1 + w) convention.
+        self.create_norm = create_norm
+
         # Quantization is per module, not per model: this checkpoint's MLPs are
         # NVFP4 while its attention and GDN projections are per-tensor FP8, so
         # each construction site is handed its own config rather than one
