@@ -163,6 +163,14 @@ adapter must only use the following layer projections:
 - `v_proj`
 - `o_proj`
 
+MAX fuses the query, key, and value projections into a single `qkv_proj`
+layer internally and applies each adapter to its corresponding projection.
+
+LoRA adapters are not compatible with the overlap scheduler. MAX
+automatically keeps the overlap scheduler off when you enable LoRA, and
+explicitly passing `--enable-overlap-scheduler` together with `--enable-lora`
+raises an error.
+
 ## Quickstart
 
 We can quickly deploy Llama 3.1 8B Instruct using MAX as a backend with LoRA
