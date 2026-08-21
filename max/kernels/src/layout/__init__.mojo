@@ -61,3 +61,7 @@ from .tensor_storage import (
     TensorStorage,
     PointerStorage,
 )
+from .buffer_storage import (
+    TensorBufferStorage,
+    TensorBufferStorageView,
+)
