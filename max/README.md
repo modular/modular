@@ -30,6 +30,13 @@ If you want to report issues or request features, [please create a GitHub
 issue here](https://github.com/modular/modular/issues)—also see our [guide to
 submitting good bug reports](./CONTRIBUTING.md#submitting-bugs).
 
+## License
+
+The open-source code in this directory is licensed under the Apache License v2.0
+with LLVM Exceptions (see the repository [LICENSE](../LICENSE) file).
+Modular, MAX and Mojo usage and distribution are licensed under the
+[Modular Community License](https://www.modular.com/legal/community).
+
 ## Contact us
 
 If you'd like to chat with the team and other community members, please send a
