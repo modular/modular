@@ -13,6 +13,7 @@
 
 from std.os import abort
 from std.testing import assert_raises, _assert_aborts, TestSuite
+from std.time import sleep
 
 
 def test_passes_when_closure_aborts() raises:
@@ -57,6 +58,14 @@ def test_raises_when_message_does_not_match() raises:
             aborts_with_a_different_message,
             contains="this text will never appear",
         )
+
+
+def test_raises_when_closure_does_not_abort_in_time() raises:
+    def hangs():
+        sleep(3600.0)
+
+    with assert_raises(contains="was still running after"):
+        _assert_aborts(hangs, timeout=0.5)
 
 
 def main() raises:
