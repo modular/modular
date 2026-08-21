@@ -701,8 +701,7 @@ def normpath[PathLike: stdPathLike, //](path: PathLike) -> String:
     print(normpath(""))  # "."
     ```
     """
-    var _drive, root, tail = splitroot(path.__fspath__())
-
+    var _drive, root, tail = splitroot(path)
     var parts = List[String]()
     for comp_slice in tail.split(sep):
         var comp = String(comp_slice)
