@@ -56,6 +56,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "DeclRef";
   case ExprNode::kAttributeRef:
     return "AttributeRef";
+  case ExprNode::kInferredAttributeRef:
+    return "InferredAttributeRef";
   case ExprNode::kParen:
     return "Paren";
   case ExprNode::kTuple:
@@ -299,6 +301,12 @@ void AttributeRefNode::print(raw_indented_ostream &os) const {
   printIdentifier(os, *this);
   os << "\n";
   os.unindent() << "}\n";
+}
+
+void InferredAttributeRefNode::print(raw_indented_ostream &os) const {
+  os << "InferredAttributeRef { ";
+  printIdentifier(os, *this);
+  os << " }\n";
 }
 
 void Operand::print(raw_indented_ostream &os) const {

@@ -21,8 +21,9 @@
 //
 // AnyValue       <- Expr emitted to MLIR...
 //   UValue         <- a value with an unresolved type
-//     OverloadSetUValue  <- an unresolved overload set
-//     InitializerUValue  <- constructor operands {a=1, b="foo"}
+//     OverloadSetUValue         <- an unresolved overload set
+//     InitializerUValue         <- constructor operands {a=1, b="foo"}
+//     InferredBaseAttrRefUValue <- inferred-base attr ref `.f64`
 //   CValue        <- Concrete value: something with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
@@ -478,12 +479,39 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);
 
+/// Instances of InferredBaseAttrRefUValue represent an attribute reference
+/// whose base type is inferred from context, e.g. `.f64` in `foo(.f64)`, or a
+/// call of such a reference, e.g. `.hsb_to_rgb(...)` in
+/// `foo(.hsb_to_rgb(...))`.
+class InferredBaseAttrRefUValue {
+public:
+  InferredBaseAttrRefUValue() = default; // Used by dyn_cast.
+  explicit InferredBaseAttrRefUValue(const ExprNode *expr) : expr(expr) {
+    assert(expr && "InferredBaseAttrRefUValue requires an expression");
+  }
+
+  bool isNull() const { return !expr; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  const ExprNode *getExpr() const { return expr; }
+
+  /// Emit this as a CValue if it can be resolved, otherwise emit an error and
+  /// return null.
+  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
+
+private:
+  const ExprNode *expr = nullptr;
+};
+raw_ostream &operator<<(raw_ostream &os, InferredBaseAttrRefUValue value);
+
 struct VariantValueStorageBase {
   /// These are all the forms of storage we can have.
   using Storage =
       SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
-                   OverloadSetUValue, InitializerUValue, SBValue, MBPValue,
-                   PMBValue, PMRValue, MBValue, DLValue, MLValue, RLValue>;
+                   OverloadSetUValue, InitializerUValue,
+                   InferredBaseAttrRefUValue, SBValue, MBPValue, PMBValue,
+                   PMRValue, MBValue, DLValue, MLValue, RLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -616,6 +644,11 @@ struct VariantUValue {
 
   VariantUValue(InitializerUValue value) { getStorageR() = std::move(value); }
 
+  VariantUValue(InferredBaseAttrRefUValue value) {
+    if (value)
+      getStorageR() = std::move(value);
+  }
+
   OverloadSetUValue getIfOverloadSet() const {
     return dyn_cast<OverloadSetUValue>(getStorageR());
   }
@@ -624,6 +657,10 @@ struct VariantUValue {
     if (isa<InitializerUValue>(getStorageR()))
       return cast<InitializerUValue>(getStorageR());
     return {};
+  }
+
+  InferredBaseAttrRefUValue getIfInferredBaseAttrRef() const {
+    return dyn_cast<InferredBaseAttrRefUValue>(getStorageR());
   }
 
 private:
@@ -638,7 +675,7 @@ private:
   }
 };
 
-/// UValue = OverloadSetUValue|InitializerUValue
+/// UValue = OverloadSetUValue|InitializerUValue|InferredBaseAttrRefUValue
 class UValue : public VariantValueStorage<UValue>,
                public VariantUValue<UValue> {
 public:
@@ -648,7 +685,8 @@ public:
   static UValue getFrom(Storage storage) {
     UValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<OverloadSetUValue, InitializerUValue>(storage))
+    if (isa<OverloadSetUValue, InitializerUValue, InferredBaseAttrRefUValue>(
+            storage))
       result.storage = std::move(storage);
     return result;
   }
