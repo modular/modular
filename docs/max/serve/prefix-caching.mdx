@@ -55,6 +55,15 @@ prefix caching behavior:
   `--no-enable-prefix-caching` to disable it.
 - `--kv-cache-page-size`: sets the number of tokens per page in the paged KV
   cache. PagedAttention requires a page size that is a multiple of 128.
+- `--enable-dp-cross-replica-prefix-copy`: when serving with data parallelism
+  (`--data-parallel-degree` greater than 1), lets MAX serve a prefix-cache hit
+  that lives on another replica's GPU by copying it device-to-device onto the
+  requesting replica. This is on by default. When disabled, cross-replica
+  reuse is served only from the shared host or disk tier, or recomputed.
+
+Prefix caching is not compatible with [LoRA
+adapters](/serve/lora-adapters). Disable it with
+`--no-enable-prefix-caching` when serving LoRA adapters.
 
 Prefix caching with PagedAttention works on both CPU and GPU. To deploy a model
 with prefix caching using the `max` CLI, you can use the flag `--devices cpu`
