@@ -37,6 +37,7 @@ from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
@@ -49,6 +50,7 @@ from .layers.attention import Qwen3_5Attention
 from .layers.gated_deltanet import GatedDeltaNet
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
+from .quantization import storage_dtype
 
 
 def _shard_mlp_and_norms(
@@ -95,8 +97,11 @@ class Qwen3_5FullAttentionBlock(Module):
         rope: Llama3RotaryEmbedding,
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
+        attn_quant_config: QuantConfig | None = None,
+        mlp_quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
+        compute_dtype = config.compute_dtype
         self.self_attn = Qwen3_5Attention(
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
@@ -104,23 +109,25 @@ class Qwen3_5FullAttentionBlock(Module):
             head_dim=config.kv_params.head_dim,
             kv_params=config.kv_params,
             layer_idx=layer_idx,
-            dtype=config.dtype,
+            dtype=storage_dtype(attn_quant_config, compute_dtype),
             rope=rope,
             linear_cls=linear_cls,
             devices=config.devices,
             scale=config.attention_multiplier,
             partial_rotary_factor=config.partial_rotary_factor,
             has_bias=config.attention_bias,
-            norm_dtype=config.norm_dtype or config.dtype,
+            norm_dtype=config.norm_dtype or compute_dtype,
             norm_eps=config.rms_norm_eps or 1e-6,
+            quant_config=attn_quant_config,
         )
         self.mlp = MLP(
-            config.dtype,
+            storage_dtype(mlp_quant_config, compute_dtype),
             config.model_quantization_encoding,
             config.hidden_size,
             config.intermediate_size,
             config.devices,
             linear_cls,
+            quant_config=mlp_quant_config,
         )
         self.input_layernorm = create_norm()
         self.post_attention_layernorm = create_norm()
@@ -197,8 +204,11 @@ class Qwen3_5LinearAttentionBlock(Module):
         config: Qwen3_5Config,
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
+        attn_quant_config: QuantConfig | None = None,
+        mlp_quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
+        compute_dtype = config.compute_dtype
         self.linear_attn = GatedDeltaNet(
             hidden_size=config.hidden_size,
             num_key_heads=config.linear_num_key_heads,
@@ -206,18 +216,21 @@ class Qwen3_5LinearAttentionBlock(Module):
             key_head_dim=config.linear_key_head_dim,
             value_head_dim=config.linear_value_head_dim,
             conv_kernel_size=config.linear_conv_kernel_dim,
-            dtype=config.dtype,
+            dtype=compute_dtype,
             device=config.devices[0],
             rms_norm_eps=config.rms_norm_eps or 1e-6,
             ssm_dtype=config.mamba_ssm_dtype,
+            proj_dtype=storage_dtype(attn_quant_config, compute_dtype),
+            quant_config=attn_quant_config,
         )
         self.mlp = MLP(
-            config.dtype,
+            storage_dtype(mlp_quant_config, compute_dtype),
             config.model_quantization_encoding,
             config.hidden_size,
             config.intermediate_size,
             config.devices,
             linear_cls,
+            quant_config=mlp_quant_config,
         )
         self.input_layernorm = create_norm()
         self.post_attention_layernorm = create_norm()
@@ -323,8 +336,13 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             weight_offset=1.0,
             multiply_before_cast=False,
         )
-
-        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
+        # Quantization is per module, not per model: this checkpoint's MLPs are
+        # NVFP4 while its attention and GDN projections are per-tensor FP8, so
+        # each construction site is handed its own config rather than one
+        # partial-bound `linear_cls`.
+        scheme = config.quant_scheme
+        compute_dtype = config.compute_dtype
+        linear_cls = Linear
 
         self.layer_types = config.layer_types
         self.linear_layer_indices = [
@@ -335,6 +353,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
 
         layers: list[Module] = []
         for i, lt in enumerate(config.layer_types):
+            attn_quant_config = scheme.attn_config(i) if scheme else None
+            mlp_quant_config = scheme.mlp_config(i) if scheme else None
             if lt == "full_attention":
                 layers.append(
                     Qwen3_5FullAttentionBlock(
@@ -343,6 +363,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                         rope=rope,
                         create_norm=create_norm,
                         linear_cls=linear_cls,
+                        attn_quant_config=attn_quant_config,
+                        mlp_quant_config=mlp_quant_config,
                     )
                 )
             else:
@@ -351,6 +373,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                         config=config,
                         create_norm=create_norm,
                         linear_cls=linear_cls,
+                        attn_quant_config=attn_quant_config,
+                        mlp_quant_config=mlp_quant_config,
                     )
                 )
         self.layers = LayerList(layers)
@@ -362,22 +386,26 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         )
         self.norm_shards = self.norm.shard(config.devices)
 
-        # Embedding and output layers
-        embedding_dtype = config.dtype
+        # Embedding and output layers. `embed_tokens` is never quantized;
+        # `lm_head` is NVFP4 in this checkpoint, and shares the MLP's config.
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
-            embedding_dtype,
+            compute_dtype,
             config.devices,
+        )
+        lm_head_quant_config = (
+            scheme.mlp if scheme and scheme.quantize_lm_head else None
         )
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
-            embedding_dtype,
+            storage_dtype(lm_head_quant_config, compute_dtype),
             devices=config.devices,
             tied_weight=(
                 self.embed_tokens.weight if config.tie_word_embeddings else None
             ),
+            quant_config=lm_head_quant_config,
         )
 
         self.kv_params = config.kv_params
@@ -464,9 +492,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
+        # An unscaled FP8 cache (`--kv-cache-format float8_e4m3fn`) is
+        # supported and needs no scale buffers; a *scaled* one is not.
         for kv_collection in kv_collections:
             assert kv_collection.kv_scales is None, (
-                "Qwen3.5 does not support quantized KV cache"
+                "Qwen3.5 does not support a scale-calibrated quantized KV cache"
             )
             assert kv_collection.draft_attention_dispatch_metadata is None, (
                 "Qwen3.5 does not support eagle speculation"
@@ -583,7 +613,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # for every layer, plus its own copy of ``slot_idx``. Every block below
         # is device-major: ``[slot_idx x D, conv x D x L, recurrent x D x L]``.
         num_linear_layers = len(self.linear_layer_indices)
-        state_dtype = self.config.dtype
+        state_dtype = self.config.compute_dtype
         conv_dim = self._conv_dim // self.num_devices
         num_v_heads = self._num_v_heads // self.num_devices
         slot_idx_types: list[TensorType | BufferType] = [
@@ -620,7 +650,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         if self.vision_encoder is not None:
             vision_types.extend(
                 TensorType(
-                    self.config.dtype,
+                    self.config.compute_dtype,
                     shape=["vision_merged_seq_len", self.config.hidden_size],
                     device=device,
                 )

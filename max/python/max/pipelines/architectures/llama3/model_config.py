@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
@@ -371,6 +372,21 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             quantization_encoding=quantization_encoding,
         )
 
+    def _parse_quant_config(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+    ) -> QuantConfig | None:
+        """Parses the checkpoint's quantization config during ``finalize``.
+
+        An extension point for architectures whose quantization metadata
+        ``parse_quant_config`` cannot read: it is a single uniform format keyed
+        off one ``quant_algo``, resolved against the config object handed to
+        ``finalize``. Qwen3.5 overrides this because its checkpoint mixes NVFP4
+        and FP8 and keeps ``quantization_config`` beside ``text_config``.
+        """
+        return parse_quant_config(huggingface_config, state_dict, self.dtype)
+
     def finalize(
         self,
         huggingface_config: AutoConfig,
@@ -406,9 +422,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         else:
             normalized_state_dict = dict(state_dict)
 
-        # Parse the float8 config from compressed-tensors or FBGEMM.
-        quant_config = parse_quant_config(
-            huggingface_config, normalized_state_dict, self.dtype
+        quant_config = self._parse_quant_config(
+            huggingface_config, normalized_state_dict
         )
 
         # Determine norm_dtype.

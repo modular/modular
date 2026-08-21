@@ -1021,6 +1021,7 @@ class GenericOracle(PipelineOracle):
         self,
         *,
         model_path: str,
+        torch_model_path: str | None = None,
         device_encoding_map: dict[str, list[str]] | None = None,
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
@@ -1034,6 +1035,11 @@ class GenericOracle(PipelineOracle):
         add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
+        # A quantized checkpoint transformers cannot load names its bf16 source
+        # here, so the torch reference is the model MAX's weights were
+        # quantized from. Same tokenizer, same prompts, and the quantization
+        # error lands in the tolerances.
+        self.torch_model_path = torch_model_path or model_path
         # Memoized local path: an ``s3://`` model_path is synced to a local
         # cache dir on first use (see `_local_model_path`).
         self._resolved_model_path: str | None = None
@@ -1133,7 +1139,11 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        model_path = self._local_model_path()
+        model_path = (
+            self.torch_model_path
+            if self.torch_model_path != self.model_path
+            else self._local_model_path()
+        )
         processor = self.auto_processor_cls.from_pretrained(
             model_path,
             trust_remote_code=self.trust_remote_code,
@@ -1169,9 +1179,10 @@ class GenericOracle(PipelineOracle):
                     else None,
                 )
         else:
-            # For FP8 models, use bfloat16 as compute dtype since FP8 can't
-            # be set as torch default dtype.
-            if encoding == "float8_e4m3fn":
+            # Sub-byte and FP8 encodings cannot be a torch default dtype,
+            # and a bf16 reference model has no quantized weights to load
+            # anyway, so the torch side computes in bfloat16.
+            if encoding in ("float8_e4m3fn", "float4_e2m1fnx2"):
                 torch_dtype = torch.bfloat16
             else:
                 torch_dtype = (
@@ -2014,6 +2025,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "Qwen/Qwen3.8-27B": GenericOracle(
+        model_path="Qwen/Qwen3.8-27B",
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "RadixArk/Qwen3.8-27B-NVFP4": GenericOracle(
+        model_path="RadixArk/Qwen3.8-27B-NVFP4",
+        torch_model_path="Qwen/Qwen3.8-27B",
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
