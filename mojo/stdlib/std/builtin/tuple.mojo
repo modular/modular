@@ -347,26 +347,12 @@ struct Tuple[*Ts: Movable](
     def _compare(
         self, other: Self
     ) -> Int where Self.Ts.all_conforms_to[Comparable]():
-        comptime self_len = type_of(self).__len__()
-        comptime other_len = type_of(other).__len__()
-
-        comptime if other_len == 0:
-            return 1 if self_len > 0 else 0
-
-        comptime min_length = min(self_len, other_len)
-
-        comptime for i in range(min_length):
+        comptime for i in range(Self.__len__()):
             if self[i] < other[i]:
                 return -1
             if other[i] < self[i]:
                 return 1
-
-        comptime if self_len < other_len:
-            return -1
-        elif self_len > other_len:
-            return 1
-        else:
-            return 0
+        return 0
 
     @always_inline
     def __lt__(
