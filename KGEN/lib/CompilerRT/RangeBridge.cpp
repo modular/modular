@@ -11,9 +11,12 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// FFI bridge between Mojo and the M::Profiling Range API. Mojo's planned
-// mo.profile range op will lower to KGEN_CompilerRT_Range{Begin,End} via this
-// file (not yet implemented). The enable/disable control surface is driven by
+// FFI bridge between Mojo and the M::Profiling Range API. The Mojo callers
+// are `max.runtime.tracing.Trace` (op-level spans, routed here from its
+// __enter__/__exit__ on every production trace site) and the
+// `profiling_range.Range` struct (profiler-only spans; no in-tree
+// production sites yet), both via external_call. The enable/disable
+// control surface is driven by
 // InferenceSession construction auto-start (max-debug.profiling-enabled).
 //
 //===----------------------------------------------------------------------===//
@@ -38,9 +41,9 @@ extern "C" {
 // Precondition: `namePtr` must be non-null even when `nameLen == 0`.
 // Constructing a `std::string_view` from a null pointer is undefined behavior
 // under C++17 and only well-defined under C++20 when the length is zero.
-// The planned `mo.profile` lowering (not yet implemented) will pass
-// `String.unsafe_ptr()`, which is always non-null, and so will satisfy this
-// contract; until then, every C-ABI caller must uphold it themselves.
+// The Mojo callers pass String/StaticString buffer pointers, which are
+// non-null even for empty strings and so satisfy this contract; any new
+// C-ABI caller must uphold it itself.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeBegin(const char *namePtr, size_t nameLen,
                            uint32_t color) {
@@ -96,6 +99,22 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_RangeIsEnabled(void) {
 #if MODULAR_KGEN_PROFILING_ENABLED
   return M::Profiling::isEnabled() ? 1 : 0;
+#else
+  return 0;
+#endif
+}
+
+// Returns 1 while a trace of either origin — an explicit session enable or an
+// externally requested on-demand capture — is live and RangeBegin/RangeEnd
+// record. Unlike RangeIsEnabled this is the gate hot-path callers should use
+// to elide per-span argument setup: it covers on-demand traces too, and it is
+// one relaxed atomic load behind the FFI call. The gate is process-global
+// (libMSupportGlobals.so), so a trace started through any other statically
+// linked copy of the range shim is visible here immediately.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_RangeIsRecording(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
+  return M::Profiling::isRangeRecordingActive() ? 1 : 0;
 #else
   return 0;
 #endif

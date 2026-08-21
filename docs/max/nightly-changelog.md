@@ -159,7 +159,32 @@ This version is still a work in progress.
     two are mutually exclusive and both off by default.
 - Expanded Qwen support:
   - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Added `Qwen/Qwen3.8-27B` support in bfloat16 on the existing
+    `Qwen3_5ForConditionalGeneration` architecture, covered by logit
+    verification against the torch reference.
+  - `Qwen3_5ForConditionalGeneration` now serves across multiple GPUs.
+    Tensor parallelism splits the attention heads, the gated-DeltaNet key and
+    value heads, and the per-device linear-attention state pools; both mixers
+    reject a device count that would not divide their head counts evenly.
+  - `Qwen3_5ForConditionalGeneration` now supports device graph capture.
+  - Added multi-token prediction (MTP) speculative decoding for Qwen3.8
+    (`UnifiedMTPQwen3_5ForConditionalGeneration`), fusing the target, the
+    baked-in MTP head and a recurrent-state rollback into one graph, selected
+    for Qwen3.5-family checkpoints that ship an MTP head with
+    `--speculative-method mtp`. Rejecting a speculated token cannot be undone
+    by rewinding a KV length pointer when the layer is recurrent, so the graph
+    snapshots the gated-DeltaNet conv and recurrent pools before verifying and
+    replays the two state kernels over the accepted rows. The graph is served
+    through the Mach engine; MAX compiles and exports it but does not run it.
   - Fixed a `Qwen3EmbeddingModel` crash.
+- Added `--state-pool-dtype`, which overrides the storage dtype of a hybrid
+  model's recurrent state pools (SSM and linear-attention conv and recurrent
+  state). It defaults to the model's compute dtype. `float32` makes a
+  speculated generation follow the same state trajectory as an unspeculated
+  one -- the recurrence rounds to the pool dtype at each call boundary, so a
+  lossy pool makes the trajectory depend on how speculation chunked the
+  sequence -- at roughly double the per-request state memory (Qwen3.8-27B:
+  74.8 to 149.6 MiB per seated request).
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
   with `LoRAManager.apply` swapping target layers in a model.
@@ -171,6 +196,25 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
+  pipeline is loaded: the effective `max_length`, `max_batch_size`,
+  `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
+  and its schedulers consume.
+- Renamed `MemoryEstimator.estimate_memory_footprint` to
+  `MemoryEstimator.plan_from_sizes`, after the `MemoryPlan` it returns. Use
+  `MemoryEstimator.plan` instead to plan from a `PipelineConfig` alone;
+  `plan_from_sizes` is for callers that have already computed the weight,
+  activation, and signal-buffer sizes.
+- Made `MemoryEstimator.free_memory`, `static_memory_size`,
+  `available_kv_cache_memory`, and `max_supported_sequence_length` private.
+  They are steps within a memory plan rather than useful on their own, and
+  the values they produced are now available on `MemoryPlan`.
+- The block-based vision encoder cache now shards its storage across
+  devices instead of replicating every entry on each one. The same
+  `--vision-cache-utilization` fraction buys the same cache capacity while
+  reserving only `1/n_devices` of it per device; the remainder stays with
+  the KV cache. Cache hits gather rows to each device in one batched
+  submission.
 - Added opt-in token-balanced CE scheduling across data-parallel replicas.
   With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
   encoding requests wait in an unbound pool and are placed by a per-step
@@ -404,21 +448,29 @@ This version is still a work in progress.
   with the weight adapter casting at load time.
 - Improved multi-device startup latency by batching replay preface copies
   into a single submission.
-- The vision encoder cache can store embeddings in fixed-size blocks,
-  enabled by setting the `MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION`
-  environment variable to a fraction in (0, 0.5] of the KV cache pool
-  budget (`0`, the default, keeps the entry-count cache) on
-  architectures whose memory planner reports a vision row spec (Gemma 4
-  and Kimi K2.5). Capacity is a byte budget carved into 128-token
-  blocks — a video spans many blocks and an image a few — so a
-  video-capable model no longer collapses the cache to a handful of
-  worst-case-video slots that starve image workloads.
+- The vision encoder cache now stores embeddings in fixed-size blocks.
+  Capacity is a byte budget carved into 128-token blocks — a video spans
+  many blocks and an image a few — so a video-capable model no longer
+  collapses the cache to a handful of worst-case-video slots that starve
+  image workloads. The budget is set with the new
+  `--vision-cache-utilization` flag, a fraction of the KV cache pool
+  budget (default `0.05`; `0` disables caching). The previous
+  entry-count cache and its `--max-vision-cache-entries` flag are
+  removed.
 - Vision embedding assembly during chunked prefill is now bounded by the
   active window: each step copies only the embedding rows whose
   placeholder tokens fall inside the chunk, with dense scatter indices,
   instead of rebuilding every image's rows with out-of-bounds sentinels.
   Per-chunk copy cost now scales with the chunk size rather than the
   request's total image tokens.
+- Added `DeviceBuffer.unsafe_host_ptr()` to the Mojo `max.gpu.host` API. On
+  devices with unified memory (Apple silicon), it returns a CPU-addressable
+  pointer to the buffer, so the host can read a kernel's output after
+  `DeviceContext.synchronize()` without an `enqueue_copy` round trip. Reads
+  through it are uncached, so it suits small control records rather than bulk
+  readback. A CPU device returns the buffer's own pointer, since its
+  allocations are host memory already; devices whose memory is not
+  CPU-addressable raise.
 
 ### Inference server
 
@@ -505,6 +557,14 @@ This version is still a work in progress.
   now also disables LoRA that a recipe enabled, instead of being ignored.
 
 ### Python API
+
+- `max.experimental.nn.Module.compile` reuses precompiled MEFs when the session
+  has them, so a ModuleV3 model can be compiled where no accelerator is attached
+  and initialized where one is. `max.experimental.support.set_export_mefs`
+  records each compiled graph into a directory, and
+  `max.experimental.support.set_precompiled_mefs` initializes those artifacts
+  instead of compiling. `InferenceSession.compile_reusing_mefs` is the same
+  half-step for callers that trace a graph and initialize it themselves.
 
 - Eager mode tensors will use the JIT by default. This unlocks fusion and
   shape specialization optimizations even for eager code, beating PyTorch
@@ -628,6 +688,14 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
+  top-level fields after construction raises a pydantic `ValidationError`.
+  Construct it with the values you need. Its sub-configs (`runtime`,
+  `sampling`, etc.) are unchanged for now.
+
+- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
+  now immutable (pydantic `frozen=True`); assigning to a field after
+  construction raises a `ValidationError`. Construct with the desired values.
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
@@ -669,6 +737,11 @@ This version is still a work in progress.
     speculative draft architecture, so programmatically constructed
     `PipelineArgs` behave the same as CLI invocations.
   - `PipelineRuntimeConfig` is now exported from `max.pipelines`.
+- `--max-vision-cache-entries` is replaced by `--vision-cache-utilization`,
+  a fraction of the KV cache pool budget for the vision encoder cache
+  (default `0.05`; `0` disables caching). The cache is block-based, so an
+  entry count no longer describes its capacity; configs setting the old
+  flag must convert to a pool fraction.
 
 - The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
   passed as graph inputs) is now the only supported LoRA implementation.
@@ -677,7 +750,22 @@ This version is still a work in progress.
   adapters; serve the model's ModuleV3 variant (for example,
   `--prefer-module-v3`) to use LoRA adapters.
 
+- Removed the parametric `max.benchmark.bencher_iter_custom[fn](bencher, ctx)`
+  overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
+  closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
+
+- `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
+  dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
+  a `(tokenizer, factory)` tuple, so callers can reach the memory plan
+  computed during retrieval. Replace tuple unpacking with attribute access.
+  `PipelineRegistry.retrieve` is unchanged.
+
 ## Fixes
+
+- On Apple Silicon, a missing Metal Toolchain (a separate download since
+  Xcode 16) now surfaces `xcrun`'s own error, which names the fix
+  (`xcodebuild -downloadComponent MetalToolchain`), instead of the opaque
+  "Please submit a bug report." message.
 
 - Fixed tool-call requests failing with HTTP 400 (`anyOf branch and base
   schema both set "description"`) on models whose grammar compiles in strict
@@ -696,6 +784,12 @@ This version is still a work in progress.
   without the constrained-decoding bitmask inputs. The graph now binds the
   bitmask inputs and applies the grammar mask across every speculative position,
   matching the EAGLE speculative-decoding pipelines.
+
+- Fixed GPT-OSS, OLMo 3, and OLMo 2 ignoring `--max-length`. The server
+  accepted prompts up to the checkpoint's own length limit, and sized the KV
+  cache for that limit, whatever you asked for and whatever memory allowed.
+  Both now use the length you set. Runs that pass no `--max-length` are
+  unaffected.
 
 - Fixed DeepSeek-V3.2 and GLM-5.x pipelines ignoring `--max-length`: the
   resolved maximum sequence length was silently pinned to the DeepSeek
@@ -716,6 +810,17 @@ This version is still a work in progress.
   dispatch (for example, a non-quantized MoE) hit a graph-compile error. The
   BF16 branch now sets `dispatch_scale_dtype = float32` to match the kernel
   signature.
+
+- Fixed CPU `argmax`/`argmin` reductions returning a wrong index for reduce
+  axes of 256K+ elements, for example an argmax over a `[1, 2097152]` tensor,
+  where the row's reduction fans out across multiple CPU workers.
+
+- Fixed the distribution the top-k/top-p sampler emits for speculative
+  decoding (`emit_dist`) being under-normalized when a `min_p` mask removes
+  weight and the row passes top-p at the first trial: the row was scaled by
+  the unmasked softmax mass instead of the masked kept mass, so it summed to
+  less than one and skewed the rejection residual. The sampled token stream
+  was and remains unchanged.
 
 ## Mojo language
 

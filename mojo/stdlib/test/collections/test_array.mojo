@@ -409,6 +409,32 @@ def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
         return arr^
 
 
+def _return_batched_array[copy: Bool = False]() -> Array[Int32, 64]:
+    var arr = Array[Int32, 64](fill=0)
+
+    comptime if copy:
+        return arr.copy()
+    else:
+        return arr^
+
+
+def test_array_batched_copy_and_move_llvm_ir() raises:
+    # 64 elements reaches `fill=`'s batched runtime loop, unlike the 4-element
+    # case above which unrolls at compile time. A callsite marker is expected
+    # for the live loop, so this checks only the range attribute.
+    def _test(ir: StringSlice) raises:
+        assert_true("initializes((0, 256))" in ir)
+
+    var move_info = compile_info[
+        _return_batched_array[copy=False], emission_kind="llvm-opt"
+    ]()
+    _test(move_info.asm)
+    var copy_info = compile_info[
+        _return_batched_array[copy=True], emission_kind="llvm-opt"
+    ]()
+    _test(copy_info.asm)
+
+
 def test_array_copy_and_move_llvm_ir() raises:
     def _test(ir: StringSlice) raises:
         assert_true("initializes((0, 16))" in ir)
@@ -797,6 +823,55 @@ def test_array_add_explicit_destroy_type() raises:
 
     c^.deinit_with(destroy_closure)
     assert_equal(destroyed, [0, 1, 2])
+
+
+def test_array_repeat() raises:
+    var a: Array[Int, 2] = [1, 2]
+    var b = a^.repeat[3]()
+    comptime assert type_of(b).length == 6
+    for i in range(6):
+        assert_equal(b[i], i % 2 + 1)
+
+
+def test_array_repeat_by_one() raises:
+    var a: Array[Int, 3] = [1, 2, 3]
+    var b = a^.repeat[1]()
+    comptime assert type_of(b).length == 3
+    for i in range(3):
+        assert_equal(b[i], i + 1)
+
+
+def test_array_repeat_rvalue() raises:
+    def returns_array() -> Array[Int, 2]:
+        return [1, 2]
+
+    var a = returns_array().repeat[2]()
+    comptime assert type_of(a).length == 4
+    for i in range(4):
+        assert_equal(a[i], i % 2 + 1)
+
+
+def test_array_repeat_string() raises:
+    var a: Array[String, 2] = ["hi", "hello"]
+    var b = a^.repeat[2]()
+    assert_equal(b[0], "hi")
+    assert_equal(b[1], "hello")
+    assert_equal(b[2], "hi")
+    assert_equal(b[3], "hello")
+
+
+def test_array_repeat_runs_destructors_once() raises:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+    var a: Array[DelRecorder[ptr.origin], 2] = [
+        DelRecorder(0, ptr),
+        DelRecorder(1, ptr),
+    ]
+    var b = a^.repeat[3]()
+    # The input's elements were copied/moved into `b`, not destroyed.
+    assert_equal(len(destructor_recorder), 0)
+    _ = b^
+    assert_equal(destructor_recorder, [0, 1, 0, 1, 0, 1])
 
 
 def main() raises:

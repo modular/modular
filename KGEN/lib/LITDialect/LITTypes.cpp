@@ -683,10 +683,10 @@ Type TraitType::parse(AsmParser &p) {
   // Format: @TraitA, @TraitB where <constraint>, @TraitC
   if (failed(p.parseOptionalGreater())) {
     auto parseTrait = [&]() -> ParseResult {
-      SymbolRefAttr symbol;
-      if (p.parseAttribute(symbol))
+      TraitSymbolAttr symbol;
+      if (parseTraitSymbol(p, symbol))
         return failure();
-      symbols.push_back(TraitSymbolAttr::get(symbol));
+      symbols.push_back(symbol);
 
       // Check for optional "where <constraint>" after this symbol.
       if (succeeded(p.parseOptionalKeyword("where"))) {
@@ -731,7 +731,7 @@ void TraitType::print(AsmPrinter &p) const {
   for (size_t i = 0; i < symbols.size(); ++i) {
     if (i > 0)
       p << ", ";
-    p.printAttribute(symbols[i].getSymbol());
+    printTraitSymbol(p, symbols[i]);
     // Print "where <constraint>" for conditional conformance constraints.
     if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
       p << " where ";
@@ -1603,32 +1603,8 @@ Type FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 
   // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  struct OriginDeclRemapper : IndexParameterReplacer<OriginDeclRemapper> {
-    OriginDeclRemapper(size_t depthOffset) : depthOffset(depthOffset) {}
-
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
-        // If it's in the mapping, then we know it's an *origin* param ref, so
-        // no need to check its type.
-        if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
-          // Subtract depthOffset because we may be replacing the signature
-          // directly.
-          // Theories on what that means:
-          // https://github.com/modularml/modular/pull/62096#discussion_r2114820289
-          size_t index = it->second;
-          return ImplicitOriginRefAttr::get(depth - depthOffset, index,
-                                            ref.getType());
-        }
-      }
-      return nullptr;
-    }
-
-    size_t depthOffset;
-    DenseMap<StringAttr, size_t> mapping;
-  } remapper(depthOffset);
-  for (auto [i, decl] : llvm::enumerate(originDecls))
-    remapper.mapping.try_emplace(decl.getName(), i);
+  NameToImplicitOriginRefRemapper<ParamDeclRefAttr> remapper(originDecls,
+                                                             depthOffset);
   return remapper.replace(origType);
 }
 

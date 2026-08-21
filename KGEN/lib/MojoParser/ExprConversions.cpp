@@ -960,10 +960,10 @@ classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
 //===----------------------------------------------------------------------===//
 
 static TypedAttr stripTypeValueCasts(TypedAttr typeValue) {
-  typeValue = LIT::stripIdentityWrappers(typeValue);
+  typeValue = KGEN::stripIdentityWrappers(typeValue);
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
     if (auto paramType = sugarDynCast<ParamType>(typeParam.getTypeValue()))
-      typeValue = LIT::stripIdentityWrappers(paramType.getParam());
+      typeValue = KGEN::stripIdentityWrappers(paramType.getParam());
   return typeValue;
 }
 

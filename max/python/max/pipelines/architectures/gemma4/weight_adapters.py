@@ -52,8 +52,7 @@ def convert_safetensor_language_state_dict(
         if weight_name.endswith((".k_scale", ".v_scale")):
             continue
         if not (
-            weight_name.startswith("language_model.")
-            or weight_name.startswith("model.language_model.")
+            weight_name.startswith(("language_model.", "model.language_model."))
         ):
             continue
 
@@ -206,8 +205,9 @@ def convert_safetensor_vision_state_dict(
 
     for weight_name, value in state_dict.items():
         if not (
-            weight_name.startswith("model.vision_tower.")
-            or weight_name.startswith("model.embed_vision.")
+            weight_name.startswith(
+                ("model.vision_tower.", "model.embed_vision.")
+            )
         ):
             continue
 

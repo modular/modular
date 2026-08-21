@@ -481,8 +481,7 @@ parseBindParamsOpValues(AsmParser &p, GeneratorType genType,
     Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
     Type valueType;
     if (parseColonTypeOrDefault(p, valueType, defaultValueType) ||
-        parseParamValue(p, paramValues.emplace_back(), valueType,
-                        /*disableTypeParser=*/true))
+        parseParamValue(p, paramValues.emplace_back(), valueType))
       return failure();
     TypedAttr value = paramValues.back();
     if (::isa<UnboundAttr>(value)) {
@@ -567,8 +566,8 @@ ParseResult BindParamsOp::parse(OpAsmParser &parser, OperationState &result) {
 
   auto genType = cast<FnTypeGeneratorType>(generatorType);
   if (parseBindParamsOpValues(parser, genType, paramValues, discharged) ||
-      parser.parseOptionalAttrDict(result.attributes) || parser.parseArrow() ||
-      parseGenerator(parser, resultType) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseKeyword("to") || parseGenerator(parser, resultType) ||
       parser.resolveOperand(generatorOperand, generatorType, result.operands))
     return failure();
 
@@ -590,7 +589,7 @@ void BindParamsOp::print(OpAsmPrinter &p) {
   p.printOptionalAttrDict(
       getOperation()->getAttrs(),
       /*elidedAttrs=*/{"generator", "paramValues", "discharged"});
-  p << " -> ";
+  p << " to ";
   printGenerator(p, getResult().getType());
 }
 
@@ -2057,6 +2056,11 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {},
         /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
+}
+
+TraitSymbolAttr TraitDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
+  assert(paramValues.size() == this->getInputParams().size() - 1);
+  return TraitSymbolAttr::get(getFullyResolvedSymbolRef(*this), paramValues);
 }
 
 //===----------------------------------------------------------------------===//

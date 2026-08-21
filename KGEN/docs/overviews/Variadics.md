@@ -1,7 +1,7 @@
 # Overview
 
 Highly recommend reading the
-[variadics public docs](https://docs.modular.com/mojo/manual/functions/#variadic-arguments)
+[variadics public docs](https://mojolang.org/docs/manual/functions/#variadic-arguments)
 first.
 
 TL;DR:
@@ -145,13 +145,13 @@ they have an address at run-time.
 A VariadicList (which wraps `kgen.variadic`), is conceptually similar to Java’s
 variadics, where the arguments are gathered into an array of pointers. Relevant:
 see
-[VariadicListMem docs](https://docs.modular.com/mojo/std/builtin/builtin_list/VariadicListMem)
+[VariadicListMem docs](https://mojolang.org/docs/std/builtin/builtin_list/VariadicListMem)
 how it accepts its index as a runtime argument… only possible if there’s an
 array at run-time.
 
 A VariadicPack (which wraps `lit.ref.pack`) is exactly the same, but it lowers
 to a struct at run-time, and its `__get__`’s index
-[is a generic parameter](https://docs.modular.com/mojo/std/builtin/builtin_list/VariadicPack).
+[is a generic parameter](https://mojolang.org/docs/std/builtin/builtin_list/VariadicPack).
 
 VariadicLists are like this because we (intentionally) do not instantiate on all
 the values passed in via VariadicList.

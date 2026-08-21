@@ -325,7 +325,7 @@
               "label": "tree_utils",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/experimental.tree_utils"
+                "id": "api/python/experimental.tree_utils"
               },
               "items": [
                 "__AUTOGEN:max.experimental.tree_utils__"
@@ -474,6 +474,7 @@
                 "api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "api/python/pipelines.architectures.unified_mtp_gemma4",
                 "api/python/pipelines.architectures.unified_mtp_glm5_2",
+                "api/python/pipelines.architectures.unified_mtp_qwen3_5",
                 "api/python/pipelines.architectures.wan"
               ]
             },

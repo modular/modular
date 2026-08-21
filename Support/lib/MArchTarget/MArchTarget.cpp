@@ -56,13 +56,14 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOptLevel optLevel) {
 ErrorOr<TargetInfoAttr>
 M::getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
                     StringRef mcpu, StringRef mtune, StringRef acceleratorArch,
-                    llvm::Reloc::Model relocModel) {
+                    llvm::Reloc::Model relocModel, StringRef abi) {
   auto runtimeTargetInfoOr =
       getMArchTargetInfo(targetTriple, march, mcpu, mtune);
   if (runtimeTargetInfoOr)
     return runtimeTargetInfoOr.takeError();
 
-  return getTargetInfoFor(
-      ctx, runtimeTargetInfoOr->triple.str(), runtimeTargetInfoOr->arch,
-      encodeFeatures(*runtimeTargetInfoOr), mtune, acceleratorArch, relocModel);
+  return getTargetInfoFor(ctx, runtimeTargetInfoOr->triple.str(),
+                          runtimeTargetInfoOr->arch,
+                          encodeFeatures(*runtimeTargetInfoOr), mtune,
+                          acceleratorArch, relocModel, abi);
 }

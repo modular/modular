@@ -330,6 +330,10 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     The `accelerator_arch` contains the vendor name of the accelerator in
     lowercase (e.g. nvidia or amd) along with the compute capability (e.g. 80 or
     90). For example, a valid `accelerator_arch` is `nvidia:80` or `amdgpu:gfx942`.
+
+    The `abi` names the target ABI (e.g. RISC-V's `lp64d`, MIPS's `n32`),
+    mirroring clang's `-target-abi`. When set, it is recorded as a
+    `target-abi` LLVM module flag, exactly as clang does.
   }];
 
   let parameters = (ins
@@ -344,7 +348,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     DefaultValuedParameter<"std::optional<int64_t>",
                            "std::nullopt">:$index_bit_width,
     OptionalStringRefParameter:$tune_cpu,
-    OptionalStringRefParameter:$accelerator_arch
+    OptionalStringRefParameter:$accelerator_arch,
+    OptionalStringRefParameter:$abi
   );
 
   let assemblyFormat = "`<` struct(params) `>`";

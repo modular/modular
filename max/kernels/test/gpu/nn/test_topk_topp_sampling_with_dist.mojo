@@ -27,7 +27,10 @@ from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
-from nn.topk_fi import topk_topp_sampling_from_prob
+from nn.sampling import topk_topp_sampling_from_prob
+from nn.sampling.topk_fi import (
+    topk_topp_sampling_from_prob as single_block_sampling_from_prob,
+)
 
 
 def scrambled_logit(row: Int, col: Int) -> Float64:
@@ -37,7 +40,11 @@ def scrambled_logit(row: Int, col: Int) -> Float64:
 
 
 def reference_masked_probs(
-    logits: List[Float64], k: Int, top_p: Float64, temperature: Float64
+    logits: List[Float64],
+    k: Int,
+    top_p: Float64,
+    temperature: Float64,
+    min_p: Float64 = 0.0,
 ) -> List[Float64]:
     """Masked, renormalized reference distribution, O(d^2)."""
     var d = len(logits)
@@ -54,7 +61,13 @@ def reference_masked_probs(
         total += v
 
     var k_eff = d if (k <= 0 or k > d) else k
+    # The top-p budget scales with the unmasked mass; only the working
+    # weights below take the min-p mask, matching the kernel.
     var p_eff = top_p.clamp(0.0, 1.0) * total
+    if min_p > 0:
+        for i in range(d):
+            if e[i] < min_p:
+                e[i] = 0.0
 
     # The largest weight that fails the predicate is the cutoff; every token
     # strictly above it survives.
@@ -101,6 +114,8 @@ def run_sampling[
     top_p: Float64,
     temperature: Float64,
     seed_base: UInt64,
+    min_p: Float64 = 0.0,
+    single_block: Bool = False,
 ) raises -> SamplingRun:
     var logits_dev = ctx.enqueue_create_buffer[dtype](rows * d)
     ctx.enqueue_copy(logits_dev, logits_host)
@@ -113,44 +128,82 @@ def run_sampling[
     var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
     var top_k_host = ctx.enqueue_create_host_buffer[DType.int64](rows)
     var seed_host = ctx.enqueue_create_host_buffer[DType.uint64](rows)
+    var min_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
     for row in range(rows):
         temp_host[row] = Float32(temperature)
         top_p_host[row] = Float32(top_p)
         top_k_host[row] = Int64(k)
         seed_host[row] = seed_base + UInt64(row)
+        min_p_host[row] = Float32(min_p)
     var temp_dev = ctx.enqueue_create_buffer[DType.float32](rows)
     var top_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
     var top_k_dev = ctx.enqueue_create_buffer[DType.int64](rows)
     var seed_dev = ctx.enqueue_create_buffer[DType.uint64](rows)
+    var min_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
     ctx.enqueue_copy(seed_dev, seed_host)
+    ctx.enqueue_copy(min_p_dev, min_p_host)
 
-    # `d` is the top_k default, so a per-row -1 means keep every token.
-    topk_topp_sampling_from_prob[
-        from_logits=True, emit_dist=emit_dist, dist_dtype=DType.float32
-    ](
-        ctx,
-        TileTensor(logits_dev, row_major(rows, d)),
-        TileTensor(tokens_dev, row_major(rows)),
-        d,
-        rng_seed=TileTensor(seed_dev, row_major(rows))
-        .as_unsafe_any_origin()
-        .as_immut(),
-        top_k_arr=TileTensor(top_k_dev, row_major(rows))
-        .as_unsafe_any_origin()
-        .as_immut(),
-        top_p_arr=TileTensor(top_p_dev, row_major(rows))
-        .as_unsafe_any_origin()
-        .as_immut(),
-        temperature=TileTensor(temp_dev, row_major(rows))
-        .as_unsafe_any_origin()
-        .as_immut(),
-        out_dist=TileTensor(
-            dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
-        ).as_unsafe_any_origin(),
-    )
+    # `d` is the top_k default, so a per-row -1 means keep every token. The
+    # single-block entry is reachable through the dispatcher only past the
+    # shared-memory gate, where the O(d^2) reference is unusable, so exact
+    # cases call it directly.
+    if single_block:
+        single_block_sampling_from_prob[
+            from_logits=True, emit_dist=emit_dist, dist_dtype=DType.float32
+        ](
+            ctx,
+            TileTensor(logits_dev, row_major(rows, d)),
+            TileTensor(tokens_dev, row_major(rows)),
+            d,
+            rng_seed=TileTensor(seed_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_k_arr=TileTensor(top_k_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=TileTensor(top_p_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=TileTensor(temp_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            min_p=TileTensor(min_p_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            out_dist=TileTensor(
+                dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
+            ).as_unsafe_any_origin(),
+        )
+    else:
+        topk_topp_sampling_from_prob[
+            from_logits=True, emit_dist=emit_dist, dist_dtype=DType.float32
+        ](
+            ctx,
+            TileTensor(logits_dev, row_major(rows, d)),
+            TileTensor(tokens_dev, row_major(rows)),
+            d,
+            rng_seed=TileTensor(seed_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_k_arr=TileTensor(top_k_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=TileTensor(top_p_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=TileTensor(temp_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            min_p=TileTensor(min_p_dev, row_major(rows))
+            .as_unsafe_any_origin()
+            .as_immut(),
+            out_dist=TileTensor(
+                dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
+            ).as_unsafe_any_origin(),
+        )
 
     var tokens_out = ctx.enqueue_create_host_buffer[DType.int64](rows)
     var dist_out = ctx.enqueue_create_host_buffer[DType.float32](dist_len)
@@ -172,6 +225,7 @@ def run_sampling[
     _ = top_p_dev^
     _ = top_k_dev^
     _ = seed_dev^
+    _ = min_p_dev^
 
     return SamplingRun(tokens^, dist^)
 
@@ -196,6 +250,8 @@ def test_dist_matches_reference[
     k: Int,
     top_p: Float64,
     temperature: Float64,
+    min_p: Float64 = 0.0,
+    single_block: Bool = False,
 ) raises:
     """The emitted distribution equals the reference masked softmax.
 
@@ -212,13 +268,17 @@ def test_dist_matches_reference[
         top_p=top_p,
         temperature=temperature,
         seed_base=1234,
+        min_p=min_p,
+        single_block=single_block,
     )
 
     for row in range(rows):
         var logits = List[Float64]()
         for col in range(d):
             logits.append(Float64(logits_host[row * d + col]))
-        var expected = reference_masked_probs(logits, k, top_p, temperature)
+        var expected = reference_masked_probs(
+            logits, k, top_p, temperature, min_p
+        )
 
         var dist_sum = 0.0
         for col in range(d):
@@ -338,6 +398,67 @@ def test_empirical_distribution(
             )
 
 
+def test_empirical_distribution_cluster(
+    ctx: DeviceContext,
+    *,
+    launches: Int,
+    rows: Int,
+    d: Int,
+    k: Int,
+    top_p: Float64,
+) raises:
+    """`test_empirical_distribution` for the cluster kernel.
+
+    That test needs thousands of draws, but a batch that large takes the
+    single-block kernel. Here the batch stays small enough to cluster and the
+    draws accumulate over many launches, re-seeded per launch.
+    """
+    var logits_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
+    for row in range(rows):
+        for col in range(d):
+            logits_host[row * d + col] = Float32(scrambled_logit(0, col))
+
+    var counts = List[Int](length=d, fill=0)
+    for launch in range(launches):
+        var run = run_sampling[DType.float32](
+            ctx,
+            logits_host,
+            rows,
+            d,
+            k=k,
+            top_p=top_p,
+            temperature=1.0,
+            seed_base=9000 + UInt64(launch * rows),
+        )
+        for row in range(rows):
+            counts[run.tokens[row]] += 1
+
+    var logits = List[Float64]()
+    for col in range(d):
+        logits.append(scrambled_logit(0, col))
+    var expected = reference_masked_probs(logits, k, top_p, 1.0)
+
+    var n = launches * rows
+    for col in range(d):
+        var p = expected[col]
+        var observed = Float64(counts[col])
+        var mean = p * Float64(n)
+        var sigma = sqrt(mean * (1.0 - p)) + 1.0
+        assert_true(
+            abs(observed - mean) <= 5.0 * sigma,
+            msg=String(
+                t"token {col}: observed {observed} vs expected {mean}"
+                t" (p={p}, n={n})"
+            ),
+        )
+        if p == 0.0:
+            assert_equal(
+                counts[col],
+                0,
+                msg=String(t"token {col} is masked out but was sampled"),
+            )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_dist_matches_reference(
@@ -359,10 +480,78 @@ def main() raises:
         test_dist_matches_reference[DType.bfloat16](
             ctx, rows=2, d=512, k=32, top_p=0.95, temperature=1.0
         )
+        # A batch wider than the SM count: the grid runs multiple waves of
+        # clusters.
+        test_dist_matches_reference(
+            ctx, rows=160, d=512, k=16, top_p=0.9, temperature=1.0
+        )
+        # A vocabulary whose per-CTA slice does not fit the shared-memory
+        # budget: the launcher falls back to the single-block kernel and its
+        # emit_dist tail, which are otherwise unexercised on cluster devices.
+        test_tokens_match_without_dist(ctx, rows=2, d=249856, k=40, top_p=0.95)
+        # Vocabularies narrower than one block: under a cluster most CTAs own
+        # no elements and contribute only reduction identities -- the shape
+        # the rejection sampler reaches with its unit-test vocabularies.
+        test_dist_matches_reference(
+            ctx, rows=4, d=6, k=-1, top_p=0.6, temperature=1.0
+        )
+        test_dist_matches_reference(
+            ctx, rows=4, d=8, k=4, top_p=0.9, temperature=1.0
+        )
+        # Min-p masks weight out of the working distribution while the
+        # sampling budget stays the unmasked mass, so the emitted row must
+        # renormalize by the masked kept mass -- on both launch shapes, and
+        # in particular when the whole row passes top-p at the first trial
+        # (the regression the fuzzer found: the row summed to less than 1).
+        test_dist_matches_reference(
+            ctx, rows=4, d=1000, k=0, top_p=0.95, temperature=1.0, min_p=0.05
+        )
+        test_dist_matches_reference(
+            ctx, rows=3, d=3, k=0, top_p=0.951, temperature=0.5, min_p=0.149
+        )
+        test_dist_matches_reference(
+            ctx,
+            rows=4,
+            d=1000,
+            k=0,
+            top_p=0.95,
+            temperature=1.0,
+            min_p=0.05,
+            single_block=True,
+        )
+        test_dist_matches_reference(
+            ctx,
+            rows=3,
+            d=3,
+            k=0,
+            top_p=0.951,
+            temperature=0.5,
+            min_p=0.149,
+            single_block=True,
+        )
+        test_dist_matches_reference(
+            ctx,
+            rows=4,
+            d=512,
+            k=40,
+            top_p=0.9,
+            temperature=0.7,
+            min_p=0.02,
+            single_block=True,
+        )
 
         test_tokens_match_without_dist(ctx, rows=8, d=1024, k=32, top_p=0.9)
         # Real Llama-3.1-8B vocabulary width.
         test_tokens_match_without_dist(ctx, rows=2, d=128256, k=40, top_p=0.95)
+        # A vocabulary in the two-CTA window: too wide for one CTA's staging
+        # budget, narrow enough to split across two.
+        test_tokens_match_without_dist(ctx, rows=2, d=98304, k=40, top_p=0.95)
 
         test_empirical_distribution(ctx, rows=8192, d=64, k=8, top_p=1.0)
         test_empirical_distribution(ctx, rows=8192, d=128, k=-1, top_p=0.9)
+        test_empirical_distribution_cluster(
+            ctx, launches=512, rows=8, d=64, k=8, top_p=1.0
+        )
+        test_empirical_distribution_cluster(
+            ctx, launches=512, rows=8, d=128, k=-1, top_p=0.9
+        )

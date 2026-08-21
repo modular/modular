@@ -213,7 +213,7 @@ def _checked(
     err: _CString,
     *,
     msg: String = "",
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
 ) raises:
     if err:
         _raise_checked_impl(err, msg, location.or_else(call_location()))
@@ -557,6 +557,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         buffer. The operation is asynchronous and will be executed in the stream associated
         with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             dst: The destination device buffer to copy data to.
 
@@ -606,6 +610,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         This method schedules a memory copy operation to this buffer from the source
         buffer. The operation is asynchronous and will be executed in the stream
         associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             src: The source device buffer to copy data from.
@@ -1746,6 +1754,10 @@ struct DeviceBuffer[dtype: DType](
         buffer. The operation is asynchronous and will be executed in the stream associated
         with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             dst: The destination host buffer to copy data to.
 
@@ -1763,6 +1775,10 @@ struct DeviceBuffer[dtype: DType](
         This method schedules a memory copy operation from this device buffer to the
         specified host memory location. The operation is asynchronous and will be
         executed in the stream associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             dst_ptr: Pointer to the destination host memory location.
@@ -1796,6 +1812,10 @@ struct DeviceBuffer[dtype: DType](
         buffer. The operation is asynchronous and will be executed in the stream
         associated with this buffer's context.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             src: The source host buffer to copy data from.
 
@@ -1813,6 +1833,10 @@ struct DeviceBuffer[dtype: DType](
         This method schedules a memory copy operation to this device buffer from the
         specified host memory location. The operation is asynchronous and will be
         executed in the stream associated with this buffer's context.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             src_ptr: Pointer to the source host memory location.
@@ -1834,6 +1858,10 @@ struct DeviceBuffer[dtype: DType](
         least as many elements as this buffer; this invariant is checked via
         `debug_assert`.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Args:
             src: The source span to copy data from. Must have at least as many
                 elements as this buffer.
@@ -1854,6 +1882,10 @@ struct DeviceBuffer[dtype: DType](
         the stream associated with this buffer's context. The span must contain
         at least as many elements as this buffer; this invariant is checked via
         `debug_assert`.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Args:
             dst: The destination span to copy data to. Must have at least as
@@ -1969,6 +2001,56 @@ struct DeviceBuffer[dtype: DType](
         return self._device_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
             origin
         ]()
+
+    @always_inline
+    def unsafe_host_ptr[
+        mut: Bool,
+        //,
+        origin: Origin[mut=mut],
+    ](ref[origin] self) raises -> Pointer[Scalar[Self.dtype], origin]:
+        """Returns a CPU-addressable pointer to this buffer's contents.
+
+        Only devices whose allocations are CPU-addressable support this: a
+        unified-memory GPU such as an Apple GPU, and the CPU device, whose
+        allocations are host memory to begin with. On every other device this
+        method raises, and the bytes must be staged with `enqueue_copy`
+        instead.
+
+        Reading through the returned pointer is valid only after the device work
+        that wrote the buffer has completed. Call `DeviceContext.synchronize()`
+        or wait on an event first. Host writes must not race device work that
+        touches the same buffer; a host write that completes before a later
+        `enqueue_function` is visible to that kernel.
+
+        Device allocations use write-combined CPU caching, so host reads through
+        the returned pointer are uncached and cost far more per byte than reads
+        of ordinary host memory. Use this for small control records, and use
+        `enqueue_copy` for bulk transfers.
+
+        Parameters:
+            mut: The mutability of this `DeviceBuffer`.
+            origin: The origin of this `DeviceBuffer`.
+
+        Returns:
+            A host pointer to the first element of this buffer.
+
+        Raises:
+            If this buffer's device does not expose device memory to the CPU, or
+            if the device context does not recognize this buffer's pointer.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        var host_ptr: Optional[Self._DevicePtr] = {}
+        # const char *AsyncRT_DeviceBuffer_hostPtr(
+        #     void **result, const DeviceBuffer *buffer)
+        _checked(
+            external_call["AsyncRT_DeviceBuffer_hostPtr", _CString[]](
+                Pointer(to=host_ptr), self._handle
+            ),
+            location=call_location(),
+        )
+        return (
+            host_ptr.value().unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
+        )
 
     def device_ptr(
         ref self,
@@ -3060,7 +3142,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         comptime num_args = Ts.length
         var num_captures = max(0, self._func_impl.num_captures)
@@ -3296,7 +3378,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -4496,7 +4578,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Enqueues an external device function for execution on this device.
 
@@ -4589,7 +4671,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a capturing kernel for execution on this device with type checking.
 
@@ -4710,7 +4792,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
+        location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
         overload takes in a function that's `capturing`.
@@ -5282,6 +5364,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The number of bytes copied is determined by the size of the
         device buffer.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5348,6 +5434,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.
@@ -5454,6 +5544,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The span must contain at least as many elements as the
         destination buffer; this invariant is checked via `debug_assert`.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5515,6 +5609,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         buffer. The span must contain at least as many elements as the source
         buffer; this invariant is checked via `debug_assert` (debug builds
         only).
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.
@@ -5643,6 +5741,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
+
         Parameters:
             dtype: Type of the data being copied.
 
@@ -5675,6 +5777,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
+
+        Read the destination only after the copy completes: call
+        `DeviceContext.synchronize()`, or wait on an event enqueued after this
+        call.
 
         Parameters:
             dtype: Type of the data being copied.

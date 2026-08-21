@@ -619,9 +619,7 @@ class TextTokenizer(
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
-        if isinstance(prompt, str):
-            return prompt, await self.encode(prompt, add_special_tokens=True)
-        elif isinstance(prompt, list):
+        if isinstance(prompt, str | list):
             return prompt, await self.encode(prompt, add_special_tokens=True)
         elif isinstance(messages, list):
             prompt = self.apply_chat_template(

@@ -685,7 +685,18 @@ void LIT::sortAndDeduplicateTraitSymbols(
       if (aSeg != bSeg)
         return aSeg.getValue() < bSeg.getValue();
     }
-    return aSegments.size() < bSegments.size();
+    if (aSegments.size() != bSegments.size())
+      return aSegments.size() < bSegments.size();
+
+    // Same symbol, then must have the same number of parameter value, compare
+    // each parameter lexicographically.
+    assert(ta.getParamValues().size() == tb.getParamValues().size());
+    for (auto [aVal, bVal] :
+         llvm::zip_equal(ta.getParamValues(), tb.getParamValues())) {
+      if (aVal != bVal)
+        return ParameterAttr::compare(aVal, bVal);
+    }
+    return false;
   });
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
 }
@@ -878,6 +889,77 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 
   return nullptr;
 }
+
+//===----------------------------------------------------------------------===//
+// ImplicitOriginRefAttrReplacer
+//===----------------------------------------------------------------------===//
+
+template <typename NameRefT>
+Attribute
+ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
+                                                          size_t depth) {
+  auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
+  if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
+    return nullptr;
+
+  auto it = implicitOriginToNewParamRef.find(implicitOriginRef);
+  if (it != implicitOriginToNewParamRef.end())
+    return it->second;
+
+  auto originName = StringAttr::get(ctx, llvm::utostr(originDecls.size()) +
+                                             "_unnamed`" + namePostfix);
+  originDecls.push_back(
+      ParamDeclAttr::get(originName, implicitOriginRef.getType()));
+  auto originParamRef = NameRefT::get(originName, implicitOriginRef.getType());
+  implicitOriginToNewParamRef.insert({implicitOriginRef, originParamRef});
+  return originParamRef;
+}
+
+// Explicit instantiation, these are the only two variants.
+template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
+    ParamDeclRefAttr>;
+template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
+    FnGenBuilderParamDeclRefAttr>;
+
+//===----------------------------------------------------------------------===//
+// OriginDeclRemapper
+//===----------------------------------------------------------------------===//
+
+template <typename NameRefT>
+NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
+    ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
+    : depthOffset(depthOffset) {
+  for (auto [index, decl] : llvm::enumerate(originDecls))
+    mapping.try_emplace(decl.getName().strref(), index);
+}
+
+template <typename NameRefT>
+NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
+    ArrayRef<StringAttr> originDecls, size_t depthOffset)
+    : depthOffset(depthOffset) {
+  for (auto [index, decl] : llvm::enumerate(originDecls))
+    mapping.try_emplace(decl.strref(), index);
+}
+
+template <typename NameRefT>
+Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
+                                                                size_t depth) {
+  auto ref = dyn_cast<NameRefT>(attr);
+  if (!ref)
+    return nullptr;
+  // If it's in the mapping, then we know it's an *origin* param ref, so no
+  // need to check its type.
+  auto it = mapping.find(ref.getName());
+  if (it == mapping.end())
+    return nullptr;
+  return ImplicitOriginRefAttr::get(depth - depthOffset, it->second,
+                                    ref.getType());
+}
+
+// Explicit instantiation, these are the only two variants.
+template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<ParamDeclRefAttr>;
+template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<
+    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // Constraint Implication
@@ -1181,18 +1263,6 @@ static void forEachConformsToInProposition(
     return;
   }
   visit(proposition);
-}
-
-TypedAttr LIT::stripIdentityWrappers(TypedAttr attr) {
-  while (true) {
-    TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
-    stripped = UpcastAttr::strip(stripped);
-    stripped = DowncastAttr::strip(stripped);
-    stripped = ExtensionAttr::strip(stripped);
-    if (stripped == attr)
-      return attr;
-    attr = stripped;
-  }
 }
 
 TraitType LIT::getTraitBoundFromAssumptions(

@@ -28,6 +28,7 @@
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/Support/SMLoc.h"
 
 namespace mlir {
@@ -270,6 +271,70 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ImplicitOriginRefAttrReplacer
+//===----------------------------------------------------------------------===//
+
+/// Utility class for replacing implicit origin references that point all the
+/// way up to the root scope of the walked value (see PSTIAIRAID) with
+/// references to explicitly *named* parameter-decls, creating one decl per
+/// distinct origin.
+template <typename NameRefT>
+class ImplicitOriginToNameRefAttrReplacer
+    : public IndexParameterReplacer<
+          ImplicitOriginToNameRefAttrReplacer<NameRefT>> {
+public:
+  /// Both containers stay owned by the caller: newly created decls are
+  /// appended to `newOriginParamDecls`, and `implicitOriginToNewParamRef`
+  /// records the origins that were already given a name.
+  ImplicitOriginToNameRefAttrReplacer<NameRefT>(
+      MLIRContext *ctx, StringRef namePostfix = StringRef())
+      : ctx(ctx), namePostfix(namePostfix) {}
+
+  std::vector<ParamDeclAttr> &getNewOriginParamDecls() { return originDecls; }
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<
+      ImplicitOriginToNameRefAttrReplacer<NameRefT>>;
+
+  MLIRContext *ctx;
+  StringRef namePostfix;
+
+  std::vector<ParamDeclAttr> originDecls;
+  llvm::MapVector<ImplicitOriginRefAttr, NameRefT> implicitOriginToNewParamRef;
+};
+
+//===----------------------------------------------------------------------===//
+// OriginDeclRemapper
+//===----------------------------------------------------------------------===//
+
+/// The inverse of `ImplicitOriginRefAttrReplacer`: replaces references to the
+/// *named* implicit origin decls it was constructed with by index-based
+/// `ImplicitOriginRefAttr` references.
+template <typename NameRefT>
+class NameToImplicitOriginRefRemapper
+    : public IndexParameterReplacer<NameToImplicitOriginRefRemapper<NameRefT>> {
+public:
+  NameToImplicitOriginRefRemapper<NameRefT>(ArrayRef<ParamDeclAttr> originDecls,
+                                            size_t depthOffset);
+  NameToImplicitOriginRefRemapper<NameRefT>(ArrayRef<StringAttr> originDecls,
+                                            size_t depthOffset);
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<
+      NameToImplicitOriginRefRemapper<NameRefT>>;
+
+  /// Subtracted from the depth of the created references, because we may be
+  /// replacing the signature directly. Theories on what that means:
+  /// https://github.com/modularml/modular/pull/62096#discussion_r2114820289
+  size_t depthOffset;
+  llvm::StringMap<size_t> mapping;
+};
+
+//===----------------------------------------------------------------------===//
 // Constraint Checking
 //===----------------------------------------------------------------------===//
 
@@ -305,10 +370,6 @@ TriState isPropositionImplied(ConstraintAttr proposition,
 TraitType getTraitBoundFromAssumptions(
     TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
-
-/// Peel off transparent wrappers that do not change type identity: rebind,
-/// upcast, downcast, and extension.
-TypedAttr stripIdentityWrappers(TypedAttr attr);
 
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper
 /// (`getUnderlyingParamRef`). Unify these implementations to avoid drift.

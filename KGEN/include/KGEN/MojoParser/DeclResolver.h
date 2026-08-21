@@ -194,10 +194,6 @@ public:
   /// to copy from the source. Returns {} if \p moduleDecl has no symbol.
   ImportPathAttr getAbsoluteModuleName(ASTDecl &moduleDecl);
 
-  /// Import the given module into the provided destination.
-  LogicalResult importModule(ASTDecl &dest, UnresolvedImportOp op,
-                             PackageOp currentPackage, SMLoc loc,
-                             SMLoc importNameLoc);
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
   /// resolveTarget determines whether we resolve the ultimate decl as well.
@@ -347,7 +343,10 @@ public:
   /// @Movable>) attributes {immediateParents = #M<symbols[@AnyType]>}
   LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
                                    SmallVector<TraitSymbolAttr> &parentTraits,
-                                   DenseSet<TraitSymbolAttr> &immediateParents);
+                                   DenseSet<TraitSymbolAttr> &immediateParents,
+                                   ArrayRef<ParamDeclAttr> parameters = {},
+                                   ArrayRef<PassingKind> passingKinds = {});
+
   // Populate the trait with methods it inherits from parents.
   void addParentDeclsToTrait(TraitDeclOp traitOp, ASTDecl &traitDecl);
 

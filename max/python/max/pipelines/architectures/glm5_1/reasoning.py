@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
@@ -42,6 +42,9 @@ class GlmReasoningParser(ReasoningParser):
     Mirrors the Qwen 3.5 parser (same ``<think>`` prefill semantics); only the
     delimiter tokens differ.
     """
+
+    REASONING_START: ClassVar[str] = "<think>"
+    REASONING_END: ClassVar[str] = "</think>"
 
     def __init__(
         self,
@@ -162,8 +165,10 @@ class GlmReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> GlmReasoningParser:
         """Construct a reasoning parser from a tokenizer."""
-        think_start_id = await convert_token_to_id(tokenizer, "<think>")
-        think_end_id = await convert_token_to_id(tokenizer, "</think>")
+        think_start_id = await convert_token_to_id(
+            tokenizer, cls.REASONING_START
+        )
+        think_end_id = await convert_token_to_id(tokenizer, cls.REASONING_END)
 
         if think_start_id is None or think_end_id is None:
             raise ValueError(
@@ -185,4 +190,4 @@ class GlmReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> int | None:
         """Returns the ``</think>`` token id that closes a reasoning span."""
-        return await convert_token_to_id(tokenizer, "</think>")
+        return await convert_token_to_id(tokenizer, cls.REASONING_END)

@@ -19,6 +19,6 @@ lit.struct.decl @bar register_passable {
 
 lit.fn @bind_params_non_singleton(%fn: !lit.generator<<index>() -> ()>) {
   // expected-error @+1 {{may only bind singleton compile-time parameters during lowering}}
-  %0 = lit.bind_params %fn : !lit.generator<<index>() -> ()>, 1 -> !lit.generator<() -> ()>
+  %0 = lit.bind_params %fn : !lit.generator<<index>() -> ()>, 1 to !lit.generator<() -> ()>
   kgen.return
 }

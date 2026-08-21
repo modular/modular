@@ -30,7 +30,7 @@ from .weight_adapters import convert_qwen3_5_state_dict
 qwen3_5_arch = SupportedArchitecture(
     name="Qwen3_5ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3.5-27B"],
+    example_repo_ids=["Qwen/Qwen3.5-27B", "Qwen/Qwen3.8-27B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Qwen3_5Config.DEFAULT_ENCODING,
     supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
@@ -45,9 +45,12 @@ qwen3_5_arch = SupportedArchitecture(
     },
     config=Qwen3_5Config,
     batching=Qwen3_5BatchProcessor,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,
-    supports_device_graph_capture=False,
+    # Requires Qwen3_5Model.release_warmup_state (SupportsSSMStateWarmup):
+    # each capture-warmup probe claims state pool slots that must be released
+    # before the next probe, or warmup exhausts the pool.
+    supports_device_graph_capture=True,
 )

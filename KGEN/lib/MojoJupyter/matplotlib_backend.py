@@ -106,7 +106,7 @@ def flush_figures():  # noqa: ANN201
         return show(True)
     try:
         # exclude any figures that were closed:
-        active = set([fm.canvas.figure for fm in _Gcf.get_all_fig_managers()])
+        active = {fm.canvas.figure for fm in _Gcf.get_all_fig_managers()}
         for fig in [fig for fig in show._to_draw if fig in active]:
             show._display(fig, _fetch_figure_metadata(fig))
     finally:

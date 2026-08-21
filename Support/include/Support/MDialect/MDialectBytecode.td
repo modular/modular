@@ -111,7 +111,8 @@ def TargetInfoAttr : DialectAttribute<(attr
   SignedVarInt:$simd_bit_width,
   OptionalInt64:$index_bit_width,
   String:$tune_cpu,
-  String:$accelerator_arch
+  String:$accelerator_arch,
+  String:$abi
 )>;
 
 def MDialectAttributes : DialectAttributes<"M"> {

@@ -481,9 +481,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
             "the same time as -march or -mcpu"));
 
       // Use `-march` to determine the feature set.
-      targetOr = getMArchFeatures(
-          ctx, clOptions.targetTriple, clOptions.march, clOptions.mcpu,
-          clOptions.mtune, clOptions.targetAccelerator, options.relocModel);
+      targetOr = getMArchFeatures(ctx, clOptions.targetTriple, clOptions.march,
+                                  clOptions.mcpu, clOptions.mtune,
+                                  clOptions.targetAccelerator,
+                                  options.relocModel, options.targetAbi);
     } else {
       if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
         if (clOptions.targetCpu == llvm::sys::getHostCPUName()) {
@@ -516,10 +517,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.
-      targetOr =
-          getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
-                           clOptions.targetFeatures, clOptions.mtune,
-                           options.targetAccelerator, options.relocModel);
+      targetOr = getTargetInfoFor(ctx, clOptions.targetTriple,
+                                  clOptions.targetCpu, clOptions.targetFeatures,
+                                  clOptions.mtune, options.targetAccelerator,
+                                  options.relocModel, options.targetAbi);
     }
 
     if (targetOr.isError())
@@ -528,6 +529,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.targetTriple = target.getTripleStr();
     options.targetCpu = target.getArch();
     options.targetFeatures = target.getFeatures();
+    options.targetAbi = target.getAbi();
     options.targetAccelerator = clOptions.targetAccelerator;
   }
 

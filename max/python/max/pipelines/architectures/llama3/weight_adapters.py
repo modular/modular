@@ -75,7 +75,7 @@ def _convert_safetensor_with_model_config(
             # That said, leave scale and bias in float16 (apparently that is
             # needed for correctness). The rest must be converted to bfloat16.
             if weight_data.dtype == DType.float16 and not (
-                key.endswith("bias") or key.endswith("scales")
+                key.endswith(("bias", "scales"))
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
 

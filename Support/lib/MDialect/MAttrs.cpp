@@ -1138,7 +1138,8 @@ void M::eraseTargetInfo(ModuleOp module) {
 ErrorOr<TargetInfoAttr>
 M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                     StringRef features, StringRef tuneCpu,
-                    StringRef acceleratorArch, llvm::Reloc::Model relocModel) {
+                    StringRef acceleratorArch, llvm::Reloc::Model relocModel,
+                    StringRef abi) {
   std::string errorMessage;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
       llvm::Triple(targetTriple), errorMessage);
@@ -1194,16 +1195,19 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                              resolvedFeatures, std::move(*dl),
                              machine->getRelocationModel(),
                              simdWidthFromFeatures(StringRef(resolvedFeatures)),
-                             pointerBitWidth, tuneCpu, acceleratorArch);
+                             pointerBitWidth, tuneCpu, acceleratorArch, abi);
 }
 
 bool M::isKnownTargetFeature(StringRef feature, StringRef targetTriple) {
   // LLVM has no combined feature table, so union the current target (covers
-  // whatever we compile for, GPU included) with host x86-64 + aarch64 (cover
-  // the cross-arch CPU queries the stdlib `has_*` wrappers make).  The
+  // whatever we compile for, GPU included) with host x86-64 + aarch64 + riscv64
+  // (cover the cross-arch CPU queries the stdlib `has_*` wrappers make).  The
   // OS/environment does not affect the feature table, so use `unknown-unknown`.
+  // riscv64 subsumes riscv32's extension names apart from the `32bit`/`64bit`
+  // pair, and `CompilationTarget` exposes those as `is_rv32()`/`is_rv64()`.
   static constexpr StringLiteral kUnionTriples[] = {"x86_64-unknown-unknown",
-                                                    "aarch64-unknown-unknown"};
+                                                    "aarch64-unknown-unknown",
+                                                    "riscv64-unknown-unknown"};
 
   static llvm::sys::SmartMutex<true> mu;
   // triple -> its full set of valid feature names. An entry that failed to
@@ -1258,7 +1262,8 @@ ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
     return errOr.takeError();
   return TargetInfo(targetInfoAttr.getTriple(),
                     std::string(targetInfoAttr.getArch()),
-                    std::move(errOr->enabled), std::move(errOr->disabled));
+                    std::move(errOr->enabled), std::move(errOr->disabled),
+                    std::string(targetInfoAttr.getAbi()));
 }
 
 /// Returns attribute representing runtime target info.
@@ -1269,7 +1274,7 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
       /*stdlib_plugin=*/"default", encodeFeatures(runtimeTargetInfo),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
-      /*tune_cpu=*/{}, /*accelerator_arch=*/{});
+      /*tune_cpu=*/{}, /*accelerator_arch=*/{}, runtimeTargetInfo.abi);
 }
 
 namespace mlir {

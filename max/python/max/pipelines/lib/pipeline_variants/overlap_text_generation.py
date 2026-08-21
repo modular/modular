@@ -153,7 +153,7 @@ from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
-from ..memory_estimation import _MemoryPlan
+from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
@@ -1718,7 +1718,7 @@ class OverlapTextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
-        memory_plan: _MemoryPlan,
+        memory_plan: MemoryPlan,
         disable_overlap: bool = False,
     ) -> None:
         """Initialize a text generation pipeline instance.
@@ -1891,7 +1891,6 @@ class OverlapTextGenerationPipeline(
         )
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
-                max_entries=pipeline_config.runtime.max_vision_cache_entries,
                 plan=memory_plan.vision_cache_plan,
                 devices=self._devices,
             )

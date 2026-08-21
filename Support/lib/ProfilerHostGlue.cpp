@@ -42,9 +42,11 @@
 //     statically linked copies in one process (max._core, libmax, the mach
 //     shim) attached to the single plugin instance.
 //
-// On success the glue registers its DSO's gate addresses with the plugin
-// (registerShim), which then mirrors every authoritative gate transition
-// into this copy. The plugin handle is deliberately never dlclose()d
+// On success the glue registers the shim's gate addresses with the plugin
+// (registerShim), which then stores every authoritative gate transition
+// through them; the gates live in the process-global block in
+// libMSupportGlobals.so, so every copy registers pointers to the same two
+// atomics. The plugin handle is deliberately never dlclose()d
 // (rationale in PluginABI.h). In Tracy builds the loader compiles to
 // "always unavailable": Tracy owns CUPTI, and the two GPU profilers are
 // mutually exclusive.
@@ -222,9 +224,10 @@ const M_ProfilerPluginAPI *attemptLoad(bool allowFullLoad) {
     return nullptr;
   }
 
-  // Hand the plugin this copy's gate addresses; it seeds them with the
-  // current authoritative values, so adopting mid-trace flips the gates
-  // before the first post-adoption read.
+  // Hand the plugin the shim's gate addresses (process-global, so every
+  // copy registers the same two atomics); it seeds them with the current
+  // authoritative values, so adopting mid-trace flips the gates before the
+  // first post-adoption read.
   static const M_ProfilerShimGates kGates = {&getEnabledGate(),
                                              &getRecordingGate()};
   api->registerShim(&kGates);

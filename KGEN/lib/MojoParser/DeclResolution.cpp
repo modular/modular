@@ -4401,20 +4401,39 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
 LogicalResult
 DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
                                  SmallVector<TraitSymbolAttr> &parentTraits,
-                                 DenseSet<TraitSymbolAttr> &immediateParents) {
+                                 DenseSet<TraitSymbolAttr> &immediateParents,
+                                 ArrayRef<ParamDeclAttr> parameters,
+                                 ArrayRef<PassingKind> passingKinds) {
+  assert(parameters.size() == passingKinds.size());
+
+  MLIRContext *ctx = getContext();
+  SmallVector<TypedAttr> declRefs =
+      llvm::map_to_vector(parameters, [&](ParamDeclAttr decl) -> TypedAttr {
+        return ParamDeclRefAttr::get(decl);
+      });
+
+  // Can not use bindReference since we are constructing the trait.
+  TraitSymbolAttr selfTrait =
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitOp), declRefs);
   // Add the trait itself to its canonical trait list.
-  parentTraits.push_back(
-      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitOp)));
+  parentTraits.push_back(selfTrait);
   TraitType canonTrait = getCanonicalTrait(parentTraits);
   traitOp.setCanonicalTrait(canonTrait);
 
-  auto actualType =
-      ParamDeclAttr::get(decl.mangleParamName("_Self"), canonTrait);
+  // Set up the parameter decl array by appending `_Self` to the end.
+  SmallVector<ParamDeclAttr> traitParams(parameters);
+  auto selfDecl = ParamDeclAttr::get(decl.mangleParamName("_Self"), canonTrait);
+  traitParams.push_back(selfDecl);
+  auto paramArray = ParamDeclArrayAttr::get(ctx, traitParams);
 
-  MLIRContext *ctx = getContext();
-  auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
-  auto paramListAttr = PogListAttr::get(ctx, StringAttr::get(ctx, "_Self"),
-                                        PassingKind::Implicit);
+  // Set up the pog list too.
+  SmallVector<PassingKind> traitParamsPassingKinds(passingKinds);
+  traitParamsPassingKinds.push_back(PassingKind::Implicit);
+  SmallVector<StringAttr> names = llvm::map_to_vector(
+      parameters, [&](ParamDeclAttr decl) { return decl.getName(); });
+  names.push_back(StringAttr::get(ctx, "_Self"));
+  auto paramListAttr = PogListAttr::get(ctx, names, traitParamsPassingKinds);
+
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(ctx), paramArray,
                                                  paramListAttr);
   if (!sig)
@@ -5295,20 +5314,18 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
   if (!importNameLoc.isValid())
     importNameLoc = decl.getLoc();
 
-  // Check if we are importing a specific decl within the module, or the
-  // module itself.
-  if (auto declName = op.getDeclNameAttr()) {
-    SMLoc declNameLoc = shared.diags.convertLocToSMLoc(op.getDeclNameLocAttr());
-    if (!declNameLoc.isValid())
-      declNameLoc = decl.getLoc();
+  // Check that we are importing a specific decl within the module.
+  auto declName = op.getDeclNameAttr();
+  assert(declName && "Whole-package imports should be resolved by now");
 
-    return getDeclResolver().importDeclFromModule(
-        *decl.getParentDecl(), packageOp, op.getModulePathAttr(), declName,
-        op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
-        resolveTarget);
-  }
-  return getDeclResolver().importModule(*decl.getParentDecl(), op, packageOp,
-                                        decl.getLoc(), importNameLoc);
+  SMLoc declNameLoc = shared.diags.convertLocToSMLoc(op.getDeclNameLocAttr());
+  if (!declNameLoc.isValid())
+    declNameLoc = decl.getLoc();
+
+  return getDeclResolver().importDeclFromModule(
+      *decl.getParentDecl(), packageOp, op.getModulePathAttr(), declName,
+      op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
+      resolveTarget);
 }
 
 //===----------------------------------------------------------------------===//

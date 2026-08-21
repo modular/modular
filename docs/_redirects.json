@@ -1,7 +1,7 @@
 [
   {
-    "source": "/max/",
-    "dest": "/",
+    "source": "/max/(.*)",
+    "dest": "/{0}",
     "status": 302
   },
   {

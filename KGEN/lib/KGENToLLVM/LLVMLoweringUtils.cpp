@@ -133,6 +133,7 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
   if (!target.getTuneCpu().empty())
     attrs.push_back(b.getArrayAttr(
         {b.getStringAttr("tune-cpu"), b.getStringAttr(target.getTuneCpu())}));
+  // `abi` is recorded as a module flag in LowerKGENToLLVMPass instead.
   return b.getArrayAttr(attrs);
 }
 

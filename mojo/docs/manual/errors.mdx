@@ -206,8 +206,8 @@ optional stack trace are reference counted. To avoid the copy, transfer the
 error with the
 [transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-):
 `raise e^`. A [custom error type](#typed-errors) that doesn't conform to
-[`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) requires the
-transfer sigil to re-raise.
+[`ImplicitlyCopyable`](/docs/std/traits/copyable/ImplicitlyCopyable/) requires
+the transfer sigil to re-raise.
 
 ## Typed errors
 

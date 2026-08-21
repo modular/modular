@@ -1949,69 +1949,116 @@ static void meetOriginMutability(DenseMap<StringAttr, bool> &originMutability,
     it->second = true;
 }
 
-// Given an attribute, update origin mutability information. Returns false to
-// stop recursion for origin typed nodes so cast operands aren't counted
-// separately.
-static bool checkOriginMutableCast(DenseMap<StringAttr, bool> &originMutability,
-                                   Attribute attr) {
+static bool isOutlinedInteriorOrigin(
+    TypedAttr typed,
+    const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
+  if (!typed || !sugarIsa<OriginType>(typed.getType()))
+    return false;
+  TypedAttr stripped = OriginType::stripMutCastAndRebind(typed);
+  if (!sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped))
+    return false;
+  return interiorOrigins.contains(cast<TypedAttr>(getCanonicalAttr(stripped)));
+}
+
+static bool hasOutlinedInteriorOrigin(
+    Type type,
+    const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
+  WalkResult result = type.walk([&](Attribute attr) {
+    auto typed = dyn_cast<TypedAttr>(attr);
+    return isOutlinedInteriorOrigin(typed, interiorOrigins)
+               ? WalkResult::interrupt()
+               : WalkResult::advance();
+  });
+  return result.wasInterrupted();
+}
+
+// Given an attribute, update origin mutability information and register any
+// interior origins for outlining. Returns false to stop recursion for origin
+// typed nodes so cast operands and base origins of outlined interior origins
+// aren't counted separately.
+static bool checkOriginAndOutline(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    Attribute attr) {
   auto typed = dyn_cast<TypedAttr>(attr);
-  if (!typed || !isa<OriginType>(typed.getType()))
+  if (!typed || !sugarIsa<OriginType>(typed.getType()))
     return true;
 
-  if (auto ref = dyn_cast<ParamDeclRefAttr>(
-          OriginType::stripMutCastAndRebind(typed))) {
+  // Strip mutcasts before classifying so an immutable use of a mutable
+  // interior origin (mutcast(interior)) is not counted as a mutable use of
+  // the outlined parameter. Mutability is still taken from `typed`.
+  TypedAttr stripped = OriginType::stripMutCastAndRebind(typed);
+
+  if (sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped)) {
+    TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(stripped));
+    auto it = interiorOrigins.find(canon);
+    if (it == interiorOrigins.end()) {
+      StringAttr name = StringAttr::get(ctx, Twine("?__interior_origin_") +
+                                                 Twine(interiorOrigins.size()));
+      ParamDeclAttr param = ParamDeclAttr::get(name, canon.getType());
+      it = interiorOrigins.insert({canon, ParamDeclRefAttr::get(param)}).first;
+    }
+    meetOriginMutability(originMutability, it->second.getName(),
+                         OriginType::isMutableKnown(typed, false));
+    return false;
+  }
+
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(stripped)) {
     meetOriginMutability(originMutability, ref.getName(),
                          OriginType::isMutableKnown(typed, false));
     return false;
   }
 
-  // Otherwise this is a derived origin such as a field or interior projection,
+  // Otherwise this is a derived origin such as a field projection,
   // which holds the origins it is derived from in its sub-elements. Keep
   // walking so those are counted at their own mutability; stopping here would
   // leave a mutably-used origin unrecorded and let it be wrongly promoted.
   return true;
 }
 
-// Given an attribute or type, determine if the references to an origin are a
-// net mutable or net immutable.
 template <typename AttrOrType>
-static void checkMutableImpl(DenseMap<StringAttr, bool> &originMutability,
-                             AttrOrType attrOrType) {
-
+static void checkOriginAndOutlineImpl(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    AttrOrType attrOrType) {
+  if (!attrOrType)
+    return;
   if constexpr (std::is_convertible_v<AttrOrType, Attribute>) {
-    if (!checkOriginMutableCast(originMutability, attrOrType))
+    if (!checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                               attrOrType))
       return;
   }
   attrOrType.walkImmediateSubElements(
       [&](Attribute attribute) {
-        checkMutableImpl(originMutability, attribute);
+        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins,
+                                  attribute);
       },
-      [&](Type type) { checkMutableImpl(originMutability, type); });
+      [&](Type type) {
+        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, type);
+      });
 }
 
 template <typename AttrOrType>
-static void checkMutable(DenseMap<StringAttr, bool> &originMutability,
-                         AttrOrType attrOrType) {
+static void checkOriginAndOutline(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    AttrOrType attrOrType) {
   if constexpr (std::is_convertible_v<AttrOrType, Attribute>)
     attrOrType = cast<AttrOrType>(getCanonicalAttr(attrOrType));
   else
     attrOrType = cast<AttrOrType>(getCanonicalType(attrOrType));
-  checkMutableImpl(originMutability, attrOrType);
+  checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, attrOrType);
 }
 
 static SmallPtrSet<StringAttr, 8>
 collectPromotedOrigins(MLIRContext *ctx,
-                       SmallVectorImpl<StructDefFieldAttr> &fieldDecls,
+                       const DenseMap<StringAttr, bool> &originMutability,
                        SmallVectorImpl<ParamDeclAttr> &structParams,
                        SmallVectorImpl<TypedAttr> &structBindings) {
-  DenseMap<StringAttr, bool> originMutability;
-  for (StructDefFieldAttr fieldDecl : fieldDecls)
-    checkMutable(originMutability, fieldDecl.getTypeValue());
-
   SmallPtrSet<StringAttr, 8> promotedOriginNames;
   for (auto [index, param] : llvm::enumerate(structParams)) {
     StringAttr name = param.getName();
-    auto originType = dyn_cast<OriginType>(param.getType());
+    auto originType = sugarDynCast<OriginType>(param.getType());
     // If an origin is already immutable, no need to promote.
     if (!originType || originType.isMutableKnown(false))
       continue;
@@ -2024,6 +2071,194 @@ collectPromotedOrigins(MLIRContext *ctx,
     promotedOriginNames.insert(name);
   }
   return promotedOriginNames;
+}
+
+static TypedAttr
+getOutlinedOriginRef(MLIRContext *ctx, ParamDeclRefAttr paramRef,
+                     const SmallPtrSetImpl<StringAttr> &promotedOriginNames) {
+  StringAttr name = paramRef.getName();
+  Type originType = promotedOriginNames.contains(name)
+                        ? OriginType::get(ctx, false)
+                        : paramRef.getType();
+  return ParamDeclRefAttr::get(name, originType);
+}
+
+static std::optional<TypedAttr>
+getPromotedOriginRef(MLIRContext *ctx, TypedAttr origin,
+                     const SmallPtrSetImpl<StringAttr> &promotedOriginNames) {
+  auto originRef = dyn_cast<ParamDeclRefAttr>(origin);
+  if (!originRef || !promotedOriginNames.contains(originRef.getName()))
+    return std::nullopt;
+  return ParamDeclRefAttr::get(originRef.getName(),
+                               OriginType::get(ctx, false));
+}
+
+static LogicalResult outlineAndPromoteOrigins(
+    SharedState &shared, SmallVectorImpl<StructDefFieldAttr> &fieldDecls,
+    SmallVectorImpl<ParamDeclAttr> &allStructParams,
+    SmallVectorImpl<TypedAttr> &structParamBindings, FnOp nestedFn,
+    SmallVectorImpl<Type> &deviceCaptureFieldTypes,
+    llvm::MapVector<StringRef, Type> &aliases, Location closureLoc) {
+  MLIRContext *ctx = shared.getContext();
+  assert(allStructParams.size() == structParamBindings.size() &&
+         "expected parallel struct parameters and bindings");
+
+  DenseMap<StringAttr, bool> originMutability;
+  llvm::MapVector<TypedAttr, ParamDeclRefAttr> interiorOrigins;
+
+  for (StructDefFieldAttr fieldDecl : fieldDecls)
+    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                          fieldDecl.getTypeValue());
+  for (ParamDeclAttr param : allStructParams)
+    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                          param.getType());
+
+  // Append fresh parameter declarations and their parent-scope bindings.
+  for (auto &[interiorAttr, paramRef] : interiorOrigins) {
+    allStructParams.push_back(
+        ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
+    structParamBindings.push_back(interiorAttr);
+  }
+
+  // Prune origin parameters in allStructParams that were not referenced outside
+  // of interior origins.
+  // If it were referenced outside the interior origin it would be registered in
+  // the origin mutability table so if its not there its safe to assume its
+  // unused and can be dropped.
+  assert(allStructParams.size() == structParamBindings.size() &&
+         "expected parallel struct parameters and bindings before pruning");
+  SmallVector<ParamDeclAttr> prunedParams;
+  SmallVector<TypedAttr> prunedBindings;
+  for (auto [param, binding] :
+       llvm::zip_equal(allStructParams, structParamBindings)) {
+    if (sugarIsa<OriginType>(param.getType())) {
+      if (!originMutability.contains(param.getName()))
+        continue;
+    }
+    prunedParams.push_back(param);
+    prunedBindings.push_back(binding);
+  }
+  allStructParams = std::move(prunedParams);
+  structParamBindings = std::move(prunedBindings);
+
+  // Promote origin parameters that are only read-only into immutable origins.
+  SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
+      ctx, originMutability, allStructParams, structParamBindings);
+
+  if (interiorOrigins.empty() && promotedOriginNames.empty())
+    return success();
+
+  Location rewriteLoc = closureLoc;
+  bool hadConflict = false;
+
+  // Replace all interior origin occurrences and promoted origin references in a
+  // single walk.
+  mlir::AttrTypeReplacer originReplacer;
+  originReplacer.addReplacement([&](SymbolConstantAttr sym)
+                                    -> std::pair<Attribute, WalkResult> {
+    bool bindsOutlinedInterior = false;
+    bool changed = false;
+    DenseMap<TypedAttr, TypedAttr> paramReplacements;
+    SmallVector<TypedAttr> newParamValues;
+    newParamValues.reserve(sym.getParamValues().size());
+    for (TypedAttr pv : sym.getParamValues()) {
+      bindsOutlinedInterior |= isOutlinedInteriorOrigin(pv, interiorOrigins);
+      auto newPv = cast<TypedAttr>(originReplacer.replace(pv));
+      if (newPv != pv) {
+        changed = true;
+        paramReplacements[cast<TypedAttr>(getCanonicalAttr(pv))] = newPv;
+      }
+      newParamValues.push_back(newPv);
+    }
+
+    // An interior origin in the signature that the call does not bind as a
+    // parameter value is derived from the callee's own parameters, so rewriting
+    // it would misstate the callee's signature. Keep it as is and reject if
+    // that same interior origin was outlined (interior origins are spelled
+    // inline, so preserved occurrences are indistinguishable from the ones that
+    // need to be rewritten). Reject this case (for now).
+    if (!bindsOutlinedInterior &&
+        hasOutlinedInteriorOrigin(sym.getType(), interiorOrigins)) {
+      hadConflict = true;
+      shared.emitError(
+          rewriteLoc,
+          "cannot derive an interior origin from a captured container while "
+          "an interior reference to the container is also captured");
+      return {sym, WalkResult::skip()};
+    }
+
+    if (!changed)
+      return {sym, WalkResult::skip()};
+
+    mlir::AttrTypeReplacer symTypeReplacer;
+    symTypeReplacer.addReplacement(
+        [&](TypedAttr attr) -> std::optional<TypedAttr> {
+          if (!sugarIsa<OriginType>(attr.getType()))
+            return std::nullopt;
+          TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(attr));
+          auto it = paramReplacements.find(canon);
+          if (it != paramReplacements.end())
+            return it->second;
+          return getPromotedOriginRef(ctx,
+                                      OriginType::stripMutCastAndRebind(attr),
+                                      promotedOriginNames);
+        });
+    auto newType =
+        cast<FuncTypeGeneratorType>(symTypeReplacer.replace(sym.getType()));
+    return {SymbolConstantAttr::get(sym.getSymbol(), newType, newParamValues),
+            WalkResult::skip()};
+  });
+  originReplacer.addReplacement(
+      [&](TypedAttr attr) -> std::optional<TypedAttr> {
+        if (!sugarIsa<OriginType>(attr.getType()))
+          return std::nullopt;
+
+        TypedAttr stripped = OriginType::stripMutCastAndRebind(attr);
+        if (sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped)) {
+          auto it =
+              interiorOrigins.find(cast<TypedAttr>(getCanonicalAttr(stripped)));
+          if (it == interiorOrigins.end())
+            return std::nullopt;
+          if (attr != stripped)
+            return std::nullopt;
+          return getOutlinedOriginRef(ctx, it->second, promotedOriginNames);
+        }
+
+        return getPromotedOriginRef(ctx, stripped, promotedOriginNames);
+      });
+
+  // Rewrite the body before the storage struct so a conflict is diagnosed at
+  // the operation that hit it, and so a rejected closure leaves the struct
+  // alone.
+  if (nestedFn) {
+    nestedFn.walk([&](Operation *op) {
+      rewriteLoc = op->getLoc();
+      originReplacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                       /*replaceLocs=*/true,
+                                       /*replaceTypes=*/true);
+      return hadConflict ? WalkResult::interrupt() : WalkResult::advance();
+    });
+    if (hadConflict)
+      return failure();
+    rewriteLoc = closureLoc;
+  }
+
+  for (StructDefFieldAttr &fieldDecl : fieldDecls) {
+    auto newTypeValue =
+        cast<TypedAttr>(originReplacer.replace(fieldDecl.getTypeValue()));
+    fieldDecl = StructDefFieldAttr::get(fieldDecl.getName(), newTypeValue);
+  }
+  for (Type &fieldType : deviceCaptureFieldTypes)
+    fieldType = cast<Type>(originReplacer.replace(fieldType));
+  for (auto &[name, type] : aliases) {
+    if (sugarIsa<OriginType>(type)) {
+      if (promotedOriginNames.contains(StringAttr::get(ctx, name)))
+        type = OriginType::get(ctx, false);
+    } else {
+      type = cast<Type>(originReplacer.replace(type));
+    }
+  }
+  return failure(hadConflict);
 }
 
 static SmallVector<Type>
@@ -2177,7 +2412,8 @@ ASTDecl *ClosureEmitter::liftClosureIntoMethod(
             .front();
 
     Value replacement = extractedRef;
-    if (!isa<RefType>(capture.getType()) || isByReferenceCapture(convention))
+    if (!sugarIsa<RefType>(capture.getType()) ||
+        isByReferenceCapture(convention))
       replacement =
           RefLoadOp::create(bodyBuilder, promotedBodyLoc, extractedRef);
     captureReplacements[capture] = replacement;
@@ -2233,41 +2469,9 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     bool capturesEncodable, ASTDecl &nestedFnDecl) {
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
-
-  SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
-      ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
 
   SmallVector<Type> promotedDeviceCaptureFieldTypes =
       std::move(deviceCaptureFieldTypes);
-
-  mlir::AttrTypeReplacer promoteOriginRefs;
-  promoteOriginRefs.addReplacement(
-      [&](TypedAttr attr) -> std::optional<TypedAttr> {
-        if (!isa<OriginType>(attr.getType()))
-          return std::nullopt;
-        auto originRef =
-            dyn_cast<ParamDeclRefAttr>(OriginType::stripMutCastAndRebind(attr));
-        if (!originRef || !promotedOriginNames.contains(originRef.getName()))
-          return std::nullopt;
-        return ParamDeclRefAttr::get(originRef.getName(),
-                                     OriginType::get(ctx, false));
-      });
-
-  if (!promotedOriginNames.empty()) {
-    promoteOriginRefs.recursivelyReplaceElementsIn(nestedFn,
-                                                   /*replaceAttrs=*/true,
-                                                   /*replaceLocs=*/true,
-                                                   /*replaceTypes=*/true);
-    for (StructDefFieldAttr &fieldDecl : concreteFieldDecls) {
-      auto promotedTypeValue =
-          cast<TypedAttr>(promoteOriginRefs.replace(fieldDecl.getTypeValue()));
-      fieldDecl =
-          StructDefFieldAttr::get(fieldDecl.getName(), promotedTypeValue);
-    }
-    for (Type &deviceFieldType : promotedDeviceCaptureFieldTypes)
-      deviceFieldType = cast<Type>(promoteOriginRefs.replace(deviceFieldType));
-  }
 
   SmallVector<TypedAttr> selfRefParamValues = llvm::map_to_vector(
       concreteParams, [](ParamDeclAttr declAttr) -> TypedAttr {
@@ -2370,6 +2574,12 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     CaptureConvention captureConvention =
         concreteFieldCaptureConventions[index];
 
+    // `__init__`'s byref-result is always `self`; a capture of the same
+    // spelling would alias both origins. Keep the field name; rename the arg.
+    StringAttr initArgName = fieldName;
+    if (fieldName.getValue() == "self")
+      initArgName = StringAttr::get(ctx, "__capture_self");
+
     Type argType;
     ArgConvention argConvention;
     switch (captureConvention) {
@@ -2377,7 +2587,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     case CaptureConvention::kConventionMut:
     case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionRef:
-      if (isa<RefType>(fieldType)) {
+      if (sugarIsa<RefType>(fieldType)) {
         argType = fieldType;
         argConvention = ArgConvention::Ref;
         break;
@@ -2385,7 +2595,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       [[fallthrough]];
     case CaptureConvention::kConventionTrivialCopy:
     case CaptureConvention::kConventionCopy:
-      argType = ASTType(fieldType).getRefForArgument(fieldName.getValue(),
+      argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                      /*isMut=*/false);
       argConvention = ArgConvention::ReadMem;
       break;
@@ -2396,7 +2606,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
         argType = fieldType;
         argConvention = ArgConvention::OwnedReg;
       } else {
-        argType = ASTType(fieldType).getRefForArgument(fieldName.getValue(),
+        argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                        /*isMut=*/true);
         argConvention = ArgConvention::OwnedMem;
       }
@@ -2406,7 +2616,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
     initArgumentTypes.push_back(argType);
     argConventions.push_back(argConvention);
-    argNames.push_back(fieldName);
+    argNames.push_back(initArgName);
     argPassingKinds.push_back(PassingKind::PosOnly);
   }
 
@@ -2455,7 +2665,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
       // Reference captures
       if (isByReferenceCapture(concreteFieldCaptureConventions[index]) &&
-          isa<RefType>(fieldType)) {
+          sugarIsa<RefType>(fieldType)) {
         RefStoreOp::create(bodyBuilder, arg, fieldRef);
         continue;
       }
@@ -2689,7 +2899,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
-    if (capture.getCaptureConvention() == CaptureConvention::kConventionMove)
+    if (capture.getCaptureConvention() == CaptureConvention::kConventionMove &&
+        sugarIsa<RefType>(value.getType()) &&
+        sugarCast<RefType>(value.getType()).isMutableKnown(true))
       constructorArgs.push_back(MRValue(value));
     else
       constructorArgs.push_back(capture.getValue());
@@ -2706,7 +2918,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     auto captureName = StringAttr::get(ctx, capture.getSpelling());
     auto captureConvention = capture.getCaptureConvention();
     Type mlirType = value.getType();
-    if (auto refType = dyn_cast<LIT::RefType>(mlirType))
+    if (auto refType = sugarDynCast<LIT::RefType>(mlirType))
       mlirType = refType.getElementType();
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
@@ -2717,8 +2929,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       // TODO: Pointers are register passable, so this demotion
       // should become unnecessary once downstream passes are fixed.
       TypeConvention captureConventionMet =
-          (isa<LIT::RefType>(value.getType())
-               ? ASTType(cast<LIT::RefType>(value.getType()).getElementType())
+          (sugarIsa<LIT::RefType>(value.getType())
+               ? ASTType(
+                     sugarCast<LIT::RefType>(value.getType()).getElementType())
                : ASTType(value.getType()))
               .getRegisterPassability(nestedFnDecl.getLoc(), shared);
       updateCaptureConvention(captureConventionMet);
@@ -2728,24 +2941,24 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       break;
     case CaptureConvention::kConventionCopy:
     case CaptureConvention::kConventionMove: {
-      if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
+      if (auto refType = sugarDynCast<LIT::RefType>(value.getType())) {
         if (auto captureOriginParam = dyn_cast<ParamDeclRefAttr>(
                 OriginType::stripMutCastAndRebind(refType.getOrigin())))
           byValueCapturedOriginParamNames.insert(captureOriginParam.getName());
       }
       // Copy/move captures materialize storage for the captured value itself,
       // not for a reference wrapper. Use the pointee as the field type.
-      if (isa<LIT::RefType>(value.getType()))
+      if (sugarIsa<LIT::RefType>(value.getType()))
         captureTypeAttr = TypeParamAttr::get(mlirType, anyType);
 
-      if (auto structType = dyn_cast<StructType>(mlirType)) {
+      if (auto structType = sugarDynCast<StructType>(mlirType)) {
         updateCaptureConvention(typeConventionOf(shared, structType));
-      } else if (isa<TraitType>(mlirType)) {
+      } else if (sugarIsa<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
                          "existentials are not implemented.");
         return {};
-      } else if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+      } else if (auto paramType = sugarDynCast<ParamType>(mlirType)) {
         updateCaptureConvention(
             typeConventionOf(shared, paramType, capture, nestedFnDecl));
       }
@@ -2828,11 +3041,17 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     structParamBindings.push_back(capturedParam);
   }
 
-  // Compute the storage struct bindings for the init call.
-  SmallVector<ParamDeclAttr> storageStructParams = allStructParams;
+  // (1) Outline interior origins and promote origin parameters in a unified
+  // pass.
+  if (!allCapturesEncodable)
+    deviceCaptureFieldTypes.clear();
+  if (failed(outlineAndPromoteOrigins(
+          shared, fieldDecls, allStructParams, structParamBindings, nestedFn,
+          deviceCaptureFieldTypes, aliases, location)))
+    return {};
+
+  // Storage bindings passed to initializer call.
   SmallVector<TypedAttr> storageParamBindings = structParamBindings;
-  (void)collectPromotedOrigins(ctx, fieldDecls, storageStructParams,
-                               storageParamBindings);
 
   Closure liftedClosure = liftClosure(
       moduleDecl, nestedFnDecl.getLoc(), closureParents,
@@ -3010,7 +3229,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                           std::optional<bool> mutability) -> CValue {
     // Ensure we are not capturing an immutable reference by mutable
     // reference.
-    if (auto refType = dyn_cast<RefType>(value.getType().mlirType)) {
+    if (auto refType = sugarDynCast<RefType>(value.getType().mlirType)) {
       // If the mutability is not specified or the reference type match the
       // specified mutability, return the original value.
       OriginType originType = refType.getOriginType();
@@ -3057,7 +3276,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   switch (parsedConvention) {
   case CaptureConvention::kConventionMove: {
     Type type = valueInParent.getType().mlirType;
-    if (auto ref = dyn_cast<RefType>(valueInParent.getType().mlirType))
+    if (auto ref = sugarDynCast<RefType>(valueInParent.getType().mlirType))
       type = ref.getElementType();
     if (!ASTType(type).isMovable(closure.getLoc(), shared, *fnParentDecl)) {
       shared.emitError(location, "Cannot capture ")
@@ -3071,7 +3290,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
     // If it was captured by move then there was a transfer operation.
     convention = parsedConvention;
-    if (isa<RefType>(valueInParent.getType().mlirType))
+    if (sugarIsa<RefType>(valueInParent.getType().mlirType))
       captureValue = CValue::getMValueForRef(valueInParent.getMlirValue());
     else
       captureValue = MRValue(valueInParent.getMlirValue());
@@ -3084,7 +3303,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       convention = CaptureConvention::kConventionTrivialCopy;
       // if we are capturing by mutable copy and its trivial do not capture
       // the reference.
-      if (isa<RefType>(valueInParent.getType())) {
+      if (sugarIsa<RefType>(valueInParent.getType())) {
         SyntheticNode node(result->getLoc());
         ExprDest dest(EC_Capture);
         captureValue = emitter.emitRValue(
@@ -3095,7 +3314,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       }
     } else {
       convention = parsedConvention;
-      if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
+      if (auto refType =
+              sugarDynCast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
           Location fusedLoc =

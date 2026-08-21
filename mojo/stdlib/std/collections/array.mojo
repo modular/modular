@@ -1065,3 +1065,42 @@ struct Array[T: AnyType, length: Int](
             Self.length,
             Pointer(to=self),
         )
+
+    @always_inline
+    def repeat[
+        n: Int
+    ](
+        deinit self,
+        out result: Array[Self.T, Self.length * n],
+    ) where (
+        conforms_to(Self.T, Copyable) and (n > 0),
+        "`Array * n` requires n > 0",
+    ):
+        """Repeats this array's elements the given number of times.
+
+
+        Parameters:
+            n: The number of repetitions. Must be greater than 0.
+
+        Returns:
+            An array of length `Self.length * rhs` containing the elements
+            of `self` repeated `rhs` times.
+
+        Examples:
+
+        ```mojo
+        var a = [1, 2].repeat[3]()  # Array[Int, 6](1, 2, 1, 2, 1, 2)
+        ```
+        """
+        result = {uninitialized = True}
+        for rep in range(n - 1):
+            unsafe_uninit_copy_n[overlapping=False](
+                dest=result.unsafe_ptr().unsafe_offset(rep * Self.length),
+                src=self.unsafe_ptr(),
+                count=Self.length,
+            )
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr().unsafe_offset((n - 1) * Self.length),
+            src=self.unsafe_ptr(),
+            count=Self.length,
+        )

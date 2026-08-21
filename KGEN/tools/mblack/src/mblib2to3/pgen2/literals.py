@@ -69,7 +69,7 @@ def escape(m: Match[str]) -> str:
 
 
 def evalString(s: str) -> str:
-    assert s.startswith("'") or s.startswith('"'), repr(s[:1])
+    assert s.startswith(("'", '"')), repr(s[:1])
     q = s[0]
     if s[:3] == q * 3:
         q = q * 3

@@ -102,9 +102,7 @@ def _rename_vision_key(checkpoint_name: str) -> str:
 def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     """Return WeightData, casting floats (non-FP8, non-scale) to bfloat16."""
     weight_data = weight.data()
-    is_scale = checkpoint_name.endswith(
-        ".weight_scale"
-    ) or checkpoint_name.endswith(".input_scale")
+    is_scale = checkpoint_name.endswith((".weight_scale", ".input_scale"))
     if (
         weight_data.dtype.is_float()
         and not weight_data.dtype.is_float8()

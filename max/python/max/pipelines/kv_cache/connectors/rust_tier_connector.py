@@ -56,11 +56,11 @@ from max.driver import (
     _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.support.human_readable_formatter import to_human_readable_bytes
 
-from ..kv_connector import BlockCount, KVConnectorTransfer
+from ..kv_connector import BlockCount, KVConnector, KVConnectorTransfer
 from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -131,14 +131,13 @@ class _Replica(NamedTuple):
     compute_streams: list[tuple[int, int]]
 
 
-class RustTierConnector:
+class RustTierConnector(KVConnector):
     """KVConnector backed by the Rust host/disk tiered connector."""
 
     def __init__(
         self,
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         disk_cache_dir: str,
-        kv_hash_algo: KVHashAlgo = "ahash64",
         host_offload_max_gb: float | None = None,
         disk_offload_max_gb: float | None = None,
         num_disk_workers: int = 32,
@@ -148,7 +147,6 @@ class RustTierConnector:
         Args:
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
             disk_cache_dir: Directory backing the disk last level.
-            kv_hash_algo: Hash algo the caller computes block hashes with.
             host_offload_max_gb: Host budget. ``None`` sizes the host pool to
                 hold twice the device page pool.
             disk_offload_max_gb: Disk budget. ``None`` sizes it to hold three
@@ -162,15 +160,6 @@ class RustTierConnector:
 
         if not replica_kv_memory:
             raise ValueError("RustTierConnector requires at least one replica")
-
-        # The Rust tier stores blocks keyed by the caller-computed hash bytes,
-        # so it is hash-algo agnostic; we only validate the caller's algo is one
-        # this connector advertises.
-        if kv_hash_algo not in self.supported_hash_algos:
-            raise ValueError(
-                f"RustTierConnector does not support kv_hash_algo="
-                f"{kv_hash_algo!r}; supported: {sorted(self.supported_hash_algos)}"
-            )
 
         gpu0 = replica_kv_memory[0][0].buffers[0].device
         if gpu0.is_host:
@@ -361,7 +350,3 @@ class RustTierConnector:
 
     def reset_metrics(self) -> None:
         self._rust.reset_metrics()
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})

@@ -35,7 +35,7 @@ def create_params(
     tp: int = 1,
     page_size: int = 128,
     dtype: DType = DType.float32,
-    quantization_config: KVCacheQuantizationConfig = KVCacheQuantizationConfig(),
+    quantization_config: KVCacheQuantizationConfig = KVCacheQuantizationConfig(),  # noqa: B008
 ) -> KVCacheParams:
     return MHAKVCacheParams(
         dtype=dtype,

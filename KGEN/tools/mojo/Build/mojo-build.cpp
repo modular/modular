@@ -270,6 +270,7 @@ static int printEffectiveTarget(TargetInfoAttr targetInfo) {
   std::string normalized = normalizeTriple(targetInfo.getTripleStr());
   StringRef cpu = targetInfo.getArch();
   StringRef features = targetInfo.getFeatures();
+  StringRef abi = targetInfo.getAbi();
   StringRef accelerator = targetInfo.getAcceleratorArch();
 
   llvm::outs() << "Effective target configuration:\n";
@@ -278,6 +279,8 @@ static int printEffectiveTarget(TargetInfoAttr targetInfo) {
   llvm::outs() << "  --target-cpu " << cpu << "\n";
   if (!features.empty())
     llvm::outs() << "  --target-features " << features << "\n";
+  if (!abi.empty())
+    llvm::outs() << "  --target-abi " << abi << "\n";
   if (!accelerator.empty())
     llvm::outs() << "  --target-accelerator " << accelerator << "\n";
 
@@ -379,6 +382,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .targetTriple = options::OPT_target_triple,
       .targetCpu = options::OPT_target_cpu,
       .targetFeatures = options::OPT_target_features,
+      .targetAbi = options::OPT_target_abi,
       .march = options::OPT_march,
       .mcpu = options::OPT_mcpu,
       .mtune = options::OPT_mtune,

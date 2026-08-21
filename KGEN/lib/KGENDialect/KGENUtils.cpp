@@ -442,13 +442,16 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
 
 void KGEN::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
   p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
 }
 
 ParseResult KGEN::parseTraitSymbol(AsmParser &p, TraitSymbolAttr &trait) {
   SymbolRefAttr symbol;
-  if (p.parseAttribute(symbol))
+  SmallVector<TypedAttr> paramValues;
+  if (p.parseAttribute(symbol) || parseParameterValues(p, paramValues))
     return failure();
-  trait = TraitSymbolAttr::get(symbol);
+
+  trait = TraitSymbolAttr::get(symbol, paramValues);
   return success();
 }
 
@@ -764,7 +767,6 @@ enum class POCAliases : uint32_t {
   NE, // !(==)
   GT, // !(<)
   GE, // !(<=)
-  NOT_IN,
   // This is an unknown opcode name.
   kInvalid,
 };
@@ -958,19 +960,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     // operand-list ::= expr (`,` expr)*
     return p.parseCommaSeparatedList(
         [&] { return parseParamValue(p, operands.emplace_back(), type); });
-  case (uint32_t)POC::In:
-  case (uint32_t)POCAliases::NOT_IN:
-    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
-    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
-          return parseParamValue(p, operands.emplace_back(), type);
-        }))
-      return failure();
-    return success();
-    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        parseIndexParamValue(p, operands.emplace_back()))
-      return failure();
-    return success();
   case (uint32_t)POC::TargetHasFeature:
   case (uint32_t)POC::TargetGetField:
     // Parse TargetHasFeature, and TargetGetField -- the first operand is a
@@ -1088,8 +1077,6 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
     return (uint32_t)POCAliases::GT;
   if (keyword == "ge")
     return (uint32_t)POCAliases::GE;
-  if (keyword == "not_in")
-    return (uint32_t)POCAliases::NOT_IN;
 
   return (uint32_t)POCAliases::kInvalid;
 }
@@ -1329,8 +1316,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       case (uint32_t)POCAliases::NE:
       case (uint32_t)POCAliases::GE:
       case (uint32_t)POCAliases::GT:
-      case (uint32_t)POCAliases::NOT_IN:
-      case (uint32_t)POC::In:
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
@@ -1381,10 +1366,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       opcode = (uint32_t)POC::LE;
       needsInvert = true;
       break;
-    case (uint32_t)POCAliases::NOT_IN:
-      opcode = (uint32_t)POC::In;
-      needsInvert = true;
-      break;
     case (uint32_t)POCAliases::NOT:
       if (operands.size() != 1 || !isI1OrSIMDOfBool(operands[0].getType()))
         return p.emitError(
@@ -1418,8 +1399,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
 static void printOperatorOperands(AsmPrinter &p, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If the elements are not index type, print the type explicitly.
-  if (llvm::is_contained({POC::In, POC::EQ, POC::LT, POC::LE, POC::Rebind},
-                         opcode))
+  if (llvm::is_contained({POC::EQ, POC::LT, POC::LE, POC::Rebind}, opcode))
     printColonTypeOrIndexPrefix(p, operands[0].getType());
 
   switch (opcode) {
@@ -1427,15 +1407,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     // operand-list ::= expr (`,` expr)*
     llvm::interleaveComma(
         operands, p, [&](TypedAttr operand) { printParamValue(p, operand); });
-    break;
-  case POC::In:
-    // operand-list ::= expr `,` `[` (expr (`,` expr)*)? `]`
-    printParamValue(p, operands[0]);
-    p << ", [";
-    llvm::interleaveComma(operands.drop_front(), p, [&](TypedAttr operand) {
-      printParamValue(p, operand);
-    });
-    p << "]";
     break;
 
   case POC::Apply:

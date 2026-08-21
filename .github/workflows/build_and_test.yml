@@ -65,19 +65,6 @@ jobs:
             )
           fi
 
-          excludes=()
-          if [[ -d KGEN ]]; then
-            args+=(--config=prebuilt-mojo)
-            excludes=(
-              -//AsyncRT/...
-              -//Cache/...
-              -//Config/...
-              -//Init/...
-              -//KGEN/...
-              -//Support/...
-            )
-          fi
-
           # Print CPU info for debugging purposes
           lscpu || true
 
@@ -90,8 +77,14 @@ jobs:
             "${args[@]}" \
             --build_tag_filters=-skip-external-ci,-requires-network \
             --test_tag_filters=-skip-external-ci,-requires-network \
+            --config=prebuilt-mojo \
             -- \
             //... \
-            "${excludes[@]}"
+            -//AsyncRT/... \
+            -//Cache/... \
+            -//Config/... \
+            -//Init/... \
+            -//KGEN/... \
+            -//Support/...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

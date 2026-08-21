@@ -56,7 +56,6 @@ modular_py_binary(
         requirement("pydantic"),
         requirement("pyyaml"),
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
     ],
 )
 

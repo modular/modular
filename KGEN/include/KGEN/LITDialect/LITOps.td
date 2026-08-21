@@ -294,7 +294,7 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
 
     ```mlir
     %bound = lit.bind_params %fn : !lit.generator<<"dtype": !DType, "width": !Int>() -> !T>, ?, 2
-      -> !lit.generator<<"dtype": !DType>() -> !T>
+      to !lit.generator<<"dtype": !DType>() -> !T>
     lit.call_indirect %bound(%arg) : ...
     ```
   }];
@@ -784,6 +784,9 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
       return c == TypeConvention::RegisterPassableTrivial ||
        c == TypeConvention::RegisterPassable;
     }
+
+    TraitSymbolAttr bindReference(ArrayRef<TypedAttr> paramValues);
+
     bool isRegisterPassableTrivial() {
       return getConvention() == TypeConvention::RegisterPassableTrivial;
     }
@@ -1367,8 +1370,7 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
     SymbolNameAttr:$importName,
     OptionalAttr<SymbolNameAttr>:$declName,
     OptionalAttr<Builtin_LocationAttr>:$importNameLoc,
-    OptionalAttr<Builtin_LocationAttr>:$declNameLoc,
-    DefaultValuedAttr<BoolAttr, "false">:$isLeafBinding
+    OptionalAttr<Builtin_LocationAttr>:$declNameLoc
   );
   let assemblyFormat = [{
     $modulePath (`->` $declName^)? `as` $importName

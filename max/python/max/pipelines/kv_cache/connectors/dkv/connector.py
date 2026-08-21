@@ -18,14 +18,6 @@ A thin :class:`~max.pipelines.kv_cache.kv_connector.KVConnector` shim over the
 owns the NIXL agent, all block transfers, the control-plane RPCs, inline
 reconnection, and metrics; this shim only adapts the MAX-side types (device
 ``KVCacheMemory``, ``KVCacheMetrics``) to the client's API.
-
-Block-hash contract: the dkv wire format carries a ``uint64 seq_hash`` and is
-unchanged by this shim. Callers may pass either the 8-byte canonical encoding
-used by ``ahash64`` / ``sha256_64`` or the 32-byte canonical encoding used by
-full ``sha256``; in the 32-byte case the shim truncates to the first 8 bytes
-at the boundary. Truncation is byte-identical to the existing ``sha256_64``
-algorithm, so configuring MAX with ``sha256`` or ``sha256_64`` yields the
-same dkv key for the same logical digest.
 """
 
 from __future__ import annotations
@@ -35,7 +27,6 @@ import hashlib
 import logging
 import math
 import os
-import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 
@@ -45,7 +36,6 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
-    KVHashAlgo,
     MultiKVCacheParams,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -57,8 +47,8 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVConnectorTransfer,
     TransferDirection,
 )
@@ -597,7 +587,7 @@ class DKVExternalBlockMetadata(
     seq_hash: int
 
 
-class DKVConnector:
+class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
     A single instance serves every DP replica. The underlying Rust client is
@@ -1023,16 +1013,6 @@ class DKVConnector:
         except Exception as exc:
             _logger.debug("dKV touch skipped: %s", exc)
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        """Returns ``(0, 0)``: block presence is tracked by the remote dKV
-        service, so there is no cheap local index to consult synchronously.
-        Callers treat dKV-resident blocks as misses for counting purposes;
-        the ``load`` path still fetches them normally.
-        """
-        return (0, 0)
-
     def wait_for_loads(self) -> None:
         for client in self._clients:
             client.wait_for_loads()
@@ -1051,16 +1031,6 @@ class DKVConnector:
     def reset_prefix_cache(self) -> None:
         # No-op: dKV manages its own external block lifecycle server-side.
         pass
-
-    @property
-    def host_block_count(self) -> BlockCount:
-        # BlockManager gates the load path on host_block_count.total > 0. dKV
-        # capacity is managed externally by the dKV service.
-        return BlockCount(free=sys.maxsize, total=sys.maxsize)
-
-    @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""
@@ -1094,15 +1064,3 @@ class DKVConnector:
                 dkv_reconnect_attempts=m["reconnect_attempts"],
             )
         return total
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        """Algos this connector accepts in :meth:`load` / :meth:`offload`.
-
-        Accepts the full ahash64-family set plus 32-byte ``sha256``: 32-byte
-        digests are truncated to their first 8 bytes at the boundary, which
-        is byte-identical to the ``sha256_64`` algo (see :func:`_to_dkv_u64`
-        and the module docstring). The dkv wire format stays ``uint64
-        seq_hash``.
-        """
-        return frozenset({"ahash64", "sha256", "sha256_64"})

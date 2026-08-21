@@ -301,7 +301,7 @@ class JengaBlockPool:
 
     def get_or_commit_into_prefix_cache(
         self, block_hash: bytes, block: LittleKVCacheBlock
-    ) -> None | LittleKVCacheBlock:
+    ) -> LittleKVCacheBlock | None:
         """Commits a block, or returns the twin already holding its bytes.
 
         Returns:

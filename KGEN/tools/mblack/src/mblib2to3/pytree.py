@@ -55,7 +55,7 @@ _type_reprs: dict[int, str | int] = {}
 
 
 def type_repr(type_num: int) -> str | int:
-    global _type_reprs
+    global _type_reprs  # noqa: PLW0602 (FIXME)
     if not _type_reprs:
         from .pygram import python_symbols
 
@@ -97,7 +97,7 @@ class Base:
         assert cls is not Base, "Cannot instantiate Base"
         return object.__new__(cls)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """
         Compare two nodes for equality.
 
@@ -524,8 +524,7 @@ class BasePattern:
     """
 
     # Defaults for instance variables
-    type: int | None
-    type = None  # Node type (token if < 256, symbol if >= 256)
+    type: int | None = None  # Node type (token if < 256, symbol if >= 256)
     content: Any = None  # Optional content matching pattern
     name: str | None = None  # Optional name used to store match in results dict
 

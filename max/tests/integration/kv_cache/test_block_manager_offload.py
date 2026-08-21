@@ -27,7 +27,6 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
@@ -70,10 +69,6 @@ class RecordingConnector:
     @property
     def name(self) -> str:
         return "recording"
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
 
     def offload(
         self,
@@ -671,30 +666,6 @@ def test_cross_replica_copy_disabled_count_is_local_only() -> None:
         )
         == 2
     )
-
-
-def test_touch_not_fired_without_external_tier() -> None:
-    """A connector with no external tier is never touched on a device hit.
-
-    The G0 recency ``touch`` is gated behind the ``host_block_count.total == 0``
-    early-return, so a NullConnector-style connector (``host_block_count.total == 0``,
-    whose ``touch`` is a pure no-op) sees no ``touch`` call at all and pays no
-    per-hit payload cost. A plain ``RecordingConnector`` reports
-    ``host_block_count.total == 0`` and records any touch, so the empty ``touches``
-    assertion verifies the gate rather than a silent no-op.
-    """
-    bm, connector = (
-        _make_block_manager()
-    )  # RecordingConnector: no external tier
-    rid = RequestID("req-null")
-    bm.req_to_hashes[rid] = [_b(111), _b(222)]
-    _commit_device_block(bm.device_block_pool, 111)
-    _commit_device_block(bm.device_block_pool, 222)
-
-    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
-
-    assert len(device_blocks) == 2
-    assert connector.touches == []
 
 
 def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:

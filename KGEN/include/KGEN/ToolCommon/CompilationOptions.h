@@ -78,32 +78,22 @@ splitFpModeEmissionOptions(llvm::StringRef options, FpMode &mode,
   return std::nullopt;
 }
 
-/// Returns true if `item` is a `nvptx-short-ptr=...` emission option. Since
-/// LLVM 40001fdcb26d the short-pointer mode is the "shortptr" target ABI, not
-/// a global cl option, so KGEN recognizes the option itself and forwards it
-/// to the TargetMachine as the ABI name.
-inline bool isShortPtrEmissionOption(llvm::StringRef item) {
-  return item.split('=').first == "nvptx-short-ptr";
+/// Returns true if `item` is a `target-abi=...` emission option. KGEN
+/// intercepts this itself, rather than registering a global cl option, since
+/// it must be applied before the TargetMachine is created.
+inline bool isTargetABIEmissionOption(llvm::StringRef item) {
+  return item.split('=').first == "target-abi";
 }
 
-/// Applies any `nvptx-short-ptr=true|false` items in `items` to `targetABI`
-/// ("shortptr" for true, cleared for false). Returns the offending item if
-/// one carries an invalid value; nullopt otherwise.
-inline std::optional<std::string>
-applyShortPtrEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
-                             std::string &targetABI) {
+/// Applies a `target-abi=<value>` item in `items` to `targetABI`, forwarding
+/// the value verbatim, matching LLVM's own `-target-abi` flag semantics.
+inline void applyTargetABIEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
+                                          std::string &targetABI) {
   for (llvm::StringRef item : items) {
     auto [key, value] = item.split('=');
-    if (key != "nvptx-short-ptr")
-      continue;
-    if (value.equals_insensitive("true") || value == "1")
-      targetABI = "shortptr";
-    else if (value.equals_insensitive("false") || value == "0")
-      targetABI.clear();
-    else
-      return item.str();
+    if (key == "target-abi")
+      targetABI = value.str();
   }
-  return std::nullopt;
 }
 
 /// This class provides a set of options used to control the compilation of
@@ -192,11 +182,18 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  /// User-supplied target ABI name (`--target-abi`, or a `#kgen.target`'s
+  /// `abi` field): a target-identity property shared by every kernel
+  /// compiled for that target. Forwarded to the TargetMachine (see
+  /// `targetABI` below) and recorded as a `target-abi` LLVM module flag,
+  /// mirroring clang's `-target-abi`.
+  std::string targetAbi;
   std::string targetDataLayout;
-  /// Target ABI name forwarded to the TargetMachine (MCOptions.ABIName).
-  /// For NVPTX, "shortptr" selects 32-bit const/local/shared pointers to
-  /// match the shortptr data layout our GPU targets declare; it is set from
-  /// the `nvptx-short-ptr` emission option.
+  /// Target ABI name forwarded to the TargetMachine (MCOptions.ABIName),
+  /// taking precedence over `targetAbi` above when both are set. Unlike
+  /// `targetAbi`, this is a per-kernel override (e.g. NVPTX's "shortptr"
+  /// ABI) sourced from a `target-abi` emission option, reset before each
+  /// compile rather than carried on the target's identity.
   std::string targetABI;
   std::optional<llvm::CodeModel::Model> mcmodel;
   std::optional<uint64_t> largeDataThreshold;

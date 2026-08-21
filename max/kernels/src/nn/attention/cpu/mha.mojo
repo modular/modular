@@ -117,9 +117,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
 
-        @__parameter
         @always_inline
-        def loop_body[lane_count: Int](k: Int):
+        def loop_body[
+            lane_count: Int
+        ](k: Int) {mut ak_ptr, mut bk_ptr, mut c_tile, imm}:
             var a_tile = Array[SIMD[Self.dtype, lane_count], tile_m](fill=0)
 
             comptime for m in range(tile_m):
@@ -138,7 +139,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
                 bk_ptr += b_stride
 
-        tile[loop_body, [Self.simd_width, 1]](0, K)
+        tile[[Self.simd_width, 1]](0, K, loop_body)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = ak_ptr
         _ = bk_ptr
@@ -158,9 +159,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
 
-        @__parameter
         @always_inline
-        def loop_body[unroll_factor: Int](k: Int):
+        def loop_body[
+            unroll_factor: Int
+        ](k: Int) {mut ak_ptr, mut bk_ptr, mut c_tile, imm}:
             var b_tile = Array[SIMD[Self.dtype, Self.simd_width], tile_n](
                 fill=0
             )
@@ -180,7 +182,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 ak_ptr += 1
                 bk_ptr += b_stride
 
-        tile[loop_body, [2, 1]](0, K)
+        tile[[2, 1]](0, K, loop_body)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = ak_ptr
         _ = bk_ptr
@@ -201,13 +203,13 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         var am_ptr = a_ptr
         var cm_ptr = c_ptr
 
-        @__parameter
-        def process_rows[tile_m: Int](m: Int):
+        def process_rows[tile_m: Int](m: Int) {mut am_ptr, mut cm_ptr, imm}:
             var bn_ptr = b_ptr
             var cn_ptr = cm_ptr
 
-            @__parameter
-            def process_cols[tile_n: Int](n_unscaled: Int):
+            def process_cols[
+                tile_n: Int
+            ](n_unscaled: Int) {mut bn_ptr, mut cn_ptr, imm}:
                 var c_tile = _Accumulator[
                     Self.dtype, tile_m, tile_n, Self.simd_width
                 ]()
@@ -231,8 +233,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 bn_ptr += tile_n * Self.simd_width
                 cn_ptr += tile_n * Self.simd_width
 
-            tile[process_cols, Self._matmul_config.col_sizes](
-                0, ceildiv(N, Self.simd_width)
+            tile[Self._matmul_config.col_sizes](
+                0, ceildiv(N, Self.simd_width), process_cols
             )
 
             am_ptr += tile_m * a_stride
@@ -242,7 +244,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             _ = bn_ptr
             _ = cn_ptr
 
-        tile[process_rows, Self._matmul_config.row_sizes](0, M)
+        tile[Self._matmul_config.row_sizes](0, M, process_rows)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
         _ = cm_ptr
@@ -270,9 +272,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             row_major[transpose_width, transpose_width]()
         )
 
-        @__parameter
         @always_inline
-        def process_tile[tile_n: Int, tile_k: Int](n: Int, k: Int):
+        def process_tile[
+            tile_n: Int, tile_k: Int
+        ](n: Int, k: Int) {mut transpose_buffer, imm}:
             comptime if transpose_width == tile_n == tile_k:
                 # Use an optimized path to transpose a square tile of the
                 # input tensor.
@@ -304,7 +307,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                             (k + kk) * aligned_n + (n + nn), val[kk]
                         )
 
-        tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
+        tile[tile_sizes, tile_sizes](0, 0, N, K, process_tile)
         _ = transpose_buffer
 
         if aligned_n != N:
@@ -326,14 +329,14 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         var aligned_n = align_up(N, Self.simd_width)
 
         for _k in range(K):
-
-            @__parameter
+            # TODO(MOCO-4664): `var _k` copy-captures the loop variable to work
+            # around wrong debug-info scopes on implicit nested-scope captures.
             @always_inline
-            def packed_copy[_simd_width: Int](idx: Int):
+            def packed_copy[_simd_width: Int](idx: Int) {var _k, imm}:
                 var val = input_b_fn[_simd_width](idx, _k)
                 output_ptr.store(idx, val)
 
-            tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
+            tile[Self._matmul_config.pack_sizes](0, N, packed_copy)
 
             if aligned_n != N:
                 unsafe_memset_zero(output_ptr + N, aligned_n - N)
@@ -353,10 +356,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
         var cn_ptr = c_ptr
 
-        @__parameter
         @always_inline
-        def process_cols[tile_n: Int](n: Int):
-            @__parameter
+        def process_cols[tile_n: Int](n: Int) {mut cn_ptr, imm}:
             @always_inline
             def do_reduce[
                 _simd_width: SIMDLength
@@ -364,7 +365,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 start: Int,
                 end: Int,
                 mut accum: Array[SIMD[Self.dtype, _simd_width], tile_n],
-            ):
+            ) {imm}:
                 for _k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](_k)
 
@@ -372,13 +373,12 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                         var b_data = input_b_fn[_simd_width](n + nn, _k)
                         accum[nn] = b_data.fma(a_data, accum[nn])
 
-            @__parameter
             @always_inline
             def do_reduce_accum[
                 target_width: Int, _simd_width: SIMDLength
-            ](accum: Array[SIMD[Self.dtype, _simd_width], tile_n]) -> Array[
-                SIMD[Self.dtype, target_width], tile_n
-            ]:
+            ](accum: Array[SIMD[Self.dtype, _simd_width], tile_n]) {
+                imm
+            } -> Array[SIMD[Self.dtype, target_width], tile_n]:
                 var accum_reduce = Array[
                     SIMD[Self.dtype, target_width], tile_n
                 ](fill=0)
@@ -408,7 +408,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
             cn_ptr += tile_n
 
-        tile[process_cols, [4, 1]](0, N)
+        tile[[4, 1]](0, N, process_cols)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = K
         _ = cn_ptr
@@ -426,9 +426,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     ):
         var cn_ptr = c_ptr
 
-        @__parameter
         @always_inline
-        def process_cols[_simd_width: Int](n: Int):
+        def process_cols[_simd_width: Int](n: Int) {mut cn_ptr, imm}:
             var accum = SIMD[Self.dtype, _simd_width]()
 
             for k in range(K):
@@ -441,7 +440,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             cn_ptr.store(accum)
             cn_ptr += _simd_width
 
-        tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
+        tile[Self._matmul_config.gemv_sizes](0, N, process_cols)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = cn_ptr
 

@@ -295,8 +295,10 @@ static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
   // valuable as the inliner doesn't currently care whether it is inlining an
   // invoke or a call.
 
-  // Now deduce any function attributes based in the current code.
-  mainCgPipeline.addPass(PostOrderFunctionAttrsPass());
+  // Only recursive functions can affect the simplification pipeline below. The
+  // rest are covered by the unrestricted run after it, matching upstream's
+  // split in https://reviews.llvm.org/D145210.
+  mainCgPipeline.addPass(PostOrderFunctionAttrsPass(/*SkipNonRecursive=*/true));
 
   // Lastly, add the core function simplification pipeline nested inside the
   // CGSCC walk.
@@ -304,6 +306,10 @@ static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
       buildFunctionSimplificationPipeline(passBuilder, options),
       /*EagerlyInvalidateAnalyses*/ true,
       /*EnableNoRerunSimplificationPipeline*/ true));
+
+  // Range attributes like `initializes` are only derivable once simplification
+  // has collapsed loop-based initialization into single memory operations.
+  mainCgPipeline.addPass(PostOrderFunctionAttrsPass());
 
   MPM.addPass(std::move(miwp));
 }

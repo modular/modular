@@ -157,7 +157,7 @@ struct _ListIterOwned[T: Movable & Deinitable](
     " non-`Deinitable` elements"
 )
 @stable(since="1.0")
-struct List[T: Movable, /](
+struct List[T: AnyType, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
@@ -165,7 +165,7 @@ struct List[T: Movable, /](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Iterable,
-    IterableOwned where conforms_to(T, Deinitable),
+    IterableOwned where conforms_to(T, Deinitable & Movable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -359,7 +359,7 @@ struct List[T: Movable, /](
     """
 
     comptime IteratorOwnedType: Iterator where conforms_to(
-        Self.T, Deinitable
+        Self.T, Deinitable & Movable
     ) = _ListIterOwned[Self.T]
     """The owned iterator type for this list."""
 
@@ -460,7 +460,9 @@ struct List[T: Movable, /](
         self._unchecked_grow(length, fill)
 
     @always_inline
-    def __init__(out self, var *values: Self.T, __list_literal__: NoneType):
+    def __init__(
+        out self, var *values: Self.T, __list_literal__: NoneType
+    ) where conforms_to(Self.T, Movable):
         """Constructs a list from the given values.
 
         Args:
@@ -707,7 +709,7 @@ struct List[T: Movable, /](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Deinitable):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Deinitable & Movable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
@@ -845,7 +847,9 @@ struct List[T: Movable, /](
         return self._capacity
 
     @no_inline
-    def _realloc(mut self, new_capacity: Int):
+    def _realloc(
+        mut self, new_capacity: Int
+    ) where conforms_to(Self.T, Movable):
         var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
         unsafe_uninit_move_n[overlapping=False](
@@ -866,7 +870,7 @@ struct List[T: Movable, /](
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
     # mutable origins.
     @__unsafe_nested_origins_read_only
-    def append(mut self, var value: Self.T):
+    def append(mut self, var value: Self.T) where conforms_to(Self.T, Movable):
         """Appends a value to this list.
 
         Args:
@@ -891,7 +895,9 @@ struct List[T: Movable, /](
         self._len += 1
 
     @always_inline
-    def insert(mut self, i: Int, var value: Self.T, /):
+    def insert(
+        mut self, i: Int, var value: Self.T, /
+    ) where conforms_to(Self.T, Movable):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -926,7 +932,7 @@ struct List[T: Movable, /](
             later_idx -= 1
 
     @stable(since="1.0")
-    def extend(mut self, var other: Self):
+    def extend(mut self, var other: Self) where conforms_to(Self.T, Movable):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -1067,7 +1073,7 @@ struct List[T: Movable, /](
         )
         self._len += count
 
-    def pop(mut self) -> Self.T:
+    def pop(mut self) -> Self.T where conforms_to(Self.T, Movable):
         """Pops the last value from the list.
 
         Returns:
@@ -1084,7 +1090,7 @@ struct List[T: Movable, /](
         return self.pop(len(self) - 1)
 
     @always_inline
-    def pop(mut self, i: Int) -> Self.T:
+    def pop(mut self, i: Int) -> Self.T where conforms_to(Self.T, Movable):
         """Pops a value from the list at the given index.
 
         Args:
@@ -1113,7 +1119,7 @@ struct List[T: Movable, /](
         return ret_val^
 
     @stable(since="1.0")
-    def reserve(mut self, capacity: Int):
+    def reserve(mut self, capacity: Int) where conforms_to(Self.T, Movable):
         """Reserves the requested capacity.
 
         Args:
@@ -1170,7 +1176,7 @@ struct List[T: Movable, /](
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
-    ) where conforms_to(Self.T, Deinitable):
+    ) where conforms_to(Self.T, Deinitable & Movable):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -1235,7 +1241,7 @@ struct List[T: Movable, /](
         self._len = new_length
         self._annotate_shrink(old_length)
 
-    def reverse(mut self):
+    def reverse(mut self) where conforms_to(Self.T, Movable):
         """Reverses the elements of the list.
 
         Examples:
@@ -1560,7 +1566,7 @@ struct List[T: Movable, /](
     @always_inline
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
-    ) where conforms_to(Self.T, Deinitable):
+    ) where conforms_to(Self.T, Deinitable & Movable):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1604,7 +1610,9 @@ struct List[T: Movable, /](
                 count += 1
         return count
 
-    def swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
+    def swap_elements(
+        mut self, elt_idx_1: Int, elt_idx_2: Int
+    ) where conforms_to(Self.T, Movable):
         """Swaps elements at the specified indexes if they are different.
 
         Args:
