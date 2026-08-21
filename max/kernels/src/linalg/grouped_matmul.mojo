@@ -173,60 +173,6 @@ def naive_grouped_matmul_kernel[
         c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
-def naive_epilogue[
-    c_type: DType,
-    *,
-    elementwise_lambda_fn: elementwise_epilogue_type,
-](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContext,
-) raises:
-    """Launches the ``naive_epilogue_kernel`` to apply an elementwise epilogue function across the output tensor ``c``.
-    """
-    comptime kernel = naive_epilogue_kernel[
-        c_type,
-        type_of(c).LayoutType,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-    var M = Int(c.dim[0]())
-    var N = Int(c.dim[1]())
-    comptime simd_size = simd_width_of[c_type]()
-    var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function[kernel](
-        c,
-        grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
-        block_dim=block_dim,
-    )
-
-
-@__name(t"naive_epilogue_kernel_{c_type}")
-def naive_epilogue_kernel[
-    c_type: DType,
-    CLayout: TensorLayout,
-    *,
-    elementwise_lambda_fn: elementwise_epilogue_type,
-](c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],):
-    """Applies an elementwise epilogue function to each SIMD-vectorized element of the output tensor ``c``.
-    """
-    comptime simd_size = simd_width_of[c_type]()
-    comptime alignment = align_of[SIMD[c_type, simd_size]]()
-    var n = global_idx.x * simd_size
-    var m = global_idx.y
-    comptime N = c.static_shape[1]
-    var M = Int(c.dim[0]())
-
-    # note that the most naive implementation of simd_size=1 won't work because
-    # different threads will be loading and storing in the same 32-bit region
-    # leading to synchronization/data race issues.
-    if m < M and n < N:
-        var val = c.load_linear[width=simd_size, alignment=alignment](
-            Index(m, n)
-        )
-        elementwise_lambda_fn[c_type, simd_size, alignment=alignment](
-            Index(m, n), val
-        )
-
-
 # ===----------------------------------------------------------------------=== #
 # H100 grouped matmul
 # ===----------------------------------------------------------------------=== #
