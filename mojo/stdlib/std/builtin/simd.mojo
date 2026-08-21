@@ -950,13 +950,27 @@ struct SIMD[dtype: DType, length: SIMDLength](
             value: The input value.
         """
         _simd_construction_checks[Self.dtype, Self.length]()
-        comptime assert (
-            Self.dtype.is_floating_point()
-        ), "the SIMD type must be floating point"
-        var res = __mlir_attr[
-            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
-        ]
-        self = Self(mlir_value=res)
+        comptime if Self.dtype.is_floating_point():
+            var res = __mlir_attr[
+                `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
+            ]
+            self = Self(mlir_value=res)
+        else:
+            # Integral types: convert the literal at compile time, truncating
+            # towards zero like `FloatLiteral.__int__()` (e.g. `Int(4.5) == 4`,
+            # `Int(-3.7) == -3`). Values outside the type's range wrap,
+            # matching the runtime `SIMD.cast` behavior (e.g. `UInt(-3.7)`
+            # wraps to 2**64 - 3).
+            self._mlir_value = __mlir_attr[
+                `#pop.int_literal_convert<`,
+                __mlir_attr[
+                    `#pop<float_to_int_literal<`,
+                    value.value,
+                    `>> : !pop.int_literal`,
+                ],
+                `> : `,
+                Self._mlir_type,
+            ]
 
     @staticmethod
     def __init__[

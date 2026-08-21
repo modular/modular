@@ -2587,6 +2587,16 @@ def test_float_literal_init() raises:
         atol=1e-3,
     )
 
+    # Test integral types: truncate towards zero, matching runtime cast
+    assert_equal(SIMD[DType.int64, 1](4.5)[0], Int64(4))
+    assert_equal(SIMD[DType.int64, 1](-3.7)[0], Int64(-3))
+    assert_equal(SIMD[DType.uint64, 1](400.7)[0], UInt64(400))
+    # Values outside the type's range wrap, matching `UInt64(Float64(-3.7))`
+    assert_equal(SIMD[DType.uint64, 1](-3.7)[0], UInt64(-3))
+    assert_equal(SIMD[DType.int8, 1](-7.9)[0], Int8(-7))
+    # Float literals in comptime contexts (e.g. array sizes)
+    assert_equal(SIMD[DType.uint, 1](400. / 0.1)[0], UInt(4000))
+
 
 def test_int_literal_init() raises:
     assert_equal(UInt8(255), UInt8(-1))
