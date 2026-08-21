@@ -45,7 +45,7 @@ qwen3_5_arch = SupportedArchitecture(
     },
     config=Qwen3_5Config,
     batching=Qwen3_5BatchProcessor,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,

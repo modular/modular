@@ -55,21 +55,21 @@ logger = logging.getLogger("max.pipelines")
 class Qwen3_5Inputs(Llama3Inputs):
     """Inputs for Qwen3.5 including linear attention states and optional vision inputs."""
 
-    slot_idx: Buffer | None = None
-    """Per-batch ``[B]`` uint32 slot indices into the linear-attention pools."""
+    slot_idx: list[Buffer] | None = None
+    """Per-device ``[B]`` uint32 slot indices into the linear-attention pools."""
 
     conv_pools: list[Buffer] | None = None
-    """Per-layer mutable conv pool, ``[max_slots, conv_dim, K-1]``."""
+    """Device-major mutable conv pools, ``[max_slots, conv_dim, K-1]``."""
 
     recurrent_pools: list[Buffer] | None = None
-    """Per-layer mutable recurrent pool, ``[max_slots, nv, KD, VD]``."""
+    """Device-major mutable recurrent pools, ``[max_slots, nv, KD, VD]``."""
 
     request_ids: list[RequestID] | None = None
     """Request IDs for this batch, used to manage per-request state cache slots."""
 
     # Vision inputs (None for text-only or decode steps)
-    image_token_indices: Buffer | None = None
-    """Pre-computed scatter indices for image embeddings."""
+    image_token_indices: list[Buffer] | None = None
+    """Per-device pre-computed scatter indices for image embeddings."""
 
     pixel_values: Buffer | None = None
     """Raw pixel values for vision encoding."""
@@ -95,9 +95,10 @@ class Qwen3_5Inputs(Llama3Inputs):
     max_seqlen: Buffer | None = None
     """Maximum sequence length (CPU scalar) for vision attention."""
 
-    lm_image_embeddings: Buffer | None = None
-    """Image embeddings for the LM graph (empty [0, H] buffer for decode/text-only steps,
-    real embeddings for prefill steps with images). Must be non-None for multimodal models."""
+    lm_image_embeddings: list[Buffer] | None = None
+    """Per-device image embeddings for the LM graph (empty [0, H] buffers for
+    decode/text-only steps, real embeddings for prefill steps with images).
+    Must be non-None for multimodal models."""
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -110,12 +111,10 @@ class Qwen3_5Inputs(Llama3Inputs):
         if self.lm_image_embeddings is not None:
             assert self.image_token_indices is not None
             vision_lm_inputs = (
-                self.lm_image_embeddings,
-                self.image_token_indices,
+                *self.lm_image_embeddings,
+                *self.image_token_indices,
             )
-        slot_idx_inputs: tuple[Buffer, ...] = ()
-        if self.slot_idx is not None:
-            slot_idx_inputs = (self.slot_idx,)
+        slot_idx_inputs: tuple[Buffer, ...] = tuple(self.slot_idx or ())
         return (
             self.tokens,
             self.input_row_offsets,
@@ -173,8 +172,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     # Pre-allocated empty vision input buffers for the LM graph (multimodal models only).
     # Used for decode/text-only steps so that buffers() always has the right input count.
-    _empty_lm_image_embeddings: Buffer | None = None
-    _empty_lm_image_token_indices: Buffer | None = None
+    _empty_lm_image_embeddings: list[Buffer] | None = None
+    _empty_lm_image_token_indices: list[Buffer] | None = None
 
     @classmethod
     def calculate_max_seq_len(
@@ -190,7 +189,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._session = session
 
         self._input_row_offsets_prealloc: Buffer | None = None
-        self._slot_idx_prealloc: Buffer | None = None
+        self._slot_idx_prealloc: list[Buffer] | None = None
         max_batch_size = self.max_batch_size
         assert max_batch_size is not None, (
             "max_batch_size must be set in runtime config"
@@ -226,6 +225,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # _num_linear_layers is populated by _build_graph, so this and the
         # slot-idx prealloc must run after it.
         if self._num_linear_layers > 0 and not is_virtual_device_mode():
+            # The value heads are split across devices, so the recorded
+            # dimensions are already per-device shard widths.
             self._state_cache = GatedDeltaNetStateCache(
                 num_layers=self._num_linear_layers,
                 conv_dim=self._conv_dim,
@@ -234,24 +235,31 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 key_head_dim=self._key_head_dim,
                 value_head_dim=self._value_head_dim,
                 max_slots=max_batch_size,
-                device=self.devices[0],
+                devices=self.devices,
                 dtype=self._model_dtype,
             )
-            self._slot_idx_prealloc = Buffer(
-                shape=[max_batch_size],
-                dtype=DType.uint32,
-                device=self.devices[0],
-            )
+            self._slot_idx_prealloc = [
+                Buffer(
+                    shape=[max_batch_size],
+                    dtype=DType.uint32,
+                    device=device,
+                )
+                for device in self.devices
+            ]
 
         if self._vision_state_dict is not None and not is_virtual_device_mode():
             # Pre-allocate empty vision input buffers for the LM graph so that
             # buffers() always returns the correct input count for CUDA graph capture.
-            self._empty_lm_image_embeddings = Buffer.zeros(
-                shape=[0, self._hidden_size], dtype=self._model_dtype
-            ).to(self.devices[0])
-            self._empty_lm_image_token_indices = Buffer.zeros(
-                shape=[0], dtype=DType.int32
-            ).to(self.devices[0])
+            self._empty_lm_image_embeddings = [
+                Buffer.zeros(
+                    shape=[0, self._hidden_size], dtype=self._model_dtype
+                ).to(device)
+                for device in self.devices
+            ]
+            self._empty_lm_image_token_indices = [
+                Buffer.zeros(shape=[0], dtype=DType.int32).to(device)
+                for device in self.devices
+            ]
 
         if (
             self._batch_processor is not None
@@ -463,20 +471,22 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._nn_model = nn_model
 
         # Save dimensions for state buffer allocation and empty-buffer creation
+        # Per-device shard widths: the tensor-parallel split is by head, so
+        # the state pools follow the value heads onto their own device.
+        num_devices = len(self.devices)
         self._num_linear_layers = len(nn_model.linear_layer_indices)
-        self._conv_dim = nn_model._conv_dim
+        self._conv_dim = nn_model._conv_dim // num_devices
         self._conv_kernel_size = nn_model._conv_kernel_size
-        self._num_v_heads = nn_model._num_v_heads
+        self._num_v_heads = nn_model._num_v_heads // num_devices
         self._key_head_dim = nn_model._key_head_dim
         self._value_head_dim = nn_model._value_head_dim
         self._hidden_size = model_config.hidden_size
         self._model_dtype = model_config.dtype
 
         has_vision = nn_model.vision_encoder is not None
-        num_devices = len(self.devices)
         num_linear_layers = self._num_linear_layers
-        # Vision adds 2 extra inputs: image_embeddings, image_token_indices
-        vision_input_count = 2 if has_vision else 0
+        # Vision adds image_embeddings + image_token_indices, per device.
+        vision_input_count = 2 * num_devices if has_vision else 0
 
         with Graph(
             "qwen3_5",
@@ -493,44 +503,54 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             # Unmarshal KV cache inputs. The trailing slice contains
             # [slot_idx, *conv_pools, *recurrent_pools, *vision_inputs].
             kv_start = num_devices
-            slot_idx_count = 1 if num_linear_layers > 0 else 0
+            pool_count = num_devices * num_linear_layers
+            slot_idx_count = num_devices if num_linear_layers > 0 else 0
             kv_count = (
                 len(variadic_args)
                 - num_devices
                 - slot_idx_count
-                - num_linear_layers * 2
+                - pool_count * 2
                 - vision_input_count
             )
             kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 
-            # Extract slot_idx + the linear-attention pools (BufferType inputs).
+            # Extract slot_idx + the linear-attention pools (BufferType
+            # inputs). Every block is device-major.
             idx = kv_start + kv_count
-            slot_idx_g: TensorValue | None = None
-            conv_pools: list[BufferValue] = []
-            recurrent_pools: list[BufferValue] = []
+            slot_idx_g: list[TensorValue] = []
+            conv_pools: list[list[BufferValue]] = []
+            recurrent_pools: list[list[BufferValue]] = []
             if num_linear_layers > 0:
-                slot_idx_g = variadic_args[idx].tensor
-                idx += 1
-                conv_pools = [
-                    variadic_args[idx + i].buffer
-                    for i in range(num_linear_layers)
+                slot_idx_g = [
+                    variadic_args[idx + d].tensor for d in range(num_devices)
                 ]
-                idx += num_linear_layers
-                recurrent_pools = [
-                    variadic_args[idx + i].buffer
-                    for i in range(num_linear_layers)
-                ]
-                idx += num_linear_layers
+                idx += num_devices
+                for pools in (conv_pools, recurrent_pools):
+                    pools.extend(
+                        [
+                            variadic_args[
+                                idx + d * num_linear_layers + i
+                            ].buffer
+                            for i in range(num_linear_layers)
+                        ]
+                        for d in range(num_devices)
+                    )
+                    idx += pool_count
 
             # Extract vision inputs (only present for multimodal models)
             image_embeddings_g = None
             image_token_indices_g = None
             if has_vision:
-                image_embeddings_g = variadic_args[idx].tensor
-                image_token_indices_g = variadic_args[idx + 1].tensor
+                image_embeddings_g = [
+                    variadic_args[idx + d].tensor for d in range(num_devices)
+                ]
+                image_token_indices_g = [
+                    variadic_args[idx + num_devices + d].tensor
+                    for d in range(num_devices)
+                ]
 
-            assert slot_idx_g is not None, (
+            assert slot_idx_g, (
                 "Qwen3.5 graph requires linear attention layers; got 0"
             )
             outputs = nn_model(
@@ -582,9 +602,14 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
                 assert isinstance(vision_outputs[0], Buffer)
                 assert self._session is not None
-                model_inputs.lm_image_embeddings = cast_tensors_to(
+                embeddings = cast_tensors_to(
                     [vision_outputs[0]], self._model_dtype, self._session
                 )[0]
+                # The hidden state is replicated across devices, so every
+                # replica merges the same embeddings.
+                model_inputs.lm_image_embeddings = [
+                    embeddings.to(device) for device in self.devices
+                ]
                 # image_token_indices is already set on model_inputs
             elif model_inputs.lm_image_embeddings is None:
                 # Text-only or decode step with no pre-allocated buffers (e.g.

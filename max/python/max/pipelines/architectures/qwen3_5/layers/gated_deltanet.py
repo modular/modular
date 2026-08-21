@@ -25,6 +25,10 @@ mutate in place at slot ``slot_idx[batch_item]``:
 - ``recurrent_pool``: the accumulated key-value memory.
   Shape ``[max_slots, num_v_heads, key_head_dim, value_head_dim]``.
 
+Under tensor parallelism the heads are split, so ``conv_dim`` and
+``num_v_heads`` above are the per-device widths and each device owns its own
+pool pair per layer.
+
 Both prefill (seq_len > 1) and decode (seq_len == 1) are handled by the
 same two slot-indexed fused GPU kernels:
 
@@ -46,9 +50,19 @@ gather/scatter loop.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
-from max.nn.layer import Module
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+    ops,
+)
+from max.graph.weight import Segment
+from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.stacked_linear import StackedLinear
@@ -58,7 +72,18 @@ from max.nn.state_space import (
 )
 
 
-class GatedDeltaNet(Module):
+def _projection(stack: StackedLinear, name: str) -> Linear:
+    """Returns one projection of an unfused stack.
+
+    The children are set as dynamically named attributes, so this narrows
+    what would otherwise be an untyped attribute read.
+    """
+    child = getattr(stack, name)
+    assert isinstance(child, Linear)
+    return child
+
+
+class GatedDeltaNet(Module, Shardable):
     """Gated DeltaNet linear attention layer.
 
     This replaces standard attention in linear attention layers. It uses:
@@ -77,6 +102,7 @@ class GatedDeltaNet(Module):
         dtype: Weight data type.
         device: Device for computation.
         rms_norm_eps: Epsilon for the gated RMSNorm.
+        ssm_dtype: Dtype of the recurrence arithmetic.
     """
 
     def __init__(
@@ -102,6 +128,8 @@ class GatedDeltaNet(Module):
         self.dtype = dtype
         self.device = device
         self.ssm_dtype = ssm_dtype
+        self.rms_norm_eps = rms_norm_eps
+        self._sharding_strategy: ShardingStrategy | None = None
 
         self.key_dim = key_head_dim * num_key_heads
         self.value_dim = value_head_dim * num_value_heads
@@ -159,6 +187,138 @@ class GatedDeltaNet(Module):
             device=device,
             has_bias=False,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the layer's sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Splits the layer by head, and propagates that to every weight.
+
+        Both SSM kernels are per-``(batch_item, value_head)`` with no
+        cross-head or cross-channel reduction, and the recurrence maps value
+        head ``v`` onto key head ``v // (num_value_heads // num_key_heads)``.
+        Cutting both head counts by the same factor therefore leaves the
+        mapping intact on every device and the same compiled kernel runs on
+        the shard.
+
+        Args:
+            strategy: Must be tensor-parallel; there is no data-parallel path.
+
+        Raises:
+            ValueError: If the strategy is not tensor-parallel, or if the
+                device count does not divide either head count.
+        """
+        if not strategy.is_tensor_parallel:
+            raise ValueError(
+                "GatedDeltaNet supports only tensor-parallel sharding, got "
+                f"{strategy}"
+            )
+        num_devices = strategy.num_devices
+        for count, name in (
+            (self.num_key_heads, "num_key_heads"),
+            (self.num_value_heads, "num_value_heads"),
+        ):
+            if count % num_devices:
+                raise ValueError(
+                    f"GatedDeltaNet {name} ({count}) must be divisible by the "
+                    f"device count ({num_devices})"
+                )
+
+        self._sharding_strategy = strategy
+
+        # `in_proj_qkv` and the depthwise conv share the conv channel layout
+        # [Q | K | V], each block head-major. Splitting each block at its own
+        # head boundary keeps Q/K/V aligned per device; a flat split of
+        # `conv_dim` would hand a device K channels belonging to another
+        # device's value heads.
+        key_segment = Segment.head_aware(self.num_key_heads, self.key_head_dim)
+        qkv_strategy = ShardingStrategy.segmented(
+            num_devices,
+            axis=0,
+            segments=(
+                key_segment,
+                key_segment,
+                Segment.head_aware(self.num_value_heads, self.value_head_dim),
+            ),
+        )
+        _projection(
+            self.in_proj, "in_proj_qkv"
+        ).sharding_strategy = qkv_strategy
+        self.conv1d.sharding_strategy = qkv_strategy
+
+        # Everything else is indexed by value head alone.
+        value_rows = ShardingStrategy.rowwise(num_devices)
+        _projection(self.in_proj, "in_proj_z").sharding_strategy = value_rows
+        for name in ("in_proj_b", "in_proj_a"):
+            _projection(self.in_proj, name).sharding_strategy = value_rows
+        self.dt_bias.sharding_strategy = value_rows
+        self.A_log.sharding_strategy = value_rows
+
+        # The gated norm reduces over `value_head_dim` inside one head, so it
+        # needs no cross-device statistic.
+        self.norm.sharding_strategy = ShardingStrategy.replicate(num_devices)
+
+        # Row-parallel: each device holds the columns of its own value heads
+        # and produces a partial sum the caller all-reduces.
+        self.out_proj.sharding_strategy = (
+            ShardingStrategy.head_aware_columnwise(
+                num_devices, self.num_value_heads, self.value_head_dim
+            )
+        )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[GatedDeltaNet]:
+        """Creates one per-device view of this layer, split by head.
+
+        Args:
+            devices: Devices to place the shards on.
+
+        Returns:
+            One :class:`GatedDeltaNet` per device, each dimensioned for its
+            own head slice.
+
+        Raises:
+            ValueError: If no sharding strategy has been set.
+        """
+        if self._sharding_strategy is None:
+            raise ValueError(
+                "GatedDeltaNet cannot be sharded because no sharding strategy "
+                "was provided."
+            )
+        devices = list(devices)
+        num_devices = len(devices)
+
+        in_proj_shards = self.in_proj.shard(devices)
+        conv1d_shards = self.conv1d.shard(devices)
+        dt_bias_shards = self.dt_bias.shard(devices)
+        a_log_shards = self.A_log.shard(devices)
+        norm_shards = self.norm.shard(devices)
+        out_proj_shards = self.out_proj.shard(devices)
+
+        shards: list[GatedDeltaNet] = []
+        for i, device in enumerate(devices):
+            shard = GatedDeltaNet(
+                hidden_size=self.hidden_size,
+                num_key_heads=self.num_key_heads // num_devices,
+                num_value_heads=self.num_value_heads // num_devices,
+                key_head_dim=self.key_head_dim,
+                value_head_dim=self.value_head_dim,
+                conv_kernel_size=self.conv_kernel_size,
+                dtype=self.dtype,
+                device=device,
+                rms_norm_eps=self.rms_norm_eps,
+                ssm_dtype=self.ssm_dtype,
+            )
+            shard.in_proj = in_proj_shards[i]
+            shard.conv1d = conv1d_shards[i]
+            shard.dt_bias = dt_bias_shards[i]
+            shard.A_log = a_log_shards[i]
+            shard.norm = norm_shards[i]
+            shard.out_proj = out_proj_shards[i]
+            shards.append(shard)
+        return shards
 
     def __call__(
         self,

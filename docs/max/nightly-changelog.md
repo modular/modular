@@ -162,6 +162,10 @@ This version is still a work in progress.
   - Added `Qwen/Qwen3.8-27B` support in bfloat16 on the existing
     `Qwen3_5ForConditionalGeneration` architecture, covered by logit
     verification against the torch reference.
+  - `Qwen3_5ForConditionalGeneration` now serves across multiple GPUs.
+    Tensor parallelism splits the attention heads, the gated-DeltaNet key and
+    value heads, and the per-device linear-attention state pools; both mixers
+    reject a device count that would not divide their head counts evenly.
   - Fixed a `Qwen3EmbeddingModel` crash.
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,

@@ -14,8 +14,9 @@
 """Qwen3.5 full attention layer.
 
 Differences from Qwen3 attention:
-- q_proj outputs 2x width: [hidden_size -> num_heads * head_dim * 2] where the
-  extra half is a sigmoid gate applied to the attention output.
+- q_proj outputs 2x width: [hidden_size -> num_heads * head_dim * 2], laid out
+  per-head interleaved as [head0 Q | head0 gate | head1 Q | head1 gate | ...].
+  A block split into [all Q | all gate] compiles, runs, and silently corrupts.
 - Partial RoPE: only partial_rotary_factor * head_dim dimensions get rotation.
 - RMSNorm on Q/K uses (1 + weight) offset (weight_offset=1.0).
 """
@@ -23,10 +24,11 @@ Differences from Qwen3 attention:
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.graph.weight import Segment
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
     flash_attention_ragged,
@@ -35,19 +37,31 @@ from max.nn.kernels import (
     store_v_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module
+from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.nn.stacked_linear import StackedLinear
 
 
-class Qwen3_5Attention(Module):
+def _projection(stack: StackedLinear, name: str) -> Linear:
+    """Returns one projection of an unfused stack.
+
+    The children are set as dynamically named attributes, so this narrows
+    what would otherwise be an untyped attribute read.
+    """
+    child = getattr(stack, name)
+    assert isinstance(child, Linear)
+    return child
+
+
+class Qwen3_5Attention(Module, Shardable):
     """Full attention layer for Qwen3.5 with gated output and partial RoPE.
 
     This attention layer differs from standard GQA in several ways:
-    1. q_proj produces 2x output width - the second half is a sigmoid gate
-       applied to the attention output before the output projection.
+    1. q_proj produces 2x output width, interleaved per head as
+       [head0 Q | head0 gate | ...]; each head's gate is applied by sigmoid to
+       that head's attention output before the output projection.
     2. Only partial_rotary_factor (25%) of head_dim gets rotary embedding.
     3. QK RMSNorm uses (1 + weight) scaling (weight_offset=1.0).
     """
@@ -88,6 +102,9 @@ class Qwen3_5Attention(Module):
         self.scale = (
             scale if scale is not None else math.sqrt(1.0 / self.head_dim)
         )
+        self.norm_eps = norm_eps
+        self.linear_cls = linear_cls
+        self._sharding_strategy: ShardingStrategy | None = None
 
         # QK norm with (1 + weight) offset
         self.q_norm = RMSNorm(
@@ -130,6 +147,123 @@ class Qwen3_5Attention(Module):
             device=devices[0],
             has_bias=has_bias,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the layer's sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Splits the layer by attention head, and propagates that to weights.
+
+        Args:
+            strategy: Must be tensor-parallel; there is no data-parallel path.
+
+        Raises:
+            ValueError: If the strategy is not tensor-parallel, or if the
+                device count does not divide either head count.
+        """
+        if not strategy.is_tensor_parallel:
+            raise ValueError(
+                "Qwen3_5Attention supports only tensor-parallel sharding, got "
+                f"{strategy}"
+            )
+        num_devices = strategy.num_devices
+        for count, name in (
+            (self.n_heads, "num_attention_heads"),
+            (self.num_key_value_heads, "num_key_value_heads"),
+        ):
+            if count % num_devices:
+                raise ValueError(
+                    f"Qwen3_5Attention {name} ({count}) must be divisible by "
+                    f"the device count ({num_devices})"
+                )
+
+        self._sharding_strategy = strategy
+
+        # `q_proj` packs each head as one `[query | gate]` block of
+        # `2 * head_dim` consecutive rows, so a head-aware split of blocks
+        # that wide keeps every gate with the query it multiplies. Treating
+        # the weight as `[all queries | all gates]` compiles and silently
+        # pairs each head's output with another head's gate.
+        _projection(
+            self.qkv_proj, "q_proj"
+        ).sharding_strategy = ShardingStrategy.segmented(
+            num_devices,
+            axis=0,
+            segments=(Segment.head_aware(self.n_heads, self.head_dim * 2),),
+        )
+        kv_segments = (
+            Segment.head_aware(self.num_key_value_heads, self.head_dim),
+        )
+        for name in ("k_proj", "v_proj"):
+            _projection(
+                self.qkv_proj, name
+            ).sharding_strategy = ShardingStrategy.segmented(
+                num_devices, axis=0, segments=kv_segments
+            )
+
+        # Q/K norm gamma is per head-dim element, shared by every head.
+        replicate = ShardingStrategy.replicate(num_devices)
+        self.q_norm.sharding_strategy = replicate
+        self.k_norm.sharding_strategy = replicate
+
+        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
+            num_devices, self.n_heads, self.head_dim
+        )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Qwen3_5Attention]:
+        """Creates one per-device view of this layer, split by head.
+
+        Args:
+            devices: Devices to place the shards on.
+
+        Returns:
+            One :class:`Qwen3_5Attention` per device, each dimensioned for
+            its own head slice.
+
+        Raises:
+            ValueError: If no sharding strategy has been set.
+        """
+        if self._sharding_strategy is None:
+            raise ValueError(
+                "Qwen3_5Attention cannot be sharded because no sharding "
+                "strategy was provided."
+            )
+        devices = list(devices)
+        num_devices = len(devices)
+
+        qkv_shards = self.qkv_proj.shard(devices)
+        o_proj_shards = self.o_proj.shard(devices)
+        q_norm_shards = self.q_norm.shard(devices)
+        k_norm_shards = self.k_norm.shard(devices)
+
+        shards: list[Qwen3_5Attention] = []
+        for i, device in enumerate(devices):
+            shard = Qwen3_5Attention(
+                rope=self.rope,
+                num_attention_heads=self.n_heads // num_devices,
+                num_key_value_heads=self.num_key_value_heads // num_devices,
+                hidden_size=self.hidden_size,
+                head_dim=self.head_dim,
+                kv_params=self.kv_params,
+                layer_idx=self.layer_idx,
+                dtype=self.dtype,
+                devices=[device],
+                linear_cls=self.linear_cls,
+                scale=self.scale,
+                partial_rotary_factor=self.partial_rotary_factor,
+                has_bias=self.has_bias,
+                norm_dtype=self.norm_dtype,
+                norm_eps=self.norm_eps,
+            )
+            shard.qkv_proj = qkv_shards[i]
+            shard.o_proj = o_proj_shards[i]
+            shard.q_norm = q_norm_shards[i]
+            shard.k_norm = k_norm_shards[i]
+            shards.append(shard)
+        return shards
 
     def __call__(
         self,
