@@ -754,6 +754,11 @@ This version is still a work in progress.
   overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
   closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
 
+- Removed `max.algorithm.reduce_boolean()`, which took its `reduce_fn` and
+  `continue_fn` as `capturing` compile-time parameters and had no callers. Use
+  `max.algorithm.reduce()` with a boolean accumulator, or write the early-exit
+  loop directly.
+
 - Removed the parametric `max.algorithm.parallelize[func](num_work_items, ...)`
   and `max.algorithm.parallelize_over_rows[func](shape, axis, grain_size, ...)`
   overloads that took a `capturing` closure as a compile-time parameter. Pass
