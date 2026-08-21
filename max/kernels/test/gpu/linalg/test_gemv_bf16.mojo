@@ -63,8 +63,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
-    @__parameter
-    def run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
@@ -77,7 +76,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
         )
 
     var kernelType = "GEMV"
-    var nstime = ctx.execution_time[run_func_gemv](iterations)
+    var nstime = ctx.execution_time(run_func_gemv, iterations)
     var flops = 2 * M * N * K
     var sectime = Float64(nstime) / Float64(iterations) / 1000000000
     print(kernelType, "KERNEL:")
@@ -117,8 +116,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     )
 
     @always_inline
-    @__parameter
-    def run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
@@ -140,7 +138,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    nstime = ctx.execution_time[run_func_naive](iterations)
+    nstime = ctx.execution_time(run_func_naive, iterations)
     var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")

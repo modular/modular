@@ -199,15 +199,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @always_inline
-    @__copy_capture(
-        q_tt,
-        k_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[
                 config=MHAConfig[q_type](num_heads, depth),
@@ -243,7 +238,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._closure import __ownership_keepalive
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.math.uutils import umod, ufloordiv, udivmod
@@ -1124,8 +1125,7 @@ def test_blackwell_kernel_6[
         comptime num_warmup = 20
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             blackwell_kernel_6[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1148,7 +1148,7 @@ def test_blackwell_kernel_6[
         # print("finished warmup")
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
@@ -1184,6 +1184,10 @@ def test_blackwell_kernel_6[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
+
+    # `a_device_lt` / `b_device_lt` are raw pointer views, so past the copies
+    # above nothing else refers to the buffers backing them.
+    __ownership_keepalive(a_device, b_device)
 
 
 def get_dic_of_shapes(

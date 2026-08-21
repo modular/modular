@@ -297,8 +297,7 @@ def test_combine[
         shmem_barrier_all_on_stream(ctx.stream())
 
     @always_inline
-    @__parameter
-    def run_combine_async(ctx: DeviceContext) raises:
+    def run_combine_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var combine_recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [
             send_buf
@@ -321,8 +320,9 @@ def test_combine[
         )
 
     @always_inline
-    @__parameter
-    def run_combine_async_wait(ctx: DeviceContext) raises:
+    def run_combine_async_wait(
+        ctx: DeviceContext,
+    ) raises {var atomic_counter, imm}:
         ctx.enqueue_function(
             func_combine_async_wait,
             output_2_tensor,
@@ -335,8 +335,7 @@ def test_combine[
         )
 
     @always_inline
-    @__parameter
-    def run_e2e(ctx: DeviceContext) raises:
+    def run_e2e(ctx: DeviceContext) raises {imm}:
         run_combine_async(ctx)
         run_combine_async_wait(ctx)
 
@@ -364,7 +363,7 @@ def test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_combine_async, 1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
@@ -373,7 +372,7 @@ def test_combine[
         std.time.sleep(1e-2)
 
         new_value = (
-            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+            Float64(ctx.execution_time(run_combine_async_wait, 1)) * 1e-3
         )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
@@ -382,7 +381,7 @@ def test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_e2e, 1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 

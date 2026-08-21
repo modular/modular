@@ -202,9 +202,8 @@ def test_tma_block_reduce[
     ctx.enqueue_memset(d_out, 0)
 
     # Define the kernel launch function for benchmarking
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext) raises -> None:
+    def kernel_launch(ctx: DeviceContext) raises {imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -266,7 +265,7 @@ def test_tma_block_reduce[
             kernel_launch(ctx)
 
         # Timed runs
-        var total_time = ctx.execution_time[kernel_launch](num_iters)
+        var total_time = ctx.execution_time(kernel_launch, num_iters)
         var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
         print(

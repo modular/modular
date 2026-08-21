@@ -165,10 +165,10 @@ def test_matmul_sm100_epilogue[
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
-    @__parameter
     @always_inline
-    @__copy_capture(c_tensor, a_tensor, b_tensor)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var c_tensor, var a_tensor, var b_tensor, imm}:
         blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=matmul_config,
@@ -181,7 +181,7 @@ def test_matmul_sm100_epilogue[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000

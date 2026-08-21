@@ -149,15 +149,16 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ]
 
     @always_inline
-    @__copy_capture(
-        output_dyn,
-        input_0_dyn,
-        input_1_dyn,
-        input_2_dyn,
-        input_3_dyn,
-    )
-    @__parameter
-    def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
+    def run_concat_inner_most_single_dim(
+        ctx: DeviceContext,
+    ) raises {
+        var output_dyn,
+        var input_0_dyn,
+        var input_1_dyn,
+        var input_2_dyn,
+        var input_3_dyn,
+        imm,
+    }:
         ctx.enqueue_function[kernel](
             output_dyn.as_unsafe_any_origin(),
             StaticTuple[
@@ -173,7 +174,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             block_dim=(B_SIZE),
         )
 
-    var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
+    var nstime_kernel = ctx.execution_time(run_concat_inner_most_single_dim, 1)
     print(
         "concat_inner_most_single_dim time = ",
         Float64(nstime_kernel) * 1e-6,
@@ -223,15 +224,16 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     validate_results()
 
     @always_inline
-    @__copy_capture(
-        output_dyn,
-        input_0_dyn,
-        input_1_dyn,
-        input_2_dyn,
-        input_3_dyn,
-    )
-    @__parameter
-    def run_concat_gpu(ctx: DeviceContext) raises:
+    def run_concat_gpu(
+        ctx: DeviceContext,
+    ) raises {
+        var output_dyn,
+        var input_0_dyn,
+        var input_1_dyn,
+        var input_2_dyn,
+        var input_3_dyn,
+        imm,
+    }:
         # uses default stream
         _concat_gpu[
             epilogue_fn=Optional[elementwise_epilogue_type](
@@ -252,7 +254,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             ctx,
         )
 
-    var nstime = ctx.execution_time[run_concat_gpu](1)
+    var nstime = ctx.execution_time(run_concat_gpu, 1)
     print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",

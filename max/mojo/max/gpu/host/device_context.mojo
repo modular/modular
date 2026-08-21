@@ -4900,41 +4900,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def enqueue_cpu_function[
-        func: def() capturing -> None,
-    ](self) raises:
-        """Enqueues a function for execution on CPU.
-
-        Parameters:
-            func: The function to execute.
-
-        Raises:
-            If the operation fails.
-            If self is not a CPU DeviceContext.
-        """
-        if self.api() != "cpu":
-            raise Error(
-                "enqueue_cpu_function is only supported on CPU DeviceContexts"
-            )
-
-        async def wrapper() capturing -> None:
-            func()
-
-        var coro = wrapper()
-        coro._set_noop_callback()
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_enqueueHostFunction",
-                _CString[],
-            ](
-                self._handle,
-                _coro_resume_fn,
-                _coro_destroy_fn,
-                coro^._take_handle(),
-            )
-        )
-
-    @always_inline
-    def enqueue_cpu_function[
         FuncType: def() -> None,
     ](self, func: FuncType) raises:
         """Enqueues a function for execution on CPU.
@@ -5021,59 +4986,15 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             )
         )
 
-    @__parameter
-    @always_inline
-    def execution_time[
-        func: def(Self) raises capturing[_] -> None
-    ](self, num_iters: Int) raises -> Int:
-        """Measures the execution time of a function that takes a DeviceContext parameter.
-
-        This method times the execution of a provided function that requires the
-        DeviceContext as a parameter. It runs the function for the specified number
-        of iterations and returns the total elapsed time in nanoseconds.
-
-        Parameters:
-            func: A function that takes a DeviceContext parameter to execute and time.
-
-        Args:
-            num_iters: The number of iterations to run the function.
-
-        Returns:
-            The total elapsed time in nanoseconds for all iterations.
-
-        Raises:
-            If the timer operations fail or if the function raises an exception.
-
-        Example:
-
-        ```text
-        from max.gpu.host import DeviceContext
-
-        def gpu_operation(ctx: DeviceContext) raises -> None:
-            # Perform some GPU operation using ctx
-            pass
-
-        with DeviceContext() as ctx:
-            # Measure execution time of a function that uses the context
-            var time_ns = ctx.execution_time[gpu_operation](10)
-            print("Execution time for 10 iterations:", time_ns, "ns")
-        ```
-        """
-
-        @always_inline
-        def func_unified(ctx: Self):
-            try:
-                func(ctx)
-            except e:
-                abort(String(e))
-
-        return self.execution_time(func_unified, num_iters)
-
     @always_inline
     def execution_time[
         FuncType: def(Self) raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
+
+        This method times the execution of a provided function that requires the
+        DeviceContext as a parameter. It runs the function for the specified number
+        of iterations and returns the total elapsed time in nanoseconds.
 
         Parameters:
             FuncType: The body function type.
@@ -5087,6 +5008,21 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         Raises:
             If the timer operations fail.
+
+        Example:
+
+        ```text
+        from max.gpu.host import DeviceContext
+
+        def gpu_operation(ctx: DeviceContext) raises -> None:
+            # Perform some GPU operation using ctx
+            pass
+
+        with DeviceContext() as ctx:
+            # Measure execution time of a function that uses the context
+            var time_ns = ctx.execution_time(gpu_operation, 10)
+            print("Execution time for 10 iterations:", time_ns, "ns")
+        ```
         """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
         _checked(
@@ -5169,56 +5105,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def execution_time[
-        func: def() raises capturing[_] -> None
-    ](self, num_iters: Int) raises -> Int:
+        FuncType: def() raises -> None,
+    ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
         This method times the execution of a provided function that doesn't require
         the DeviceContext as a parameter. It runs the function for the specified
         number of iterations and returns the total elapsed time in nanoseconds.
-
-        Parameters:
-            func: A function with no parameters to execute and time.
-
-        Args:
-            num_iters: The number of iterations to run the function.
-
-        Returns:
-            The total elapsed time in nanoseconds for all iterations.
-
-        Raises:
-            If the timer operations fail or if the function raises an exception.
-
-        Example:
-
-        ```text
-        from max.gpu.host import DeviceContext
-
-        def some_gpu_operation() raises -> None:
-            # Perform some GPU operation
-            pass
-
-        with DeviceContext() as ctx:
-            # Measure execution time of a function
-            var time_ns = ctx.execution_time[some_gpu_operation](10)
-            print("Execution time:", time_ns, "ns")
-        ```
-        """
-
-        @always_inline
-        def func_unified():
-            try:
-                func()
-            except e:
-                abort(String(e))
-
-        return self.execution_time(func_unified, num_iters)
-
-    @always_inline
-    def execution_time[
-        FuncType: def() raises -> None,
-    ](self, func: FuncType, num_iters: Int) raises -> Int:
-        """Measures the execution time of a function over multiple iterations.
 
         Parameters:
             FuncType: The body function type.
@@ -5232,6 +5125,21 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         Raises:
             If the timer operations fail.
+
+        Example:
+
+        ```text
+        from max.gpu.host import DeviceContext
+
+        def some_gpu_operation() raises -> None:
+            # Perform some GPU operation
+            pass
+
+        with DeviceContext() as ctx:
+            # Measure execution time of a function
+            var time_ns = ctx.execution_time(some_gpu_operation, 10)
+            print("Execution time:", time_ns, "ns")
+        ```
         """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
         _checked(
@@ -5261,57 +5169,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def execution_time_iter[
-        func: def(Self, Int) raises capturing[_] -> None
-    ](self, num_iters: Int) raises -> Int:
+        FuncType: def(Self, Int) raises -> None,
+    ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 
         This method times the execution of a provided function that requires both the
         DeviceContext and the current iteration index as parameters. It runs the function
         for the specified number of iterations, passing the iteration index to each call,
         and returns the total elapsed time in nanoseconds.
-
-        Parameters:
-            func: A function that takes the DeviceContext and an iteration index.
-
-        Args:
-            num_iters: The number of iterations to run the function.
-
-        Returns:
-            The total elapsed time in nanoseconds for all iterations.
-
-        Raises:
-            If the timer operations fail or if the function raises an exception.
-
-        Example:
-
-        ```text
-        from max.gpu.host import DeviceContext
-
-        def benchmark_kernel(ctx: DeviceContext, i: Int) raises -> None:
-            # Perform GPU operations using ctx, potentially varying by iteration
-            pass
-
-        with DeviceContext() as ctx:
-            # Measure execution time with iteration awareness
-            var time_ns = ctx.execution_time_iter[benchmark_kernel](10)
-            print("Total execution time:", time_ns, "ns")
-        ```
-        """
-
-        @always_inline
-        def func_unified(ctx: Self, i: Int):
-            try:
-                func(ctx, i)
-            except e:
-                abort(String(e))
-
-        return self.execution_time_iter(func_unified, num_iters)
-
-    @always_inline
-    def execution_time_iter[
-        FuncType: def(Self, Int) raises -> None,
-    ](self, func: FuncType, num_iters: Int) raises -> Int:
-        """Measures the execution time of a function that takes iteration index as input.
 
         Parameters:
             FuncType: The body function type.
@@ -5325,6 +5190,21 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         Raises:
             If the timer operations fail.
+
+        Example:
+
+        ```text
+        from max.gpu.host import DeviceContext
+
+        def benchmark_kernel(ctx: DeviceContext, i: Int) raises -> None:
+            # Perform GPU operations using ctx, potentially varying by iteration
+            pass
+
+        with DeviceContext() as ctx:
+            # Measure execution time with iteration awareness
+            var time_ns = ctx.execution_time_iter(benchmark_kernel, 10)
+            print("Total execution time:", time_ns, "ns")
+        ```
         """
         var timer_ptr: _DeviceTimerPtr[mut=True] = {}
         _checked(

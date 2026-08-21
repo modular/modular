@@ -371,8 +371,7 @@ def test(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @always_inline
-        @__parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[gemm](
                 c_tensor,
                 a_tensor,
@@ -385,7 +384,7 @@ def test(ctx: DeviceContext) raises:
         for _ in range(nwarmup):
             run_func(ctx)
 
-        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
+        var nstime = Float64(ctx.execution_time(run_func, nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)

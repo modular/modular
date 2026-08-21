@@ -763,6 +763,16 @@ This version is still a work in progress.
   drop `@__parameter` / `@__copy_capture` in favor of an explicit capture list,
   for example `def body(start: Int, end: Int) {imm}:`.
 
+- Removed the parametric `capturing` overloads of
+  `DeviceContext.execution_time[fn](num_iters)`,
+  `DeviceContext.execution_time_iter[fn](num_iters)`, and
+  `DeviceContext.enqueue_cpu_function[fn]()`. Pass the closure as a runtime
+  argument instead: `execution_time(fn, num_iters)`,
+  `execution_time_iter(fn, num_iters)`, and `enqueue_cpu_function(fn)`. Nested
+  closures passed this way are unified closures, so replace `@__parameter` and
+  `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
+  `{var x, imm}`.
+
 - `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
   dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
   a `(tokenizer, factory)` tuple, so callers can reach the memory plan

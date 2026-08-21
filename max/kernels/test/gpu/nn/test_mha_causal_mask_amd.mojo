@@ -184,10 +184,17 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @__parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_device,
+        var k_device,
+        var v_device,
+        var mask4d,
+        var output_device,
+        imm,
+    }:
         flash_attention(
             output_device,
             q_device,
@@ -204,7 +211,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000

@@ -32,6 +32,7 @@ Not a correctness test: output is not verified here (see
 test_mla_decode_sparse_kv_fp8.mojo for numerics).
 """
 
+from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.random import seed
 from std.sys import has_nvidia_gpu_accelerator
@@ -294,8 +295,7 @@ def bench_sparse_kv_fp8[
 
     var indices_stride = topk
 
-    @__parameter
-    def _launch(ctx: DeviceContext) raises:
+    def _launch(ctx: DeviceContext) raises {imm}:
         flare_mla_decoding[
             rank=3,
             config=MHAConfig[q_type](num_heads, Q_DEPTH),
@@ -323,7 +323,7 @@ def bench_sparse_kv_fp8[
     ctx.synchronize()
 
     var us_per_iter = (
-        Float64(ctx.execution_time[_launch](iters)) / Float64(iters) / 1000.0
+        Float64(ctx.execution_time(_launch, iters)) / Float64(iters) / 1000.0
     )
     print(
         "PERF",
@@ -344,6 +344,20 @@ def bench_sparse_kv_fp8[
         num_partitions,
         " us_per_iter=",
         us_per_iter,
+    )
+
+    # `_launch` only captures the pointer-based views, so nothing else keeps the
+    # owning allocations alive past the last `.unsafe_ptr()` call above. Without
+    # this the buffers are freed while the timed launches are still in flight.
+    __ownership_keepalive(
+        blocks_device,
+        lookup_table_device,
+        cache_lengths_device,
+        q_device,
+        out_device,
+        d_indices_device,
+        row_offsets_device,
+        mla_args,
     )
 
 
