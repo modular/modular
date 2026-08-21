@@ -159,6 +159,9 @@ This version is still a work in progress.
     two are mutually exclusive and both off by default.
 - Expanded Qwen support:
   - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Added `Qwen/Qwen3.8-27B` support in bfloat16 on the existing
+    `Qwen3_5ForConditionalGeneration` architecture, covered by logit
+    verification against the torch reference.
   - Fixed a `Qwen3EmbeddingModel` crash.
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
