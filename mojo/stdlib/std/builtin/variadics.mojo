@@ -1680,3 +1680,68 @@ struct VariadicPack[
             start=StaticString("("),
             end=StaticString(")"),
         )
+
+
+@always_inline
+def _call_with_dynamic_pack_pointers[
+    Args: TypeList[Trait=AnyType, ...],
+    MakeElemPtr: def[idx: Int]() -> Pointer[Args[idx], MutUnsafeAnyOrigin],
+    //,
+    user_func: def(* args: * Args) thin,
+](make_elem_ptr: MakeElemPtr):
+    """Call `user_func` using a `VariadicPack` whose elements are initialized
+    by per-index calls to `make_elem_ptr`.
+
+    Ordinarily, the compiler constructs `VariadicPack` values automatically and
+    implicitly from the syntax of argument sequences when calling a function
+    that takes a `*args: *Ts` argument pack. This is a language feature, and
+    not directly exposed programmatically.
+
+    However, in some uncommon situations, it is useful to be able to initialize
+    the elements in such a pack from dynamic data at runtime.
+
+    The `make_elem_ptr` closure will be invoked exactly once for each type in
+    `Args`, with `idx` values in ascending order.
+
+    Parameters:
+        Args: The argument types accepted by `user_func`.
+        MakeElemPtr: Element initialization function.
+        user_func: The user function to call with the dynamically initialized
+            argument pack.
+
+    Args:
+        make_elem_ptr: Closure returning a pointer to the pack argument value
+            for a given index. The pointer origin must be valid for the duration
+            of the call to `user_func`.
+    """
+    comptime ToPointer[T: AnyType]: ImplicitlyCopyable & Deinitable = Pointer[
+        T, MutUnsafeAnyOrigin
+    ]
+
+    # The tuple cannot be default constructed because `Pointer` is not default
+    # constructible. The tuple however is initialized in the loop below.
+    var pointers: Tuple[*Args.map[ToPointer]()]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(pointers))
+
+    # Get a pointer to each pack element value. It's up to the caller
+    # to ensure that these pointers are valid for the duration of this function.
+    comptime for i in range(Args.length):
+        var element = make_elem_ptr[i]()
+        # FIXME(MOCO-4635): This rebind is needed to work around a type folding bug
+        pointers[i] = rebind[type_of(pointers[i])](element)
+
+    # Construct a pack from the initialized locals
+    comptime BorrowedPack = VariadicPack[
+        origin=MutUnsafeAnyOrigin,
+        element_trait=AnyType,
+        False,
+        *Args,
+    ]
+    var borrowed = BorrowedPack(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[
+            _type=BorrowedPack._mlir_type
+        ](pointers._mlir_value)
+    )
+
+    # Call the user primary function
+    user_func(*borrowed)

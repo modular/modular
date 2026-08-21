@@ -14,6 +14,8 @@
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
 
+from std.builtin.variadics import _call_with_dynamic_pack_pointers
+
 
 def test_variadic_iterator() raises:
     def helper(*args: Int) raises:
@@ -621,6 +623,51 @@ def test_typelist_map_empty() raises:
     comptime ToList[T: Copyable]: Copyable = List[T]
     comptime mapped = TL.map[ToList]()
     assert_equal(mapped.length, 0)
+
+
+def format_args(
+    buffer: Pointer[String, MutAnyOrigin],
+    x: Int,
+    y: String,
+    z: List[Int],
+):
+    buffer[].write(x, " ", y, " ", z)
+
+
+def test_dynamic_variadic_pack() raises:
+    var buffer = String()
+    var buffer_ptr = Pointer(to=buffer).as_unsafe_any_origin()
+    var a1 = Int(5)
+    var a2 = String("hello")
+    var a3: List[Int] = [1, 20, 300]
+
+    comptime Args = TypeList.of[
+        Trait=AnyType,
+        type_of(buffer_ptr),
+        Int,
+        String,
+        List[Int],
+    ]()
+
+    def make_elem_ptr[
+        idx: Int
+    ]() {imm} -> Pointer[Args[idx], MutUnsafeAnyOrigin]:
+        comptime ArgPtr = Pointer[Args[idx], MutUnsafeAnyOrigin]
+        comptime if idx == 0:
+            return rebind_var[ArgPtr](
+                Pointer(to=buffer_ptr).as_unsafe_any_origin()
+            )
+        elif idx == 1:
+            return rebind_var[ArgPtr](Pointer(to=a1).as_unsafe_any_origin())
+        elif idx == 2:
+            return rebind_var[ArgPtr](Pointer(to=a2).as_unsafe_any_origin())
+        else:
+            comptime assert idx == 3
+            return rebind_var[ArgPtr](Pointer(to=a3).as_unsafe_any_origin())
+
+    _call_with_dynamic_pack_pointers[format_args](make_elem_ptr)
+
+    assert_equal(buffer, "5 hello [1, 20, 300]")
 
 
 def main() raises:
