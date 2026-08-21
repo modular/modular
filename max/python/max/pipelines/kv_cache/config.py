@@ -259,6 +259,21 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the default data type of the KV cache."""
+
+    state_pool_dtype: str | None = Field(
+        default=None,
+        description=(
+            "Override the storage dtype of a hybrid model's recurrent state "
+            "pools (SSM/linear-attention conv and recurrent state). Defaults "
+            "to the model's compute dtype (bfloat16 for supported "
+            "architectures). ``float32`` makes a speculated generation follow "
+            "the exact state trajectory of an unspeculated one, at roughly "
+            "double the per-request state memory (Qwen3.8-27B: 74.8 to "
+            "149.6 MiB per seated request). Supported values: ``bfloat16``, "
+            "``float32``."
+        ),
+    )
+    """An override for the storage dtype of recurrent (SSM) state pools."""
     kv_cache_hash_algo: KVHashAlgo = Field(
         default="ahash64",
         description=(

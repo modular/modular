@@ -110,6 +110,19 @@ class Qwen3_5Config(Llama3Config):
     mamba_ssm_dtype: DType = DType.float32
     """Dtype for SSM (state space model) computations in linear attention layers."""
 
+    state_pool_dtype: DType | None = None
+    """Storage dtype override for the linear-attention state pools.
+
+    ``None`` (the default) stores both pools at :attr:`compute_dtype`
+    (bfloat16), the configuration every exported artifact and the Mach
+    registry declare. ``float32`` makes a speculated generation follow the
+    exact state trajectory of an unspeculated one — the recurrence rounds to
+    the pool dtype only at a call boundary, so a lossy pool makes the
+    trajectory depend on speculation's chunking — at roughly double the
+    per-request state memory (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the
+    ``state_pool_dtype`` KV-cache config knob; read through
+    :attr:`state_dtype`."""
+
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None
     """Vision encoder configuration; None for text-only models."""
@@ -159,6 +172,19 @@ class Qwen3_5Config(Llama3Config):
         if self.declared_dtype is not None:
             return self.declared_dtype
         return self.dtype
+
+    @property
+    def state_dtype(self) -> DType:
+        """Storage dtype of the linear-attention state pools.
+
+        Every declarer of a pool buffer — the base graph, the fused
+        speculative graph, and the serving-side state cache — must read this
+        one property: the two graphs share one pool allocation at serve time,
+        so a disagreement is an unserveable artifact pair.
+        """
+        if self.state_pool_dtype is not None:
+            return self.state_pool_dtype
+        return self.compute_dtype
 
     @override
     def _parse_quant_config(
@@ -265,8 +291,8 @@ class Qwen3_5Config(Llama3Config):
         """Return GPU bytes for one request's linear-attention state (all linear layers).
 
         Each linear-attention layer stores two state arrays per active request:
-        - Conv state:       `(1, conv_dim, kernel-1)` compute dtype
-        - Recurrent state:  `(1, nv, kd, vd)`         compute dtype
+        - Conv state:       `(1, conv_dim, kernel-1)` :attr:`state_dtype`
+        - Recurrent state:  `(1, nv, kd, vd)`         :attr:`state_dtype`
 
         Computation is promoted to float32 inside GatedDeltaNet.__call__().
         These buffers are NOT included in the KV-cache budget.
@@ -280,11 +306,11 @@ class Qwen3_5Config(Llama3Config):
             2 * self.linear_key_head_dim * self.linear_num_key_heads
             + self.linear_value_head_dim * self.linear_num_value_heads
         )
-        # The pools hold no quantized tensors, so they follow the compute
-        # dtype the graph allocates them in -- `dtype` is the encoding's
-        # storage dtype and is 1-byte `uint8` for packed NVFP4, which would
-        # inflate the inferred batch size this feeds.
-        dtype_bytes = self.compute_dtype.size_in_bytes
+        # `state_dtype` is the one property every pool declarer reads, so the
+        # cost this feeds to `infer_optimal_batch_size` tracks the override
+        # too -- a float32 pool is 2x a bf16 one, and 4x what the encoding's
+        # `uint8` storage dtype would have implied.
+        dtype_bytes = self.state_dtype.size_in_bytes
         bytes_per_layer = (
             # conv state: (conv_dim * (kernel-1)) elements
             conv_dim * (self.linear_conv_kernel_dim - 1) * dtype_bytes
@@ -448,6 +474,23 @@ class Qwen3_5Config(Llama3Config):
             mamba_ssm_dtype_str, DType.float32
         )
 
+        # State-pool storage knob (None = compute dtype). Unlike
+        # mamba_ssm_dtype this is a user setting, so an unknown value is
+        # rejected rather than defaulted.
+        state_pool_dtype: DType | None = None
+        state_pool_dtype_str = model_config.kv_cache.state_pool_dtype
+        if state_pool_dtype_str is not None:
+            _pool_dtype_map = {
+                "bfloat16": DType.bfloat16,
+                "float32": DType.float32,
+            }
+            if state_pool_dtype_str not in _pool_dtype_map:
+                raise ValueError(
+                    "state_pool_dtype must be 'bfloat16' or 'float32', got"
+                    f" {state_pool_dtype_str!r}"
+                )
+            state_pool_dtype = _pool_dtype_map[state_pool_dtype_str]
+
         # Handle tie_word_embeddings from top-level config
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False
@@ -518,6 +561,7 @@ class Qwen3_5Config(Llama3Config):
             partial_rotary_factor=partial_rotary_factor,
             attn_output_gate=attn_output_gate,
             mamba_ssm_dtype=mamba_ssm_dtype,
+            state_pool_dtype=state_pool_dtype,
             # Vision (optional)
             vision_config=vision_cfg,
             image_token_id=image_token_id,

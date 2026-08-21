@@ -48,6 +48,7 @@ def _qwen_config(
     dtype: DType = DType.bfloat16,
     declared_dtype: DType | None = None,
     quant_scheme: Qwen3_5QuantScheme | None = None,
+    state_pool_dtype: DType | None = None,
 ) -> Qwen3_5Config:
     kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
@@ -73,6 +74,7 @@ def _qwen_config(
         dtype=dtype,
         declared_dtype=declared_dtype,
         quant_scheme=quant_scheme,
+        state_pool_dtype=state_pool_dtype,
         model_quantization_encoding=None,
         quantization_config=None,
         kv_params=kv_params,
@@ -234,3 +236,42 @@ def test_inferred_batch_size_is_not_inflated_by_a_quantized_encoding() -> None:
     )
 
     assert nvfp4 == bf16
+
+
+def test_float32_state_pools_double_the_reservation() -> None:
+    """``state_pool_dtype="float32"`` doubles the pool, so must double the
+    reservation.
+
+    The knob is the only input that changes here, and it is read through
+    ``state_dtype`` rather than the model dtype, so an accounting path bound
+    to the model dtype would reserve half.
+    """
+    planner = Qwen3_5MemoryPlanner(_qwen_config(state_pool_dtype=DType.float32))
+
+    activation = planner.estimate_activation_memory(
+        _pipeline_config(max_batch_size=16), _hf_config()
+    )
+
+    assert activation == 16 * 5376  # 2 * 2688
+
+
+def test_float32_state_pools_shrink_the_inferred_batch_size() -> None:
+    """A 4-byte pool costs twice as much per request, so fewer fit.
+
+    ``infer_optimal_batch_size`` divides by the per-request cost; if that
+    cost ignored the override the inferred bound would be twice what the
+    device can hold.
+    """
+    devices = _devices(free_memory=8 * 1024**3)
+    weights_size = 5 * 1024**3
+
+    bf16 = _qwen_config().infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+    fp32 = _qwen_config(
+        state_pool_dtype=DType.float32
+    ).infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+
+    assert fp32 == bf16 // 2

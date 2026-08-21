@@ -218,6 +218,12 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     # Model dtype and hidden size (set during graph build, used for empty buffers)
     _hidden_size: int = 0
     _model_dtype: DType = DType.bfloat16
+    # State-pool storage dtype. Deliberately separate from _model_dtype: the
+    # vision empties keep the compute dtype even when the pools are fp32.
+    _state_dtype: DType = DType.bfloat16
+    # Per-request state bytes the config budgeted, checked against what the
+    # pools actually allocate. See the assertion at the state-cache build.
+    _accounted_state_bytes: int = 0
 
     # Linear attention state dimensions (set during graph build)
     _num_linear_layers: int = 0
@@ -296,7 +302,21 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 value_head_dim=self._value_head_dim,
                 max_slots=max_batch_size,
                 devices=self.devices,
-                dtype=self._model_dtype,
+                dtype=self._state_dtype,
+            )
+            # Memory planning sizes the pools from `Qwen3_5Config.state_dtype`
+            # and the unsharded geometry; the cache is built from per-device
+            # shard widths. Every device holds one shard, so the two must
+            # reconcile exactly. They have diverged before -- by reading the
+            # encoding's storage dtype instead of the pool dtype -- and the
+            # symptom was an inflated batch size that OOMed at load, far from
+            # the cause.
+            allocated = self._state_cache.bytes_per_slot * len(self.devices)
+            assert allocated == self._accounted_state_bytes, (
+                "Qwen3.5 state pools allocate "
+                f"{allocated} B per request but memory planning budgeted "
+                f"{self._accounted_state_bytes} B. The pool dtype "
+                f"({self._state_dtype}) and the accounted dtype must agree."
             )
             self._slot_idx_prealloc = [
                 Buffer(
@@ -530,6 +550,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._value_head_dim = nn_model._value_head_dim
         self._hidden_size = model_config.hidden_size
         self._model_dtype = model_config.compute_dtype
+        self._state_dtype = model_config.state_dtype
+        self._accounted_state_bytes = model_config._per_request_state_bytes()
 
         has_vision = nn_model.vision_encoder is not None
         num_linear_layers = self._num_linear_layers
@@ -687,3 +709,20 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         """Release per-request state cache slot when a request completes."""
         if self._state_cache is not None:
             self._state_cache.release(request_id)
+
+    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
+        """Release state pool slots claimed during graph-capture warmup.
+
+        Called by the overlap pipeline's ``_warmup_model_inputs`` context
+        manager after each ``(batch_size, cache_length)`` probe completes.
+        Each probe claims up to ``batch_size`` fresh slots; without this
+        release the warmup sweep would exhaust the pool before serving
+        begins.
+
+        The pool rows are NOT zeroed here — the state a warmup forward wrote
+        is wiped by the next ``claim()`` for that slot, when a real request
+        is assigned to it.
+        """
+        if self._state_cache is not None:
+            for request_id in request_ids:
+                self._state_cache.release(request_id)

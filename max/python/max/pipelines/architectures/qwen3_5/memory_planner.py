@@ -85,12 +85,12 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
         kernel = getattr(text_config, "linear_conv_kernel_dim", 4)
 
         conv_dim = 2 * kd * nk + vd * nv
-        # The pools are never quantized, so they follow the compute dtype the
-        # graph allocates them in -- not the encoding's storage dtype, which is
-        # 1-byte `uint8` for packed NVFP4 and would budget half of what a
-        # bf16 pool needs.
+        # `state_dtype` is the one property every pool declarer reads: it
+        # carries the `state_pool_dtype` override and, absent one, the compute
+        # dtype. The encoding's storage dtype is 1-byte `uint8` for packed
+        # NVFP4 and would under-reserve by 2x, or 4x against a float32 pool.
         assert isinstance(self._config, Qwen3_5Config)
-        dtype_bytes = self._config.compute_dtype.size_in_bytes
+        dtype_bytes = self._config.state_dtype.size_in_bytes
         bytes_per_layer = (
             conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes
         )

@@ -49,5 +49,8 @@ qwen3_5_arch = SupportedArchitecture(
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,
-    supports_device_graph_capture=False,
+    # Requires Qwen3_5Model.release_warmup_state (SupportsSSMStateWarmup):
+    # each capture-warmup probe claims state pool slots that must be released
+    # before the next probe, or warmup exhausts the pool.
+    supports_device_graph_capture=True,
 )
