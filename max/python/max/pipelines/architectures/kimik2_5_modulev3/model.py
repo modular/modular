@@ -66,6 +66,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
@@ -155,6 +156,7 @@ class KimiK2_5Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("Kimi-K2.5 is only supported on GPU.")
@@ -171,6 +173,7 @@ class KimiK2_5Model(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         # The base hook is typed loosely (``Callable``); both towers here come

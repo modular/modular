@@ -39,6 +39,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from .batch_processor import InternVLBatchProcessor
@@ -146,6 +147,7 @@ class InternVLModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -156,6 +158,7 @@ class InternVLModel(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model(session)

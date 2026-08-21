@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import GptOssBatchProcessor
 from .gpt_oss import GptOss
@@ -97,6 +98,7 @@ class GptOssModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         """
         Args:
@@ -121,6 +123,7 @@ class GptOssModel(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model = self.load_model(session)

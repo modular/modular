@@ -45,6 +45,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -125,6 +126,7 @@ class UnifiedDSparkGemma4_12BModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         # The drafter's trained width, resolved from the draft checkpoint;
         # exposed for the overlap pipeline's spec-decode buffers.
@@ -141,6 +143,7 @@ class UnifiedDSparkGemma4_12BModel(
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 

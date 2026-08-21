@@ -63,6 +63,9 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
+    # TODO(MXF-517): Remove the interfaces/memory_estimation import cycle.
+    from max.pipelines.lib.memory_estimation import MemoryPlan
+
     from .batch_processor import BatchProcessor
 
 logger = logging.getLogger("max.pipelines")
@@ -372,8 +375,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.memory_plan = memory_plan
         self.max_batch_size = max_batch_size
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
@@ -383,9 +388,18 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states
 
-        # Initialize `max_seq_len` here to avoid repeated HF config access.
-        self.max_seq_len = self.calculate_max_seq_len(
+        # Derive even when the plan provides the length: the per-arch
+        # policies validate the configured value against the model's bounds.
+        derived_max_seq_len = self.calculate_max_seq_len(
             pipeline_config, self.huggingface_config
+        )
+        planned_max_length = (
+            memory_plan.max_length if memory_plan is not None else None
+        )
+        self.max_seq_len = (
+            planned_max_length
+            if planned_max_length is not None
+            else derived_max_seq_len
         )
 
         if pipeline_config.lora and kv_cache_config.enable_prefix_caching:
@@ -859,6 +873,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config=pipeline_config,
@@ -870,6 +885,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,

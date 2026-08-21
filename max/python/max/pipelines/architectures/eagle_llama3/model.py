@@ -27,6 +27,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
@@ -51,6 +52,7 @@ class EagleLlama3Model(LlamaModelBase):
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.LAST,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -62,6 +64,7 @@ class EagleLlama3Model(LlamaModelBase):
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

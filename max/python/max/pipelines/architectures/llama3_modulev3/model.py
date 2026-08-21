@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRATargetModule
 
 from .batch_processor import Llama3ModuleV3BatchProcessor
@@ -102,6 +103,7 @@ class Llama3Model(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -113,6 +115,7 @@ class Llama3Model(
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model()
 

@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
@@ -76,6 +77,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         shared_weights: dict[str, DLPackArray] | None = None,
         shared_ep_comm_initializer: EPCommInitializer | None = None,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._shared_weights = shared_weights
         self._shared_ep_comm_initializer = shared_ep_comm_initializer
@@ -89,6 +91,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             return_logits,
             return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     def _apply_shared_weights(self, state_dict: dict[str, WeightData]) -> None:

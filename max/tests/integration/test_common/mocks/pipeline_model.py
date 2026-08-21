@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
 
@@ -90,8 +91,10 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.memory_plan = memory_plan
         self.max_batch_size = max_batch_size
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
@@ -113,8 +116,16 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
-        self.max_seq_len = self.calculate_max_seq_len(
+        derived_max_seq_len = self.calculate_max_seq_len(
             pipeline_config, self.huggingface_config
+        )
+        planned_max_length = (
+            memory_plan.max_length if memory_plan is not None else None
+        )
+        self.max_seq_len = (
+            planned_max_length
+            if planned_max_length is not None
+            else derived_max_seq_len
         )
         self._lora_manager = (
             LoRAManagerV3(

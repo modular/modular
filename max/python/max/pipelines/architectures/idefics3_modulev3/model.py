@@ -39,6 +39,7 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
@@ -133,6 +134,7 @@ class Idefics3Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -143,6 +145,7 @@ class Idefics3Model(
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model()

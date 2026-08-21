@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Idefics3BatchProcessor
@@ -146,6 +147,7 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
+        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -156,6 +158,7 @@ class Idefics3Model(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             adapter,
             return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.image_token_id = self.huggingface_config.image_token_id

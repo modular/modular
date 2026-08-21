@@ -1838,6 +1838,7 @@ class OverlapTextGenerationPipeline(
             adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         available_cache_memory = memory_plan.available_cache_memory
