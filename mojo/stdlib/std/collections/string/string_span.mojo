@@ -1721,16 +1721,17 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
-        var n = len(self)
+        var n = self.byte_length()
         var s = start if start >= 0 else max(0, start + n)
         var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
-        if s > e or len(prefix) > e - s:
+        var prefix_len = prefix.byte_length()
+        if s > e or prefix_len > e - s:
             return False
         return (
             unsafe_memcmp(
                 self.unsafe_ptr().unsafe_offset(s),
                 prefix.unsafe_ptr(),
-                len(prefix),
+                prefix_len,
             )
             == 0
         )
@@ -1752,16 +1753,17 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        var n = len(self)
+        var n = self.byte_length()
         var s = start if start >= 0 else max(0, start + n)
         var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
-        if s > e or len(suffix) > e - s:
+        var suffix_len = suffix.byte_length()
+        if s > e or suffix_len > e - s:
             return False
         return (
             unsafe_memcmp(
-                self.unsafe_ptr().unsafe_offset(e - len(suffix)),
+                self.unsafe_ptr().unsafe_offset(e - suffix_len),
                 suffix.unsafe_ptr(),
-                len(suffix),
+                suffix_len,
             )
             == 0
         )
