@@ -47,7 +47,7 @@ from max.nn.transformer.transformer import forward_sharded_layers
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .layers.attention import Qwen3_5Attention
-from .layers.gated_deltanet import GatedDeltaNet
+from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
@@ -199,6 +199,14 @@ class Qwen3_5FullAttentionBlock(Module):
 class Qwen3_5LinearAttentionBlock(Module):
     """Linear-attention transformer block (Gated DeltaNet path)."""
 
+    replay_capture: list[list[GatedDeltaReplayInputs]] | None = None
+    """Per-device sink for this layer's state-kernel inputs, or ``None``.
+
+    Set by the speculative graph, which re-runs those kernels over the
+    accepted prefix after the verify pass. Off by default, so the base graph
+    is unchanged.
+    """
+
     def __init__(
         self,
         config: Qwen3_5Config,
@@ -271,6 +279,11 @@ class Qwen3_5LinearAttentionBlock(Module):
                     recurrent_pool=recurrent_pools[i],
                     slot_idx=slot_idx[i],
                     input_row_offsets=input_row_offsets[i],
+                    replay_capture=(
+                        None
+                        if self.replay_capture is None
+                        else self.replay_capture[i]
+                    ),
                 )
                 for i, shard in enumerate(self.linear_attn_shards)
             ],
