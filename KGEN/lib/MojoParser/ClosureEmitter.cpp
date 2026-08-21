@@ -1949,69 +1949,116 @@ static void meetOriginMutability(DenseMap<StringAttr, bool> &originMutability,
     it->second = true;
 }
 
-// Given an attribute, update origin mutability information. Returns false to
-// stop recursion for origin typed nodes so cast operands aren't counted
-// separately.
-static bool checkOriginMutableCast(DenseMap<StringAttr, bool> &originMutability,
-                                   Attribute attr) {
+static bool isOutlinedInteriorOrigin(
+    TypedAttr typed,
+    const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
+  if (!typed || !sugarIsa<OriginType>(typed.getType()))
+    return false;
+  TypedAttr stripped = OriginType::stripMutCastAndRebind(typed);
+  if (!sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped))
+    return false;
+  return interiorOrigins.contains(cast<TypedAttr>(getCanonicalAttr(stripped)));
+}
+
+static bool hasOutlinedInteriorOrigin(
+    Type type,
+    const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
+  WalkResult result = type.walk([&](Attribute attr) {
+    auto typed = dyn_cast<TypedAttr>(attr);
+    return isOutlinedInteriorOrigin(typed, interiorOrigins)
+               ? WalkResult::interrupt()
+               : WalkResult::advance();
+  });
+  return result.wasInterrupted();
+}
+
+// Given an attribute, update origin mutability information and register any
+// interior origins for outlining. Returns false to stop recursion for origin
+// typed nodes so cast operands and base origins of outlined interior origins
+// aren't counted separately.
+static bool checkOriginAndOutline(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    Attribute attr) {
   auto typed = dyn_cast<TypedAttr>(attr);
-  if (!typed || !isa<OriginType>(typed.getType()))
+  if (!typed || !sugarIsa<OriginType>(typed.getType()))
     return true;
 
-  if (auto ref = dyn_cast<ParamDeclRefAttr>(
-          OriginType::stripMutCastAndRebind(typed))) {
+  // Strip mutcasts before classifying so an immutable use of a mutable
+  // interior origin (mutcast(interior)) is not counted as a mutable use of
+  // the outlined parameter. Mutability is still taken from `typed`.
+  TypedAttr stripped = OriginType::stripMutCastAndRebind(typed);
+
+  if (sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped)) {
+    TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(stripped));
+    auto it = interiorOrigins.find(canon);
+    if (it == interiorOrigins.end()) {
+      StringAttr name = StringAttr::get(ctx, Twine("?__interior_origin_") +
+                                                 Twine(interiorOrigins.size()));
+      ParamDeclAttr param = ParamDeclAttr::get(name, canon.getType());
+      it = interiorOrigins.insert({canon, ParamDeclRefAttr::get(param)}).first;
+    }
+    meetOriginMutability(originMutability, it->second.getName(),
+                         OriginType::isMutableKnown(typed, false));
+    return false;
+  }
+
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(stripped)) {
     meetOriginMutability(originMutability, ref.getName(),
                          OriginType::isMutableKnown(typed, false));
     return false;
   }
 
-  // Otherwise this is a derived origin such as a field or interior projection,
+  // Otherwise this is a derived origin such as a field projection,
   // which holds the origins it is derived from in its sub-elements. Keep
   // walking so those are counted at their own mutability; stopping here would
   // leave a mutably-used origin unrecorded and let it be wrongly promoted.
   return true;
 }
 
-// Given an attribute or type, determine if the references to an origin are a
-// net mutable or net immutable.
 template <typename AttrOrType>
-static void checkMutableImpl(DenseMap<StringAttr, bool> &originMutability,
-                             AttrOrType attrOrType) {
-
+static void checkOriginAndOutlineImpl(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    AttrOrType attrOrType) {
+  if (!attrOrType)
+    return;
   if constexpr (std::is_convertible_v<AttrOrType, Attribute>) {
-    if (!checkOriginMutableCast(originMutability, attrOrType))
+    if (!checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                               attrOrType))
       return;
   }
   attrOrType.walkImmediateSubElements(
       [&](Attribute attribute) {
-        checkMutableImpl(originMutability, attribute);
+        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins,
+                                  attribute);
       },
-      [&](Type type) { checkMutableImpl(originMutability, type); });
+      [&](Type type) {
+        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, type);
+      });
 }
 
 template <typename AttrOrType>
-static void checkMutable(DenseMap<StringAttr, bool> &originMutability,
-                         AttrOrType attrOrType) {
+static void checkOriginAndOutline(
+    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
+    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
+    AttrOrType attrOrType) {
   if constexpr (std::is_convertible_v<AttrOrType, Attribute>)
     attrOrType = cast<AttrOrType>(getCanonicalAttr(attrOrType));
   else
     attrOrType = cast<AttrOrType>(getCanonicalType(attrOrType));
-  checkMutableImpl(originMutability, attrOrType);
+  checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, attrOrType);
 }
 
 static SmallPtrSet<StringAttr, 8>
 collectPromotedOrigins(MLIRContext *ctx,
-                       SmallVectorImpl<StructDefFieldAttr> &fieldDecls,
+                       const DenseMap<StringAttr, bool> &originMutability,
                        SmallVectorImpl<ParamDeclAttr> &structParams,
                        SmallVectorImpl<TypedAttr> &structBindings) {
-  DenseMap<StringAttr, bool> originMutability;
-  for (StructDefFieldAttr fieldDecl : fieldDecls)
-    checkMutable(originMutability, fieldDecl.getTypeValue());
-
   SmallPtrSet<StringAttr, 8> promotedOriginNames;
   for (auto [index, param] : llvm::enumerate(structParams)) {
     StringAttr name = param.getName();
-    auto originType = dyn_cast<OriginType>(param.getType());
+    auto originType = sugarDynCast<OriginType>(param.getType());
     // If an origin is already immutable, no need to promote.
     if (!originType || originType.isMutableKnown(false))
       continue;
@@ -2024,6 +2071,194 @@ collectPromotedOrigins(MLIRContext *ctx,
     promotedOriginNames.insert(name);
   }
   return promotedOriginNames;
+}
+
+static TypedAttr
+getOutlinedOriginRef(MLIRContext *ctx, ParamDeclRefAttr paramRef,
+                     const SmallPtrSetImpl<StringAttr> &promotedOriginNames) {
+  StringAttr name = paramRef.getName();
+  Type originType = promotedOriginNames.contains(name)
+                        ? OriginType::get(ctx, false)
+                        : paramRef.getType();
+  return ParamDeclRefAttr::get(name, originType);
+}
+
+static std::optional<TypedAttr>
+getPromotedOriginRef(MLIRContext *ctx, TypedAttr origin,
+                     const SmallPtrSetImpl<StringAttr> &promotedOriginNames) {
+  auto originRef = dyn_cast<ParamDeclRefAttr>(origin);
+  if (!originRef || !promotedOriginNames.contains(originRef.getName()))
+    return std::nullopt;
+  return ParamDeclRefAttr::get(originRef.getName(),
+                               OriginType::get(ctx, false));
+}
+
+static LogicalResult outlineAndPromoteOrigins(
+    SharedState &shared, SmallVectorImpl<StructDefFieldAttr> &fieldDecls,
+    SmallVectorImpl<ParamDeclAttr> &allStructParams,
+    SmallVectorImpl<TypedAttr> &structParamBindings, FnOp nestedFn,
+    SmallVectorImpl<Type> &deviceCaptureFieldTypes,
+    llvm::MapVector<StringRef, Type> &aliases, Location closureLoc) {
+  MLIRContext *ctx = shared.getContext();
+  assert(allStructParams.size() == structParamBindings.size() &&
+         "expected parallel struct parameters and bindings");
+
+  DenseMap<StringAttr, bool> originMutability;
+  llvm::MapVector<TypedAttr, ParamDeclRefAttr> interiorOrigins;
+
+  for (StructDefFieldAttr fieldDecl : fieldDecls)
+    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                          fieldDecl.getTypeValue());
+  for (ParamDeclAttr param : allStructParams)
+    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
+                          param.getType());
+
+  // Append fresh parameter declarations and their parent-scope bindings.
+  for (auto &[interiorAttr, paramRef] : interiorOrigins) {
+    allStructParams.push_back(
+        ParamDeclAttr::get(paramRef.getName(), paramRef.getType()));
+    structParamBindings.push_back(interiorAttr);
+  }
+
+  // Prune origin parameters in allStructParams that were not referenced outside
+  // of interior origins.
+  // If it were referenced outside the interior origin it would be registered in
+  // the origin mutability table so if its not there its safe to assume its
+  // unused and can be dropped.
+  assert(allStructParams.size() == structParamBindings.size() &&
+         "expected parallel struct parameters and bindings before pruning");
+  SmallVector<ParamDeclAttr> prunedParams;
+  SmallVector<TypedAttr> prunedBindings;
+  for (auto [param, binding] :
+       llvm::zip_equal(allStructParams, structParamBindings)) {
+    if (sugarIsa<OriginType>(param.getType())) {
+      if (!originMutability.contains(param.getName()))
+        continue;
+    }
+    prunedParams.push_back(param);
+    prunedBindings.push_back(binding);
+  }
+  allStructParams = std::move(prunedParams);
+  structParamBindings = std::move(prunedBindings);
+
+  // Promote origin parameters that are only read-only into immutable origins.
+  SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
+      ctx, originMutability, allStructParams, structParamBindings);
+
+  if (interiorOrigins.empty() && promotedOriginNames.empty())
+    return success();
+
+  Location rewriteLoc = closureLoc;
+  bool hadConflict = false;
+
+  // Replace all interior origin occurrences and promoted origin references in a
+  // single walk.
+  mlir::AttrTypeReplacer originReplacer;
+  originReplacer.addReplacement([&](SymbolConstantAttr sym)
+                                    -> std::pair<Attribute, WalkResult> {
+    bool bindsOutlinedInterior = false;
+    bool changed = false;
+    DenseMap<TypedAttr, TypedAttr> paramReplacements;
+    SmallVector<TypedAttr> newParamValues;
+    newParamValues.reserve(sym.getParamValues().size());
+    for (TypedAttr pv : sym.getParamValues()) {
+      bindsOutlinedInterior |= isOutlinedInteriorOrigin(pv, interiorOrigins);
+      auto newPv = cast<TypedAttr>(originReplacer.replace(pv));
+      if (newPv != pv) {
+        changed = true;
+        paramReplacements[cast<TypedAttr>(getCanonicalAttr(pv))] = newPv;
+      }
+      newParamValues.push_back(newPv);
+    }
+
+    // An interior origin in the signature that the call does not bind as a
+    // parameter value is derived from the callee's own parameters, so rewriting
+    // it would misstate the callee's signature. Keep it as is and reject if
+    // that same interior origin was outlined (interior origins are spelled
+    // inline, so preserved occurrences are indistinguishable from the ones that
+    // need to be rewritten). Reject this case (for now).
+    if (!bindsOutlinedInterior &&
+        hasOutlinedInteriorOrigin(sym.getType(), interiorOrigins)) {
+      hadConflict = true;
+      shared.emitError(
+          rewriteLoc,
+          "cannot derive an interior origin from a captured container while "
+          "an interior reference to the container is also captured");
+      return {sym, WalkResult::skip()};
+    }
+
+    if (!changed)
+      return {sym, WalkResult::skip()};
+
+    mlir::AttrTypeReplacer symTypeReplacer;
+    symTypeReplacer.addReplacement(
+        [&](TypedAttr attr) -> std::optional<TypedAttr> {
+          if (!sugarIsa<OriginType>(attr.getType()))
+            return std::nullopt;
+          TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(attr));
+          auto it = paramReplacements.find(canon);
+          if (it != paramReplacements.end())
+            return it->second;
+          return getPromotedOriginRef(ctx,
+                                      OriginType::stripMutCastAndRebind(attr),
+                                      promotedOriginNames);
+        });
+    auto newType =
+        cast<FuncTypeGeneratorType>(symTypeReplacer.replace(sym.getType()));
+    return {SymbolConstantAttr::get(sym.getSymbol(), newType, newParamValues),
+            WalkResult::skip()};
+  });
+  originReplacer.addReplacement(
+      [&](TypedAttr attr) -> std::optional<TypedAttr> {
+        if (!sugarIsa<OriginType>(attr.getType()))
+          return std::nullopt;
+
+        TypedAttr stripped = OriginType::stripMutCastAndRebind(attr);
+        if (sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped)) {
+          auto it =
+              interiorOrigins.find(cast<TypedAttr>(getCanonicalAttr(stripped)));
+          if (it == interiorOrigins.end())
+            return std::nullopt;
+          if (attr != stripped)
+            return std::nullopt;
+          return getOutlinedOriginRef(ctx, it->second, promotedOriginNames);
+        }
+
+        return getPromotedOriginRef(ctx, stripped, promotedOriginNames);
+      });
+
+  // Rewrite the body before the storage struct so a conflict is diagnosed at
+  // the operation that hit it, and so a rejected closure leaves the struct
+  // alone.
+  if (nestedFn) {
+    nestedFn.walk([&](Operation *op) {
+      rewriteLoc = op->getLoc();
+      originReplacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                       /*replaceLocs=*/true,
+                                       /*replaceTypes=*/true);
+      return hadConflict ? WalkResult::interrupt() : WalkResult::advance();
+    });
+    if (hadConflict)
+      return failure();
+    rewriteLoc = closureLoc;
+  }
+
+  for (StructDefFieldAttr &fieldDecl : fieldDecls) {
+    auto newTypeValue =
+        cast<TypedAttr>(originReplacer.replace(fieldDecl.getTypeValue()));
+    fieldDecl = StructDefFieldAttr::get(fieldDecl.getName(), newTypeValue);
+  }
+  for (Type &fieldType : deviceCaptureFieldTypes)
+    fieldType = cast<Type>(originReplacer.replace(fieldType));
+  for (auto &[name, type] : aliases) {
+    if (sugarIsa<OriginType>(type)) {
+      if (promotedOriginNames.contains(StringAttr::get(ctx, name)))
+        type = OriginType::get(ctx, false);
+    } else {
+      type = cast<Type>(originReplacer.replace(type));
+    }
+  }
+  return failure(hadConflict);
 }
 
 static SmallVector<Type>
@@ -2234,41 +2469,9 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     bool capturesEncodable, ASTDecl &nestedFnDecl) {
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
-  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
-
-  SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
-      ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
 
   SmallVector<Type> promotedDeviceCaptureFieldTypes =
       std::move(deviceCaptureFieldTypes);
-
-  mlir::AttrTypeReplacer promoteOriginRefs;
-  promoteOriginRefs.addReplacement(
-      [&](TypedAttr attr) -> std::optional<TypedAttr> {
-        if (!isa<OriginType>(attr.getType()))
-          return std::nullopt;
-        auto originRef =
-            dyn_cast<ParamDeclRefAttr>(OriginType::stripMutCastAndRebind(attr));
-        if (!originRef || !promotedOriginNames.contains(originRef.getName()))
-          return std::nullopt;
-        return ParamDeclRefAttr::get(originRef.getName(),
-                                     OriginType::get(ctx, false));
-      });
-
-  if (!promotedOriginNames.empty()) {
-    promoteOriginRefs.recursivelyReplaceElementsIn(nestedFn,
-                                                   /*replaceAttrs=*/true,
-                                                   /*replaceLocs=*/true,
-                                                   /*replaceTypes=*/true);
-    for (StructDefFieldAttr &fieldDecl : concreteFieldDecls) {
-      auto promotedTypeValue =
-          cast<TypedAttr>(promoteOriginRefs.replace(fieldDecl.getTypeValue()));
-      fieldDecl =
-          StructDefFieldAttr::get(fieldDecl.getName(), promotedTypeValue);
-    }
-    for (Type &deviceFieldType : promotedDeviceCaptureFieldTypes)
-      deviceFieldType = cast<Type>(promoteOriginRefs.replace(deviceFieldType));
-  }
 
   SmallVector<TypedAttr> selfRefParamValues = llvm::map_to_vector(
       concreteParams, [](ParamDeclAttr declAttr) -> TypedAttr {
@@ -2838,11 +3041,17 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     structParamBindings.push_back(capturedParam);
   }
 
-  // Compute the storage struct bindings for the init call.
-  SmallVector<ParamDeclAttr> storageStructParams = allStructParams;
+  // (1) Outline interior origins and promote origin parameters in a unified
+  // pass.
+  if (!allCapturesEncodable)
+    deviceCaptureFieldTypes.clear();
+  if (failed(outlineAndPromoteOrigins(
+          shared, fieldDecls, allStructParams, structParamBindings, nestedFn,
+          deviceCaptureFieldTypes, aliases, location)))
+    return {};
+
+  // Storage bindings passed to initializer call.
   SmallVector<TypedAttr> storageParamBindings = structParamBindings;
-  (void)collectPromotedOrigins(ctx, fieldDecls, storageStructParams,
-                               storageParamBindings);
 
   Closure liftedClosure = liftClosure(
       moduleDecl, nestedFnDecl.getLoc(), closureParents,
