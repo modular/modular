@@ -51,6 +51,7 @@ gather/scatter loop.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import (
@@ -71,6 +72,27 @@ from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
 )
+
+
+class GatedDeltaReplayInputs(NamedTuple):
+    """One layer's per-token inputs to the two state kernels.
+
+    Speculative decoding runs the verify pass over K+1 positions and then has
+    to land the pools on the accepted prefix instead. Every op feeding these
+    tensors is causal or pointwise, so re-running the two kernels over the
+    accepted rows from the pre-verify state reproduces the state the verify
+    pass held at that length. Captured only when the caller asks for it; see
+    ``mach/docs/qwen38_27b/mtp-serving.md``.
+    """
+
+    qkv: TensorValue
+    """``[total_seq_len, conv_dim]`` float32 conv input."""
+    conv_weight: TensorValue
+    """``[conv_dim, kernel_size]`` float32 depthwise weights."""
+    decay: TensorValue
+    """``[total_seq_len, num_value_heads]`` float32 decays."""
+    beta: TensorValue
+    """``[total_seq_len, num_value_heads]`` float32 beta gates."""
 
 
 def _projection(stack: StackedLinear, name: str) -> Linear:
@@ -390,6 +412,7 @@ class GatedDeltaNet(Module, Shardable):
         recurrent_pool: BufferValue,
         slot_idx: TensorValue,
         input_row_offsets: TensorValue,
+        replay_capture: list[GatedDeltaReplayInputs] | None = None,
     ) -> TensorValue:
         """Forward pass through the Gated DeltaNet layer.
 
@@ -407,6 +430,10 @@ class GatedDeltaNet(Module, Shardable):
                 ``[max_slots, num_v_heads, key_head_dim, value_head_dim]``.
             slot_idx: ``[batch_size]`` uint32 slot indices into the pools.
             input_row_offsets: Row offsets ``[batch_size + 1]`` (uint32).
+            replay_capture: When given, this call's
+                :class:`GatedDeltaReplayInputs` are appended to it so a
+                speculative rollback can re-run the two state kernels over a
+                shorter prefix.
 
         Returns:
             Output hidden states ``[total_seq_len, hidden_size]``.
@@ -464,6 +491,16 @@ class GatedDeltaNet(Module, Shardable):
         # working tensors stay at fp32.
         offsets_uint32 = ops.cast(input_row_offsets, DType.uint32)
         slot_idx_uint32 = ops.cast(slot_idx, DType.uint32)
+
+        if replay_capture is not None:
+            replay_capture.append(
+                GatedDeltaReplayInputs(
+                    qkv=qkv_f32,
+                    conv_weight=conv_weight_flat,
+                    decay=decay,
+                    beta=beta,
+                )
+            )
 
         conv_output_ragged = gated_delta_conv1d_fwd(
             qkv_input_ragged=qkv_f32,

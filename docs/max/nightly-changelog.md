@@ -167,6 +167,15 @@ This version is still a work in progress.
     value heads, and the per-device linear-attention state pools; both mixers
     reject a device count that would not divide their head counts evenly.
   - `Qwen3_5ForConditionalGeneration` now supports device graph capture.
+  - Added multi-token prediction (MTP) speculative decoding for Qwen3.8
+    (`UnifiedMTPQwen3_5ForConditionalGeneration`), fusing the target, the
+    baked-in MTP head and a recurrent-state rollback into one graph, selected
+    for Qwen3.5-family checkpoints that ship an MTP head with
+    `--speculative-method mtp`. Rejecting a speculated token cannot be undone
+    by rewinding a KV length pointer when the layer is recurrent, so the graph
+    snapshots the gated-DeltaNet conv and recurrent pools before verifying and
+    replays the two state kernels over the accepted rows. The graph is served
+    through the Mach engine; MAX compiles and exports it but does not run it.
   - Fixed a `Qwen3EmbeddingModel` crash.
 - Added `--state-pool-dtype`, which overrides the storage dtype of a hybrid
   model's recurrent state pools (SSM and linear-attention conv and recurrent
