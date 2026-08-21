@@ -23,7 +23,9 @@ from max.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from extensibility import InputTensor, OutputTensor
+from extensibility import Tensor, TileTensorable
 
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -294,15 +296,15 @@ struct LogProbabilitiesRagged:
 
 @register_shape_function("compute_log_probabilities_ragged")
 def compute_log_probabilities_ragged_shape[
-    levels: Int
+    levels: Int,
 ](
-    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
-    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
+    logits: Some[Tensor],
+    tokens: Some[Tensor],
+    sampled_tokens: Some[Tensor],
+    logit_row_offsets: Some[Tensor],
+    token_row_offsets: Some[Tensor],
+    lp_output_offsets: Some[Tensor],
+    lp_output_offsets_host: Some[TileTensorable],
 ) -> IndexList[2]:
     """Computes the output shapes for the ragged log-probabilities op.
 
@@ -325,7 +327,48 @@ def compute_log_probabilities_ragged_shape[
     Returns:
         The output shape `[num_output_tokens, 2**levels]`.
     """
+    comptime assert (
+        type_of(logits).dtype == logit_dtype
+    ), "logits dtype must be logit_dtype"
+    comptime assert type_of(logits).rank == 2, "logits must be rank 2"
+    comptime assert (
+        type_of(tokens).dtype == token_dtype
+    ), "tokens dtype must be token_dtype"
+    comptime assert type_of(tokens).rank == 1, "tokens must be rank 1"
+    comptime assert (
+        type_of(sampled_tokens).dtype == token_dtype
+    ), "sampled_tokens dtype must be token_dtype"
+    comptime assert (
+        type_of(sampled_tokens).rank == 1
+    ), "sampled_tokens must be rank 1"
+    comptime assert (
+        type_of(logit_row_offsets).dtype == offset_dtype
+    ), "logit_row_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(logit_row_offsets).rank == 1
+    ), "logit_row_offsets must be rank 1"
+    comptime assert (
+        type_of(token_row_offsets).dtype == offset_dtype
+    ), "token_row_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(token_row_offsets).rank == 1
+    ), "token_row_offsets must be rank 1"
+    comptime assert (
+        type_of(lp_output_offsets).dtype == offset_dtype
+    ), "lp_output_offsets dtype must be offset_dtype"
+    comptime assert (
+        type_of(lp_output_offsets).rank == 1
+    ), "lp_output_offsets must be rank 1"
+    comptime assert (
+        type_of(lp_output_offsets_host).dtype == offset_dtype
+    ), "lp_output_offsets_host dtype must be offset_dtype"
+    comptime assert (
+        type_of(lp_output_offsets_host).rank == 1
+    ), "lp_output_offsets_host must be rank 1"
+    var num_offsets = coord_to_index_list(
+        lp_output_offsets_host.shape().tuple()
+    )[0]
     return IndexList[2](
-        Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
+        Int(lp_output_offsets_host.to_tile_tensor().raw_load(num_offsets - 1)),
         2**levels,
     )

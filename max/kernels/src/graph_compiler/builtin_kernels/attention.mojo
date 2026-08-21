@@ -36,6 +36,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    coord_to_index_list,
     row_major,
 )
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
@@ -83,6 +84,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill import (
 )
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor, InputTensor, OutputTensor
+from extensibility import Tensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -742,21 +744,47 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
 
 @extensibility.register_shape_function("with_mask_flash_attention_split_kv_cpu")
-def with_mask_flash_attention_split_kv_cpu_shape[
-    dtype: DType,
-    rank: Int,
-](
-    q: InputTensor[dtype=dtype, rank=rank, ...],
-    k: InputTensor[dtype=dtype, rank=rank, ...],
-    v: InputTensor[dtype=dtype, rank=rank, ...],
-    k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-    v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
-    mask: InputTensor[dtype=dtype, ...],
+def with_mask_flash_attention_split_kv_cpu_shape(
+    q: Some[Tensor],
+    k: Some[Tensor],
+    v: Some[Tensor],
+    k_cache: Some[Tensor],
+    v_cache: Some[Tensor],
+    mask: Some[Tensor],
     scale: Scalar[dtype=DType.float32],
-) -> IndexList[q.rank]:
+) -> IndexList[type_of(q).rank]:
     """Computes the output shape for the `with_mask_flash_attention_split_kv_cpu` graph op.
     """
-    return q.shape()
+    comptime assert (
+        type_of(k).dtype == type_of(q).dtype
+    ), "k and q must share a dtype"
+    comptime assert (
+        type_of(v).dtype == type_of(q).dtype
+    ), "v and q must share a dtype"
+    comptime assert (
+        type_of(k_cache).dtype == type_of(q).dtype
+    ), "k_cache and q must share a dtype"
+    comptime assert (
+        type_of(v_cache).dtype == type_of(q).dtype
+    ), "v_cache and q must share a dtype"
+    comptime assert (
+        type_of(mask).dtype == type_of(q).dtype
+    ), "mask and q must share a dtype"
+    comptime assert (
+        type_of(k).rank == type_of(q).rank
+    ), "k and q must share a rank"
+    comptime assert (
+        type_of(v).rank == type_of(q).rank
+    ), "v and q must share a rank"
+    comptime assert (
+        type_of(k_cache).rank == type_of(q).rank + 1
+    ), "k_cache rank must be q rank + 1"
+    comptime assert (
+        type_of(v_cache).rank == type_of(q).rank + 1
+    ), "v_cache rank must be q rank + 1"
+    return rebind[IndexList[type_of(q).rank]](
+        coord_to_index_list(q.shape().tuple())
+    )
 
 
 @extensibility.register("mo.composite.masked_flash_attention_cpu")
