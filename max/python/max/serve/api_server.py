@@ -59,6 +59,7 @@ from max.serve.router import (
     openresponses_routes,
     sagemaker_routes,
 )
+from max.serve.router._image_resolution import fetch_media_data_uri
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import RequestQueueFull
@@ -429,6 +430,17 @@ def fastapi_app(
         app.include_router(ROUTES[api_type].router)
 
     app.state.settings = settings
+
+    # The /v1/responses input schema takes data: URIs only, so a client-supplied
+    # http(s) image must be fetched and inlined before the body validates. The
+    # request library cannot do that itself (it does not depend on max.serve, and
+    # a second downloader there would be a second SSRF surface), so hand it the
+    # shared resolver, which carries the byte caps and host validation.
+    async def fetch_media_data_uri_for_app(url: str) -> str:
+        return await fetch_media_data_uri(url, settings)
+
+    app.state.media_data_uri_fetcher = fetch_media_data_uri_for_app
+
     register_request(app)
 
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
