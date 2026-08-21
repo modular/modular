@@ -70,7 +70,7 @@ from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tile_io import GenericToSharedAsyncTileCopier
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
-from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from linalg.utils import GemmShape, elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
 from std.memory.unsafe import bitcast
 
