@@ -379,13 +379,13 @@ def test_capture_releases_input_dlpack_producer() -> None:
     """Regression test for GEX-3732.
 
     `ModelHandle::capture`, `replay`, and `debug_verify_replay` route
-    every input buffer through `collectInputMemories`, which calls
-    `Buffer::getMemory()`. For the common contiguous-slice case
-    `getMemory()` returns a freshly heap-allocated `DeviceMemory` view.
-    Prior to GEX-3732 these views were never freed, so each call leaked a
-    refcounted handle to the underlying `DeviceBuffer`. That handle
-    transitively pinned the DLPack capsule's destructor — and through it,
-    the Python `DLManagedTensor` producer — alive indefinitely.
+    every input buffer through `collectInputBuffers`, which takes a
+    refcounted `DeviceBufferRef` from `Buffer::getInputStorage()`. Prior to
+    GEX-3732 that path instead allocated a `DeviceMemory` view per input
+    and never freed it, so each call leaked a handle to the underlying
+    `DeviceBuffer`. That handle transitively pinned the DLPack capsule's
+    destructor — and through it, the Python `DLManagedTensor` producer —
+    alive indefinitely.
 
     This test wraps a `torch.Tensor` as the DLPack producer, routes it
     through all three engine paths, then asserts that dropping the
@@ -416,12 +416,11 @@ def test_capture_releases_input_dlpack_producer() -> None:
     model.replay(0, input_buffer)
     model.debug_verify_replay(0, input_buffer)
 
-    # Drop every user-visible reference. With the fix in place, the
-    # DeviceMemory views created by `Buffer::getMemory()` inside each
-    # handler are freed on return, so the ref chain back to `producer`
-    # unwinds: view DM dies -> DeviceBufferRef drops -> ~DeviceBuffer fires
-    # -> DLPack destructor lambda runs -> DLManagedTensor deleter releases
-    # the producer.
+    # Drop every user-visible reference. The buffer refs each handler
+    # collected are released when they go out of scope, so the ref chain back
+    # to `producer` unwinds: DeviceBufferRef drops -> ~DeviceBuffer fires ->
+    # DLPack destructor lambda runs -> DLManagedTensor deleter releases the
+    # producer.
     del output
     model.release_captured_graph(0)
     del input_buffer

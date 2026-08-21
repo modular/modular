@@ -30,6 +30,7 @@
 #include "llvm/TargetParser/Triple.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -179,6 +180,14 @@ struct DeviceSpec {
   static ErrorOr<DeviceSpec> deserializeFromJSON(const llvm::json::Value *json);
   static ErrorOr<DeviceSpec> deserializeFromJSON(StringRef json);
 };
+
+/// A shared, immutable `DeviceSpec`. A spec owns a `TargetInfo` -- a triple,
+/// an arch string and two feature vectors -- so copying one per tensor is far
+/// from free, and on the host path `getHostTargetInfo()` fills those vectors
+/// in. The runtime keeps one spec per configured device for the session and
+/// hands out this handle instead; consumers that only compare `ref` pay a
+/// refcount rather than a dozen allocations.
+using DeviceSpecRef = std::shared_ptr<const DeviceSpec>;
 
 //===----------------------------------------------------------------------===//
 // DeviceSpecCollection
