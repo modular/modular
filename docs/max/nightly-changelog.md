@@ -663,6 +663,11 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
+  top-level fields after construction raises a pydantic `ValidationError`.
+  Construct it with the values you need. Its sub-configs (`runtime`,
+  `sampling`, etc.) are unchanged for now.
+
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
