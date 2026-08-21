@@ -103,7 +103,13 @@ from std.sys import get_defined_bool, get_defined_int, size_of
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor
+from layout import (
+    Coord,
+    PointerStorage,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
     PipelineState,
@@ -395,14 +401,22 @@ def _fp8_index_score_prefill_kernel_sm100[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    *,
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
+    QSStorageType: TensorStorage = PointerStorage[element_width=1],
+    OutStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
-    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin],
-    output: TileTensor[DType.float32, OutLT, MutAnyOrigin],
+    valid_length: TileTensor[
+        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+    ],
+    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
+    output: TileTensor[
+        DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
+    ],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     num_key_parts_dev: Int32,
@@ -756,7 +770,7 @@ def _fp8_index_score_prefill_kernel_sm100[
         # the storage base with no layout arithmetic and no exposure to
         # `linear_idx_type`, which the store offset deliberately outgrows. Dead
         # code (and free) in the branch arm.
-        var out_base = output.ptr_at_offset(Coord(0))
+        var out_base = output.ptr
 
         # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
         # variable directly (`range.mojo:495`) -- the whole key-index chain stays
@@ -1145,14 +1159,20 @@ def fp8_index_score_sm100_prefill[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    *,
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
+    QSStorageType: TensorStorage = PointerStorage[element_width=1],
+    OutStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
-    q_s: TileTensor[mut=False, DType.float32, ...],
-    output: TileTensor[DType.float32, ...],
+    valid_length: TileTensor[
+        mut=False, DType.uint32, ..., Storage=VLStorageType
+    ],
+    q_s: TileTensor[mut=False, DType.float32, ..., Storage=QSStorageType],
+    output: TileTensor[DType.float32, ..., Storage=OutStorageType],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -1230,6 +1250,9 @@ def fp8_index_score_sm100_prefill[
         BM_key,
         N_TOKENS,
         _is_cache_length_accurate,
+        VLStorageType=type_of(valid_length.as_immut()).Storage,
+        QSStorageType=q_s.Storage,
+        OutStorageType=output.Storage,
     ]
     # The `setmaxnreg` caps redistribute a fixed file: 65536 registers/SM shared
     # by `CTAS_PER_SM` CTAs, and every thread of a warpgroup holds that

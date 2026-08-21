@@ -123,7 +123,7 @@ def test_index_fp8[
         row_major(batch_size + 1),
     )
 
-    var cache_row_offsets_device = TileTensor[mut=False](
+    var cache_row_offsets_device = TileTensor[mut=False, Storage=_](
         cache_row_offsets_device_ptr,
         row_major(batch_size + 1),
     )

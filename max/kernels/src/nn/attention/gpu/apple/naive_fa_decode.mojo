@@ -53,7 +53,15 @@ from std.sys import llvm_intrinsic
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
-from layout import UNKNOWN_VALUE, Idx, Layout, LayoutTensor, TileTensor
+from layout import (
+    UNKNOWN_VALUE,
+    Idx,
+    Layout,
+    LayoutTensor,
+    PointerStorage,
+    TensorStorage,
+    TileTensor,
+)
 from layout.coord import Coord
 from layout.tile_layout import (
     TensorLayout,
@@ -150,11 +158,23 @@ def naive_fa_decode_apple_core[
     *,
     Depth: Int,
     SplitSize: Int,
+    OPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    MPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    LPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    QStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
+    SinkStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    o_partial: TileTensor[p_type, p_layout, MutAnyOrigin],
-    m_partial: TileTensor[p_type, p_layout, MutAnyOrigin],
-    l_partial: TileTensor[p_type, p_layout, MutAnyOrigin],
-    q: TileTensor[q_type, q_layout, ImmutAnyOrigin],
+    o_partial: TileTensor[
+        p_type, p_layout, MutAnyOrigin, Storage=OPartialStorageType
+    ],
+    m_partial: TileTensor[
+        p_type, p_layout, MutAnyOrigin, Storage=MPartialStorageType
+    ],
+    l_partial: TileTensor[
+        p_type, p_layout, MutAnyOrigin, Storage=LPartialStorageType
+    ],
+    q: TileTensor[q_type, q_layout, ImmutAnyOrigin, Storage=QStorageType],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -162,8 +182,11 @@ def naive_fa_decode_apple_core[
         DType.uint32,
         valid_length_layout,
         ImmutAnyOrigin,
+        Storage=VLStorageType,
     ],
-    sink_weights: OptionalReg[TileTensor[q_type, sink_layout, ImmutAnyOrigin]],
+    sink_weights: OptionalReg[
+        TileTensor[q_type, sink_layout, ImmutAnyOrigin, Storage=SinkStorageType]
+    ],
     scale: Float32,
     batch_size: Int32,
     max_prompt_len: Int32,
@@ -210,6 +233,12 @@ def naive_fa_decode_apple_core[
         Depth: Compile-time head dimension; must be a multiple of
             `WARP_SIZE`.
         SplitSize: Per-partition KV span in keys.
+        OPartialStorageType: Storage policy of the `o_partial` tile.
+        MPartialStorageType: Storage policy of the `m_partial` tile.
+        LPartialStorageType: Storage policy of the `l_partial` tile.
+        QStorageType: Storage policy of the `q` tile.
+        VLStorageType: Storage policy of the `valid_length` tile.
+        SinkStorageType: Storage policy of the `sink_weights` tile.
 
     Args:
         o_partial: Flat 1D partial output buffer; one accumulator per
@@ -447,16 +476,30 @@ def naive_fa_decode_apple_stitch[
     _is_cache_length_accurate: Bool = False,
     *,
     SplitSize: Int,
+    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    OPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    MPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    LPartialStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    output: TileTensor[output_type, output_layout, MutAnyOrigin],
-    o_partial: TileTensor[p_type, p_layout, ImmutAnyOrigin],
-    m_partial: TileTensor[p_type, p_layout, ImmutAnyOrigin],
-    l_partial: TileTensor[p_type, p_layout, ImmutAnyOrigin],
+    output: TileTensor[
+        output_type, output_layout, MutAnyOrigin, Storage=OutStorageType
+    ],
+    o_partial: TileTensor[
+        p_type, p_layout, ImmutAnyOrigin, Storage=OPartialStorageType
+    ],
+    m_partial: TileTensor[
+        p_type, p_layout, ImmutAnyOrigin, Storage=MPartialStorageType
+    ],
+    l_partial: TileTensor[
+        p_type, p_layout, ImmutAnyOrigin, Storage=LPartialStorageType
+    ],
     k: k_t,
     valid_length: TileTensor[
         DType.uint32,
         valid_length_layout,
         ImmutAnyOrigin,
+        Storage=VLStorageType,
     ],
     max_prompt_len: Int32,
     # Full key count for the dense decode path; mirrors the producer so the
@@ -754,6 +797,12 @@ def naive_fa_decode_apple[
                     _is_cache_length_accurate=_is_cache_length_accurate,
                     Depth=D,
                     SplitSize=SplitSize,
+                    OPartialStorageType=o_partial_t.Storage,
+                    MPartialStorageType=m_partial_t.Storage,
+                    LPartialStorageType=l_partial_t.Storage,
+                    QStorageType=q_flat.Storage,
+                    VLStorageType=valid_length_flat.Storage,
+                    SinkStorageType=SinkTile.Storage,
                 ]
                 ctx.enqueue_function[core_kernel](
                     o_partial_t,
@@ -791,6 +840,11 @@ def naive_fa_decode_apple[
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
         SplitSize=SplitSize,
+        OutStorageType=output_flat.Storage,
+        OPartialStorageType=o_partial_imm.Storage,
+        MPartialStorageType=m_partial_imm.Storage,
+        LPartialStorageType=l_partial_imm.Storage,
+        VLStorageType=valid_length_flat.Storage,
     ]
     ctx.enqueue_function[stitch_kernel](
         output_flat,

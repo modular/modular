@@ -20,8 +20,10 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
+    PointerStorage,
     RuntimeLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
 )
@@ -76,17 +78,28 @@ def fp8_index_kernel[
     # When False: num_keys = cache_length + seq_len (cache_length excludes new tokens).
     # When True: num_keys = cache_length (cache_length already includes new tokens).
     _is_cache_length_accurate: Bool = False,
+    *,
+    OutputStorageType: TensorStorage = PointerStorage[element_width=1],
+    QStorageType: TensorStorage = PointerStorage[element_width=1],
+    QSStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    output_tt: TileTensor[DType.float32, OutputLT, MutAnyOrigin],
+    output_tt: TileTensor[
+        DType.float32, OutputLT, MutAnyOrigin, Storage=OutputStorageType
+    ],
     # [total_seq_len, num_heads, depth]
-    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin],
+    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin, Storage=QStorageType],
     # [total_seq_len, num_heads]
-    q_s_tt: TileTensor[DType.float32, QSLT, MutAnyOrigin],
+    q_s_tt: TileTensor[
+        DType.float32, QSLT, MutAnyOrigin, Storage=QSStorageType
+    ],
     # MHAOperand for K values
     k_operand: k_operand_type,
     # MHAOperand for K scales
     ks_operand: ks_operand_type,
-    valid_length_tt: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
+    valid_length_tt: TileTensor[
+        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+    ],
 ):
     """Computes the scalar FP8 index/gather score kernel as a Blackwell tensor-core fallback.
 
@@ -106,6 +119,10 @@ def fp8_index_kernel[
         num_heads: Number of attention heads.
         depth: Per-head feature depth.
         _is_cache_length_accurate: When True, `cache_length` already includes new tokens.
+        OutputStorageType: Storage policy of the `output_tt` tile.
+        QStorageType: Storage policy of the `q_tt` tile.
+        QSStorageType: Storage policy of the `q_s_tt` tile.
+        VLStorageType: Storage policy of the `valid_length_tt` tile.
 
     Args:
         output_tt: Output score tensor of shape `[total_seq_len, num_keys]`.
@@ -482,6 +499,10 @@ def fp8_index[
             num_heads,
             depth,
             _is_cache_length_accurate=True,
+            OutputStorageType=output.Storage,
+            QStorageType=q.Storage,
+            QSStorageType=q_s.Storage,
+            VLStorageType=valid_length.Storage,
         ]
 
         ctx.enqueue_function[kernel](
