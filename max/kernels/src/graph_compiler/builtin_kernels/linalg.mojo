@@ -105,6 +105,7 @@ from linalg.utils import (
 from nn._ragged_utils import merge_ragged_tensors
 from nn.gemv_partial_norm import gemv_and_partial_norm
 from extensibility import InputTensor, OutputTensor
+from extensibility import Tensor, TileTensorable
 from extensibility import _FusedComputeOutputTensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -196,19 +197,14 @@ struct MatmulFusedPartialRMSNorm:
 )
 def composite_matmul_fused_partial_rms_norm_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    weight: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.composite.matmul_fused_partial_rms_norm` graph op.
-
-    Parameters:
-        dtype: Element type of the input and weight tensors.
-        rank: Tensor rank of the input tensor.
 
     Args:
         input: Input activation tensor `x` of the GEMV.
@@ -222,9 +218,22 @@ def composite_matmul_fused_partial_rms_norm_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
+    comptime assert (
+        type_of(weight).dtype == type_of(input).dtype
+    ), "weight and input must share a dtype"
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma and input must share a dtype"
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        dtype == type_of(input).dtype
+    ), "weight_offset dtype must match input dtype"
     # Return the input shape for normed output
     # The actual shape split is handled by the op semantics
-    return input.shape()
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.matmul")
@@ -360,20 +369,10 @@ struct BatchMatmul:
 
 
 @extensibility.register_shape_function("mo.batch_matmul")
-def batch_matmul_shape[
-    rank: Int,
-    a_type: DType,
-    b_type: DType,
-](
-    a: InputTensor[dtype=a_type, rank=rank, ...],
-    b: InputTensor[dtype=b_type, rank=rank, ...],
-) raises -> IndexList[rank]:
+def batch_matmul_shape(
+    a: Some[TileTensorable], b: Some[TileTensorable]
+) raises -> IndexList[type_of(a).rank]:
     """Computes the output shape for the `mo.batch_matmul` graph op.
-
-    Parameters:
-        rank: Tensor rank of the batched matmul operands and output.
-        a_type: Element type of the `a` input tensor.
-        b_type: Element type of the `b` input tensor.
 
     Args:
         a: Left-hand batched input tensor.
@@ -382,9 +381,12 @@ def batch_matmul_shape[
     Returns:
         The output shape of the batched matmul.
     """
-    return batched_matmul_shape[rank](
-        a.to_tile_tensor[DType.int64](),
-        b.to_tile_tensor[DType.int64](),
+    comptime assert (
+        type_of(a).rank == type_of(b).rank
+    ), "a and b must share a rank"
+    return batched_matmul_shape[type_of(a).rank](
+        a.to_tile_tensor(),
+        b.to_tile_tensor(),
     )
 
 
@@ -1634,12 +1636,11 @@ struct PackMatmulBShapeFunc:
 def pack_matmul_b_shape_func_shape[
     a_type: DType,
     a_shape: IntTuple,
-    b_type: DType,
     b_shape: IntTuple,
     c_type: DType,
     c_shape: IntTuple,
     transpose_in_0: Bool,
-](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
+](b_input: Some[TileTensorable]) -> IndexList[2]:
     """Computes the output shape for the `pack_matmul_b_shape_func` graph op.
 
     Parameters:
@@ -1648,7 +1649,6 @@ def pack_matmul_b_shape_func_shape[
         a_shape: Static shape of the A operand; `a_shape[0]` is the M
             dimension used to select the matmul kernel variant
             (`UNKNOWN_VALUE` for dynamic M).
-        b_type: Element type of the B (weight) operand being packed.
         b_shape: Static shape of the B operand.
         c_type: Element type of the C (output) operand of the matmul
             the packed B will be used in.
@@ -1663,6 +1663,7 @@ def pack_matmul_b_shape_func_shape[
     Returns:
         The packed output shape for the B operand.
     """
+    comptime assert type_of(b_input).rank == 2, "b_input must be rank 2"
     var kernel_type_m = 0
     comptime if a_shape[0] != UNKNOWN_VALUE:
         kernel_type_m = Int(a_shape[0])
@@ -1670,7 +1671,7 @@ def pack_matmul_b_shape_func_shape[
         a_type,
         c_type,
         transpose_in_0,
-    ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
+    ](b_input.to_tile_tensor().as_immut(), kernel_type_m)
 
 
 @extensibility.register("mo.matmul_dynamic_scaled_fp8")
