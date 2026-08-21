@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.nn.kv_cache import KVConnectorType, MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -31,6 +31,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
@@ -50,6 +51,7 @@ from max.serve.scheduler.base import (
     SchedulerProgress,
 )
 from max.serve.scheduler.decode_scheduler import (
+    DecodeRequestPhase,
     DecodeScheduler,
     TokenGenerationSchedulerConfig,
 )
@@ -153,6 +155,28 @@ def response_count(q: DIQueues, req_id: RequestID) -> int:
     return sum(1 for batch in list(q.response_queue.queue) if req_id in batch)
 
 
+def in_transfer(decode: DecodeScheduler, req_id: RequestID) -> bool:
+    """True if ``req_id`` is tracked with its KV transfer in flight."""
+    pending = decode.requests.get(req_id)
+    return (
+        pending is not None and pending.phase is DecodeRequestPhase.TRANSFERRING
+    )
+
+
+def any_in_transfer(decode: DecodeScheduler) -> bool:
+    """True if any tracked request has a KV transfer in flight."""
+    return any(
+        pending.phase is DecodeRequestPhase.TRANSFERRING
+        for pending in decode.requests.values()
+    )
+
+
+def is_cancelled(decode: DecodeScheduler, req_id: RequestID) -> bool:
+    """True if ``req_id`` is tracked and flagged cancelled mid-transfer."""
+    pending = decode.requests.get(req_id)
+    return pending is not None and pending.cancelled
+
+
 class BasicDispatcherServer(PrefillDispatcherServer):
     def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
@@ -198,9 +222,9 @@ def create_di_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     overlap_prefill: bool = False,
     overlap_decode: bool = False,
     spec_decode_prefill: bool = False,
@@ -254,7 +278,7 @@ def create_di_scheduler(
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             dp=effective_prefill_dp,
             device=device,
             num_speculative_tokens=effective_num_spec_tokens,
@@ -270,7 +294,7 @@ def create_di_scheduler(
             max_seq_len=max_seq_len,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             dp=effective_decode_dp,
             device=device,
             num_speculative_tokens=effective_num_spec_tokens,
@@ -715,9 +739,9 @@ def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
     """prefill_reqs_per_replica must return to [0, 0] after requests complete
     end-to-end with DP=2.
 
-    Regression: check_for_completed_transfers popped from prefill_reqs
-    without decrementing prefill_reqs_per_replica, causing the counter to
-    drift and degrade DP replica load balancing.
+    Regression: check_for_completed_transfers popped the request from
+    tracking without decrementing prefill_reqs_per_replica, causing the
+    counter to drift and degrade DP replica load balancing.
     """
     decode, prefill, server_addr, q = create_di_scheduler(dp=2)
 
@@ -734,10 +758,10 @@ def test_prefill_reqs_per_replica_decremented_on_completion() -> None:
     # Run end-to-end, pumping decode until both transfers are observed
     decode.run_iteration()
     prefill.run_iteration()
-    run_until(lambda: not decode.prefill_reqs, decode, prefill)
+    run_until(lambda: not decode.requests, decode, prefill)
 
-    # Both requests should have been popped from prefill_reqs
-    assert decode.prefill_reqs == {}
+    # Both requests should have been popped from requests
+    assert decode.requests == {}
 
     # prefill_reqs_per_replica must be back to zero for both replicas
     assert decode.prefill_reqs_per_replica == [0, 0], (
@@ -751,8 +775,8 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     on the decode side.
 
     Regression: _handle_cancelled_requests removed the request from
-    prefill_reqs but never called kv_cache.release, permanently leaking
-    the blocks allocated before sending to prefill.
+    tracking but never called kv_cache.release, permanently leaking the
+    blocks allocated before sending to prefill.
     """
     decode, _, q, ctx = create_default_di_scheduler_and_submit_one_request()
     req_id = ctx.request_id
@@ -787,11 +811,73 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     )
 
 
+def test_cancel_after_prefill_response_defers_release_until_transfer_completes() -> (
+    None
+):
+    """Cancelling with a transfer in flight must defer KV block release
+    until the transfer engine confirms completion. ``is_complete`` is
+    forced ``False`` while cancelling, since real completion can otherwise
+    race the cancel and make this non-deterministic.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
+
+    q.request_queue.put(ctx)
+    decode.run_iteration()  # sends to prefill
+    prefill.run_iteration()  # prefill runs CE, sends PrefillResponse
+
+    # Decode receives the PrefillResponse: the request's transfer is in
+    # flight (TRANSFERRING phase).
+    run_until(lambda: in_transfer(decode, req_id), decode, prefill)
+    assert req_id in decode.requests
+
+    # Cancel while the transfer engine still reports it in flight.
+    q.cancel_queue.put([req_id])
+    with patch.object(
+        decode.transfer_engine, "is_complete", return_value=False
+    ):
+        decode.run_iteration()
+
+    # Cancellation must be deferred: still tracked and transferring, blocks
+    # not yet released, but the client already got its cancelled() result.
+    assert in_transfer(decode, req_id)
+    assert is_cancelled(decode, req_id)
+    pages_while_deferred = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_while_deferred > pages_before, (
+        "Blocks must not be released while the transfer is still in flight"
+    )
+    # The PrefillResponse's own generated-token result was queued before the
+    # cancellation, so scan for the cancelled entry rather than assuming it's
+    # first.
+    all_outputs = []
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        if req_id in batch:
+            all_outputs.append(batch[req_id])
+    assert all_outputs and all_outputs[-1].result is None  # cancelled
+
+    # Pump both schedulers until the transfer actually completes.
+    run_until(lambda: req_id not in decode.requests, decode, prefill)
+
+    # Only now must the deferred cleanup have run.
+    assert not decode.batch_constructor.contains(req_id)
+    pages_after_completion = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_after_completion == pages_before, (
+        f"KV blocks leaked after deferred cancel cleanup: had "
+        f"{pages_before} before, {pages_after_completion} after "
+        f"(expected {pages_before})."
+    )
+
+
 def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     """A PrefillResponse arriving after the request was cancelled must be
     silently discarded, not raise KeyError.
 
-    Regression: handle_prefill_response accessed self.prefill_reqs[request_id]
+    Regression: handle_prefill_response accessed self.requests[request_id]
     without checking membership, crashing when the request had already been
     cancelled and removed in a prior iteration.
     """
@@ -814,8 +900,7 @@ def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     # It must not crash and must discard it
     decode.run_iteration()
 
-    assert req_id not in decode.prefill_reqs
-    assert req_id not in decode.inflight_transfers
+    assert req_id not in decode.requests
     assert not decode.batch_constructor.contains(req_id)
 
 
@@ -920,8 +1005,7 @@ def test_completed_request_cleans_up_all_state() -> None:
     prefill.run_iteration()
     run_until(
         lambda: (
-            not decode.inflight_transfers
-            and not decode.prefill_reqs
+            not decode.requests
             and decode.kv_cache.block_count(replica_idx=0).used == 0
             and not prefill.active_transfers
             and not prefill.transfer_engine.inflight_send_transfers
@@ -931,8 +1015,7 @@ def test_completed_request_cleans_up_all_state() -> None:
     )
 
     # Transfer state fully cleaned up on both sides
-    assert decode.inflight_transfers == {}
-    assert decode.prefill_reqs == {}
+    assert decode.requests == {}
     assert prefill.active_transfers == {}
     assert prefill.transfer_engine.inflight_send_transfers == {}
 
@@ -962,8 +1045,7 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
     # Both sides need to poll for transfer completion
     run_until(
         lambda: (
-            not decode.inflight_transfers
-            and not decode.prefill_reqs
+            not decode.requests
             and not prefill.active_transfers
             and not prefill.transfer_engine.inflight_send_transfers
             and prefill.kv_cache.block_count(replica_idx=0).used == 0
@@ -972,15 +1054,15 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
         prefill,
     )
 
-    assert decode.inflight_transfers == {}
-    assert decode.prefill_reqs == {}
+    assert decode.requests == {}
     assert prefill.active_transfers == {}
     assert prefill.transfer_engine.inflight_send_transfers == {}
     assert prefill.kv_cache.block_count(replica_idx=0).used == 0
 
 
 def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
-    """A request cancelled while prefill is in-flight does not enter the decode batch."""
+    """A request cancelled mid-prefill never enters the decode batch;
+    prefill_reqs cleanup is deferred until its in-flight transfer completes."""
     decode, prefill, q, ctx = (
         create_default_di_scheduler_and_submit_one_request()
     )
@@ -994,12 +1076,16 @@ def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
 
     prefill.run_iteration()
 
-    # Decode processes cancel + in-flight prefill response
-    # Request should not enter the decode batch
+    # Decode processes cancel + in-flight prefill response in one tick: the
+    # transfer that response kicked off is still running, so cleanup is
+    # deferred rather than dropped.
     decode.run_iteration()
 
-    # Request must not be in decode batch or prefill_reqs
-    assert req_id not in decode.prefill_reqs
+    assert is_cancelled(decode, req_id)
+    assert not decode.batch_constructor.contains(req_id)
+
+    # Once the transfer actually completes, the deferred cleanup runs.
+    run_until(lambda: req_id not in decode.requests, decode, prefill)
     assert not decode.batch_constructor.contains(req_id)
 
     # The final response should be the cancelled sentinel
@@ -1201,7 +1287,7 @@ def test_kv_backpressure_stops_sending_to_prefill() -> None:
 
     decode.reserve_memory_and_send_to_prefill()
 
-    assert len(decode.prefill_reqs) == 1, "Only one request should be sent"
+    assert len(decode.requests) == 1, "Only one request should be sent"
     assert len(decode.pending_reqs) == 1, "Second request should be held back"
 
 
@@ -1576,7 +1662,7 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
             len(done_request_ids(q)) == num_requests
             and decode.kv_cache.block_count(replica_idx=0).used == 0
             and prefill.kv_cache.block_count(replica_idx=0).used == 0
-            and not decode.inflight_transfers
+            and not any_in_transfer(decode)
             and not prefill.active_transfers
         ),
         decode,
@@ -1595,7 +1681,7 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     assert decode.kv_cache.block_count(replica_idx=0).used == 0
     assert prefill.kv_cache.block_count(replica_idx=0).used == 0
     # No lingering transfer state
-    assert decode.inflight_transfers == {}
+    assert decode.requests == {}
     assert prefill.active_transfers == {}
 
 
@@ -1896,9 +1982,9 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
     # Feed the response into the decode scheduler
     decode.handle_prefill_response(prefill_response)
 
-    # The context in prefill_reqs should now have draft tokens set
-    assert req_id in decode.prefill_reqs
-    pending = decode.prefill_reqs[req_id]
+    # The tracked context should now have draft tokens set
+    assert req_id in decode.requests
+    pending = decode.requests[req_id]
     assert (
         len(pending.context.spec_decoding_state.draft_tokens_to_verify)
         == num_spec_tokens
@@ -2267,9 +2353,9 @@ def test_stall_watchdog_fires_when_prefill_stalled() -> None:
     ctx = create_text_context(target_endpoint=server_addr, prompt_len=100)
     q.request_queue.put(ctx)
 
-    # Move request into prefill_reqs without running prefill (simulates NIXL stall).
+    # Move request into tracking without running prefill (simulates NIXL stall).
     decode.reserve_memory_and_send_to_prefill()
-    assert len(decode.prefill_reqs) == 1
+    assert len(decode.requests) == 1
 
     # Backdate last activity to simulate a long stall.
     decode._last_batch_activity = time.monotonic() - 9999
@@ -2287,7 +2373,7 @@ def test_stall_watchdog_no_fire_within_timeout() -> None:
     q.request_queue.put(ctx)
 
     decode.reserve_memory_and_send_to_prefill()
-    assert len(decode.prefill_reqs) == 1
+    assert len(decode.requests) == 1
 
     # Last activity was just now.
     decode._last_batch_activity = time.monotonic()
@@ -2339,7 +2425,7 @@ def test_stall_watchdog_clock_resets_while_idle() -> None:
     ctx = create_text_context(target_endpoint=server_addr, prompt_len=100)
     q.request_queue.put(ctx)
     decode.reserve_memory_and_send_to_prefill()
-    assert len(decode.prefill_reqs) == 1
+    assert len(decode.requests) == 1
 
     result = decode.run_iteration()
 
@@ -2389,7 +2475,7 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
 def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``run_iteration`` evicts a request stuck in ``prefill_reqs`` past TTL."""
+    """``run_iteration`` evicts a request stuck AWAITING_PREFILL past TTL."""
     decode, prefill, server_addr, q = create_di_scheduler()
     decode.scheduler_config.decode_request_ttl_s = 30.0
 
@@ -2403,17 +2489,18 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
 
     # Send to prefill but never run prefill, so PrefillResponse never arrives.
     decode.run_iteration()
-    assert req_id in decode.prefill_reqs
+    assert req_id in decode.requests
     assert decode.prefill_reqs_per_replica[0] == 1
 
     # Patch only affects time.monotonic() in _evict_expired_requests; the
-    # already-set PendingPrefill.sent_at uses the originally-captured ref.
+    # already-set PendingDecodeRequest.phase_entered_at uses the
+    # originally-captured ref.
     real_now = time.monotonic()
     monkeypatch.setattr(time, "monotonic", lambda: real_now + 1000.0)
 
     decode.run_iteration()
 
-    assert req_id not in decode.prefill_reqs
+    assert req_id not in decode.requests
     assert decode.prefill_reqs_per_replica[0] == 0
     assert decode.kv_cache.block_count(replica_idx=0).used == pages_before
 
@@ -2476,7 +2563,7 @@ def _setup_tg_alloc_deferred_with_pending_prefill() -> DecodeScheduler:
     )
     q.request_queue.put(ctx2)
     decode.reserve_memory_and_send_to_prefill()
-    assert ctx2.request_id in decode.prefill_reqs
+    assert ctx2.request_id in decode.requests
     assert len(decode.pending_reqs) == 0
 
     # The upcoming InsufficientBlocksError must be attributable solely to
@@ -2494,11 +2581,11 @@ def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
     reservation converts into a preemptible TG request, so the deficit
     isn't necessarily permanent."""
     decode = _setup_tg_alloc_deferred_with_pending_prefill()
-    assert len(decode.prefill_reqs) == 1
+    assert len(decode.requests) == 1
 
     # Generate until req1 fills its page; the next alloc needs a second
     # block, which only req2's pending-prefill reservation holds. Must not
-    # raise -- prefill_reqs counts as in-flight work.
+    # raise -- requests counts as in-flight work.
     for _ in range(40):
         decode.run_iteration()
 
@@ -2538,7 +2625,7 @@ def _patch_decode_metrics(recorder: _GaugeRecorder) -> Any:
 
 def test_decode_publish_metrics_emits_pending_snapshot() -> None:
     """Each decode iteration that runs a batch publishes the current
-    pending depth (len(pending_reqs) + len(prefill_reqs)) as a gauge.
+    pending depth (len(pending_reqs) + len(requests)) as a gauge.
     """
     recorder = _GaugeRecorder()
     with _patch_decode_metrics(recorder):
@@ -2553,12 +2640,10 @@ def test_decode_publish_metrics_emits_pending_snapshot() -> None:
         decode.run_iteration()
         prefill.run_iteration()
         run_until(
-            lambda: not decode.pending_reqs and not decode.prefill_reqs,
+            lambda: not decode.pending_reqs and not decode.requests,
             decode,
             prefill,
         )
 
         assert recorder.last == 0
-        assert (
-            len(decode.pending_reqs) + len(decode.prefill_reqs) == recorder.last
-        )
+        assert len(decode.pending_reqs) + len(decode.requests) == recorder.last

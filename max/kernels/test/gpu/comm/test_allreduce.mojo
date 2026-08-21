@@ -395,7 +395,6 @@ def allreduce_naive_test() raises -> None:
         host_ptrs[i].free()
 
 
-@__parameter
 def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(

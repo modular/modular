@@ -156,7 +156,7 @@ def test_exp2_compile() raises:
             exp_op,
             target=A100.target(),
             emission_kind="asm",
-            compile_options="nvptx-short-ptr=true,denormal-fp-math-f32=preserve-sign",
+            compile_options="target-abi=shortptr,denormal-fp-math-f32=preserve-sign",
         ]()
     )
 

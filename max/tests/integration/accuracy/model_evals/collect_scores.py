@@ -113,6 +113,7 @@ def collect(
                 "total": summary.get("total"),
                 "mean_output_tokens": summary.get("mean_output_tokens"),
                 "p50_output_tokens": summary.get("p50_output_tokens"),
+                "stop_ratio": summary.get("stop_ratio"),
                 "path": str(score_path.relative_to(artifacts_dir)),
                 "summary": summary,
             }
@@ -185,18 +186,19 @@ def markdown_table(rows: list[dict[str, Any]], missing: list[str]) -> str:
     lines = [
         (
             "| Benchmark | Group | Score | Errors | Total | Mean tokens | p50"
-            " tokens |"
+            " tokens | Stop ratio |"
         ),
-        "|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['benchmark']} | {r['group']} | {fmt(r['score'])} |"
             f" {fmt(r['errors'])} | {fmt(r['total'])} |"
             f" {fmt(r['mean_output_tokens'])} | {fmt(r['p50_output_tokens'])} |"
+            f" {fmt(r.get('stop_ratio'))} |"
         )
     for name in missing:
-        lines.append(f"| {name} | | MISSING | | | | |")
+        lines.append(f"| {name} | | MISSING | | | | | |")
     return "\n".join(lines) + "\n"
 
 

@@ -94,7 +94,7 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
-from ..memory_estimation import _MemoryPlan
+from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
@@ -148,7 +148,7 @@ class TextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
-        memory_plan: _MemoryPlan,
+        memory_plan: MemoryPlan,
     ) -> None:
         """Initialize a text generation pipeline instance.
 
@@ -200,6 +200,7 @@ class TextGenerationPipeline(
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
             pipeline_config.sampling.structured_output_backend,
+            pipeline_config.sampling.structured_output_any_whitespace,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -250,8 +251,7 @@ class TextGenerationPipeline(
         )
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
-                max_entries=pipeline_config.runtime.max_vision_cache_entries,
-                plan=pipeline_config.runtime._vision_cache_plan,
+                plan=memory_plan.vision_cache_plan,
                 devices=self._devices,
             )
 

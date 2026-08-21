@@ -51,7 +51,7 @@ def convert_with_mtp_state_dict(
 
         # Drop FP8 KV-cache static scales emitted by some checkpoints; MAX
         # reads KV cache scales from a separate configuration path.
-        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+        if max_name.endswith((".k_scale", ".v_scale")):
             continue
 
         mtp_prefix = f"layers.{mtp_layer_idx}."

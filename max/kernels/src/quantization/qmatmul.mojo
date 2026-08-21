@@ -177,9 +177,10 @@ def _quantize_a_buffer[
 
         var am_ptr = a.ptr + ko
 
-        @__parameter
         @always_inline
-        def process_rows[tile_m: Int](m: Int):
+        def process_rows[
+            tile_m: Int
+        ](m: Int) {mut am_ptr, mut a_quant_ptr, mut a_scale_ptr, imm}:
             for row in range(tile_m):
                 var ak_quant_ptr = a_quant_ptr + row * aq_interleave
                 var ak_scale_ptr = a_scale_ptr + row
@@ -217,7 +218,7 @@ def _quantize_a_buffer[
             a_quant_ptr += tile_m * ko_count
             a_scale_ptr += tile_m * (ko_count // group_size)
 
-        tile[process_rows, [4, 2, 1]](0, M)
+        tile[[4, 2, 1]](0, M, process_rows)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
         _ = ko_count
@@ -1030,18 +1031,17 @@ def _matmul_qint4_m_1[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @__parameter
-    @__copy_capture(N, K, k_groups, work_count, num_workers)
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {var N, var K, var k_groups, var work_count, var num_workers, imm}:
         var block_range = partition_work(task_id, num_workers, work_count, 1)
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
 
         var b_ptr = b.ptr.bitcast[Int8]()
 
-        @__parameter
         @always_inline
-        def process_cols[tile_n: Int](n_idx: Int):
+        def process_cols[tile_n: Int](n_idx: Int) {imm}:
             var n = task_n_start + n_idx * simd_width
 
             var c_float = _Accumulator[DType.float32, 1, tile_n, simd_width]()
@@ -1072,12 +1072,12 @@ def _matmul_qint4_m_1[
                         Index(0, n + nn * simd_width), val
                     )
 
-        tile[process_cols, [2, 1]](0, ceildiv(task_n_count, simd_width))
+        tile[[2, 1]](0, ceildiv(task_n_count, simd_width), process_cols)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = task_n_start
         _ = b_ptr
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
 
 def _matmul_qint4_m_any[
@@ -1119,9 +1119,9 @@ def _matmul_qint4_m_any[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @__parameter
-    @__copy_capture(M, N, K, k_groups, work_count, num_workers)
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {var M, var N, var K, var k_groups, var work_count, var num_workers, imm}:
         var block_range = partition_work(task_id, num_workers, work_count, 1)
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
@@ -1132,9 +1132,13 @@ def _matmul_qint4_m_any[
             var ko_count = min(K_BATCH_SIZE, K - ko)
             var ko_group = ko // group_size
 
-            @__parameter
+            # TODO(MOCO-4664): Capture the loop-scoped values by copy to work
+            # around the wrong debug-info scope emitted for implicit
+            # nested-scope captures, which breaks --debug-level=full builds.
             @always_inline
-            def process_cols[tile_n: Int](n_idx: Int):
+            def process_cols[
+                tile_n: Int
+            ](n_idx: Int) {var ko, var ko_count, var ko_group, imm}:
                 var n = task_n_start + n_idx * simd_width
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
@@ -1182,9 +1186,10 @@ def _matmul_qint4_m_any[
                 var ak_ptr = a_quant.ptr + ko * M
                 var ak_scale_ptr = a_scale.ptr + ko_group * M
 
-                @__parameter
                 @always_inline
-                def process_rows[tile_m: Int](m: Int):
+                def process_rows[
+                    tile_m: Int
+                ](m: Int) {mut ak_scale_ptr, mut ak_ptr, imm}:
                     var c_ptr = c.ptr + c._offset(Index(m, n))
                     var c_float = _Accumulator[
                         DType.float32, tile_m, tile_n, simd_width
@@ -1235,12 +1240,12 @@ def _matmul_qint4_m_any[
                                         val,
                                     )
 
-                tile[process_rows, [4, 2, 1]](0, M)
+                tile[[4, 2, 1]](0, M, process_rows)
                 # TODO(MOCO-2074): Suppress false positive unused var warning.
                 _ = ak_ptr
                 _ = ak_scale_ptr
 
-            tile[process_cols, [2, 1]](0, ceildiv(task_n_count, simd_width))
+            tile[[2, 1]](0, ceildiv(task_n_count, simd_width), process_cols)
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = ko_count
             _ = ko_group
@@ -1249,7 +1254,7 @@ def _matmul_qint4_m_any[
         _ = task_n_start
         _ = b_ptr
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
 
 def _matmul_qint4[

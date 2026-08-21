@@ -49,8 +49,8 @@ from .driver import (
     NPU,
     Accelerator,
     Device,
+    DeviceQueue,
     DeviceSpec,
-    DeviceStream,
     accelerator_api,
     accelerator_architecture_name,
     accelerator_count,
@@ -60,9 +60,6 @@ from .driver import (
     load_devices,
     scan_available_devices,
 )
-
-del driver  # type: ignore
-del buffer  # type: ignore
 
 
 @contextlib.contextmanager
@@ -107,8 +104,8 @@ __all__ = [
     "Device",
     "DeviceEvent",
     "DevicePinnedBuffer",
+    "DeviceQueue",
     "DeviceSpec",
-    "DeviceStream",
     "LaunchTraceEntry",
     "accelerator_api",
     "accelerator_architecture_name",

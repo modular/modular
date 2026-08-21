@@ -255,8 +255,8 @@ struct ParameterizedArray[T: Copyable & Deinitable](
 This struct has a single parameter, `T`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
 parameter*. `T` conforms to the
-[`Copyable`](/docs/std/builtin/value/Copyable/) trait and therefore to the
-[`Movable`](/docs/std/builtin/value/Movable/) trait.
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait and therefore to the
+[`Movable`](/docs/std/traits/movable/Movable/) trait.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of

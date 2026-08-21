@@ -42,6 +42,7 @@ from max.pipelines.modeling.types import (
     RequestID,
 )
 from max.pipelines.request.open_responses import (
+    ImageGenerationDetails,
     OutputImageContent,
     OutputVideoContent,
     Usage,
@@ -107,9 +108,11 @@ class PixelGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[DiffusionPipeline]
-        | type[PipelineExecutor[Any, Any, Any]]
-        | type[Module[Any, Any]],
+        pipeline_model: type[
+            DiffusionPipeline
+            | PipelineExecutor[Any, Any, Any]
+            | Module[Any, Any]
+        ],
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -312,11 +315,17 @@ class PixelGenerationPipeline(
             pixel_data = images[offset : offset + num_images_per_prompt]
 
             output_format = getattr(_context, "output_format", "jpeg")
-            # Usage reports generated pixels as output tokens, counted from
+            # Per the unified usage spec, image generation keeps token counts
+            # at 0; billing-relevant metadata (dimensions, megapixels, steps,
+            # image count) lives under image_generation_details, measured from
             # the actual output arrays rather than the requested dimensions.
-            # Prompt text is not counted, so input_tokens stays 0.
-            output_pixels = int(
-                sum(img.shape[0] * img.shape[1] for img in pixel_data)
+            usage = Usage(
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+                image_generation_details=ImageGenerationDetails.from_images(
+                    pixel_data, steps=_context.num_inference_steps
+                ),
             )
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
@@ -325,11 +334,7 @@ class PixelGenerationPipeline(
                     OutputImageContent.from_numpy(img, format=output_format)
                     for img in pixel_data
                 ],
-                usage=Usage(
-                    input_tokens=0,
-                    output_tokens=output_pixels,
-                    total_tokens=output_pixels,
-                ),
+                usage=usage,
             )
 
         return responses
@@ -387,4 +392,3 @@ class PixelGenerationPipeline(
         Args:
             request_id: The request ID to release resources for.
         """
-        pass

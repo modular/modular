@@ -207,5 +207,3 @@ class _Cumsum:
 
 class ReductionTests(_Sum, _Mean, _Softmax, _Cumsum):
     """Aggregates all reduction test classes for thin subclassing."""
-
-    pass

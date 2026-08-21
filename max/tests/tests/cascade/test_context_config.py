@@ -23,7 +23,14 @@ from __future__ import annotations
 import os
 
 import pytest
-from max.experimental.cascade import GenerateRequest, Worker, worker_method
+from max.experimental.cascade import (
+    ChatMessage,
+    GenAIRequest,
+    GenAITextChunk,
+    TextGenOptions,
+    Worker,
+    worker_method,
+)
 from max.experimental.cascade.core.pipeline_method import (
     _pipeline_method_scope,
 )
@@ -135,12 +142,13 @@ async def test_open_context_runs_pipeline(transport: Transport) -> None:
         pipeline = await build_dummy_textgen_pipeline()
         await pipeline.deploy(runtime)
 
-        req = GenerateRequest(num_tokens=5)
-        tokens = [
-            token async for token in pipeline.generate_text(req, "hello, ")
-        ]
+        req = GenAIRequest(
+            messages=[ChatMessage.text("user", "hello, ")],
+            text=TextGenOptions(num_tokens=5),
+        )
+        tokens = [token async for token in pipeline.generate(req)]
 
-    assert tokens == ["A"] * 5
+    assert tokens == [GenAITextChunk(text="A")] * 5
 
 
 @pytest.mark.asyncio
@@ -178,9 +186,10 @@ async def test_open_context_runs_pipeline_multi_cpu_worker() -> None:
         pipeline = await build_dummy_textgen_pipeline()
         await pipeline.deploy(runtime)
 
-        req = GenerateRequest(num_tokens=5)
+        req = GenAIRequest(
+            messages=[ChatMessage.text("user", "hello, ")],
+            text=TextGenOptions(num_tokens=5),
+        )
         for _ in range(2 * 3):
-            tokens = [
-                token async for token in pipeline.generate_text(req, "hello, ")
-            ]
-            assert tokens == ["A"] * 5
+            tokens = [token async for token in pipeline.generate(req)]
+            assert tokens == [GenAITextChunk(text="A")] * 5

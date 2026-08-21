@@ -39,5 +39,5 @@ max serve --custom-architectures qwen2 --model Qwen/Qwen2.5-0.5B-Instruct
 ```
 
 For more information, see the
-[Serve custom model architectures](https://docs.modular.com/develop/serve-custom-model-architectures/)
+[Serve custom model architectures](https://max.modular.com/develop/serve-custom-model-architectures/)
 tutorial.

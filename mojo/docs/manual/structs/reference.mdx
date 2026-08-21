@@ -135,7 +135,7 @@ def free_node(var node_ptr: Self.NodePointer):
 ```
 
 The two steps are separate because `dealloc()` releases memory without running
-destructors on whatever the memory holds. Skipping
+deinitializers on whatever the memory holds. Skipping
 [`unsafe_deinit_pointee()`](/docs/std/memory/pointer/Pointer/#unsafe_deinit_pointee)
 would leak whatever the node's value owns, which in this case is a
 [`String`](/docs/std/collections/string/string/String/)'s heap buffer.
@@ -221,13 +221,13 @@ list_head[].free_chain()
 ListNode.free_node(list_head)
 ```
 
-### Destructors
+### Deinitializers
 
 When you build real Mojo data structures, you usually want a safe API that
 hides raw pointers from users. In a complete linked-list type (rather than
 a small demo of linkable nodes) the parent list handles node allocation and
 freeing. Because it owns the nodes, it also performs cleanup in its
-[destructor](/docs/manual/lifecycle/death/).
+[deinitializer](/docs/manual/lifecycle/death/).
 
 Here's a small example that shows how to deinitialize `self`:
 
@@ -369,6 +369,6 @@ one one two three five eight
   [using pointers](/docs/manual/pointers/using-pointers/)
   and [lifetime and origin rules](/docs/manual/values/lifetimes/) guides.
 - Learn more about how to **manage cleanup** in the Mojo
-  [destructor](/docs/manual/lifecycle/death/) documentation.
+  [deinitializer](/docs/manual/lifecycle/death/) documentation.
 
 <!-- markdownlint-enable MD033 -->

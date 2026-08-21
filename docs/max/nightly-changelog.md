@@ -159,7 +159,32 @@ This version is still a work in progress.
     two are mutually exclusive and both off by default.
 - Expanded Qwen support:
   - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Added `Qwen/Qwen3.8-27B` support in bfloat16 on the existing
+    `Qwen3_5ForConditionalGeneration` architecture, covered by logit
+    verification against the torch reference.
+  - `Qwen3_5ForConditionalGeneration` now serves across multiple GPUs.
+    Tensor parallelism splits the attention heads, the gated-DeltaNet key and
+    value heads, and the per-device linear-attention state pools; both mixers
+    reject a device count that would not divide their head counts evenly.
+  - `Qwen3_5ForConditionalGeneration` now supports device graph capture.
+  - Added multi-token prediction (MTP) speculative decoding for Qwen3.8
+    (`UnifiedMTPQwen3_5ForConditionalGeneration`), fusing the target, the
+    baked-in MTP head and a recurrent-state rollback into one graph, selected
+    for Qwen3.5-family checkpoints that ship an MTP head with
+    `--speculative-method mtp`. Rejecting a speculated token cannot be undone
+    by rewinding a KV length pointer when the layer is recurrent, so the graph
+    snapshots the gated-DeltaNet conv and recurrent pools before verifying and
+    replays the two state kernels over the accepted rows. The graph is served
+    through the Mach engine; MAX compiles and exports it but does not run it.
   - Fixed a `Qwen3EmbeddingModel` crash.
+- Added `--state-pool-dtype`, which overrides the storage dtype of a hybrid
+  model's recurrent state pools (SSM and linear-attention conv and recurrent
+  state). It defaults to the model's compute dtype. `float32` makes a
+  speculated generation follow the same state trajectory as an unspeculated
+  one -- the recurrence rounds to the pool dtype at each call boundary, so a
+  lossy pool makes the trajectory depend on how speculation chunked the
+  sequence -- at roughly double the per-request state memory (Qwen3.8-27B:
+  74.8 to 149.6 MiB per seated request).
 - Added per-request LoRA adapter support: `LoRALinear` and
   `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
   with `LoRAManager.apply` swapping target layers in a model.
@@ -171,6 +196,171 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
+  pipeline is loaded: the effective `max_length`, `max_batch_size`,
+  `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
+  and its schedulers consume.
+- Renamed `MemoryEstimator.estimate_memory_footprint` to
+  `MemoryEstimator.plan_from_sizes`, after the `MemoryPlan` it returns. Use
+  `MemoryEstimator.plan` instead to plan from a `PipelineConfig` alone;
+  `plan_from_sizes` is for callers that have already computed the weight,
+  activation, and signal-buffer sizes.
+- Made `MemoryEstimator.free_memory`, `static_memory_size`,
+  `available_kv_cache_memory`, and `max_supported_sequence_length` private.
+  They are steps within a memory plan rather than useful on their own, and
+  the values they produced are now available on `MemoryPlan`.
+- The block-based vision encoder cache now shards its storage across
+  devices instead of replicating every entry on each one. The same
+  `--vision-cache-utilization` fraction buys the same cache capacity while
+  reserving only `1/n_devices` of it per device; the remainder stays with
+  the KV cache. Cache hits gather rows to each device in one batched
+  submission.
+- Added opt-in token-balanced CE scheduling across data-parallel replicas.
+  With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
+  encoding requests wait in an unbound pool and are placed by a per-step
+  planner that prices them at their post-prefix-cache length (a read-only
+  probe of each replica's device cache and the shared host/disk tiers) and
+  binds them to the least-loaded replica when first scheduled. Unbalanced CE
+  work may be deferred up to the timeout while its replica runs decode
+  instead, until per-step occupancy reaches `--dp-ce-balance-threshold`
+  (default 0.8). A below-threshold step with CE work on two or more replicas
+  still runs immediately with each replica's chunk size reduced to the
+  balance level, so only the excess defers
+  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on; skipped when the
+  balance level is under half the CE chunk target, where the extra chunks
+  would cost more than the imbalance).
+- Added `--chunked-prefill-min-chunk-size` (config key
+  `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
+  in tokens, on any chunk created by chunked prefill. When splitting a
+  request against the CE token budget, the cut is moved earlier so that
+  neither the chunk nor its remainder is smaller than the floor; if no legal
+  cut point exists within the remaining budget, the request is left unsplit
+  for a later step. This avoids degenerate slivers (for example an 8-token
+  tail chunk after an 8192-token budget cut) that pay a full step's overhead
+  and re-read the request's entire context in attention for almost no
+  progress.
+- Fixed non-streaming chat completions leaking a literal structural tool-call
+  marker (for example `<tool_call>`) into `message.content` when a
+  `max_tokens` truncation landed mid tool-call block. The response now
+  surfaces only the content before the marker, with
+  `finish_reason == "length"`.
+- Added an experimental `--fold-sampler-into-graph` option (default off) that
+  folds greedy token selection (argmax) into the captured forward graph, so a
+  single device-graph replay materializes the sampled token instead of a
+  separate sampler submission with a blocking readback. Applies to all-greedy
+  decode batches on architectures that emit the folded token output (currently
+  Nemotron-H); non-greedy requests fall back to the separate sampler.
+- Added a `max-pending-futures` config (default 1, the classic
+  overlap-scheduler depth of one forward in flight per request). Request
+  bookkeeping now tracks unrealized future-token placeholders with a counted
+  model instead of a single-sentinel check, and setting the value to 2 enables
+  experimental schedule-ahead decoding: two forwards in flight per request,
+  with the next step's input token realized on-device from the folded sampler
+  output. Behavior at the default depth is unchanged.
+- Fixed the serve CLI dropping the `fold-sampler-into-graph`,
+  `max-pending-futures`, and greedy-sampling gate settings on their way to the
+  model worker, which silently disabled the folded greedy sampler. With the
+  flags threaded through, `--fold-sampler-into-graph` removes the per-token
+  blocking sampler submission and substantially improves decode latency on
+  architectures that support it.
+- Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
+  file) without an `InferenceSession`. The resulting `CompiledModel` can
+  be initialized on any session via `InferenceSession.init`. It replaces
+  `InferenceSession.read`, which has been removed.
+- Image generation responses on the Open Responses endpoint now report
+  `usage`: token counts stay at 0 and a new `usage.image_generation_details`
+  block carries `width`, `height`, `megapixels`, `steps`, and `image_count`,
+  measured from the actual generated images rather than the requested
+  dimensions. Previously `usage` was always `null`. (An interim nightly
+  reported the raw pixel count as `output_tokens`; that encoding is replaced
+  by `image_generation_details`.)
+- Added `InferenceSession.read` for loading a compiled-model artifact (a
+  `.mef` file) previously saved with `CompiledModel.export_mef`. It accepts a
+  path or a binary file-like object (such as `io.BytesIO`), deserializes
+  without invoking the graph compiler, and returns a `CompiledModel` ready to
+  pass to `InferenceSession.init`.
+- Added `--no-enable-tool-call-constrained-decode` (config key
+  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
+  tool-call parsing from constrained decoding. When disabled, a configured
+  `--tool-parser` still parses tool calls out of the generated text, but no
+  server-generated grammar is produced and the bitmask constrained-decode path
+  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
+  or a named function can no longer force a tool call. This is independent of
+  `--enable-structured-output`, which continues to gate user-supplied
+  `response_format` JSON schemas.
+- Fixed the `code` label on the `maxserve_request_count` metric so it reports
+  the HTTP status code actually returned to the client. The count is now
+  recorded from the HTTP layer, so failures rejected before generation (for
+  example a request with an unreachable image URL) are counted with their real
+  status code instead of being labeled `200` or dropped entirely. Liveness and
+  observability endpoints (`/health`, `/version`, `/ping`, `/metrics`) are not
+  counted.
+- Failed request submissions in the OpenAI-compatible serving endpoints now
+  surface as HTTP error responses instead of a `200 OK` streaming response that
+  carries an error payload. Request tokenization and the handoff to the model
+  worker now complete before the streaming response headers are sent, so a
+  failure at submission time (for example, a dead model worker) maps to an HTTP
+  5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
+  chunk has been sent, are still serialized as an error event within the stream.
+- Added request-queue backpressure to MAX serve via two cooperating caps. The
+  `--max-queue-size` flag (env var `MAX_SERVE_MAX_QUEUE_SIZE`, cap *N*) bounds
+  the request queue to the model worker; once it is full, new requests are
+  rejected immediately with HTTP 429 instead of being enqueued. The
+  `--max-pending-requests` flag (env var `MAX_SERVE_MAX_PENDING_REQUESTS`, cap
+  *M*) stops the worker from draining the request queue once its pending
+  (prefill) queue is *M* deep, so the request queue actually backs up under
+  load. Together they form a self-calibrating mechanism that sheds load to keep
+  latency within SLAs and naturally accounts for long requests holding batch
+  space. Both default to unbounded. Rejections are observable via the existing
+  `maxserve.request_count` metric with `code="429"`.
+- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
+  waits for in-flight requests to finish after receiving `SIGTERM` before
+  exiting (default 5 seconds). Raise it so long-running requests are drained
+  rather than dropped during a rolling restart.
+- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
+  multi-turn conversation gets cache hits even when a later turn is scheduled on
+  a different replica than the previous one. GPU prefix-cache hits are served by
+  a cheap device-to-device copy of the cached pages onto the assigned replica,
+  and the CPU/disk offload tiers are now a single pool shared by every replica
+  (a block offloaded by one replica can be loaded by another). As a result,
+  `host_offload_max_gb` now sizes one shared host pool of that size for
+  the whole deployment, rather than allocating a separate pool of that size per
+  replica.
+- The dKV external KV-cache connector (`--kv-connector-config '{"type":
+  "dkv"}'`) now supports
+  data-parallel (DP) serving and shares its prefix cache across DP replicas on
+  the default single-tenant path, matching the `local` and `tiered` connectors.
+  Every replica resolves to the same replica-agnostic store, and the stored
+  block key carries no replica component, so a block offloaded through one
+  replica is served to any other.
+- The dKV external KV-cache connector now supports tensor parallelism
+  (TP greater than 1) on the multi-tenant path for head-sharded (MHA/GQA), MLA
+  (replicated-KV), and GQA head-replicated (`allow_kv_head_replication`) models.
+  Each GPU handshakes its own per-shard store, and every KV load/offload fans
+  out across the processing replica's shard clients with identical block ids and
+  hashes; a block counts as loaded only once every shard has it. The store key
+  reflects the KV-head slice each GPU holds: the TP rank when head-sharded, a
+  single shared shard for MLA, and the head-group index under head replication.
+- On the dKV multi-tenant tensor-parallel path, a KV load that returns
+  differing block counts across a replica's per-GPU shard clients now drains
+  the over-loading shards' in-flight device reads before returning the minimum
+  count. This keeps a stray in-flight host-to-device copy (into a block the
+  block manager frees because it did not land on every shard) from later
+  clobbering a reallocated block. The drain host-completes the reads on the
+  remote (NIXL) transport and enqueues a cross-stream ordering on the
+  co-located same-host (CUDA) transport, so it closes the window on both. The
+  common equal-count path is unchanged and pays no extra synchronization.
+- The dKV external KV-cache connector (`--kv-connector-config '{"type":
+  "dkv"}'`) now requires a
+  non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
+  operator); the empty-tenant "default" path is removed. Both the connector and
+  the dKV server now reject an unset/empty tenant rather than keying an unfenced
+  shared store, so every deployment (single-tenant included) routes through the
+  per-tenant region-sharded store — DP replicas of one tenant still share one
+  store. Multi-cache models (speculative draft+target, quantized values+scales)
+  now resolve on this path, folded into the handshake's `kv_config_hash`. A
+  single-tenant node spanning more than one GPU must set the dKV server's
+  `--fair-share-partitions` to its GPU count.
 - Added `MODULAR_MAX_RELEASE_FREE_HOST_MEMORY`, an opt-in serving knob that
   returns free host-allocator pages to the OS once model compilation finishes,
   before graph capture. Graph compilation leaves tens of GiB free-but-unreturned
@@ -258,21 +448,29 @@ This version is still a work in progress.
   with the weight adapter casting at load time.
 - Improved multi-device startup latency by batching replay preface copies
   into a single submission.
-- The vision encoder cache can store embeddings in fixed-size blocks,
-  enabled by setting the `MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION`
-  environment variable to a fraction in (0, 0.5] of the KV cache pool
-  budget (`0`, the default, keeps the entry-count cache) on
-  architectures whose memory planner reports a vision row spec (Gemma 4
-  and Kimi K2.5). Capacity is a byte budget carved into 128-token
-  blocks — a video spans many blocks and an image a few — so a
-  video-capable model no longer collapses the cache to a handful of
-  worst-case-video slots that starve image workloads.
+- The vision encoder cache now stores embeddings in fixed-size blocks.
+  Capacity is a byte budget carved into 128-token blocks — a video spans
+  many blocks and an image a few — so a video-capable model no longer
+  collapses the cache to a handful of worst-case-video slots that starve
+  image workloads. The budget is set with the new
+  `--vision-cache-utilization` flag, a fraction of the KV cache pool
+  budget (default `0.05`; `0` disables caching). The previous
+  entry-count cache and its `--max-vision-cache-entries` flag are
+  removed.
 - Vision embedding assembly during chunked prefill is now bounded by the
   active window: each step copies only the embedding rows whose
   placeholder tokens fall inside the chunk, with dense scatter indices,
   instead of rebuilding every image's rows with out-of-bounds sentinels.
   Per-chunk copy cost now scales with the chunk size rather than the
   request's total image tokens.
+- Added `DeviceBuffer.unsafe_host_ptr()` to the Mojo `max.gpu.host` API. On
+  devices with unified memory (Apple silicon), it returns a CPU-addressable
+  pointer to the buffer, so the host can read a kernel's output after
+  `DeviceContext.synchronize()` without an `enqueue_copy` round trip. Reads
+  through it are uncached, so it suits small control records rather than bulk
+  readback. A CPU device returns the buffer's own pointer, since its
+  allocations are host memory already; devices whose memory is not
+  CPU-addressable raise.
 
 ### Inference server
 
@@ -286,6 +484,11 @@ This version is still a work in progress.
   (OpenRouter's name for that same top level) now selects the lower level, so
   an unrecognized value degrades to less reasoning instead of silently maxing
   out. Requests that set no effort are unaffected.
+
+- Structured-output JSON grammars can be made whitespace-tolerant, per
+  architecture via `default_structured_output_any_whitespace`.
+  - GLM 5 models default to whitespace-tolerant `response_format` grammars.
+
 - Structured-output grammar compilation now runs off both serving hot
   paths. A new request's grammar matcher (from `response_format` JSON
   schemas or tool-call grammars) is built on a worker thread while the
@@ -355,6 +558,14 @@ This version is still a work in progress.
 
 ### Python API
 
+- `max.experimental.nn.Module.compile` reuses precompiled MEFs when the session
+  has them, so a ModuleV3 model can be compiled where no accelerator is attached
+  and initialized where one is. `max.experimental.support.set_export_mefs`
+  records each compiled graph into a directory, and
+  `max.experimental.support.set_precompiled_mefs` initializes those artifacts
+  instead of compiling. `InferenceSession.compile_reusing_mefs` is the same
+  half-step for callers that trace a graph and initialize it themselves.
+
 - Eager mode tensors will use the JIT by default. This unlocks fusion and
   shape specialization optimizations even for eager code, beating PyTorch
   performance in eager in the common case.
@@ -363,6 +574,17 @@ This version is still a work in progress.
   `mesh_context()` when none is passed, so a layer can name the axis it shards
   along without being handed a mesh. Its `original_spec` and
   `original_unreduced` properties are removed.
+
+- Added `max.experimental.tree_utils`, pytree utilities over nested `list` /
+  `tuple` / `namedtuple` / `dict` and any class declaring the tree protocol:
+  `__tree_flatten__` with either `__tree_unflatten__` or `__tree_empty__`, and
+  an optional `__tree_setattr__`. There is no registry and no decorator, so a
+  type opts in by declaring the methods. `flatten` and `unflatten` carry a
+  value across a flat boundary, `leaves`, `paths` and `nodes` read it, `map`
+  builds a new tree, and `update` writes path-keyed values into an existing one
+  in place. Every walk takes `leaf`, saying where it stops, and `shared`,
+  saying whether a value reachable by two paths is one object or two. Import
+  the module as a namespace: `from max.experimental import tree_utils as tree`.
 
 - `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
   argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
@@ -466,6 +688,34 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
+  top-level fields after construction raises a pydantic `ValidationError`.
+  Construct it with the values you need. Its sub-configs (`runtime`,
+  `sampling`, etc.) are unchanged for now.
+
+- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
+  now immutable (pydantic `frozen=True`); assigning to a field after
+  construction raises a `ValidationError`. Construct with the desired values.
+- The KV cache connector is now configured as a single object: its type moved
+  onto `--kv-connector-config` as a `type` field, and the separate
+  `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
+  `--kv-connector-config '{"type": "rust_tiered"}'`, and in a recipe set
+  `model.kv_cache.kv_connector_config.type`. `host_kvcache_swap_space_gb` is
+  renamed `host_offload_max_gb` to match `disk_offload_max_gb`, and both now
+  default to sizing their tier from the device page pool (twice it on host,
+  three times on disk) rather than to a fixed 50 GiB. Dict-valued `kv_cache`
+  flags now merge field-wise over a config file's value instead of replacing
+  it, so overriding one connector field on the command line keeps the rest --
+  previously a partial override reset the connector type and silently disabled
+  offloading.
+
+- Renamed `max.driver.DeviceStream` to `DeviceQueue` and
+  `Device.default_stream` to `Device.default_queue`; the old names were
+  removed. The driver models work submission as a command queue; a stream
+  is one backend's implementation of that queue. Method, property, and
+  argument names (`Buffer.stream`, `stream=`, `native_stream_handle`) are
+  unchanged.
+
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction
   around a single path and a single (nested) shape:
   - `PipelineArgs` now nests its runtime, sampling, and profiling fields in
@@ -487,6 +737,11 @@ This version is still a work in progress.
     speculative draft architecture, so programmatically constructed
     `PipelineArgs` behave the same as CLI invocations.
   - `PipelineRuntimeConfig` is now exported from `max.pipelines`.
+- `--max-vision-cache-entries` is replaced by `--vision-cache-utilization`,
+  a fraction of the KV cache pool budget for the vision encoder cache
+  (default `0.05`; `0` disables caching). The cache is block-based, so an
+  entry count no longer describes its capacity; configs setting the old
+  flag must convert to a pool fraction.
 
 - The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
   passed as graph inputs) is now the only supported LoRA implementation.
@@ -495,7 +750,22 @@ This version is still a work in progress.
   adapters; serve the model's ModuleV3 variant (for example,
   `--prefer-module-v3`) to use LoRA adapters.
 
+- Removed the parametric `max.benchmark.bencher_iter_custom[fn](bencher, ctx)`
+  overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
+  closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
+
+- `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
+  dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
+  a `(tokenizer, factory)` tuple, so callers can reach the memory plan
+  computed during retrieval. Replace tuple unpacking with attribute access.
+  `PipelineRegistry.retrieve` is unchanged.
+
 ## Fixes
+
+- On Apple Silicon, a missing Metal Toolchain (a separate download since
+  Xcode 16) now surfaces `xcrun`'s own error, which names the fix
+  (`xcodebuild -downloadComponent MetalToolchain`), instead of the opaque
+  "Please submit a bug report." message.
 
 - Fixed tool-call requests failing with HTTP 400 (`anyOf branch and base
   schema both set "description"`) on models whose grammar compiles in strict
@@ -514,6 +784,12 @@ This version is still a work in progress.
   without the constrained-decoding bitmask inputs. The graph now binds the
   bitmask inputs and applies the grammar mask across every speculative position,
   matching the EAGLE speculative-decoding pipelines.
+
+- Fixed GPT-OSS, OLMo 3, and OLMo 2 ignoring `--max-length`. The server
+  accepted prompts up to the checkpoint's own length limit, and sized the KV
+  cache for that limit, whatever you asked for and whatever memory allowed.
+  Both now use the length you set. Runs that pass no `--max-length` are
+  unaffected.
 
 - Fixed DeepSeek-V3.2 and GLM-5.x pipelines ignoring `--max-length`: the
   resolved maximum sequence length was silently pinned to the DeepSeek
@@ -534,6 +810,17 @@ This version is still a work in progress.
   dispatch (for example, a non-quantized MoE) hit a graph-compile error. The
   BF16 branch now sets `dispatch_scale_dtype = float32` to match the kernel
   signature.
+
+- Fixed CPU `argmax`/`argmin` reductions returning a wrong index for reduce
+  axes of 256K+ elements, for example an argmax over a `[1, 2097152]` tensor,
+  where the row's reduction fans out across multiple CPU workers.
+
+- Fixed the distribution the top-k/top-p sampler emits for speculative
+  decoding (`emit_dist`) being under-normalized when a `min_p` mask removes
+  weight and the row passes top-p at the first trial: the row was scaled by
+  the unmasked softmax mass instead of the masked kept mass, so it summed to
+  less than one and skewed the rejection residual. The sampled token stream
+  was and remains unchanged.
 
 ## Mojo language
 
