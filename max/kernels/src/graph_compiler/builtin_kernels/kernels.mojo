@@ -132,6 +132,7 @@ from extensibility import (
     IOSpec,
     ManagedTensorSlice,
     OutputTensor,
+    Tensor,
     VariadicTensors,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -169,19 +170,12 @@ from nn.tpool_patch_merger import (
 
 
 @always_inline("nodebug")
-def reduce_shape[
-    input_rank: Int, input_type: DType, //
-](
-    input_buf: ManagedTensorSlice[dtype=input_type, rank=input_rank, ...],
-    axis: Int,
-) raises -> IndexList[input_rank]:
+def reduce_shape(
+    input_buf: Some[Tensor], axis: Int
+) raises -> IndexList[type_of(input_buf).rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
     compatible.
-
-    Parameters:
-        input_rank: Input_rank of the input tensor.
-        input_type: Type of the input tensor.
 
     Args:
         input_buf: The input tensor.
@@ -192,8 +186,10 @@ def reduce_shape[
     """
 
     # compute and return the output shape
-    var output_shape = input_buf.shape()
-    output_shape[normalize_neg_index(axis, input_rank)] = 1
+    var output_shape = rebind[IndexList[type_of(input_buf).rank]](
+        coord_to_index_list(input_buf.shape().tuple())
+    )
+    output_shape[normalize_neg_index(axis, type_of(input_buf).rank)] = 1
     return output_shape
 
 
