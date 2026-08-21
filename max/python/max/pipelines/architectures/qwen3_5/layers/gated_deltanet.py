@@ -65,6 +65,7 @@ from max.graph.weight import Segment
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.stacked_linear import StackedLinear
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
@@ -99,10 +100,14 @@ class GatedDeltaNet(Module, Shardable):
         key_head_dim: Dimension per key head.
         value_head_dim: Dimension per value head.
         conv_kernel_size: Kernel size for the causal conv1d.
-        dtype: Weight data type.
+        dtype: Weight data type for the unquantized weights and activations.
         device: Device for computation.
         rms_norm_eps: Epsilon for the gated RMSNorm.
         ssm_dtype: Dtype of the recurrence arithmetic.
+        proj_dtype: Storage dtype of the quantized projections; defaults to
+            ``dtype``.
+        quant_config: Quantization of ``in_proj_qkv``, ``in_proj_z`` and
+            ``out_proj``.
     """
 
     def __init__(
@@ -117,6 +122,8 @@ class GatedDeltaNet(Module, Shardable):
         device: DeviceRef,
         rms_norm_eps: float = 1e-6,
         ssm_dtype: DType = DType.float32,
+        proj_dtype: DType | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -129,25 +136,61 @@ class GatedDeltaNet(Module, Shardable):
         self.device = device
         self.ssm_dtype = ssm_dtype
         self.rms_norm_eps = rms_norm_eps
+        self.quant_config = quant_config
         self._sharding_strategy: ShardingStrategy | None = None
+        # Only in_proj_qkv, in_proj_z and out_proj are quantized; conv1d, the
+        # b/a gates, the norm and every activation stay at `dtype`.
+        proj_dtype = dtype if proj_dtype is None else proj_dtype
+        self.proj_dtype = proj_dtype
 
         self.key_dim = key_head_dim * num_key_heads
         self.value_dim = value_head_dim * num_value_heads
         self.conv_dim = self.key_dim * 2 + self.value_dim
 
+        # Quantized checkpoints put in_proj_qkv and in_proj_z in FP8 but leave
+        # the per-head in_proj_b and in_proj_a in bf16, so the four cannot
+        # share one stacked matmul. Unquantized models keep the single
+        # four-way stack the BF16 logit gate was measured against.
         self.in_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dims=[
-                self.conv_dim,
-                self.value_dim,
-                num_value_heads,
-                num_value_heads,
-            ],
-            names=["in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a"],
-            dtype=dtype,
+            out_dims=(
+                [self.conv_dim, self.value_dim]
+                if quant_config
+                else [
+                    self.conv_dim,
+                    self.value_dim,
+                    num_value_heads,
+                    num_value_heads,
+                ]
+            ),
+            names=(
+                ["in_proj_qkv", "in_proj_z"]
+                if quant_config
+                else [
+                    "in_proj_qkv",
+                    "in_proj_z",
+                    "in_proj_b",
+                    "in_proj_a",
+                ]
+            ),
+            dtype=proj_dtype,
             device=device,
             stacked=False,
             has_bias=False,
+            quant_config=quant_config,
+        )
+        self.in_proj_ba: StackedLinear | None = (
+            StackedLinear(
+                in_dim=hidden_size,
+                out_dims=[num_value_heads, num_value_heads],
+                names=["in_proj_b", "in_proj_a"],
+                dtype=dtype,
+                device=device,
+                stacked=False,
+                has_bias=False,
+            )
+            if quant_config
+            else None
         )
 
         # Causal conv1d weight (depthwise): [conv_dim, 1, kernel_size]
@@ -183,10 +226,21 @@ class GatedDeltaNet(Module, Shardable):
         self.out_proj = Linear(
             in_dim=self.value_dim,
             out_dim=hidden_size,
-            dtype=dtype,
+            dtype=proj_dtype,
             device=device,
             has_bias=False,
+            quant_config=quant_config,
         )
+
+    @property
+    def _ba_owner(self) -> StackedLinear:
+        """Where ``in_proj_b`` / ``in_proj_a`` live.
+
+        They join the four-way ``in_proj`` stack when the model is
+        unquantized and split into ``in_proj_ba`` when it is not, because a
+        quantized checkpoint leaves the two gates at the compute dtype.
+        """
+        return self.in_proj if self.in_proj_ba is None else self.in_proj_ba
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -253,7 +307,7 @@ class GatedDeltaNet(Module, Shardable):
         value_rows = ShardingStrategy.rowwise(num_devices)
         _projection(self.in_proj, "in_proj_z").sharding_strategy = value_rows
         for name in ("in_proj_b", "in_proj_a"):
-            _projection(self.in_proj, name).sharding_strategy = value_rows
+            _projection(self._ba_owner, name).sharding_strategy = value_rows
         self.dt_bias.sharding_strategy = value_rows
         self.A_log.sharding_strategy = value_rows
 
@@ -291,6 +345,11 @@ class GatedDeltaNet(Module, Shardable):
         num_devices = len(devices)
 
         in_proj_shards = self.in_proj.shard(devices)
+        ba_shards = (
+            self.in_proj_ba.shard(devices)
+            if self.in_proj_ba is not None
+            else None
+        )
         conv1d_shards = self.conv1d.shard(devices)
         dt_bias_shards = self.dt_bias.shard(devices)
         a_log_shards = self.A_log.shard(devices)
@@ -310,8 +369,12 @@ class GatedDeltaNet(Module, Shardable):
                 device=device,
                 rms_norm_eps=self.rms_norm_eps,
                 ssm_dtype=self.ssm_dtype,
+                proj_dtype=self.proj_dtype,
+                quant_config=self.quant_config,
             )
             shard.in_proj = in_proj_shards[i]
+            if ba_shards is not None:
+                shard.in_proj_ba = ba_shards[i]
             shard.conv1d = conv1d_shards[i]
             shard.dt_bias = dt_bias_shards[i]
             shard.A_log = a_log_shards[i]
@@ -354,12 +417,17 @@ class GatedDeltaNet(Module, Shardable):
         K = self.conv_kernel_size
 
         # ---- Projections (all tokens, fully parallel) ----
-        proj = self.in_proj(x)
-        qkv, z, b_proj, a_proj = ops.split(
-            proj,
-            [self.conv_dim, self.value_dim, nv, nv],
-            axis=-1,
-        )
+        if self.in_proj_ba is None:
+            qkv, z, b_proj, a_proj = ops.split(
+                self.in_proj(x),
+                [self.conv_dim, self.value_dim, nv, nv],
+                axis=-1,
+            )
+        else:
+            qkv, z = ops.split(
+                self.in_proj(x), [self.conv_dim, self.value_dim], axis=-1
+            )
+            b_proj, a_proj = ops.split(self.in_proj_ba(x), [nv, nv], axis=-1)
         qkv_f32 = ops.cast(qkv, DType.float32)  # [N, conv_dim]
 
         # ---- Decay / beta params ----

@@ -132,6 +132,66 @@ class Qwen3_5Inputs(Llama3Inputs):
         )
 
 
+# Scale tensors carry the calibration a quantized checkpoint cannot be read
+# without. A dropped one is not a degradation, it is a different model.
+_SCALE_SUFFIXES = (".weight_scale", ".weight_scale_2", ".input_scale")
+
+# Everything the architecture deliberately does not load. `mtp.*` is the
+# speculative-decoding head, which the weight adapter drops.
+_UNUSED_PREFIXES = ("mtp.",)
+
+
+def _check_weights_match(expected: set[str], provided: set[str]) -> None:
+    """Fails the load when the checkpoint and the graph disagree on weights.
+
+    ``load_state_dict(strict=False)`` drops both directions of mismatch
+    without a word, so a quantized checkpoint whose 995 scale tensors go
+    unconsumed loads clean and emits garbage. This is the gate that turns
+    that into a startup error.
+
+    Args:
+        expected: Weight names the built graph will look up.
+        provided: Weight names the adapted checkpoint supplies.
+
+    Raises:
+        ValueError: If a weight the graph needs is absent, or a scale tensor
+            the checkpoint supplies is not consumed.
+    """
+    missing = sorted(expected - provided)
+    if missing:
+        raise ValueError(
+            f"Qwen3.5 checkpoint is missing {len(missing)} weight(s) the model "
+            f"requires: {missing[:20]}"
+            + (f" (+{len(missing) - 20} more)" if len(missing) > 20 else "")
+        )
+
+    unused = provided - expected
+    unconsumed_scales = sorted(
+        k
+        for k in unused
+        if k.endswith(_SCALE_SUFFIXES) and not k.startswith(_UNUSED_PREFIXES)
+    )
+    if unconsumed_scales:
+        raise ValueError(
+            f"Qwen3.5 checkpoint supplies {len(unconsumed_scales)} "
+            "quantization scale tensor(s) that no layer consumes, so those "
+            "weights would be read at the wrong precision: "
+            f"{unconsumed_scales[:20]}"
+            + (
+                f" (+{len(unconsumed_scales) - 20} more)"
+                if len(unconsumed_scales) > 20
+                else ""
+            )
+        )
+
+    if unused:
+        logger.info(
+            "Qwen3.5 load_state_dict: %d unused checkpoint keys: %s",
+            len(unused),
+            sorted(unused)[:20],
+        )
+
+
 class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     """Qwen3.5 pipeline model implementation.
 
@@ -429,22 +489,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         graph_inputs = nn_model.input_types(self.kv_params)
 
-        # Log weight loading diagnostics (strict=False silently drops mismatches)
-        expected_weights = set(nn_model.raw_state_dict().keys())
-        provided_weights = set(full_state_dict.keys())
-        missing_keys = expected_weights - provided_weights
-        unused_keys = provided_weights - expected_weights
-        if missing_keys:
-            logger.warning(
-                f"Qwen3.5 load_state_dict: {len(missing_keys)} MISSING"
-                f" weights (not in checkpoint): {sorted(missing_keys)}"
-            )
-        if unused_keys:
-            logger.info(
-                f"Qwen3.5 load_state_dict: {len(unused_keys)} unused"
-                f" checkpoint keys: {sorted(list(unused_keys)[:20])}"
-                + ("..." if len(unused_keys) > 20 else "")
-            )
+        _check_weights_match(
+            expected=set(nn_model.raw_state_dict().keys()),
+            provided=set(full_state_dict.keys()),
+        )
 
         nn_model.load_state_dict(
             full_state_dict,
@@ -481,7 +529,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._key_head_dim = nn_model._key_head_dim
         self._value_head_dim = nn_model._value_head_dim
         self._hidden_size = model_config.hidden_size
-        self._model_dtype = model_config.dtype
+        self._model_dtype = model_config.compute_dtype
 
         has_vision = nn_model.vision_encoder is not None
         num_linear_layers = self._num_linear_layers

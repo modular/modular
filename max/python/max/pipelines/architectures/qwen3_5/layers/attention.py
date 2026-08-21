@@ -26,6 +26,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 
+import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.graph.weight import Segment
@@ -33,6 +34,7 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
+    rope_split_store_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -40,6 +42,7 @@ from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.nn.stacked_linear import StackedLinear
 
@@ -84,6 +87,7 @@ class Qwen3_5Attention(Module, Shardable):
         has_bias: bool = False,
         norm_dtype: DType | None = None,
         norm_eps: float = 1e-6,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         self.rope = rope
@@ -103,6 +107,7 @@ class Qwen3_5Attention(Module, Shardable):
             scale if scale is not None else math.sqrt(1.0 / self.head_dim)
         )
         self.norm_eps = norm_eps
+        self.quant_config = quant_config
         self.linear_cls = linear_cls
         self._sharding_strategy: ShardingStrategy | None = None
 
@@ -139,6 +144,7 @@ class Qwen3_5Attention(Module, Shardable):
             stacked=False,
             has_bias=has_bias,
             linear_cls=linear_cls,
+            quant_config=quant_config,
         )
         self.o_proj = linear_cls(
             in_dim=self.q_weight_dim,
@@ -146,6 +152,7 @@ class Qwen3_5Attention(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=has_bias,
+            quant_config=quant_config,
         )
 
     @property
@@ -257,6 +264,7 @@ class Qwen3_5Attention(Module, Shardable):
                 has_bias=self.has_bias,
                 norm_dtype=self.norm_dtype,
                 norm_eps=self.norm_eps,
+                quant_config=self.quant_config,
             )
             shard.qkv_proj = qkv_shards[i]
             shard.o_proj = o_proj_shards[i]
@@ -264,6 +272,36 @@ class Qwen3_5Attention(Module, Shardable):
             shard.k_norm = k_norm_shards[i]
             shards.append(shard)
         return shards
+
+    def _full_width_freqs(
+        self, freqs_cis: TensorValue, dtype: DType
+    ) -> TensorValue:
+        """Widens the partial-rotary table to ``head_dim`` for the fused store.
+
+        ``rope_split_store`` rotates every one of ``head_dim`` lanes against a
+        ``[positions, head_dim]`` table, while Qwen3.5 rotates only
+        ``rotary_dim`` of them. Q and K are already rearranged to
+        ``[NoPE | RoPE]``, so prepending the identity rotation ``(cos, sin) =
+        (1, 0)`` over the NoPE lanes reproduces partial rotary exactly. The
+        table is a graph constant, so the widening costs build time, not
+        runtime.
+        """
+        freqs_cis = ops.cast(freqs_cis, dtype).to(self.devices[0])
+        nope_dim = self.head_dim - self.rotary_dim
+        if nope_dim == 0:
+            return freqs_cis
+        identity = ops.cast(
+            ops.constant(
+                np.tile([1.0, 0.0], nope_dim // 2).astype(np.float32),
+                DType.float32,
+                device=self.devices[0],
+            ),
+            dtype,
+        )
+        identity = ops.broadcast_to(
+            ops.unsqueeze(identity, 0), [freqs_cis.shape[0], nope_dim]
+        )
+        return ops.concat((identity, freqs_cis), axis=-1)
 
     def __call__(
         self,
@@ -386,23 +424,58 @@ class Qwen3_5Attention(Module, Shardable):
         )
         key = ops.concat([k_pass, k_rope_interleaved], axis=-1)
 
-        # Write rearranged, normed K and V to cache.
-        store_k_cache_ragged(kv_collection, key, input_row_offsets, layer_idx)
-        store_v_cache_ragged(kv_collection, value, input_row_offsets, layer_idx)
+        if self.kv_params.is_fp8_kv_dtype:
+            # `store_k_cache_ragged` and `store_v_cache_ragged` are monomorphic
+            # on the cache dtype, so they cannot write bf16-computed K/V into an
+            # FP8 `kv_blocks`. The fused rope+store converts at store time. Q is
+            # emitted in the cache dtype so flash attention's
+            # `input.dtype == kv_params.dtype` guard passes.
+            qkv = ops.concat(
+                (
+                    ops.reshape(query, [total_seq_len, -1]),
+                    ops.reshape(key, [total_seq_len, -1]),
+                    ops.reshape(value, [total_seq_len, -1]),
+                ),
+                axis=-1,
+            )
+            query = rope_split_store_ragged(
+                kv_params=self.kv_params,
+                qkv=qkv,
+                input_row_offsets=input_row_offsets,
+                freqs_cis=self._full_width_freqs(freqs_cis, qkv.dtype),
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                interleaved=self.rope.interleaved,
+                q_out_dtype=self.kv_params.dtype,
+            )
+            query = ops.reshape(
+                query, [total_seq_len, self.n_heads, self.head_dim]
+            )
+        else:
+            # Write rearranged, normed K and V to cache.
+            store_k_cache_ragged(
+                kv_collection, key, input_row_offsets, layer_idx
+            )
+            store_v_cache_ragged(
+                kv_collection, value, input_row_offsets, layer_idx
+            )
 
-        # Apply RoPE (kernel rotates last rotary_dim dims of Q and K in cache)
-        freqs_cis = ops.cast(freqs_cis, query.dtype).to(query.device)
-        query = fused_qk_ragged_rope(
-            self.kv_params,
-            query,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=self.rope.interleaved,
-        )
+            # Apply RoPE (kernel rotates last rotary_dim dims of Q and K in cache)
+            freqs_cis = ops.cast(freqs_cis, query.dtype).to(query.device)
+            query = fused_qk_ragged_rope(
+                self.kv_params,
+                query,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
+            )
 
-        # Flash attention
+        # Flash attention. `output_dtype` is pinned to the activation dtype so
+        # an FP8 query still yields a bf16 attention output for the gate and
+        # o_proj; it is a no-op on the bf16 path.
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=query,
@@ -411,6 +484,7 @@ class Qwen3_5Attention(Module, Shardable):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
+            output_dtype=x.dtype,
         )
 
         # Reshape attention output: [total_seq_len, n_heads * head_dim]
