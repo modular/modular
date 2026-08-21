@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/ToolCommon/LLVMTimingRegions.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
@@ -723,8 +724,12 @@ void M::LLVMPassTiming::configure(const llvm::opt::InputArgList &args,
   // generation region has one object for each name. Two threads that run the
   // same region thus start one timer two times, and LLVM stops with an
   // assertion. One thread also keeps one row for each pass, because the report
-  // does not merge the rows of the units that a parallel build makes.
+  // does not merge the rows of the units that a parallel build makes. The
+  // split of the report into one part for each pipeline needs one thread as
+  // well, because it reads the same global timers.
   options.numThreads = 1;
+
+  KGEN::enableLLVMTimingRegions();
 }
 
 void M::LLVMPassTiming::finish() {
@@ -735,24 +740,13 @@ void M::LLVMPassTiming::finish() {
   // report that no one prints.
   llvm::TimePassesIsEnabled = false;
 
-  // `printAll` includes each group that a pass manager filled: the pass
-  // group, the analysis group, and the code generation groups for the register
-  // allocation and the instruction selection. Collect the groups into a
-  // string, because a group that has no times writes nothing. Then a run that
-  // gets all of its object code from the cache does not show an empty report
-  // below the title.
-  std::string report;
-  llvm::raw_string_ostream reportStream(report);
-  llvm::TimerGroup::printAll(reportStream);
-  // `printAll` does not clear the timers, and a group shows the values that
-  // stay in it when the process deletes the group. Clear the timers to keep
-  // the report to one copy.
-  llvm::TimerGroup::clearAll();
-
-  if (report.empty())
-    return;
-  printTimingReportTitle("LLVM pass timing (--llvm-timing)");
-  llvm::errs() << report;
+  // Each part holds one pipeline: the host, and one for each offload target.
+  // A pipeline that the compilation cache answered gives no part, so a run
+  // that gets all of its object code from the cache writes nothing at all.
+  for (const KGEN::LLVMTimingReportPart &part : KGEN::takeLLVMTimingReport()) {
+    printTimingReportTitle("LLVM pass timing (--llvm-timing): " + part.label);
+    llvm::errs() << part.report;
+  }
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
