@@ -293,16 +293,17 @@ def execute_kv_cache_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @__parameter
-    @__copy_capture(
-        q_tensor,
-        k_cache_device,
-        v_cache_device,
-        output_device_tensor,
-        input_row_offsets_tensor,
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
+    def bench_func(
+        mut b: Bencher,
+    ) raises {
+        var q_tensor,
+        var k_cache_device,
+        var v_cache_device,
+        var output_device_tensor,
+        var input_row_offsets_tensor,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             flash_attention[ragged=True](
@@ -318,7 +319,8 @@ def execute_kv_cache_ragged_flash_attention[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
                 batch_size,

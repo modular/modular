@@ -139,12 +139,12 @@ def run_reduce[
             reduce_dim=axis,
         ](shape, StaticTuple[_, num_reductions](init), ctx)
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "reduce",
             input_id=String(

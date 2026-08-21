@@ -354,21 +354,22 @@ def run_mla_prefill_v2[
         var work_info_ptr = dev_work_info.unsafe_ptr()
         var num_works = md.num_works
 
-        @__parameter
         @always_inline
-        @__copy_capture(
-            cb_q,
-            cb_k,
-            cb_v,
-            cb_o,
-            compiled,
-            mask,
-            work_indptr_ptr,
-            work_info_ptr,
-            num_works,
-            num_cu,
-        )
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {
+            var cb_q,
+            var cb_k,
+            var cb_v,
+            var cb_o,
+            var compiled,
+            var mask,
+            var work_indptr_ptr,
+            var work_info_ptr,
+            var num_works,
+            var num_cu,
+            imm,
+        }:
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
@@ -510,7 +511,8 @@ def run_mla_prefill_v2[
             var o_bytes = batch_size * num_heads * seq_len * _D_NOPE * out_b
             return q_bytes + k_bytes + v_bytes + o_bytes
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mla_prefill_v2",
                 # fmt: off

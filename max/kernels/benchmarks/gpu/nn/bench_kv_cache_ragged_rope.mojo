@@ -198,16 +198,17 @@ def execute_kv_cache_ragged_rope[
     )
     var flop_count = num_flops_per_elem * num_elems
 
-    @__parameter
-    @__copy_capture(
-        q_device,
-        kv_collection_device,
-        input_row_offsets_device,
-        freqs_cis_table_device,
-        output_device_tensor,
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
+    def bench_func(
+        mut b: Bencher,
+    ) raises {
+        var q_device,
+        var kv_collection_device,
+        var input_row_offsets_device,
+        var freqs_cis_table_device,
+        var output_device_tensor,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             fused_qk_rope_ragged[
@@ -227,7 +228,8 @@ def execute_kv_cache_ragged_rope[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
                 batch_size,

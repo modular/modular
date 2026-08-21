@@ -272,15 +272,16 @@ def execute_mla_decode_sparse[
         )
 
     @always_inline
-    def bench_func(mut b: Bencher) raises capturing:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _run_name[q_dtype, num_heads, page_size, top_k](
                 batch_size, seq_len, cache_len
             )
-        )
+        ),
     )
 
     _ = mla_args
