@@ -133,6 +133,7 @@ from extensibility import (
     ManagedTensorSlice,
     OutputTensor,
     Tensor,
+    TileTensorable,
     VariadicTensors,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -459,22 +460,14 @@ struct MaxPool:
 
 
 @extensibility.register_shape_function("mo.max_pool")
-def max_pool_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def max_pool_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.max_pool` graph op.
-
-    Parameters:
-        dtype: Element type of the pooling `input` tensor.
-        int_type: Element type of the `filter`, `strides`, `dilations`, and
-            `paddings` tensors.
 
     Args:
         input: Rank-4 batched image input to the pooling operator.
@@ -491,13 +484,23 @@ def max_pool_shape[
     Returns:
         The output shape of the max pooling operation.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(strides).dtype == type_of(filter).dtype
+        and type_of(dilations).dtype == type_of(filter).dtype
+        and type_of(paddings).dtype == type_of(filter).dtype
+    ), "filter, strides, dilations, and paddings must share a dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -534,22 +537,14 @@ struct MaxPoolCeilModeTrue:
 
 
 @extensibility.register_shape_function("mo.max_pool_ceil_mode_true")
-def max_pool_ceil_mode_true_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def max_pool_ceil_mode_true_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.max_pool_ceil_mode_true` graph op.
-
-    Parameters:
-        dtype: Element type of the pooling `input` tensor.
-        int_type: Element type of the `filter`, `strides`, `dilations`, and
-            `paddings` tensors.
 
     Args:
         input: Rank-4 batched image input to the pooling operator.
@@ -566,13 +561,23 @@ def max_pool_ceil_mode_true_shape[
     Returns:
         The output shape of the max pooling operation with ceil mode enabled.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(strides).dtype == type_of(filter).dtype
+        and type_of(dilations).dtype == type_of(filter).dtype
+        and type_of(paddings).dtype == type_of(filter).dtype
+    ), "filter, strides, dilations, and paddings must share a dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape_ceil(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -613,19 +618,14 @@ struct NonMaximumSuppression:
 
 
 @extensibility.register_shape_function("mo.non_maximum_suppression")
-def non_maximum_suppression_shape[
-    dtype: DType
-](
-    boxes: InputTensor[dtype=dtype, rank=3, ...],
-    scores: InputTensor[dtype=dtype, rank=3, ...],
+def non_maximum_suppression_shape(
+    boxes: Some[TileTensorable],
+    scores: Some[TileTensorable],
     max_output_boxes_per_class: Int64,
     iou_threshold: Float32,
     score_threshold: Float32,
 ) -> IndexList[2]:
     """Computes the output shape for the `mo.non_maximum_suppression` graph op.
-
-    Parameters:
-        dtype: Element type of the `boxes` and `scores` tensors.
 
     Args:
         boxes: Rank-3 tensor of bounding boxes with shape
@@ -643,13 +643,18 @@ def non_maximum_suppression_shape[
     Returns:
         Two-element `IndexList` of shape `(num_selected_boxes, 3)`.
     """
+    comptime assert type_of(boxes).rank == 3, "boxes must be rank 3"
+    comptime assert type_of(scores).rank == 3, "scores must be rank 3"
+    comptime assert (
+        type_of(scores).dtype == type_of(boxes).dtype
+    ), "scores dtype must match boxes dtype"
     var max_output_boxes_int = Int(max_output_boxes_per_class)
     var iou_threshold_float = iou_threshold
     var score_threshold_float = score_threshold
 
     return non_max_suppression_shape_func(
-        boxes.to_tile_tensor[DType.int64](),
-        scores.to_tile_tensor[DType.int64](),
+        boxes.to_tile_tensor(),
+        scores.to_tile_tensor().bitcast[type_of(boxes).dtype](),
         max_output_boxes_int,
         iou_threshold_float,
         score_threshold_float,
@@ -692,8 +697,8 @@ struct ROIAlign:
 
 @extensibility.register_shape_function("mo.roi_align")
 def roi_align_shape(
-    input: InputTensor[rank=4, ...],
-    rois: InputTensor[rank=2, ...],
+    input: Some[Tensor],
+    rois: Some[Tensor],
     output_height: Int64,
     output_width: Int64,
     spatial_scale: Scalar,
@@ -716,14 +721,19 @@ def roi_align_shape(
     Returns:
         The output shape `(num_rois, output_height, output_width, channels)`.
     """
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(rois).rank == 2, "rois must be rank 2"
+    var input_shape = coord_to_index_list(input.shape().tuple())
+    var rois_shape = coord_to_index_list(rois.shape().tuple())
+
     var shape = IndexList[4]()
     # input shape is [N, H, W, C]
     # rois shape is [M, 5]
     # output shape is [M, output_height, output_width, C]
-    shape[0] = rois.dim_size[0]()
+    shape[0] = rois_shape[0]
     shape[1] = Int(output_height)
     shape[2] = Int(output_width)
-    shape[3] = input.dim_size[3]()
+    shape[3] = input_shape[3]
 
     return shape
 
@@ -760,8 +770,8 @@ struct RepeatInterleave:
 
 @extensibility.register_shape_function("repeat_interleave")
 def repeat_interleave_kernel_shape(
-    input: InputTensor, repeats: InputTensor[rank=1, ...], axis: Scalar
-) raises -> IndexList[input.rank]:
+    input: Some[TileTensorable], repeats: Some[TileTensorable], axis: Scalar
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `repeat_interleave` graph op.
 
     Args:
@@ -776,14 +786,15 @@ def repeat_interleave_kernel_shape(
         The output shape with `axis` expanded by the repeat counts.
     """
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
+    comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
 
     var interleave_shape = repeat_interleave_shape(
-        input.to_tile_tensor[DType.int64](),
-        repeats.to_tile_tensor[DType.int64](),
-        Int(normalize_neg_index(axis, input.rank)),
+        input.to_tile_tensor(),
+        repeats.to_tile_tensor(),
+        Int(normalize_neg_index(axis, type_of(input).rank)),
     )
 
-    return rebind[IndexList[input.rank]](interleave_shape)
+    return rebind[IndexList[type_of(input).rank]](interleave_shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -829,12 +840,12 @@ struct RandomNormal:
 
 @extensibility.register_shape_function("mo.random.normal")
 def random_normal_shape[
-    output_rank: Int
+    output_rank: Int,
 ](
-    shape: InputTensor[rank=1, ...],
+    shape: Some[TileTensorable],
     mean: Scalar,
     variance: Scalar,
-    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+    seed_value: Some[Tensor],
 ) -> IndexList[output_rank]:
     """Computes the output shape for the `mo.random.normal` graph op.
 
@@ -855,9 +866,15 @@ def random_normal_shape[
     Returns:
         The output shape specified by `shape`.
     """
+    comptime assert type_of(shape).rank == 1, "shape must be rank 1"
+    comptime assert type_of(seed_value).rank == 1, "seed_value must be rank 1"
+    comptime assert (
+        type_of(seed_value).dtype == DType.uint64
+    ), "seed_value dtype must be uint64"
+    var shape_tt = shape.to_tile_tensor()
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape[i])
+        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
 
     return unrolled_shape
 
@@ -900,12 +917,12 @@ struct RandomUniform:
 
 @extensibility.register_shape_function("mo.random.uniform")
 def random_uniform_shape[
-    output_rank: Int
+    output_rank: Int,
 ](
-    shape: InputTensor[rank=1, ...],
+    shape: Some[TileTensorable],
     mean: Scalar,
     variance: Scalar,
-    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+    seed_value: Some[Tensor],
 ) -> IndexList[output_rank]:
     """Computes the output shape for the `mo.random.uniform` graph op.
 
@@ -926,11 +943,17 @@ def random_uniform_shape[
     Returns:
         The output shape specified by `shape`.
     """
-    assert shape.dim_size[0]() == output_rank
+    comptime assert type_of(shape).rank == 1, "shape must be rank 1"
+    comptime assert type_of(seed_value).rank == 1, "seed_value must be rank 1"
+    comptime assert (
+        type_of(seed_value).dtype == DType.uint64
+    ), "seed_value dtype must be uint64"
+    var shape_tt = shape.to_tile_tensor()
+    assert Int(shape_tt.dim(0)) == output_rank
 
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape[i])
+        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
 
     return unrolled_shape
 
@@ -1114,7 +1137,6 @@ struct Fold:
 
 @extensibility.register_shape_function("fold")
 def fold_kernel_shape[
-    dtype: DType,
     stride_h: Int,
     stride_w: Int,
     dilation_h: Int,
@@ -1122,14 +1144,13 @@ def fold_kernel_shape[
     padding_h: Int,
     padding_w: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=3, ...],
-    output_size: InputTensor,
-    kernel_size: InputTensor,
+    input: Some[TileTensorable],
+    output_size: Some[TileTensorable],
+    kernel_size: Some[TileTensorable],
 ) raises -> IndexList[4]:
     """Computes the output shape for the `fold` graph op.
 
     Parameters:
-        dtype: Element type of the input tensor.
         stride_h: Vertical stride of the sliding window, in elements.
         stride_w: Horizontal stride of the sliding window, in elements.
         dilation_h: Vertical dilation factor applied to the kernel.
@@ -1148,13 +1169,25 @@ def fold_kernel_shape[
     Returns:
         The four-dimensional output shape of the folded tensor.
     """
+    comptime assert type_of(input).rank == 3, "input must be rank 3"
+    comptime assert type_of(output_size).rank == 1, "output_size must be rank 1"
+    comptime assert type_of(kernel_size).rank == 1, "kernel_size must be rank 1"
     comptime assert (
-        kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
+        type_of(kernel_size).dtype.is_integral()
+        and type_of(output_size).dtype.is_integral()
     ), "kernel_size and output_size must have integral type"
-    var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
-    var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+    var output_size_tt = output_size.to_tile_tensor()
+    var kernel_size_tt = kernel_size.to_tile_tensor()
+    var output_size_tuple = Index(
+        Int(output_size_tt.load[1](Coord(0))),
+        Int(output_size_tt.load[1](Coord(1))),
+    )
+    var kernel_size_tuple = Index(
+        Int(kernel_size_tt.load[1](Coord(0))),
+        Int(kernel_size_tt.load[1](Coord(1))),
+    )
     return fold_shape(
-        input.to_tile_tensor[DType.int64](),
+        input.to_tile_tensor(),
         output_size_tuple,
         kernel_size_tuple,
     )
@@ -2317,26 +2350,17 @@ struct PackConvTransposeFilterShape:
 
 
 @extensibility.register_shape_function("pack_conv_transpose_filter_shape")
-def pack_conv_transpose_filter_shape_shape[
-    rank: Int,
-    filter_type: DType,
-](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-    rank + 1
-]:
+def pack_conv_transpose_filter_shape_shape(
+    filter_buf: Some[TileTensorable],
+) -> IndexList[type_of(filter_buf).rank + 1]:
     """Computes the output shape for the `pack_conv_transpose_filter_shape` graph op.
-
-    Parameters:
-        rank: Number of dimensions of the input `filter_buf` tensor.
-        filter_type: Element type of the `filter_buf` tensor.
 
     Args:
         filter_buf: Input transposed-convolution filter tensor whose packed
             output shape is computed.
     """
-    return rebind[IndexList[rank + 1]](
-        pack_filter_shape_conv_transpose(
-            filter_buf.to_tile_tensor[DType.int64](), 1
-        )
+    return rebind[IndexList[type_of(filter_buf).rank + 1]](
+        pack_filter_shape_conv_transpose(filter_buf.to_tile_tensor(), 1)
     )
 
 
@@ -3219,8 +3243,8 @@ struct TPoolPatchMerger:
 
 @extensibility.register_shape_function("tpool_patch_merger")
 def tpool_patch_merger_shape(
-    input: InputTensor[rank=2, ...],
-    _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+    input: Some[Tensor],
+    _grid_thws: Some[Tensor],
     _kH: Int32,
     _kW: Int32,
     _max_h: Int32,
@@ -3243,7 +3267,13 @@ def tpool_patch_merger_shape(
         total_output_patches: Total number of output patches across all
             videos; becomes the first dimension of the output shape.
     """
-    return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
+    comptime assert type_of(_grid_thws).rank == 2, "_grid_thws must be rank 2"
+    comptime assert (
+        type_of(_grid_thws).dtype == DType.int64
+    ), "_grid_thws dtype must be int64"
+    var input_shape = coord_to_index_list(input.shape().tuple())
+    return IndexList[2](Int(total_output_patches), Int(input_shape[1]))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3410,23 +3440,14 @@ struct GatedDeltaConv1dFwd:
 
 
 @extensibility.register_shape_function("gated_delta_conv1d_fwd")
-def gated_delta_conv1d_fwd_shape[
-    work_dtype: DType,
-    state_dtype: DType,
-](
-    qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-    conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-    conv_state: InputTensor[dtype=state_dtype, rank=3, ...],
-    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+def gated_delta_conv1d_fwd_shape(
+    qkv_input_ragged: Some[Tensor],
+    conv_weight: Some[Tensor],
+    conv_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `gated_delta_conv1d_fwd` graph op.
-
-    Parameters:
-        work_dtype: Element type of the per-token input and weight tensors
-            (inferred).
-        state_dtype: Element type of the persistent conv-state pool,
-            independent of `work_dtype` (inferred).
 
     Args:
         qkv_input_ragged: Ragged QKV input tensor of shape
@@ -3440,8 +3461,28 @@ def gated_delta_conv1d_fwd_shape[
         input_row_offsets: Cumulative row offsets per batch, shape
             `[batch_size + 1]`.
     """
+    comptime assert (
+        type_of(qkv_input_ragged).rank == 2
+    ), "qkv_input_ragged must be rank 2"
+    comptime assert type_of(conv_weight).rank == 2, "conv_weight must be rank 2"
+    comptime assert (
+        type_of(conv_weight).dtype == type_of(qkv_input_ragged).dtype
+    ), "qkv_input_ragged and conv_weight must share a dtype"
+    comptime assert type_of(conv_state).rank == 3, "conv_state must be rank 3"
+    comptime assert type_of(slot_idx).rank == 1, "slot_idx must be rank 1"
+    comptime assert (
+        type_of(slot_idx).dtype == DType.uint32
+    ), "slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(input_row_offsets).rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert (
+        type_of(input_row_offsets).dtype == DType.uint32
+    ), "input_row_offsets dtype must be uint32"
     # conv_output_ragged has same shape as qkv_input_ragged
-    return qkv_input_ragged.shape()
+    return rebind[IndexList[2]](
+        coord_to_index_list(qkv_input_ragged.shape().tuple())
+    )
 
 
 @extensibility.register("gated_delta_recurrence_fwd")
@@ -3653,23 +3694,15 @@ struct GatedDeltaRecurrenceFwd:
 
 
 @extensibility.register_shape_function("gated_delta_recurrence_fwd")
-def gated_delta_recurrence_fwd_shape[
-    work_dtype: DType,
-    state_dtype: DType,
-](
-    qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-    decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-    beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-    recurrent_state: InputTensor[dtype=state_dtype, rank=4, ...],
-    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+def gated_delta_recurrence_fwd_shape(
+    qkv_conv_output: Some[Tensor],
+    decay_per_token: Some[Tensor],
+    beta_per_token: Some[Tensor],
+    recurrent_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `gated_delta_recurrence_fwd` graph op.
-
-    Parameters:
-        work_dtype: Element type of the per-token input tensors (inferred).
-        state_dtype: Element type of the persistent recurrent-state pool,
-            independent of `work_dtype` (inferred).
 
     Args:
         qkv_conv_output: Ragged conv output of shape
@@ -3685,10 +3718,45 @@ def gated_delta_recurrence_fwd_shape[
         input_row_offsets: Cumulative row offsets per batch, shape
             `[batch_size + 1]`.
     """
+    comptime assert (
+        type_of(qkv_conv_output).rank == 2
+    ), "qkv_conv_output must be rank 2"
+    comptime assert (
+        type_of(decay_per_token).rank == 2
+    ), "decay_per_token must be rank 2"
+    comptime assert (
+        type_of(beta_per_token).rank == 2
+    ), "beta_per_token must be rank 2"
+    comptime assert (
+        type_of(recurrent_state).rank == 4
+    ), "recurrent_state must be rank 4"
+    comptime assert (
+        type_of(decay_per_token).dtype == type_of(qkv_conv_output).dtype
+        and type_of(beta_per_token).dtype == type_of(qkv_conv_output).dtype
+    ), "qkv_conv_output, decay_per_token, and beta_per_token must share a dtype"
+    comptime assert type_of(slot_idx).rank == 1, "slot_idx must be rank 1"
+    comptime assert (
+        type_of(slot_idx).dtype == DType.uint32
+    ), "slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(input_row_offsets).rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert (
+        type_of(input_row_offsets).dtype == DType.uint32
+    ), "input_row_offsets dtype must be uint32"
     # recurrence_output: [total_seq_len, value_dim]
-    var total_seq_len = qkv_conv_output.dim_size(0)
-    var num_value_heads = decay_per_token.dim_size(1)
-    var value_head_dim = recurrent_state.dim_size(3)
+    var qkv_conv_output_shape = coord_to_index_list(
+        qkv_conv_output.shape().tuple()
+    )
+    var decay_per_token_shape = coord_to_index_list(
+        decay_per_token.shape().tuple()
+    )
+    var recurrent_state_shape = coord_to_index_list(
+        recurrent_state.shape().tuple()
+    )
+    var total_seq_len = qkv_conv_output_shape[0]
+    var num_value_heads = decay_per_token_shape[1]
+    var value_head_dim = recurrent_state_shape[3]
     var value_dim = num_value_heads * value_head_dim
     return IndexList[2](total_seq_len, value_dim)
 
@@ -3929,25 +3997,19 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
 
 
 @extensibility.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd")
-def mamba2_ssd_chunk_scan_varlen_fwd_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    dt: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=1, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    initial_states: InputTensor[dtype=DType.float32, rank=4, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+def mamba2_ssd_chunk_scan_varlen_fwd_shape(
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    dt_bias: Some[Tensor],
+    initial_states: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    has_initial_state: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd` graph op.
-
-    Parameters:
-        dtype: Element type of the SSM input and parameter tensors
-            (inferred).
 
     Args:
         x: Packed input tensor of shape
@@ -3971,8 +4033,41 @@ def mamba2_ssd_chunk_scan_varlen_fwd_shape[
             in `bool` indicating whether to load `initial_states`;
             may be empty when no initial states are used.
     """
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
+    comptime assert type_of(A).rank == 1, "A must be rank 1"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
+    comptime assert (
+        type_of(initial_states).rank == 4
+    ), "initial_states must be rank 4"
+    comptime assert (
+        type_of(initial_states).dtype == DType.float32
+    ), "initial_states dtype must be float32"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == DType.int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == DType.bool
+    ), "has_initial_state dtype must be bool"
+    comptime assert (
+        type_of(dt).dtype == type_of(x).dtype
+        and type_of(A).dtype == type_of(x).dtype
+        and type_of(B).dtype == type_of(x).dtype
+        and type_of(C).dtype == type_of(x).dtype
+        and type_of(D).dtype == type_of(x).dtype
+        and type_of(dt_bias).dtype == type_of(x).dtype
+    ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
     # y has the same shape as x: (total_len, nheads, head_dim).
-    return x.shape()
+    return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
 
 
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
@@ -4376,29 +4471,20 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 @extensibility.register_shape_function(
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace"
 )
-def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
-    dtype: DType,
-    state_dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    dt: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=1, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ssm_pool: InputTensor[dtype=state_dtype, rank=4, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    dt_bias: Some[Tensor],
+    ssm_pool: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    has_initial_state: Some[Tensor],
+    cache_indices: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
-
-    Parameters:
-        dtype: Element type of the SSM input and parameter tensors
-            (inferred).
-        state_dtype: Element type of the SSM state pool tensor
-            (inferred).
 
     Args:
         x: Packed input tensor of shape
@@ -4427,8 +4513,42 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
             `(batch,)` in `uint32` selecting where in `ssm_pool`
             the final states are written.
     """
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
+    comptime assert type_of(A).rank == 1, "A must be rank 1"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
+    comptime assert type_of(ssm_pool).rank == 4, "ssm_pool must be rank 4"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == DType.int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == DType.bool
+    ), "has_initial_state dtype must be bool"
+    comptime assert (
+        type_of(cache_indices).rank == 1
+    ), "cache_indices must be rank 1"
+    comptime assert (
+        type_of(cache_indices).dtype == DType.uint32
+    ), "cache_indices dtype must be uint32"
+    comptime assert (
+        type_of(dt).dtype == type_of(x).dtype
+        and type_of(A).dtype == type_of(x).dtype
+        and type_of(B).dtype == type_of(x).dtype
+        and type_of(C).dtype == type_of(x).dtype
+        and type_of(D).dtype == type_of(x).dtype
+        and type_of(dt_bias).dtype == type_of(x).dtype
+    ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
     # y has the same shape as x: (total_len, nheads, head_dim).
-    return x.shape()
+    return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
 
 
 @extensibility.register("causal_conv1d_varlen_fwd")
@@ -4746,27 +4866,21 @@ struct CausalConv1DVarlenFwd[
 
 
 @extensibility.register_shape_function("causal_conv1d_varlen_fwd")
-def causal_conv1d_varlen_fwd_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=2, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    bias: InputTensor[dtype=dtype, rank=1, ...],
+def causal_conv1d_varlen_fwd_shape(
+    x: Some[Tensor],
+    weight: Some[Tensor],
+    bias: Some[Tensor],
     # Must mirror the execute function's input-tensor list (incl. the in/out
     # `conv_states` pool) or the MOGG kernel-library validator rejects the op
     # ("Execute and shape functions do not have the same input tensors").
-    # Declared as InputTensor here (the shape fn does not mutate), matching the
-    # SSD-inplace `ssm_pool` shape-fn convention.
-    conv_states: InputTensor[dtype=dtype, rank=3, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+    # Bound as a role-less tensor trait here (the shape fn does not mutate),
+    # matching the SSD-inplace `ssm_pool` shape-fn convention.
+    conv_states: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    cache_indices: Some[Tensor],
+    has_initial_state: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `causal_conv1d_varlen_fwd` graph op.
-
-    Parameters:
-        dtype: Element type of the conv input, weight, bias, and conv state
-            tensors.
 
     Args:
         x: Input tensor of concatenated sequence elements with shape
@@ -4781,7 +4895,34 @@ def causal_conv1d_varlen_fwd_shape[
         has_initial_state: Whether each sequence has an initial state with
             shape (batch,).
     """
-    return x.shape()
+    comptime assert type_of(x).rank == 2, "x must be rank 2"
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
+    comptime assert type_of(conv_states).rank == 3, "conv_states must be rank 3"
+    comptime assert (
+        type_of(weight).dtype == type_of(x).dtype
+        and type_of(bias).dtype == type_of(x).dtype
+        and type_of(conv_states).dtype == type_of(x).dtype
+    ), "x, weight, bias, and conv_states must share a dtype"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == DType.int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(cache_indices).rank == 1
+    ), "cache_indices must be rank 1"
+    comptime assert (
+        type_of(cache_indices).dtype == DType.int32
+    ), "cache_indices dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == DType.bool
+    ), "has_initial_state dtype must be bool"
+    return rebind[IndexList[2]](coord_to_index_list(x.shape().tuple()))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4877,16 +5018,19 @@ struct GatedGroupRMSNorm[group_size: Int]:
 
 
 @extensibility.register_shape_function("gated_group_rmsnorm")
-def gated_group_rmsnorm_shape[
-    dtype: DType,
-    gate_dtype: DType,
-](
-    y: InputTensor[dtype=dtype, rank=2, ...],
-    gate: InputTensor[dtype=gate_dtype, rank=2, ...],
-    weight: InputTensor[dtype=DType.float32, rank=1, ...],
+def gated_group_rmsnorm_shape(
+    y: Some[Tensor],
+    gate: Some[Tensor],
+    weight: Some[Tensor],
     eps: Float32,
 ) -> IndexList[2]:
-    return y.shape()
+    comptime assert type_of(y).rank == 2, "y must be rank 2"
+    comptime assert type_of(gate).rank == 2, "gate must be rank 2"
+    comptime assert type_of(weight).rank == 1, "weight must be rank 1"
+    comptime assert (
+        type_of(weight).dtype == DType.float32
+    ), "weight dtype must be float32"
+    return rebind[IndexList[2]](coord_to_index_list(y.shape().tuple()))
 
 
 # ===-----------------------------------------------------------------------===#
