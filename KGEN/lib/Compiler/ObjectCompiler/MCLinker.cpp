@@ -351,8 +351,7 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = llvmTargetMachine.Options;
   passMgr.add(new llvm::RuntimeLibraryInfoWrapper(
-      llvm::Triple(options.targetTriple), tmOptions.ExceptionModel,
-      tmOptions.FloatABIType, tmOptions.EABIVersion,
+      tmOptions.ExceptionModel, tmOptions.EABIVersion,
       tmOptions.MCOptions.ABIName, tmOptions.VecLib));
 
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,

@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "ec26997e2e4606d97918a4a082c4f93ca38a6f46"
+LLVM_COMMIT = "4f5aa5128922ad0575e3844c201eb49f448cba4d"
 
-LLVM_SHA = "7636ff70c60a2933a91362932127478b7b24a610ef1f01afa58fc2a4ecb125ed"
+LLVM_SHA = "9bce3a316440548ef4b75c5a75b935ee9caaf9de3db38499b38fbb25e0361c10"
 # END_GENERATED
 
 PATCHES = [
@@ -31,19 +31,6 @@ PATCHES = [
     # unconditional glibc/macOS defines, which are correct for our builds
     # (we do not target musl).
     "//bazel/public-patches:llvm-config-musl-select.patch",
-    # OrcTargetProcess's OrcRTBootstrap.cpp now includes
-    # RTBridge/SPS/Calls.h (llvm/llvm-project#213265), which pulls in Core.h
-    # and, transitively, most of the top-level Orc/*.h headers plus
-    # JITLink/JITLinkDylib.h. TargetProcess depends on :OrcShared, not
-    # :OrcJIT/:JITLink (the targets that already glob those headers) --
-    # and can't depend on either without a dependency cycle, since both
-    # :OrcJIT and :JITLink already depend on :OrcTargetProcess (:JITLink
-    # also depends on :OrcShared directly). Mirror their header globs onto
-    # :OrcShared's hdrs (a plain file list, not a link dependency) so the
-    # headers are visible where they're actually included from; this is
-    # header-only exposure, the .cpp only uses header-defined type aliases,
-    # not anything requiring OrcJIT's/JITLink's .cpp-defined symbols.
-    "//bazel/public-patches:llvm-orcshared-sps-rtbridge-headers.patch",
 ]
 
 def _llvm_source_impl(module_ctx):

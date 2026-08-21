@@ -295,8 +295,7 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = targetMachine.Options;
   passMgr.add(new RuntimeLibraryInfoWrapper(
-      Triple(module.getTargetTriple()), tmOptions.ExceptionModel,
-      tmOptions.FloatABIType, tmOptions.EABIVersion,
+      tmOptions.ExceptionModel, tmOptions.EABIVersion,
       tmOptions.MCOptions.ABIName, tmOptions.VecLib));
 
 #ifndef MODULAR_PRODUCTION

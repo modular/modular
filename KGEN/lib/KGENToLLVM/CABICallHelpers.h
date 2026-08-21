@@ -168,10 +168,11 @@ struct CABICallHelper {
                            bool isVariadic = false) const;
 
   /// Set the llvm.sret attribute on arg_attrs[0] of `call` when usesSRet is
-  /// true.  Uses getArgOperands().size() for the attribute array length, which
-  /// is correct for both direct calls (callee is a symbol, not in operands)
-  /// and indirect calls (callee is operands[0] and excluded from
-  /// getArgOperands()).
+  /// true.  The attribute array is sized from the operands actually passed to
+  /// the callee, so it is correct for direct calls (callee is a symbol, not in
+  /// operands), indirect calls (callee is operands[0], consumed by the op),
+  /// and variadic calls (whose variadic tail arg_attrs must still be
+  /// addressable).
   static void applySRetAttrIfNeeded(mlir::LLVM::CallOp call,
                                     mlir::Type origRetTy, bool usesSRet,
                                     mlir::OpBuilder &builder);
