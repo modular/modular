@@ -255,6 +255,51 @@ def test_config_file_value_survives_and_cli_overrides_it(
         ), "a CLI flag reset a sibling field set in the config file"
 
 
+_FROM_ARGS_REBUILT = ("profiling", "runtime", "sampling")
+
+_FROM_ARGS_CASES = [
+    (path, config_class, field, value)
+    for path, config_class, field, value, _ in _CASES
+    if path in _FROM_ARGS_REBUILT
+]
+
+
+@pytest.mark.parametrize(
+    ("path", "config_class", "field", "value"),
+    _FROM_ARGS_CASES,
+    ids=[f"{path}.{field}" for path, _c, field, _v in _FROM_ARGS_CASES],
+)
+def test_from_args_preserves_every_explicitly_set_field(
+    path: str, config_class: type[ConfigFileModel], field: str, value: Any
+) -> None:
+    """Every explicitly-set field must survive ``PipelineConfig.from_args``.
+
+    Regression guard for the kadabra-v5 incident (ENABLE-2881): ``from_args``
+    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted
+    ``enable_tool_call_constrained_decode``, so production served with the
+    flag reset to its default and ``tool_choice="required"`` was
+    grammar-forced despite ``--no-enable-tool-call-constrained-decode``.
+    Sweeping ``model_fields`` covers future fields the day they are added.
+    """
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(**{field: value})
+    )
+    expected = getattr(config_class(**{field: value}), field)
+    assert getattr(getattr(config, path), field) == expected, (
+        f"{path}.{field} was set via CLI flat kwargs but reset by "
+        "PipelineConfig.from_args — the worker would serve with the default"
+    )
+
+
+def test_tool_call_constrained_decode_flag_reaches_worker_config() -> None:
+    """The exact field production lost; kept explicit so the incident's
+    reproducer survives even if the matrix's value derivation changes."""
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(enable_tool_call_constrained_decode=False)
+    )
+    assert config.sampling.enable_tool_call_constrained_decode is False
+
+
 def test_pipeline_args_surface_is_frozen() -> None:
     """Top-level fields are fixed at construction; assignment raises."""
     args = PipelineArgs(max_length=128)
