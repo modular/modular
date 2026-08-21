@@ -7,7 +7,10 @@ modular_py_library(
     name = "serve",
     srcs = glob(
         ["*.py"],
-        exclude = ["main.py"],
+        exclude = [
+            "main.py",
+            "__main__.py",
+        ],
     ),
     deps = [
         requirement("fastapi"),
@@ -23,19 +26,14 @@ modular_py_library(
     ],
 )
 
-# Experimental cascade serving CLI entrypoint.
-modular_py_binary(
-    name = "main",
+# The serve CLI as a library
+modular_py_library(
+    name = "main_lib",
     srcs = ["main.py"],
     # gguf is imported lazily by the weight loader when a GGUF checkpoint is
     # selected on the CLI, so it never appears as a static import of main.py.
     ignore_extra_deps = [
         requirement("gguf"),
-    ],
-    main = "main.py",
-    tags = [
-        "no-sandbox",
-        "requires-network",
     ],
     # The all_pipelines dispatcher target pulls in every architecture (for the
     # registry's lazy runtime imports), so the server can serve any supported
@@ -48,4 +46,16 @@ modular_py_binary(
         "//max/python/max/experimental/cascade/serve",
         "//max/python/max/pipelines/lib",
     ],
+)
+
+# Experimental cascade serving CLI entrypoint.
+modular_py_binary(
+    name = "main",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [":main_lib"],
 )

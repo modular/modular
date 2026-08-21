@@ -144,7 +144,7 @@ async def test_greedy_decode_answers_capital_of_france(model_path: str) -> None:
         generated = (
             np.concatenate(chunks) if chunks else np.array([], dtype=np.int32)
         )
-        answer = await (await tokenizer.decode(generated))
+        answer = await (await tokenizer.decode(generated, True))
 
     assert "paris" in answer.lower(), f"unexpected answer: {answer!r}"
 

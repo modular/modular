@@ -106,7 +106,7 @@ async def test_decode_roundtrip(model_path: str) -> None:
     async with LocalRuntime() as rt, _pipeline_method_scope():
         tokenizer = await rt.deploy(MAXTokenizer(model_path))
         tokens = await (await tokenizer.encode(MESSAGES))
-        decoded = await (await tokenizer.decode(tokens))
+        decoded = await (await tokenizer.decode(tokens, True))
     # The worker wraps the HF tokenizer, so its decode must match the reference
     # decode of the same ids.
     assert decoded == reference.decode(
