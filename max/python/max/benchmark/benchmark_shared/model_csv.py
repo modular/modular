@@ -752,6 +752,24 @@ def _iter_fields(model_type: type[ModelT]) -> Iterable[tuple[str, object]]:
         raise TypeError(f"Expected BaseModel or dataclass, got {model_type}")
 
 
+def _csv_mode_opaque(model_type: type[ModelT], field_name: str) -> bool:
+    """Returns True when a BaseModel field opts out of structured CSV expansion.
+
+    Set ``Field(json_schema_extra={"csv_mode": "opaque"})`` on presentation
+    views that duplicate other structured fields (e.g. ``result_groups``) so
+    they stay one JSON cell instead of exploding into duplicate columns.
+    """
+    if not isinstance(model_type, type) or not issubclass(
+        model_type, BaseModel
+    ):
+        return False
+    field_info = model_type.model_fields.get(field_name)
+    if field_info is None:
+        return False
+    extra = field_info.json_schema_extra
+    return isinstance(extra, dict) and extra.get("csv_mode") == "opaque"
+
+
 def columns_for_type(
     model_type: type[BaseModel | _DataclassInstance],
 ) -> Iterable[str]:
@@ -760,6 +778,9 @@ def columns_for_type(
     Nested structured fields are recursively expanded with dot-separated names.
     """
     for field_name, annotation in _iter_fields(model_type):
+        if _csv_mode_opaque(model_type, field_name):
+            yield field_name
+            continue
         nested_type = _unwrap_optional_structured_type(annotation)
         if nested_type is not None:
             for column in columns_for_type(nested_type):
@@ -800,7 +821,10 @@ def _flatten_jsonable(
     flattened: dict[str, str] = {}
     for field_name, annotation in _iter_fields(model_type):
         field_value = dumped.get(field_name)
-        nested_type = _unwrap_optional_structured_type(annotation)
+        if _csv_mode_opaque(model_type, field_name):
+            nested_type = None
+        else:
+            nested_type = _unwrap_optional_structured_type(annotation)
         if nested_type is not None:
             if field_value is None:
                 for col in columns_for_type(nested_type):

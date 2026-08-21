@@ -42,6 +42,24 @@ modular_py_library(
     deps = [],
 )
 
+# Namespaced presentation schemas for ``BenchmarkResult.result_groups``.
+# Carved out (pydantic + ``:percentile_metrics`` only) so consumers that
+# only need the group type shapes — e.g. the benchmark-visibility
+# dashboard once uv/Docker packaging lands (MXTOOLS-45) — can import them
+# without pulling the full ``benchmark_shared`` runner tree. Public
+# visibility matches the intended non-MAX consumer path; the full
+# ``:benchmark_shared`` library depends on this target and excludes the
+# file from its own ``srcs`` glob.
+modular_py_library(
+    name = "result_groups",
+    srcs = ["result_groups.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":percentile_metrics",
+        requirement("pydantic"),
+    ],
+)
+
 modular_py_library(
     name = "benchmark_shared",
     srcs = glob(
@@ -50,6 +68,7 @@ modular_py_library(
             "backend_names.py",
             "model_csv.py",
             "percentile_metrics.py",
+            "result_groups.py",
         ],
     ),
     data = glob(["datasets/packaged_data/**/*"]) + [
@@ -58,6 +77,7 @@ modular_py_library(
     deps = [
         ":backend_names",
         ":percentile_metrics",
+        ":result_groups",
         "//max/python/max/config",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",

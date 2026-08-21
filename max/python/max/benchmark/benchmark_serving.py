@@ -853,7 +853,6 @@ async def benchmark(
         achieved_request_rate=achieved_request_rate,
         collect_gpu_stats=args.collect_gpu_stats,
         collect_cpu_stats=args.collect_cpu_stats,
-        spec_decode_stats=spec_decode_stats,
         lora_manager=session.lora_manager,
     )
 
