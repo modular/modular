@@ -39,7 +39,9 @@ from max.experimental.cascade.pipelines.chat_parser import (
     ChatParserConfig,
     ChatParserWorker,
 )
-from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
+from max.experimental.cascade.workers.max_tokenizer import (
+    make_tokenizer_worker,
+)
 
 Int32Array = npt.NDArray[np.int32]
 
@@ -77,15 +79,20 @@ class EchoTransformer(Worker):
 class EchoTextGenPipeline(GenAIPipeline):
     """Cascade pipeline pairing ``MAXTokenizer`` with ``EchoTransformer``."""
 
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self, model_path: str, tokenizer_impl: str | None = None
+    ) -> None:
         """Build the pipeline for the tokenizer at *model_path*.
 
         Args:
             model_path: Hugging Face repo id (or local path) whose tokenizer the
                 worker loads. No model worker is created, so the pipeline config
                 is never resolved and no weights are downloaded.
+            tokenizer_impl: Import path (``"module.path:ClassName"``) of the
+                ``TokenizerWorker`` subclass to construct, or ``None`` to use
+                the HuggingFace tokenizer.
         """
-        self.tokenizer = MAXTokenizer(model_path)
+        self.tokenizer = make_tokenizer_worker(model_path, tokenizer_impl)
         self.transformer = EchoTransformer()
         # Echoed prompt tokens carry no reasoning or tool markers, so the
         # default (plain text) parser keeps the stage in the chain -- and its
@@ -112,7 +119,7 @@ class EchoTextGenPipeline(GenAIPipeline):
         """
         tokens = await self.tokenizer.encode(req.messages)
         gen_tokens = await self.transformer.decode(req.text, tokens)
-        text = await self.tokenizer.decode_stream(gen_tokens)
+        text = await self.tokenizer.decode_stream(gen_tokens, True)
         return await self.parser.parse_stream(
             text, req.tools_enabled, req.tool_schemas()
         )

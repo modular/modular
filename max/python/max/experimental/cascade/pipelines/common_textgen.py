@@ -35,7 +35,9 @@ from max.experimental.cascade.pipelines.chat_parser import (
     ChatParserWorker,
 )
 from max.experimental.cascade.workers.max_model_worker import MAXModelWorker
-from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
+from max.experimental.cascade.workers.max_tokenizer import (
+    make_tokenizer_worker,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pipeline_runtime_config import DISABLE_PARSER_SENTINEL
 from max.pipelines.lib.reasoning import get_parser_cls as reasoning_parser_cls
@@ -88,15 +90,24 @@ def chat_parser_config(config: PipelineConfig) -> ChatParserConfig:
 class CommonTextGenPipeline(GenAIPipeline):
     """Cascade pipeline chaining tokenizer, model worker, and response parser."""
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(
+        self,
+        config: PipelineConfig,
+        tokenizer_impl: str | None = None,
+    ) -> None:
         """Build the pipeline for *config*.
 
         Args:
             config: Fully-specified ``PipelineConfig``. Its ``model_path``
-                seeds the tokenizer worker, the whole config drives the model
-                worker, and its runtime parser names fix the response format.
+                seeds the tokenizer worker and the whole config drives the
+                model worker.
+            tokenizer_impl: Import path (``"module.path:ClassName"``) of the
+                ``TokenizerWorker`` subclass to construct, or ``None`` to use
+                the HuggingFace tokenizer.
         """
-        self.tokenizer = MAXTokenizer(config.model.model_path)
+        self.tokenizer = make_tokenizer_worker(
+            config.model.model_path, tokenizer_impl
+        )
         self.model = MAXModelWorker(config)
         self.parser = ChatParserWorker(chat_parser_config(config))
 
@@ -121,7 +132,7 @@ class CommonTextGenPipeline(GenAIPipeline):
         """
         tokens = await self.tokenizer.encode(req.messages)
         gen_tokens = await self.model.decode(req.text, tokens)
-        text = await self.tokenizer.decode_stream(gen_tokens)
+        text = await self.tokenizer.decode_stream(gen_tokens, True)
         return await self.parser.parse_stream(
             text, req.tools_enabled, req.tool_schemas()
         )

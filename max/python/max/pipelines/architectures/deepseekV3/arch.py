@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
@@ -45,4 +48,5 @@ deepseekV3_arch = SupportedArchitecture(
     config=DeepseekV3Config,
     tool_parser=resolve_deepseekv3_tool_parser,
     memory_planner=DeepseekV3MemoryPlanner,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )
