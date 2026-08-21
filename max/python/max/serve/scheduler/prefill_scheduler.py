@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import time
 import uuid
@@ -39,10 +40,12 @@ from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
 )
 from max.serve.scheduler.interface import Scheduler
+from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
@@ -53,6 +56,13 @@ from .di_dispatchers import PrefillDispatcherServer
 from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
+
+# Decode-clock ping-back protocol for isolating DI dispatch latency (queue
+# wait, CE time, ZMQ round trips) without comparing clocks across the
+# decode/prefill nodes. Off by default -- two extra ZMQ messages per
+# request is unwanted steady-state overhead outside an active
+# investigation.
+_DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
 
 
 @dataclass
@@ -97,6 +107,11 @@ class PrefillScheduler(Scheduler):
         )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
+
+        # request_id -> time.monotonic() at enqueue, popped the first time
+        # the request enters an executed CE batch. Feeds the
+        # di_prefill_queue_wait_time metric; prefill-local, no wire cost.
+        self._enqueue_time: dict[RequestID, float] = {}
 
         # Maps req_id → (context, src_replica_idx) for CE-complete requests
         # whose first generated token hasn't materialized yet due to the overlap scheduling
@@ -162,6 +177,12 @@ class PrefillScheduler(Scheduler):
                 dst_replica_idx=message.dst_replica_idx,
             ),
         )
+        self._enqueue_time[message.id] = time.monotonic()
+        if _DI_LATENCY_PING_ENABLED:
+            self.dispatcher.send_reply_nowait(
+                PrefillProgressPing(id=message.id, event="arrived"),
+                identity,
+            )
 
     def cleanup_active_transfers(self) -> None:
         """Cleans up completed transfers from the active transfers dictionary.
@@ -216,6 +237,15 @@ class PrefillScheduler(Scheduler):
             src_replica_idx: The replica the request is on for Prefill
         """
         req_id = context.request_id
+        if _DI_LATENCY_PING_ENABLED:
+            # Peek (not pop) the identity: this is the CE-complete signal
+            # for the ping-back protocol, sent before the pop below so
+            # cancelled requests still get a ping matching their arrival one.
+            ping_identity, _ = self.request_id_to_reply_context[req_id]
+            self.dispatcher.send_reply_nowait(
+                PrefillProgressPing(id=req_id, event="ce_done"),
+                ping_identity,
+            )
         identity, transfer_dest = self.request_id_to_reply_context.pop(req_id)
 
         # If cancelled, release the request's blocks instead of transferring them.
@@ -429,6 +459,17 @@ class PrefillScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
+        # Attribute queue wait to every request entering its first executed
+        # CE batch, right as that batch is about to run.
+        # Pop-on-first-sight means chunked-prefill continuations (already
+        # popped on their first chunk) don't re-fire.
+        for replica_batch in inputs.batches:
+            for context in replica_batch:
+                enqueued_at = self._enqueue_time.pop(context.request_id, None)
+                if enqueued_at is not None:
+                    METRICS.di_prefill_queue_wait_time(
+                        (t0 - enqueued_at) * 1000
+                    )
         with Tracer(f"_schedule({inputs})"):
             num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
