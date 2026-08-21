@@ -30,7 +30,14 @@ from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from nn.normalization import (
     rms_norm_fused_quantize_dynamic_scaled_fp8,
 )
@@ -83,7 +90,8 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
+from extensibility import TileTensorable
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -208,17 +216,25 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 )
 def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
     input_dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=input_dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+    input: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
     weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shapes for the fused RMS norm and dynamic scaled FP8 quantization op.
     """
-    return input.shape()
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        input_dtype == type_of(input).dtype
+    ), "weight_offset dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.resize.nearest")
@@ -248,16 +264,15 @@ struct ResizeNearest:
 
 
 @extensibility.register_shape_function("mo.resize.nearest")
-def resize_nearest_shape[
-    rank: Int
-](
-    input: InputTensor[rank=rank, ...],
-    size: InputTensor[rank=1, ...],
-) -> IndexList[rank]:
+def resize_nearest_shape(
+    input: Some[Tensor], size: Some[TileTensorable]
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.resize.nearest` graph op."""
-    var shape = IndexList[rank]()
-    for i in range(rank):
-        shape[i] = Int(size[i])
+    comptime assert type_of(size).rank == 1, "size must be rank 1"
+    var size_tt = size.to_tile_tensor()
+    var shape = IndexList[type_of(input).rank]()
+    for i in range(type_of(input).rank):
+        shape[i] = Int(size_tt[i])
 
     return shape
 
@@ -286,16 +301,15 @@ struct ResizeLinear:
 
 
 @extensibility.register_shape_function("mo.resize.linear")
-def resize_linear_shape[
-    rank: Int
-](
-    input: InputTensor[rank=rank, ...],
-    size: InputTensor[rank=1, ...],
-) -> IndexList[rank]:
+def resize_linear_shape(
+    input: Some[Tensor], size: Some[TileTensorable]
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.resize.linear` graph op."""
-    var shape = IndexList[rank]()
-    for i in range(rank):
-        shape[i] = Int(size[i])
+    comptime assert type_of(size).rank == 1, "size must be rank 1"
+    var size_tt = size.to_tile_tensor()
+    var shape = IndexList[type_of(input).rank]()
+    for i in range(type_of(input).rank):
+        shape[i] = Int(size_tt[i])
 
     return shape
 
@@ -324,15 +338,15 @@ struct ResizeBicubic:
 
 
 @extensibility.register_shape_function("mo.resize.bicubic")
-def resize_bicubic_shape[
-    rank: Int
-](
-    input: InputTensor[rank=rank, ...], size: InputTensor[rank=1, ...]
-) -> IndexList[rank]:
+def resize_bicubic_shape(
+    input: Some[Tensor], size: Some[TileTensorable]
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.resize.bicubic` graph op."""
-    var shape = IndexList[rank]()
-    for i in range(rank):
-        shape[i] = Int(size[i])
+    comptime assert type_of(size).rank == 1, "size must be rank 1"
+    var size_tt = size.to_tile_tensor()
+    var shape = IndexList[type_of(input).rank]()
+    for i in range(type_of(input).rank):
+        shape[i] = Int(size_tt[i])
 
     return shape
 
@@ -359,16 +373,16 @@ struct GGMLQ40Dequantize:
 
 
 @extensibility.register_shape_function("ggml_q4_0_dequantize")
-def ggml_q4_0_dequantize_shape(
-    input: InputTensor[dtype=DType.uint8, rank=2, ...]
-) -> IndexList[2]:
+def ggml_q4_0_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q4_0_dequantize` graph op."""
+    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[Q4sym[group_size=32]]()
     comptime quants_per_block = 32
-    var num_block_per_batch = (
-        input.size() // input.dim_size[0]()
-    ) // block_nbytes
-    return (input.dim_size[0](), quants_per_block * num_block_per_batch)
+    var shape = input.shape()
+    var dim0 = Int(coord_to_index_list(shape.tuple())[0])
+    var num_block_per_batch = (Int(shape.product()) // dim0) // block_nbytes
+    return (dim0, quants_per_block * num_block_per_batch)
 
 
 @extensibility.register("vroom_q4_0_matmul")
@@ -396,12 +410,16 @@ struct VroomQ40Matmul:
 
 
 @extensibility.register_shape_function("vroom_q4_0_matmul")
-def vroom_q4_0_matmul_shape(
-    a: InputTensor[dtype=DType.float32, rank=2, ...],
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def vroom_q4_0_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q4_0_matmul` graph op."""
-    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).rank == 2, "a must be rank 2"
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return IndexList[2](
+        Int(coord_to_index_list(a.shape().tuple())[0]),
+        Int(coord_to_index_list(b.shape().tuple())[0]),
+    )
 
 
 @extensibility.register("vroom_q4_0_repack_weights")
@@ -425,11 +443,15 @@ struct VroomQ40RepackWeights:
 
 @extensibility.register_shape_function("vroom_q4_0_repack_weights")
 def vroom_q4_0_repack_weights_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...]
-) -> IndexList[2]:
+    b: Some[Tensor],
+) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q4_0_repack_weights` graph op.
     """
-    return b.shape()
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return rebind[IndexList[type_of(b).rank]](
+        coord_to_index_list(b.shape().tuple())
+    )
 
 
 @extensibility.register("ggml_q4_k_dequantize")
@@ -451,19 +473,19 @@ struct GGMLQ4KDequantize:
 
 
 @extensibility.register_shape_function("ggml_q4_k_dequantize")
-def ggml_q4_k_dequantize_shape(
-    input: InputTensor[dtype=DType.uint8, rank=2, ...]
-) -> IndexList[2]:
+def ggml_q4_k_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q4_k_dequantize` graph op."""
+    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[block_Q4_K]()
     comptime elements_per_block = block_QK_K.quantized_k
 
-    var num_block_per_batch = (
-        input.size() // input.dim_size[0]()
-    ) // block_nbytes
+    var shape = input.shape()
+    var dim0 = Int(coord_to_index_list(shape.tuple())[0])
+    var num_block_per_batch = (Int(shape.product()) // dim0) // block_nbytes
 
     return (
-        input.dim_size[0](),
+        dim0,
         elements_per_block * num_block_per_batch,
     )
 
@@ -493,12 +515,16 @@ struct VroomQ4KMatmul:
 
 
 @extensibility.register_shape_function("vroom_q4_k_matmul")
-def vroom_q4_k_matmul_shape(
-    a: InputTensor[dtype=DType.float32, rank=2, ...],
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def vroom_q4_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q4_k_matmul` graph op."""
-    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).rank == 2, "a must be rank 2"
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return IndexList[2](
+        Int(coord_to_index_list(a.shape().tuple())[0]),
+        Int(coord_to_index_list(b.shape().tuple())[0]),
+    )
 
 
 @extensibility.register("vroom_q4_k_repack_weights")
@@ -522,11 +548,15 @@ struct VroomQ4KRepackWeights:
 
 @extensibility.register_shape_function("vroom_q4_k_repack_weights")
 def vroom_q4_k_repack_weights_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+    b: Some[Tensor],
+) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q4_k_repack_weights` graph op.
     """
-    return b.shape()
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return rebind[IndexList[type_of(b).rank]](
+        coord_to_index_list(b.shape().tuple())
+    )
 
 
 @extensibility.register("ggml_q6_k_dequantize")
@@ -551,19 +581,19 @@ struct GGMLQ6KDequantize:
 
 
 @extensibility.register_shape_function("ggml_q6_k_dequantize")
-def ggml_q6_k_dequantize_shape(
-    input: InputTensor[dtype=DType.uint8, rank=2, ...]
-) -> IndexList[2]:
+def ggml_q6_k_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q6_k_dequantize` graph op."""
+    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[block_Q6_K]()
     comptime elements_per_block = block_QK_K.quantized_k
 
-    var num_block_per_batch = (
-        input.size() // input.dim_size[0]()
-    ) // block_nbytes
+    var shape = input.shape()
+    var dim0 = Int(coord_to_index_list(shape.tuple())[0])
+    var num_block_per_batch = (Int(shape.product()) // dim0) // block_nbytes
 
     return (
-        input.dim_size[0](),
+        dim0,
         elements_per_block * num_block_per_batch,
     )
 
@@ -593,12 +623,16 @@ struct VroomQ6KMatmul:
 
 
 @extensibility.register_shape_function("vroom_q6_k_matmul")
-def vroom_q6_k_matmul_shape(
-    a: InputTensor[dtype=DType.float32, rank=2, ...],
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def vroom_q6_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q6_k_matmul` graph op."""
-    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).rank == 2, "a must be rank 2"
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return IndexList[2](
+        Int(coord_to_index_list(a.shape().tuple())[0]),
+        Int(coord_to_index_list(b.shape().tuple())[0]),
+    )
 
 
 @extensibility.register("vroom_q6_k_repack_weights")
@@ -622,11 +656,15 @@ struct VroomQ6KRepackWeights:
 
 @extensibility.register_shape_function("vroom_q6_k_repack_weights")
 def vroom_q6_k_repack_weights_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+    b: Some[Tensor],
+) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q6_k_repack_weights` graph op.
     """
-    return b.shape()
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return rebind[IndexList[type_of(b).rank]](
+        coord_to_index_list(b.shape().tuple())
+    )
 
 
 @extensibility.register("qmatmul_b4_g32")
@@ -655,12 +693,14 @@ struct QMatmulGPU_b4_g32:
 
 
 @extensibility.register_shape_function("qmatmul_b4_g32")
-def qmatmul_b4_g32_shape(
-    a: InputTensor[dtype=DType.float32, rank=2, ...],
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def qmatmul_b4_g32_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `qmatmul_b4_g32` graph op."""
-    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+    comptime assert type_of(a).rank == 2, "a must be rank 2"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return IndexList[2](
+        Int(coord_to_index_list(a.shape().tuple())[0]),
+        Int(coord_to_index_list(b.shape().tuple())[0]),
+    )
 
 
 @extensibility.register("qmatmul_b4_g128")
@@ -689,12 +729,14 @@ struct QMatmulGPU_b4_g128:
 
 
 @extensibility.register_shape_function("qmatmul_b4_g128")
-def qmatmul_b4_g128_shape(
-    a: InputTensor[dtype=DType.float32, rank=2, ...],
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def qmatmul_b4_g128_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `qmatmul_b4_g128` graph op."""
-    return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+    comptime assert type_of(a).rank == 2, "a must be rank 2"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return IndexList[2](
+        Int(coord_to_index_list(a.shape().tuple())[0]),
+        Int(coord_to_index_list(b.shape().tuple())[0]),
+    )
 
 
 @extensibility.register("GGUF_gpu_repack_q4_0")
@@ -720,10 +762,14 @@ struct QMatmulGPURepackGGUF:
 
 @extensibility.register_shape_function("GGUF_gpu_repack_q4_0")
 def GGUF_gpu_repack_q4_0_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+    b: Some[Tensor],
+) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `GGUF_gpu_repack_q4_0` graph op."""
-    return b.shape()
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    return rebind[IndexList[type_of(b).rank]](
+        coord_to_index_list(b.shape().tuple())
+    )
 
 
 @extensibility.register("GPTQ_gpu_repack_b4_g128")
@@ -749,11 +795,13 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 
 
 @extensibility.register_shape_function("GPTQ_gpu_repack_b4_g128")
-def GPTQ_gpu_repack_b4_g128_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-) -> IndexList[2]:
+def GPTQ_gpu_repack_b4_g128_shape(b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `GPTQ_gpu_repack_b4_g128` graph op."""
-    return IndexList[2](b.dim_size[1](), b.dim_size[0]())
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    var shape = b.shape()
+    var shape_list = coord_to_index_list(shape.tuple())
+    return IndexList[2](Int(shape_list[1]), Int(shape_list[0]))
 
 
 @extensibility.register("GPTQ_gpu_repack_b4_g128_desc_act")
@@ -790,12 +838,19 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
 @extensibility.register_shape_function("GPTQ_gpu_repack_b4_g128_desc_act")
 def GPTQ_gpu_repack_b4_g128_desc_act_shape(
-    b: InputTensor[dtype=DType.uint8, rank=2, ...],
-    perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+    b: Some[Tensor], perm_idx: Some[Tensor]
 ) -> IndexList[2]:
     """Computes the output shape for the `GPTQ_gpu_repack_b4_g128_desc_act` graph op.
     """
-    return IndexList[2](b.dim_size(1), b.dim_size(0))
+    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).rank == 2, "b must be rank 2"
+    comptime assert (
+        type_of(perm_idx).dtype == DType.int32
+    ), "perm_idx must be int32"
+    comptime assert type_of(perm_idx).rank == 1, "perm_idx must be rank 1"
+    var shape = b.shape()
+    var shape_list = coord_to_index_list(shape.tuple())
+    return IndexList[2](Int(shape_list[1]), Int(shape_list[0]))
 
 
 @extensibility.register("mo.quantize.dynamic.block.scaled")
