@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """CPU implementations of elementwise functions."""
 
-from std.math import ceildiv
+from std.math import ceildiv, clamp
 
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
@@ -74,7 +74,7 @@ def _elementwise_impl_cpu_1d[
     """
     comptime assert shape.rank == 1, "Specialization for 1D"
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = clamp(simd_width // 4, 1, 8)
 
     var problem_size = shape.product()
 
@@ -124,7 +124,7 @@ def _elementwise_impl_cpu_nd[
     if shape[rank - 1].value() == 0:
         return
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = clamp(simd_width // 4, 1, 8)
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
