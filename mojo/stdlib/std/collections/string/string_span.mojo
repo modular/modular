@@ -1721,14 +1721,20 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return self.find(prefix, start) == start
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
+        var n = self.byte_length()
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        var prefix_len = prefix.byte_length()
+        if s > e or prefix_len > e - s:
+            return False
+        return (
+            unsafe_memcmp(
+                self.unsafe_ptr().unsafe_offset(s),
+                prefix.unsafe_ptr(),
+                prefix_len,
             )
-        ).startswith(prefix)
+            == 0
+        )
 
     def endswith(
         self, suffix: StringSpan, start: Int = 0, end: Int = -1
@@ -1747,20 +1753,20 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        if suffix.byte_length() > self.byte_length():
+        var n = self.byte_length()
+        var s = start if start >= 0 else max(0, start + n)
+        var e = n if end == -1 else min(n, end if end >= 0 else max(0, end + n))
+        var suffix_len = suffix.byte_length()
+        if s > e or suffix_len > e - s:
             return False
-        if end == -1:
-            return (
-                self.rfind(suffix, start) + suffix.byte_length()
-                == self.byte_length()
+        return (
+            unsafe_memcmp(
+                self.unsafe_ptr().unsafe_offset(e - suffix_len),
+                suffix.unsafe_ptr(),
+                suffix_len,
             )
-        # FIXME: use normalize_index
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
-            )
-        ).endswith(suffix)
+            == 0
+        )
 
     def removeprefix(self, prefix: StringSpan, /) -> Self:
         """Returns a view of the string with the prefix removed if it was

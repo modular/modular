@@ -87,6 +87,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSpan.startswith()` and `StringSpan.endswith()` now use a direct
+  `memcmp` against the prefix/suffix bytes instead of going through `find()`,
+  avoiding the cost of a full search when the answer is determined by a single
+  bounded comparison.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
