@@ -413,3 +413,7 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
   longer wrap silently, and `Int.MIN` parses correctly by design rather than
   by wraparound.
+
+- Every value of a struct type whose `@align(N)` exceeds its natural
+  alignment is now aligned to `N`, including every element of an array or a
+  `List` of that type.
