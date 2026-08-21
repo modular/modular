@@ -24,11 +24,13 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from types import UnionType
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
+import cyclopts
 import pytest
 import yaml
+from cyclopts import Parameter
 from max._entrypoints.cli.config import pipeline_config_options
 from max.config import ConfigFileModel
 from max.pipelines.lib import PipelineArgs, PipelineConfig
@@ -251,3 +253,64 @@ def test_config_file_value_survives_and_cli_overrides_it(
         assert routed(sibling[0], **{field: from_cli}) == stored(
             sibling[0], sibling[1]
         ), "a CLI flag reset a sibling field set in the config file"
+
+
+def test_pipeline_args_surface_is_frozen() -> None:
+    """Top-level fields are fixed at construction; assignment raises."""
+    args = PipelineArgs(max_length=128)
+    field = "max_length"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(args, field, 256)
+
+
+def test_model_copy_preserves_model_fields_set() -> None:
+    """Pins the ``model_copy`` invariant internal callers depend on: updated
+    keys are marked set and untouched fields stay unset, because
+    ``PipelineConfig.from_args`` rebuilds sub-configs from ``model_fields_set``.
+    """
+    args = PipelineArgs(max_length=128)
+    copied = args.model_copy(update={"max_length": 512})
+    assert copied.max_length == 512
+    assert args.max_length == 128
+    assert "max_length" in copied.model_fields_set
+    assert "model_path" not in copied.model_fields_set
+
+
+def test_private_attrs_stay_assignable() -> None:
+    """Callers set ``_weights_repo_id`` post-construction; frozen only
+    guards declared fields, not private attributes.
+    """
+    args = PipelineArgs()
+    args._weights_repo_id = "org/weights-repo"
+    assert args._weights_repo_id == "org/weights-repo"
+
+
+def test_cyclopts_flat_binding_constructs_a_new_instance() -> None:
+    """The cascade CLI binds PipelineArgs with ``Parameter(name="*")`` and a
+    default instance; cyclopts must build a fresh instance from parsed flags
+    (the constructor path) rather than mutating the default in place.
+    """
+    app = cyclopts.App(name="probe", help_formatter="plain")
+    default_args = PipelineArgs()
+    received: list[PipelineArgs] = []
+
+    @app.default
+    def probe(
+        pipeline_args: Annotated[
+            PipelineArgs, Parameter(name="*")
+        ] = default_args,
+    ) -> None:
+        received.append(pipeline_args)
+
+    try:
+        app(["--model-path", "org/some-model", "--max-length", "1234"])
+    except SystemExit as e:  # cyclopts may exit(0) after a command
+        if e.code:
+            raise
+
+    (args,) = received
+    assert args is not default_args
+    assert args.model_path == "org/some-model"
+    assert args.max_length == 1234
+    assert default_args.model_path == ""
+    assert default_args.max_length is None
