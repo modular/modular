@@ -51,6 +51,7 @@ summarizes code paths and contribution status for more significant changes.
 | `max/docs`                          | Developer documentation           | Contributions welcome                                                      |
 | `max/examples`                      | Code examples                     | Contributions welcome                                                      |
 | `max/kernels`                       | Public MAX kernels                | See `max/kernels/CONTRIBUTING.md`                                          |
+| `max/mojo`                          | The `max` Mojo package            | Contributions welcome                                                      |
 | `max/python/docs`                   | Python API docs                   | Automatically generated                                                    |
 | `max/python/max`                    | Python API sources                | See the table below                                                        |
 
