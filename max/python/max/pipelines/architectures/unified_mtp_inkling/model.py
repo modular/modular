@@ -128,8 +128,9 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> InklingConfig:
-        # FIXME
-        config = InklingConfig.initialize(self.pipeline_config)  # type: ignore
+        config = InklingConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         config.finalize(self.huggingface_config, state_dict)
         config.use_subgraphs = False
         mtp = parse_inkling_mtp_config(self.huggingface_config)
