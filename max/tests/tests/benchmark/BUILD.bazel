@@ -67,7 +67,6 @@ modular_py_test(
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
     ],
 )

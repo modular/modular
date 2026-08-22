@@ -241,27 +241,6 @@ alias(
     )
     for lib in INTERNAL_PACKAGES
 ]
-
-pycross_wheel_library(
-    name = "mblack-lib",
-    tags = ["manual"],
-    wheel = "@mblack_wheel//file",
-)
-
-py_binary(
-    name = "mblack",
-    srcs = ["@@//bazel:mblack-main.py"],
-    main = "@@//bazel:mblack-main.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":mblack-lib",
-        requirement("click"),
-        requirement("mypy-extensions"),
-        requirement("pathspec"),
-        requirement("platformdirs"),
-        requirement("tomli"),
-    ],
-)
 """)  # buildifier: disable=canonical-repository
 
 modular_wheel_repository = repository_rule(

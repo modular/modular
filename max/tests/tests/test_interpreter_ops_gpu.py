@@ -70,6 +70,11 @@ def _interpreter_only() -> Generator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def _seed_torch() -> None:
+    torch.manual_seed(42)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _require_warm_adoption() -> None:
     """Fail loudly unless the build-warmed eager-GC cache actually took effect.
@@ -2429,7 +2434,6 @@ class TestLayerNormGPU:
         """Test layer_norm on GPU matches torch reference."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
         shape = [3, 4, 5]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
@@ -2459,7 +2463,6 @@ class TestLayerNormGPU:
         """Test layer_norm on a 2D tensor on GPU."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
         shape = [4, 8]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
@@ -2485,7 +2488,6 @@ class TestLayerNormGPU:
     def test_layer_norm_gpu_large(self) -> None:
         """Test layer_norm with a large feature dimension on GPU."""
         shape = [8, 128]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
         gamma_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
         beta_torch = torch.randn(shape[-1], dtype=torch.float32, device="cuda")
@@ -2522,7 +2524,6 @@ class TestRmsNormGPU:
         """Test rms_norm (Llama-style) on GPU matches torch reference."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
         shape = [3, 4, 5]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         weight_torch = torch.randn(shape[-1], dtype=torch_dtype, device="cuda")
 
@@ -2546,7 +2547,6 @@ class TestRmsNormGPU:
     def test_rms_norm_gpu_multiply_before_cast(self) -> None:
         """Test rms_norm (Gemma-style multiply_before_cast=True) on GPU."""
         shape = [4, 6]
-        torch.manual_seed(42)
         x_torch = torch.randn(shape, dtype=torch.bfloat16, device="cuda")
         weight_torch = torch.randn(
             shape[-1], dtype=torch.bfloat16, device="cuda"
@@ -2599,7 +2599,6 @@ class TestGroupNormGPU:
     def test_group_norm_gpu_4d(self, dtype: DType) -> None:
         """Test group_norm on a 4D NCHW tensor on GPU."""
         torch_dtype = DTYPE_TO_TORCH[dtype]
-        torch.manual_seed(50)
         x_torch = torch.randn(2, 4, 3, 3, dtype=torch_dtype, device="cuda")
         gamma_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
         beta_torch = torch.randn(4, dtype=torch_dtype, device="cuda")
@@ -2624,7 +2623,6 @@ class TestGroupNormGPU:
 
     def test_group_norm_gpu_3d_input(self) -> None:
         """Test group_norm on a 3D [N, C, L] tensor on GPU."""
-        torch.manual_seed(51)
         x_torch = torch.randn(2, 6, 8, dtype=torch.float32, device="cuda")
         gamma_torch = torch.randn(6, dtype=torch.float32, device="cuda")
         beta_torch = torch.randn(6, dtype=torch.float32, device="cuda")
@@ -2648,7 +2646,6 @@ class TestGroupNormGPU:
 
     def test_group_norm_gpu_single_group(self) -> None:
         """Test group_norm with num_groups=1 on GPU."""
-        torch.manual_seed(52)
         x_torch = torch.randn(2, 4, 3, 3, dtype=torch.float32, device="cuda")
         gamma_torch = torch.randn(4, dtype=torch.float32, device="cuda")
         beta_torch = torch.randn(4, dtype=torch.float32, device="cuda")

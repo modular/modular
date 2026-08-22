@@ -105,7 +105,6 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

@@ -446,7 +446,7 @@ class FakeModel:
 
         # update all tokens to contain the tokens which should have a KV
         # projection in the cache after this forward step
-        for request_id in request_ids_and_prompts:
+        for request_id in request_ids_and_prompts:  # noqa: PLC0206
             self.request_ids_and_all_tokens[request_id] = np.concatenate(
                 [
                     self.request_ids_and_all_tokens.get(
@@ -616,8 +616,8 @@ async def test_prefix_caching_grouped_prefixes(
                 kv_manager.release(batch[request_id])
                 del batch[request_id]
 
-    for request_id in batch:
-        kv_manager.release(batch[request_id])
+    for value in batch.values():
+        kv_manager.release(value)
 
 
 def run_forward(

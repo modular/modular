@@ -588,7 +588,7 @@ class XgrammarBackend(GrammarBackend[Any]):
         Xgrammar rejects unsatisfiable schemas at compile time, so the
         compiled grammar reaching here is already valid (nothing to check).
         """
-        return None
+        return
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int

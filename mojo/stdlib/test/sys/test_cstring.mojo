@@ -50,7 +50,7 @@ def test_c_string_slice_from_ptr() raises:
     var cslice = CStringSlice(unsafe_from_ptr=ptr)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(ptr))
+    assert_equal(Int(cslice.ptr()), Int(ptr))
 
 
 def test_c_string_slice_from_nul_string() raises:
@@ -58,7 +58,7 @@ def test_c_string_slice_from_nul_string() raises:
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(string.as_bytes().unsafe_ptr()))
+    assert_equal(Int(cslice.ptr()), Int(string.as_bytes().unsafe_ptr()))
 
 
 def test_c_string_slice_from_nul_span() raises:
@@ -66,7 +66,7 @@ def test_c_string_slice_from_nul_span() raises:
     var cslice = CStringSlice(span)
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(span.unsafe_ptr()))
+    assert_equal(Int(cslice.ptr()), Int(span.unsafe_ptr()))
 
 
 def test_c_string_slice_from_string() raises:
@@ -74,7 +74,7 @@ def test_c_string_slice_from_string() raises:
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(string.as_bytes().unsafe_ptr()))
+    assert_equal(Int(cslice.ptr()), Int(string.as_bytes().unsafe_ptr()))
 
 
 def test_c_string_slice_from_span() raises:
@@ -89,7 +89,7 @@ def test_c_string_slice_from_span() raises:
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")
-    assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
+    assert_equal(Int(cslice.ptr()), Int(string.unsafe_ptr()))
 
 
 def test_c_string_copy() raises:
@@ -98,7 +98,7 @@ def test_c_string_copy() raises:
 
     var copy = cslice
     assert_true(copy == cslice)
-    assert_equal(Int(copy.unsafe_ptr()), Int(cslice.unsafe_ptr()))
+    assert_equal(Int(copy.ptr()), Int(cslice.ptr()))
 
 
 def test_c_string_eq() raises:

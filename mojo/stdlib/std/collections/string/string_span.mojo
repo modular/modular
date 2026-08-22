@@ -1077,7 +1077,9 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
-        var res = String(capacity=self_len + (new_len - old_len) * occurrences)
+        var res = String(
+            capacity_bytes=self_len + (new_len - old_len) * occurrences
+        )
 
         var current_pos = 0
 
@@ -1104,7 +1106,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         # TODO: this may be better as:
         # (val.byte_length() * self.count_codepoints()) + self.count_codepoints()
         var estimated_capacity = val.byte_length() * self.byte_length()
-        var res = String(capacity=estimated_capacity)
+        var res = String(capacity_bytes=estimated_capacity)
         for codepoint in self.codepoint_slices():
             res += val
             res += codepoint
@@ -2415,7 +2417,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             fillchar.byte_length() == 1
         ), "fill char needs to be a one byte literal"
 
-        var result = String(capacity=width)
+        var result = String(capacity_bytes=width)
         for _ in range(start):
             result += fillchar
         result += self
@@ -2453,7 +2455,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             )
         )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
-        var result = String(capacity=total_bytes)
+        var result = String(capacity_bytes=total_bytes)
 
         if result._is_inline():
             # Write directly to the stack address

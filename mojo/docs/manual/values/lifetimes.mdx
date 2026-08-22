@@ -8,7 +8,7 @@ description: Working with origins and references.
 
 The Mojo compiler includes a lifetime checker, a compiler pass that analyzes
 dataflow through your program. It identifies when variables are valid and
-inserts destructor calls when a variable's lifetime ends.
+inserts deinitializer calls when a variable's lifetime ends.
 
 The Mojo compiler uses a special value called an *origin* to track the lifetime
 of variables and the validity of references.
@@ -240,7 +240,7 @@ lifetime checker. For example, the
 `MutUntrackedOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
 for managing the lifetime yourself: for example, a struct that allocates memory
-should generally free that memory in its destructor.
+should generally free that memory in its deinitializer.
 
 #### Wildcard origins
 

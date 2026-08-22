@@ -587,71 +587,63 @@ struct StringDict[
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
             d[key] = i
         keep(d._table._ctrl)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
             d[key] = i
         keep(d._table._ctrl)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark StringDict init
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_dict_init_with_short_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         var d = StringDict[Int]()
         for i, key in enumerate(keys):
             d.put(key, i)
         keep(d.keys.keys)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_string_dict_init_with_long_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         var d = StringDict[Int]()
         for i, key in enumerate(keys):
             d.put(key, i)
         keep(d.keys.keys)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -704,66 +696,86 @@ def main() raises:
             num_repetitions=5,
         )
     )
-    m.bench_function[bench_dict_init_with_short_keys["UN_charter_EN.txt"]](
-        BenchId("bench_dict_init_with_short_keys EN")
+    m.bench_function(
+        bench_dict_init_with_short_keys["UN_charter_EN.txt"],
+        BenchId("bench_dict_init_with_short_keys EN"),
     )
-    m.bench_function[bench_dict_init_with_short_keys["UN_charter_AR.txt"]](
-        BenchId("bench_dict_init_with_short_keys AR")
+    m.bench_function(
+        bench_dict_init_with_short_keys["UN_charter_AR.txt"],
+        BenchId("bench_dict_init_with_short_keys AR"),
     )
-    m.bench_function[bench_dict_init_with_short_keys["UN_charter_ES.txt"]](
-        BenchId("bench_dict_init_with_short_keys ES")
+    m.bench_function(
+        bench_dict_init_with_short_keys["UN_charter_ES.txt"],
+        BenchId("bench_dict_init_with_short_keys ES"),
     )
-    m.bench_function[bench_dict_init_with_short_keys["UN_charter_RU.txt"]](
-        BenchId("bench_dict_init_with_short_keys RU")
+    m.bench_function(
+        bench_dict_init_with_short_keys["UN_charter_RU.txt"],
+        BenchId("bench_dict_init_with_short_keys RU"),
     )
-    m.bench_function[bench_dict_init_with_short_keys["UN_charter_zh-CN.txt"]](
-        BenchId("bench_dict_init_with_short_keys zh-CN")
+    m.bench_function(
+        bench_dict_init_with_short_keys["UN_charter_zh-CN.txt"],
+        BenchId("bench_dict_init_with_short_keys zh-CN"),
     )
-    m.bench_function[bench_dict_init_with_long_keys["UN_charter_EN.txt"]](
-        BenchId("bench_dict_init_with_long_keys EN")
+    m.bench_function(
+        bench_dict_init_with_long_keys["UN_charter_EN.txt"],
+        BenchId("bench_dict_init_with_long_keys EN"),
     )
-    m.bench_function[bench_dict_init_with_long_keys["UN_charter_AR.txt"]](
-        BenchId("bench_dict_init_with_long_keys AR")
+    m.bench_function(
+        bench_dict_init_with_long_keys["UN_charter_AR.txt"],
+        BenchId("bench_dict_init_with_long_keys AR"),
     )
-    m.bench_function[bench_dict_init_with_long_keys["UN_charter_ES.txt"]](
-        BenchId("bench_dict_init_with_long_keys ES")
+    m.bench_function(
+        bench_dict_init_with_long_keys["UN_charter_ES.txt"],
+        BenchId("bench_dict_init_with_long_keys ES"),
     )
-    m.bench_function[bench_dict_init_with_long_keys["UN_charter_RU.txt"]](
-        BenchId("bench_dict_init_with_long_keys RU")
+    m.bench_function(
+        bench_dict_init_with_long_keys["UN_charter_RU.txt"],
+        BenchId("bench_dict_init_with_long_keys RU"),
     )
-    m.bench_function[bench_dict_init_with_long_keys["UN_charter_zh-CN.txt"]](
-        BenchId("bench_dict_init_with_long_keys zh-CN")
+    m.bench_function(
+        bench_dict_init_with_long_keys["UN_charter_zh-CN.txt"],
+        BenchId("bench_dict_init_with_long_keys zh-CN"),
     )
 
-    m.bench_function[
-        bench_string_dict_init_with_short_keys["UN_charter_EN.txt"]
-    ](BenchId("bench_string_dict_init_with_short_keys EN"))
-    m.bench_function[
-        bench_string_dict_init_with_short_keys["UN_charter_AR.txt"]
-    ](BenchId("bench_string_dict_init_with_short_keys AR"))
-    m.bench_function[
-        bench_string_dict_init_with_short_keys["UN_charter_ES.txt"]
-    ](BenchId("bench_string_dict_init_with_short_keys ES"))
-    m.bench_function[
-        bench_string_dict_init_with_short_keys["UN_charter_RU.txt"]
-    ](BenchId("bench_string_dict_init_with_short_keys RU"))
-    m.bench_function[
-        bench_string_dict_init_with_short_keys["UN_charter_zh-CN.txt"]
-    ](BenchId("bench_string_dict_init_with_short_keys zh-CN"))
-    m.bench_function[
-        bench_string_dict_init_with_long_keys["UN_charter_EN.txt"]
-    ](BenchId("bench_string_dict_init_with_long_keys EN"))
-    m.bench_function[
-        bench_string_dict_init_with_long_keys["UN_charter_AR.txt"]
-    ](BenchId("bench_string_dict_init_with_long_keys AR"))
-    m.bench_function[
-        bench_string_dict_init_with_long_keys["UN_charter_ES.txt"]
-    ](BenchId("bench_string_dict_init_with_long_keys ES"))
-    m.bench_function[
-        bench_string_dict_init_with_long_keys["UN_charter_RU.txt"]
-    ](BenchId("bench_string_dict_init_with_long_keys RU"))
-    m.bench_function[
-        bench_string_dict_init_with_long_keys["UN_charter_zh-CN.txt"]
-    ](BenchId("bench_string_dict_init_with_long_keys zh-CN"))
+    m.bench_function(
+        bench_string_dict_init_with_short_keys["UN_charter_EN.txt"],
+        BenchId("bench_string_dict_init_with_short_keys EN"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_short_keys["UN_charter_AR.txt"],
+        BenchId("bench_string_dict_init_with_short_keys AR"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_short_keys["UN_charter_ES.txt"],
+        BenchId("bench_string_dict_init_with_short_keys ES"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_short_keys["UN_charter_RU.txt"],
+        BenchId("bench_string_dict_init_with_short_keys RU"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_short_keys["UN_charter_zh-CN.txt"],
+        BenchId("bench_string_dict_init_with_short_keys zh-CN"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_long_keys["UN_charter_EN.txt"],
+        BenchId("bench_string_dict_init_with_long_keys EN"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_long_keys["UN_charter_AR.txt"],
+        BenchId("bench_string_dict_init_with_long_keys AR"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_long_keys["UN_charter_ES.txt"],
+        BenchId("bench_string_dict_init_with_long_keys ES"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_long_keys["UN_charter_RU.txt"],
+        BenchId("bench_string_dict_init_with_long_keys RU"),
+    )
+    m.bench_function(
+        bench_string_dict_init_with_long_keys["UN_charter_zh-CN.txt"],
+        BenchId("bench_string_dict_init_with_long_keys zh-CN"),
+    )
 
     m.dump_report()

@@ -409,6 +409,32 @@ def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
         return arr^
 
 
+def _return_batched_array[copy: Bool = False]() -> Array[Int32, 64]:
+    var arr = Array[Int32, 64](fill=0)
+
+    comptime if copy:
+        return arr.copy()
+    else:
+        return arr^
+
+
+def test_array_batched_copy_and_move_llvm_ir() raises:
+    # 64 elements reaches `fill=`'s batched runtime loop, unlike the 4-element
+    # case above which unrolls at compile time. A callsite marker is expected
+    # for the live loop, so this checks only the range attribute.
+    def _test(ir: StringSlice) raises:
+        assert_true("initializes((0, 256))" in ir)
+
+    var move_info = compile_info[
+        _return_batched_array[copy=False], emission_kind="llvm-opt"
+    ]()
+    _test(move_info.asm)
+    var copy_info = compile_info[
+        _return_batched_array[copy=True], emission_kind="llvm-opt"
+    ]()
+    _test(copy_info.asm)
+
+
 def test_array_copy_and_move_llvm_ir() raises:
     def _test(ir: StringSlice) raises:
         assert_true("initializes((0, 16))" in ir)
@@ -701,8 +727,153 @@ def test_array_with_explicit_destroy_type() raises:
     assert_equal(destroyed, [0, 1, 2])
 
 
+def test_array_add() raises:
+    var a: Array[Int, 2] = [1, 2]
+    var b: Array[Int, 3] = [3, 4, 5]
+    var c = (a^) + (b^)
+    comptime assert type_of(c).length == 5
+    for i in range(5):
+        assert_equal(c[i], i + 1)
+
+    var empty = Array[Int, 0](uninitialized=True)
+    var d: Array[Int, 1] = [7]
+    var e = (empty^) + (d^)
+    comptime assert type_of(e).length == 1
+    assert_equal(e[0], 7)
+
+
+def test_array_add_list_literal_rhs() raises:
+    # A list literal on the right-hand side materializes as an `Array`.
+    var a: Array[Int, 2] = [1, 2]
+    var b = (a^) + [3, 4]
+    comptime assert type_of(b).length == 4
+    for i in range(4):
+        assert_equal(b[i], i + 1)
+
+
+def test_array_add_list_literal_to_rvalue() raises:
+    def returns_array() -> Array[Int, 2]:
+        return [1, 2]
+
+    # An rvalue array concatenates with a literal directly.
+    var a = returns_array() + [3, 4]
+    comptime assert type_of(a).length == 4
+    for i in range(4):
+        assert_equal(a[i], i + 1)
+
+
+def test_array_add_list_literal_lhs() raises:
+    def returns_array() -> Array[Int, 2]:
+        return [3, 4]
+
+    # A literal on the left-hand side also resolves to `Array.__add__`.
+    var a = [1, 2] + returns_array()
+    comptime assert type_of(a).length == 4
+    for i in range(4):
+        assert_equal(a[i], i + 1)
+
+
+def test_array_add_two_list_literals() raises:
+    # Two literals with an `Array`-typed binding.
+    var a: Array[Int, 4] = [1, 2] + [3, 4]
+    for i in range(4):
+        assert_equal(a[i], i + 1)
+
+
+def test_array_add_string() raises:
+    var a: Array[String, 2] = ["hi", "hello"]
+    var b: Array[String, 1] = ["hey"]
+    var c = (a^) + (b^)
+    assert_equal(c[0], "hi")
+    assert_equal(c[1], "hello")
+    assert_equal(c[2], "hey")
+
+
+def test_array_add_runs_destructors_once() raises:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+    var a: Array[DelRecorder[ptr.origin], 2] = [
+        DelRecorder(0, ptr),
+        DelRecorder(1, ptr),
+    ]
+    var b: Array[DelRecorder[ptr.origin], 2] = [
+        DelRecorder(2, ptr),
+        DelRecorder(3, ptr),
+    ]
+    var c = (a^) + (b^)
+    # The inputs' elements were moved into `c`, not destroyed.
+    assert_equal(len(destructor_recorder), 0)
+    _ = c^
+    assert_equal(destructor_recorder, [0, 1, 2, 3])
+
+
+def test_array_add_explicit_destroy_type() raises:
+    var a: Array[ExplicitDestroy, 1] = [ExplicitDestroy(0)]
+    var b: Array[ExplicitDestroy, 2] = [
+        ExplicitDestroy(1),
+        ExplicitDestroy(2),
+    ]
+    var c = (a^) + (b^)
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    c^.deinit_with(destroy_closure)
+    assert_equal(destroyed, [0, 1, 2])
+
+
+def test_array_repeat() raises:
+    var a: Array[Int, 2] = [1, 2]
+    var b = a^.repeat[3]()
+    comptime assert type_of(b).length == 6
+    for i in range(6):
+        assert_equal(b[i], i % 2 + 1)
+
+
+def test_array_repeat_by_one() raises:
+    var a: Array[Int, 3] = [1, 2, 3]
+    var b = a^.repeat[1]()
+    comptime assert type_of(b).length == 3
+    for i in range(3):
+        assert_equal(b[i], i + 1)
+
+
+def test_array_repeat_rvalue() raises:
+    def returns_array() -> Array[Int, 2]:
+        return [1, 2]
+
+    var a = returns_array().repeat[2]()
+    comptime assert type_of(a).length == 4
+    for i in range(4):
+        assert_equal(a[i], i % 2 + 1)
+
+
+def test_array_repeat_string() raises:
+    var a: Array[String, 2] = ["hi", "hello"]
+    var b = a^.repeat[2]()
+    assert_equal(b[0], "hi")
+    assert_equal(b[1], "hello")
+    assert_equal(b[2], "hi")
+    assert_equal(b[3], "hello")
+
+
+def test_array_repeat_runs_destructors_once() raises:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+    var a: Array[DelRecorder[ptr.origin], 2] = [
+        DelRecorder(0, ptr),
+        DelRecorder(1, ptr),
+    ]
+    var b = a^.repeat[3]()
+    # The input's elements were copied/moved into `b`, not destroyed.
+    assert_equal(len(destructor_recorder), 0)
+    _ = b^
+    assert_equal(destructor_recorder, [0, 1, 0, 1, 0, 1])
+
+
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
-    # TODO: skipped to work around MOCO-3749
-    suite.skip[test_array_copy_and_move_llvm_ir]()
     suite^.run()

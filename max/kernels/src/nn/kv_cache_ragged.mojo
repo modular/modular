@@ -3981,11 +3981,10 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @__parameter
-    @__copy_capture(k, v)
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
-        @__parameter
-        def call_flash_attention[sink: Bool]() raises:
+    def _dispatch_flash_attention[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {var k, var v, imm}:
+        def call_flash_attention[sink: Bool]() raises {imm}:
             return _launch_flash_attention_with_mask[
                 target=target,
                 output_dtype=output_dtype,
@@ -4003,13 +4002,12 @@ def _flash_attention_dispatch[
                 sink_weights,
             )
 
-        unswitch[call_flash_attention](Bool(sink_weights))
+        unswitch(Bool(sink_weights), call_flash_attention)
 
     return dispatch_mask[
         mask_str,
-        _dispatch_flash_attention,
         local_window_size,
-    ]()
+    ](_dispatch_flash_attention)
 
 
 @always_inline
@@ -4052,8 +4050,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
         desc_parts.append("scale=" + String(scale))
@@ -4077,9 +4074,9 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     var k = kv_collection.get_key_cache(Int(layer_idx))
     var v = kv_collection.get_value_cache(Int(layer_idx))
 
-    @__parameter
-    @__copy_capture(k, v)
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {var k, var v, imm}:
         return _launch_flash_attention_with_mask[
             target=target,
             output_dtype=output_dtype,
@@ -4097,13 +4094,10 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
 
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
-        return dispatch_relative_logits_mask[
-            _dispatch_flash_attention,
-            local_window_size,
-        ](
+        return dispatch_relative_logits_mask[local_window_size,](
             LayoutTensor[bias.dtype, bias.layout, bias.origin](
                 bias.ptr,
                 RuntimeLayout[bias.layout].row_major(
@@ -4112,6 +4106,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
             ),
             cache_lengths,
             input_row_offsets,
+            _dispatch_flash_attention,
         )
 
 
@@ -4483,24 +4478,25 @@ def _flare_mla_decode_kv_cache_ragged[
         num_partitions_in.value() if has_num_partitions else 0
     )
 
-    @__parameter
     @always_inline
-    @__copy_capture(
-        k,
-        scalar_args_buf_tt,
-        q_scale_ptr,
-        d_indices,
-        topk_lengths,
-        attn_sink_ptr,
-        extra_k,
-        extra_d_indices,
-        extra_topk_lengths,
-        extra_scales_ptr,
-        has_num_partitions,
-        num_partitions_val,
-        logical_indices,
-    )
-    def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_mla[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {
+        var k,
+        var scalar_args_buf_tt,
+        var q_scale_ptr,
+        var d_indices,
+        var topk_lengths,
+        var attn_sink_ptr,
+        var extra_k,
+        var extra_d_indices,
+        var extra_topk_lengths,
+        var extra_scales_ptr,
+        var has_num_partitions,
+        var num_partitions_val,
+        var logical_indices,
+        imm,
+    }:
         var _num_partitions_in: Optional[Int] = Optional[Int](
             num_partitions_val
         ) if has_num_partitions else Optional[Int](None)
@@ -4536,9 +4532,8 @@ def _flare_mla_decode_kv_cache_ragged[
 
     dispatch_mask[
         mask_str,
-        _dispatch_mla,
         local_window_size,
-    ]()
+    ](_dispatch_mla)
 
 
 @always_inline
@@ -4747,13 +4742,9 @@ def _flare_mla_prefill_kv_cache_ragged[
     var k_lt = k.to_layout_tensor()
     var v_lt = v.to_layout_tensor()
 
-    @__parameter
-    @__copy_capture(
-        k_rope,
-        k_lt,
-        v_lt,
-    )
-    def _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
+    def _mla_dispatch[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {var k_rope, var k_lt, var v_lt, imm}:
         flare_mla_prefill[rank=3,](
             output,
             q,
@@ -4781,9 +4772,8 @@ def _flare_mla_prefill_kv_cache_ragged[
 
     dispatch_mask[
         mask_str,
-        _mla_dispatch,
         local_window_size,
-    ]()
+    ](_mla_dispatch)
 
 
 @always_inline
@@ -5104,9 +5094,17 @@ def _cross_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @__parameter
-    @__copy_capture(q, k, v, output, q_input_row_offsets, kv_input_row_offsets)
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+    def _dispatch_flash_attention[
+        mask_t: MHAMask
+    ](mask: mask_t) raises {
+        var q,
+        var k,
+        var v,
+        var output,
+        var q_input_row_offsets,
+        var kv_input_row_offsets,
+        imm,
+    }:
         comptime if is_cpu[target]():
             comptime assert output_dtype == dtype, (
                 "CPU flash attention requires output dtype == q dtype;"
@@ -5150,9 +5148,8 @@ def _cross_attention_dispatch[
 
     return dispatch_mask[
         mask_str,
-        _dispatch_flash_attention,
         local_window_size,
-    ]()
+    ](_dispatch_flash_attention)
 
 
 @always_inline

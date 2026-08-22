@@ -5,7 +5,7 @@
 > If you're using MAX as an application developer (via the `modular` package),
 > you should instead use the `max benchmark` command line tool—see the more
 > detailed guide to [benchmark MAX on
-> GPUs](https://docs.modular.com/serve/benchmark/).
+> GPUs](https://max.modular.com/serve/benchmark/).
 
 This guide describes how to benchmark the performance of a MAX model
 server—measuring throughput, latency, and resource utilization—using
@@ -49,7 +49,7 @@ python benchmark_serving.py --help
 ```
 
 For more information, see the [`max benchmark`
-documentation](https://docs.modular.com/max/cli/benchmark).
+documentation](https://max.modular.com/cli/benchmark).
 
 ## Config files
 
