@@ -640,6 +640,28 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = (
                     "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
                 )
+        if target_archs[0] == "Qwen3_5ForConditionalGeneration":
+            # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
+            # there is no separate draft model. Qwen3.5 shares the arch name
+            # but ships no head; only override when the head exists. Unlike
+            # the other in-checkpoint MTP overrides this one also waits for an
+            # explicit `--speculative-method mtp`: the fused graph it selects
+            # is served by Mach rather than MAX, so a plain `max serve` of a
+            # Qwen3.8 checkpoint must keep landing on the base architecture.
+            text_config = getattr(
+                self.model.huggingface_config,
+                "text_config",
+                self.model.huggingface_config,
+            )
+            has_mtp = (
+                getattr(text_config, "mtp_num_hidden_layers", 0) or 0
+            ) > 0
+            if (
+                self.speculative.is_mtp()
+                and self.draft_model is None
+                and has_mtp
+            ):
+                target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
         if target_archs[0] == "GlmMoeDsaForCausalLM":
             # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
             # there is no separate draft model. GLM-5.1 shares the arch name

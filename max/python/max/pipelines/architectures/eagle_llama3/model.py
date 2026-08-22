@@ -38,7 +38,7 @@ from .model_config import Llama3Config
 class EagleLlama3Model(LlamaModelBase):
     """EAGLE Llama3 draft model pipeline implementation."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
 
     def __init__(
         self,

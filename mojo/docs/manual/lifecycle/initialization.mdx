@@ -182,9 +182,9 @@ Any moved field requires a new value before you can use the instance
 again. Even if _all_ fields are moved, the instance itself remains
 logically initialized.
 
-## Mojo's default destructor
+## Mojo's default deinitializer
 
-`__del__()` is Mojo's default _destructor_ (or _deinitializer_). While it
+`__deinit__()` is Mojo's default _deinitializer_. While it
 runs, the instance remains logically initialized, and it becomes
 logically deinitialized when the method completes:
 
@@ -194,10 +194,10 @@ struct Contact:
     var name: String
     var email: String
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # `self` is initialized
         print("destroying contact")
-        # `self is deinitialized
+        # `self` remains initialized until this method completes
 
 def main():
     var me = Contact("Alice", "alice@example.com")
@@ -206,9 +206,9 @@ def main():
     # since the instance was never used after assignment.
 ```
 
-## Destructors and moving fields
+## Deinitializers and moving fields
 
-Destructors are the only place where you can safely move values out of an
+Deinitializers are the only place where you can safely move values out of an
 instance's fields without having to reinitialize the field before its
 next use.
 
@@ -216,18 +216,18 @@ This special rule isn't about where the code lives. It's about
 guarantees:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     var name = self.name^  # OK: can take ownership of fields
 ```
 
-The compiler knows that destructors like `__del__()` are the final use of
-an instance. Because of this, it allows you to move values out of fields
-without reinitializing them.
+The compiler knows that deinitializers like `__deinit__()` are the final
+use of an instance. Because of this, it allows you to move values out of
+fields without reinitializing them.
 
 This ensures that fields are only moved out of struct instances when the
 compiler can guarantee the instance is at the end of its lifetime.
 
-Like instances, struct fields use ASAP destruction within deinit
+Like instances, struct fields use ASAP destruction within `__deinit__()`
 methods. For example:
 
 ```mojo
@@ -235,54 +235,54 @@ struct S:
    var a: String
    var b: String
 
-   def __del__(deinit self):
-       # Mojo calls a.__del__() here.
+   def __deinit__(deinit self):
+       # Mojo calls a.__deinit__() here.
        use(b)
-       # Mojo calls b.__del__() here.
+       # Mojo calls b.__deinit__() here.
 ```
 
 ## The `deinit` convention
 
-A destructor's secret sauce is the `deinit` convention. Because of this,
-`deinit self` works in named destructors as well as `__del__()`:
+A deinitializer's secret sauce is the `deinit` convention. Because of this,
+`deinit self` works in named deinitializers as well as `__deinit__()`:
 
 ```mojo
 struct Parent:
     def consume(deinit self):
-        # `consume` is a named destructor
+        # `consume` is a named deinitializer
         # Can move values out of fields here too
 ```
 
 When you use the `deinit self` convention in a method, the compiler
-recognizes the method as a destructor and lets you move a field without
+recognizes the method as a deinitializer and lets you move a field without
 reinitializing it:
 
 ```mojo
 struct Parent:
     def consume(deinit self):
-        """valid destructor"""
+        """valid deinitializer"""
         var name = self.name^
         print("Name:", name) # Prints name
 ```
 
-Any struct method that uses `deinit self` as its first argument is a destructor.
-As a destructor, you can use this `consume` method for
-[explicit destruction types](/docs/manual/lifecycle/death/#explicitly-destroyed-types).
+Any struct method that uses `deinit self` as its first argument is technically
+a deinitializer. It won't participate in explicit destruction unless the
+type conforms to `Deinitable where False`.
 
-## Explicit and implicit destructors
+## Explicit and implicit deinitializers
 
-The `__del__()` method is the core of implicit destruction types. It's
-Mojo's default destructor and works hand in hand with
-`Deinitable`, a trait that all structs conform to by default.
-The compiler calls `__del__()` automatically when it detects the final
-use of a `Deinitable` struct value.
+The `__deinit__()` method is the core of implicit deinitialization types.
+It's Mojo's default deinitializer and works hand in hand with `Deinitable`,
+a trait that all structs conform to by default. The compiler calls
+`__deinit__()` automatically when it detects the final use of a
+`Deinitable` struct value.
 
 As the name suggests, explicit destruction requires you to call a
-destructor. An explicitly destroyed type must define at least one
-custom destructor, such as the `consume()` method shown in the
-previous section. The compiler make sure that the final use of an
+deinitializer. An explicitly destroyed type must define at least one
+custom deinitializer, such as the `consume()` method shown in the
+previous section. The compiler makes sure that the final use of an
 explicitly destroyed value will be a call to one of its custom
-destructors.
+deinitializers.
 
 ### Using `deinit` with other arguments
 
@@ -336,10 +336,10 @@ def move_field(mut self, var new_name: String):
 
 ## Destroying instances
 
-Unless you opt into
-[explicit destructors](/docs/manual/lifecycle/death/#explicitly-destroyed-types),
-Mojo uses implicit destruction. Both explicit and implicit destructors use ASAP
-("As Soon As Possible") destruction:
+Unless you opt into [explicit
+destruction](/docs/manual/lifecycle/death/#explicitly-destroyed-types)
+by conforming to `Deinitable where False`, Mojo uses implicit
+deinitialization.
 
 ```mojo
 def example():
@@ -350,35 +350,34 @@ def example():
     more_code()  # x is already gone
 ```
 
-With ASAP, Mojo destroys instances immediately after their last use, not
-at the end of scope. This can happen even in the middle of an
-expression.
+With ASAP destruction, the default implicit approach, Mojo destroys
+instances immediately after their last use, not at the end of scope. This
+can happen even in the middle of an expression.
 
 This differs from many languages with compiler-managed lifecycles, where
 destruction happens at end of scope. Mojo's ASAP destruction enables
-better tail call optimization, but it also means destructors can run
+better tail call optimization, but it also means deinitializers can run
 earlier than you might expect.
 
 Mojo also supports _explicitly-destroyed types_, which require you to make an
-explicit call to a destructor method. For more information, see
+explicit call to a deinitializer method. For more information, see
 [Explicitly-destroyed types](/docs/manual/lifecycle/death/#explicitly-destroyed-types).
 
 Mojo tracks the lifetimes of values in your code. It knows when you move
 out of a value using the transfer operator (`^`), or when you call a
 `deinit` method that explicitly destroys it. If the compiler finds a
 live value that hasn't otherwise been cleaned up, it uses the implicit
-destructor (`__del__(deinit self...)`) to destroy it.
+deinitializer (`__deinit__(deinit self...)`) to destroy it.
 
-If a type doesn't have an implicit destructor because it requires
-explicit destruction, the compiler emits an error, as indicated by the
-`@explicit_destroy` decorator.
+If a type doesn't have an implicit deinitializer because it requires
+explicit destruction, the compiler emits an error.
 
-While the compiler checks that a destructor is called before an
+While the compiler checks that a deinitializer is called before an
 instance goes out of scope, you're responsible for choosing _when_ that
 happens. The key differences are:
 
-- Destruction doesn't automatically happen at the point of last use.
-- The explicit destructor isn't named `__del__()`.
+- Deinitialization doesn't automatically happen at the point of last use.
+- The explicit deinitializer isn't named `__deinit__()`.
 
 ## Object initialization summary
 
@@ -395,11 +394,11 @@ means calling the initializer. You must also initialize fields before
 accessing them. Partially initialized instances can't be used in many
 contexts, including method calls and return values.
 
-For implicitly destroyed structs, the compiler inserts a destructor
+For implicitly destroyed structs, the compiler inserts a deinitializer
 call after the instance's last use. For explicitly destroyed values,
-you must call a destructor before the instance goes out of scope.
-Destruction is compiler-checked, but you choose when it happens.
-The value's final use in scope must be that explicit destructor call.
+you must call a deinitializer before the instance goes out of scope.
+Deinitialization is compiler-checked, but you choose when it happens.
+The value's final use in scope must be that explicit deinitializer call.
 
 Field operations are also constrained. Fieldwise initialization must
 happen inside the `__init__()` initializer. You can move values out of a
@@ -409,4 +408,4 @@ normal method.
 
 This split between logical and fieldwise initialization gives Mojo
 fine-grained control over instance lifetimes, while ensuring that
-initialization, use, and destruction remain safe and explicit.
+initialization, use, and deinitialization remain safe and explicit.

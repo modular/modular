@@ -825,6 +825,11 @@ def _load_standalone_quant_config(
             }
             if "ignore" in quantization:
                 mapped["ignore"] = quantization["ignore"]
+            # modelopt records per-module algorithms here for mixed-precision
+            # checkpoints; without it a `MIXED_PRECISION` quant_algo is
+            # uninterpretable.
+            if "quantized_layers" in quantization:
+                mapped["quantized_layers"] = quantization["quantized_layers"]
             return mapped
         return None
 
@@ -833,10 +838,26 @@ def _load_standalone_quant_config(
         return None
 
 
-def _resolve_quant_config(
+def resolve_hf_quant_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
 ) -> dict[str, Any] | None:
+    """Resolves a checkpoint's Hugging Face quantization config.
+
+    Tries, in order: the config's own ``quantization_config`` field, a
+    standalone ``hf_quant_config.json`` beside the weights, and finally a sniff
+    of the state dict for modelopt NVFP4's ``weight_scale_2`` tensors.
+
+    Args:
+        huggingface_config: The config to read ``quantization_config`` from.
+            For a nested multimodal config this must be the top-level one --
+            the sub-config does not carry the field.
+        state_dict: The checkpoint weights, used only by the final sniff.
+
+    Returns:
+        The resolved quantization config, or ``None`` when the checkpoint
+        declares no quantization.
+    """
     if hf_quant_config := getattr(
         huggingface_config, "quantization_config", None
     ):
@@ -862,7 +883,7 @@ def _parse_modelopt_float4_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> QuantConfig | None:
-    resolved_quant_config = _resolve_quant_config(
+    resolved_quant_config = resolve_hf_quant_config(
         huggingface_config, state_dict
     )
     quant_method = quant_method_override
@@ -872,6 +893,16 @@ def _parse_modelopt_float4_config(
         quant_algo = resolved_quant_config.get("quant_algo", quant_algo)
     if not quant_method or not quant_algo:
         return None
+    if quant_algo != "NVFP4":
+        # Everything below hard-codes the NVFP4 two-level scheme. Returning it
+        # for another algorithm silently reinterprets the payload: a
+        # MIXED_PRECISION checkpoint's FP8 bases would be read as packed FP4.
+        raise ValueError(
+            f"modelopt quant_algo {quant_algo!r} cannot be loaded as NVFP4. "
+            "Only 'NVFP4' is uniform enough for a single QuantConfig; a "
+            "mixed-precision checkpoint needs per-module handling in its "
+            "architecture (see Qwen3.5's `_parse_quant_config`)."
+        )
 
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
@@ -1078,7 +1109,7 @@ def _parse_float4_config(
     if dtype not in _FP4_DTYPES:
         return None
 
-    quant_config = _resolve_quant_config(huggingface_config, state_dict)
+    quant_config = resolve_hf_quant_config(huggingface_config, state_dict)
     if not quant_config:
         return None
 

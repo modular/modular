@@ -37,7 +37,7 @@ from max.pipelines.weights.hf_utils import (
 from transformers import AutoConfig
 from typing_extensions import ParamSpec
 
-from .memory_estimation import mock_estimate_memory_footprint
+from .memory_estimation import mock_plan_from_sizes
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -320,12 +320,12 @@ def mock_pipeline_config_hf_dependencies(
     - mock_huggingface_hub_repo_exists_with_retry
     - mock_huggingface_hub_file_exists
     - mock_huggingface_config
-    - mock_estimate_memory_footprint
+    - mock_plan_from_sizes
     """
     return mock_generate_local_model_path(
         mock_huggingface_hub_repo_exists_with_retry(
             mock_huggingface_hub_file_exists(
-                mock_huggingface_config(mock_estimate_memory_footprint(func))
+                mock_huggingface_config(mock_plan_from_sizes(func))
             )
         )
     )
@@ -398,14 +398,15 @@ def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        from max.pipelines.lib.memory_estimation import _MemoryPlan
+        from max.pipelines.lib.memory_estimation import MemoryPlan
 
         with (
             patch(
-                "max.pipelines.lib.registry._run_memory_planning",
-                side_effect=lambda config, *a, **kw: _MemoryPlan(
+                "max.pipelines.lib.memory_estimation.MemoryEstimator.plan",
+                side_effect=lambda config, *a, **kw: MemoryPlan(
                     max_batch_size=1,
                     footprint=0,
+                    max_length=config.model.max_length,
                     device_specs=tuple(config.model.device_specs),
                 ),
             ),

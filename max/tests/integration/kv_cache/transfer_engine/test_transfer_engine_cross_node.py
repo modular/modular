@@ -50,9 +50,10 @@ import msgspec
 import numpy as np
 import zmq
 from max.driver import Accelerator
+from max.driver import __version__ as max_version
 from max.driver.buffer import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -350,6 +351,11 @@ def run_receiver(
 
 def main() -> None:
     args = parse_args()
+    # The pods mount this script from the CI checkout but import the `max`
+    # installed in the engine image. Naming that version up front keeps a
+    # checkout/image skew from surfacing only as an unrelated API error deep in
+    # engine construction.
+    print(f"[{args.role}] MAX engine version: {max_version}", flush=True)
     set_env_vars(args)
     num_pages = (
         args.num_pages
@@ -371,7 +377,7 @@ def main() -> None:
         f"engine_{args.role}",
         [
             [
-                KVCacheMemoryGroup(
+                KVCacheMemory(
                     replicated=False,
                     buffers=[_view(b, cfg.num_pages) for b in all_blocks],
                 )

@@ -88,12 +88,13 @@ don't occur in the first place.
 Mojo uses a third approach called "ownership" that relies on a collection of
 rules that programmers must follow when passing values. The rules ensure there
 is only one "owner" for a given value at a time. When a value's lifetime ends,
-Mojo calls its destructor, which is responsible for deallocating any heap memory
-that needs to be deallocated.
+Mojo calls its deinitializer, which is responsible for deallocating any
+heap memory that needs to be deallocated.
 
-In this way, Mojo helps ensure memory is freed, but it does so in a way that's
-deterministic and safe from errors such as use-after-free, double-free and
-memory leaks. Plus, it does so with a very low performance overhead.
+In this way, Mojo helps ensure memory is freed, but it does so in a way
+that's deterministic and safe from errors such as use-after-free,
+double-deallocation and memory leaks. Plus, it does so with a very low
+performance overhead.
 
 Mojo's value ownership model provides an excellent balance of programming
 productivity and strong memory safety. It only requires that you learn some new

@@ -198,6 +198,23 @@ struct OwnedPointer[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    def ptr[origin: Origin, //](ref[origin] self) -> Pointer[Self.T, origin]:
+        """Returns a pointer to the `OwnedPointer`'s contents.
+
+        Parameters:
+            origin: The origin of the pointer.
+
+        Returns:
+            A pointer to the `OwnedPointer`'s contents.
+        """
+        return (
+            self._inner.unsafe_ptr()
+            .unsafe_mut_cast[origin.mut]()
+            .unsafe_origin_cast[origin]()
+        )
+
+    @doc_hidden
+    @deprecated(use=ptr)
     def unsafe_ptr[
         mut: Bool,
         origin: Origin[mut=mut],
@@ -212,28 +229,17 @@ struct OwnedPointer[T: AnyType](
         Returns:
             A pointer to the backing allocation for this `OwnedPointer`.
         """
-        return (
-            self._inner.unsafe_ptr()
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        return self.ptr()
 
-    @__allow_legacy_custom_self_type
-    def into_inner[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
+    def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.
-
-        Parameters:
-            _T: The type of the data backing this `OwnedPointer`. `into_inner()` only exists for
-                `T: Movable` since this consuming operation only makes sense for types that you want
-                to avoid copying. For types that are `ImplicitlyCopyable` or `Copyable` you can copy
-                them through `__getitem__` as in `var v = some_ptr_var[]`.
 
         Returns:
             The data that is (was) backing the `OwnedPointer`.
         """
         var r = self._inner.unsafe_ptr().unsafe_take_pointee()
-        dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
+        dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
         return r^
 
     def unsafe_take_allocation(deinit self) -> Allocation[Self.T]:

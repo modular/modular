@@ -99,7 +99,7 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
 
     comptime if messages.__len__() == 0:
         _debug_assert_msg(
-            _NO_MESSAGE.unsafe_ptr(), _NO_MESSAGE.byte_length() + 1, location
+            _NO_MESSAGE.ptr(), _NO_MESSAGE.byte_length() + 1, location
         )
     else:
         var message = _WriteBufferHeap()
@@ -529,7 +529,7 @@ def debug_assert[
             return
 
         _debug_assert_msg(
-            message.unsafe_ptr(),
+            message.ptr(),
             # include StringLiteral null terminator for printf statements
             message.byte_length() + 1,
             call_location(),

@@ -108,7 +108,7 @@ modular/
 │   │   └── ...              # graph, engine, kv_cache, etc.
 │   ├── examples/            # MAX usage examples
 │   └── tests/               # MAX tests
-├── docs/                    # MAX docs site sources (docs.modular.com)
+├── docs/                    # MAX docs site sources (max.modular.com)
 └── bazel/                   # Build system configuration
 ```
 
@@ -231,16 +231,16 @@ external contributions.
 
 ## LLM-friendly documentation
 
-MAX documentation (docs.modular.com):
+MAX documentation (max.modular.com):
 
-- <https://docs.modular.com/llms.txt>: index of the MAX docs
-- <https://docs.modular.com/llms-max-guides.txt>: MAX guides for deployment,
+- <https://max.modular.com/llms.txt>: index of the MAX docs
+- <https://max.modular.com/llms-max-guides.txt>: MAX guides for deployment,
   serving, and model development
-- <https://docs.modular.com/llms-python.txt>: MAX Python API reference
-- <https://docs.modular.com/llms-accelerator-api.txt>: MAX accelerator library
+- <https://max.modular.com/llms-python.txt>: MAX Python API reference
+- <https://max.modular.com/llms-accelerator-api.txt>: MAX accelerator library
   (Mojo) API reference
-- <https://docs.modular.com/llms-c-api.txt>: MAX C API reference
-- <https://docs.modular.com/releases-llms.txt>: MAX release notes
+- <https://max.modular.com/llms-c-api.txt>: MAX C API reference
+- <https://max.modular.com/releases-llms.txt>: MAX release notes
 
 Mojo language documentation (mojolang.org):
 

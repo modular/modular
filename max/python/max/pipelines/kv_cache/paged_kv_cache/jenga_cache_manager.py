@@ -215,14 +215,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         # by callers (e.g. scheduler).
         self.params = params
 
-        if params.data_parallel_degree != 1:
-            raise ValueError(
-                "JengaKVCacheManager only supports data parallelism of 1."
-            )
-        if (
-            params.kv_connector is not None
-            and params.kv_connector != KVConnectorType.null
-        ):
+        if params.kv_connector_config.type != KVConnectorType.null:
             raise ValueError(
                 "JengaKVCacheManager does not support KVConnectors."
             )
@@ -237,7 +230,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         devices_per_replica = split_into_groups(
             devices, self.params.data_parallel_degree
         )
-        self._device0 = devices[0]
+        self._staging_devices = [ds[0] for ds in devices_per_replica]
         self._persistent_kv_device_input_buffers = [
             _PersistentKVDeviceInputBuffers.create(
                 max_batch_size=max_batch_size,
@@ -260,6 +253,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             kv_hash_algo=self.params.kv_hash_algo,
             kv_hash_seed=self.params.kv_hash_seed,
             max_num_input_tokens=self._max_num_input_tokens,
+            num_draft_tokens=self.params.num_draft_tokens,
             num_draft_tokens_per_step=self.params.num_draft_tokens_per_step,
         )
 
@@ -361,16 +355,17 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         padded_lut_num_pages = _padded_lut_cols(lut_num_pages)
         shape = (batch_size, padded_lut_num_pages)
         dtype = DType.uint32
-        buffer_cls = Buffer if self._device0.is_host else DevicePinnedBuffer
+        device = self._staging_devices[replica_idx]
+        buffer_cls = Buffer if device.is_host else DevicePinnedBuffer
         cache_lengths_host = buffer_cls(
-            shape=(batch_size,), dtype=dtype, device=self._device0
+            shape=(batch_size,), dtype=dtype, device=device
         )
         luts, cache_lengths = self._persistent_kv_device_input_buffers[
             replica_idx
         ].view(batch_size, lut_num_pages)
 
         lut_host_by_leaf = {
-            leaf_id: buffer_cls(shape=shape, dtype=dtype, device=self._device0)
+            leaf_id: buffer_cls(shape=shape, dtype=dtype, device=device)
             for leaf_id in self._leaf_infos
         }
         lut_np_by_leaf = {
@@ -481,13 +476,9 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     # Metrics
     # ============================================================================
 
-    def reset_metrics(self) -> None:
-        """Resets metrics for the block manager."""
-        return
-
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns aggregated metrics across all replicas."""
-        return KVCacheMetrics()
+        return self.metrics
 
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""
@@ -521,6 +512,16 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     # Misc
     # ============================================================================
 
+    def get_prefix_cache_hit_counts(
+        self, ctx: TextContext
+    ) -> list[PrefixCacheHits]:
+        """Counts each replica's contiguous cached prefix for a request.
+
+        Unimplemented: this only feeds prefix-aware replica selection, which
+        fails open to weighting every replica by the full prompt.
+        """
+        raise NotImplementedError
+
     def runtime_inputs_for_leaf(
         self,
         batches: Sequence[Sequence[TextContext]],
@@ -529,11 +530,17 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         batch_characteristics: BatchCharacteristics | None = None,
     ) -> KVCacheInputs[Buffer, Buffer]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache."""
-        raise NotImplementedError
+        inputs = self.runtime_inputs(
+            batches,
+            max_cache_length=max_cache_length,
+            batch_characteristics=batch_characteristics,
+        )
+        assert isinstance(inputs, KVCacheInputs)
+        return inputs
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the device buffer for the given replica."""
-        raise NotImplementedError
+        return self._kv_buffers[replica_idx]
 
     def get_req_blocks(self, ctx: TextContext) -> list[int]:
         """Returns block IDs the request holds on the replica it was claimed on.
@@ -543,14 +550,4 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         not support -- see the ``kv_connector`` guard in ``__init__``).
         Jenga's own per-leaf equivalent is :meth:`get_req_blocks_per_leaf`.
         """
-        raise NotImplementedError
-
-    def get_prefix_cache_hit_counts(
-        self, ctx: TextContext
-    ) -> list[PrefixCacheHits]:
-        """Counts each replica's contiguous cached prefix for a request."""
-        raise NotImplementedError
-
-    def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
-        """Claims a dummy request and maps it to the replica's null block."""
         raise NotImplementedError

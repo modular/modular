@@ -24,7 +24,6 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
-    KVConnectorType,
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
@@ -84,10 +83,9 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    kv_connector: KVConnectorType | None = None,
     kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     num_speculative_tokens: int = 0,
     is_mla: bool = False,
     tp_per_replica: int = 1,
@@ -123,6 +121,8 @@ def create_kv_cache(
         device_refs = [DeviceRef.from_device(device) for _ in range(dp)]
         session_devices = [device]
 
+    kv_connector_config = kv_connector_config or KVConnectorConfig()
+
     def make_leaf_params(num_layers: int, head_dim: int) -> KVCacheParams:
         if is_mla:
             return MLAKVCacheParams(
@@ -131,9 +131,7 @@ def create_kv_cache(
                 head_dim=head_dim,
                 page_size=page_size,
                 enable_prefix_caching=enable_prefix_caching,
-                kv_connector=kv_connector,
                 kv_connector_config=kv_connector_config,
-                host_kvcache_swap_space_gb=999,
                 data_parallel_degree=dp,
                 devices=device_refs,
                 speculative_method="eagle"
@@ -151,9 +149,7 @@ def create_kv_cache(
             head_dim=head_dim,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
             kv_connector_config=kv_connector_config,
-            host_kvcache_swap_space_gb=999,
             data_parallel_degree=dp,
             devices=device_refs,
             speculative_method="eagle" if num_speculative_tokens > 0 else None,
@@ -177,13 +173,9 @@ def create_kv_cache(
 
     session = InferenceSession(devices=session_devices)
 
-    # CPU swap space is 100x the device cache memory
-    num_blocks = num_blocks
-    num_host_pages = num_blocks * 100 if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
-        total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
         max_batch_size=max_batch_size,
@@ -205,11 +197,10 @@ def create_paged_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    kv_connector: KVConnectorType | None = None,
     kv_connector_config: KVConnectorConfig | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
-    device: Device = CPU(),
+    device: Device = CPU(),  # noqa: B008
     num_speculative_tokens: int = 0,
     max_pending_requests: int | None = None,
 ) -> tuple[
@@ -223,7 +214,6 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        kv_connector=kv_connector,
         kv_connector_config=kv_connector_config,
         dp=dp,
         device=device,

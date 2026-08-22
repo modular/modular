@@ -19,10 +19,12 @@ from std.testing import TestSuite
 
 def run_func[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: SIMDLength](
-        SIMD[dtype, width]
-    ) thin -> SIMD[dtype, width],
-](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
+    kernel_fn: def[fn_dtype: DType, width: SIMDLength](
+        SIMD[fn_dtype, width]
+    ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point(),
+](
+    ctx: DeviceContext, val: Scalar[dtype] = 0
+) raises where dtype.is_floating_point():
     @__parameter
     def kernel(
         output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
@@ -93,9 +95,9 @@ def test_math() raises:
 
         @__parameter
         def test[
-            *kernel_fns: def[dtype: DType, width: SIMDLength](
-                SIMD[dtype, width]
-            ) thin -> SIMD[dtype, width]
+            *kernel_fns: def[fn_dtype: DType, width: SIMDLength](
+                SIMD[fn_dtype, width]
+            ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point()
         ](ctx: DeviceContext) raises:
             comptime ls = kernel_fns.size
 

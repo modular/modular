@@ -16,7 +16,7 @@ from layout import Layout
 
 
 def lookup_fn[idx: Int](value: Int) -> Int:
-    comptime my_constants = [3, 6, 9]
+    comptime my_constants: List[Int] = [3, 6, 9]
     return comptime (my_constants[idx]) * value
 
 

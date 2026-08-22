@@ -96,8 +96,13 @@ def test_raw_tstring() raises:
 
 
 def test_collection_literals() raises:
-    var nums = [1, 2, 3]
-    assert_equal(len(nums), 3)
+    # A bracket literal infers a fixed-size Array; annotating gets a List, and
+    # only the List grows.
+    var fixed = [1, 2, 3]
+    assert_equal(len(fixed), 3)
+    var nums: List[Int] = [1, 2, 3]
+    nums.append(4)
+    assert_equal(len(nums), 4)
     var d = {"id": 1, "qty": 9}
     assert_equal(d["qty"], 9)
     var pair = (1, "a", 2.0)

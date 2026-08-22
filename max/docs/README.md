@@ -45,5 +45,5 @@ analysis.
 - [`/oss/modular/mojo/stdlib/docs`](/oss/modular/mojo/stdlib/docs): Docs for
   developers working in the Mojo standard library.
 - [`/oss/modular/mojo/docs`](/oss/modular/mojo/docs): Source docs for
-  docs.modular.com/mojo.
-- [docs.modular.com](https://docs.modular.com): All other developer docs.
+  mojolang.org/docs.
+- [max.modular.com](https://max.modular.com): All other developer docs.
