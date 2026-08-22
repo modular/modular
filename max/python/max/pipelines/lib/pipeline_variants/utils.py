@@ -430,6 +430,23 @@ class StructuredOutputHelper:
 
         return (None, None)
 
+    @staticmethod
+    def any_constrained(
+        context_batch: Sequence[TextGenerationContextType],
+    ) -> bool:
+        """Whether any context in the batch is constrained.
+
+        ``needs_bitmask_constraints`` is a static per-process signal and says
+        nothing about whether a given batch actually has a constrained
+        request; callers use this to tell the two apart.
+        """
+        return any(
+            ctx.matcher is not None
+            or ctx.grammar is not None
+            or ctx.json_schema is not None
+            for ctx in context_batch
+        )
+
     @classmethod
     def from_tokenizer(
         cls,
@@ -1071,12 +1088,7 @@ class StructuredOutputHelper:
         packed_vocab_size = ceildiv(self.vocab_size, 32)
 
         # Check if any context has structured output
-        has_structured_output = any(
-            ctx.json_schema is not None
-            or ctx.matcher is not None
-            or ctx.grammar is not None
-            for ctx in context_batch
-        )
+        has_structured_output = self.any_constrained(context_batch)
 
         if not has_structured_output:
             # Fast path: all unconstrained, return all-valid packed bitmask

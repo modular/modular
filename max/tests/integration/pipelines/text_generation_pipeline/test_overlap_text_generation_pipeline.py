@@ -1323,7 +1323,9 @@ class TestEnqueuePrevBitmaskCallback:
     """Tests for OverlapTextGenerationPipeline._enqueue_prev_bitmask_callback."""
 
     def _make_pipeline(
-        self, structured_output_enabled: bool = True
+        self,
+        structured_output_enabled: bool = True,
+        needs_bitmask_constraints: bool | None = None,
     ) -> OverlapTextGenerationPipeline[TextContext]:
         pipeline = OverlapTextGenerationPipeline.__new__(
             OverlapTextGenerationPipeline
@@ -1332,7 +1334,13 @@ class TestEnqueuePrevBitmaskCallback:
         mock_so.enabled = structured_output_enabled
         pipeline._structured_output = mock_so
         mock_config = MagicMock()
-        mock_config.needs_bitmask_constraints = structured_output_enabled
+        # Defaults to the flag; pass explicitly for tool-parser-only configs.
+        if needs_bitmask_constraints is None:
+            needs_bitmask_constraints = structured_output_enabled
+        mock_config.needs_bitmask_constraints = needs_bitmask_constraints
+        mock_config.sampling.enable_structured_output = (
+            structured_output_enabled
+        )
         pipeline._pipeline_config = mock_config
         return pipeline
 
@@ -1508,6 +1516,201 @@ class TestEnqueuePrevBitmaskCallback:
 
         assert result is False
 
+    def test_returns_false_when_no_constrained_row(self) -> None:
+        """A tool parser alone makes ``needs_bitmask_constraints`` True for
+        every batch; the callback also requires an actually-constrained
+        request in the batch.
+        """
+        pipeline = self._make_pipeline()
+        mock_spec_state = MagicMock()
+        for name in (
+            "persistent_bonus_tokens_pinned",
+            "persistent_num_accepted_pinned",
+            "persistent_accepted_draft_tokens_pinned",
+            "persistent_next_draft_tokens_pinned",
+        ):
+            setattr(mock_spec_state, name, MagicMock())
+        pipeline._spec_decode_state = mock_spec_state
+        pipeline._prev_batch = self._make_prev_batch(
+            [], num_draft_to_verify=2, next_draft_k=2
+        )
+
+        # A steady decode-path context (generated_length > 0) with no matcher,
+        # grammar, or json_schema: nothing to constrain, so no callback.
+        curr_ctx = TextContext(
+            request_id=RequestID("unconstrained"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        curr_ctx.tokens._current_length += 1
+        assert curr_ctx.tokens.generated_length > 0
+        assert curr_ctx.matcher is None
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ) as mock_build:
+            result = pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[curr_ctx],
+            )
+
+        assert result is False
+        mock_build.assert_not_called()
+
+    def test_returns_false_when_flag_off_even_with_tool_parser(self) -> None:
+        """The host callback never runs without
+        ``--enable-structured-output``, even with a tool parser configured
+        and a genuinely constrained batch.
+        """
+        pipeline = self._make_pipeline(
+            structured_output_enabled=False, needs_bitmask_constraints=True
+        )
+
+        mock_spec_state = MagicMock()
+        for name in (
+            "persistent_bonus_tokens_pinned",
+            "persistent_num_accepted_pinned",
+            "persistent_accepted_draft_tokens_pinned",
+            "persistent_next_draft_tokens_pinned",
+        ):
+            setattr(mock_spec_state, name, MagicMock())
+        pipeline._spec_decode_state = mock_spec_state
+        pipeline._prev_batch = self._make_prev_batch(
+            [], num_draft_to_verify=2, next_draft_k=2
+        )
+
+        # Constrained context; only the disabled flag should block the callback.
+        curr_ctx = TextContext(
+            request_id=RequestID("constrained"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        curr_ctx.tokens._current_length += 1
+        curr_ctx.set_matcher(MagicMock())
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ) as mock_build:
+            result = pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[curr_ctx],
+            )
+
+        assert result is False
+        mock_build.assert_not_called()
+
+    def test_skipped_callback_falls_back_to_early_sync_for_prev_fsm(
+        self,
+    ) -> None:
+        """A prev-constrained -> curr-unconstrained transition still advances
+        the previous batch's FSM, via the early-sync backstop.
+
+        ``any_constrained`` only inspects the current batch, so this case
+        skips the callback; ``_should_early_sync_prev_batch`` must catch it.
+        """
+        pipeline = self._make_pipeline()  # flag on, needs_bitmask True
+        mock_spec_state = MagicMock()
+        for name in (
+            "persistent_bonus_tokens_pinned",
+            "persistent_num_accepted_pinned",
+            "persistent_accepted_draft_tokens_pinned",
+            "persistent_next_draft_tokens_pinned",
+        ):
+            setattr(mock_spec_state, name, MagicMock())
+        pipeline._spec_decode_state = mock_spec_state
+
+        # Previous batch is constrained; its FSM hasn't been advanced yet.
+        prev_ctx = TextContext(
+            request_id=RequestID("prev"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        prev_ctx.set_matcher(MagicMock())
+        pipeline._prev_batch = self._make_prev_batch(
+            [prev_ctx], num_draft_to_verify=2, next_draft_k=2
+        )
+
+        # Current batch is unconstrained and on the steady decode path.
+        curr_ctx = TextContext(
+            request_id=RequestID("curr"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        curr_ctx.tokens._current_length += 1
+        assert curr_ctx.matcher is None
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ) as mock_build:
+            result = pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[curr_ctx],
+            )
+
+        # Callback skipped (current batch unconstrained) ...
+        assert result is False
+        mock_build.assert_not_called()
+        # ... producing batch not marked FSM-advanced ...
+        assert (
+            pipeline._prev_batch.spec_decode.fsm_advanced_by_callback is False
+        )
+        # ... so the early-sync backstop fires instead.
+        assert pipeline._should_early_sync_prev_batch() is True
+
+    def test_early_sync_skipped_when_flag_off_and_prev_batch_unconstrained(
+        self,
+    ) -> None:
+        """Must not fire on every step just because a tool parser is
+        configured.
+
+        With the flag off, ``_enqueue_prev_bitmask_callback`` always skips,
+        so gating solely on ``needs_bitmask_constraints`` would fire this
+        every step for every request. It must also require an
+        actually-constrained previous batch.
+        """
+        pipeline = self._make_pipeline(
+            structured_output_enabled=False, needs_bitmask_constraints=True
+        )
+
+        # Plain decode context: nothing for the sync to advance.
+        prev_ctx = TextContext(
+            request_id=RequestID("prev"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        assert prev_ctx.matcher is None
+        pipeline._prev_batch = self._make_prev_batch(
+            [prev_ctx], num_draft_to_verify=2, next_draft_k=2
+        )
+
+        assert pipeline._should_early_sync_prev_batch() is False
+
+    def test_early_sync_still_fires_when_flag_off_but_prev_batch_constrained(
+        self,
+    ) -> None:
+        """Companion to the test above: a genuinely constrained previous
+        batch still gets the synchronous FSM advance when the flag kept the
+        async callback from running it.
+        """
+        pipeline = self._make_pipeline(
+            structured_output_enabled=False, needs_bitmask_constraints=True
+        )
+
+        prev_ctx = TextContext(
+            request_id=RequestID("prev"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        prev_ctx.set_matcher(MagicMock())
+        pipeline._prev_batch = self._make_prev_batch(
+            [prev_ctx], num_draft_to_verify=2, next_draft_k=2
+        )
+
+        assert pipeline._should_early_sync_prev_batch() is True
+
     def test_returns_true_and_enqueues_for_decode_batch(self) -> None:
         """Returns True and dispatches via overlap_state.enqueue_async_callback
         for a decode batch."""
@@ -1574,6 +1777,8 @@ class TestEnqueuePrevBitmaskCallback:
         # membership guard requires every current row to be a producing-batch
         # member with is_initial_prompt=False.
         curr_ctx.update(new_token=99)
+        # The callback is only enqueued for batches with a constrained row.
+        curr_ctx.set_matcher(MagicMock())
 
         pipeline._prev_batch = self._make_prev_batch(
             [prev_ctx], num_draft_to_verify=num_draft, next_draft_k=num_draft
@@ -1680,6 +1885,8 @@ class TestEnqueuePrevBitmaskCallback:
         # Apply one token so is_initial_prompt=False; the membership guard
         # requires every current row to satisfy both conditions.
         curr_ctx.update(new_token=99)
+        # The callback is only enqueued for batches with a constrained row.
+        curr_ctx.set_matcher(MagicMock())
 
         with patch.object(
             pipeline,
@@ -1849,6 +2056,9 @@ class TestEnqueuePrevBitmaskCallback:
         # Both rows continuing (is_initial_prompt=False) from the producing batch.
         ctx_a.update(new_token=10)
         ctx_b.update(new_token=11)
+        # Callback requires at least one constrained row.
+        ctx_a.set_matcher(MagicMock())
+        ctx_b.set_matcher(MagicMock())
 
         pipeline, mock_spec_state, mock_overlap_state = (
             self._make_pipeline_with_spec_state([ctx_a, ctx_b])
@@ -1875,6 +2085,8 @@ class TestEnqueuePrevBitmaskCallback:
             tokens=TokenBuffer(np.array([1])),
         )
         producer.update(new_token=10)
+        # Callback requires at least one constrained row.
+        producer.set_matcher(MagicMock())
         padding = TextContext(
             request_id=RequestID("ordinary-id"),
             max_length=100,
