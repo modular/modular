@@ -230,5 +230,3 @@ class _CustomDispatchManual:
 
 class CustomDispatchTests(_CustomDispatchExplicit, _CustomDispatchManual):
     """Aggregates all custom dispatch test classes."""
-
-    pass

@@ -34,7 +34,7 @@ class Llama4Model(LlamaModelBase):
     """
 
     model_config_cls: ClassVar[type[Llama4Config]] = Llama4Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
     @override

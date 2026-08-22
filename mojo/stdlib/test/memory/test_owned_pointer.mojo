@@ -54,7 +54,7 @@ def test_owned_pointer_copy_constructor() raises:
     assert_equal(1, b[])
     assert_equal(1, b2[])
 
-    assert_false(b.unsafe_ptr() == b2.unsafe_ptr())
+    assert_false(b.ptr() == b2.ptr())
 
 
 def test_copying_constructor() raises:
@@ -118,10 +118,10 @@ def test_into_inner() raises:
 def test_moveinit() raises:
     var deleted = False
     var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))
-    var p1 = Int(b.unsafe_ptr())
+    var p1 = Int(b.ptr())
 
     var b2 = b^
-    var p2 = Int(b2.unsafe_ptr())
+    var p2 = Int(b2.ptr())
 
     assert_false(deleted)
 

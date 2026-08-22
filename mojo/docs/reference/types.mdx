@@ -178,7 +178,7 @@ for code written before the two types were unified.
 
 For an overview of pointer types, see
 [Intro to pointers](/docs/manual/pointers/). For memory allocation and pointer
-usage, see [Using pointers](/docs/manual/pointers/using_pointers).
+usage, see [Using pointers](/docs/manual/pointers/using-pointers).
 
 ## Other built-in types
 
@@ -259,7 +259,7 @@ contiguous `List` slice yields a `Span` view; a strided slice yields a
 new `List`.
 
 ```mojo
-var items = [0, 1, 2, 3, 4, 5]
+var items: List[Int] = [0, 1, 2, 3, 4, 5]
 var middle = items[1:4]      # Span view, [1, 2, 3]
 var strided = items[::2]     # new List, [0, 2, 4]
 ```

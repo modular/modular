@@ -19,7 +19,7 @@ from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, Layout, LayoutTensor, RuntimeLayout
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import (
     ConvShape,
@@ -128,30 +128,28 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var conv_shape = ConvShape[spec.static_info.rank](
         n=spec.n,
-        input_dims=spec.input_dims,
-        output_dims=output_dims,
-        filter_dims=spec.filter_dims,
+        input_dims=Coord(spec.input_dims),
+        output_dims=Coord(output_dims),
+        filter_dims=Coord(spec.filter_dims),
         c=spec.c,
         f=spec.f,
-        stride=spec.stride,
-        dilation=spec.dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(spec.stride),
+        dilation=Coord(spec.dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=spec.num_groups,
     )
 
-    @__parameter
     @always_inline
     def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
-    ) raises:
+    ) raises {imm}:
         # Count the iteration to decide which input copy to use.
         var counter = 0
 
         @always_inline
-        @__parameter
-        def bench_fn():
+        def bench_fn() {mut counter, imm}:
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
@@ -197,9 +195,10 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
             keep(output.ptr)
 
-        b.iter[bench_fn]()
+        b.iter(bench_fn)
 
-    m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
+    m.bench_with_input(
+        bench_conv_wrapper,
         BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.

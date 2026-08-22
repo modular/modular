@@ -28,7 +28,6 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
@@ -1596,23 +1595,12 @@ class MAXModelConfig(MAXModelConfigBase):
             ),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
-            ("kv_connector", kv_config.kv_connector or "null"),
-        ]
-        cfg = kv_config.kv_connector_config
-        if (
-            kv_config.kv_connector
-            in (KVConnectorType.tiered, KVConnectorType.rust_tiered)
-            and cfg
-        ):
-            entries.append(
-                ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
-            )
-        entries.append(
+            ("kv_connector", kv_config.kv_connector_config.type.value),
             (
                 "memory_utilization",
                 f"{kv_config.device_memory_utilization:.1%}",
-            )
-        )
+            ),
+        ]
 
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)

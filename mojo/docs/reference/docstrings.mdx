@@ -204,11 +204,11 @@ language tag for syntax highlighting.
 Examples for a hypothetical `find()` API:
 
 ```mojo
-var names = ["alice", "bob", "carol"]
+var names: List[String] = ["alice", "bob", "carol"]
 print(names.find("bob").value())  # 1
 print(names.find("dave") is None) # True
 
-var numbers = [1, 2, 3, 4, 3, 9, 3]
+var numbers: List[Int] = [1, 2, 3, 4, 3, 9, 3]
 while idx := numbers.find(3):
     _ = numbers.pop(idx.value())
 print(numbers)  # [1, 2, 4, 9]

@@ -190,10 +190,21 @@ def matmul_kernel[
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
     var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
-    @__parameter
-    @__copy_capture(row, localCol, a, b, localRow, col, a_shared, b_shared)
     @always_inline
-    def update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
+    def update_tile[
+        full_tile: Bool
+    ](offset: Int, end: Int, tile_size: Int) {
+        var row,
+        var localCol,
+        var a,
+        var b,
+        var localRow,
+        var col,
+        var a_shared,
+        var b_shared,
+        mut result,
+        imm,
+    }:
         # If K is not multiple of tile_size, the last tile contains less than
         # tile_size elements. The thread block needs to take addition bound check
         # when loading elements into shared memory.
@@ -236,7 +247,9 @@ def matmul_kernel[
 
         barrier()
 
-    tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
+    tile_and_unswitch(
+        0, k, tile_size, K_remainder, workgroup_function=update_tile
+    )
 
     if row < m and col < n:
         comptime if elementwise_lambda_fn:

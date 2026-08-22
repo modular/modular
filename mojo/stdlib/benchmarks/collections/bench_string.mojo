@@ -63,7 +63,6 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string init
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_init(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -77,7 +76,6 @@ def bench_string_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_count[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -96,7 +94,6 @@ def bench_string_count[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_split[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -124,7 +121,6 @@ def bench_string_split[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string join
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_join[short: Bool](mut b: Bencher) raises:
     var count: Int
     comptime if short:
@@ -150,7 +146,6 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_splitlines[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -168,7 +163,6 @@ def bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string lower
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_lower[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -185,7 +179,6 @@ def bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string upper
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_upper[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -202,7 +195,6 @@ def bench_string_upper[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string replace
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_replace[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -222,7 +214,6 @@ def bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count_codepoints
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -239,7 +230,6 @@ def bench_string_count_codepoints[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find single
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_find_single[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -260,7 +250,6 @@ def bench_string_find_single[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find multiple
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_find_multiple[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -281,14 +270,14 @@ def bench_string_find_multiple[
 # Benchmark string rfind multiple
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_rfind_multiple[
+def bench_string_rfind_multiple[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var sequence = "ZZZZ"  # something that probably won't be there
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() {imm}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             var res = black_box(items).rfind(black_box(sequence))
@@ -300,7 +289,6 @@ fn bench_string_rfind_multiple[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_is_valid_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -317,7 +305,6 @@ def bench_string_is_valid_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark write_utf8
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_write_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -345,7 +332,6 @@ def bench_write_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string write
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items = make_string[1000]("UN_charter_EN.txt")
     # workaround for "allows writing to mem location ..."
@@ -392,7 +378,6 @@ struct NullWriter(ImplicitlyCopyable, Writer):
         keep(string)
 
 
-@__parameter
 def bench_string_repr[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher):
@@ -451,12 +436,12 @@ def main() raises:
     - 1_000_000: ~ 667 pages (200k words)
     """
 
-    m.bench_function[bench_string_init](BenchId("bench_string_init"))
-    m.bench_function[bench_string_write[True]](
-        BenchId(String("bench_string_write_short"))
+    m.bench_function(bench_string_init, BenchId("bench_string_init"))
+    m.bench_function(
+        bench_string_write[True], BenchId(String("bench_string_write_short"))
     )
-    m.bench_function[bench_string_write[False]](
-        BenchId(String("bench_string_write_long"))
+    m.bench_function(
+        bench_string_write[False], BenchId(String("bench_string_write_long"))
     )
 
     comptime for i in range(len(lengths)):
@@ -467,54 +452,70 @@ def main() raises:
             comptime old = rebind[StaticString](old_chars[j])
             comptime new = rebind[StaticString](new_chars[j])
             comptime suffix = String("[", length, "]")  # "(" + fname + ")"
-            m.bench_function[bench_string_count[length, fname, old]](
-                BenchId(String("bench_string_count", suffix))
+            m.bench_function(
+                bench_string_count[length, fname, old],
+                BenchId(String("bench_string_count", suffix)),
             )
-            m.bench_function[bench_string_split[length, fname, old]](
-                BenchId(String("bench_string_split", suffix))
+            m.bench_function(
+                bench_string_split[length, fname, old],
+                BenchId(String("bench_string_split", suffix)),
             )
-            m.bench_function[bench_string_split[length, fname]](
-                BenchId(String("bench_string_split_none", suffix))
+            m.bench_function(
+                bench_string_split[length, fname],
+                BenchId(String("bench_string_split_none", suffix)),
             )
-            m.bench_function[bench_string_splitlines[length, fname]](
-                BenchId(String("bench_string_splitlines", suffix))
+            m.bench_function(
+                bench_string_splitlines[length, fname],
+                BenchId(String("bench_string_splitlines", suffix)),
             )
-            m.bench_function[bench_string_lower[length, fname]](
-                BenchId(String("bench_string_lower", suffix))
+            m.bench_function(
+                bench_string_lower[length, fname],
+                BenchId(String("bench_string_lower", suffix)),
             )
-            m.bench_function[bench_string_upper[length, fname]](
-                BenchId(String("bench_string_upper", suffix))
+            m.bench_function(
+                bench_string_upper[length, fname],
+                BenchId(String("bench_string_upper", suffix)),
             )
-            m.bench_function[bench_string_replace[length, fname, old, new]](
-                BenchId(String("bench_string_replace", suffix))
+            m.bench_function(
+                bench_string_replace[length, fname, old, new],
+                BenchId(String("bench_string_replace", suffix)),
             )
-            m.bench_function[bench_string_count_codepoints[length, fname]](
-                BenchId(String("bench_string_count_codepoints", suffix))
+            m.bench_function(
+                bench_string_count_codepoints[length, fname],
+                BenchId(String("bench_string_count_codepoints", suffix)),
             )
-            m.bench_function[bench_string_find_single[length, fname]](
-                BenchId(String("bench_string_find_single", suffix))
+            m.bench_function(
+                bench_string_find_single[length, fname],
+                BenchId(String("bench_string_find_single", suffix)),
             )
-            m.bench_function[bench_string_find_multiple[length, fname]](
-                BenchId(String("bench_string_find_multiple", suffix))
+            m.bench_function(
+                bench_string_find_multiple[length, fname],
+                BenchId(String("bench_string_find_multiple", suffix)),
             )
-            m.bench_function[bench_string_rfind_multiple[length, fname]](
-                BenchId(String("bench_string_rfind_multiple", suffix))
+            m.bench_function(
+                bench_string_rfind_multiple[length, fname],
+                BenchId(String("bench_string_rfind_multiple", suffix)),
             )
-            m.bench_function[bench_string_is_valid_utf8[length, fname]](
-                BenchId(String("bench_string_is_valid_utf8", suffix))
+            m.bench_function(
+                bench_string_is_valid_utf8[length, fname],
+                BenchId(String("bench_string_is_valid_utf8", suffix)),
             )
-            m.bench_function[bench_write_utf8[length, fname]](
-                BenchId(String("bench_write_utf8", suffix))
+            m.bench_function(
+                bench_write_utf8[length, fname],
+                BenchId(String("bench_write_utf8", suffix)),
             )
-            m.bench_function[bench_string_repr[length, fname]](
-                BenchId(String("bench_string_repr", suffix))
+            m.bench_function(
+                bench_string_repr[length, fname],
+                BenchId(String("bench_string_repr", suffix)),
             )
 
-    m.bench_function[bench_string_join[True]](
-        BenchId(String("bench_string_join_short"))
+    m.bench_function(
+        bench_string_join[True],
+        BenchId(String("bench_string_join_short")),
     )
-    m.bench_function[bench_string_join[False]](
-        BenchId(String("bench_string_join_long"))
+    m.bench_function(
+        bench_string_join[False],
+        BenchId(String("bench_string_join_long")),
     )
 
     # NOTE: do not delete this. This is supposed to measure the average for

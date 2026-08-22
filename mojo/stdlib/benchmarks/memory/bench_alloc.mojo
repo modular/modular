@@ -14,20 +14,18 @@
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
-@__parameter
 def bench_allocation(mut b: Bencher) raises:
     @always_inline
-    @__parameter
     def call_fn():
         for _ in range(10000):
             var allocation = alloc[Int]({count = 100}).into_managed()
             var a = allocation.unsafe_ptr()
             keep(a)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 def main() raises:
     var m = Bench(BenchConfig())
-    m.bench_function[bench_allocation](BenchId("bench_allocation"))
+    m.bench_function(bench_allocation, BenchId("bench_allocation"))
     m.dump_report()
