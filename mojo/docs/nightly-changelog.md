@@ -87,6 +87,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Dict` and `Set` now have a `reserve()` method, which grows the container's
+  capacity to hold at least a given number of elements. This lets you
+  pre-allocate after construction, when the expected size only becomes known
+  later, instead of rehashing repeatedly while inserting.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
