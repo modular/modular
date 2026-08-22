@@ -16,7 +16,8 @@ from std.os import abort
 from std.random import randn
 from std.sys import get_defined_int, size_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -24,7 +25,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
 from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
 
@@ -129,19 +130,20 @@ def bench_concat[
         input1_host.as_unsafe_any_origin(),
     )
 
-    @parameter
     @always_inline
-    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
-        @parameter
+    def bench_func(
+        mut b: Bencher, shape: IndexList[rank]
+    ) raises {mut output_device, imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
             _concat_gpu_elementwise[epilogue_fn=None](
                 output_device.as_unsafe_any_origin(), axis, inputs, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_with_input[IndexList[rank], bench_func](
+    b.bench_with_input(
+        bench_func,
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
@@ -209,12 +211,10 @@ def bench_concat_inner_most_single_dim[
     var out_dev = ctx.enqueue_create_buffer[dtype](n_out)
     ctx.synchronize()
 
-    @parameter
     @always_inline
-    def bench_fn(mut b: Bencher) raises:
-        @parameter
+    def bench_fn(mut b: Bencher) raises {mut out_dev, imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut out_dev, imm}:
             comptime if static_shape:
                 # Fully static layouts -> the row -> n-D divisors fold.
                 comptime input_layout = row_major[d0, d1, d2, d3, d4]()
@@ -297,10 +297,11 @@ def bench_concat_inner_most_single_dim[
                     block_dim=(B_SIZE),
                 )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "concat_inner_most_single_dim",
             input_id=String(shape_tag, dtype, d0, d1, d2, d3, d4, sep="/"),

@@ -21,11 +21,11 @@ from std.os import listdir
 """
 
 from std._plugin import CurrentPlugin
-from std.collections import InlineArray, List
-from std.collections.string.string_slice import _unsafe_strlen
+from std.collections import Array, List
+from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
-from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
+from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std.gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu, is_apple_gpu
@@ -66,7 +66,7 @@ struct _dirent_linux(Copyable):
     """Length of the record."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 
@@ -82,7 +82,7 @@ struct _dirent_macos(Copyable):
     """Length of the name."""
     var d_type: Int8
     """Type of file."""
-    var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
+    var name: Array[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
 
@@ -101,8 +101,8 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", _CPointer[NoneType, UntrackedOrigin[mut=True]]
-        ](path.as_c_string_slice().unsafe_ptr())
+            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        ](path.as_c_string_slice())
 
         if not handle:
             var err = get_errno()
@@ -116,7 +116,7 @@ struct _DirHandle:
 
         self._handle = handle.value()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
@@ -142,15 +142,15 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_linux, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
-                    ptr=name_ptr,
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
+                    unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
                     ),
@@ -172,15 +172,15 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_macos, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
+            var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span(
-                    ptr=name_ptr,
+                unsafe_from_utf8=Span[Byte, origin_of(name)](
+                    unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
                     ),
@@ -307,7 +307,15 @@ def _abort_impl[
                 flush=True,
             )
     else:
-        print(prefix, " ", loc, ": ", message, sep="", flush=True)
+        print(
+            prefix,
+            StaticString(" "),
+            loc,
+            StaticString(": "),
+            message,
+            sep="",
+            flush=True,
+        )
 
     abort()
 
@@ -364,9 +372,7 @@ def remove[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](
-        fspath.as_c_string_slice().unsafe_ptr()
-    )
+    var error = external_call["unlink", Int32](fspath.as_c_string_slice())
 
     if error != 0:
         var err = get_errno()
@@ -420,8 +426,8 @@ def symlink[
     var linkpath_fspath = linkpath.__fspath__()
 
     var error = external_call["symlink", c_int](
-        target_fspath.as_c_string_slice().unsafe_ptr(),
-        linkpath_fspath.as_c_string_slice().unsafe_ptr(),
+        target_fspath.as_c_string_slice(),
+        linkpath_fspath.as_c_string_slice(),
     )
 
     if error != 0:
@@ -461,8 +467,8 @@ def link[
     var newpath_fspath = newpath.__fspath__()
 
     var error = external_call["link", Int32](
-        oldpath_fspath.as_c_string_slice().unsafe_ptr(),
-        newpath_fspath.as_c_string_slice().unsafe_ptr(),
+        oldpath_fspath.as_c_string_slice(),
+        newpath_fspath.as_c_string_slice(),
     )
 
     if error != 0:
@@ -500,9 +506,7 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](
-        fspath.as_c_string_slice().unsafe_ptr(), mode
-    )
+    var error = external_call["mkdir", Int32](fspath.as_c_string_slice(), mode)
     if error != 0:
         var err = get_errno()
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))
@@ -565,9 +569,7 @@ def rmdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](
-        fspath.as_c_string_slice().unsafe_ptr()
-    )
+    var error = external_call["rmdir", Int32](fspath.as_c_string_slice())
     if error != 0:
         var err = get_errno()
         raise Error("Can not remove directory: ", fspath, " Err: ", String(err))

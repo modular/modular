@@ -15,9 +15,11 @@ from std.collections import Optional
 from std.math import inf, isnan, log, nan, sqrt
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise, mean, sum, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import elementwise, mean, sum
 from std.algorithm.functional import unswitch
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.utils import IndexList
 from std.utils.coord import Coord
@@ -116,8 +118,8 @@ def correlation[
     len: Int,
     ctx: DeviceContext,
     *,
-    w: OptionalUnsafePointer[mut=True, u.type, _] = Optional[
-        UnsafePointer[u.type, MutUntrackedOrigin]
+    w: OptionalPointer[mut=True, u.T, _] = Optional[
+        UnsafePointer[u.T, MutUntrackedOrigin]
     ](),
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
@@ -157,10 +159,9 @@ def correlation[
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
 
-    var w_val = w_list.unsafe_ptr()
+    var w_val: UnsafePointer[w_list.T, origin_of(w_list)] = w_list.unsafe_ptr()
 
-    @parameter
-    def accumulate[weighted: Bool]():
+    def accumulate[weighted: Bool]() {u, v, len, mut}:
         def apply_wfn[simd_width: Int](idx: Int) {u, v, mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
@@ -187,7 +188,7 @@ def correlation[
 
         vectorize[simd_width](len, apply_wfn)
 
-    unswitch[accumulate](w.__bool__())
+    unswitch(w.__bool__(), accumulate)
 
     uv += uv_simd.reduce_add()
     uu += uu_simd.reduce_add()
@@ -354,7 +355,7 @@ def _sum[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return sum(Span[Scalar[dtype]](ptr=src, length=len))
+    return sum(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _mean[
@@ -362,7 +363,7 @@ def _mean[
 ](src: UnsafePointer[mut=False, Scalar[dtype], _], len: Int) raises -> Scalar[
     dtype
 ]:
-    return mean(Span[Scalar[dtype]](ptr=src, length=len))
+    return mean(Span[Scalar[dtype]](unsafe_ptr=src, length=len))
 
 
 def _dot[

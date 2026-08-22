@@ -6,7 +6,7 @@ description: Introduction to Mojo structures (structs).
 
 A struct is Mojo's primary way to define your own type. When you want to model
 both data and behavior—whether that's a small value type, a numeric
-abstraction, or the foundation of a larger system—you'll use a struct.
+abstraction, or the foundation of a larger system—use a struct.
 
 At a high level, a Mojo struct lets you bundle data together with the
 operations that act on that data. This makes structs a natural way to represent
@@ -23,7 +23,7 @@ members:
 - **Static methods** are functions provided by the type to perform behaviors,
   provide constants, or create specialized instances.
 - **Dunder methods** are named for their _d_ouble _under_-scored form, with
-  `__` on both sides. Also called "special methods", [they help define
+  `__` on both sides. Also called "special methods," [they help define
   behaviors](/docs/manual/structs/#special-methods) such as initialization
   and allow structs to conform to [traits](/docs/manual/traits/).
 - **`comptime` members** enable compile-time references that can be used for
@@ -54,8 +54,8 @@ struct MyPair:
     var second: Int
 ```
 
-However, you can't instantiate this struct because it has no constructor
-method. So here it is with a constructor to initialize the two fields:
+However, you can't instantiate this struct because it has no initializer
+method. So here it is with an initializer to initialize the two fields:
 
 ```mojo
 struct MyPair:
@@ -70,7 +70,7 @@ struct MyPair:
 Notice that the first argument in the `__init__()` method is `out self`.
 You'll have a `self` argument as the first argument on all struct methods.
 It references the current struct instance (it allows code in the method to
-refer to "itself"). _When you call the constructor, you never pass a value
+refer to "itself"). _When you call the initializer, you never pass a value
 for `self`—Mojo passes it in automatically._
 
 The `out` portion of `out self` is an [argument
@@ -78,11 +78,11 @@ convention](/docs/manual/values/ownership#argument-conventions) that declares
 `self` as a mutable reference that starts out as uninitialized and must be
 initialized before the function returns.
 
-Many types use a field-wise constructor like the one shown for `MyPair` above:
+Many types use a field-wise initializer like the one shown for `MyPair` above:
 it takes an argument for each field, and initializes the fields directly from
 the arguments. To save typing, Mojo provides a
 [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/) decorator, which
-generates a field-wise constructor for the struct. So you can rewrite the
+generates a field-wise initializer for the struct. So you can rewrite the
 `MyPair` example above like this:
 
 ```mojo
@@ -99,14 +99,14 @@ pre-determined names.
 :::note
 
 You can't assign values when you declare fields. You must initialize
-all of the struct's fields in the constructor. (If you try to leave a field
+all of the struct's fields in the initializer. (If you try to leave a field
 uninitialized, the code won't compile.)
 
 :::
 
 ## Constructing a struct type
 
-Once you have a constructor, with `__init__` or using `@fieldwise_init`,
+Once you have a initializer, with `__init__()` or using `@fieldwise_init`,
 you can create an instance of `MyPair` and set the fields:
 
 ```mojo title="Construct an instance"
@@ -121,50 +121,16 @@ print(mine.first)
 :::note Initializer lists
 Mojo initializer lists let you construct instances without spelling
 out the full type name and parameters. If the full type can be inferred
-from context, pass the constructor arguments directly between braces,
+from context, pass the initializer arguments directly between braces,
 with or without keywords. For example `{0.5, fish="salmon"}` calls
 `__init__(0.5, fish="salmon")` on the appropriate struct type. This
 is equivalent to `MyStruct(0.5, fish="salmon")` if the type is inferred
 to be `MyStruct`.
 :::
 
-## Mutating a struct
-
-By default, a struct's methods receive an immutable `self`,
-so they can't modify the struct's fields. For example:
-
-```mojo
-struct MyStruct:
-    var value: Int
-
-    def increment(self):
-        self.value += 1 # ERROR: expression must be mutable in assignment
-
-    # ...
-```
-
-To allow a method to mutate the instance, declare its receiver as `mut self`.
-This makes `self` mutable inside the method and allows changes to its fields
-that persist after the method returns:
-
-```mojo
-struct MyStruct:
-    var value: Int
-
-    def increment(mut self):
-        self.value += 1 # Works: Mutable `self` allows assignment
-
-    #...
-```
-
-:::info
-Read more about mutable arguments and the `mut` keyword:
-[Mutable arguments (`mut`)](/docs/manual/values/ownership/#mutable-arguments-mut)
-:::
-
 ## Making a struct Copyable {#making-a-struct-copyable-and-movable}
 
-Mojo structs are not copyable or movable by default.
+By default, Mojo structs can be _moved_, but not _copied_.
 
 For example, the following code produces errors:
 
@@ -176,30 +142,14 @@ var b = a  # value of type 'MyPair' cannot be implicitly copied,
            # it does not conform to 'ImplicitlyCopyable'
 
 # Explicit copy
-var c = a.copy()  # value of type 'MyPair' cannot be implicitly copied,
-        # it does not conform to 'ImplicitlyCopyable'
+var c = a.copy()  # 'MyPair' has no attribute 'copy'
+                    # it does not conform to 'Copyable'
 # Move
-var d = a^  # value of type 'MyPair' cannot be copied or moved; consider
-            # conforming it to 'Copyable', which also adds 'Movable'
-            # conformance.
+var d = a^  # OK
 ```
 
-In most cases, you can make a struct copyable (and movable) just by adding the
+In most cases, you can make a struct copyable just by adding the
 `Copyable` [trait](/docs/manual/traits/).
-
-### Movability
-
-To make a struct move-only, add the `Movable` trait:
-
-  ```mojo
-  struct MyPair(Movable):
-  ...
-  ```
-
-Mojo will generate a move constructor for you. You rarely need to
-write your own custom move constructor. For more information,
-see the section on
-[move constructors](/docs/manual/lifecycle/life/#move-constructor).
 
 ### Copyability
 
@@ -210,20 +160,21 @@ To make a struct copyable, add the `Copyable` trait:
     ...
   ```
 
-In most cases, that's all you need to do. Mojo will generate a copy constructor
-(`__init__(out self, *, copy: Self)` method) for you. You don't need to write
-your own unless you need custom logic in the copy constructor; for example, if
-your struct dynamically allocates memory. For more information, see the section
-on [copy constructors](/docs/manual/lifecycle/life/#copy-constructor).
+In most cases, that's all you need to do. Mojo generates a copy
+initializer (`__init__(out self, *, copy: Self)` method) for you. You don't
+need to write your own unless you need custom logic in the copy
+initializer; for example, if your struct dynamically allocates memory. For
+more information, see the section on [copy
+initializers](/docs/manual/lifecycle/life/#copy-constructor).
 
-The `Copyable` trait provides two ways to copy a value: the `copy()`
-instance method and the copy initializer.
-In addition, `Copyable` automatically adds movability, so you won't
-need to add both `Copyable` _and_ `Movable` to your declarations.
+The [`Copyable`](/docs/std/traits/copyable/Copyable/) trait provides two ways
+to copy a value: the `copy()`
+instance method and the copy initializer. Prefer the `copy()` method.
 
 ### Implicit copyability
 
-To make a struct implicitly copyable, add the `ImplicitlyCopyable` trait:
+To make a struct implicitly copyable, add the
+[`ImplicitlyCopyable`](/docs/std/traits/copyable/ImplicitlyCopyable/) trait:
 
 ```mojo
 struct MyPair(ImplicitlyCopyable):
@@ -302,7 +253,7 @@ struct MyStruct:
         self.foo = new_value
 ```
 
-**You must** initialize fields within constructors, and not
+**You must** initialize fields within initializers, and not
 at the point of declaration.
 
 ```mojo
@@ -368,10 +319,44 @@ because they act on an instance of the struct.
 :::note
 
 The `self` argument in a struct method is the only argument in a `def`
-function that does not require a type. You can include the type if you
+function that doesn't require a type. You can include the type if you
 want, but you can elide it because Mojo already knows its type
 (`MyPair` in this case).
 
+:::
+
+## Mutating methods {#mutating-a-struct}
+
+By default, a struct's methods receive an immutable `self`,
+so they can't modify the struct's fields. For example:
+
+```mojo
+struct MyStruct:
+    var value: Int
+
+    def increment(self):
+        self.value += 1 # ERROR: expression must be mutable in assignment
+
+    # ...
+```
+
+To allow a method to mutate the instance, declare its receiver as `mut self`.
+This makes `self` mutable inside the method and allows changes to its fields
+that persist after the method returns:
+
+```mojo
+struct MyStruct:
+    var value: Int
+
+    def increment(mut self):
+        self.value += 1 # Works: Mutable `self` allows assignment
+
+    #...
+```
+
+:::note
+Read more about mutable arguments and the `mut` keyword:
+[Mutable arguments (`mut`)](/docs/manual/values/ownership/#mutable-arguments-mut)
 :::
 
 ### Static methods
@@ -381,7 +366,9 @@ creating an instance of the struct. Unlike instance methods, a static method
 doesn't receive the implicit `self` argument, so it can't access any fields on
 the struct.
 
-To declare a static method, use the `@staticmethod` decorator and don't include
+To declare a static method, use the
+[`@staticmethod`](/docs/reference/decorators/staticmethod/) decorator and don't
+include
 a `self` argument:
 
 ```mojo
@@ -428,7 +415,7 @@ their key differences are as follows:
   methods at runtime). Structs allow you to trade flexibility for performance
   while being safe and easy to use.
 
-- Mojo structs do not support inheritance ("sub-classing"), but a struct can
+- Mojo structs don't support inheritance ("sub-classing"), but a struct can
   implement [traits](/docs/manual/traits/).
 
 - Python classes support class attributes—values that are shared by all
@@ -454,11 +441,13 @@ Python, like operator overloading (which lets you change how math symbols like
 `+` and `-` work with your own data, using [special
 methods](#special-methods)).
 
-As mentioned above, all Mojo's standard types
-(`Int`, `String`, etc.) are made using structs, rather than being hardwired
-into the language itself. This gives you more flexibility and control when
-writing your code, and it means you can define your own types with all the same
-capabilities (there's no special treatment for the standard library types).
+As mentioned above, Mojo builds all its standard types
+([`Int`](/docs/std/builtin/simd/#int),
+[`String`](/docs/std/collections/string/string/String/), etc.) from structs,
+rather than hardwiring them into the language itself. This gives you more
+flexibility and control when writing your code, and it means you can define your
+own types with all the same capabilities (there's no special treatment for the
+standard library types).
 
 ## Special methods
 
@@ -470,7 +459,7 @@ point is that you never should, because Mojo automatically invokes them in
 circumstances where they're needed (which is why they're also called "magic
 methods"). For example, Mojo calls the `__init__()` method when you create
 an instance of the struct; and when Mojo destroys the instance, it calls the
-`__del__()` method (if it exists).
+`__deinit__()` method (if it exists).
 
 Even operator behaviors that appear built-in (`+`, `<`, `==`, `|`, and so on)
 are implemented as special methods that Mojo implicitly calls upon to perform
@@ -486,11 +475,11 @@ and they usually accomplish one of two types of tasks:
   appropriately with each type. For more information, see
   [Implement operators for custom types](/docs/manual/operators/#implement-operators-for-custom-types).
 
-- Lifecycle event handling: These special methods deal with the lifecycle and
-  value ownership of an instance. For example, `__init__()` and `__del__()`
-  demarcate the beginning and end of an instance lifetime, and other special
-  methods define the behavior for other lifecycle events such as how to copy or
-  move a value.
+- Lifecycle event handling: These special methods deal with the lifecycle
+  and value ownership of an instance. For example, `__init__()` and
+  `__deinit__()` demarcate the beginning and end of an instance lifetime,
+  and other special methods define the behavior for other lifecycle events
+  such as how to copy or move a value.
 
 You can learn all about the lifecycle special methods in the [Value
 lifecycle](/docs/manual/lifecycle/) section. However, most structs are simple

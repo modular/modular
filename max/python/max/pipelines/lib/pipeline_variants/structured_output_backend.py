@@ -29,7 +29,12 @@ thin pass-through with no behavior change.
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol, TypeVar
+import logging
+import os
+import time
+from collections.abc import Callable, Collection
+from functools import wraps
+from typing import Any, Protocol, TypeVar, cast
 
 import llguidance
 import llguidance.hf
@@ -42,13 +47,68 @@ from max import _xgrammar as xgrammar
 from max._xgrammar.structural_tag import (
     JSONSchemaFormat,
     OrFormat,
-    SequenceFormat,
     StructuralTag,
 )
 from max.pipelines.context import GrammarMatcher
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.tool_parsing import get_parser_cls
 from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
+
+logger = logging.getLogger("max.pipelines")
+
+# Log a line whenever a grammar compile exceeds this threshold (milliseconds).
+# Compilation runs synchronously on the decode thread, so a cold build stalls
+# co-batched requests. Override via ``MAX_GRAMMAR_COMPILE_LOG_MS``; the 10ms
+# default surfaces real cold compiles without spamming the warm path.
+_GRAMMAR_COMPILE_LOG_MS = float(
+    os.environ.get("MAX_GRAMMAR_COMPILE_LOG_MS", "10.0")
+)
+
+# Cap on each run of consecutive whitespace a whitespace-tolerant
+# response_format grammar accepts between JSON tokens.
+STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN = 16
+
+_CompileFn = TypeVar("_CompileFn", bound=Callable[..., Any])
+
+
+def _log_if_slow(fn: _CompileFn) -> _CompileFn:
+    """Time a backend compile method and log when it exceeds the threshold.
+
+    Wraps the compile entry points (``create_matcher`` /
+    ``compile_json_schema``) so every caller -- decode-thread setup and
+    admission-time validation alike -- surfaces a slow compile without
+    per-call-site timing. Logs the backend name, method, and duration only;
+    the schema/grammar body is never logged (may be large or sensitive).
+
+    The same three values are attached as ``extra`` so structured log
+    backends can facet and aggregate on them (a duration that lives only in
+    the message text is not queryable). ``grammar_backend`` rather than
+    ``name`` because ``LogRecord`` reserves the latter for the logger name.
+    """
+
+    @wraps(fn)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        start = time.perf_counter()
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            if elapsed_ms > _GRAMMAR_COMPILE_LOG_MS:
+                logger.info(
+                    "grammar %s took %.1fms (%s backend)",
+                    fn.__name__,
+                    elapsed_ms,
+                    self.name,
+                    extra={
+                        "event": "grammar_compile_slow",
+                        "grammar_compile_method": fn.__name__,
+                        "grammar_compile_time_ms": elapsed_ms,
+                        "grammar_backend": self.name,
+                    },
+                )
+
+    return cast(_CompileFn, wrapper)
 
 
 class _TikTokenAdapter:
@@ -200,7 +260,7 @@ class GrammarBackend(GrammarValidator, Protocol[GrammarT]):
         except Exception as e:
             raise InputError(
                 f"Tool-call grammar cannot be compiled by the "
-                f"{self.name} backend: {e}"
+                f"{self.name} backend: {str(e).strip()}"
             ) from e
 
     def check_json_schema(self, json_schema: str) -> None:
@@ -217,7 +277,7 @@ class GrammarBackend(GrammarValidator, Protocol[GrammarT]):
         except Exception as e:
             raise InputError(
                 f"response_format json_schema cannot be compiled by the "
-                f"{self.name} backend: {e}"
+                f"{self.name} backend: {str(e).strip()}"
             ) from e
 
 
@@ -226,14 +286,18 @@ class LlguidanceBackend(GrammarBackend[Any]):
 
     name = "llguidance"
 
-    def __init__(self, tokenizer_info: Any) -> None:
+    def __init__(
+        self, tokenizer_info: Any, any_whitespace: bool = False
+    ) -> None:
         self._tokenizer_info = tokenizer_info
+        self._any_whitespace = any_whitespace
 
     @classmethod
     def from_tokenizer_delegate(
         cls,
         tokenizer_delegate: PreTrainedTokenizerBase,
         vocab_size: int,
+        any_whitespace: bool = False,
     ) -> LlguidanceBackend:
         """Build the llguidance tokenizer info from a tokenizer delegate."""
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
@@ -244,14 +308,25 @@ class LlguidanceBackend(GrammarBackend[Any]):
             adapter = _TikTokenAdapter(tokenizer_delegate)
             wrapper = TokenizerWrapper(adapter)
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
-        return cls(tokenizer_info)
+        return cls(tokenizer_info, any_whitespace=any_whitespace)
 
+    @_log_if_slow
     def compile_json_schema(self, json_schema: str) -> Any:
         """Compile a JSON schema to a grammar handle for this backend."""
+        # The empty whitespace pattern pins compact JSON (no whitespace
+        # between tokens); omitting it uses llguidance's whitespace-tolerant
+        # default. Unlike xgrammar, llguidance has no whitespace-run cap: a
+        # bounded whitespace_pattern regex does not bound consecutive
+        # whitespace (the pattern repeats), so whitespace-tolerant mode on
+        # this backend is unbounded.
         return LLMatcher.grammar_from_json_schema(
-            json_schema, overrides={"whitespace_pattern": ""}
+            json_schema,
+            overrides=(
+                None if self._any_whitespace else {"whitespace_pattern": ""}
+            ),
         )
 
+    @_log_if_slow
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar (backend-specific handle)."""
         return LLMatcher(self._tokenizer_info, grammar)
@@ -319,6 +394,92 @@ class XgrammarMatcher:
         return XgrammarMatcher(self._matcher.fork())
 
 
+def content_stripped_special_token_ids(
+    tokenizer: PreTrainedTokenizerBase,
+) -> set[int]:
+    """Return the ids of special/added tokens that carry no string content.
+
+    A control/special token that decodes to the empty string with
+    ``skip_special_tokens=True`` is never valid JSON string content: if left in
+    the byte-level content vocabulary it can satisfy a character-count minimum
+    while decoding to nothing, silently bypassing ``minLength``. Marking such
+    ids special excludes them from byte-content matching while keeping them
+    emittable at grammar positions that reference them by id. Sourced generally
+    from the tokenizer's own special/added-token metadata plus a decode-strip
+    check -- no model-specific id list.
+    """
+    candidates: set[int] = set()
+    for tid in getattr(tokenizer, "all_special_ids", None) or []:
+        candidates.add(int(tid))
+    for tid in getattr(tokenizer, "added_tokens_decoder", None) or {}:
+        candidates.add(int(tid))
+    return {
+        tid
+        for tid in candidates
+        if tokenizer.decode([tid], skip_special_tokens=True) == ""
+    }
+
+
+def special_token_ids_for_markers(
+    markers: Collection[str],
+    tokenizer_delegate: PreTrainedTokenizerBase,
+) -> set[int]:
+    """Resolve structural marker strings to their single vocabulary token ids.
+
+    A marker the tokenizer encodes as one token is registered special so its
+    bytes are masked out of byte-level string content; a marker with no
+    single-token form is skipped (the grammar keeps its byte-literal form).
+    """
+    unk_id = getattr(tokenizer_delegate, "unk_token_id", None)
+    ids: set[int] = set()
+    for marker in markers:
+        token_id = tokenizer_delegate.convert_tokens_to_ids(marker)
+        if token_id is None or token_id == unk_id:
+            continue
+        ids.add(int(token_id))
+    return ids
+
+
+# Structural tool-call markers a model's grammar references by token id (rather
+# than by byte literal), keyed by the parser's ``XGRAMMAR_FORMAT`` model key.
+# They must be masked out of byte-level string content so a bare string value's
+# length bound cannot be satisfied by the marker's own bytes, while the marker
+# stays emittable where the grammar references it by id.
+STRUCTURAL_MARKERS_BY_MODEL: dict[str, tuple[str, ...]] = {
+    "glm_4_7": ("<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"),
+}
+
+
+def special_token_ids_for(
+    tool_parser_name: str | None,
+    tokenizer_delegate: PreTrainedTokenizerBase,
+) -> set[int]:
+    """Return every special token id the grammar backend must mask."""
+    parser_cls = get_parser_cls(tool_parser_name)
+    model = (
+        getattr(parser_cls, "XGRAMMAR_FORMAT", None)
+        if isinstance(parser_cls, type)
+        else None
+    )
+    markers = STRUCTURAL_MARKERS_BY_MODEL.get(model, ()) if model else ()
+    return content_stripped_special_token_ids(
+        tokenizer_delegate
+    ) | special_token_ids_for_markers(markers, tokenizer_delegate)
+
+
+# xgrammar's compiled-grammar cache is unbounded by default; a long-running
+# server accumulating unique schemas would grow it without limit. Bound it like
+# vLLM does (its VLLM_XGRAMMAR_CACHE_MB, default 512 MB); override the MB budget
+# with MODULAR_XGRAMMAR_CACHE_MB.
+_DEFAULT_XGRAMMAR_CACHE_MB = 512
+
+
+def _xgrammar_cache_limit_bytes() -> int:
+    """Return the byte budget for xgrammar's compiled-grammar LRU cache."""
+    mb = os.environ.get("MODULAR_XGRAMMAR_CACHE_MB")
+    return (int(mb) if mb else _DEFAULT_XGRAMMAR_CACHE_MB) * 1024 * 1024
+
+
 class XgrammarBackend(GrammarBackend[Any]):
     """xgrammar backend.
 
@@ -330,35 +491,58 @@ class XgrammarBackend(GrammarBackend[Any]):
 
     name = "xgrammar"
 
-    def __init__(self, compiler: Any) -> None:
+    def __init__(
+        self,
+        compiler: Any,
+        # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+        reject_unsupported: bool = False,
+        any_whitespace: bool = False,
+    ) -> None:
         self._compiler = compiler
+        self._reject_unsupported = reject_unsupported
+        self._any_whitespace = any_whitespace
 
     @classmethod
     def from_tokenizer_delegate(
         cls,
         tokenizer_delegate: PreTrainedTokenizerBase,
         vocab_size: int,
+        # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+        reject_unsupported: bool = False,
+        stop_token_ids: Collection[int] | None = None,
+        special_token_ids: Collection[int] = (),
+        any_whitespace: bool = False,
     ) -> XgrammarBackend:
         """Build the xgrammar tokenizer info and compiler from a delegate."""
+        stop_token_ids = (
+            list(stop_token_ids) if stop_token_ids is not None else None
+        )
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
             tokenizer_info = xgrammar.TokenizerInfo.from_huggingface(
-                tokenizer_delegate, vocab_size=vocab_size
+                tokenizer_delegate,
+                vocab_size=vocab_size,
+                stop_token_ids=stop_token_ids,
+                special_token_ids=sorted(set(special_token_ids)),
             )
         else:
             adapter = _TikTokenAdapter(tokenizer_delegate)
-            stop_token_ids = (
-                [adapter.eos_token_id]
-                if adapter.eos_token_id is not None
-                else None
-            )
+            if stop_token_ids is None and adapter.eos_token_id is not None:
+                stop_token_ids = [adapter.eos_token_id]
             tokenizer_info = xgrammar.TokenizerInfo(
                 adapter.tokens,
                 vocab_type=xgrammar.VocabType.RAW,
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
             )
-        return cls(xgrammar.GrammarCompiler(tokenizer_info))
+        return cls(
+            xgrammar.GrammarCompiler(
+                tokenizer_info, max_memory_bytes=_xgrammar_cache_limit_bytes()
+            ),
+            reject_unsupported=reject_unsupported,
+            any_whitespace=any_whitespace,
+        )
 
+    @_log_if_slow
     def compile_json_schema(self, json_schema: Any) -> Any:
         """Compile a JSON schema (str or dict) to a grammar handle."""
         schema = (
@@ -366,12 +550,24 @@ class XgrammarBackend(GrammarBackend[Any]):
             if isinstance(json_schema, str)
             else json.dumps(json_schema)
         )
-        # any_whitespace=True allows flexible whitespace (including none); it
-        # enforces the schema structure without blocking valid JSON. NOTE:
-        # any_whitespace=False is NOT "compact" — it mandates a space after
-        # ':'/',' and would reject compact output. This matches vLLM's default.
-        return self._compiler.compile_json_schema(schema, any_whitespace=True)
+        # Compact mode pins the separators; whitespace-tolerant mode must
+        # leave them unset (xgrammar's flexible-whitespace grammar) and caps
+        # each whitespace run so a looping model cannot emit whitespace
+        # forever.
+        return self._compiler.compile_json_schema(
+            schema,
+            any_whitespace=self._any_whitespace,
+            separators=None if self._any_whitespace else (",", ":"),
+            max_whitespace_cnt=(
+                STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN
+                if self._any_whitespace
+                else None
+            ),
+            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
+            reject_unsupported=self._reject_unsupported,
+        )
 
+    @_log_if_slow
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar or structural-tag JSON."""
         if isinstance(grammar, xgrammar.CompiledGrammar):
@@ -392,7 +588,7 @@ class XgrammarBackend(GrammarBackend[Any]):
         Xgrammar rejects unsatisfiable schemas at compile time, so the
         compiled grammar reaching here is already valid (nothing to check).
         """
-        return None
+        return
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -418,7 +614,6 @@ def build_xgrammar_tool_grammar(
     model_format: str,
     tools: list[dict[str, Any]],
     tool_choice: str | dict[str, Any],
-    reasoning: bool = False,
     response_format_schema: dict[str, Any] | None = None,
 ) -> str:
     """Build a serialized xgrammar tool-call grammar (StructuralTag JSON).
@@ -436,7 +631,6 @@ def build_xgrammar_tool_grammar(
         model_format: xgrammar model-format key (e.g. ``"kimi"``).
         tools: OpenAI-style tool dicts (``{"type": "function", "function": ...}``).
         tool_choice: ``"auto"``, ``"required"``, or a named choice.
-        reasoning: Whether the model interleaves reasoning before tool calls.
         response_format_schema: Optional JSON schema for a ``response_format``
             json_schema response. When set, the grammar allows a
             schema-conforming JSON response as an alternative to a tool call.
@@ -450,33 +644,24 @@ def build_xgrammar_tool_grammar(
         # output. OR-ing that with the response schema would let arbitrary text
         # through and defeat the schema. Use the mandatory (``required``) tool
         # section so the only accepting outputs are a complete tool call or a
-        # schema-conforming JSON. The reasoning prefix is kept,
-        # so the model may still think before a tool call.
+        # schema-conforming JSON.
         effective_tool_choice = "required"
     tag = xgrammar.get_builtin_structural_tag(
         model_format,
         tools=tools,
         tool_choice=effective_tool_choice,
-        reasoning=reasoning,
+        reasoning=False,
     )
     if response_format_schema is not None:
-        # Accept a complete tool call or a schema-conforming JSON response, with
-        # an optional reasoning prefix allowed before EITHER. Factor the prefix
-        # out of the alternation -- Sequence([prefix, Or([tool_section, json])]).
-        json_branch = JSONSchemaFormat(json_schema=response_format_schema)
-        fmt = tag.format
-        if isinstance(fmt, SequenceFormat):
-            *prefix_elements, tool_section = fmt.elements
-            tag = StructuralTag(
-                format=SequenceFormat(
-                    elements=[
-                        *prefix_elements,
-                        OrFormat(elements=[tool_section, json_branch]),
-                    ]
-                )
-            )
-        else:
-            tag = StructuralTag(format=OrFormat(elements=[fmt, json_branch]))
+        json_branch = JSONSchemaFormat(
+            json_schema=response_format_schema,
+            any_whitespace=False,
+            separators=(",", ":"),
+            # TODO(CENG-813): drop this per-model scoping once
+            # require_object_root/reject_unsupported default on for all models.
+            reject_unsupported=model_format in ("gemma_4", "glm_4_7"),
+        )
+        tag = StructuralTag(format=OrFormat(elements=[tag.format, json_branch]))
     return tag.model_dump_json()
 
 
@@ -484,6 +669,10 @@ def make_grammar_backend(
     name: str,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
+    *,
+    tool_parser_name: str | None = None,
+    stop_token_ids: Collection[int] | None = None,
+    any_whitespace: bool = False,
 ) -> GrammarBackend[Any]:
     """Construct the structured-output backend selected by ``name``.
 
@@ -491,6 +680,11 @@ def make_grammar_backend(
         name: Backend identifier (``"llguidance"`` or ``"xgrammar"``).
         tokenizer_delegate: HuggingFace/TikToken tokenizer to build vocab info.
         vocab_size: Vocabulary size from the tokenizer.
+        tool_parser_name: Active tool parser, used to derive the special-token
+            mask and the fail-closed compile policy (xgrammar only).
+        stop_token_ids: The full set of stop token IDs.
+        any_whitespace: Whether ``response_format`` grammars accept whitespace
+            between JSON tokens. ``False`` (the default) pins compact JSON.
 
     Returns:
         A configured :class:`GrammarBackend`.
@@ -500,11 +694,20 @@ def make_grammar_backend(
     """
     if name == "llguidance":
         return LlguidanceBackend.from_tokenizer_delegate(
-            tokenizer_delegate, vocab_size
+            tokenizer_delegate, vocab_size, any_whitespace=any_whitespace
         )
     if name == "xgrammar":
         return XgrammarBackend.from_tokenizer_delegate(
-            tokenizer_delegate, vocab_size
+            tokenizer_delegate,
+            vocab_size,
+            # TODO(CENG-813): drop this per-model scoping once
+            # require_object_root/reject_unsupported default on for all models.
+            reject_unsupported=tool_parser_name in ("gemma4", "glm45"),
+            stop_token_ids=stop_token_ids,
+            special_token_ids=special_token_ids_for(
+                tool_parser_name, tokenizer_delegate
+            ),
+            any_whitespace=any_whitespace,
         )
     raise ValueError(
         f"unknown structured output backend: {name!r} "
@@ -516,6 +719,9 @@ def make_grammar_validator(
     backend_name: str | None,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
+    *,
+    tool_parser_name: str | None = None,
+    any_whitespace: bool | None = None,
 ) -> GrammarValidator:
     """Build the admission-time :class:`GrammarValidator` for a backend.
 
@@ -540,4 +746,6 @@ def make_grammar_validator(
         backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
         tokenizer_delegate,
         vocab_size,
+        tool_parser_name=tool_parser_name,
+        any_whitespace=bool(any_whitespace),
     )

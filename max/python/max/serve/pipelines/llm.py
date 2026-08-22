@@ -40,10 +40,12 @@ from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,
     create_buffered_detokenizer,
 )
+from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
+from opentelemetry import propagate as otel_propagate
 
 logger = logging.getLogger("max.serve")
 
@@ -74,6 +76,9 @@ class TokenGeneratorOutput:
     cached_token_count: int | None = None
     reasoning_token_count: int | None = None
     stop_sequence: str | None = None
+    batch_id: int | None = None
+    """Monotonic forward-pass counter from the scheduler that produced this
+    chunk. Used to correlate API-side OTel spans with model-worker spans."""
 
 
 def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
@@ -128,7 +133,27 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         reasoning_token_count=sum(c.reasoning_token_count or 0 for c in chunks)
         or None,
         stop_sequence=stop_sequence,
+        batch_id=chunks[-1].batch_id,
     )
+
+
+def _inject_trace_carrier(context: BaseContextType) -> None:
+    """Serialize the current request's OTel trace context onto ``context``.
+
+    ``context`` crosses into the model-worker process by value (pickled onto
+    the request queue), so the ambient ``request_trace_ctx`` -- populated by
+    the route handler from the inbound request's W3C headers -- can't follow
+    it there directly. Inject it into a plain string-dict carrier instead,
+    which the scheduler re-``extract``s to parent its phase spans under the
+    caller's trace. A no-op for context types that don't carry a
+    ``trace_carrier`` field (only ``TextContext`` does).
+    """
+    if not isinstance(context, TextContext):
+        return
+    carrier: dict[str, str] = {}
+    otel_propagate.inject(carrier, context=request_trace_ctx.get())
+    if carrier:
+        context.trace_carrier = carrier
 
 
 def _apply_stop_truncation(
@@ -269,6 +294,11 @@ class TokenGeneratorPipeline(
         - Callers can amortize Pydantic/SSE overhead across the chunk
         """
         itl = StopWatch()
+        # TTFT runs from the arrival timestamp stamped by the HTTP middleware,
+        # so it covers body parse, validation and media resolution rather than
+        # starting here at pipeline entry. Offline callers leave timestamp_ns
+        # at its 0 default; those fall back to pipeline entry.
+        ttft_sw = StopWatch(start_ns=request.timestamp_ns or None)
         total_sw = StopWatch()
         decode_sw = StopWatch()
         decode_elapsed_ms = 0.0
@@ -306,6 +336,7 @@ class TokenGeneratorPipeline(
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
+            _inject_trace_carrier(context)
 
             # Create buffered detokenizers for proper UTF-8 handling.
             # These handle multi-byte UTF-8 sequences that span multiple tokens,
@@ -393,7 +424,7 @@ class TokenGeneratorPipeline(
                 is_still_reasoning
             try:
                 with record_ms(METRICS.output_time):
-                    async for responses in response_stream:
+                    async for responses, batch_id in response_stream:
                         assert isinstance(responses, list)
                         assert len(responses) > 0
                         assert isinstance(responses[0], TextGenerationOutput)
@@ -457,13 +488,27 @@ class TokenGeneratorPipeline(
                                 # per-request report, so mirror the first-chunk
                                 # gating below and only emit it if no earlier
                                 # chunk already carried it.
+                                #
+                                # response.tokens (pre-strip) still holds the
+                                # delimiter token(s) that extract_content/
+                                # extract_reasoning stripped down to nothing.
+                                # They were genuinely generated and consumed
+                                # the token budget, so they must still be
+                                # billed -- as reasoning tokens, since that's
+                                # what they are -- or a max_tokens=1 request
+                                # that stops on a bare think-start delimiter
+                                # reports completion_tokens=0 (CENG-932).
                                 yield TokenGeneratorOutput(
                                     status=response.final_status,
                                     token_count=0,
+                                    reasoning_token_count=len(response.tokens)
+                                    if response.tokens
+                                    else 0,
                                     prompt_token_count=context.tokens.prompt_length,
                                     cached_token_count=response.num_cached_tokens
                                     if not first_chunk_yielded
                                     else None,
+                                    batch_id=batch_id,
                                 )
                             continue
 
@@ -537,7 +582,7 @@ class TokenGeneratorPipeline(
                         # Record metrics - one TTFT/ITL per chunk
                         is_first_chunk = not first_chunk_yielded
                         if is_first_chunk:
-                            METRICS.ttft(itl.elapsed_ms)
+                            METRICS.ttft(ttft_sw.elapsed_ms)
                             decode_sw.reset()
                             first_chunk_yielded = True
                         else:
@@ -558,6 +603,7 @@ class TokenGeneratorPipeline(
                             else None,
                             reasoning_token_count=reasoning_token_count,
                             stop_sequence=stop_sequence_match,
+                            batch_id=batch_id,
                         )
             finally:
                 if first_chunk_yielded and num_generated_tokens > 1:
@@ -587,7 +633,7 @@ class TokenGeneratorPipeline(
     ) -> EmbeddingsGenerationOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
-        self.logger.debug(
+        self.logger.debug(  # noqa: PLE1206 (maybe FIXME)
             "%s [%d]: Started: Elapsed: %0.2f ms",
             request.request_id,
             total_sw.elapsed_ms,
@@ -596,6 +642,7 @@ class TokenGeneratorPipeline(
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
+            _inject_trace_carrier(context)
 
             with record_ms(METRICS.output_time):
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
@@ -604,7 +651,7 @@ class TokenGeneratorPipeline(
                 response_stream = await self.model_worker.stream(
                     request.request_id, context
                 )
-                async for responses in response_stream:
+                async for responses, _batch_id in response_stream:
                     for response in responses:
                         # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
                         # Cast to handle the generic type parameter mismatch

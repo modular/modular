@@ -15,22 +15,20 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import tempfile
-from typing import TYPE_CHECKING, Any, Literal, get_args
+import os
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
-from max.driver import accelerator_api, load_devices
+from max.driver import accelerator_api
 from max.engine import InferenceSession
-from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
-from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
+from max.pipelines.lib.arch_lookup import (
+    find_architecture,
+    import_custom_architectures,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
-    ArchConfigWithKVCache,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
@@ -40,6 +38,7 @@ from max.pipelines.lib.pipeline_runtime_config import (
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.sampling import (
+    DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
 )
@@ -49,12 +48,18 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
-    TypeAdapter,
+    ValidationError,
     field_validator,
+    model_validator,
 )
 from typing_extensions import Self
 
-from .model_config import MAXModelConfig
+from .model_config import (
+    MAXModelConfig,
+    _parse_component_overrides,
+    _populate_weights_and_encoding,
+    _select_quantization_encoding,
+)
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -73,38 +78,6 @@ else:
     _ModelsType = dict[str, MAXModelConfig]
 
 
-def _strip_default_model_kwargs(
-    model_kwargs: dict[str, Any],
-) -> dict[str, Any]:
-    """Return *model_kwargs* with entries that match MAXModelConfig defaults removed.
-
-    Fields declared with ``default_factory`` have ``field.default`` set to
-    ``PydanticUndefined``, so we must invoke the factory to obtain the
-    comparable default value.
-    """
-    from pydantic_core import PydanticUndefined
-
-    fields = MAXModelConfig.model_fields
-    non_default: dict[str, Any] = {}
-    for k, v in model_kwargs.items():
-        field = fields.get(k)
-        if field is None:
-            # Not a MAXModelConfig field — keep it.
-            non_default[k] = v
-            continue
-        if field.default is not PydanticUndefined:
-            if v == field.default:
-                continue
-        elif field.default_factory is not None:
-            try:
-                if v == field.default_factory():  # type: ignore[call-arg]
-                    continue
-            except Exception:
-                pass
-        non_default[k] = v
-    return non_default
-
-
 def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     """Return the Pydantic model class for a field annotation, if any.
 
@@ -119,26 +92,21 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
-# FIXME: This method seems like a major hack...
-# Can this be moved to the KVCacheConfig post init?
-def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
-    """Validates KV connector configuration and applies defaults."""
-    connector = kv.kv_connector
-    if connector is None:
-        return
+_SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
 
-    # Ensure a config object exists for connectors that need one.
-    cfg = kv.kv_connector_config or KVConnectorConfig()
 
-    if connector == KVConnectorType.tiered:
-        if cfg.disk_offload_dir is None:
-            cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
-            logger.info(
-                f"Tiered connector: auto-created disk offload dir "
-                f"{cfg.disk_offload_dir}"
-            )
+def _construct_from_user_fields(sub: _SubConfigT) -> _SubConfigT:
+    """Constructs a fresh sub-config from only the caller-set fields.
 
-    kv.kv_connector_config = cfg
+    The result is built once, through the class constructor: unset fields
+    re-derive from the class defaults and nested models are rebuilt rather
+    than aliased, so it shares no mutable state with ``sub``.
+    """
+    return type(sub)(
+        **sub.model_dump(
+            include=sub.model_fields_set - {"config_file", "section_name"}
+        )
+    )
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -243,6 +211,25 @@ class PipelineConfig(ConfigFileModel):
             )
         return result
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_unrequested_optional_subtrees(cls, data: Any) -> Any:
+        """Drop optional subtrees whose enabling field wasn't supplied.
+
+        The CLI generates a default for every flag, so a subtree's presence
+        cannot signal intent -- only its enabling field can.
+        """
+        if not isinstance(data, dict):
+            return data
+        for subtree, enabling_field in (
+            ("lora", "enable_lora"),
+            ("speculative", "speculative_method"),
+        ):
+            section = data.get(subtree)
+            if isinstance(section, dict) and not section.get(enabling_field):
+                data = {k: v for k, v in data.items() if k != subtree}
+        return data
+
     @field_validator("models", mode="wrap")
     @classmethod
     def _coerce_models(cls, v: Any, handler: Any) -> ModelManifest:
@@ -255,6 +242,63 @@ class PipelineConfig(ConfigFileModel):
             return result
         return ModelManifest(result)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _disable_penalties_with_draft_model(cls, data: Any) -> Any:
+        """Force penalties off when speculative decoding is configured.
+
+        The speculative-decoding pipelines don't support the penalty
+        sampling features. Both facts are user input, so the override
+        edits the raw constructor input; the constructed config is
+        never mutated.
+        """
+        if not isinstance(data, dict):
+            return data
+        models = data.get("models")
+        if not (isinstance(models, dict) and "draft" in models):
+            return data
+        raw_sampling = data.get("sampling")
+        if raw_sampling is None:
+            return data
+        if isinstance(raw_sampling, SamplingConfig):
+            sampling = raw_sampling
+        else:
+            try:
+                sampling = SamplingConfig.model_validate(raw_sampling)
+            except ValidationError:
+                # Malformed input: fall through so field validation
+                # reports the error with proper field locations.
+                return data
+        if not sampling.enable_penalties:
+            return data
+        logger.warning(
+            "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
+        )
+        return {
+            **data,
+            "sampling": sampling.model_copy(update={"enable_penalties": False}),
+        }
+
+    @model_validator(mode="after")
+    def _validate_lora_prefix_caching(self) -> Self:
+        """Reject LoRA combined with prefix caching.
+
+        Both settings are user input, so the check runs at construction
+        rather than ``resolve()``.
+        """
+        if (
+            self.lora
+            and self.lora.enable_lora
+            and "main" in self.models
+            and self.models["main"].kv_cache.enable_prefix_caching
+        ):
+            raise ValueError(
+                "LoRA is not compatible with prefix caching. "
+                "Please disable prefix caching by using the "
+                "--no-enable-prefix-caching flag."
+            )
+        return self
+
     @property
     def model(self) -> MAXModelConfig:
         """The main model config. Alias for ``models["main"]``."""
@@ -266,18 +310,10 @@ class PipelineConfig(ConfigFileModel):
             )
         return main
 
-    @model.setter
-    def model(self, value: MAXModelConfig) -> None:
-        self.models = self.models.with_override("main", config=value)
-
     @property
     def draft_model(self) -> MAXModelConfig | None:
         """The draft model configuration. Alias for ``models.get("draft")``."""
         return self.models.get("draft")
-
-    @draft_model.setter
-    def draft_model(self, value: MAXModelConfig) -> None:
-        self.models = self.models.with_override("draft", config=value)
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
@@ -352,6 +388,16 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+        # BLASST prefill sparsity sweep hook (off unless ENABLE_BLASST is set in
+        # the env). Injects the comptime defines the SM100 2Q attention kernel
+        # reads via get_defined_{bool,int}. Values must be str/int, never Python
+        # True (a UnitAttr fails KGEN's string coercion). No effect when unset.
+        if os.environ.get("ENABLE_BLASST"):
+            session._set_mojo_define("ENABLE_BLASST", "true")
+            session._set_mojo_define(
+                "BLASST_LOG_THRESHOLD_MAG",
+                int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
+            )
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
@@ -359,23 +405,18 @@ class PipelineConfig(ConfigFileModel):
         """Estimates total signal-buffer memory across all devices.
 
         Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
-        per-GPU allocations used by P2P collectives. Each independent allocation
-        site contributes one set of ``ngpus`` buffers. The base estimate counts
-        the sites visible from :class:`PipelineConfig`:
-
-        - main model graph (multi-GPU only),
-        - :class:`BlockOffloadEngine` for KV-cache offloading, *only* when its
-          ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
-          multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
+        per-GPU allocations used by P2P collectives. The only site visible
+        from :class:`PipelineConfig` is the main model graph, and only for
+        multi-GPU pipelines. The ``tiered``/``rust_tiered`` KV connectors fan
+        MLA-replicated blocks out via plain P2P copies, not a signal-buffer
+        broadcast (see ``dkv/kv-tier-connector/src/copy_engine.rs``), so they
+        contribute no additional term here.
 
         Returns 0 for single-device pipelines.
 
         Args:
-            arch_config: Optional architecture config. When provided and it
-                exposes KV params, the BCE term is gated on the actual
-                ``replicates_kv_across_tp`` flag rather than only the
-                ``kv_connector`` setting. Without it, the BCE term is added
-                whenever a connector is configured (conservative).
+            arch_config: Unused; kept for interface parity with
+                :meth:`MemoryPlanner.estimate_signal_buffer_memory`.
 
         Returns:
             Estimated total signal-buffer memory in bytes (across all devices).
@@ -383,342 +424,16 @@ class PipelineConfig(ConfigFileModel):
         ngpus = len(self.model.device_specs)
         if ngpus <= 1:
             return 0
+        return Signals.NUM_BYTES * ngpus
 
-        count_per_gpu = 1  # main model
-        if self.model.kv_cache.kv_connector in {
-            KVConnectorType.tiered,
-            KVConnectorType.local,
-        }:
-            # BlockOffloadEngine only allocates signal buffers when its
-            # broadcast path is active (replicate_kv_across_tp = is_mla AND
-            # dp==1 AND n_devices>1; see block_copy_engine.py:242-306).
-            # Without arch_config we can't tell, so be conservative and add
-            # the set; with arch_config, gate precisely.
-            bce_allocates = True
-            if isinstance(arch_config, ArchConfigWithKVCache):
-                bce_allocates = (
-                    arch_config.get_kv_params().replicates_kv_across_tp
-                )
-            if bce_allocates:
-                count_per_gpu += 1  # BlockOffloadEngine
+    def _apply_speculative_draft_architecture(self) -> None:
+        """Rewrite the draft model's HuggingFace architecture for the method.
 
-        return Signals.NUM_BYTES * count_per_gpu * ngpus
-
-    @staticmethod
-    def _extract_kwargs_for_config(
-        kwargs: dict[str, Any],
-        config_class: type[ConfigFileModel],
-        key_prefix: str = "",
-        strip_prefix: bool = False,
-    ) -> dict[str, Any]:
-        """Extracts kwargs that match a config class's fields.
-
-        Args:
-            kwargs: Source kwargs dictionary (modified in place)
-            config_class: The ConfigFileModel dataclass to match fields against
-            key_prefix: Optional prefix to filter keys (for example, ``"draft_"``)
-            strip_prefix: Whether to strip the prefix from extracted keys
-
-        Returns:
-            Dictionary of extracted kwargs
+        Runs after the models are built, since it edits the draft's loaded
+        HuggingFace config rather than any MAX config field.
         """
-        extracted = {}
-        keys_to_remove = []
-
-        for key, value in kwargs.items():
-            # Check if key matches the prefix filter
-            if key_prefix and not key.startswith(key_prefix):
-                continue
-
-            # Determine the field name to check
-            field_name = key.replace(key_prefix, "") if strip_prefix else key
-
-            # Check if this field exists in the config class (Pydantic model)
-            if field_name in config_class.model_fields:
-                # Use original key or stripped key as specified
-                extracted_key = field_name if strip_prefix else key
-                extracted[extracted_key] = value
-                keys_to_remove.append(key)
-
-        # Remove extracted keys from original kwargs
-        for key in keys_to_remove:
-            del kwargs[key]
-
-        return extracted
-
-    def _create_denoising_cache_config_if_needed(
-        self, kwargs: dict[str, Any]
-    ) -> None:
-        """Extract denoising cache kwargs and set on runtime.denoising_cache."""
-        cache_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, DenoisingCacheConfig
-        )
-        if cache_kwargs:
-            # Remove None values so DenoisingCacheConfig defaults are used
-            filtered = {k: v for k, v in cache_kwargs.items() if v is not None}
-            if filtered:
-                self.runtime.denoising_cache = DenoisingCacheConfig(**filtered)
-
-    def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
-        """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
-        lora_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, LoRAConfig
-        )
-
-        if lora_kwargs.get("enable_lora", False):
-            self.lora = LoRAConfig(**lora_kwargs)
-        # TODO: We should add an elif to check / error out if other LoRA params
-        # are provided, but enable_lora is not. We can't do this today as our
-        # click PipelineConfig autogenerates defaults for all fields, including
-        # required ones.
-
-    def _build_models_from_kwargs(
-        self, unmatched_kwargs: dict[str, Any]
-    ) -> None:
-        """Build the ModelManifest from unmatched model kwargs.
-
-        Uses ``ModelManifest.from_model_path()`` as the single entry point
-        for creating the main model config. Handles KV cache kwargs
-        separately and adds draft model via ``with_override``.
-
-        When the manifest is already populated (e.g. passed directly via
-        ``models=``), this method only processes KV cache and draft kwargs
-        without rebuilding the manifest.
-        """
-        # Extract model kwargs (model_path, quantization_encoding, etc.)
-        model_kwargs = PipelineConfig._extract_kwargs_for_config(
-            unmatched_kwargs, MAXModelConfig
-        )
-        kv_cache_kwargs: dict[str, Any] = {}
-        for key in list(unmatched_kwargs):
-            if key in KVCacheConfig.model_fields:
-                kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
-
-        # Parse --model-override entries once, grouped by target component, so
-        # "main"/"draft" overrides can be folded into the constructor kwargs
-        # below.  HuggingFaceRepo.__post_init__ and the MAXModelConfig
-        # validator eagerly hit HF using the dataclass-default revision, which
-        # fails under HF_HUB_OFFLINE for repos cached only at a pinned SHA.
-        component_overrides: dict[str, dict[str, Any]] = {}
-        for override_str in self.model_override:
-            component, field_name, value = self._parse_model_override(
-                override_str
-            )
-            component_overrides.setdefault(component, {})[field_name] = value
-
-        # Only rebuild the manifest when explicit model kwargs were provided
-        # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
-        # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
-        # not reconstruct the manifest (which would trigger HF validation).
-        if model_kwargs:
-            model_kwargs.update(component_overrides.get("main", {}))
-            if "main" in self.models:
-                # The main model came from a YAML recipe (or a pre-built
-                # manifest via ``models=``). Merge CLI overrides -- including
-                # --model-path -- into it via with_override() so the same
-                # recipe can be reused across different multi-GPU setups or
-                # models, instead of rebuilding the manifest from scratch and
-                # losing the recipe's other settings (device_specs, kv_cache,
-                # etc).
-                new_model_path = model_kwargs.get("model_path")
-                if (
-                    new_model_path
-                    and new_model_path != self.models["main"].model_path
-                ):
-                    logger.warning(
-                        "--model-path %r overrides the model_path %r loaded "
-                        "from --config-file. The rest of the config file "
-                        "(device_specs, kv_cache, etc) was tuned for the "
-                        "original model and may not be appropriate for %r.",
-                        new_model_path,
-                        self.models["main"].model_path,
-                        new_model_path,
-                    )
-                if model_kwargs:
-                    self.models = self.models.with_override(
-                        "main", **model_kwargs
-                    )
-            else:
-                model_path = model_kwargs.pop("model_path", "")
-                if model_path:
-                    revision = model_kwargs.pop(
-                        "huggingface_model_revision", None
-                    )
-                    # Strip kwargs that match MAXModelConfig defaults so
-                    # from_model_path() doesn't reject them for diffusion
-                    # pipelines (which forbid extra kwargs).
-                    non_default_kwargs = _strip_default_model_kwargs(
-                        model_kwargs
-                    )
-                    self.models = ModelManifest.from_model_path(
-                        model_path,
-                        revision=revision,
-                        **non_default_kwargs,
-                    )
-
-        # Apply KV cache config to main model
-        if kv_cache_kwargs and "main" in self.models:
-            self.model.create_kv_cache_config(**kv_cache_kwargs)
-
-        # Extract draft model kwargs and add via with_override
-        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
-            unmatched_kwargs,
-            MAXModelConfig,
-            key_prefix="draft_",
-            strip_prefix=True,
-        )
-        if draft_kwargs.get("model_path", "") != "":
-            # Inherit certain fields from the target model if not explicitly
-            # specified for the draft model. This simplifies CLI usage for
-            # speculative decoding (e.g. --draft-trust-remote-code is not
-            # needed if --trust-remote-code is already set).
-            if "main" in self.models:
-                self._apply_draft_model_defaults(draft_kwargs, self.model)
-
-            # "draft" overrides are applied after inheritance so explicit
-            # user intent wins over copied target-model defaults.
-            draft_kwargs.update(component_overrides.get("draft", {}))
-
-            draft_config = MAXModelConfig(**draft_kwargs)
-            if kv_cache_kwargs:
-                draft_config.create_kv_cache_config(**kv_cache_kwargs)
-            self.models = self.models.with_override(
-                "draft", config=draft_config
-            )
-
-        # Apply parsed overrides via with_override.  This is idempotent for
-        # "main"/"draft" fields already folded into kwargs above, and is the
-        # only path that runs when a pre-built manifest was passed via
-        # ``models=``.
-        for component, fields in component_overrides.items():
-            if component not in self.models:
-                raise ValueError(
-                    f"Component {component!r} not found in manifest. "
-                    f"Available: {list(self.models.keys())}"
-                )
-            self.models = self.models.with_override(component, **fields)
-
-    @staticmethod
-    def _apply_draft_model_defaults(
-        draft_kwargs: dict[str, Any], target_model: MAXModelConfig
-    ) -> None:
-        """Inherit certain fields from the target model for the draft model.
-
-        When running speculative decoding, the draft model typically shares
-        configuration with the target model (same devices, same trust settings,
-        same parallelism). This method copies these fields from the target
-        model config into the draft kwargs if they weren't explicitly specified.
-
-        Fields inherited:
-        - ``trust_remote_code``: If the target model requires custom code,
-          the draft model (from the same model family) likely does too.
-        - ``device_specs``: The draft model runs on the same devices as the
-          target model.
-        - ``data_parallel_degree``: Both models use the same parallelism.
-
-        Note: ``quantization_encoding`` is NOT inherited because draft models
-        (especially EAGLE3) often use bfloat16 regardless of the target model's
-        quantization. The draft model should auto-detect its encoding from its
-        weights.
-
-        Args:
-            draft_kwargs: The draft model kwargs dict (modified in place).
-            target_model: The target model configuration to inherit from.
-        """
-        # Inherit trust_remote_code if not explicitly specified
-        if "trust_remote_code" not in draft_kwargs:
-            if target_model.trust_remote_code:
-                logger.info(
-                    "Inheriting trust_remote_code=True from target model "
-                    "for draft model"
-                )
-                draft_kwargs["trust_remote_code"] = True
-
-        # Inherit device_specs if not explicitly specified
-        if "device_specs" not in draft_kwargs:
-            logger.info(
-                f"Inheriting device_specs={target_model.device_specs} "
-                "from target model for draft model"
-            )
-            draft_kwargs["device_specs"] = target_model.device_specs
-
-        # Inherit data_parallel_degree if not explicitly specified
-        if "data_parallel_degree" not in draft_kwargs:
-            if target_model.data_parallel_degree != 1:
-                logger.info(
-                    f"Inheriting data_parallel_degree="
-                    f"{target_model.data_parallel_degree} from target model "
-                    "for draft model"
-                )
-            draft_kwargs["data_parallel_degree"] = (
-                target_model.data_parallel_degree
-            )
-
-    @staticmethod
-    def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
-        """Parse ``component.field=value`` into ``(component, field, value)``.
-
-        The value is coerced to the target field's type via Pydantic's
-        ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
-
-        Raises:
-            ValueError: if the string is malformed or names an unknown
-                ``MAXModelConfig`` field.
-        """
-        dot_pos = override_str.find(".")
-        if dot_pos < 1:
-            raise ValueError(
-                f"Invalid --model-override format: {override_str!r}. "
-                f"Expected 'component.field=value'."
-            )
-        eq_pos = override_str.find("=", dot_pos)
-        if eq_pos < dot_pos + 2:
-            raise ValueError(
-                f"Invalid --model-override format: {override_str!r}. "
-                f"Expected 'component.field=value'."
-            )
-        component = override_str[:dot_pos]
-        field_name = override_str[dot_pos + 1 : eq_pos]
-        raw_value = override_str[eq_pos + 1 :]
-
-        if field_name not in MAXModelConfig.model_fields:
-            raise ValueError(
-                f"Unknown MAXModelConfig field: {field_name!r}. "
-                f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
-            )
-
-        # For compound types (list, dict) the raw CLI string is JSON, so try
-        # json.loads first; fall back to the raw string for plain scalars.
-        field_info = MAXModelConfig.model_fields[field_name]
-        adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
-        try:
-            parsed_value = json.loads(raw_value)
-        except (json.JSONDecodeError, ValueError):
-            parsed_value = raw_value
-        return component, field_name, adapter.validate_python(parsed_value)
-
-    def _create_speculative_config_if_needed(
-        self, kwargs: dict[str, Any]
-    ) -> None:
-        """Extract speculative config kwargs and create SpeculativeConfig if any speculative parameters provided."""
-        speculative_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, SpeculativeConfig
-        )
-        # Only create speculative config if speculative_method is explicitly set
-        if not (
-            speculative_kwargs
-            and speculative_kwargs.get("speculative_method") is not None
-        ):
+        if self.speculative is None:
             return
-
-        # Remove None values to use defaults
-        filtered_kwargs = {
-            k: v for k, v in speculative_kwargs.items() if v is not None
-        }
-        if not filtered_kwargs:
-            return
-
-        self.speculative = SpeculativeConfig(**filtered_kwargs)
         # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
         if self.speculative.is_eagle() and self.draft_model is not None:
             if len(self.draft_model.huggingface_config.architectures) != 1:
@@ -747,155 +462,14 @@ class PipelineConfig(ConfigFileModel):
                     "LlamaForCausalLM"
                 )
 
-    # Explicit type mapping for config classes that are processed from
-    # unmatched kwargs.  "model" is handled separately in
-    # _build_models_from_kwargs via ModelManifest.from_model_path().
-    _CONFIG_TYPE_MAPPING: dict[str, type[ConfigFileModel]] = {
-        "runtime": PipelineRuntimeConfig,
-        "sampling": SamplingConfig,
-        "profiling": ProfilingConfig,
-    }
+    def _validate_repo_access(self) -> None:
+        """Validates that every model's repo was provided and is accessible.
 
-    def _process_remaining_config_classes(
-        self, unmatched_kwargs: dict[str, Any]
-    ) -> None:
-        """Processes remaining kwargs for other config classes.
-
-        Note: model kwargs are handled separately in ``_build_models_from_kwargs``.
-
-        Args:
-            unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
+        Called at the end of the construction factories so a bad repo fails
+        fast. See :meth:`MAXModelConfig.validate_repo_access`.
         """
-        # NOTE: runtime must come before sampling so that its
-        # fields are consumed first.
-        # NOTE: model must be built before sampling so that
-        # SamplingConfig can use generation_config from the model.
-        # Model is handled in _build_models_from_kwargs, which runs
-        # before this method.
-        config_mappings = ["runtime", "sampling", "profiling"]
-
-        for config_name in config_mappings:
-            config_class = self._CONFIG_TYPE_MAPPING[config_name]
-            matched_kwargs = {}
-
-            for key, value in unmatched_kwargs.items():
-                if key in config_class.model_fields:
-                    matched_kwargs[key] = value
-
-            if matched_kwargs:
-                self._create_and_set_config(
-                    config_name, config_class, matched_kwargs
-                )
-
-                # Remove matched kwargs
-                for key in matched_kwargs:
-                    _ = unmatched_kwargs.pop(key, None)
-
-    def _create_and_set_config(
-        self,
-        config_name: str,
-        config_class: type,
-        matched_kwargs: dict[str, Any],
-    ) -> None:
-        """Creates and sets a config object with special handling for config types.
-
-        Args:
-            config_name: Name of the config attribute (for example, ``"sampling"``)
-            config_class: The config class to instantiate
-            matched_kwargs: kwargs that matched the config class fields
-        """
-        if config_name == "sampling":
-            if "main" in self.models:
-                assert isinstance(self.model, MAXModelConfig)
-                assert hasattr(
-                    config_class, "from_generation_config_sampling_defaults"
-                )
-                sampling_config = config_class.from_generation_config_sampling_defaults(
-                    sampling_params_defaults=self.model.sampling_params_defaults,
-                    **matched_kwargs,
-                )
-            else:
-                sampling_config = config_class(**matched_kwargs)
-
-            if "main" in self.models and self.model.enable_echo:
-                sampling_config.enable_variable_logits = True
-            setattr(self, config_name, sampling_config)
-        else:
-            existing = getattr(self, config_name, None)
-            if existing is not None and isinstance(existing, config_class):
-                merged = existing.model_copy(update=matched_kwargs)
-                setattr(self, config_name, merged)
-            else:
-                setattr(self, config_name, config_class(**matched_kwargs))
-
-    @classmethod
-    def from_flat_kwargs(cls, **kwargs: Any) -> Self:
-        """Construct a :class:`PipelineConfig` from a flat CLI kwargs namespace.
-
-        Accepts the flat kwargs produced by ``pipeline_config_options`` (for
-        example ``model_path``, ``kv_cache_size``, ``enable_lora``) and routes
-        them into the appropriate sub-configs before constructing the instance.
-
-        This is the entry point for CLI and legacy callers. Direct construction
-        via ``PipelineConfig(models=..., runtime=..., ...)`` with properly typed
-        sub-configs is also supported and requires no routing.
-        """
-        # Merge YAML config file values before routing, then clear config_file
-        # so the Pydantic model_validator on ConfigFileModel doesn't reload it
-        # when cls(**pydantic_kwargs) is called below.
-        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
-        kwargs.pop("config_file", None)
-
-        # Intercept legacy model/draft_model kwargs — these are no longer
-        # Pydantic fields but some callers still pass them directly.
-        model_kwarg = kwargs.pop("model", None)
-        draft_model_kwarg = kwargs.pop("draft_model", None)
-
-        # If a MAXModelConfig (or plain dict from config file) was passed
-        # directly, wrap it in a manifest.
-        if model_kwarg is not None:
-            if isinstance(model_kwarg, dict) and not isinstance(
-                model_kwarg, MAXModelConfig
-            ):
-                model_kwarg = MAXModelConfig(**model_kwarg)
-            kwargs["models"] = ModelManifest({"main": model_kwarg})
-
-        # Separate PipelineConfig-own fields from sub-config fields.
-        pydantic_kwargs: dict[str, Any] = {}
-        unmatched_kwargs: dict[str, Any] = {}
-        for key, value in kwargs.items():
-            if key in cls.model_fields:
-                pydantic_kwargs[key] = value
-            else:
-                unmatched_kwargs[key] = value
-
-        instance = cls(**pydantic_kwargs)
-
-        # Add draft model via with_override.
-        if draft_model_kwarg is not None:
-            if isinstance(draft_model_kwarg, dict) and not isinstance(
-                draft_model_kwarg, MAXModelConfig
-            ):
-                draft_model_kwarg = MAXModelConfig(**draft_model_kwarg)
-            instance.models = instance.models.with_override(
-                "draft", config=draft_model_kwarg
-            )
-
-        # Route unmatched kwargs into sub-configs.  Ordering matters:
-        # - models before sampling (sampling needs generation_config from model)
-        # - models before speculative (speculative needs draft_model)
-        # - runtime before denoising_cache (denoising_cache is set on runtime)
-        instance._create_lora_config_if_needed(unmatched_kwargs)
-        instance._build_models_from_kwargs(unmatched_kwargs)
-        instance._create_speculative_config_if_needed(unmatched_kwargs)
-        if unmatched_kwargs:
-            instance._process_remaining_config_classes(unmatched_kwargs)
-        instance._create_denoising_cache_config_if_needed(unmatched_kwargs)
-
-        if unmatched_kwargs:
-            raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
-
-        return instance
+        for model in self.models.values():
+            model.validate_repo_access()
 
     def _validate_required_arguments_against_architecture(
         self, architecture: Any
@@ -945,7 +519,7 @@ class PipelineConfig(ConfigFileModel):
                 # We should be able to override this value for all config objects.
                 continue
 
-    def _resolve_speculative_target_architecture(self) -> None:
+    def _apply_speculative_target_architecture(self) -> None:
         """Override the target architecture for unified spec-decode pipelines.
 
         Unified EAGLE / DFlash / MTP pipelines fold the draft into a dedicated
@@ -954,11 +528,11 @@ class PipelineConfig(ConfigFileModel):
         ``model.huggingface_config.architectures[0]`` in place.
 
         This must run *before* the architecture is resolved from
-        ``models.main_architecture_name`` (i.e. before :meth:`resolve` is
-        called), so that the resolved ``arch`` — consumed by memory estimation,
-        the overlap scheduler, parser resolution, and ``pipeline_model``
-        construction — reflects the override. The registry invokes it at that
-        point. It is a no-op when speculative decoding is disabled.
+        ``models.main_architecture_name``, so that the resolved ``arch`` —
+        consumed by memory estimation, the overlap scheduler, parser
+        resolution, and ``pipeline_model`` construction — reflects the
+        override. ``from_args`` invokes it before construction-time
+        resolution. It is a no-op when speculative decoding is disabled.
         """
         if not self.speculative:
             return
@@ -1024,6 +598,32 @@ class PipelineConfig(ConfigFileModel):
             )
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+            elif draft_archs and draft_archs[0] == "DSparkDraftModel":
+                # Speculators-format DSpark drafters (e.g.
+                # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
+                # generic architectures: ["DSparkDraftModel"].
+                target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
+            elif (
+                self.speculative.is_dflash()
+                and draft_archs
+                # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
+                # declare architectures: ["DFlashDraftModel"], which
+                # ``_create_speculative_config_if_needed`` rewrites to
+                # "LlamaForCausalLM" on the CLI-kwargs path (but not the
+                # recipe path) before this runs. Accept both spellings.
+                and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
+            ):
+                target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
+        # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
+        # block drafter declares architectures: ["Gemma4DSparkModel"].
+        if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
+                target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
         if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
             draft_archs = (
                 self.draft_model.huggingface_config.architectures
@@ -1040,6 +640,28 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = (
                     "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
                 )
+        if target_archs[0] == "Qwen3_5ForConditionalGeneration":
+            # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
+            # there is no separate draft model. Qwen3.5 shares the arch name
+            # but ships no head; only override when the head exists. Unlike
+            # the other in-checkpoint MTP overrides this one also waits for an
+            # explicit `--speculative-method mtp`: the fused graph it selects
+            # is served by Mach rather than MAX, so a plain `max serve` of a
+            # Qwen3.8 checkpoint must keep landing on the base architecture.
+            text_config = getattr(
+                self.model.huggingface_config,
+                "text_config",
+                self.model.huggingface_config,
+            )
+            has_mtp = (
+                getattr(text_config, "mtp_num_hidden_layers", 0) or 0
+            ) > 0
+            if (
+                self.speculative.is_mtp()
+                and self.draft_model is None
+                and has_mtp
+            ):
+                target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
         if target_archs[0] == "GlmMoeDsaForCausalLM":
             # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
             # there is no separate draft model. GLM-5.1 shares the arch name
@@ -1055,79 +677,31 @@ class PipelineConfig(ConfigFileModel):
             if self.draft_model is None and has_mtp:
                 target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
 
-    def resolve(
-        self,
-        arch: Any,
-        draft_arch: Any = None,
-    ) -> None:
-        """Validates the config.
+    def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
+        """Rejects synthetic acceptance when constrained decoding can fire.
 
-        Args:
-            arch: Pre-resolved target architecture from the registry.
-            draft_arch: Pre-resolved draft architecture (speculative decoding
-                only). Required when ``draft_model`` is set.
+        The synthetic acceptance path ignores token bitmasks, so structured
+        output and tool-call grammars would silently stop being enforced
+        while the serve layer believes they are. Checked here — after tool
+        parser resolution — because both inputs to the decision
+        (``needs_bitmask_constraints`` and the speculative section) are only
+        final at this point, and checking per-model would leave every spec
+        arch to re-implement it.
         """
-        self.models.resolve()
-        # Diffusers pipelines don't have a "main" model — they have
-        # per-component configs (unet, vae, etc.).  The LLM-specific
-        # validations below all assume a single main model, so skip
-        # them for multi-component diffusers manifests.
-        if "main" not in self.models:
+        if self.speculative is None:
             return
-
-        # Validation for max_length is handled in MAXModelConfig
-
-        self._validate_and_resolve_max_num_steps()
-
-        if (
-            self.sampling.enable_structured_output
-            and self.model.default_device_spec.device_type == "cpu"
-        ):
-            raise ValueError(
-                "enable_structured_output is not currently supported on CPU."
-            )
-
-        if self.sampling.enable_penalties and self.draft_model:
-            logger.warning(
-                "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
-            )
-            self.sampling.enable_penalties = False
-
-        # Validate LoRA compatibility with model configuration
-        if self.lora and self.lora.enable_lora:
-            self.model.validate_lora_compatibility()
-
-        # NOTE: the unified spec-decode target-architecture override
-        # (``_resolve_speculative_target_architecture``) is applied by the
-        # registry *before* it resolves ``arch`` and passes it in here, so that
-        # the ``arch`` consumed by memory estimation, the overlap scheduler, and
-        # parser resolution below already reflects the override. Applying it
-        # here (after ``arch`` is resolved) would leave those consumers using
-        # the stale pre-override architecture. See SERVOPT regression from
-        # PipelineConfig/registry decoupling (#88511).
-
-        # Validate KV connector configuration
-        _resolve_kvconnector_config(self.model.kv_cache)
-
-        # By this point, we should have a valid model_path.
-
-        if self.draft_model:
-            _resolve_kvconnector_config(self.draft_model.kv_cache)
-            self._validate_speculative_model_configs(
-                target_arch=arch, draft_arch=draft_arch
-            )
-            self._validate_pipeline_config_for_speculative_decoding(
-                target_arch=arch,
-                draft_arch=draft_arch,
-            )
-        else:
-            self._validate_remaining_pipeline_config(
-                model_config=self.model, resolved_arch=arch
-            )
-
-        self._resolve_default_reasoning_parser(arch=arch)
-        self._resolve_default_tool_parser(arch=arch)
-        self._resolve_default_structured_output_backend(arch=arch)
+        if self.speculative.synthetic_acceptance_rate is None:
+            return
+        if not self.needs_bitmask_constraints:
+            return
+        raise ValueError(
+            "synthetic_acceptance_rate is incompatible with constrained"
+            " decoding: the synthetic acceptance path ignores token"
+            " bitmasks, so structured output and tool-call grammars would"
+            " silently stop being enforced. For synthetic-acceptance"
+            " benchmarking pass --tool-parser none and leave"
+            " --enable-structured-output off."
+        )
 
     def _resolve_default_reasoning_parser(self, arch: Any = None) -> None:
         """Apply the architecture's default reasoning parser when unset.
@@ -1215,10 +789,11 @@ class PipelineConfig(ConfigFileModel):
            ``"llguidance"``), use it.
         3. Otherwise, fall back to the global default ``"xgrammar"``.
 
-        Runs unconditionally so the field is always a concrete ``str`` after
-        ``resolve()``. The ``None`` sentinel (unset) is what distinguishes an
-        explicit user value from the default -- mirroring the reasoning/tool
-        parser resolvers above.
+        Runs whenever construction resolves an architecture, so the field is
+        a concrete ``str`` on any config with a registered architecture. The
+        ``None`` sentinel (unset) is what distinguishes an explicit user
+        value from the default -- mirroring the reasoning/tool parser
+        resolvers above.
         """
         if self.sampling.structured_output_backend is not None:
             # Explicit user configuration always wins.
@@ -1250,9 +825,34 @@ class PipelineConfig(ConfigFileModel):
             arch.name if arch is not None else None,
         )
 
-    def _validate_and_resolve_overlap_scheduler(
-        self, arch: Any = None, max_batch_size: int = 1
+    def _resolve_default_structured_output_any_whitespace(
+        self, arch: Any = None
     ) -> None:
+        """Resolve structured-output whitespace mode based on architecture."""
+        if self.sampling.structured_output_any_whitespace is not None:
+            # Explicit user configuration always wins.
+            return
+
+        if (
+            arch is not None
+            and arch.default_structured_output_any_whitespace is not None
+        ):
+            self.sampling.structured_output_any_whitespace = (
+                arch.default_structured_output_any_whitespace
+            )
+            logger.info(
+                "Using architecture default structured output any_whitespace %r"
+                " (%s).",
+                arch.default_structured_output_any_whitespace,
+                arch.name,
+            )
+            return
+
+        self.sampling.structured_output_any_whitespace = (
+            DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
+        )
+
+    def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
         if not self.runtime.force:
             if (
                 self.runtime.device_graph_capture is None
@@ -1265,10 +865,9 @@ class PipelineConfig(ConfigFileModel):
             ):
                 self.runtime.device_graph_capture = True
                 logger.info(
-                    "Automatically enabling device graph capture for %s with max_batch_size=%d. "
+                    "Automatically enabling device graph capture for %s. "
                     "You can manually disable this by setting --no-device-graph-capture.",
                     arch.name,
-                    max_batch_size,
                 )
 
         if self.runtime.device_graph_capture is None:
@@ -1309,7 +908,7 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self.model.device_specs[0].device_type == "cpu":
+            if self.model.default_device_spec.device_type == "cpu":
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
@@ -1323,7 +922,7 @@ class PipelineConfig(ConfigFileModel):
             arch.task == PipelineTask.TEXT_GENERATION
             and not self.sampling.enable_variable_logits
             and not self.lora
-            and self.model.device_specs[0].device_type != "cpu"
+            and self.model.default_device_spec.device_type != "cpu"
         )
 
     def _validate_and_resolve_device_graph_capture(self) -> None:
@@ -1333,19 +932,6 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
-
-    def _validate_and_resolve_max_num_steps(self) -> None:
-        """Normalize deprecated ``max_num_steps`` to single-step decode."""
-        if self.runtime.max_num_steps in (1, -1):
-            self.runtime.max_num_steps = 1
-            return
-
-        logger.warning(
-            "--max-num-steps=%s is deprecated and ignored; using single-step "
-            "decode (max_num_steps=1).",
-            self.runtime.max_num_steps,
-        )
-        self.runtime.max_num_steps = 1
 
     def _validate_pipeline_config_for_speculative_decoding(
         self,
@@ -1369,21 +955,18 @@ class PipelineConfig(ConfigFileModel):
     def _validate_model_config_against_arch(
         self, model_config: MAXModelConfig, arch: Any
     ) -> None:
-        """Validates and resolves model config fields against a resolved architecture.
+        """Validates model config fields against a resolved architecture.
 
-        Validates quantization encoding, rope type, LoRA support, multi-GPU
-        compatibility, and encoding support. Mutates ``model_config`` in place
-        (resolves encoding, cache dtype, rope type, weight path). Does not
+        Validates quantization encoding, LoRA support, multi-GPU
+        compatibility, and empty-batch support. Read-only for encoding and
+        weight paths — those are resolved at construction
+        (:meth:`_populate_model_configs_from_archs`). Does not
         perform memory estimation.
 
         Args:
-            model_config: The model configuration to validate and mutate.
+            model_config: The model configuration to validate.
             arch: The pre-resolved architecture to validate against.
         """
-        # Validate required arguments
-        if not self.runtime.force:
-            self._validate_required_arguments_against_architecture(arch)
-
         # Validate that model supports empty batches, if being requested.
         if (
             self.runtime.execute_empty_batches
@@ -1393,8 +976,6 @@ class PipelineConfig(ConfigFileModel):
                 f"Architecture '{arch.name}' does not support empty batches. "
                 "Please set `execute_empty_batches` to False."
             )
-
-        devices = load_devices(model_config.device_specs)
 
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self.lora and self.lora.enable_lora:
@@ -1406,7 +987,7 @@ class PipelineConfig(ConfigFileModel):
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
                 )
             # Currently, LoRA supported on only 1 device.
-            if len(devices) > 1:
+            if len(model_config.device_specs) > 1:
                 raise ValueError(
                     "LoRA is currently not supported with the number of devices > 1."
                 )
@@ -1415,27 +996,15 @@ class PipelineConfig(ConfigFileModel):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        model_config.validate_and_resolve_quantization_encoding_weight_path(
-            default_encoding=arch.default_encoding
+        # Re-check after the required-argument overrides, which may rewrite
+        # the encoding populated earlier in construction.
+        resolved_encoding = _select_quantization_encoding(
+            model_config, arch.default_encoding
         )
-
-        # The quantization encoding has been resolved at this point.
-        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
-        model_config.set_cache_dtype_given_quantization_encoding()
-
-        model_config.validate_and_resolve_rope_type(
-            arch_rope_type=arch.rope_type
-        )
-
-        # by this point, the quantization_encoding must be provided. verify it is supported.
-        if model_config.quantization_encoding not in arch.supported_encodings:
+        if resolved_encoding not in arch.supported_encodings:
             raise ValueError(
-                f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+                f"quantization_encoding of '{resolved_encoding}' not supported by MAX engine."
             )
-        model_config.validate_and_resolve_with_resolved_quantization_encoding(
-            supported_encodings=arch.supported_encodings,
-            default_weights_format=arch.default_weights_format,
-        )
 
     def _validate_speculative_model_configs(
         self, target_arch: Any, draft_arch: Any
@@ -1453,30 +1022,123 @@ class PipelineConfig(ConfigFileModel):
         # of the target model's quantization. The draft model auto-detects
         # its encoding from its weights during architecture resolution.
 
-        # Validate draft model config against its architecture (quantization,
-        # rope type, encoding, etc.). Target validation is handled inside
-        # _validate_remaining_pipeline_config below.
+        # Validate the draft model config against its architecture
+        # (quantization, rope type, encoding, etc.), then the target
+        # against its own.
         self._validate_model_config_against_arch(self.draft_model, draft_arch)
-        self._validate_remaining_pipeline_config(
-            model_config=self.model,
-            resolved_arch=target_arch,
-        )
+        self._validate_model_config_against_arch(self.model, target_arch)
 
-    def _validate_remaining_pipeline_config(
-        self,
-        model_config: MAXModelConfig,
-        resolved_arch: Any,
-    ) -> None:
-        """Validates model config against the architecture.
+    def _populate_model_configs_from_archs(self) -> None:
+        """Assigns each model's encoding, weight paths, and devices, then validates.
 
-        Memory estimation and max_length resolution have moved to the registry
-        (``retrieve_factory``), where they run after this validation completes.
-
-        Args:
-            model_config: The model configuration to validate.
-            resolved_arch: Pre-resolved architecture from the registry.
+        A CPU-only encoding downcasts all-GPU ``device_specs`` to CPU,
+        warning once per model. Also applies the arch-declared defaults and
+        runs the arch-dependent validations.
+        Must use the same architecture-selection inputs as the registry.
+        A determinable architecture name with no registered architecture is
+        an error; models whose architecture name cannot be determined keep
+        their raw fields and are reported downstream.
         """
-        self._validate_model_config_against_arch(model_config, resolved_arch)
+        if "main" not in self.models:
+            return
+        try:
+            arch_name: str | None = self.models.main_architecture_name
+        except Exception:
+            logger.debug(
+                "Could not determine the main architecture name at "
+                "construction; skipping construction-time resolution.",
+                exc_info=True,
+            )
+            arch_name = None
+        task = (
+            self.task
+            if self.task != PipelineTask.UNDEFINED
+            else PipelineTask.TEXT_GENERATION
+        )
+        arch = find_architecture(
+            arch_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+            task=task,
+        )
+        if arch_name is not None and arch is None:
+            # Custom architectures are imported before this lookup, so an
+            # unregistered name is a hard error here. Only an undeterminable
+            # name (a repo/metadata problem) defers to the downstream path.
+            raise ValueError(f"No architecture found for {arch_name}")
+        if arch is not None:
+            _populate_weights_and_encoding(
+                self.model,
+                default_encoding=arch.default_encoding,
+                supported_encodings=arch.supported_encodings,
+                default_weights_format=arch.default_weights_format,
+            )
+        draft_arch = None
+        if self.draft_model is not None:
+            try:
+                draft_arch_name: str | None = self.draft_model.architecture_name
+            except Exception:
+                logger.debug(
+                    "Could not determine the draft architecture name at "
+                    "construction; skipping construction-time resolution.",
+                    exc_info=True,
+                )
+                draft_arch_name = None
+            # Mirrors the registry's draft lookup, which passes no task.
+            draft_arch = find_architecture(
+                draft_arch_name,
+                prefer_module_v3=self.runtime.prefer_module_v3,
+            )
+            if draft_arch_name is not None and draft_arch is None:
+                raise ValueError(
+                    "MAX-Optimized architecture not found for `draft_model`"
+                )
+            if draft_arch is not None:
+                _populate_weights_and_encoding(
+                    self.draft_model,
+                    default_encoding=draft_arch.default_encoding,
+                    supported_encodings=draft_arch.supported_encodings,
+                    default_weights_format=draft_arch.default_weights_format,
+                )
+
+        if arch is None:
+            return
+        if not self.runtime.force:
+            # Draft first so the target architecture wins conflicting keys,
+            # matching the order resolve() historically applied them in.
+            if draft_arch is not None:
+                self._validate_required_arguments_against_architecture(
+                    draft_arch
+                )
+            self._validate_required_arguments_against_architecture(arch)
+        self._resolve_default_reasoning_parser(arch=arch)
+        self._resolve_default_tool_parser(arch=arch)
+        self._resolve_default_structured_output_backend(arch=arch)
+        self._resolve_default_structured_output_any_whitespace(arch=arch)
+        self._validate_synthetic_acceptance_with_constrained_decoding()
+
+        if (
+            self.sampling.enable_structured_output
+            and self.model.default_device_spec.device_type == "cpu"
+        ):
+            raise ValueError(
+                "enable_structured_output is not currently supported on CPU."
+            )
+
+        if self.draft_model is not None:
+            # draft_arch is only None here when the draft's architecture
+            # name could not be determined; the registry reports that.
+            if draft_arch is not None:
+                self._validate_speculative_model_configs(
+                    target_arch=arch, draft_arch=draft_arch
+                )
+                self._validate_pipeline_config_for_speculative_decoding(
+                    target_arch=arch,
+                    draft_arch=draft_arch,
+                )
+        else:
+            self._validate_model_config_against_arch(self.model, arch)
+
+        self._validate_and_resolve_overlap_scheduler(arch=arch)
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1489,15 +1151,6 @@ class PipelineConfig(ConfigFileModel):
     # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
     # should rely on the BaseModel implementation.
 
-    @property
-    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
-        """Converts the CLI encoding to a MAX graph quantization encoding.
-
-        Returns:
-            The graph quantization encoding corresponding to the CLI encoding.
-        """
-        return self.model.graph_quantization_encoding
-
     @classmethod
     def from_args(cls, args: PipelineArgs) -> Self:
         """Construct a :class:`PipelineConfig` from a :class:`PipelineArgs`.
@@ -1506,15 +1159,11 @@ class PipelineConfig(ConfigFileModel):
             args: Flat user-facing pipeline arguments.
 
         Returns:
-            A fully constructed :class:`PipelineConfig` ready for
-            architecture-driven resolution via :meth:`resolve`.
+            A fully constructed and validated :class:`PipelineConfig`.
         """
-        from max.pipelines.lib.pipeline_runtime_config import (
-            PipelineRuntimeConfig,
-        )
-        from max.pipelines.sampling import SamplingConfig
-
-        from .profiling_config import ProfilingConfig
+        # Register user-supplied custom architectures before any
+        # construction-time architecture lookup (they may override built-ins).
+        import_custom_architectures(args.runtime.custom_architectures)
 
         if args._manifest_override is not None:
             manifest = args._manifest_override
@@ -1526,66 +1175,49 @@ class PipelineConfig(ConfigFileModel):
                 models_dict["draft"] = args.draft_model.model_copy(deep=True)
             manifest = ModelManifest(models_dict)
 
-        return cls(
+        # The model's HF generation_config may declare default sampling
+        # params (e.g. repetition_penalty) that the sampler can only honor
+        # if the matching feature is compiled in. Build sampling from the
+        # user-set fields only (Pydantic fields-set), then let
+        # from_generation_config_sampling_defaults switch on
+        # enable_penalties/enable_min_tokens where the generation config
+        # requires them.
+        if "main" in manifest:
+            main_model = manifest["main"]
+            explicit_sampling = args.sampling.model_dump(
+                include=args.sampling.model_fields_set
+                - {"config_file", "section_name"}
+            )
+            if main_model.enable_echo:
+                explicit_sampling["enable_variable_logits"] = True
+            sampling = SamplingConfig.from_generation_config_sampling_defaults(
+                sampling_params_defaults=main_model.sampling_params_defaults,
+                **explicit_sampling,
+            )
+        else:
+            sampling = _construct_from_user_fields(args.sampling)
+
+        # Apply --model-override entries to the manifest before construction
+        # (with_override returns a new manifest). Idempotent for "main"/
+        # "draft" fields that from_flat_kwargs already folded into the flat
+        # fields; this is the only application path for pre-built manifests
+        # and programmatically constructed PipelineArgs.
+        for component, fields in _parse_component_overrides(
+            args.model_override
+        ).items():
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+            manifest = manifest.with_override(component, **fields)
+
+        config = cls(
             models=manifest,
             model_override=list(args.model_override),
-            sampling=SamplingConfig(
-                in_dtype=args.in_dtype,
-                out_dtype=args.out_dtype,
-                enable_structured_output=args.enable_structured_output,
-                structured_output_backend=args.structured_output_backend,
-                enable_variable_logits=args.enable_variable_logits,
-                enable_penalties=args.enable_penalties,
-                enable_min_tokens=args.enable_min_tokens,
-                sample_on_host=args.sample_on_host,
-            ),
-            runtime=PipelineRuntimeConfig(
-                pipeline_role=args.pipeline_role,
-                max_batch_size=args.max_batch_size,
-                max_queue_size_tg=args.max_queue_size_tg,
-                min_batch_size_tg=args.min_batch_size_tg,
-                ep_size=args.ep_size,
-                ep_use_allreduce=args.ep_use_allreduce,
-                eplb_profile=args.eplb_profile,
-                ce_delay_ms=args.ce_delay_ms,
-                enable_prioritize_first_decode=args.enable_prioritize_first_decode,
-                enable_chunked_prefill=args.enable_chunked_prefill,
-                enable_in_flight_batching=args.enable_in_flight_batching,
-                eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
-                max_num_steps=args.max_num_steps,
-                max_batch_input_tokens=args.max_batch_input_tokens,
-                use_experimental_kernels=args.use_experimental_kernels,
-                use_vendor_blas=args.use_vendor_blas,
-                use_vendor_ccl=args.use_vendor_ccl,
-                custom_architectures=list(args.custom_architectures),
-                execute_empty_batches=args.execute_empty_batches,
-                max_batch_total_tokens=args.max_batch_total_tokens,
-                device_graph_capture=args.device_graph_capture,
-                force=args.force,
-                kvcache_ce_watermark=args.kvcache_ce_watermark,
-                decode_stall_timeout_s=args.decode_stall_timeout_s,
-                decode_request_ttl_s=args.decode_request_ttl_s,
-                enable_overlap_scheduler=args.enable_overlap_scheduler,
-                allow_unsupported_logprobs=args.allow_unsupported_logprobs,
-                allow_extra_request_fields=args.allow_extra_request_fields,
-                prefer_module_v3=args.prefer_module_v3,
-                reasoning_parser=args.reasoning_parser,
-                tool_parser=args.tool_parser,
-                emit_reasoning_content=args.emit_reasoning_content,
-                temperature=args.temperature,
-                thinking_temperature=args.thinking_temperature,
-                max_vision_cache_entries=args.max_vision_cache_entries,
-                denoising_cache=args.denoising_cache.model_copy(deep=True),
-            ),
-            profiling=ProfilingConfig(
-                gpu_profiling=args.gpu_profiling,
-                profiling_enabled=args.profiling_enabled,
-                profiling_output_path=args.profiling_output_path,
-                profiling_dynolog_enabled=args.profiling_dynolog_enabled,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-                profiling_active_steps=args.profiling_active_steps,
-                profiling_periodic_flush_seconds=args.profiling_periodic_flush_seconds,
-            ),
+            sampling=sampling,
+            runtime=_construct_from_user_fields(args.runtime),
+            profiling=_construct_from_user_fields(args.profiling),
             lora=args.lora.model_copy(deep=True) if args.lora else None,
             speculative=args.speculative.model_copy(deep=True)
             if args.speculative
@@ -1593,6 +1225,29 @@ class PipelineConfig(ConfigFileModel):
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
         )
+
+        config._apply_speculative_draft_architecture()
+        # Must precede the arch lookups so every consumer resolves the
+        # overridden arch (#88511). Best-effort: repos whose HF config
+        # cannot load fail downstream instead.
+        try:
+            config._apply_speculative_target_architecture()
+        except Exception:
+            logger.debug(
+                "Could not apply the speculative target-architecture "
+                "override at construction.",
+                exc_info=True,
+            )
+        config._validate_repo_access()
+        config._populate_model_configs_from_archs()
+        # Freeze the manifest: construction is complete, so any later dict
+        # mutation must go through with_override() on a new manifest.
+        config.models.resolve()
+        # Overlap/DGC resolution above is arch-gated; configs without a
+        # registered architecture still end with a concrete bool.
+        if config.runtime.device_graph_capture is None:
+            config.runtime.device_graph_capture = False
+        return config
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

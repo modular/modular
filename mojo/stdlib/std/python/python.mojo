@@ -43,13 +43,11 @@ struct _PythonGlobal(Defaultable, Movable):
     def __init__(out self):
         self.cpython = {}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.cpython.destroy()
 
 
-def _get_python_interface() raises -> (
-    UnsafePointer[CPython, StaticConstantOrigin]
-):
+def _get_python_interface() raises -> Pointer[CPython, ImmStaticOrigin]:
     """Returns an immutable static pointer to the CPython global.
 
     The returned pointer is immutable to prevent invalid shared mutation of
@@ -58,9 +56,9 @@ def _get_python_interface() raises -> (
 
     var python = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
     var cpython_instance = (
-        UnsafePointer(to=python[].cpython)
-        .as_immutable()
-        .unsafe_origin_cast[StaticConstantOrigin]()
+        Pointer(to=python[].cpython)
+        .as_imm()
+        .unsafe_origin_cast[ImmStaticOrigin]()
     )
     return cpython_instance
 
@@ -68,7 +66,7 @@ def _get_python_interface() raises -> (
 struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: UnsafePointer[mut=False, CPython, StaticConstantOrigin]
+    var _impl: ImmPointer[CPython, ImmStaticOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -82,19 +80,19 @@ struct Python(Defaultable, ImplicitlyCopyable):
         except e:
             abort[prefix="ERROR:"](String(e))
 
-    def __init__(out self, ref[StaticConstantOrigin] cpython: CPython):
+    def __init__(out self, ref[ImmStaticOrigin] cpython: CPython):
         """Construct a `Python` instance from an existing reference
         to the lower-level singleton `CPython` instance.
 
         Args:
             cpython: Reference to the `CPython` singleton.
         """
-        self._impl = UnsafePointer[mut=False, CPython, MutAnyOrigin](
+        self._impl = ImmPointer[CPython, MutAnyOrigin](
             to=cpython
-        ).unsafe_origin_cast[StaticConstantOrigin]()
+        ).unsafe_origin_cast[ImmStaticOrigin]()
 
     @always_inline
-    def cpython(self) -> ref[StaticConstantOrigin] CPython:
+    def cpython(self) -> ref[ImmStaticOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
 
@@ -289,13 +287,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         #   in a global variable (yet).
         return Self._unsafe_add_functions(
             module,
-            functions.steal_data().unsafe_origin_cast[MutUntrackedOrigin](),
+            functions.unsafe_take_allocation().unsafe_leak(),
         )
 
     @staticmethod
     def _unsafe_add_functions(
         module: PythonObject,
-        functions: UnsafePointer[PyMethodDef, MutUntrackedOrigin],
+        functions: Pointer[PyMethodDef, MutUntrackedOrigin],
     ) raises:
         """Adds functions to a Python module object.
 
@@ -345,7 +343,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
             value._obj_ptr,
         )
         if errno == -1:
@@ -356,7 +354,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def dict(**kwargs: PythonObject) raises -> PythonObject:
+    def dict(var **kwargs: PythonObject) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Args:

@@ -14,7 +14,8 @@
 from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
-from std.algorithm.reduction import max as reduce_max
+from max.algorithm.reduction import max as reduce_max
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,9 +23,16 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from nn.topk import (
     _top_k_cpu,
@@ -42,20 +50,22 @@ comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
 
 
-def time_kernel[
-    func: def(DeviceContext) raises capturing -> None
-](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+def time_kernel(
+    mut m: Bench,
+    ctx: DeviceContext,
+    kernel_name: String,
+    func: Some[def(DeviceContext) raises -> None],
+) raises:
     @always_inline
-    def bench_func(mut m: Bencher):
-        @parameter
+    def bench_func(mut m: Bencher) {imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             kernel_name
         ),  # ThroughputMeasure(BenchMetric.elements, 2 * size)
@@ -64,12 +74,21 @@ def time_kernel[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
-        _
-    ] -> None,
     out_idx_type: DType = DType.int,
     rank: Int = 2,
-](ctx: DeviceContext, test_case: TestCase) raises:
+](
+    ctx: DeviceContext,
+    test_case: TestCase,
+    fill_fn: Some[
+        def[
+            dtype: DType
+        ](
+            TileTensor[
+                mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+            ]
+        ) -> None
+    ],
+) raises:
     # Fetch arguments
     var m = Bench()
     var batch_size = test_case.batch_size
@@ -140,7 +159,10 @@ def test_case_batched[
 
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_ptr.unsafe_ptr(), length=K_shape.flattened_length())
+            Span(
+                unsafe_ptr=K_host_ptr.unsafe_ptr(),
+                length=K_shape.flattened_length(),
+            )
         )
     )
 
@@ -175,8 +197,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {var}:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -194,7 +215,7 @@ def test_case_batched[
             ctx.synchronize()
 
         comptime msg = "tk-smpl-gpu" if sampling else "tk-gpu"
-        time_kernel[run_func](m, ctx, msg)
+        time_kernel(m, ctx, msg, run_func)
 
     _topk_gpu[sampling=sampling, largest=largest](
         ctx,
@@ -255,8 +276,7 @@ def test_case_batched[
         comptime if DEBUG_BENCH:
 
             @always_inline
-            @parameter
-            def run_func_cpu(ctx: DeviceContext) raises:
+            def run_func_cpu(ctx: DeviceContext) raises {var}:
                 _top_k_cpu[
                     dtype=dtype,
                     out_idx_type=DType.int64,
@@ -272,7 +292,7 @@ def test_case_batched[
                     k=k_host_tt.as_unsafe_any_origin().as_immut(),
                 )
 
-            time_kernel[run_func_cpu](m, ctx, "topk-cpu")
+            time_kernel(m, ctx, "topk-cpu", run_func_cpu)
 
         _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_host_tt,
@@ -311,12 +331,21 @@ def test_case_batched[
 
 def test_case_multi_rank[
     dtype: DType,
-    fill_fn: def[dtype: DType](TileTensor[mut=True, dtype, ...]) capturing[
-        _
-    ] -> None,
     rank: Int,
     out_idx_type: DType = DType.int,
-](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, ...]) raises:
+](
+    ctx: DeviceContext,
+    test_case: TestCaseMultiRank[rank=rank, ...],
+    fill_fn: Some[
+        def[
+            dtype: DType
+        ](
+            TileTensor[
+                mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+            ]
+        ) -> None
+    ],
+) raises:
     # Fetch arguments
     var input_shape = test_case.input_shape
     var K = test_case.K
@@ -385,7 +414,10 @@ def test_case_multi_rank[
     ctx.synchronize()
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_ptr.unsafe_ptr(), length=K_shape.flattened_length())
+            Span(
+                unsafe_ptr=K_host_ptr.unsafe_ptr(),
+                length=K_shape.flattened_length(),
+            )
         )
     )
 
@@ -469,8 +501,13 @@ def test_case_multi_rank[
     _ = K_device_buffer^
 
 
-@parameter
-def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_random[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     comptime min_val = -1e9
     comptime max_val = 1e9
     var total_elements = buffer.num_elements()
@@ -479,8 +516,13 @@ def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-@parameter
-def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_constant[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
@@ -489,8 +531,13 @@ def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
             buffer.raw_store(i, 0.0)
 
 
-@parameter
-def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
+def fill_nan[
+    dtype: DType
+](
+    buffer: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     """Fill all elements with NaN — regression guard for Bug 1 (all-NaN row
     emits invalid token) and Bug 3 (p==-1 sentinel causes OOB read/write)."""
     var nan_val = nan[dtype]()
@@ -499,10 +546,15 @@ def fill_nan[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
         buffer.raw_store(i, nan_val)
 
 
-@parameter
-def fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
+def fill_iota[
+    dtype: DType
+](
+    buf: TileTensor[
+        mut=True, dtype, ..., Storage=PointerStorage[element_width=1]
+    ]
+):
     iota(
-        buf.ptr,
+        buf._storage,
         coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
     )
 
@@ -612,9 +664,8 @@ def test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     print_test_case(test_case0)
     test_case_batched[
         dtype,
-        fill_iota,
         out_idx_type=DType.uint64,
-    ](ctx, test_case0)
+    ](ctx, test_case0, fill_iota)
 
     comptime test_case1 = TestCase[_sampling=False, _largest=False](
         N=32000,
@@ -624,10 +675,7 @@ def test_min_topk[dtype: DType](ctx: DeviceContext) raises:
         num_blocks_per_input=8,
     )
     print_test_case(test_case1)
-    test_case_batched[
-        dtype,
-        fill_iota,
-    ](ctx, test_case1)
+    test_case_batched[dtype,](ctx, test_case1, fill_iota)
 
     comptime test_case2 = TestCase[_sampling=False, _largest=False](
         N=llama3_vocab_size,
@@ -640,10 +688,7 @@ def test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     # Changed from fill_random to fill_iota for deterministic test data.
     # With random data, duplicate/similar values can cause GPU and CPU to
     # produce different (but equally valid) index orderings.
-    test_case_batched[
-        dtype,
-        fill_iota,
-    ](ctx, test_case2)
+    test_case_batched[dtype,](ctx, test_case2, fill_iota)
 
 
 def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
@@ -657,7 +702,7 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
         block_size=256,
     )
     print_test_case(test_case_multi_rank1)
-    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank1)
+    test_case_multi_rank[dtype](ctx, test_case_multi_rank1, fill_iota)
 
     comptime test_case_multi_rank2 = TestCaseMultiRank[
         _sampling=sampling, rank=2, _largest=True
@@ -667,7 +712,7 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
         block_size=512,
     )
     print_test_case(test_case_multi_rank2)
-    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank2)
+    test_case_multi_rank[dtype](ctx, test_case_multi_rank2, fill_iota)
 
     comptime test_case_multi_rank3 = TestCaseMultiRank[
         _sampling=sampling, rank=3, _largest=True
@@ -677,7 +722,7 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
         num_blocks_per_input=2,
     )
     print_test_case(test_case_multi_rank3)
-    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
+    test_case_multi_rank[dtype](ctx, test_case_multi_rank3, fill_iota)
 
 
 def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
@@ -942,9 +987,8 @@ def main() raises:
         print_test_case(test_case0)
         test_case_batched[
             dtype,
-            fill_iota,
             out_idx_type=DType.uint64,
-        ](ctx, test_case0)
+        ](ctx, test_case0, fill_iota)
 
         comptime test_case1 = TestCase[_sampling=False](
             N=1024,
@@ -955,9 +999,8 @@ def main() raises:
         print_test_case(test_case1)
         test_case_batched[
             dtype,
-            fill_iota,
             out_idx_type=DType.uint64,
-        ](ctx, test_case1)
+        ](ctx, test_case1, fill_iota)
 
         comptime test_case2 = TestCase[_sampling=False](
             N=32000,
@@ -967,7 +1010,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case2)
-        test_case_batched[dtype, fill_iota](ctx, test_case2)
+        test_case_batched[dtype](ctx, test_case2, fill_iota)
 
         comptime test_case3 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -978,7 +1021,7 @@ def main() raises:
         )
         print_test_case(test_case3)
         # Changed from fill_random to fill_iota for deterministic test data
-        test_case_batched[dtype, fill_iota](ctx, test_case3)
+        test_case_batched[dtype](ctx, test_case3, fill_iota)
 
         comptime test_case4 = TestCase[_sampling=True](
             N=1024,
@@ -987,10 +1030,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case4)
-        test_case_batched[
-            dtype,
-            fill_iota,
-        ](ctx, test_case4)
+        test_case_batched[dtype,](ctx, test_case4, fill_iota)
 
         comptime test_case5 = TestCase[_sampling=True](
             N=32000,
@@ -1000,7 +1040,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case5)
-        test_case_batched[dtype, fill_iota](ctx, test_case5)
+        test_case_batched[dtype](ctx, test_case5, fill_iota)
 
         comptime test_case6 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -1012,9 +1052,8 @@ def main() raises:
         print_test_case(test_case6)
         test_case_batched[
             dtype,
-            fill_random,
             out_idx_type=DType.int32,
-        ](ctx, test_case6)
+        ](ctx, test_case6, fill_random)
 
         comptime test_case7 = TestCase[_sampling=False](
             N=1024,
@@ -1023,7 +1062,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case7)
-        test_case_batched[dtype, fill_iota](ctx, test_case7)
+        test_case_batched[dtype](ctx, test_case7, fill_iota)
 
         comptime test_case8 = TestCase[_sampling=False](
             N=32000,
@@ -1033,7 +1072,7 @@ def main() raises:
             num_blocks_per_input=2,
         )
         print_test_case(test_case8)
-        test_case_batched[dtype, fill_iota](ctx, test_case8)
+        test_case_batched[dtype](ctx, test_case8, fill_iota)
 
         comptime test_case9 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -1043,7 +1082,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case9)
-        test_case_batched[dtype, fill_iota](ctx, test_case9)
+        test_case_batched[dtype](ctx, test_case9, fill_iota)
 
         comptime test_case10 = TestCase[_sampling=True](
             N=1024,
@@ -1052,7 +1091,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case10)
-        test_case_batched[dtype, fill_iota](ctx, test_case10)
+        test_case_batched[dtype](ctx, test_case10, fill_iota)
 
         comptime test_case11 = TestCase[_sampling=True](
             N=32000,
@@ -1062,7 +1101,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case11)
-        test_case_batched[bf16_type, fill_random](ctx, test_case11)
+        test_case_batched[bf16_type](ctx, test_case11, fill_random)
 
         comptime test_case12 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -1071,7 +1110,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case12)
-        test_case_batched[bf16_type, fill_random](ctx, test_case12)
+        test_case_batched[bf16_type](ctx, test_case12, fill_random)
 
         comptime test_case13 = TestCase[_sampling=False](
             N=1024,
@@ -1082,9 +1121,8 @@ def main() raises:
         print_test_case(test_case13)
         test_case_batched[
             bf16_type,
-            fill_iota,
             out_idx_type=DType.uint64,
-        ](ctx, test_case13)
+        ](ctx, test_case13, fill_iota)
 
         comptime test_case14 = TestCase[_sampling=False](
             N=32000,
@@ -1093,7 +1131,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case14)
-        test_case_batched[bf16_type, fill_random](ctx, test_case14)
+        test_case_batched[bf16_type](ctx, test_case14, fill_random)
 
         comptime test_case15 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -1103,7 +1141,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case15)
-        test_case_batched[bf16_type, fill_iota](ctx, test_case15)
+        test_case_batched[bf16_type](ctx, test_case15, fill_iota)
 
         comptime test_case16 = TestCase[_sampling=True](
             N=1024,
@@ -1114,9 +1152,8 @@ def main() raises:
         print_test_case(test_case16)
         test_case_batched[
             bf16_type,
-            fill_iota,
             out_idx_type=DType.int64,
-        ](ctx, test_case16)
+        ](ctx, test_case16, fill_iota)
 
         comptime test_case17 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -1126,7 +1163,7 @@ def main() raises:
             num_blocks_per_input=16,
         )
         print_test_case(test_case17)
-        test_case_batched[bf16_type, fill_random](ctx, test_case17)
+        test_case_batched[bf16_type](ctx, test_case17, fill_random)
 
         comptime test_case18 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -1136,7 +1173,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case18)
-        test_case_batched[bf16_type, fill_random](ctx, test_case18)
+        test_case_batched[bf16_type](ctx, test_case18, fill_random)
 
         comptime test_case19 = TestCase[_sampling=False](
             N=1024,
@@ -1145,7 +1182,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case19)
-        test_case_batched[bf16_type, fill_random](ctx, test_case19)
+        test_case_batched[bf16_type](ctx, test_case19, fill_random)
 
         # Test with identical values
         comptime test_case20 = TestCase[_sampling=False](
@@ -1155,7 +1192,7 @@ def main() raises:
             batch_size=2,
         )
         print_test_case(test_case20)
-        test_case_batched[dtype, fill_constant](ctx, test_case20)
+        test_case_batched[dtype](ctx, test_case20, fill_constant)
 
         comptime test_case_21 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -1165,7 +1202,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case_21)
-        test_case_batched[DType.float32, fill_random](ctx, test_case_21)
+        test_case_batched[DType.float32](ctx, test_case_21, fill_random)
 
         comptime test_case_22 = TestCase[_sampling=False](
             N=50,
@@ -1174,7 +1211,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case_22)
-        test_case_batched[DType.float32, fill_random](ctx, test_case_22)
+        test_case_batched[DType.float32](ctx, test_case_22, fill_random)
 
         # Test with zero batch size
         comptime test_case_23 = TestCase[_sampling=False](
@@ -1184,7 +1221,7 @@ def main() raises:
             batch_size=0,
         )
         print_test_case(test_case_23)
-        test_case_batched[dtype, fill_iota](ctx, test_case_23)
+        test_case_batched[dtype](ctx, test_case_23, fill_iota)
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)
@@ -1198,7 +1235,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_nan_256)
-        test_case_batched[dtype, fill_nan](ctx, test_nan_256)
+        test_case_batched[dtype](ctx, test_nan_256, fill_nan)
 
         # Test OOB (N=257) + All NaN
         comptime test_nan_257 = TestCase[_sampling=True](
@@ -1209,7 +1246,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_nan_257)
-        test_case_batched[dtype, fill_nan](ctx, test_nan_257)
+        test_case_batched[dtype](ctx, test_nan_257, fill_nan)
 
         # All NaN + Batch=4
         comptime test_nan_batch = TestCase[_sampling=True](
@@ -1220,7 +1257,7 @@ def main() raises:
             batch_size=4,
         )
         print_test_case(test_nan_batch)
-        test_case_batched[dtype, fill_nan](ctx, test_nan_batch)
+        test_case_batched[dtype](ctx, test_nan_batch, fill_nan)
 
         # Regression: large top_k (2048) forces the public topk_gpu to reduce
         # num_blocks_per_input so the stage-2 reduction fits the device
@@ -1231,7 +1268,7 @@ def main() raises:
             _sampling=False, rank=2, _largest=True
         ](input_shape=IndexList[2](2, 4096), K=2048)
         print_test_case(test_case_large_k)
-        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k)
+        test_case_multi_rank[dtype](ctx, test_case_large_k, fill_iota)
 
         # Same, but with an explicit num_blocks_per_input=8 that the clamp must
         # override (8 * 2048 candidates would overflow stage-2 shared memory).
@@ -1239,7 +1276,7 @@ def main() raises:
             _sampling=False, rank=2, _largest=True
         ](input_shape=IndexList[2](2, 4096), K=2048, num_blocks_per_input=8)
         print_test_case(test_case_large_k_nb)
-        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k_nb)
+        test_case_multi_rank[dtype](ctx, test_case_large_k_nb, fill_iota)
 
         # Run multi-rank tests
         test_multi_rank[dtype, False](ctx)

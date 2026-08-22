@@ -175,8 +175,8 @@ def test_fused_qk_rms_norm_matches_unfused_gpu() -> None:
         max_batch_size=4,
     )
     context = create_text_context(np.empty(seq_len))
-    kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.claim(context)
+    kv_manager.alloc(context)
     batch = [context]
     graph_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 

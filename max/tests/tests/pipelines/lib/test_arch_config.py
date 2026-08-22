@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import NonCallableMock
+from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.driver import (
@@ -50,6 +50,9 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
     """Concrete implementation of ArchConfigWithAttentionKVCache for testing."""
 
+    DEFAULT_ENCODING = "bfloat16"
+    SUPPORTED_ENCODINGS = {"bfloat16"}
+
     # Required attributes can be implemented as dataclass fields.
     num_key_value_heads: int = 8
     head_dim: int = 64
@@ -79,12 +82,23 @@ def create_mock_pipeline_config(
     mock_model.device_specs = []
     mock_model.max_length = max_length
 
+    # `initialize` resolves the encoding via `_select_quantization_encoding`,
+    # which reads the weight path and the HF repo's supported encodings. With
+    # no weight path and an empty repo, resolution keeps a given encoding and
+    # falls back to `DEFAULT_ENCODING` when unset.
+    mock_model.weight_path = []
+    mock_weight_repo = MagicMock()
+    mock_weight_repo.supported_encodings = []
+    mock_weight_repo.files_for_encoding.return_value = {}
+    mock_weight_repo.encoding_for_file.return_value = None
+    mock_model.huggingface_weight_repo = mock_weight_repo
+
     # Create mock kv_cache_config
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
     mock_kv_cache_config.kv_cache_page_size = kv_cache_page_size
     mock_kv_cache_config.enable_prefix_caching = enable_prefix_caching
     mock_kv_cache_config.kv_connector_config = kv_connector_config
-    mock_kv_cache_config.cache_dtype = DType.bfloat16
+    mock_kv_cache_config.kv_cache_format = None
 
     mock_model.kv_cache = mock_kv_cache_config
     mock_config.model = mock_model
@@ -148,17 +162,22 @@ def test_arch_config_with_cache_protocol_check() -> None:
 class TestArchConfigWithAttentionKVCache:
     """Tests for ArchConfigWithAttentionKVCache."""
 
-    def test_initialize_raises_error_when_quantization_encoding_is_none(
+    def test_initialize_resolves_default_encoding_when_none(
         self,
     ) -> None:
-        """Test that initialize raises ValueError when quantization_encoding is None."""
+        """Test that initialize falls back to DEFAULT_ENCODING when unset.
+
+        `quantization_encoding` is no longer required: with the raw value unset
+        and nothing to infer, `_select_quantization_encoding` resolves to the
+        architecture's `DEFAULT_ENCODING` (``bfloat16`` here).
+        """
         mock_config = create_mock_pipeline_config(quantization_encoding=None)
 
-        with pytest.raises(
-            ValueError,
-            match="Quantization encoding is required for ArchConfigWithAttentionKVCache",
-        ):
-            ConcreteArchConfig.initialize(mock_config)
+        result = ConcreteArchConfig.initialize(mock_config)
+        assert isinstance(result, ConcreteArchConfig)
+        assert result.quantization_encoding == "bfloat16"
+        assert result.dtype == DType.bfloat16
+        assert result.cache_dtype == DType.bfloat16
 
     def test_initialize_succeeds_with_valid_quantization_encoding(self) -> None:
         """Test that initialize succeeds with valid quantization encoding."""
@@ -176,7 +195,7 @@ class TestArchConfigWithAttentionKVCache:
         mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
-        assert result.cache_dtype == DType.bfloat16
+        assert result.cache_dtype == DType.float32
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:
@@ -244,9 +263,9 @@ class TestArchConfigWithAttentionKVCache:
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
             enable_prefix_caching=True,
-            kv_connector=KVConnectorType.local,
             kv_connector_config=KVConnectorConfig(
-                host_kvcache_swap_space_gb=100.0,
+                type=KVConnectorType.tiered,
+                host_offload_max_gb=100.0,
             ),
         )
 
@@ -266,8 +285,12 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
         assert kv_params.enable_prefix_caching is True
-        assert kv_params.kv_connector == KVConnectorType.local
-        assert kv_params.host_kvcache_swap_space_gb == 100.0
+        cfg = kv_params.kv_connector_config
+        # The params interface types this as the protocol, which carries only
+        # the connector type; narrow to read the concrete config's sizing.
+        assert isinstance(cfg, KVConnectorConfig)
+        assert cfg.type == KVConnectorType.tiered
+        assert cfg.host_offload_max_gb == 100.0
         assert kv_params.data_parallel_degree == 2
 
         # Test that kv params are cached.

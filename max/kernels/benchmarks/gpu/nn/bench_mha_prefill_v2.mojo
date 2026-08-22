@@ -26,6 +26,7 @@ from std.math import isclose
 from std.random import seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,7 +35,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import StaticTuple
 from std.utils.numerics import min_or_neg_inf
 
@@ -137,29 +138,28 @@ def run_mha_prefill_v2[
 
     if bench:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var k_ptr = (
                     cb_k.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var v_ptr = (
                     cb_v.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var q_tt = TileTensor(
@@ -221,7 +221,7 @@ def run_mha_prefill_v2[
                         sw_buf.unsafe_ptr()
                         .bitcast[Scalar[DType.bfloat16]]()
                         .as_unsafe_any_origin()
-                        .as_immutable()
+                        .as_imm()
                     )
                     mha_prefill_v2[
                         _config,
@@ -252,9 +252,9 @@ def run_mha_prefill_v2[
                         ctx,
                     )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Causal-mask: half the tiles. Matches bench_hk_mha_exact's
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth

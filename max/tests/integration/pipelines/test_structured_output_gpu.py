@@ -16,10 +16,15 @@ import asyncio
 import json
 from typing import cast
 
-import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.pipelines import PipelineArgs, PipelineConfig, TextGenerationPipeline
+from max.pipelines import (
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+    SamplingConfig,
+    TextGenerationPipeline,
+)
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
@@ -43,23 +48,20 @@ pytest_plugins = "test_common.registry"
 def test_smollm_with_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
-        max_batch_size=1,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """
@@ -114,7 +116,7 @@ def test_smollm_with_structured_output_gpu(
     # Cast for type checker - both have the same interface for what we need.
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     tokens: list[int] = []
     max_iterations = 60
@@ -122,7 +124,7 @@ def test_smollm_with_structured_output_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         response = pipeline.execute(inputs)
 
         # Handle overlap pipeline which may return empty response on first iteration
@@ -157,28 +159,27 @@ def test_multistep_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
     """Test structured output over multiple single-step pipeline invocations."""
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        max_batch_size=1,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'Alice Smith is 30 years old.'"""
@@ -218,14 +219,14 @@ def test_multistep_structured_output_gpu(
     assert isinstance(pipeline, TextGenerationPipeline)
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     tokens = []
     while True:
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:
@@ -250,28 +251,27 @@ def test_multi_step_guided_decoding_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
     """Test that guided decoding works over repeated single-step invocations."""
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        max_batch_size=1,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Return JSON: 'Bob Jones is 25.'"""
@@ -305,7 +305,7 @@ def test_multi_step_guided_decoding_gpu(
     assert isinstance(pipeline, TextGenerationPipeline)
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     # Single-step execution with guided decoding per scheduler iteration.
     max_iterations = 20
@@ -314,7 +314,7 @@ def test_multi_step_guided_decoding_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         response = pipeline.execute(inputs)
 
         if response[request_id].is_done:
@@ -331,24 +331,23 @@ def test_overlap_pipeline_structured_output_gpu(
     valid JSON output conforming to the schema.
     """
 
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract name and age from: 'Charlie Brown is 8 years old.'"""
@@ -383,7 +382,7 @@ def test_overlap_pipeline_structured_output_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
     pipeline = cast(OverlapTextGenerationPipeline[TextContext], pipeline)
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     tokens: list[int] = []
     max_iterations = 60  # More iterations needed with single-step execution
@@ -392,7 +391,7 @@ def test_overlap_pipeline_structured_output_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
         # For structured output, overlap pipeline syncs immediately (no overlap)
         # so results are returned in the same call, not delayed.
@@ -437,27 +436,26 @@ def test_heterogeneous_batch_structured_output_gpu(
     - Structured output requests produce valid JSON conforming to their schema
     - Non-structured requests generate unconstrained output (not blocked by bitmask)
     """
-    revision = hf_repo_lock.revision_for_hf_repo(
-        "HuggingFaceTB/SmolLM2-135M-Instruct"
-    )
-    assert revision is not None
     pipeline_config = PipelineArgs(
         model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Use batch_size=2 for heterogeneous batch testing.
         # Disable overlap scheduler for simpler output handling.
-        max_batch_size=2,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=2,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     # Request 1: Structured output with JSON schema
@@ -524,8 +522,8 @@ def test_heterogeneous_batch_structured_output_gpu(
     kv_manager = pipeline.kv_manager
 
     # Claim KV cache for both requests
-    kv_manager.claim(structured_ctx.request_id, replica_idx=0)
-    kv_manager.claim(freeform_ctx.request_id, replica_idx=0)
+    kv_manager.claim(structured_ctx)
+    kv_manager.claim(freeform_ctx)
 
     structured_tokens: list[int] = []
     freeform_tokens: list[int] = []
@@ -540,7 +538,7 @@ def test_heterogeneous_batch_structured_output_gpu(
 
         # Allocate KV cache for active contexts
         for ctx in active_contexts:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[active_contexts]

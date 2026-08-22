@@ -6,13 +6,13 @@ description: Load a checkpoint into a MAX model by writing a weight adapter that
 Nearly all model architectures require a weight adapter. Write a weight adapter
 to convert checkpoint weights (most often published on Hugging Face) into the
 format expected by your MAX
-[`Module`](/max/api/python/generated/max.nn.Module/). Then, integrate the weight
-adapter into the [model pipeline](/max/develop/pipelines/).
+[`Module`](/api/python/generated/max.nn.Module/). Then, integrate the weight
+adapter into the [model pipeline](/develop/pipelines/).
 
 :::note
 
 You should be familiar with the `Module` class before writing a weight adapter.
-To learn more, see [Build a model graph with Module](/max/develop/modules/).
+To learn more, see [Build a model graph with Module](/develop/modules/).
 
 :::
 
@@ -42,21 +42,21 @@ The following steps show when the weight adapter runs within the
 entire weight loading flow:
 
 1. The pipeline calls
-   [`weights_format()`](/max/api/python/generated/max.graph.weights.format/#max.graph.weights.format.weights_format)
+   [`weights_format()`](/api/python/generated/max.graph.weights.weights_format/#max.graph.weights.weights_format)
    to detect the checkpoint format from the weight file extensions.
 2. The pipeline retrieves the
    [registered weight adapter](#registering-the-weight-adapter).
 3. The pipeline calls
-   [`load_weights()`](/max/api/python/generated/max.graph.weights/#max.graph.weights.load_weights)
+   [`load_weights()`](/api/python/generated/max.graph.weights.load_weights/#max.graph.weights.load_weights)
    to load the checkpoint into a `Weights` object.
 4. The pipeline constructs your
-   [pipeline model](/max/api/python/generated/max.pipelines.PipelineModel/) with
+   [pipeline model](/api/python/generated/max.pipelines.PipelineModel/) with
    `weights` and `adapter` as arguments.
 5. The pipeline model builds a state dictionary from the `Weights` object.
 6. The weight adapter renames and converts the tensors and returns a
    `dict[str, WeightData]`.
 7. Your model passes that result to
-   [`load_state_dict()`](/max/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict),
+   [`load_state_dict()`](/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict),
    which loads the converted tensors into the `Module` hierarchy.
 
 This is how the checkpoint weights become compatible with your `Module` when
@@ -80,7 +80,7 @@ transformations](#tensor-transformations) to learn more.
 ### Inspect the checkpoint
 
 To inspect the checkpoint, pass its path to
-[`load_weights()`](/max/api/python/generated/max.graph.weights.load_weights/)
+[`load_weights()`](/api/python/generated/max.graph.weights.load_weights/)
 and iterate over the entries to print each tensor's name, shape, and dtype:
 
 ```python
@@ -121,10 +121,10 @@ Note that during serving, MAX finds and merges shards for you.
 ### Inspect the module state dictionary
 
 To inspect the target format your `Module` expects, call
-[`raw_state_dict()`](/max/api/python/generated/max.nn.Module/#max.nn.Module.raw_state_dict)
+[`raw_state_dict()`](/api/python/generated/max.nn.Module/#max.nn.Module.raw_state_dict)
 on your module instance (often named `model`). This returns each
-[`Weight`](/max/api/python/generated/max.graph.Weight/) in the `Module`,
-including its shape, dtype, and quantization encoding:
+[`Weight`](/api/python/generated/max.graph.Weight/) in the `Module`, including
+its shape, dtype, and quantization encoding:
 
 ```python
 for name, weight in model.raw_state_dict().items():
@@ -227,8 +227,8 @@ def convert_safetensor_state_dict(
 
 Perform the conversion in the weight adapter for tensor-level dtype casts. Defer
 layer-level encoding decisions to
-[`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat/) and
-[`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig/) instead.
+[`QuantFormat`](/api/python/generated/max.nn.QuantFormat/) and
+[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) instead.
 
 ## Removing unused weights
 
@@ -376,9 +376,9 @@ Intentional differences may include:
 ## Registering the weight adapter
 
 To wire the weight adapter function into the pipeline, add it to the
-[`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
 definition in `arch.py`, keyed by the corresponding
-[`WeightsFormat`](/max/api/python/generated/max.graph.weights.WeightsFormat/):
+[`WeightsFormat`](/api/python/generated/max.graph.weights.WeightsFormat/):
 
 ```python
 weight_adapters={
@@ -392,11 +392,11 @@ weight_adapters={
 Once your adapter loads successfully, complete the remaining model bring-up
 steps:
 
-- [Implement the pipeline model](/max/develop/pipelines/): The pipeline model
+- [Implement the pipeline model](/develop/pipelines/): The pipeline model
   class connects weight loading, graph construction, compilation, and execution.
-- [Configure quantization support](/max/graph/quantize/): If your checkpoint
+- [Configure quantization support](/develop/quantize/): If your checkpoint
   uses a quantized format, implement the corresponding `QuantConfig` and
   `QuantFormat` integration.
 
 For the complete workflow, see
-[Model bring-up workflow](/max/develop/model-bringup-workflow/).
+[Model bring-up workflow](/develop/model-bringup-workflow/).

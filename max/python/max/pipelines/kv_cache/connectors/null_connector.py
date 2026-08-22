@@ -21,11 +21,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnector,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 
 
-class NullConnector:
+class NullConnector(KVConnector):
     """No-op connector for when external caching is disabled."""
 
     @property
@@ -37,53 +42,17 @@ class NullConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
-        return 0
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def offload(
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
-        pass
-
-    def wait_for_loads(self) -> None:
-        pass
-
-    def wait_for_offloads(self) -> None:
-        pass
-
-    def shutdown(self) -> None:
-        pass
-
-    @property
-    def num_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
-
-    def reset_prefix_cache(self) -> None:
-        pass
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.OFFLOAD)
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
-
-    def reset_metrics(self) -> None:
-        pass
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})

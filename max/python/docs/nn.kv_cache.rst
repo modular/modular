@@ -29,7 +29,6 @@ Cache configuration
    KVConnectorType
    KVCacheMemory
    MultiKVCacheParams
-   ReplicatedKVCacheMemory
 
 Cache inputs
 ------------
@@ -78,5 +77,5 @@ Functions
    build_max_lengths_tensors
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
-   compute_num_host_blocks
    estimated_memory_size
+   spec_decode_cache_slack

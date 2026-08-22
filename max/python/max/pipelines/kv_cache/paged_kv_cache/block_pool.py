@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
 from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock
@@ -41,14 +40,10 @@ class BlockPool:
     @traced
     def __init__(
         self,
-        memory_tier: MemoryTier,
         total_num_blocks: int,
-        enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ) -> None:
-        self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
-        self.enable_prefix_caching = enable_prefix_caching
         self.enable_runtime_checks = enable_runtime_checks
 
         # A Block pool of all kv-cache blocks.
@@ -66,7 +61,7 @@ class BlockPool:
         # between requests for prefix caching. The cached block may be used by
         # running requests or in the free_block_queue that could potentially
         # be evicted.
-        self.prefix_cache: dict[int | bytes, KVCacheBlock] = {}
+        self.prefix_cache: dict[bytes, KVCacheBlock] = {}
 
         # Placeholder block for dummy / padding requests. It will never be freed.
         self.null_block = KVCacheBlock(
@@ -76,7 +71,7 @@ class BlockPool:
     @traced
     def commit_into_prefix_cache(
         self,
-        block_hash: int | bytes,
+        block_hash: bytes,
         block: KVCacheBlock,
     ) -> None:
         """Commit a block into the prefix cache."""
@@ -92,9 +87,9 @@ class BlockPool:
 
     def get_or_commit_into_prefix_cache(
         self,
-        block_hash: int | bytes,
+        block_hash: bytes,
         block: KVCacheBlock,
-    ) -> None | KVCacheBlock:
+    ) -> KVCacheBlock | None:
         """Get or commit a block into the prefix cache.
 
         If there already exists a committed block with the same hash, we return
@@ -134,7 +129,7 @@ class BlockPool:
         block.block_hash = None
 
     @traced
-    def alloc_block(self) -> tuple[KVCacheBlock, int | bytes | None]:
+    def alloc_block(self) -> tuple[KVCacheBlock, bytes | None]:
         """Allocates a block from the free block queue."""
         # First allocate block
         curr_block = self.free_block_queue.popleft()
@@ -142,7 +137,6 @@ class BlockPool:
 
         # If the block is committed into prefix cache, evict it.
         block_hash = curr_block.block_hash
-        assert self.enable_prefix_caching or block_hash is None
         if block_hash is not None:
             self.uncommit_block(curr_block)
 

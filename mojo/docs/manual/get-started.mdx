@@ -5,6 +5,8 @@ github_url: https://github.com/modular/modular/tree/main/mojo/examples/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
 complete program that does much more than simply printing "Hello, world!"
 
@@ -228,31 +230,17 @@ Who are you? Edna
 Hi, Edna!
 ```
 
-Notice that this code uses a `String` type annotation that indicates the type of
-value the variable can contain. The Mojo compiler performs [static type
-checking](https://en.wikipedia.org/wiki/Type_system#Static_type_checking), which
-means you'll encounter a compile-time error if your code tries to assign a
-value of one type to a variable of a different type.
+Notice that this code uses a `String` type annotation that indicates the
+type of value the variable can contain. The Mojo compiler performs [static
+type
+checking](https://en.wikipedia.org/wiki/Type_system#Static_type_checking),
+which means you'll encounter a compile-time error if your code tries to
+assign a value of one type to a variable of a different type.
 
-Mojo also supports implicitly declared variables, where you simply assign a
-value to a new variable without using the `var` keyword or indicating its type.
-We can replace the code we just entered with the following, and it works
-exactly the same.
-
-```mojo title="life.mojo"
-def main() raises:
-    name = input("Who are you? ")
-    greeting = "Hi, " + name + "!"
-    print(greeting)
-```
-
-However, implicitly declared variables still have a fixed type, which Mojo
-automatically infers from the initial value assignment. In this example, both
-`name` and `greeting` are inferred as `String` type variables. If you then try
-to assign an integer value like 42 to the `name` variable, you'll get a
-compile-time error because of the type mismatch. You can learn more about Mojo
-variables in the [Variables](/docs/manual/variables/) section of the Mojo
-manual.
+If you then try to assign an integer value like 42 to the `name` variable,
+you'll get a compile-time error because of the type mismatch. You can learn
+more about Mojo variables in the [Variables](/docs/manual/variables/)
+section of the Mojo manual.
 
 ## 4. Use Mojo `Int` and `List` types to represent the game state
 
@@ -267,7 +255,7 @@ column. This will come into play later when we implement the algorithm for
 calculating each subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
-[`Int`](/docs/std/builtin/int/Int/), which represents a signed integer of the
+[`Int`](/docs/std/builtin/simd/#int), which represents a signed integer of the
 [word size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the
 CPU, typically 32 or 64 bits.
 
@@ -284,7 +272,7 @@ dynamically-sized sequence of values.
 All values in a Mojo `List` must be the same type so the Mojo compiler can
 ensure type safety. (For example, when we retrieve a value from a `List[Int]`,
 the compiler knows the value is an `Int` and can verify that we use it
-correctly.) Mojo collections are implemented as [generic
+correctly.) Mojo collections are implemented as [parameterized
 types](https://en.wikipedia.org/wiki/Generic_programming), so we can indicate
 the type of values the specific collection will hold by specifying a
 [type parameter](/docs/manual/parameters/#parameterized-structs) in square
@@ -292,22 +280,10 @@ brackets like this:
 
 ```mojo
 # The List in row can contain only Int values
-row = List[Int]()
+var row = List[Int]()
 
 # The List in names can contain only String values
-names = List[String]()
-```
-
-We can also create a `List` with an initial set of values and let the compiler
-infer the type. Use the *list literal* syntax and simply enclose the values in
-square brackets (`[]`):
-
-```mojo
-# Create a List[Int] with the list literal syntax, inferring the type
-nums2 = [12, -7, 64]
-
-# which is equivalent to
-nums2: List[Int] = [12, -7, 64]
+var names = List[String]()
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values from
@@ -315,7 +291,7 @@ the list, and access list items using subscript notation. Here's a taste of
 those operations:
 
 ```mojo
-nums = [12, -7, 64]
+var nums: List[Int] = [12, -7, 64]
 nums.append(-937)
 print("Number of elements in the list:", len(nums))
 print("Popping last element off the list:", nums.pop())
@@ -335,7 +311,7 @@ Last element of the list: 64
 We can also nest `List`s:
 
 ```mojo
-grid = [
+var grid: List[List[Int]] = [
     [11, 22],
     [33, 44]
 ]
@@ -368,9 +344,9 @@ any raising functions, we can omit it. For more about error handling, see
 
 ```mojo title="life.mojo"
 def main():
-    num_rows = 8
-    num_cols = 8
-    glider = [
+    var num_rows = 8
+    var num_cols = 8
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -393,8 +369,8 @@ like `Int` and `String` and more complex types like `List`:
   copy it like this:
 
   ```mojo
-  first = [1, 2, 3]
-  second = first.copy()  # explicit copy
+  var first: List[Int] = [1, 2, 3]
+  var second = first.copy()  # explicit copy
   ```
 
   This leaves `first` unchanged and assigns `second` its own, uniquely owned
@@ -406,8 +382,8 @@ like `Int` and `String` and more complex types like `List`:
   `one_value` is an `Int`, you can copy it like this:
 
   ```mojo
-  one_value = 15
-  another_value = one_value  # implicit copy
+  var one_value = 15
+  var another_value = one_value  # implicit copy
   ```
 
   Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
@@ -429,11 +405,11 @@ implement, usually in the form of one or more method signatures.
 - The `List` type and other Mojo collection types like
   [`Dict`](/docs/std/collections/dict/Dict/) and
   [`Set`](/docs/std/collections/set/Set/) conform to the
-  [`Copyable`](/docs/std/builtin/value/Copyable/) trait, which indicates that
+  [`Copyable`](/docs/std/traits/copyable/Copyable/) trait, which indicates that
   they are **explicitly copyable**.
 
 - The `String`, `Int` and other numeric types conform to the
-  [`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) trait,
+  [`ImplicitlyCopyable`](/docs/std/traits/copyable/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
   `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you
   can also use types that conform to the `ImplicitlyCopyable` trait in the same
@@ -455,7 +431,7 @@ after `main()`, but the convention is to put `main()` at the end.
 ```mojo title="life.mojo"
 def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(rows):
@@ -502,7 +478,7 @@ of iterating over the values of a `range()` and then accessing the `List`
 elements by their numeric index.
 
 ```mojo
-nums = [12, -7, 64]
+var nums: List[Int] = [12, -7, 64]
 for value in nums:
     print("Value:", value)
 ```
@@ -514,7 +490,7 @@ Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 ```mojo title="life.mojo"
 def main():
     ...
-    result = grid_str(num_rows, num_cols, glider)
+    var result = grid_str(num_rows, num_cols, glider)
     print(result)
 ```
 
@@ -582,12 +558,12 @@ Mojo requires you to declare all fields in the struct definition. You
 can't add fields dynamically at run-time. You must declare the type for each
 field, but you cannot assign a value as part of the field declaration.
 
-The [constructor](/docs/manual/lifecycle/life/#constructor) is responsible for
+The [initializer](/docs/manual/lifecycle/life/#constructor) is responsible for
 initializing the value of all fields, as well as allocating additional resources
 and performing any other configuration required by a new instance of the struct.
-You implement a constructor by defining a method named `__init__()` in the
+You implement a initializer by defining a method named `__init__()` in the
 struct definition. Here's an example of how we *could* implement the
-constructor for `Grid`:
+initializer for `Grid`:
 
 ```mojo
     def __init__(out self, rows: Int, cols: Int, var data: List[List[Int]]):
@@ -596,10 +572,10 @@ constructor for `Grid`:
         self.data = data^
 ```
 
-The first argument of a constructor is the newly created instance of the struct,
+The first argument of a initializer is the newly created instance of the struct,
 which by convention is named `self`. The Mojo compiler automatically passes the
-instance to the constructor when you create a new instance of the struct. Note
-that in a constructor, you must include the `out` [argument
+instance to the initializer when you create a new instance of the struct. Note
+that in a initializer, you must include the `out` [argument
 convention](/docs/manual/values/ownership#argument-conventions) for the `self`
 argument. The values of the remaining arguments are assigned to the
 corresponding fields of the new instance. (Don't worry about the `var` keyword
@@ -607,13 +583,13 @@ and `^` character for now. We'll discuss both of them in more detail later.)
 
 To reduce the amount of boilerplate code you need to write, Mojo provides a
 decorator called [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/)
-that automatically generates a constructor for you that performs "field-wise"
-initialization. The constructor's arguments have the same names and types as the
+that automatically generates a initializer for you that performs "field-wise"
+initialization. The initializer's arguments have the same names and types as the
 struct's fields and appear in the same order. This means that given our original
 definition of `Grid`, we can create an instance of `Grid` like this:
 
 ```mojo
-my_grid = Grid(2, 2, [[0, 1], [1, 1]])
+var my_grid = Grid(2, 2, [[0, 1], [1, 1]])
 ```
 
 We can then access the field values with "dot" syntax like this:
@@ -632,11 +608,11 @@ structs support several different [lifecycle methods](/docs/manual/lifecycle/)
 that define the behavior when an instance of the struct is created, moved,
 copied, and destroyed.
 
-Structs that conform to the [`Movable`](/docs/std/builtin/value/Movable/)
+Structs that conform to the [`Movable`](/docs/std/traits/movable/Movable/)
 [trait](/docs/manual/traits/) denote a type whose value can be moved, and
-structs that conform to the [`Copyable`](/docs/std/builtin/value/Copyable/)
+structs that conform to the [`Copyable`](/docs/std/traits/copyable/Copyable/)
 trait denote a type whose value can be *explicitly* copied and/or moved. You can
-then implement custom move and copy constructors that perform the necessary
+then implement custom move and copy initializers that perform the necessary
 operations to move or copy the instance.
 
 As a convenience for structs that are basic aggregations of other types and
@@ -673,7 +649,7 @@ from gridv1 import Grid
 
 def grid_str(grid: Grid) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(grid.rows):
@@ -688,7 +664,7 @@ def grid_str(grid: Grid) -> String:
     return str
 
 def main():
-    glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -698,8 +674,8 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    start = Grid(8, 8, glider^)
-    result = grid_str(start)
+    var start = Grid(8, 8, glider^)
+    var result = grid_str(start)
     print(result)
 ```
 
@@ -711,15 +687,15 @@ the list.
 
 One alternative—if we plan to use the value of the `glider` variable again later
 in `main()`—would be to create a copy of the `glider` list to pass to the `Grid`
-constructor, like this:
+initializer, like this:
 
 ```mojo
-    start = Grid(8, 8, glider.copy())
+    var start = Grid(8, 8, glider.copy())
 ```
 
 In our case, we don't need to use the `glider` variable again later, so we can
 instead use the `^` transfer sigil to *transfer ownership* of the list to the
-corresponding argument of the `Grid` constructor. After the transfer, the
+corresponding argument of the `Grid` initializer. After the transfer, the
 `glider` variable is uninitialized. You would need to assign a new value to it
 if you want to use the variable again. For more information about ownership and
 the `^` transfer sigil, see the [Ownership](/docs/manual/values/ownership/)
@@ -761,7 +737,7 @@ struct Grid(Copyable):
 
     def grid_str(self) -> String:
         # Create an empty String
-        writer = String()
+        var writer = String()
 
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
@@ -804,7 +780,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 from gridv1 import Grid
 
 def main():
-    glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -814,7 +790,7 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    start = Grid(8, 8, glider^)
+    var start = Grid(8, 8, glider^)
     print(start.grid_str())
 ```
 
@@ -827,22 +803,23 @@ You can convert most Mojo types to `String` using `String(my_val)` to produce a
 `String` representation of that instance. However, you'll get an error if you
 try to do that with our current implementation of `Grid`. Let's fix that.
 
-Because the Mojo compiler performs static type checking, a `String` constructor
+Because the Mojo compiler performs static type checking, a `String` initializer
 can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
-To enforce this, the `String()` constructors require a type to conform to the
+To enforce this, the `String()` initializers require a type to conform to the
 [`Writable`](/docs/std/format/Writable/) trait. (This type of function is
 sometimes referred to as a
-[*generic* function](/docs/manual/parameters/#parameters-and-generics).) Each
-trait requires a conforming type to implement a `write_to()` method that writes
-its `String` representation. (To learn more, read
+[*parameterized* function](/docs/manual/parameters/#parameters-and-generics).)
+Each trait requires a conforming type to implement a `write_to()` method that
+writes its `String` representation. (To learn more, read
 [The `Writable` trait](/docs/manual/traits/#the-writable-trait).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,
-files, network streams, and so on. By writing to a generic `Writer` instead of
-building and returning a `String`, your type works with any output destination.
+files, network streams, and so on. By writing to a parameterized `Writer`
+instead of building and returning a `String`, your type works with any
+output destination.
 
 Our `grid_str()` method already writes our `String` representation, so it looks
 like we'll have to rename it to `write_to()` and add the `Writer` argument to
@@ -878,7 +855,7 @@ Now let's verify that `String()` works with an instance of `Grid`.
 ```mojo title="life.mojo"
 def main():
     ...
-    start = Grid(8, 8, glider^)
+    var start = Grid(8, 8, glider^)
     print(String(start))
 ```
 
@@ -1059,7 +1036,7 @@ signed 64-bit integer value. As described in [Numeric
 types](/docs/manual/types#numeric-types), this is *not* the same as the `Int`
 type, whose precision is dependent on the native word size of the system.
 Therefore, we're passing this value to the
-[`Int()`](/docs/std/builtin/int/Int/#__init__) constructor, which explicitly
+[`Int()`](/docs/std/builtin/simd/SIMD/#__init__) initializer, which explicitly
 converts a numeric value to an `Int`.
 
 After creating a complete row of random values, we append it to `data`. The
@@ -1073,7 +1050,7 @@ to use the `^` sigil when appending the `Int` values because they're
 The return type of the method is `Self`, which is an alias for the type of the
 struct. This is a convenient shortcut if the actual name of the struct is long
 or includes parameters. The last line uses `Self()` to invoke the struct's
-constructor and return a newly created instance with random data. Once again, we
+initializer and return a newly created instance with random data. Once again, we
 use the `^` transfer sigil to transfer ownership of the newly created
 `List[List[Int]]` to the new instance rather than make a copy of it.
 
@@ -1093,7 +1070,7 @@ and print it.
 ...
 
 def main():
-    start = Grid.random(8, 16)
+    var start = Grid.random(8, 16)
     print(String(start))
 ```
 
@@ -1127,22 +1104,22 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 struct Grid(Copyable, Writable):
     ...
     def evolve(self) -> Self:
-        next_generation = List[List[Int]]()
+        var next_generation = List[List[Int]]()
 
         for row in range(self.rows):
-            row_data = List[Int]()
+            var row_data = List[Int]()
 
             # Calculate neighboring row indices, handling "wrap-around"
-            row_above = (row - 1) % self.rows
-            row_below = (row + 1) % self.rows
+            var row_above = (row - 1) % self.rows
+            var row_below = (row + 1) % self.rows
 
             for col in range(self.cols):
                 # Calculate neighboring column indices, handling "wrap-around"
-                col_left = (col - 1) % self.cols
-                col_right = (col + 1) % self.cols
+                var col_left = (col - 1) % self.cols
+                var col_right = (col + 1) % self.cols
 
                 # Determine number of populated cells around the current cell
-                num_neighbors = (
+                var num_neighbors = (
                     self[row_above, col_left]
                     + self[row_above, col]
                     + self[row_above, col_right]
@@ -1154,7 +1131,7 @@ struct Grid(Copyable, Writable):
                 )
 
                 # Determine the state of the current cell for the next generation
-                new_state = 0
+                var new_state = 0
                 if self[row, col] == 1 and (
                     num_neighbors == 2 or num_neighbors == 3
                 ):
@@ -1230,7 +1207,7 @@ def run_display(var grid: Grid) raises -> None:
         grid = grid.evolve()
 
 def main() raises:
-    start = Grid.random(16, 16)
+    var start = Grid.random(16, 16)
     run_display(start^)
 ```
 
@@ -1281,7 +1258,7 @@ from std.python import Python
 
 def run_display() raises:
     # This is roughly equivalent to Python's `import pygame`
-    pygame = Python.import_module("pygame")
+    var pygame = Python.import_module("pygame")
 
     # Initialize pygame modules
     pygame.init()
@@ -1319,22 +1296,24 @@ def run_display(
     pause: Float64 = 0.1,
 ) raises -> None:
     # Import the pygame Python package
-    pygame = Python.import_module("pygame")
+    var pygame = Python.import_module("pygame")
 
     # Initialize pygame modules
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode(Python.tuple(window_width, window_height))
+    var window = pygame.display.set_mode(
+        Python.tuple(window_width, window_height)
+    )
     pygame.display.set_caption("Conway's Game of Life")
 
-    cell_height = Float64(window_height) / Float64(grid.rows)
-    cell_width = Float64(window_width) / Float64(grid.cols)
-    border_size = 1
-    cell_fill_color = pygame.Color(cell_color)
-    background_fill_color = pygame.Color(background_color)
+    var cell_height = Float64(window_height) / Float64(grid.rows)
+    var cell_width = Float64(window_width) / Float64(grid.cols)
+    var border_size = 1
+    var cell_fill_color = pygame.Color(cell_color)
+    var background_fill_color = pygame.Color(background_color)
 
-    running = True
+    var running = True
     while running:
         # Poll for events
         for event in pygame.event.get():
@@ -1353,10 +1332,10 @@ def run_display(
         for row in range(grid.rows):
             for col in range(grid.cols):
                 if grid[row, col]:
-                    x = Float64(col) * cell_width + Float64(border_size)
-                    y = Float64(row) * cell_height + Float64(border_size)
-                    width = cell_width - Float64(border_size)
-                    height = cell_height - Float64(border_size)
+                    var x = Float64(col) * cell_width + Float64(border_size)
+                    var y = Float64(row) * cell_height + Float64(border_size)
+                    var width = cell_width - Float64(border_size)
+                    var height = cell_height - Float64(border_size)
                     pygame.draw.rect(
                         window,
                         cell_fill_color,
@@ -1377,7 +1356,7 @@ def run_display(
 
 
 def main() raises:
-    start = Grid.random(128, 128)
+    var start = Grid.random(128, 128)
     run_display(start^)
 ```
 
@@ -1452,7 +1431,7 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 <ListingCards>
   <ListingCard
     title="Get started with GPUs"
-    url="/docs/manual/gpu/intro-tutorial"
+    url="https://max.modular.com/gpu/intro-tutorial"
     description="Learn the basics of GPU programming with Mojo"
   />
 
@@ -1475,3 +1454,5 @@ To use AI coding assistants with Mojo, see our guide on
 [using Mojo AI skills](/docs/tools/skills/).
 
 :::
+
+<!-- markdownlint-enable MD033 -->

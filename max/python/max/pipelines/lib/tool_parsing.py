@@ -203,6 +203,7 @@ class StreamingToolCallState:
     id: str = ""
     name: str = ""
     arguments_sent: str = ""
+    opener_sent: bool = False
 
 
 @dataclass
@@ -260,7 +261,7 @@ class StructuralTagToolParser(ABC):
     @property
     def _start_marker(self) -> str:
         """The marker that opens the tool-call region (section or call)."""
-        return self.SECTION_BEGIN if self.SECTION_BEGIN else self.CALL_BEGIN
+        return self.SECTION_BEGIN or self.CALL_BEGIN
 
     # ----- Public ToolParser protocol -----------------------------------
 
@@ -311,9 +312,11 @@ class StructuralTagToolParser(ABC):
                 cursor = section_end + len(self.SECTION_END)
 
         if not tool_calls:
+            # Do not embed the raw model output -- it may contain PII and is
+            # surfaced to logs. Report only the length for debugging.
             raise ValueError(
                 "Tool calls section found but no valid tool calls parsed "
-                f"from: {response[first_marker_idx:]}"
+                f"(section length: {len(response) - first_marker_idx} chars)"
             )
 
         return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
@@ -365,13 +368,6 @@ class StructuralTagToolParser(ABC):
                     if tool_id and tool_name:
                         tc_state.id = tool_id
                         tc_state.name = tool_name
-                        deltas.append(
-                            ParsedToolCallDelta(
-                                index=i,
-                                id=tool_id,
-                                name=tool_name,
-                            )
-                        )
 
                 if args is not None:
                     args_str = self._format_args_for_streaming(
@@ -380,6 +376,19 @@ class StructuralTagToolParser(ABC):
                     if args_str:
                         args_diff = self._compute_args_diff(i, args_str)
                         if args_diff:
+                            if (
+                                not tc_state.opener_sent
+                                and tc_state.id
+                                and tc_state.name
+                            ):
+                                deltas.append(
+                                    ParsedToolCallDelta(
+                                        index=i,
+                                        id=tc_state.id,
+                                        name=tc_state.name,
+                                    )
+                                )
+                                tc_state.opener_sent = True
                             deltas.append(
                                 ParsedToolCallDelta(
                                     index=i, arguments=args_diff
@@ -415,7 +424,7 @@ class StructuralTagToolParser(ABC):
         Schema-driven parsers (e.g. MiniMax-M3) override this; see
         ``ToolParser.set_streaming_tool_schemas`` for when that is required.
         """
-        return None
+        return
 
     # ----- Hooks (subclasses override) ----------------------------------
 

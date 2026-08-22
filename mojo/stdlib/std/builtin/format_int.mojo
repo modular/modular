@@ -256,7 +256,7 @@ def _write_int[
 
     # Prefix a '-' if the original int was negative and make positive.
     if value < 0:
-        writer.write("-")
+        writer.write_string("-")
 
     # Add the custom number prefix, e.g. "0x" commonly used for hex numbers.
     # This comes *after* the minus sign, if present.
@@ -270,7 +270,7 @@ def _write_int[
         var zero_char = digit_chars_array.unsafe_ptr()[]
 
         # Construct a null-terminated buffer of single-byte char.
-        var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
+        var zero_buf: Array[UInt8, 2] = [zero_char, 0]
 
         # TODO(MSTDL-720):
         #   Support printing non-null-terminated strings on GPU and switch
@@ -278,7 +278,9 @@ def _write_int[
         # ptr=digit_chars_array,
         writer.write(
             StringSlice(
-                unsafe_from_utf8=Span(ptr=zero_buf.unsafe_ptr(), length=1)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=zero_buf.unsafe_ptr(), length=1
+                )
             )
         )
 
@@ -291,14 +293,14 @@ def _write_int[
     # +1 for storing NUL terminator.
     comptime CAPACITY: Int = max(64, bit_width_of[dtype]()) + 1
 
-    var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
+    var buf = Array[UInt8, CAPACITY](uninitialized=True)
 
     # Start the buf pointer at the end. We will write the least-significant
     # digits later in the buffer, and then decrement the pointer to move
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    (buf.unsafe_ptr() + offset).unsafe_write(
+    buf.unsafe_ptr().unsafe_offset(offset).write(
         0
     )  # Write NUL terminator at the end
 
@@ -309,18 +311,17 @@ def _write_int[
     # Write the digits of the number
     var remaining_int = value
 
-    @parameter
     def process_digits[
         get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
         div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
-    ]():
+    ]() {mut}:
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
 
             # Write the char representing the value of the least significant
             # digit.
-            (buf.unsafe_ptr() + offset).unsafe_write(
-                digit_chars_array.unsafe_ptr()[Int(digit_value)]
+            buf.unsafe_ptr().unsafe_offset(offset).write(
+                digit_chars_array.unsafe_ptr()[unsafe_offset=Int(digit_value)]
             )
 
             # Position the offset to write the next digit.
@@ -358,5 +359,11 @@ def _write_int[
 
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
-    var bytes = Span(buf)[offset : len(buf) - 1]
-    writer.write_string(StringSlice(unsafe_from_utf8=bytes))
+    writer.write_string(
+        StringSlice(
+            unsafe_from_utf8=Span(
+                unsafe_ptr=buf.unsafe_ptr().unsafe_offset(offset),
+                length=len(buf) - offset - 1,
+            )
+        )
+    )

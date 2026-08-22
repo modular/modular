@@ -168,11 +168,11 @@ def test_reflect() raises:
 
 
 # --- materialization: comptime value -> runtime ---
-comptime POWERS: InlineArray[Int, 4] = [1, 2, 4, 8]
+comptime POWERS: Array[Int, 4] = [1, 2, 4, 8]
 
 
 def test_materialization() raises:
-    comptime table = [3, 5, 7, 11, 13]
+    comptime table: List[Int] = [3, 5, 7, 11, 13]
     var t = materialize[table]()  # heap-backed comptime List -> runtime List
     assert_equal(t[1], 5)
     ref g = global_constant[POWERS]()  # static table, indexed without a copy

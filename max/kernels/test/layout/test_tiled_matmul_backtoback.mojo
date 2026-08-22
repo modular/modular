@@ -21,7 +21,7 @@ from std.algorithm.functional import vectorize
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.int_tuple import size
 from layout.layout import expand_modes_alike, flatten
-from std.memory import alloc, stack_allocation
+from std.memory import alloc, unsafe_stack_allocation
 from std.testing import assert_false
 
 from std.utils import StaticTuple
@@ -343,7 +343,7 @@ def strided_load[
     comptime if X == 1:
         return p.load[width=W](i)
     else:
-        return (p + i * X).strided_load[width=W](X)
+        return (p + i * X).unsafe_strided_load[width=W](X)
 
 
 @always_inline
@@ -353,7 +353,7 @@ def strided_store[
     comptime if X == 1:
         p.store(i, x)
     else:
-        (p + i * X).strided_store(x, X)
+        (p + i * X).unsafe_strided_store(x, X)
 
 
 @always_inline
@@ -361,11 +361,6 @@ def vectorize_flat[
     elt_a: DType,
     elt_b: DType,
     //,
-    f: def[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[mut=True, Scalar[elt_a], _],
-        UnsafePointer[Scalar[elt_b], _],
-        Int,
-    ) capturing -> None,
     simd_width: Int,
     unroll_factor: Int,
     shape: List[Int],
@@ -374,6 +369,15 @@ def vectorize_flat[
 ](
     a: UnsafePointer[mut=True, Scalar[elt_a], _],
     b: UnsafePointer[Scalar[elt_b], _],
+    f: Some[
+        def[
+            width: Int, stride_a: Int, stride_b: Int
+        ](
+            UnsafePointer[mut=True, Scalar[elt_a], _],
+            UnsafePointer[Scalar[elt_b], _],
+            Int,
+        ) -> None
+    ],
 ):
     comptime assert len(shape) == len(stride_a)
     comptime assert len(shape) == len(stride_b)
@@ -385,7 +389,7 @@ def vectorize_flat[
         comptime size = shape[0]
 
         @always_inline
-        def vf[width: Int](i: Int) {var a, var b}:
+        def vf[width: Int](i: Int) {var a, var b, imm f}:
             f[width, int_stride_a, int_stride_b](a, b, i)
 
         vectorize[
@@ -403,13 +407,12 @@ def vectorize_flat[
         comptime b_stride: Int = stride_b[max_idx]
         for i in range(loop_size):
             vectorize_flat[
-                f,
                 simd_width,
                 unroll_factor,
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * a_stride, b + i * b_stride)
+            ](a + i * a_stride, b + i * b_stride, f)
 
 
 def tolist(x: IntTuple) -> List[Int]:
@@ -426,16 +429,20 @@ def vectorize_layout_tensor[
     elt_b: DType,
     layout_b: Layout,
     //,
-    f: def[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[mut=True, Scalar[elt_a], _],
-        UnsafePointer[Scalar[elt_b], _],
-        Int,
-    ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
 ](
     a: LayoutTensor[elt_a, layout_a, MutAnyOrigin],
     b: LayoutTensor[elt_b, layout_b, MutAnyOrigin],
+    f: Some[
+        def[
+            width: Int, stride_a: Int, stride_b: Int
+        ](
+            UnsafePointer[mut=True, Scalar[elt_a], _],
+            UnsafePointer[Scalar[elt_b], _],
+            Int,
+        ) -> None
+    ],
 ):
     comptime expanded = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
@@ -443,8 +450,8 @@ def vectorize_layout_tensor[
     comptime shape = tolist(expanded[0])
     comptime stride_a = tolist(expanded[1])
     comptime stride_b = tolist(expanded[2])
-    vectorize_flat[f, simd_width, unroll_factor, shape, stride_a, stride_b](
-        a.ptr, b.ptr
+    vectorize_flat[simd_width, unroll_factor, shape, stride_a, stride_b](
+        a.ptr, b.ptr, f
     )
 
 
@@ -461,18 +468,17 @@ def copy_to[
     src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ):
     @always_inline
-    @parameter
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
         dstp: UnsafePointer[mut=True, Scalar[elt_dst], _],
         srcp: UnsafePointer[Scalar[elt_src], _],
         i: Int,
-    ):
+    ) {var}:
         var vsrc = strided_load[width, stride_b](srcp, i)
         strided_store[stride_a](dstp, i, vsrc.cast[elt_dst]())
 
-    vectorize_layout_tensor[copy, simd_width, unroll_factor](dst, src)
+    vectorize_layout_tensor[simd_width, unroll_factor](dst, src, copy)
 
 
 def check_approx_equal[
@@ -495,20 +501,19 @@ def check_approx_equal[
     var fail: Bool = False
 
     @always_inline
-    @parameter
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
         pa: UnsafePointer[mut=True, Scalar[elt_dst], _],
         pb: UnsafePointer[Scalar[elt_src], _],
         i: Int,
-    ):
+    ) {mut}:
         var va = strided_load[width, stride_a](pa, i).cast[cmp_elt]()
         var vb = strided_load[width, stride_b](pb, i).cast[cmp_elt]()
         if not all(isclose(va, vb, atol=atol, rtol=rtol, equal_nan=equal_nan)):
             fail = True
 
-    vectorize_layout_tensor[check, simd_width, unroll_factor](dst, src)
+    vectorize_layout_tensor[simd_width, unroll_factor](dst, src, check)
     assert_false(fail)
 
 
@@ -628,7 +633,7 @@ def matmulb2b[
     var pa = A.ptr
     var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB = stack_allocation[Mc * Nc, elt, alignment=64]()
+    var AB = unsafe_stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the

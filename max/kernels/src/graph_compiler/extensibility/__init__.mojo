@@ -16,8 +16,8 @@ Provides the `@register` / `@register_internal` decorators, the
 `ManagedTensorSlice` type and supporting tensor specs/IO enums, plus the
 elementwise operation traits.
 
-For registering [custom operations](/max/develop/custom-ops/), use the Mojo
-[@compiler.register](https://mojolang.org/docs/reference/decorators/compiler-register/)
+For registering [custom operations](/develop/custom-ops/), use the Mojo
+[@extensibility.register](https://mojolang.org/docs/reference/decorators/extensibility-register/)
 decorator instead.
 """
 
@@ -35,6 +35,7 @@ from .managed_tensor_slice import (
     _FusedInputTensor,
     _FusedInputVariadicTensors,
     _FusedOutputTensor,
+    _FusedOutputTileTensor,
     _FusedOutputVariadicTensors,
     _MutableInputTensor,
     _MutableInputVariadicTensors,

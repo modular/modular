@@ -26,19 +26,37 @@ from std.benchmark import (
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_parsing_all_floats_in_file[
     origin: Origin
 ](mut b: Bencher, items_to_parse: List[StringSlice[origin]]) raises:
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm items_to_parse}:
         for item in items_to_parse:
             var res = atof(item)
             keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items_to_parse))
+    b.iter(call_fn)
+
+
+def add_atof_benchmark[
+    origin: Origin
+](
+    mut bench: Bench,
+    items_to_parse: List[StringSlice[origin]],
+    name: String,
+    nb_of_bytes: Int,
+) raises:
+    def bench_items(mut b: Bencher) raises {imm items_to_parse}:
+        bench_parsing_all_floats_in_file(b, items_to_parse)
+
+    bench.bench_function(
+        bench_items,
+        BenchId("atof", name),
+        [
+            ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
+            ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
+        ],
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -52,19 +70,17 @@ def main() raises:
 
     comptime for filename in files:
         var file_path = _dir_of_current_file() / "data" / (filename + ".txt")
-        var items_to_parse = file_path.read_text().splitlines()
+        var file_contents = file_path.read_text()
+        var items_to_parse = file_contents.splitlines()
         var nb_of_bytes = 0
         for item2 in items_to_parse:
             nb_of_bytes += item2.byte_length()
 
-        comptime S = type_of(items_to_parse)
-        bench.bench_with_input[S, bench_parsing_all_floats_in_file[S.T.origin]](
-            BenchId("atof", filename),
+        add_atof_benchmark(
+            bench,
             items_to_parse,
-            [
-                ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
-                ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
-            ],
+            String(filename),
+            nb_of_bytes,
         )
 
     print(bench)

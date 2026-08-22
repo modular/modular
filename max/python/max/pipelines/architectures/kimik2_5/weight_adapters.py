@@ -30,7 +30,7 @@ Both adapters share :func:`_convert_merged_state_dict`, which processes
 vision and language keys in a single loop over the raw checkpoint.
 
 For MXFP4 checkpoints the model calls
-:func:`~max.pipelines.weights.mxfp4_preshuffle.preshuffle_mxfp4_b_experts`
+:func:`~max.pipelines.weights.block_scaled_preshuffle.preshuffle_block_scaled_b_experts`
 on the post-adapter state dict to lay expert ``B`` bytes out in
 ``Shuffler.b_5d_grouped_layout`` for the AMD preb grouped-matmul kernel.
 The preshuffle is pure-numpy on CPU.
@@ -113,9 +113,7 @@ def _rename_vision_key(checkpoint_name: str) -> str:
 def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     """Return WeightData, casting floats (non-FP8, non-scale) to bfloat16."""
     weight_data = weight.data()
-    is_scale = checkpoint_name.endswith(
-        ".weight_scale"
-    ) or checkpoint_name.endswith(".input_scale")
+    is_scale = checkpoint_name.endswith((".weight_scale", ".input_scale"))
     if (
         weight_data.dtype.is_float()
         and not weight_data.dtype.is_float8()
@@ -228,9 +226,7 @@ def _convert_merged_state_dict(
             continue
         if name.endswith(".self_attn.rotary_emb.inv_freq"):
             continue
-        if drop_kv_scales and (
-            name.endswith(".k_scale") or name.endswith(".v_scale")
-        ):
+        if drop_kv_scales and (name.endswith((".k_scale", ".v_scale"))):
             continue
 
         data = weight.data()

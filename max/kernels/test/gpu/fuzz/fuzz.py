@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -68,6 +67,18 @@ class FuzzTarget:
 
 
 _TARGETS: dict[str, FuzzTarget] = {
+    "attn_res_mix": FuzzTarget(
+        name="attn_res_mix",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_attn_res_mix.mojo.test"
+        ),
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_attn_res_mix.mojo.test",
+        description=(
+            "attn_res_mix fused attention-residual softmax mixture "
+            "(fp64-reference oracle)"
+        ),
+        default_oracle="ref",
+    ),
     "mha_causal": FuzzTarget(
         name="mha_causal",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_mha_causal.mojo.test",
@@ -112,7 +123,7 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_layer_norm.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_layer_norm.mojo.test",
         description=(
-            "layer_norm layer_norm_gpu boundary fuzz (memory-safety + ref)"
+            "layer_norm layer_norm boundary fuzz (memory-safety + ref)"
         ),
         default_oracle="memcheck",
     ),
@@ -189,6 +200,24 @@ _TARGETS: dict[str, FuzzTarget] = {
             "grouped block-scaled MXFP8 SM100 matmul (MiniMax-M3-MXFP8 routed"
             " MoE experts): ragged per-expert token distribution fuzz vs"
             " per-expert cuBLAS ref. ref/memcheck"
+        ),
+        default_oracle="ref",
+    ),
+    "grouped_matmul_sm100_w4a8": FuzzTarget(
+        name="grouped_matmul_sm100_w4a8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:"
+            "fuzz_grouped_matmul_sm100_w4a8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_grouped_matmul_sm100_w4a8.mojo.test"
+        ),
+        description=(
+            "grouped block-scaled W4A8 SM100 matmul (E4M3 activations against"
+            " nibble-packed E2M1 weights): ragged per-expert token distribution"
+            " fuzz vs an exact host FP32 ref at one BF16 ulp."
+            " ref/determinism/memcheck"
         ),
         default_oracle="ref",
     ),
@@ -386,6 +415,38 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="initcheck",
     ),
+    "topk_topp_masked_probs": FuzzTarget(
+        name="topk_topp_masked_probs",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        description=(
+            "topk_topp_masked_probs: spec-decode target-side masked softmax"
+            " (cluster + single-block dispatch); ref validates the"
+            " tie-tolerant accept-predicate contract vs an f64 recompute"
+        ),
+        default_oracle="ref",
+    ),
+    "topk_topp_sampling_dist": FuzzTarget(
+        name="topk_topp_sampling_dist",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        description=(
+            "topk_topp_sampling_from_prob + emit_dist: spec-decode draft"
+            " sampler; token-in-nucleus / degenerate-row / emit-inertness"
+            " contracts, dist vs the accept predicate"
+        ),
+        default_oracle="ref",
+    ),
     "ep_combine": FuzzTarget(
         name="ep_combine",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_ep_combine.mojo.test"),
@@ -554,7 +615,15 @@ def _oracle_command_and_env(
     racecheck -- compute-sanitizer racecheck (pool-independent).
     synccheck -- compute-sanitizer synccheck (pool-independent).
     """
-    env: dict[str, str] = {"CUDA_VISIBLE_DEVICES": str(gpu)}
+    # Set every vendor's device-visibility var; the runtime that's actually
+    # present reads its own and ignores the others, so this pins the device
+    # correctly on both NVIDIA and AMD without needing to detect which vendor
+    # built the target.
+    env: dict[str, str] = {
+        "CUDA_VISIBLE_DEVICES": str(gpu),
+        "HIP_VISIBLE_DEVICES": str(gpu),
+        "ROCR_VISIBLE_DEVICES": str(gpu),
+    }
     cs = _compute_sanitizer_path()
     cs_common = [
         cs,
@@ -1021,7 +1090,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "deterministic repro and corpus replay."
         ),
     )
-    p.add_argument("--gpu", type=int, default=0, help="CUDA device index.")
+    p.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+        help="GPU device index (NVIDIA or AMD).",
+    )
     p.add_argument(
         "--timeout",
         type=float,

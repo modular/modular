@@ -10,16 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# ===----------------------------------------------------------------------=== #
 # Tests for the Mojo Ownership cheat sheet.
 #
 # Each test asserts a behavioral claim the card makes, so the card fails CI if a
 # claim drifts. The compile-error boundaries the card states (used-after-transfer,
-# `mut` needs a mutable arg, `var x = plain_copyable` errors) live as ERROR PROBES
-# in _private/research/ownership/ownership_tests.mojo.
-#
-# Run via pixi from ~/codework/experiment:
-#     pixi run mojo .../test_ownership.mojo
+# `mut` needs a mutable arg, `var x = plain_copyable` errors) cannot be asserted
+# at runtime and are not covered here.
 # ===----------------------------------------------------------------------=== #
 from std.testing import assert_equal
 
@@ -31,7 +27,7 @@ struct Box(ImplicitlyCopyable, Movable):
         self.v = v
 
 
-def take_read(read x: Int) -> Int:  # read = immutable borrow
+def take_imm(imm x: Int) -> Int:  # imm = immutable borrow
     return x
 
 
@@ -43,7 +39,7 @@ def take_var(var b: Box) -> Int:  # var = owns the value
     return b.v
 
 
-def first[T: Movable](ref xs: List[T]) -> ref[origin_of(xs)] T:
+def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
     return xs[0]  # len(xs) known to be > 0
 
 
@@ -58,7 +54,7 @@ def test_int_simd_aliases() raises:
 
 # var owns; ref refers and writes through.
 def test_var_owns_ref_refers() raises:
-    var data = [1, 2, 3]
+    var data: List[Int] = [1, 2, 3]
     ref view = data[0]
     view = 9
     assert_equal(data[0], 9)
@@ -73,7 +69,7 @@ def test_var_assignment() raises:
     assert_equal(made.v, 1)  # a copy leaves the source owning its value
     var ecopy = made.copy()  # explicit copy
     assert_equal(ecopy.v, 1)
-    var lst = [Box(7)]
+    var lst: List[Box] = [Box(7)]
     ref r = lst[0]
     var copied = r  # copy out of a reference
     assert_equal(copied.v, 7)
@@ -81,12 +77,12 @@ def test_var_assignment() raises:
     assert_equal(moved.v, 1)
 
 
-# Mutability: mut writes through; read borrows.
+# Mutability: mut writes through; imm borrows.
 def test_mut_and_read() raises:
     var m = 0
     take_mut(m)
     assert_equal(m, 100)
-    assert_equal(take_read(m), 100)
+    assert_equal(take_imm(m), 100)
 
 
 # Call sites into an owning var param follow the var assignment rules.
@@ -96,7 +92,7 @@ def test_call_sites() raises:
     assert_equal(take_var(b), 2)  # f(x): implicit copy; b still usable
     assert_equal(b.v, 2)
     assert_equal(take_var(b.copy()), 2)  # f(x.copy()): explicit copy
-    var lst = [Box(3)]
+    var lst: List[Box] = [Box(3)]
     ref r = lst[0]
     assert_equal(take_var(r), 3)  # a reference copies out
     assert_equal(take_var(b^), 2)  # f(x^): transfer (last use of b)
@@ -104,7 +100,7 @@ def test_call_sites() raises:
 
 # Origins: a ref return writes through to its source.
 def test_ref_return_origin() raises:
-    var lst = [10, 20, 30]
+    var lst: List[Int] = [10, 20, 30]
     ref x = first(lst)
     x = 99
     assert_equal(lst[0], 99)
@@ -133,21 +129,21 @@ def test_returns() raises:
 
 
 # Non-owning views: a contiguous slice is a Span view that writes through to the
-# source (no copy); a codepoint slice is a StringSlice view.
+# source (no copy); a codepoint slice is a StringSpan view.
 def test_views() raises:
-    var data = ["a", "b", "c", "d", "e"]
+    var data: List[String] = ["a", "b", "c", "d", "e"]
     var s = data[1:3]  # contiguous slice returns a Span view, no copy
     s[0] = "X"  # writes through to the source
     assert_equal(data[1], "X")
     assert_equal(s[0], "X")
     var text = "Hello, World!"
-    var hi = text[codepoint=0:5]  # StringSlice view
+    var hi = text[codepoint=0:5]  # StringSpan view
     assert_equal(String(hi), "Hello")
 
 
 # Consuming iteration: `^` drains a collection, moving each element out.
 def test_consuming_iteration() raises:
-    var items = [Box(1), Box(2), Box(3)]
+    var items: List[Box] = [Box(1), Box(2), Box(3)]
     var total = 0
     for var x in items^:  # items drained; each x is owned
         total += x.v

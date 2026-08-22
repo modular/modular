@@ -32,20 +32,20 @@ from std.pathlib import Path
 from std.sys import CompilationTarget
 from std.random import random_ui64
 
-from std.memory import Span
+from std.collections import Span
 
 comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""
 
 
 def _get_random_name(size: Int = 8) -> String:
-    comptime characters = "abcdefghijklmnopqrstuvwxyz0123456789_"
-    var name = String(capacity=size)
+    comptime characters = StaticString("abcdefghijklmnopqrstuvwxyz0123456789_")
+    var name = String(capacity_bytes=size)
     for _ in range(size):
         var rand_index = Int(
             random_ui64(0, UInt64(characters.byte_length() - 1))
         )
-        name += characters[rand_index]
+        name += characters[byte=rand_index]
     return name^
 
 
@@ -413,7 +413,7 @@ struct NamedTemporaryFile(Movable):
         except:
             raise Error("Failed to create temporary file")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
@@ -518,12 +518,13 @@ struct NamedTemporaryFile(Movable):
         return self._file_handle.read_bytes(size)
 
     def seek(
-        self, offset: UInt64, whence: UInt8 = std.os.SEEK_SET
+        self, offset: Int, whence: UInt8 = std.os.SEEK_SET
     ) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
-            offset: The byte offset to seek to from the start of the file.
+            offset: The byte offset to seek to, relative to `whence`. May be
+                negative when `whence` is `os.SEEK_CUR` or `os.SEEK_END`.
             whence: The reference point for the offset:
                 os.SEEK_SET = 0: start of file (Default).
                 os.SEEK_CUR = 1: current position.

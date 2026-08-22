@@ -26,7 +26,7 @@ def add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
-@parameter
+@__parameter
 def bench_gather_reduce(mut b: Bencher):
     comptime type = DType.float32
     var num_rows = 500000
@@ -56,7 +56,7 @@ def bench_gather_reduce(mut b: Bencher):
         for j in range(Int(indices.dim[1]())):
             indices[i, j] = random_si64(0, num_rows).cast[DType.int32]()
 
-    @parameter
+    @__parameter
     def to_bench():
         gather_reduce[type, 0, 1, simd_width_of[type](), add](
             output,

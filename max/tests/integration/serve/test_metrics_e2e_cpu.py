@@ -12,23 +12,73 @@
 # ===----------------------------------------------------------------------=== #
 """Test that metrics are collected correctly during a serve request."""
 
+import http.server
 import re
+import threading
 import time
+from collections.abc import Iterator
 
-import hf_repo_lock
 import pytest
 import requests
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
-from max.serve.config import MetricLevel, MetricRecordingMethod
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
+from max.serve.config import MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
+from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+    ExportMetricsServiceRequest,
+)
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
-MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
-assert MODEL_REVISION is not None
+
+# Arbitrary, fixed like the 8001 /metrics port used throughout this file;
+# just needs to not collide with 8001 or the standard OTLP ports 4317/4318,
+# in case a real local collector happens to be running on the test host.
+OTLP_CAPTURE_PORT = 14318
+
+
+class _CapturingOTLPServer(http.server.ThreadingHTTPServer):
+    """Minimal live OTLP/HTTP metrics receiver for asserting on the wire
+    shape MAX Serve actually sends, not just what's visible on /metrics."""
+
+    requests: list[ExportMetricsServiceRequest]
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.requests = []
+
+
+class _CapturingOTLPHandler(http.server.BaseHTTPRequestHandler):
+    server: _CapturingOTLPServer
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        request = ExportMetricsServiceRequest()
+        request.ParseFromString(body)
+        self.server.requests.append(request)
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:
+        # Suppress default per-request stderr logging noise.
+        pass
+
+
+@pytest.fixture
+def otlp_server() -> Iterator[_CapturingOTLPServer]:
+    server = _CapturingOTLPServer(
+        ("localhost", OTLP_CAPTURE_PORT), _CapturingOTLPHandler
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
 
 
 def assert_metrics(
@@ -98,13 +148,11 @@ def _metric_total(metrics_text: str, name: str) -> float:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -115,9 +163,6 @@ def _metric_total(metrics_text: str, name: str) -> float:
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,
@@ -184,7 +229,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 "maxserve_time_to_first_token_milliseconds_bucket",
                 "maxserve_num_output_tokens_total",
                 "maxserve_batch_size",
-                "maxserve_cache_hit_rate",
+                "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             absent_metrics=None,
@@ -234,13 +279,11 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -250,10 +293,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,
@@ -289,7 +329,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                 "maxserve_time_to_first_token_milliseconds_bucket",
                 "maxserve_num_output_tokens_total",
                 "maxserve_batch_size",
-                "maxserve_cache_hit_rate",
+                "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             absent_metrics=None,
@@ -302,13 +342,11 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -328,3 +366,111 @@ async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
         # Endpoint won't exist
         with pytest.raises(requests.exceptions.ConnectionError):
             requests.get("http://localhost:8001/metrics", timeout=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_config",
+    [
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        )
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "settings_config",
+    [
+        {
+            "MAX_SERVE_USE_HEARTBEAT": True,
+            "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
+            "MAX_SERVE_OTLP_METRICS_ENDPOINT": (
+                f"http://localhost:{OTLP_CAPTURE_PORT}/v1/metrics"
+            ),
+        }
+    ],
+    indirect=True,
+)
+async def test_metrics_e2e_otlp_endpoint_uses_exponential_histograms(
+    otlp_server: _CapturingOTLPServer, app: FastAPI
+) -> None:
+    """With MAX_SERVE_OTLP_METRICS_ENDPOINT set, both histogram
+    representations are exported side by side, on separate destinations:
+    the existing explicit-bucket histograms keep serving on the local
+    Prometheus endpoint exactly as before, while their exponential-histogram
+    shadow (name + ".exponential") goes only to the OTLP endpoint, for
+    MXSERV-258 side-by-side comparison (see
+    common._ExponentialShadowOnlyReader / metrics.HISTOGRAM_SHADOW_SUFFIX).
+    """
+    async with TestClient(app, timeout=720.0) as client:
+        for _ in range(5):
+            raw_response = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": MODEL_NAME,
+                    "messages": [{"role": "user", "content": "tell me a joke"}],
+                    "stream": False,
+                    "max_tokens": 3,
+                },
+            )
+            CreateChatCompletionResponse.model_validate(raw_response.json())
+
+        # The local Prometheus endpoint is unaffected by the connector
+        # setting: the explicit-bucket histograms it has always served
+        # keep serving.
+        assert_metrics(
+            expected_metrics=[
+                "maxserve_num_input_tokens_total",
+                "maxserve_time_to_first_token_milliseconds_bucket",
+                "maxserve_itl_milliseconds_bucket",
+                "maxserve_request_time_milliseconds_bucket",
+            ],
+            absent_metrics=None,
+        )
+
+        # The exponential shadow must reach the OTLP endpoint shaped as an
+        # exponential histogram, and the classic explicit-bucket metric
+        # must NOT also be duplicated there -- the two representations
+        # stay on separate destinations. The OTLP reader has no
+        # export_interval_millis override, so it's on the SDK's default
+        # 60s PeriodicExportingMetricReader cadence; poll comfortably past
+        # that rather than the model warmup timescale.
+        deadline = time.time() + 75.0
+        exported_names: set[str] = set()
+        while time.time() < deadline:
+            for request in otlp_server.requests:
+                for resource_metrics in request.resource_metrics:
+                    for scope_metrics in resource_metrics.scope_metrics:
+                        for metric in scope_metrics.metrics:
+                            assert (
+                                metric.name != "maxserve.time_to_first_token"
+                            ), (
+                                "the classic explicit-bucket metric should "
+                                "not also reach the OTLP endpoint"
+                            )
+                            if (
+                                metric.name
+                                == "maxserve.time_to_first_token.exponential"
+                            ):
+                                assert (
+                                    metric.WhichOneof("data")
+                                    == "exponential_histogram"
+                                ), (
+                                    "maxserve.time_to_first_token.exponential "
+                                    "should export as an exponential "
+                                    "histogram, not a bucketed one"
+                                )
+                                exported_names.add(metric.name)
+            if exported_names:
+                break
+            time.sleep(0.5)
+
+        assert exported_names, (
+            "maxserve.time_to_first_token.exponential never reached the "
+            "OTLP endpoint"
+        )

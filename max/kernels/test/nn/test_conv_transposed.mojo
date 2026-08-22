@@ -135,16 +135,16 @@ def test_conv_transposed[
 
     var conv_shape = ConvShape[rank](
         n=N,
-        input_dims=input_dims,
-        output_dims=output_dims,
-        filter_dims=filter_dims,
+        input_dims=Coord(input_dims),
+        output_dims=Coord(output_dims),
+        filter_dims=Coord(filter_dims),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 
@@ -225,7 +225,7 @@ def test_conv_transposed[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.ptr + F * (
+            var output_ref_ptr = output_ref._storage + F * (
                 i + output_image_size * n
             )
 
@@ -250,7 +250,7 @@ def test_conv_transposed[
     # Test epilogue
     @always_inline
     @__copy_capture(output, bias_ptr)
-    @parameter
+    @__parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
         def body1[width: Int](idx: Int) {var}:

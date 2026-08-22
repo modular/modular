@@ -24,11 +24,12 @@ from max.nn.comm.ep.ep_config import (
 )
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
-_GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+from .model_config import MiniMaxM2Config
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,7 @@ logger = logging.getLogger(__name__)
 class MiniMaxM2MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for MiniMax M2 MoE models.
 
-    Accounts for expert-parallel routing buffers (with double-buffering)
-    and optional device-graph-capture headroom.
+    Accounts for expert-parallel routing buffers (with double-buffering).
     """
 
     _always_signal_buffers = True
@@ -45,7 +45,9 @@ class MiniMaxM2MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        encoding = pipeline_config.model.quantization_encoding
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, MiniMaxM2Config.DEFAULT_ENCODING
+        )
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         num_experts = getattr(huggingface_config, "num_local_experts", 256)
         moe_dim = getattr(huggingface_config, "intermediate_size", 1536)
@@ -107,21 +109,13 @@ class MiniMaxM2MemoryPlanner(PagedMemoryPlanner):
 
         activation_memory = moe_activation_memory + ep_buffer_memory
 
-        graph_capture_headroom = 0
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
-            )
-            activation_memory += graph_capture_headroom
-
         if activation_memory != 0:
             logger.info(
                 "Estimated activation memory: %s "
-                "(ep_buffers=%s, moe_activation=%s, graph_capture=%s)",
+                "(ep_buffers=%s, moe_activation=%s)",
                 to_human_readable_bytes(activation_memory),
                 to_human_readable_bytes(ep_buffer_memory),
                 to_human_readable_bytes(moe_activation_memory),
-                to_human_readable_bytes(graph_capture_headroom),
             )
 
         return activation_memory

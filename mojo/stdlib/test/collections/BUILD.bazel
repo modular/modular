@@ -8,17 +8,21 @@ _FILECHECK_TESTS = [
     "test_binary_heap_assert_empty_pop.mojo",
     "test_binary_heap_assert_empty_peek.mojo",
     "test_check_bounds_assert_error.mojo",
+    "test_check_bounds_direct_call.mojo",
     "test_negative_index_deque.mojo",
     "test_negative_index_deque_insert.mojo",
     "test_negative_index_inline_array.mojo",
     "test_negative_index_linked_list.mojo",
+    "test_negative_index_linked_list_insert.mojo",
     "test_negative_index_list.mojo",
+    "test_negative_index_list_insert.mojo",
     "test_negative_index_string.mojo",
-    "test_negative_index_string_slice.mojo",
+    "test_negative_index_string_span.mojo",
 ]
 
 _LIT_TESTS = [
     "test_asan_annotations_list.mojo",
+    "test_list_bounds_abort.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {
@@ -34,13 +38,16 @@ _EXPECT_CRASH = [
     "test_list_getitem_invalid_index_int.mojo",
     "test_optional_none_abort.mojo",
     "test_check_bounds_assert_error.mojo",
+    "test_check_bounds_direct_call.mojo",
     "test_negative_index_deque.mojo",
     "test_negative_index_deque_insert.mojo",
     "test_negative_index_inline_array.mojo",
     "test_negative_index_linked_list.mojo",
+    "test_negative_index_linked_list_insert.mojo",
     "test_negative_index_list.mojo",
+    "test_negative_index_list_insert.mojo",
     "test_negative_index_string.mojo",
-    "test_negative_index_string_slice.mojo",
+    "test_negative_index_string_span.mojo",
 ]
 
 [
@@ -60,14 +67,22 @@ _EXPECT_CRASH = [
     for src in _FILECHECK_TESTS
 ]
 
+# `test_list.mojo` is large (~1300 lines) and heavily templated, so emitting
+# full DWARF for it is the dominant compile cost (~3x the CPU of `line-tables`).
+# Under asan on aarch64 that tips the compile past the 15-minute remote-executor
+# action timeout (`x-buildbuddy-platform.default-timeout`). asan finds bugs from
+# runtime instrumentation, not debug info, and `line-tables` still symbolizes
+# reports to file:line, so use the lighter level under asan for this file only.
+_ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        copts = [
-            "--debug-level",
-            "full",
-        ],
+        copts = ["--debug-level"] + (select({
+            "//:asan": ["line-tables"],
+            "//conditions:default": ["full"],
+        }) if src in _ASAN_LINE_TABLES_ONLY else ["full"]),
         data = [src],  # NOTE: some tests attempt to read their source files
         deps = [
             "@mojo//:std",
@@ -80,22 +95,19 @@ _EXPECT_CRASH = [
     )
 ]
 
-[
-    lit_tests(
-        name = "lit_tests",
-        size = "large",
-        srcs = [src],
-        mojo_deps = [
-            "@mojo//:std",
-        ],
-        # mojo build flags specified in RUN lines.
-        # Asan has different exit codes due to signal handling.
-        # Macos also has different exit codes due to signal handling.
-        target_compatible_with = select({
-            "//:asan": ["@platforms//:incompatible"],
-            "@platforms//os:macos": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
-    )
-    for src in _LIT_TESTS
-]
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    # mojo build flags specified in RUN lines.
+    # Asan has different exit codes due to signal handling.
+    # Macos also has different exit codes due to signal handling.
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

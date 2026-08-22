@@ -179,7 +179,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1

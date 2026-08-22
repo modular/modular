@@ -49,12 +49,15 @@ def _rebuild_wheel(rctx):
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
+    shared_lib_ext = "dylib" if rctx.attr.platform == "macos_arm64" else "so"
     rctx.file(
         "BUILD.bazel",
+        # buildifier: disable=canonical-repository
         """
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
@@ -84,6 +87,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+cc_import(
+    name = "CompilerRT_lib",
+    shared_library = glob(["modular/lib/libKGENCompilerRTShared.*"])[0],
+    visibility = ["//visibility:public"],
+)
+
 INDIRECT_DEPENDENCIES = [
     "AsyncRTMojoBindings",
     "AsyncRTRuntimeGlobals",
@@ -96,6 +105,7 @@ INDIRECT_DEPENDENCIES = [
     cc_import(
         name = "{}_lib".format(lib_name),
         shared_library = glob(["modular/lib/lib{}.*".format(lib_name)])[0],
+        visibility = ["//visibility:public"],
     )
     for lib_name in INDIRECT_DEPENDENCIES
 ]
@@ -124,7 +134,7 @@ cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
-    data = ["modular/lib/*.so"],
+    data = glob(["modular/lib/*.SHARED_LIB_EXT"]),
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
         "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
         "@//:linux_aarch64": [":NVPTX_lib"],
@@ -132,18 +142,15 @@ cc_import(
     })
 )
 
-mojo_import(
-    name = "msa_lib",
-    mojodeps = ["modular/lib/mojo/msa.mojoc"],
-    visibility = ["//visibility:public"],
-)
-
-mojo_import(
-    name = "matmul_rs_lib",
-    mojodeps = ["modular/lib/mojo/matmul_rs.mojoc"],
-    visibility = ["//visibility:public"],
-)
-""",
+[
+    mojo_import(
+        name = lib.split("/")[-1],
+        mojodeps = ["modular/lib/mojo/" + lib.split("/")[-1] + ".mojoc"],
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
+""".replace("SHARED_LIB_EXT", shared_lib_ext),
     )
 
 rebuild_wheel = repository_rule(
@@ -169,6 +176,7 @@ def _modular_wheel_repository_impl(rctx):
     rctx.file("BUILD.bazel", """
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load("@@//bazel:api.bzl", "requirement")
+load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 alias(
@@ -202,45 +210,37 @@ alias(
 )
 
 alias(
-    name = "msa_lib",
+    name = "AsyncRTMojoBindings_lib",
     actual = select({
-        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:msa_lib",
-        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:msa_lib",
-        "@platforms//os:macos": "@module_platlib_macos_arm64//:msa_lib",
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:AsyncRTMojoBindings_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:AsyncRTMojoBindings_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:AsyncRTMojoBindings_lib",
     }),
     visibility = ["//visibility:public"],
 )
 
 alias(
-    name = "matmul_rs_lib",
+    name = "CompilerRT_lib",
     actual = select({
-        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:matmul_rs_lib",
-        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:matmul_rs_lib",
-        "@platforms//os:macos": "@module_platlib_macos_arm64//:matmul_rs_lib",
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:CompilerRT_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:CompilerRT_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:CompilerRT_lib",
     }),
     visibility = ["//visibility:public"],
 )
 
-pycross_wheel_library(
-    name = "mblack-lib",
-    tags = ["manual"],
-    wheel = "@mblack_wheel//file",
-)
-
-py_binary(
-    name = "mblack",
-    srcs = ["@@//bazel:mblack-main.py"],
-    main = "@@//bazel:mblack-main.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":mblack-lib",
-        requirement("click"),
-        requirement("mypy-extensions"),
-        requirement("pathspec"),
-        requirement("platformdirs"),
-        requirement("tomli"),
-    ],
-)
+[
+    alias(
+        name = lib.split("/")[-1],
+        actual = select({
+            "@//:linux_aarch64": "@module_platlib_linux_aarch64//:" + lib.split("/")[-1],
+            "@//:linux_x86_64": "@module_platlib_linux_x86_64//:" + lib.split("/")[-1],
+            "@platforms//os:macos": "@module_platlib_macos_arm64//:" + lib.split("/")[-1],
+        }),
+        visibility = ["//visibility:public"],
+    )
+    for lib in INTERNAL_PACKAGES
+]
 """)  # buildifier: disable=canonical-repository
 
 modular_wheel_repository = repository_rule(

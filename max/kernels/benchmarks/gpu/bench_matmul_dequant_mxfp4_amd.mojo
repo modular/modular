@@ -35,6 +35,7 @@ from std.math import ceildiv
 from std.sys import get_defined_int, size_of
 from std.random import rand, randint
 from std.memory import bitcast
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -42,7 +43,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
@@ -200,10 +201,10 @@ def bench_dequant_mxfp4[
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
     var b_fp8_tt = TileTensor(b_fp8_device, row_major((Idx[N], Idx[K])))
 
-    @__copy_capture(b_fp8_tt, b_packed_tt, b_scales_tt)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut b_fp8_tt, imm}:
         dequant_mxfp4(
             ctx,
             b_fp8_tt,
@@ -213,10 +214,10 @@ def bench_dequant_mxfp4[
             num_cols=K,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read packed (N*K/2) + scales (N*K/32), write FP8 (N*K)
     comptime total_bytes = N * packed_K + N * scale_K + N * K * size_of[
@@ -251,16 +252,16 @@ def bench_cast_bf16_to_fp8[
 
     from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
-    @__copy_capture(a_fp8_tt, a_tt)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut a_fp8_tt, imm}:
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read BF16 (M*K*2), write FP8 (M*K*1)
     var total_bytes = M * K * (size_of[DType.bfloat16]() + size_of[fp8_type]())
@@ -312,18 +313,18 @@ def bench_fp8_matmul[
 
     from linalg.matmul.gpu import _matmul_gpu
 
-    @__copy_capture(c_tt, a_fp8_tt, b_fp8_tt)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut c_tt, imm}:
         _matmul_gpu[use_tensor_core=True, transpose_b=True](
             c_tt, a_fp8_tt, b_fp8_tt, ctx
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
@@ -361,19 +362,19 @@ def bench_mxfp4_matmul[
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
     var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
 
-    @__copy_capture(c_tt, a_tt, b_packed_tt, b_scales_tt)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut c_tt, imm}:
         mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
         ctx.synchronize()
 
     if run_benchmark:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
-            bencher.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 

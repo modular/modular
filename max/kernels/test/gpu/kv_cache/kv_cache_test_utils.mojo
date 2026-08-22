@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -148,7 +148,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.host_ptr.free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:
@@ -170,7 +170,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
         return Self.tensor_type(
-            ptr.as_immutable().as_unsafe_any_origin(), self._runtime_layout()
+            ptr.as_imm().as_unsafe_any_origin(), self._runtime_layout()
         )
 
 
@@ -320,7 +320,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         num_paged_blocks: Int,
         ctx: DeviceContext,
     ) raises -> Self:
-        @parameter
+        @__parameter
         def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):

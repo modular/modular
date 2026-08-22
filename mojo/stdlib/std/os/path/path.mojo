@@ -20,7 +20,7 @@ from std.os.path import isdir
 ```
 """
 
-from std.collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_span import _unsafe_strlen
 from std.pwd import getpwuid, getpwnam
 from std.stat import S_ISDIR, S_ISLNK, S_ISREG
 from std.ffi import MAX_PATH, c_char, external_call, get_errno
@@ -264,7 +264,7 @@ def dirname[PathLike: stdPathLike, //](path: PathLike) -> String:
 
 
 def realpath[
-    PathLike: stdPathLike & ImplicitlyDeletable, //
+    PathLike: stdPathLike & Deinitable, //
 ](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
@@ -299,21 +299,21 @@ def realpath[
     Returns:
         A String of the resolved path.
     """
-    var string = String(capacity=MAX_PATH)
+    var string = String(capacity_bytes=MAX_PATH)
 
     # Bind the fspath result to a variable so its buffer stays alive
     # through the libc_realpath call (avoids use-after-free).
     var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        fspath.as_c_string_slice().unsafe_ptr(),
-        string.unsafe_ptr_mut().bitcast[c_char](),
+        fspath.as_c_string_slice(),
+        string.unsafe_as_bytes_mut().unsafe_ptr().unsafe_bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(Int(_unsafe_strlen(string.unsafe_ptr())))
+    string._set_byte_length(Int(_unsafe_strlen(string.as_bytes().unsafe_ptr())))
     string._set_nul_terminated()
 
     return string^
@@ -456,12 +456,12 @@ def join(var path: String, *paths: String) -> String:
     print(join("a", "/b", "c")) # "/b/c" (absolute resets)
     ```
     """
-    var joined_path = path
+    var joined_path = path^
 
     for cur_path in paths:
         if cur_path.startswith(sep):
             joined_path = cur_path
-        elif not joined_path or path.endswith(sep):
+        elif not joined_path or joined_path.endswith(sep):
             joined_path += cur_path
         else:
             joined_path += sep + cur_path
@@ -650,13 +650,18 @@ def splitroot[
     """
     var p = path.__fspath__()
     comptime empty = ""
+    var length = p.byte_length()
 
     # Relative path, e.g.: 'foo'
-    if p[byte=:1] != StringSlice(sep):
+    if length < 1 or p[byte=:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[byte=1:2] != StringSlice(sep) or p[byte=2:3] == StringSlice(sep):
+    elif (
+        length < 2
+        or p[byte=1:2] != StringSlice(sep)
+        or (length >= 3 and p[byte=2:3] == StringSlice(sep))
+    ):
         return empty, String(sep), String(p[byte=1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
@@ -679,7 +684,7 @@ def _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables: InlineArray[Int, 17] = [
+    comptime shell_variables: Array[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
@@ -723,10 +728,12 @@ def _is_alphanumeric(byte: Byte) -> Bool:
 
 
 def _parse_variable_name[
-    immutable: ImmutOrigin
+    immutable: ImmOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
-    For `${}` expansions, two additional bytes are added to the byte count to account for the braces.
+    For `${}` expansions, two additional bytes are added to the byte count to
+    account for the braces, unless the closing brace is missing, in which
+    case only the opening brace is accounted for.
 
     Args:
         bytes: The bytes to extract the environment variable name from.
@@ -748,7 +755,9 @@ def _parse_variable_name[
             if bytes[i] == UInt8(ord("}")):
                 return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
-        return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
+        # No closing brace found: `i == len(bytes)`, so the whole remainder
+        # was consumed with no closing-brace byte to account for.
+        return StringSlice(unsafe_from_utf8=bytes[1:i]), i
     elif _is_shell_special_variable(bytes[0]):
         return StringSlice(unsafe_from_utf8=bytes[0:1]), 1
 
@@ -778,12 +787,12 @@ def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
     var buf = String()
 
     # Byte scanning should be fine, ${} is ASCII.
-    i = 0
-    j = 0
+    var i = 0
+    var j = 0
     while j < len(bytes):
         if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=2 * len(bytes))
+                buf.reserve_bytes(2 * len(bytes))
             buf.write_string(path_str[byte=i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])
@@ -796,7 +805,7 @@ def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
                 buf.write_string(path_str[byte = j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
-                value = getenv(String(name))
+                var value = getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:

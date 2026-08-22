@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std._plugin import CurrentPlugin
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.format._utils import _WriteBufferHeap, _WriteBufferStack
 from std.sys import _libc as libc
 from std.ffi import (
@@ -25,7 +25,7 @@ from std.ffi import (
     c_ssize_t,
     external_call,
     CStringSlice,
-    _CPointer,
+    OptionalPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import (
@@ -76,7 +76,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
         self.handle = fdopen(
             dup(Int32(stream_id.value)),
-            Self.mode.as_c_string_slice().unsafe_ptr(),
+            Self.mode.as_c_string_slice(),
         )
 
     def __enter__(self) -> Self:
@@ -144,13 +144,13 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = _CPointer[UInt8, MutUntrackedOrigin]()
+        var buffer = OptionalPointer[UInt8, MutUntrackedOrigin]()
         var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call["getdelim", c_ssize_t](
-            UnsafePointer(to=buffer),
-            UnsafePointer(to=n),
+            Pointer(to=buffer),
+            Pointer(to=n),
             ord(delimiter),
             self.handle,
         )
@@ -159,19 +159,19 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(unsafe_cast[Type=NoneType](buffer))
+            libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[MutUntrackedOrigin](
+            StringSlice(
                 unsafe_from_utf8=Span(
-                    ptr=buffer.unsafe_value(), length=bytes_read - 1
+                    unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(unsafe_cast[Type=NoneType](buffer))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
         return s^
 
 
@@ -194,25 +194,13 @@ def _flush(file: FileDescriptor = stdout):
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C printf call. Load
-    # all the members of the pack.
-
     with _fdopen(file) as fd:
-        # FIXME: external_call should handle this
-        _ = __mlir_op.`pop.external_call`[
-            func="KGEN_CompilerRT_fprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<none>,`,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !kgen.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
+        # The pack is loaded so the variadic arguments are the values
+        # themselves rather than references to them.
+        _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[fmt]().as_c_string_slice(),
             args.get_loaded_kgen_pack(),
         )
 
@@ -232,8 +220,7 @@ def _printf[
         var loaded_pack = args.get_loaded_kgen_pack()
 
         _ = external_call["vprintf", Int32](
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr(),
+            get_static_string[fmt]().as_c_string_slice(),
             Pointer(to=loaded_pack),
         )
     elif is_amd_gpu():
@@ -269,17 +256,29 @@ def _printf[
                 return UInt64(rebind[UInt](value))
             return 0
 
-        comptime args_len = types.size
+        comptime args_len = types.length
 
         var message = printf_begin()
-        message = printf_append_string_n(message, fmt.as_bytes(), args_len == 0)
+        # `get_static_string` guarantees a trailing nul in static memory (just
+        # past the returned range); include it so the AMD fprintf service sees a
+        # terminated format string even when `len(fmt)` is a multiple of 8.
+        # `as_bytes()` alone drops the nul, corrupting output (MSTDL-1597).
+        var fmt_str = get_static_string[fmt]()
+        message = printf_append_string_n(
+            message,
+            Span(
+                unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
+                length=fmt_str.byte_length() + 1,
+            ),
+            args_len == 0,
+        )
         comptime k_args_per_group = 7
 
         comptime for group in range(0, args_len, k_args_per_group):
             comptime bound = min(group + k_args_per_group, args_len)
             comptime num_args = bound - group
 
-            var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
+            var arguments = Array[UInt64, k_args_per_group](fill=0)
 
             comptime for i in range(num_args):
                 arguments[i] = _to_uint64(args[group + i])
@@ -323,7 +322,7 @@ def _printf[
 @no_inline
 def _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
+](str: MutPointer[UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -339,29 +338,15 @@ def _snprintf[
         The number of bytes written into the output string.
     """
 
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C snprintf call. Load
-    # all the members of the pack.
-    var loaded_pack = args.get_loaded_kgen_pack()
-
-    # FIXME: external_call should handle this
+    # int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
+    # The pack is loaded so the variadic arguments are the values themselves
+    # rather than references to them.
     return Int(
-        __mlir_op.`pop.external_call`[
-            func="snprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<scalar<si8>>,`,
-                `!kgen.scalar<index>, `,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !kgen.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr(),
-            loaded_pack,
+            get_static_string[fmt]().as_c_string_slice(),
+            args.get_loaded_kgen_pack(),
         )
     )
 
@@ -451,7 +436,7 @@ def print[
         var cstr = buffer.nul_terminate()
 
         comptime if is_nvidia_gpu():
-            _printf["%s"](cstr.unsafe_ptr())
+            _printf["%s"](cstr.ptr())
         elif is_amd_gpu():
             var msg = printf_begin()
             _ = printf_append_string_n(

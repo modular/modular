@@ -11,10 +11,13 @@ modular_py_library(
     ),
     deps = [
         requirement("fastapi"),
+        requirement("openai"),
         requirement("pydantic"),
         requirement("sse-starlette"),
         requirement("uvicorn"),
-        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/interfaces",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve/schemas",
     ],
@@ -24,11 +27,24 @@ modular_py_library(
 modular_py_binary(
     name = "main",
     srcs = ["main.py"],
+    # gguf is imported lazily by the weight loader when a GGUF checkpoint is
+    # selected on the CLI, so it never appears as a static import of main.py.
+    ignore_extra_deps = [
+        requirement("gguf"),
+    ],
     main = "main.py",
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    # The all_pipelines dispatcher target pulls in every architecture (for the
+    # registry's lazy runtime imports), so the server can serve any supported
+    # model the user selects on the CLI.
     deps = [
         requirement("cyclopts"),
-        "//max/python/max/experimental/cascade",
-        "//max/python/max/experimental/cascade/pipelines",
+        requirement("gguf"),  # Needed for loading gguf files
+        "//max/python/max/experimental/cascade/deployment:context_config",
+        "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/experimental/cascade/serve",
         "//max/python/max/pipelines/lib",
     ],

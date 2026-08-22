@@ -20,7 +20,7 @@ from std.base64 import b64encode
 """
 
 
-from std.memory import Span
+from std.collections import Span
 
 from ._b64encode import _b64encode
 
@@ -30,15 +30,17 @@ from ._b64encode import _b64encode
 
 
 @always_inline
-def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
+def _ascii_to_value(char: Byte) raises -> Byte:
     """Converts an ASCII character to its integer value for base64 decoding.
 
     Args:
         char: A single ascii byte.
 
     Returns:
-        The integer value of the character for base64 decoding, or -1 if
-        invalid.
+        The integer value of the character for base64 decoding.
+
+    Raises:
+        If the character is outside the base64 alphabet.
     """
     comptime `A` = Byte(ord("A"))
     comptime `a` = Byte(ord("a"))
@@ -64,13 +66,11 @@ def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     elif char == `/`:
         return Byte(63)
     else:
-        comptime if validate:
-            raise Error(
-                "ValueError: Unexpected character '",
-                chr(Int(char)),
-                "' encountered",
-            )
-        return Byte(-1)
+        raise Error(
+            "ValueError: Unexpected character '",
+            chr(Int(char)),
+            "' encountered",
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -79,7 +79,7 @@ def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -107,7 +107,7 @@ def b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
+def b64encode(input_bytes: ImmSpan[Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -126,13 +126,8 @@ def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b64decode[
-    *, validate: Bool = False
-](str: StringSlice[mut=False, _]) raises -> List[Byte]:
+def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on the input string.
-
-    Parameters:
-        validate: If true, the function will validate the input string.
 
     Args:
         str: A base64 encoded string.
@@ -141,26 +136,24 @@ def b64decode[
         The decoded bytes.
 
     Raises:
-        If the operation fails.
+        If the input length is not divisible by 4, or the input contains a
+        character outside the base64 alphabet.
     """
     comptime `=` = Byte(ord("="))
     var data = str.as_bytes()
     var n = str.byte_length()
 
-    comptime if validate:
-        if n % 4 != 0:
-            raise Error(
-                "ValueError: Input length '", n, "' must be divisible by 4"
-            )
+    if n % 4 != 0:
+        raise Error("ValueError: Input length '", n, "' must be divisible by 4")
 
     var result = List[Byte](capacity=n)
 
     # This algorithm is based on https://arxiv.org/abs/1704.00605
     for i in range(0, n, 4):
-        var a = _ascii_to_value[validate](data[i])
-        var b = _ascii_to_value[validate](data[i + 1])
-        var c = _ascii_to_value[validate](data[i + 2])
-        var d = _ascii_to_value[validate](data[i + 3])
+        var a = _ascii_to_value(data[i])
+        var b = _ascii_to_value(data[i + 1])
+        var c = _ascii_to_value(data[i + 2])
+        var d = _ascii_to_value(data[i + 3])
 
         result.append((a << 2) | (b >> 4))
         if data[i + 2] == `=`:
@@ -188,18 +181,18 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
         Base16 encoding of the input string.
     """
     comptime lookup = "0123456789ABCDEF"
-    var b16chars = lookup.unsafe_ptr()
+    var b16chars = lookup.ptr()
 
     var data = str.as_bytes()
     var length = str.byte_length()
-    var result = String(capacity=length * 2)
+    var result = String(capacity_bytes=length * 2)
 
     for i in range(length):
         var str_byte = data[i]
         var hi = str_byte >> 4
         var lo = str_byte & 0b1111
-        result._unsafe_append_byte(b16chars[hi])
-        result._unsafe_append_byte(b16chars[lo])
+        result._unsafe_append_byte(b16chars[unsafe_offset=hi])
+        result._unsafe_append_byte(b16chars[unsafe_offset=lo])
 
     return result^
 
@@ -209,7 +202,7 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
+def b16decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base16 decoding on the input string.
 
     Args:
@@ -217,31 +210,36 @@ def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
 
     Returns:
         The decoded bytes.
+
+    Raises:
+        If the input length is odd or any character is outside the base16
+        alphabet `[0-9A-F]` (per RFC 4648 section 8, which is strictly
+        uppercase).
     """
 
     comptime `A` = Byte(ord("A"))
-    comptime `a` = Byte(ord("a"))
-    comptime `Z` = Byte(ord("Z"))
-    comptime `z` = Byte(ord("z"))
+    comptime `F` = Byte(ord("F"))
     comptime `0` = Byte(ord("0"))
     comptime `9` = Byte(ord("9"))
 
     # TODO: Measure perf against lookup table approach
-    @parameter
     @always_inline
-    def decode(c: Byte) -> Byte:
-        if `A` <= c <= `Z`:
-            return c - `A` + Byte(10)
-        elif `a` <= c <= `z`:
-            return c - `a` + Byte(10)
-        elif `0` <= c <= `9`:
+    def decode(c: Byte) raises -> Byte:
+        if `0` <= c <= `9`:
             return c - `0`
+        elif `A` <= c <= `F`:
+            return c - `A` + Byte(10)
         else:
-            return Byte(-1)
+            raise Error(
+                "ValueError: Unexpected character '",
+                chr(Int(c)),
+                "' encountered",
+            )
 
     var data = str.as_bytes()
     var n = str.byte_length()
-    debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
+    if n % 2 != 0:
+        raise Error("ValueError: Input length '", n, "' must be divisible by 2")
 
     var result = List[Byte](capacity=n // 2)
 

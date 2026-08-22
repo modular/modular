@@ -50,6 +50,12 @@ _CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 # ``StructuredOutputHelper.from_tokenizer``.
 DEFAULT_STRUCTURED_OUTPUT_BACKEND = "xgrammar"
 
+# Global default for whitespace-tolerant structured-output grammars, used when
+# neither the user nor the resolved architecture specifies one. False (compact
+# JSON, no whitespace between tokens) is the Gemma-4 runaway mitigation from
+# 0c57a6bd331; flipping it is a product decision, not a per-model tweak.
+DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
+
 
 class SamplingConfig(ConfigFileModel):
     """Configuration for the sampling stage of token generation."""
@@ -77,10 +83,26 @@ class SamplingConfig(ConfigFileModel):
         default=None,
         description=(
             "Grammar backend for constrained decoding. One of ``xgrammar`` or "
-            "``llguidance``. When unset (``None``), resolved during "
-            "``PipelineConfig.resolve()`` to the architecture's default if it "
-            "declares one, else the global default ``xgrammar``. An explicit "
-            "value always wins."
+            "``llguidance``. When unset (``None``), resolved at config "
+            "construction to the architecture's default if it declares one, "
+            "else the global default ``xgrammar``. An explicit value always "
+            "wins."
+        ),
+    )
+
+    structured_output_any_whitespace: bool | None = Field(
+        default=None,
+        description=(
+            "Whether structured-output (``response_format``) grammars accept "
+            "whitespace between JSON tokens. ``False`` (the resolved default) "
+            "constrains generation to compact JSON -- no whitespace, "
+            "``','``/``':'`` separators -- which mitigates runaway generation "
+            "on some models but also masks the newline/indentation tokens "
+            "models prefer at structural boundaries. ``True`` uses the "
+            "grammar engine's whitespace-tolerant JSON. When unset "
+            "(``None``), resolved at config construction to the "
+            "architecture's default if it declares one, else ``False``. An "
+            "explicit value always wins. Tool-call grammars are unaffected."
         ),
     )
 

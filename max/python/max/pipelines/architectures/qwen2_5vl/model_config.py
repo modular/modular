@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -29,10 +29,12 @@ from max.pipelines.lib import (
     PipelineConfig,
     parse_quant_config,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -149,6 +151,13 @@ class VisionConfig:
 class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Qwen2.5VL models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     devices: list[DeviceRef]
     """Devices that the Qwen2.5VL model is parallelized over."""
 
@@ -178,6 +187,8 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     # Composed language model configuration.
     llm_config: Llama3Config
     """Language model configuration using Llama3 architecture."""
+
+    quantization_encoding: SupportedEncoding | None = None
 
     def get_kv_params(self) -> KVCacheParams:
         """Returns the KV cache parameters from the embedded LLM config."""
@@ -253,6 +264,10 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             pipeline_config, text_config
         )
 
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
+
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -269,6 +284,7 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             vision_config=vision_config,
             # Composed language model configuration
             llm_config=llm_config,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(
@@ -278,7 +294,7 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         llm_state_dict: dict[str, WeightData],
         vision_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Qwen2_5VLConfig instance with state_dict dependent fields.
 

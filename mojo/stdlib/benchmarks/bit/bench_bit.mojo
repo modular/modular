@@ -122,38 +122,34 @@ def _build_list[start: Int, stop: Int]() -> List[Int]:
 comptime width = bit_width_of[Int]()
 
 
-@parameter
 def bench_next_power_of_two_int[
     func: def(Int) thin -> Int
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm}:
         for _ in range(10_000):
             for i in range(len(_values)):
                 var result = func(_values.unsafe_get(i))
                 keep(result)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@parameter
 def bench_next_power_of_two_uint[
     func: def(UInt) thin -> UInt
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {imm}:
         for _ in range(10_000):
             for i in range(len(_values)):
                 var result = func(UInt(_values.unsafe_get(i)))
                 keep(result)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -162,36 +158,44 @@ def bench_next_power_of_two_uint[
 def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=10))
-    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v1]](
-        BenchId("bench_next_power_of_two_int_v1")
+    m.bench_function(
+        bench_next_power_of_two_int[next_power_of_two_int_v1],
+        BenchId("bench_next_power_of_two_int_v1"),
     )
-    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v2]](
-        BenchId("bench_next_power_of_two_int_v2")
+    m.bench_function(
+        bench_next_power_of_two_int[next_power_of_two_int_v2],
+        BenchId("bench_next_power_of_two_int_v2"),
     )
-    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v3]](
-        BenchId("bench_next_power_of_two_int_v3")
+    m.bench_function(
+        bench_next_power_of_two_int[next_power_of_two_int_v3],
+        BenchId("bench_next_power_of_two_int_v3"),
     )
-    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v4]](
-        BenchId("bench_next_power_of_two_int_v4")
+    m.bench_function(
+        bench_next_power_of_two_int[next_power_of_two_int_v4],
+        BenchId("bench_next_power_of_two_int_v4"),
     )
-    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v1]](
-        BenchId("bench_next_power_of_two_uint_v1")
+    m.bench_function(
+        bench_next_power_of_two_uint[next_power_of_two_uint_v1],
+        BenchId("bench_next_power_of_two_uint_v1"),
     )
-    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v2]](
-        BenchId("bench_next_power_of_two_uint_v2")
+    m.bench_function(
+        bench_next_power_of_two_uint[next_power_of_two_uint_v2],
+        BenchId("bench_next_power_of_two_uint_v2"),
     )
-    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v3]](
-        BenchId("bench_next_power_of_two_uint_v3")
+    m.bench_function(
+        bench_next_power_of_two_uint[next_power_of_two_uint_v3],
+        BenchId("bench_next_power_of_two_uint_v3"),
     )
-    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v4]](
-        BenchId("bench_next_power_of_two_uint_v4")
+    m.bench_function(
+        bench_next_power_of_two_uint[next_power_of_two_uint_v4],
+        BenchId("bench_next_power_of_two_uint_v4"),
     )
 
-    results = Dict[String, Tuple[Float64, Int]]()
+    var results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
-        n = info.name
-        time = info.result.mean("ms")
-        avg, amnt = results.get(n, (Float64(0), 0))
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = (
             (avg * Float64(amnt) + time) / Float64((amnt + 1)),
             amnt + 1,

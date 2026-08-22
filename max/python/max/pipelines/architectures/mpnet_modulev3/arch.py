@@ -27,11 +27,8 @@ mpnet_modulev3_arch = SupportedArchitecture(
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=MPNetConfig.DEFAULT_ENCODING,
+    supported_encodings=MPNetConfig.SUPPORTED_ENCODINGS,
     pipeline_model=MPNetPipelineModel,
     tokenizer=TextTokenizer,
     context_type=TextContext,

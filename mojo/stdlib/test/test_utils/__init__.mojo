@@ -19,6 +19,7 @@ from .test_utils import libm_call, check_write_to
 from .types import (
     AbortOnCopy,
     AbortOnDel,
+    CopyableExplicitDestroyKey,
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
@@ -36,6 +37,7 @@ from .types import (
     ObservableDel,
     ObservableMoveOnly,
     ExplicitDelOnly,
+    PinnedExplicitDelOnly,
     TriviallyCopyableMoveCounter,
 )
 from .words import (

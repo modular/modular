@@ -37,12 +37,12 @@ from Python include:
   independent copy. Changes to one value don't affect others unless you
   make sharing explicit. This keeps data flow clear and enables safe
   parallelism.
-- **Mojo supports modern ownership, but it doesn't trap you in
-  "safe-only" abstractions.** With ownership, the compiler tracks which
-  variables and fields control a value's lifetime. That lets Mojo manage
-  memory effectively, without a garbage collector or reference counting.
-  When you need low-level control, such as interfacing with C-language
-  libraries, you can manage memory explicitly using `UnsafePointer`.
+- **Mojo supports modern ownership, but it doesn't trap you in "safe-only"
+  abstractions.** With ownership, the compiler tracks which variables and fields
+  control a value's lifetime. That lets Mojo manage memory effectively, without
+  a garbage collector or reference counting. When you need low-level control,
+  such as interfacing with C-language libraries, you can manage memory
+  explicitly using `alloc()`, `dealloc()` and `Pointer`.
 - **Mojo brings together ideas from Rust, C++, and Python.** It combines
   Python's readability with a performance model inspired by systems
   languages like Rust and C++.
@@ -374,7 +374,7 @@ Python. Use `break` and `continue` for control flow.
 **Mojo using a typed for-loop**:
 
 ```mojo
-var nums = [0, 1, 2, 3, 4]
+var nums: List[Int] = [0, 1, 2, 3, 4]
 var squares2: List[Int] = []
 
 for x in nums:
@@ -613,7 +613,7 @@ waiting for a garbage collector to run.
 
 If you need manual memory control, Mojo offers a suite of pointer and
 allocation options. You get convenience by default, and precise
-`alloc()` and `free()` control when you reach for it.
+`alloc()` and `dealloc()` control when you reach for it.
 
 ## Python instincts that may surprise you in Mojo
 

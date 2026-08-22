@@ -67,8 +67,13 @@ def _prefixed(prefix: str, files: set[str]) -> set[str]:
 
 
 def _git_all_files(cwd: str = ".") -> set[str]:
-    tracked = subprocess.check_output(["git", "ls-files"], cwd=cwd)
-    deleted = subprocess.check_output(["git", "ls-files", "--deleted"], cwd=cwd)
+    # `core.quotepath=off` keeps non-ASCII paths raw (see `_git_changed_files`).
+    tracked = subprocess.check_output(
+        ["git", "-c", "core.quotepath=off", "ls-files"], cwd=cwd
+    )
+    deleted = subprocess.check_output(
+        ["git", "-c", "core.quotepath=off", "ls-files", "--deleted"], cwd=cwd
+    )
     return _get_files(tracked) - _get_files(deleted)
 
 
@@ -77,8 +82,20 @@ def _jj_all_files(cwd: str = ".") -> set[str]:
 
 
 def _git_changed_files(diff_target: str, cwd: str = ".") -> set[str]:
+    # `core.quotepath=off` keeps non-ASCII paths (e.g. an em-dash in a
+    # filename) as raw UTF-8 instead of C-quoting them into `"...\342\200\224..."`,
+    # so a linter given this list finds the file instead of erroring on a
+    # quoted path that doesn't exist. Mirrors `lint_file_paths.py`.
     result = subprocess.check_output(
-        ["git", "diff", "--diff-filter=d", "--name-only", diff_target],
+        [
+            "git",
+            "-c",
+            "core.quotepath=off",
+            "diff",
+            "--diff-filter=d",
+            "--name-only",
+            diff_target,
+        ],
         cwd=cwd,
     )
     return _get_files(result)
@@ -136,12 +153,15 @@ def get_all_files() -> set[str]:
     return _oss_filter(files)
 
 
-def _diff_target() -> str:
+def _diff_target() -> str | None:
     # Commit the superproject is diffed against: the merge base of the working
     # copy and main, as a git commit id. Resolving it concretely (rather than as
     # a jj revset) lets `_submodule_diff_target` reuse it to read each
     # submodule's pinned gitlink, so submodules diff from the same base on both
     # the jj and git paths.
+    #
+    # If determining the merge base fails, returns None, which should indicate
+    # falling back to a full lint.
     if _has_jj():
         return (
             subprocess.check_output(
@@ -160,11 +180,15 @@ def _diff_target() -> str:
         )
     if lint_diff_target := os.getenv("LINT_DIFF_TARGET"):
         return lint_diff_target
-    return (
-        subprocess.check_output(["git", "merge-base", "origin/main", "HEAD"])
-        .decode()
-        .rstrip("\n")
+    result = subprocess.run(
+        ["git", "merge-base", "origin/main", "HEAD"],
+        check=False,
+        capture_output=True,
     )
+    if result.returncode == 0:
+        return result.stdout.decode().rstrip("\n")
+    else:
+        return None
 
 
 def _changed_files(diff_target: str, cwd: str = ".") -> set[str]:
@@ -175,6 +199,8 @@ def _changed_files(diff_target: str, cwd: str = ".") -> set[str]:
 
 def get_changed_files() -> set[str]:
     diff_target = _diff_target()
+    if not diff_target:
+        return get_all_files()
     files = _changed_files(diff_target)
     for sm_path in _submodule_paths():
         # Diff each submodule from the commit the superproject pins at the merge

@@ -410,7 +410,9 @@ async def benchmark(
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class(
-        tokenizer=session.tokenizer, extra_body=args.extra_body
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
     )
 
     if args.warm_shared_prefix:
@@ -459,7 +461,9 @@ async def benchmark(
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
     base_driver = request_driver_class(
-        tokenizer=session.tokenizer, extra_body=args.extra_body
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
     )
 
     # Warm up the initial-slot sessions before starting the timer.
@@ -508,6 +512,7 @@ async def benchmark(
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
             max_concurrency=args.warmup_concurrency,
+            use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -663,6 +668,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -684,6 +690,7 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -711,6 +718,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -1237,7 +1245,10 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            revision=resolve_revision(tokenizer_id),
+            # An explicit revision wins: ``resolve_revision`` asks the Hub and
+            # returns None for a repo it cannot see, which loads ``main``.
+            revision=args.tokenizer_revision or resolve_revision(tokenizer_id),
+            local_files_only=args.tokenizer_local_files_only,
             model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
@@ -1254,9 +1265,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         lora_manager = LoRABenchmarkManager(
             lora_paths=args.lora_paths,
             num_requests=num_requests,
-            traffic_ratios=args.per_lora_traffic_ratio
-            if args.per_lora_traffic_ratio
-            else None,
+            traffic_ratios=args.per_lora_traffic_ratio or None,
             uniform_ratio=args.lora_uniform_traffic_ratio,
             seed=args.seed,
             max_concurrent_lora_ops=args.max_concurrent_lora_ops,
@@ -1267,9 +1276,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     trace_path = None
     if args.trace:
         assert_nvidia_gpu()
-        trace_path = (
-            args.trace_file if args.trace_file else get_default_trace_path()
-        )
+        trace_path = args.trace_file or get_default_trace_path()
         logger.info(f"Tracing enabled, output: {trace_path}")
 
     return BenchmarkSession(
@@ -1559,7 +1566,7 @@ def parse_args(
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
-        ] = ServingBenchmarkConfig(),
+        ] = ServingBenchmarkConfig(),  # noqa: B008
     ) -> None:
         parsed_configs.append(config)
 

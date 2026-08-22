@@ -7,7 +7,7 @@ show_languages: true
 is_tutorial: true
 ---
 
-import InstallModular from '../../_includes/install-modular.mdx';
+import InstallMAX from '../_includes/install-modular.mdx';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -30,11 +30,11 @@ integrating a custom op in Mojo and running it in PyTorch.
 
 Let's start by creating a Python project and installing the necessary tools.
 
-<InstallModular folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
+<InstallMAX folder="pytorch_custom_ops" extraLibraries={["torch", "pillow", "numpy"]} />
 
-This will install the `modular` package along with PyTorch (`torch`), PIL for
+This will install the `max` package along with PyTorch (`torch`), PIL for
 image processing (`pillow`), and NumPy for array operations. When you install
-the `modular` package, you'll get access to the `max` Python APIs and the Mojo
+the `max` package, you'll get access to the MAX Python APIs and the Mojo
 compiler—everything needed to build high-performance custom operations.
 
 ## Build the PyTorch interface
@@ -64,8 +64,8 @@ we need to bridge to our Mojo implementation.
 
 ## Integrate the custom operation
 
-The [`max.torch`](/max/api/python/experimental.torch) module provides
-[`CustomOpLibrary`](/max/api/python/generated/max.experimental.torch.CustomOpLibrary),
+The [`max.experimental.torch`](/api/python/experimental.torch) module provides
+[`CustomOpLibrary`](/api/python/generated/max.experimental.torch.CustomOpLibrary),
 which allows you to load and use compiled Mojo operations directly in PyTorch.
 
 Update the `grayscale.py` file to include the following code:
@@ -87,9 +87,9 @@ def grayscale(pic: torch.Tensor):
 ```
 
 The `CustomOpLibrary` loads operations from a precompiled Mojo package file
-(`.mojoc` or `.mojopkg`). Once loaded, you can call these operations just like
-any other PyTorch function. The operations automatically handle data movement
-between PyTorch and MAX, and integrate with PyTorch when needed.
+(`.mojoc`). Once loaded, you can call these operations just like any other
+PyTorch function. The operations automatically handle data movement between
+PyTorch and MAX, and integrate with PyTorch when needed.
 
 The compilation of your Mojo code into a `.mojoc` file is handled when you run
 your Python script. You don't need to manually invoke the Mojo compiler or
@@ -112,16 +112,16 @@ Then create a new file called `grayscale.mojo` inside the `operations` folder
 and add the following code:
 
 ```mojo title="grayscale.mojo"
-import compiler
+import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     @staticmethod
     def execute[
@@ -131,12 +131,12 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
         ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
-            @parameter
+            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:
@@ -158,13 +158,13 @@ struct Grayscale:
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 ```
 
-First, the `@compiler.register("grayscale")` decorator makes this operation
+First, the `@extensibility.register("grayscale")` decorator makes this operation
 available to PyTorch under the name `grayscale`. This is the
 `ops.grayscale(output, pic)` function called in the PyTorch model.
 
 The `color_to_grayscale` function takes a coordinate into the output tensor and
 returns a SIMD vector of the grayscale value. The
-[`foreach`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
+[`foreach`](/api/mojo/extensibility/managed_tensor_slice/foreach/)
 primitive automatically parallelizes the operation across available compute
 units.
 
@@ -224,8 +224,8 @@ improvements over CPU-only implementations.
 Now that you wrote a Mojo kernel with your PyTorch model, check out these
 other tutorials:
 
-- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+- [Build custom ops for GPUs](/develop/build-custom-ops): Write custom GPU
   and CPU operations in Mojo and load them into a MAX graph.
-- [Build a model graph with Module](/max/develop/modules): Learn how to
+- [Build a model graph with Module](/develop/modules): Learn how to
   compose modules, write custom modules with explicit weights, load checkpoint
   data, and construct a model graph.

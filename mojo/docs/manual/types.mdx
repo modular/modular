@@ -4,6 +4,8 @@ sidebar_position: 1
 description: Standard Mojo data types.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 All values in Mojo have an associated data type. Most of the types are
 *nominal* types, defined by a [`struct`](/docs/manual/structs/). These types are
 nominal (or "named") because type equality is determined by the type's *name*,
@@ -18,7 +20,7 @@ There are some types that aren't defined as structs:
 Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
-[`Int`](/docs/std/builtin/int/Int/) and
+[`Int`](/docs/std/builtin/simd/#int) and
 [`String`](/docs/std/collections/string/string/String/). But these standard
 library types are the building blocks you'll use for most Mojo programs.
 
@@ -229,6 +231,8 @@ Tensor Processing Units (TPUs) to accelerate machine learning workloads.
 Therefore the B is a project identifier and not a technical format indicator.
 :::
 
+<!-- markdownlint-disable MD013 -->
+
 <figure id="table-4">
 <figcaption><b>Table 4.</b> Mojo floating-point types</figcaption>
 
@@ -245,6 +249,8 @@ Therefore the B is a project identifier and not a technical format indicator.
 | `Float8_e4m3fnuz` | 8-bit floating-point<br />(AMD-only e4m3fnuz format — finite values and NaN only, no infinities)                       | GPU             |
 
 </figure>
+
+<!-- markdownlint-enable MD013 -->
 
 :::note
 GPU-only floating-point types are supported on specific accelerator hardware and
@@ -288,6 +294,8 @@ yourself.
 
 Table 5 summarizes the literal formats you can use to represent numbers.
 
+<!-- markdownlint-disable MD013 -->
+
 <figure>
 <figcaption><b>Table 5.</b> Numeric literal formats</figcaption>
 
@@ -300,6 +308,8 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 | Floating-point literal | `3.14`, `1.2e9` | Floating-point literal.<br />Must include the decimal point to be interpreted as floating-point. |
 
 </figure>
+
+<!-- markdownlint-enable MD013 -->
 
 At compile-time, Mojo treats numeric literals as arbitrary-precision values, so
 the compiler can perform compile-time calculations without overflow or rounding
@@ -381,7 +391,7 @@ types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
 aliases for scalar values:
 
 ```mojo
-comptime Scalar = SIMD[size=1]
+comptime Scalar = SIMD[length=1]
 comptime Int = Scalar[DType.int]
 comptime Int8 = Scalar[DType.int8]
 comptime Float32 = Scalar[DType.float32]
@@ -439,14 +449,16 @@ operands to the desired type.
 
 You can explicitly convert a `SIMD` value to a different `SIMD` type either by
 invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
-it as an argument to the constructor of the target type. For example:
+it as an argument to the initializer of the target type. For example:
 
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
+var simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+var simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+var simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
 print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
+var simd4 = simd2 + SIMD[DType.int16, 4](
+    simd1
+)  # Convert with SIMD initializer
 print("simd4:", simd4)
 ```
 
@@ -455,13 +467,13 @@ simd3: [-2.2, 6.6, -13.200001, 22.0]
 simd4: [1, 5, 1, 9]
 ```
 
-You can convert a `Scalar` value by passing it as an argument to the constructor
+You can convert a `Scalar` value by passing it as an argument to the initializer
 of the target type. For example:
 
 ```mojo
-var my_int: Int16 = 12                 # SIMD[DType.int16, 1]
-var my_float: Float32 = 0.75           # SIMD[DType.float32, 1]
-result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
+var my_int: Int16 = 12                     # SIMD[DType.int16, 1]
+var my_float: Float32 = 0.75               # SIMD[DType.float32, 1]
+var result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
 print("Result:", result)
 ```
 
@@ -470,11 +482,11 @@ Result: 9.0
 ```
 
 You can convert a scalar value of any numeric type to `Int` by passing the value
-to the [`Int()`](/docs/std/builtin/int/Int/#__init__) constructor method.
+to the [`Int()`](/docs/std/builtin/simd/SIMD/#__init__) initializer method.
 Additionally, you can pass an instance of any struct that implements the
 [`Intable`](/docs/std/builtin/int/Intable/) trait or
 [`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait to the `Int()`
-constructor to convert that instance to an `Int`.
+initializer to convert that instance to an `Int`.
 
 ## Strings
 
@@ -495,7 +507,7 @@ print(s) # Testing Mojo strings
 Many standard library types conform to the
 [`Writable`](/docs/std/format/Writable/) trait, which indicates
 that a value can be converted into a `String` using the `String(...)`
-constructor.
+initializer.
 
 The built-in [`print()`](/docs/std/io/io/print/) function accepts values
 that conform to the `Writable` trait.
@@ -507,7 +519,7 @@ var s = "Items in list: " + String(5)
 print(s) # Items in list: 5
 ```
 
-Or, use the string constructor with variadic `Writable` types,
+Or, use the string initializer with variadic `Writable` types,
 so you don't have to call `String()` on each value:
 
 ```mojo
@@ -628,7 +640,7 @@ var s = String(template) # explicitly construct a string
 `TString`s can add arbitrary expressions within the replacement fields:
 
 ```mojo
-var list = [1, 2, 3]
+var list: List[Int] = [1, 2, 3]
 print(t"{list[0] + list[1]}") # 3
 ```
 
@@ -733,14 +745,14 @@ several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types
-example_tuple = Tuple[Int, String](1, "Example")
+var example_tuple = Tuple[Int, String](1, "Example")
 
 # Assign multiple variables at once
-x, y = example_tuple
+var x, y = example_tuple
 print(x, y)
 
 # Get individual values with an index
-s = example_tuple[1]
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -752,8 +764,8 @@ Example
 You can also create a tuple without explicit typing.
 
 ```mojo
-example_tuple = (1, "Example")
-s = example_tuple[1]
+var example_tuple = (1, "Example")
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -775,10 +787,10 @@ can be used to build more complex data structures:
 - [`Optional`](/docs/std/collections/optional/Optional/)
   represents a value that may or may not be present.
 
-The collection types are *generic types*: while a given collection can only
-hold a specific type of value (such as `Int` or `Float64`), you specify the
-type at compile time using a [parameter](/docs/manual/parameters/). For
-example, you can create a `List` of `Int` values like this:
+The collection types are *parameterized types*: while a given collection can
+only hold a specific type of value (such as `Int` or `Float64`), you specify the
+type at compile time using a [parameter](/docs/manual/parameters/). For example,
+you can create a `List` of `Int` values like this:
 
 ```mojo
 var l: List[Int] = [1, 2, 3, 4]
@@ -791,7 +803,7 @@ integer literals, Mojo creates a `List[Int]`.
 
 ```mojo
 # Inferred type == List[Int]
-var l1 = [1, 2, 3, 4]
+var l1: List = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
@@ -807,7 +819,7 @@ The following sections give brief introduction to the main collection types.
 
 [`List`](/docs/std/collections/list/List/) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`Copyable`](/docs/std/builtin/value/Copyable/) trait. Most of the common
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter, like
 this:
@@ -821,7 +833,7 @@ ability to append to the list, pop items out of the list, and access list items
 using subscript notation.
 
 ```mojo
-var list = [2, 3, 5]
+var list: List[Int] = [2, 3, 5]
 list.append(7)
 list.append(11)
 print("Popping last item from list: ", list.pop())
@@ -843,7 +855,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
 
   ```mojo
   # List literal, element type infers to Int.
-  var nums = [2, 3, 5]
+  var nums: List = [2, 3, 5]
   ```
 
   You can also use an explicit type if you want a specific element type:
@@ -873,7 +885,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   item:
 
 ```mojo
-var list = [2, 3, 4]
+var list: List[Int] = [2, 3, 4]
 for item in list:
       print(item, end=", ")
 ```
@@ -886,7 +898,7 @@ If you would like to mutate the elements of the list, capture the reference to
 the element with `ref` instead of making a copy:
 
 ```mojo
-var list = [2, 3, 4]
+var list: List[Int] = [2, 3, 4]
 for ref item in list:     # Capture a ref to the list element
       print(item, end=", ")
       item = 0  # Mutates the element inside the list
@@ -914,7 +926,7 @@ var empty_dict: Dict[String, Float64] = {}
 var values: Dict[String, Float64] = {"pi": 3.14159, "e": 2.71828}
 ```
 
-You can also use the constructor syntax:
+You can also use the initializer syntax:
 
 ```mojo
 var values = Dict[String, Float64]()
@@ -922,7 +934,7 @@ var values = Dict[String, Float64]()
 
 The dictionary's key type must conform to the
 [`KeyElement`](/docs/std/collections/dict/#keyelement) trait, and value elements
-must conform to the [`Copyable`](/docs/std/builtin/value/Copyable/) trait.
+must conform to the [`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
@@ -958,15 +970,15 @@ values. You can add and remove elements from the set, test whether a value
 exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
 
-Sets are generic and the element type must conform to the
+Sets are parameterized and the element type must conform to the
 [`KeyElement`](/docs/std/collections/dict/#keyelement) trait. Like lists and
 dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
 
 ```mojo
-i_like = {"sushi", "ice cream", "tacos", "pho"}
-you_like = {"burgers", "tacos", "salad", "ice cream"}
-we_like = i_like.intersection(you_like)
+var i_like = {"sushi", "ice cream", "tacos", "pho"}
+var you_like = {"burgers", "tacos", "salad", "ice cream"}
+var we_like = i_like.intersection(you_like)
 
 print("We both like:")
 for item in we_like:
@@ -983,8 +995,8 @@ We both like:
 
 An [`Optional`](/docs/std/collections/optional/Optional/) represents a
 value that may or may not be present. Like the other collection types, it is
-generic, and can hold any type that conforms to the
-[`Copyable`](/docs/std/builtin/value/Copyable/) trait.
+parameterized, and can hold any type that conforms to the
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
 ```mojo
 # Two ways to initialize an Optional with a value
@@ -1017,13 +1029,10 @@ value if there is one, or a user-specified default value otherwise:
 
 ```mojo
 var custom_greeting: Optional[String] = None
-print(custom_greeting.or_else("Hello"))
+print(custom_greeting.or_else("Hello"))  # Hello
 
 custom_greeting = "Hi"
-print(custom_greeting.or_else("Hello"))
+print(custom_greeting.or_else("Hello"))  # Hi
 ```
 
-```output
-Hello
-Hi
-```
+<!-- markdownlint-enable MD033 -->

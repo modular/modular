@@ -73,15 +73,15 @@ class Value(Generic[MlirType]):
 
     .. code-block:: python
 
-        from max.graph import Graph, ops, Value
+        from max.graph import DeviceRef, Graph, ops, Value
         from max.dtype import DType
         import numpy as np
 
         # Create a graph context
         with Graph("value_example") as graph:
             # Create input values
-            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32, device=DeviceRef.CPU())
-            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32, device=DeviceRef.CPU())
+            a = ops.constant(np.array([1, 2, 3], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
+            b = ops.constant(np.array([4, 5, 6], dtype=np.float32), dtype=DType.float32, device=DeviceRef.CPU())
 
             # Use values to perform operations
             c = a + b  # c is a Value representing the addition
@@ -372,7 +372,7 @@ class TensorValue(Value[mo.TensorType]):
 
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, ops
+        from max.graph import DeviceRef, Graph, ops
 
         # Create a sample matrix
         matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -482,7 +482,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -512,7 +512,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -537,7 +537,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix (2-dimensional array)
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -569,7 +569,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -605,7 +605,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -639,7 +639,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -672,7 +672,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -762,7 +762,7 @@ class TensorValue(Value[mo.TensorType]):
 
             import numpy as np
             from max.dtype import DType
-            from max.graph import Graph, ops
+            from max.graph import DeviceRef, Graph, ops
 
             # Create a 2x3 matrix
             matrix = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
@@ -1037,7 +1037,7 @@ class TensorValue(Value[mo.TensorType]):
             index = (index,)
         return ops.slice_tensor(self, index)
 
-    def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise equality comparison.
 
         Args:
@@ -1059,7 +1059,7 @@ class TensorValue(Value[mo.TensorType]):
         """Rounds to the elementwise nearest integer, with ties going towards the nearest even number."""
         return ops.round(self)
 
-    def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> TensorValue:  # type: ignore[override]
         """Performs element-wise inequality comparison.
 
         Args:

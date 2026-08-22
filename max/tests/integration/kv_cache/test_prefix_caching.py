@@ -107,8 +107,8 @@ async def test_prefix_caching_basic() -> None:
     # Reserve a slot in the KV cache manager.
     initial_prompt_1 = [10, 11, 12, 13, 14]
     context_1 = create_text_context(np.array(initial_prompt_1, dtype=np.int64))
-    kv_manager.claim(context_1.request_id, replica_idx=0)
-    kv_manager.alloc(context_1, replica_idx=0)
+    kv_manager.claim(context_1)
+    kv_manager.alloc(context_1)
 
     # Seq 1: Prefill 10 - 14
     batch = [context_1]
@@ -118,7 +118,8 @@ async def test_prefix_caching_basic() -> None:
         len(initial_prompt_1),
     ]
     batch[0].update(15)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     # Check that we got new blocks
     assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
@@ -132,21 +133,22 @@ async def test_prefix_caching_basic() -> None:
     # Seq 1: Token gen 15 - 18
     toks = [15, 16, 17, 18, 19]
     for i in range(len(toks) - 1):
-        kv_manager.alloc(batch[0], replica_idx=0)
+        kv_manager.alloc(batch[0])
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
             1,
             5 + i + 1,
         ]
         batch[0].update(toks[i + 1])
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
     # Seq 2: Claim
     initial_prompt_2 = [10, 11, 12, 13]
     context_2 = create_text_context(np.array(initial_prompt_2, dtype=np.int64))
     batch = [context_2]
-    kv_manager.claim(context_2.request_id, replica_idx=0)
-    kv_manager.alloc(context_2, replica_idx=0)
+    kv_manager.claim(context_2)
+    kv_manager.alloc(context_2)
 
     # Seq 2: Prefill 10 - 13
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
@@ -155,7 +157,8 @@ async def test_prefix_caching_basic() -> None:
         len(initial_prompt_2),
     ]
     batch[0].update(14)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     # Check that we got cached blocks, except for last token in prompt
     assigned = assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0]
@@ -165,7 +168,7 @@ async def test_prefix_caching_basic() -> None:
     # Seq 2: Token gen 14 - 17
     toks = [14, 15, 99, 100, 101]
     for i in range(len(toks) - 1):
-        kv_manager.alloc(batch[0], replica_idx=0)
+        kv_manager.alloc(batch[0])
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         assert get_uncommitted_and_committed_block_counts(kv_inputs)[0] == [
             1,
@@ -174,7 +177,8 @@ async def test_prefix_caching_basic() -> None:
         assigned = assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0]
         assert assigned[:4] == [0, 1, 2, 3]
         batch[0].update(toks[i + 1])
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
     # Prompt tokens: prefill (5 + 1 non-cached) + cache hits (3) + TG alloc steps (4+4=8)
     metrics = kv_manager.get_metrics_aggregated()
@@ -197,21 +201,25 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     context_3 = create_text_context(prompt)
 
     # Get cache hit of 0 tokens since the prefix cache is empty
-    with kv_manager.reserve([[context_1]]):
-        kv_manager.runtime_inputs([[context_1]])
-        context_1.update(15)
-        kv_manager.step([[context_1]])
+    kv_manager.claim(context_1)
+    kv_manager.alloc(context_1)
+    kv_manager.runtime_inputs([[context_1]])
+    context_1.update(15)
+    kv_manager.step(context_1)
+    kv_manager.release(context_1)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 0
 
     # Get cache hit of 4 tokens
-    with kv_manager.reserve([[context_2]]):
-        pass
+    kv_manager.claim(context_2)
+    kv_manager.alloc(context_2)
+    kv_manager.release(context_2)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
-    with kv_manager.reserve([[context_3]]):
-        pass
+    kv_manager.claim(context_3)
+    kv_manager.alloc(context_3)
+    kv_manager.release(context_3)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
 
@@ -227,24 +235,27 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         prompt = np.array([100, 101, 102, 103, 104], dtype=np.int64)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        with kv_manager.reserve([[context]]):
-            _ = kv_manager.runtime_inputs([batch])
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
+        _ = kv_manager.runtime_inputs([batch])
 
-            if i == 0:
-                # During first fetch, we do not get a cache hit so we use 5 blocks.
-                available_blocks -= 5
-            else:
-                # During later fetches, we get a cache hit so we use 1 block.
-                available_blocks -= 1
-            assert available_blocks >= 0
+        if i == 0:
+            # During first fetch, we do not get a cache hit so we use 5 blocks.
+            available_blocks -= 5
+        else:
+            # During later fetches, we get a cache hit so we use 1 block.
+            available_blocks -= 1
+        assert available_blocks >= 0
 
-            context.update(42)
-            kv_manager.step([batch])
+        context.update(42)
+        for ctx in batch:
+            kv_manager.step(ctx)
 
-            if i != 0:
-                # During later fetches, we will just release the block we wrote to
-                # since a different block already exists for the same token.
-                available_blocks += 1
+        if i != 0:
+            # During later fetches, we will just release the block we wrote to
+            # since a different block already exists for the same token.
+            available_blocks += 1
+        kv_manager.release(context)
 
     # cache hit rate is ~= 4 / 5 tokens
     assert kv_manager.get_metrics_aggregated().cache_hit_rate > 0.79
@@ -262,11 +273,12 @@ async def test_prefix_caching_with_no_release() -> None:
         for _ in range(1000):
             prompt = gen_prompt(16)
             batch = [create_text_context(prompt)]
-            kv_manager.claim(batch[0].request_id, replica_idx=0)
-            kv_manager.alloc(batch[0], replica_idx=0)
+            kv_manager.claim(batch[0])
+            kv_manager.alloc(batch[0])
             _ = kv_manager.runtime_inputs([batch])
             batch[0].update(42)
-            kv_manager.step([batch])
+            for ctx in batch:
+                kv_manager.step(ctx)
 
             # We intentionally do not release the sequence here!
 
@@ -293,13 +305,14 @@ async def test_prefix_caching_with_random_prompts(page_size: int) -> None:
         prompt = gen_prompt(prompt_len)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         # This fetch can trigger evictions from the tree.
         _ = kv_manager.runtime_inputs([batch])
         tok = gen_prompt(1)[0]
         context.update(tok)
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
         slots_used += prompt_len
 
@@ -325,18 +338,19 @@ async def test_prefix_caching_with_random_prompts(page_size: int) -> None:
 
             # This fetch can trigger evictions from the tree.
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0)
+                kv_manager.alloc(ctx)
 
             _ = kv_manager.runtime_inputs([batch])
             next_tok = gen_prompt(1)[0]
             context.update(next_tok)
-            kv_manager.step([batch])
+            for ctx in batch:
+                kv_manager.step(ctx)
 
             slots_used += prompt_len
 
-        kv_manager.release(context.request_id, replica_idx=0)
+        kv_manager.release(context)
 
-    assert kv_manager.get_num_used_pages(replica_idx=0) == 0
+    assert kv_manager.block_count(replica_idx=0).used == 0
 
 
 @pytest.mark.asyncio
@@ -345,8 +359,8 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     # Seq 1: Prefill 10 - 14
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
     assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
@@ -358,7 +372,8 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(15)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     # Seq 1: Token gen 15
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
@@ -372,10 +387,11 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(16)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     # Seq 1: Token gen 16
-    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_manager.alloc(batch[0])
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
     assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
@@ -388,7 +404,8 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(17)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     assert kv_manager.get_metrics_aggregated().cache_hit_rate == 0.0
 
@@ -398,7 +415,7 @@ class FakeModel:
 
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.page_size = kv_manager.params.page_size
-        self.total_num_pages = kv_manager.get_num_pages(replica_idx=0)
+        self.total_num_pages = kv_manager.block_count(replica_idx=0).total
         # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
             dict
@@ -429,7 +446,7 @@ class FakeModel:
 
         # update all tokens to contain the tokens which should have a KV
         # projection in the cache after this forward step
-        for request_id in request_ids_and_prompts:
+        for request_id in request_ids_and_prompts:  # noqa: PLC0206
             self.request_ids_and_all_tokens[request_id] = np.concatenate(
                 [
                     self.request_ids_and_all_tokens.get(
@@ -534,7 +551,7 @@ async def test_prefix_caching_grouped_prefixes(
             random_len = np.random.randint(0, 10)
             prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
             ctx = create_text_context(prompt)
-            kv_manager.claim(ctx.request_id, replica_idx=0)
+            kv_manager.claim(ctx)
             batch[ctx.request_id] = ctx
 
         ctxs = list(batch.values())
@@ -542,7 +559,7 @@ async def test_prefix_caching_grouped_prefixes(
             request_id: batch[request_id].tokens.active for request_id in batch
         }
         for ctx in ctxs:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
         kv_inputs = kv_manager.runtime_inputs_for_leaf([ctxs])
         request_ids_and_new_tokens_batch = model.run(
             request_ids_and_prompts, kv_inputs
@@ -551,7 +568,8 @@ async def test_prefix_caching_grouped_prefixes(
             ctx = batch[request_id]
             for tok in request_ids_and_new_tokens_batch[request_id]:
                 ctx.update(tok)
-        kv_manager.step([ctxs])
+        for ctx in ctxs:
+            kv_manager.step(ctx)
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
@@ -577,7 +595,7 @@ async def test_prefix_caching_grouped_prefixes(
             request_id: ctx.tokens.active for request_id, ctx in batch.items()
         }
         for ctx in ctxs:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
         kv_inputs = kv_manager.runtime_inputs_for_leaf([ctxs])
         request_ids_and_new_tokens_subset = model.run(
             orig_request_ids_and_prompts, kv_inputs
@@ -587,18 +605,19 @@ async def test_prefix_caching_grouped_prefixes(
             ctx = batch[request_id]
             for tok in request_ids_and_new_tokens_subset[request_id]:
                 ctx.update(tok)
-        kv_manager.step([ctxs])
+        for ctx in ctxs:
+            kv_manager.step(ctx)
 
         # copying keys so we don't iterate over dict while deleting things
         copied_request_ids = list(batch.keys())
         for request_id in copied_request_ids:
             # terminate requests with probability 10%
             if len(batch) > 1 and np.random.rand() < 0.1:
-                kv_manager.release(batch[request_id].request_id, replica_idx=0)
+                kv_manager.release(batch[request_id])
                 del batch[request_id]
 
-    for request_id in batch:
-        kv_manager.release(request_id, replica_idx=0)
+    for value in batch.values():
+        kv_manager.release(value)
 
 
 def run_forward(
@@ -635,7 +654,7 @@ def run_forward(
     orig_request_ids_and_prompts = request_ids_and_prompts.copy()
     new_toks = {ctx.request_id: np.array([next_tok])}
     if run_fetch:
-        kv_manager.alloc(ctx, replica_idx=0)
+        kv_manager.alloc(ctx)
 
     kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
     _ = model.run(
@@ -645,7 +664,7 @@ def run_forward(
     )
     if run_step:
         ctx.update(next_tok)
-        kv_manager.step([batch])
+        kv_manager.step(ctx)
 
 
 @pytest.mark.asyncio
@@ -675,10 +694,10 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
     # === Create contexts with initial token (non-empty) ===
     ctx_1 = create_text_context(initial_token)
-    kv_manager.claim(ctx_1.request_id, replica_idx=0)
+    kv_manager.claim(ctx_1)
 
     ctx_2 = create_text_context(initial_token)
-    kv_manager.claim(ctx_2.request_id, replica_idx=0)
+    kv_manager.claim(ctx_2)
 
     # Process the remaining tokens in chunks - run_forward will include initial unprocessed token
     run_forward(
@@ -694,7 +713,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
     run_forward(model, kv_manager, ctx_2, prompt_2_part_2, 42)
-    blocks = kv_manager.get_req_blocks(ctx_2.request_id, replica_idx=0)
+    blocks = kv_manager.get_req_blocks(ctx_2)
     assert 2 not in blocks
 
     metrics = kv_manager.get_metrics_aggregated()
@@ -709,13 +728,13 @@ def run_and_check_num_cached_tokens(
 ) -> int:
     # reset cache_tokens to 0
     kv_manager.reset_metrics()
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])
     magic_token_value = 42  # this is arbitrary
     if do_step:
         ctx.update(magic_token_value)
-        kv_manager.step([[ctx]])
+        kv_manager.step(ctx)
     return kv_manager.get_metrics_aggregated().cache_tokens
 
 
@@ -870,3 +889,38 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
     assert ctx1.tokens.processed_length == 12
     block_manager = kv_manager._replica[0].block_manager
     assert block_manager.req_to_committed_idx[ctx1.request_id] == 12
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_video_frames_fold_into_block_hashes() -> None:
+    """Video frames are per-frame image entries, so their content folds into KV
+    block hashing: two clips with an identical token stream but different
+    content don't share KV past the first frame; the same clip fully reuses."""
+    VID = 99
+    kv_manager = create_kv_cache(num_blocks=128, page_size=1)
+    vision_token_ids = [VID]
+    tokens = np.array([51, 52, VID, VID, VID, VID, 53], dtype=np.int64)
+    px = np.array([[7], [7]])
+
+    def video_ctx(rid: str, h0: int, h1: int) -> TextAndVisionContext:
+        return TextAndVisionContext(
+            max_length=100,
+            tokens=TokenBuffer(tokens.copy()),
+            images=[
+                ImageMetadata(
+                    start_idx=2, end_idx=4, pixel_values=px, image_hash=h0
+                ),
+                ImageMetadata(
+                    start_idx=4, end_idx=6, pixel_values=px, image_hash=h1
+                ),
+            ],
+            vision_token_ids=vision_token_ids,
+        )
+
+    clip_a = video_ctx("a", 0xA0, 0xA1)
+    clip_a2 = video_ctx("a2", 0xA0, 0xA1)  # same clip
+    clip_b = video_ctx("b", 0xB0, 0xB1)  # different content, same tokens
+
+    assert run_and_check_num_cached_tokens(kv_manager, clip_a) == 0
+    assert run_and_check_num_cached_tokens(kv_manager, clip_a2) == 6  # full
+    assert run_and_check_num_cached_tokens(kv_manager, clip_b) == 2

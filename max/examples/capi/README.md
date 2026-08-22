@@ -1,6 +1,6 @@
 # Using the MAX C API to execute a precompiled graph
 
-The [MAX graph API](https://docs.modular.com/max/graph/) provides a powerful
+The [MAX graph API](https://max.modular.com/graph/) provides a powerful
 framework for constructing computational graphs to be run on GPUs, CPUs, and
 more. The process of compilation and execution can be separated. This example
 demonstrates how to construct and compile a graph using the MAX Python API,

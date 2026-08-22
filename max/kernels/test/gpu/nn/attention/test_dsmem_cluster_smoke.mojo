@@ -41,14 +41,13 @@ Swept over cluster sizes `P in {2, 4, 8}` (the portable split-K range).
 """
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.memory import AddressSpace
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.memory import stack_allocation
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 # Rank-distinct value written by CTA `me` at word `i`: distinct across both rank
@@ -65,7 +64,7 @@ def dsmem_smoke_kernel[
 ](output: UnsafePointer[UInt32, MutAnyOrigin]):
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
     ]()
 

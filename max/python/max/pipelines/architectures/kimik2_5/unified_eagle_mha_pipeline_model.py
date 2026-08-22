@@ -81,8 +81,8 @@ class Eagle3MHAKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
         # image_token_indices, then the rest of the inputs.
         buffers = (
             self.tokens,
-            *self.language_image_embeddings,
-            *self.language_image_token_indices,
+            *self.vision_embeddings,
+            *self.vision_scatter_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -135,9 +135,7 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         for key, value in target_state_dict.items():
             if key.startswith("vision_encoder."):
                 vision_state_dict[key] = value
-            elif key.startswith("language_model.") or key.startswith(
-                "language_"
-            ):
+            elif key.startswith(("language_model.", "language_")):
                 llm_state_dict[key] = value
 
         n_devices = len(self.devices)
@@ -301,8 +299,9 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
         with CompilationTimer("vision + eagle3 mha language model") as timer:
             graph_module = Module()
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict, module=graph_module
+            assert self.model_config is not None
+            vision_graph, _ = self._build_vision_graph(
+                self.model_config, vision_state_dict, module=graph_module
             )
             with Graph(
                 "eagle3_mha_kimik25_graph",
@@ -446,8 +445,6 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             cu_seqlens=base.cu_seqlens,
             max_seqlen=base.max_seqlen,
             vision_position_ids=base.vision_position_ids,
-            language_image_embeddings=base.language_image_embeddings,
-            language_image_token_indices=base.language_image_token_indices,
             draft_tokens=draft_tokens,
             structured_output=self.pipeline_config.needs_bitmask_constraints,
         )

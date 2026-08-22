@@ -6,12 +6,12 @@ you plan to contribute changes back to the repo, first read everything in
 
 If you just want to build with MAX and aren't interested in developing in the
 source code, instead see the [MAX quickstart
-guide](https://docs.modular.com/max/get-started).
+guide](https://max.modular.com/get-started).
 
 ## Set up your environment
 
 First, make sure your system meets the
-[MAX system requirements](https://docs.modular.com/max/packages#system-requirements).
+[MAX system requirements](https://max.modular.com/packages#system-requirements).
 The same requirements that apply to the `modular` package apply to developing in
 this repo.
 
@@ -150,7 +150,7 @@ existing models, you can use the following Bazel commands to run inference.
 
 For example, this `entrypoints:pipelines generate` command is equivalent to
 running inference with [`max
-generate`](https://docs.modular.com/max/cli/generate):
+generate`](https://max.modular.com/cli/generate):
 
 ```bash
 ./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
@@ -159,7 +159,7 @@ generate`](https://docs.modular.com/max/cli/generate):
 ```
 
 And this is equivalent to creating an endpoint with [`max
-serve`](https://docs.modular.com/max/cli/serve):
+serve`](https://max.modular.com/cli/serve):
 
 ```bash
 ./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
@@ -177,4 +177,4 @@ Here are some docs to help start developing in the MAX framework:
 - [Kernel profiling with Nsight Compute](/max/docs/kernel-profiling.md)
 - [Contributing changes to the repo](../CONTRIBUTING.md)
 
-For more documentation, see [docs.modular.com](https://docs.modular.com).
+For more documentation, see [max.modular.com](https://max.modular.com).

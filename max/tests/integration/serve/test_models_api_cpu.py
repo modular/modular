@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
@@ -25,8 +24,6 @@ from max.serve.schemas.openai import (
 )
 
 SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
-SMOLLM_135M_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_135M_REPO_ID)
-assert SMOLLM_135M_REVISION is not None
 
 
 @pytest.mark.asyncio()
@@ -35,13 +32,11 @@ assert SMOLLM_135M_REVISION is not None
     [
         PipelineArgs(
             model_path=SMOLLM_135M_REPO_ID,
-            huggingface_model_revision=SMOLLM_135M_REVISION,
-            huggingface_weight_revision=SMOLLM_135M_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -66,8 +61,6 @@ async def test_serve_models(app: FastAPI) -> None:
 
 MODEL_ALIAS = "foobar"
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
-MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
-assert MODEL_REVISION is not None
 
 
 @pytest.mark.asyncio()
@@ -77,13 +70,11 @@ assert MODEL_REVISION is not None
         PipelineArgs(
             model_path=MODEL_NAME,
             served_model_name=MODEL_ALIAS,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

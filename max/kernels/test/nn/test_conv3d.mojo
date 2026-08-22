@@ -15,7 +15,7 @@ from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, Layout, LayoutTensor, RuntimeLayout
 from layout import lt_to_tt
 from nn.conv.conv import (
     ConvDirectNHWC,
@@ -69,16 +69,16 @@ def test[
 
     var conv_shape = ConvShape[3](
         n=N,
-        input_dims=DHW,
-        output_dims=Index(DO, HO, WO),
-        filter_dims=QRS,
+        input_dims=Coord(DHW),
+        output_dims=Coord(Index(DO, HO, WO)),
+        filter_dims=Coord(QRS),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
-        pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
+        stride=Coord(stride),
+        dilation=Coord(dilation),
+        pad_d=Coord(pad_d),
+        pad_h=Coord(pad_h),
+        pad_w=Coord(pad_w),
         num_groups=num_groups,
     )
 

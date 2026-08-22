@@ -16,7 +16,7 @@ When compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, the helpers in
 this module check loaded float values against the bit pattern written by
 the debug allocator (`MODULAR_DEBUG_DEVICE_ALLOCATOR=uninitialized-poison`).
 A match prints a diagnostic identifying the load site and the offending
-lane, then triggers `abort()`. When disabled (the default), `@parameter
+lane, then triggers `abort()`. When disabled (the default), `@__parameter
 if` / `comptime if` eliminates all checking code at compile time with zero
 runtime overhead.
 

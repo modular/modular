@@ -29,11 +29,13 @@ from collections.abc import AsyncIterator
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade import GenerateRequest, Worker, worker_method
+from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.interfaces.gen_ai import TextGenOptions
 from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
     SamplingParams,
+    SamplingParamsInput,
     TextAndVisionContext,
     TextContext,
     TextGenerationOutput,
@@ -41,21 +43,36 @@ from max.pipelines.context import (
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import RequestID
-from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.worker_interface import ModelWorkerProxy
-from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
-from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 logger = logging.getLogger(__name__)
 
 Int32Array = npt.NDArray[np.int32]
-TokenIdArray = npt.NDArray[np.int64]
 
-_ModelWorkerProxy = ModelWorkerProxy[
-    TextAndVisionContext | TextContext, TextGenerationOutput
-]
+
+def _sampling_params_input(req: TextGenOptions) -> SamplingParamsInput:
+    """Map cascade :class:`TextGenOptions` onto ``SamplingParamsInput``.
+
+    Forwards every request-configurable sampling field so a request routed
+    through the cascade pipeline resolves the same parameters as one sent to
+    ``max.serve``'s OpenAI routes. ``None`` fields fall back to the model's
+    ``GenerationConfig`` defaults (then the ``SamplingParams`` class defaults).
+    """
+    return SamplingParamsInput(
+        max_new_tokens=req.num_tokens,
+        min_new_tokens=req.min_new_tokens,
+        ignore_eos=req.ignore_eos,
+        temperature=req.temperature,
+        top_k=req.top_k,
+        top_p=req.top_p,
+        min_p=req.min_p,
+        thinking_temperature=req.thinking_temperature,
+        seed=req.seed,
+        frequency_penalty=req.frequency_penalty,
+        presence_penalty=req.presence_penalty,
+        repetition_penalty=req.repetition_penalty,
+        stop=req.stop,
+        stop_token_ids=req.stop_token_ids,
+    )
 
 
 class MAXModelWorker(Worker):
@@ -76,45 +93,65 @@ class MAXModelWorker(Worker):
         super().__init__(deploy_hints=["cpu"] if on_cpu else ["gpu"])
         self.pipeline_config = pipeline_config
 
+        retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
+        # ``max_length`` is read off the resolved config in open().
         self.max_length: int | None = None
-        self._eos_token_ids: set[int] = set()
-        self._proxy: _ModelWorkerProxy | None = None
+        self._eos_token_ids: set[int] = set(retrieved.tokenizer.eos_token_ids)
+        self._model_factory = retrieved.factory
+
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.worker_interface import ModelWorkerProxy
+
+        self._proxy: (
+            ModelWorkerProxy[
+                TextAndVisionContext | TextContext, TextGenerationOutput
+            ]
+            | None
+        ) = None
 
     @contextlib.asynccontextmanager
     async def open(self) -> AsyncIterator[MAXModelWorker]:
-        """Resolve the config, bring up the model-worker subprocess and proxy.
+        """Bring up the model-worker subprocess and proxy.
 
-        The telemetry consumer, model-worker subprocess and proxy (with its
-        single response fan-out task) stay alive for the worker's lifetime.
-        These are the same async context managers used by
-        ``max.entrypoints.LLM`` and ``max.serve.api_server``.
+        Mirrors ``max.serve.api_server``: the config was already resolved and
+        the factory built in the orchestrator (passed to the constructor), so
+        here we only spawn the ``max.serve`` model-worker subprocess with that
+        factory and resolved config -- the worker never resolves or mutates the
+        config. ``retrieve_pipeline_task``/``retrieve_context_type`` are plain
+        registry lookups (no config mutation, no network). The telemetry
+        consumer, model-worker subprocess and proxy (with its single response
+        fan-out task) stay alive for the worker's lifetime -- the same async
+        context managers used by ``max.entrypoints.LLM`` and
+        ``max.serve.api_server``.
         """
+        # lazy import to avoid circular imports when defining
+        # CascadePipelines in model arch.py layers
+        from max.serve.config import MetricRecordingMethod, Settings
+        from max.serve.pipelines.model_worker import start_model_worker
+        from max.serve.pipelines.telemetry_worker import (
+            start_telemetry_consumer,
+        )
+        from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
+        from max.serve.worker_interface.zmq_interface import (
+            ZmqModelWorkerInterface,
+        )
+
+        assert self._model_factory is not None, (
+            "MAXModelWorker needs a model_factory to deploy; construct it via "
+            "build_pipeline, which resolves the config and builds the factory."
+        )
+        max_length = self.pipeline_config.model.max_length
+        assert max_length is not None, "pipeline_config must be resolved"
+        self.max_length = max_length
         t0 = time.monotonic()
         register_all_models()
 
-        pipeline_config = self.pipeline_config
-
-        # Materialize the (tokenizer, factory) pair on this side. The factory is
-        # sent via pickle to the worker subprocess where it is invoked to
-        # actually load the model on the target device. ``retrieve_factory``
-        # performs the architecture lookup and resolves ``pipeline_config`` in
-        # place (including ``max_length``).
-        tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
-            pipeline_config
-        )
-        resolved_max_length = pipeline_config.model.max_length
-        assert resolved_max_length is not None
-        self.max_length = resolved_max_length
-
         pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
-            pipeline_config.models.main_architecture_name
+            self.pipeline_config.models.main_architecture_name
         )
-        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
-
-        # Tokenization happens upstream (this worker receives token ids), so we
-        # only need the eos set to terminate generation in the worker.
-        self._eos_token_ids = set(
-            getattr(tokenizer, "_default_eos_token_ids", set())
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(
+            self.pipeline_config
         )
 
         settings = Settings(
@@ -136,8 +173,8 @@ class MAXModelWorker(Worker):
             )
             self._proxy = await exit_stack.enter_async_context(
                 start_model_worker(
-                    model_factory=model_factory,
-                    pipeline_config=pipeline_config,
+                    model_factory=self._model_factory,
+                    pipeline_config=self.pipeline_config,
                     settings=settings,
                     metric_client=metric_client,
                     model_worker_interface=model_worker_interface,
@@ -152,7 +189,7 @@ class MAXModelWorker(Worker):
 
     @worker_method()
     async def decode(
-        self, req: GenerateRequest, tokens: TokenIdArray
+        self, req: TextGenOptions, tokens: Int32Array
     ) -> AsyncIterator[Int32Array]:
         """Submit a decode request and stream generated token ids.
 
@@ -167,10 +204,12 @@ class MAXModelWorker(Worker):
         request_id = RequestID()
 
         prompt_tokens = tokens.astype(np.int64)
-        sampling_params = SamplingParams(
-            max_new_tokens=req.num_tokens,
-            ignore_eos=req.ignore_eos,
-            temperature=req.temperature,
+        # Layer the request's fields over the model's GenerationConfig defaults,
+        # exactly as ``max.serve``'s OpenAI routes do, so the two paths resolve
+        # sampling parameters identically.
+        sampling_params = SamplingParams.from_input_and_generation_config(
+            _sampling_params_input(req),
+            sampling_params_defaults=self.pipeline_config.model.sampling_params_defaults,
         )
         request_max_length = min(
             self.max_length, int(prompt_tokens.shape[0]) + req.num_tokens
@@ -192,7 +231,7 @@ class MAXModelWorker(Worker):
         )
 
         response_stream = await self._proxy.stream(request_id, ctx)
-        async for outputs in response_stream:
+        async for outputs, _batch_id in response_stream:
             token_arrays = [
                 np.asarray(output.tokens, dtype=np.int32)
                 for output in outputs

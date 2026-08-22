@@ -19,15 +19,21 @@ import numpy as np
 import numpy.typing as npt
 from max.experimental.cascade.core import (
     Worker,
-    pipeline_method,
     worker_method,
 )
-from max.experimental.cascade.pipelines import CascadePipeline
-from max.experimental.cascade.pipelines.textgen import (
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAIChunk,
+    GenAIRequest,
+    Modality,
+    TextGenOptions,
 )
+from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
+from max.experimental.cascade.pipelines.chat_parser import (
+    ChatParserConfig,
+    ChatParserWorker,
+)
+from max.experimental.cascade.workers.max_tokenizer import flatten_message
 
 Int32Array = npt.NDArray[np.int32]
 
@@ -39,12 +45,11 @@ class AsciiTokenizer(Worker):
         super().__init__(deploy_hints=["cpu"])
 
     @worker_method()
-    async def encode(self, text: str | ChatMessages) -> Int32Array:
-        """Convert text or chat messages to ASCII integer tokens."""
-        if isinstance(text, list):
-            text = "\n".join(
-                str(message.get("content", "")) for message in text
-            )
+    async def encode(self, messages: list[ChatMessage]) -> Int32Array:
+        """Convert a conversation to ASCII integer tokens."""
+        text = "\n".join(
+            flatten_message(message)["content"] for message in messages
+        )
         return np.array([ord(char) for char in text], dtype=np.int32)
 
     @worker_method()
@@ -69,7 +74,7 @@ class Transformer(Worker):
 
     @worker_method()
     async def decode(
-        self, req: GenerateRequest, tokens: Int32Array
+        self, req: TextGenOptions, tokens: Int32Array
     ) -> AsyncIterator[int]:
         """Emit ``num_tokens`` copies of the token for ``"A"``."""
         del tokens
@@ -78,23 +83,31 @@ class Transformer(Worker):
 
 
 @dataclass
-class DummyTextGenPipeline(CascadePipeline, TextGenInterface):
+class DummyTextGenPipeline(GenAIPipeline):
     """Cascade pipeline pairing the dummy tokenizer and transformer workers."""
 
     tokenizer: AsciiTokenizer
     transformer: Transformer
+    parser: ChatParserWorker
 
-    @pipeline_method
-    async def generate_text(
-        self,
-        req: GenerateRequest,
-        prompt: str | ChatMessages,
-    ) -> AsyncIterator[str]:
-        """Run text generation from text or OpenAI-style chat messages."""
-        tokens = await self.tokenizer.encode(prompt)
-        gen_tokens = await self.transformer.decode(req, tokens)
-        async for token in await self.tokenizer.decode_streaming(gen_tokens):
-            yield token
+    def supported_input_modalities(self) -> set[Modality]:
+        """Accept text prompts."""
+        return {Modality.TEXT}
+
+    def supported_output_modalities(self) -> set[Modality]:
+        """Emit assistant text, reasoning, and tool calls."""
+        return {Modality.TEXT}
+
+    async def _generate_iterator(
+        self, req: GenAIRequest
+    ) -> AsyncIterable[GenAIChunk]:
+        """Run text generation from a conversation."""
+        tokens = await self.tokenizer.encode(req.messages)
+        gen_tokens = await self.transformer.decode(req.text, tokens)
+        text = await self.tokenizer.decode_streaming(gen_tokens)
+        return await self.parser.parse_stream(
+            text, req.tools_enabled, req.tool_schemas()
+        )
 
 
 async def build_dummy_textgen_pipeline() -> DummyTextGenPipeline:
@@ -102,4 +115,5 @@ async def build_dummy_textgen_pipeline() -> DummyTextGenPipeline:
     return DummyTextGenPipeline(
         AsciiTokenizer(),
         Transformer(),
+        ChatParserWorker(ChatParserConfig()),
     )

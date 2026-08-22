@@ -1,6 +1,62 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
+
+exports_files([
+    "run_nightly_fuzz.sh",
+])
+
+# Compile-guard for the fuzz targets. Every fuzz_*.mojo.test below is `manual`
+# (it runs via fuzz.py and the nightly, not the normal test sweep), so `//...`
+# and `:all` skip them for both build and test -- which let an upstream
+# LayoutTensor origin-API change silently break 8 of them on main. This
+# build_test is NOT manual, so the targets stay in the build graph: bazel-diff
+# selects it whenever one of their deps changes and fails the PR if any stops
+# compiling. It only builds (never launches) the binaries, so there is no GPU
+# execution and no fuzz flake. Keep this list in sync when adding a target.
+build_test(
+    name = "fuzz_build_test",
+    tags = ["gpu"],
+    targets = [
+        ":fuzz_attn_res_mix.mojo.test",
+        ":fuzz_block_scaled_fp4.mojo.test",
+        ":fuzz_block_scaled_mxfp8.mojo.test",
+        ":fuzz_ep_combine.mojo.test",
+        ":fuzz_fused_qk_rms_norm.mojo.test",
+        ":fuzz_fused_qk_rope.mojo.test",
+        ":fuzz_fused_qkv_index_matmul_mxfp8.mojo.test",
+        ":fuzz_fused_qkv_matmul_mxfp8.mojo.test",
+        ":fuzz_fused_rope_rmsnorm.mojo.test",
+        ":fuzz_fused_swiglu_dispatch.mojo.test",
+        ":fuzz_fused_swiglu_mxfp8.mojo.test",
+        ":fuzz_gemv_split_k.mojo.test",
+        ":fuzz_grouped_matmul_mxfp8.mojo.test",
+        ":fuzz_grouped_matmul_sm100_w4a8.mojo.test",
+        ":fuzz_layer_norm.mojo.test",
+        ":fuzz_matmul.mojo.test",
+        ":fuzz_mha_causal.mojo.test",
+        ":fuzz_mha_nullmask.mojo.test",
+        ":fuzz_mla_decode.mojo.test",
+        ":fuzz_moe_indices.mojo.test",
+        ":fuzz_moe_router.mojo.test",
+        ":fuzz_msa_decode.mojo.test",
+        ":fuzz_msa_prefill.mojo.test",
+        ":fuzz_mxfp8_quantize.mojo.test",
+        ":fuzz_numeric_canary.mojo.test",
+        ":fuzz_oob_canary.mojo.test",
+        ":fuzz_rms_norm.mojo.test",
+        ":fuzz_softmax.mojo.test",
+        ":fuzz_sparse_indexer.mojo.test",
+        ":fuzz_sparse_indexer_decode.mojo.test",
+        ":fuzz_sparse_indexer_prefill.mojo.test",
+        ":fuzz_topk_sampling.mojo.test",
+        ":fuzz_topk_topp_masked_probs.mojo.test",
+        ":fuzz_topk_topp_sampling_dist.mojo.test",
+        ":repro_decode_hang.mojo.test",
+    ],
+)
 
 # CPU unit test for the reusable fuzz harness (_fuzz.mojo): boundary-aware shape
 # generation and the value-distribution fills (incl. NaN/Inf injection). No GPU.
@@ -11,6 +67,7 @@ mojo_test(
         "_fuzz.mojo",
         "test_fuzz_fills.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     main = "test_fuzz_fills.mojo",
     tags = ["manual"],
     deps = [
@@ -28,6 +85,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_matmul.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -60,6 +118,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_gemv_split_k.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -100,6 +159,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mha_causal.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -125,6 +185,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mha_nullmask.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -154,6 +215,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mla_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -190,6 +252,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_rope_rmsnorm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -227,6 +290,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qk_rms_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -264,6 +328,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qk_rope.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -303,6 +368,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qkv_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -346,6 +412,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -375,6 +442,7 @@ mojo_test(
     name = "repro_decode_hang.mojo.test",
     size = "small",
     srcs = ["repro_decode_hang.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -399,6 +467,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_moe_indices.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -424,6 +493,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_softmax.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -448,6 +518,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_rms_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -472,6 +543,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_layer_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -488,6 +560,34 @@ mojo_test(
     ],
 )
 
+# Target: attn_res_mix (K3's fused attention-residual softmax mixture). Fuzzes
+# hidden against both the grid-stride and warp moduli, the candidate count
+# across the op's whole comptime dispatch ladder, and the PDL producer
+# handshake at every shape.
+mojo_test(
+    name = "fuzz_attn_res_mix.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_attn_res_mix.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_attn_res_mix.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//Kernels/lib/attn_res",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
 # Target: block-scaled FP4 SM100 matmul small_bn (thin wrapper over the testbed).
 # B200-only. memcheck+pool-off surfaces a small_bn scale-factor over-read across
 # fuzzed M.
@@ -498,6 +598,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_block_scaled_fp4.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -532,6 +633,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_block_scaled_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -547,6 +649,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:linalg",
+        "//max:max_mojo",
         "//max:nn",
         "//max:structured_kernels",
         "@mojo//:std",
@@ -566,6 +669,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_grouped_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -581,6 +685,45 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:linalg",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: grouped block-scaled W4A8 SM100 matmul -- E4M3 activations against
+# nibble-packed E2M1 weights. Same ragged fuzz axis as the MXFP8 target, but the
+# two operands disagree on bytes-per-K-row (the weights stay packed in GMEM and
+# the FP4 TMA copy unpacks them), which is the geometry a boundary search is
+# here to stress. Drives the dispatch entry point so scaling-kind inference from
+# B's dtype and the AB_swapped operand wiring are covered too. `ref` (--check)
+# compares against an exact host FP32 recompute at one BF16 ulp -- no vendor
+# BLAS path takes this operand pair. K must stay a multiple of 128. B200-only.
+mojo_test(
+    name = "fuzz_grouped_matmul_sm100_w4a8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_grouped_matmul_sm100_w4a8.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_grouped_matmul_sm100_w4a8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:max_mojo",
         "//max:nn",
         "//max:structured_kernels",
         "@mojo//:std",
@@ -602,6 +745,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_moe_router.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -626,7 +770,8 @@ mojo_test(
 # (`-D N=..`, multiple of 32). `contract` (--contract, default) checks the
 # finiteness guard (a finite-but-large input must not cast to NaN -- the
 # SERVOPT-1420 class) and scale validity; `ref` (--check) is a coarse dequant
-# round-trip. B200-only (SM100 TCGEN05 interleaved scales).
+# round-trip. Dual-arch (B200 SM100 TCGEN05 interleaved scales + MI355 rank-2
+# scales), via quantize_dynamic_block_scaled's vendor dispatch.
 mojo_test(
     name = "fuzz_mxfp8_quantize.mojo.test",
     size = "large",
@@ -634,6 +779,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mxfp8_quantize.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -642,10 +788,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:linalg",
@@ -670,6 +817,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_swiglu_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -707,6 +855,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_swiglu_dispatch.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -746,6 +895,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_msa_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -777,8 +927,9 @@ mojo_test(
 # (single-token) and the indexer (block selection). Fuzzes the ragged shape
 # (batch, per-batch seqlen_q / seqlen_k driving the CSR work decomposition +
 # q-chunking) + the q2k block selection (incl. the C==0 empty-split edge);
-# topk/num_q_heads/group/causal are compile-time (`-D msap_topk=.. msap_num_q_heads=..
-# msap_group=.. msap_causal=..`, default 8/1/1/0); head_dim fixed at 128.
+# topk/num_q_heads/group/causal/dtype are compile-time (`-D msap_topk=..
+# msap_num_q_heads=.. msap_group=.. msap_causal=.. msap_fp8=..`, default
+# 8/1/1/0/0); `msap_fp8=1` fuzzes FP8 e4m3 Q/K/V -> BF16 O; head_dim fixed at 128.
 # memory-safety primary (device CSR build + block-major scatter); `ref` (--check,
 # default) is the f64 block-sparse oracle from the kernel's authority test. Dual-arch
 # (B200 tensor-core + MI355 cooperative path), via msa_amd_prefill_run on AMD.
@@ -789,6 +940,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_msa_prefill.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -833,6 +985,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_topk_sampling.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -844,6 +997,61 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Fuzz target: nn.sampling.topk_topp_masked_probs (the spec-decode target-side
+# masked softmax; cluster + single-block dispatch). ref oracle validates the
+# tie-tolerant top-k/top-p accept-predicate contract against an f64 host
+# recompute.
+mojo_test(
+    name = "fuzz_topk_topp_masked_probs.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_topk_topp_masked_probs.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_topk_topp_masked_probs.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Fuzz target: nn.sampling.topk_topp_sampling_from_prob with from_logits +
+# emit_dist (the spec-decode draft-side sampler; cluster + single-block
+# dispatch). Contracts: token in range, sampled token has positive mass in the
+# emitted distribution, the distribution satisfies the accept predicate,
+# NaN/Inf rows degenerate to token 0 + zero row, and emit_dist is inert.
+mojo_test(
+    name = "fuzz_topk_topp_sampling_dist.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_topk_topp_sampling_dist.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_topk_topp_sampling_dist.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
         "//max:nn",
         "@mojo//:std",
     ],
@@ -861,6 +1069,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_ep_combine.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -894,6 +1103,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -927,6 +1137,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -965,6 +1176,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer_prefill.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -998,6 +1210,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_oob_canary.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -1008,6 +1221,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -1023,6 +1237,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_numeric_canary.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -1033,6 +1248,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -1043,6 +1259,13 @@ modular_py_binary(
     name = "fuzz",
     testonly = True,
     srcs = ["fuzz.py"],
+    # The curated regression corpus is this binary's runtime input:
+    # `--replay-corpus` reads every entry and re-runs it as the deterministic
+    # gate. Globbed so recording a new anchor needs no BUILD edit.
+    data = glob(
+        ["corpus/**/*.json"],
+        allow_empty = True,
+    ),
     main = "fuzz.py",
     tags = ["manual"],
 )

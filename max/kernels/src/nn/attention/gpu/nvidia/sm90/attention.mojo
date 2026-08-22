@@ -11,6 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+SM90 (Hopper) multi-head attention producer-side helpers.
+
+Re-exports shared NVIDIA attention primitives from `common` and provides the
+SM90-specific implementations of `produce` (TMA-based Q/K/V tile staging),
+`_apply_mask`, `_get_position`, `get_q_head_idx`, `output_reg_to_smem`, and
+`_optional_lt_to_tt` consumed by the `sm90/mha.mojo` kernel.
+"""
+
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
@@ -22,7 +31,7 @@ import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     IntTuple,
     Layout,
@@ -162,9 +171,9 @@ def _get_position[
             num_keys = seq_len + UInt32(Int(start_pos))
         else:
             var kv_row_offsets = kv_input_row_offsets.value()
-            kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
-            kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
-            cur_kv_len = kv_seq_end - kv_seq_start
+            var kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
+            var kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
+            var cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = UInt32(cur_kv_len + Int(start_pos))
         q_row = seq_info.start_of_seq
 
@@ -211,6 +220,26 @@ def get_q_head_idx[
     lane: UInt32,
     out indices: StaticTuple[UInt32, type_of(position).num_q_heads_per_thread],
 ):
+    """Computes the query head indices owned by the current thread.
+
+    In decoding mode each thread holds several grouped query heads spaced by 8,
+    while in prefill mode every thread shares the single current head index.
+
+    Parameters:
+        BM: Block size in the query-row (M) dimension of the attention tile.
+        BN: Block size in the key/value (N) dimension of the attention tile.
+        depth: Unpadded head dimension of each attention head.
+        padded_depth: Head dimension padded to the MMA alignment boundary.
+        num_heads: Number of query heads in the model.
+        group: Grouped-query attention group size, query heads per KV head.
+        decoding: Whether the kernel runs in single-token decoding mode.
+
+    Args:
+        position: Current tile position metadata carrying the head index,
+            query row and column offsets, and sequence info.
+        lane: Lane index of the calling thread within its warp, used to
+            distribute grouped query heads across threads.
+    """
     comptime if decoding:
         var q_head_idx_0: UInt32 = UInt32(group) * position.head_idx + lane // 4
 
@@ -288,20 +317,19 @@ def _apply_mask[
     var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
     var mask_warp_col: UInt32 = kv_tile_start_row + fragment_col
 
-    @parameter
     @always_inline
-    def _apply_mask_capture[masked: Bool]():
+    def _apply_mask_capture[masked: Bool]() {imm}:
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
-                mask_frag_row = mask_warp_row + UInt32(m_mma * WM)
-                mask_frag_col = mask_warp_col + UInt32(n_mma * WN)
+                var mask_frag_row = mask_warp_row + UInt32(m_mma * WM)
+                var mask_frag_col = mask_warp_col + UInt32(n_mma * WN)
 
                 comptime for i in range(num_groups_per_thread):
                     var q_head_idx: UInt32 = position.head_idx
 
                     comptime if decoding:
-                        group_idx = UInt32(i * 8) + fragment_row
+                        var group_idx = UInt32(i * 8) + fragment_row
                         q_head_idx = UInt32(group) * q_head_idx + group_idx
                     # The row in score matrix of shape seq_len x num_keys.
                     # Mask col is score col since we don't partition in col.
@@ -322,8 +350,8 @@ def _apply_mask[
                         )
 
                     comptime for j in range(WN // 8):
-                        score_col = mask_frag_col + UInt32(j * 8)
-                        p = p_reg_tile[i, m_mma, j, n_mma]
+                        var score_col = mask_frag_col + UInt32(j * 8)
+                        var p = p_reg_tile[i, m_mma, j, n_mma]
 
                         comptime if masked:
                             p = mask.mask(
@@ -372,13 +400,14 @@ def _apply_mask[
     comptime if decoding:
         _apply_mask_capture[True]()
     else:
-        unswitch[_apply_mask_capture](
+        unswitch(
             (mask_status == TileMaskStatus.PARTIAL_MASK)
             # NOTE: mask_status should be either PARTIAL_MASK or NO_MASK at
             # this point.
             # In the NO_MASK case, we still need to mask out the scores for the
             # last tile, which goes beyond num_keys (for num_keys % 128 != 0).
-            or (UInt32(BN) + kv_tile_start_row > position.num_keys)
+            or (UInt32(BN) + kv_tile_start_row > position.num_keys),
+            _apply_mask_capture,
         )
 
 
@@ -467,6 +496,89 @@ def produce[
     num_keys_arg: UInt32,
     kv_input_row_offsets: KVInputRowOffsetsType,
 ):
+    """Stages Q, K, and V tiles into shared memory via TMA for the SM90 attention kernel.
+
+    Drives the producer side of the warp-specialized pipeline: it issues the
+    preheader Q and K copies, then runs the main loop emitting K and V copies
+    (full or partial-page) synchronized through the shared-memory barriers,
+    advancing the persistent scheduler across tiles when configured.
+
+    Parameters:
+        qkv_type: Element dtype of the query, key, and value tensors
+            (inferred).
+        BM: Block size in the query-row (M) dimension of the attention
+            tile (inferred).
+        BN: Block size in the key/value (N) dimension of the attention
+            tile (inferred).
+        q_rank: Rank of the query TMA tensor map descriptor (inferred).
+        q_tile_shape: Per-dimension tile shape for query TMA copies
+            (inferred).
+        q_desc_shape: Per-dimension descriptor shape of the query TMA
+            tensor map (inferred).
+        depth: Unpadded head dimension of each attention head (inferred).
+        padded_depth: Head dimension padded to the MMA alignment boundary
+            (inferred).
+        num_heads: Number of query heads in the model (inferred).
+        group: Grouped-query attention group size, query heads per KV head
+            (inferred).
+        PartitionType: Scheme dividing the KV range across producer
+            instances (inferred).
+        MaxSeqLenType: Statically or dynamically known maximum sequence
+            length (inferred).
+        SchedulerType: Tile scheduler driving persistent tile iteration
+            (inferred).
+        KVLUTType: KV cache operand type providing paged row lookup and
+            cache length queries (inferred).
+        MaskType: Attention mask type applied to score tiles (inferred).
+        KVInputRowOffsetsType: Optional pointer type for cross-attention
+            KV row offsets, null when unused (inferred).
+        ValidLengthType: Optional pointer type for per-batch valid lengths
+            passed to the tile scheduler (inferred).
+        swizzle_mode: Shared-memory swizzle mode applied to TMA tensor
+            maps.
+        pipeline_stages: Number of double-buffered pipeline stages for KV
+            copies, must be at least 2.
+        ragged: Whether ragged (variable-length) batching is in use.
+        _is_cache_length_accurate: Whether the KV cache length is already
+            accurate, skipping the per-batch cache_length lookup when
+            true.
+
+    Args:
+        q_tma_op: TMA tile descriptor issuing asynchronous query tile copies
+            into shared memory.
+        k_tma_op: TMA tile descriptor issuing asynchronous key tile copies
+            into shared memory.
+        v_tma_op: TMA tile descriptor issuing asynchronous value tile copies
+            into shared memory.
+        q_smem: Base shared-memory pointer for query tile staging.
+        kv_smem: Base shared-memory pointer for key and value tile staging.
+        produced_mbar_kv: Shared-memory barriers signaling KV tile
+            production completion to the consumer.
+        consumed_mbar_kv: Shared-memory barriers waited on before
+            overwriting a KV pipeline stage.
+        produced_mbar_q: Optional barriers signaling query tile production
+            for persistent kernels, unused otherwise.
+        consumed_mbar_q: Optional barriers waited on before overwriting a
+            query pipeline stage in persistent kernels.
+        kv_lut: KV cache operand providing paged row lookup and cache
+            length queries.
+        initial_position: Starting tile position metadata for the first
+            query and key tiles.
+        partition: Partition instance dividing the KV range for this
+            producer.
+        scheduler: Tile scheduler instance advancing persistent tile
+            iteration.
+        mask: Attention mask instance applied to score tiles.
+        tile_summary: Tile summary carrying per-batch valid lengths for
+            the scheduler.
+        tile_state_arg: Initial scheduler state, mutated as tiles advance.
+        max_seq_len: Maximum sequence length after padding, used for
+            homogeneous batch query row offsets.
+        num_keys_arg: Number of cache keys for the current batch, used in
+            homogeneous batching.
+        kv_input_row_offsets: Optional per-batch KV row offsets for cross
+            attention, null when unused.
+    """
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[qkv_type]()
 
     comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
@@ -485,10 +597,10 @@ def produce[
     comptime q_copy_rows = max(group, 8) if decoding else BM
     comptime qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
 
-    tile_state = tile_state_arg
-    position = initial_position
+    var tile_state = tile_state_arg
+    var position = initial_position
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
@@ -506,7 +618,7 @@ def produce[
     ]()
     comptime assert pipeline_stages >= 2
 
-    @parameter
+    @__parameter
     @always_inline
     def kv_tile(
         idx: UInt32,
@@ -542,7 +654,7 @@ def produce[
         BM, BN, page_size
     ]()
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _num_valid_pages(end_row: UInt32, current_kv_row: UInt32) -> UInt32:
         return min(
@@ -550,7 +662,7 @@ def produce[
             UInt32(KVPagedRows.num_pages),
         )
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def produce_kv[
         is_k_side: Bool,
@@ -599,7 +711,7 @@ def produce[
             )
         state.step()
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def produce_kv_partial[
         is_k_side: Bool,
@@ -655,7 +767,7 @@ def produce[
             )
         state.step()
 
-    @parameter
+    @__parameter
     @always_inline
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
@@ -675,11 +787,13 @@ def produce[
             kv_input_row_offsets,
         )
 
-    write_pipeline_states = PipelineState[pipeline_stages]()
-    q_pipeline_state = PipelineState[2 if persistent else 1]()
+    var write_pipeline_states = PipelineState[pipeline_stages]()
+    var q_pipeline_state = PipelineState[2 if persistent else 1]()
 
+    var start: UInt32
+    var end: UInt32
     comptime if PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[
+        var startend = position.get_start_and_end_for_partitions[
             page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
@@ -724,7 +838,7 @@ def produce[
         )
 
     comptime if not PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[
+        var startend = position.get_start_and_end_for_partitions[
             page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
@@ -782,6 +896,7 @@ def produce[
     # order of the producer's waits.
     # few_keys = num_keys <= BN
 
+    var new_end: UInt32
     # Process work with the tile size until there's not enough remaining work
     # to fit in a tile.
     # Production order:
@@ -801,7 +916,7 @@ def produce[
                 # we must wait before advancing, as this mbar
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
-                docontinue = scheduler.advance[
+                var docontinue = scheduler.advance[
                     producer=True, sync=MHASchedulerSynchronization.DEFAULT
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
@@ -979,7 +1094,38 @@ def output_reg_to_smem[
     MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ]:
-    accum_smem_tile = LayoutTensor[
+    """Stores the output accumulator registers from local memory into shared memory.
+
+    Selects the `stmatrix`-based path for float32 accumulators with half-precision
+    output and aligned depths, otherwise falls back to a per-thread
+    `copy_local_to_shared` store.
+
+    Parameters:
+        output_type: DType of the values written to shared memory.
+        accum_type: DType of the accumulator values held in registers.
+        num_m_mmas: Number of MMA tiles in the M dimension of the output
+            register tile.
+        o_frag_size: Number of elements per output fragment per MMA tile.
+        BM: Block size in the query-row (M) dimension of the output tile.
+        BN: Block size in the key/value (N) dimension of the output warp tile.
+        padded_depth: Head dimension padded to the MMA alignment boundary.
+        swizzle: Shared-memory swizzle pattern applied to the output store
+            layout.
+        num_consumer: Number of consumer warp groups writing the output
+            concurrently.
+
+    Args:
+        tid: Thread index of the calling thread, used to derive the warp-group
+            thread index for the stmatrix path.
+        local_warp_group_idx: Index of the calling warp group among the
+            consumer warp groups.
+        warp_y: Row index of the calling warp's 16-row tile within the
+            BM-row output block.
+        q_smem: Base pointer to shared memory where the output tile is stored.
+        output_reg_tile: Local register tile holding the accumulator output
+            fragments.
+    """
+    var accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),
         address_space=AddressSpace.SHARED,
@@ -1002,7 +1148,9 @@ def output_reg_to_smem[
         )
     else:
         comptime mma_thread_layout = Layout.row_major(8, 4)
-        accum_smem_warp_tile = accum_smem_tile.tile[16, BN](Int(warp_y), Int(0))
+        var accum_smem_warp_tile = accum_smem_tile.tile[16, BN](
+            Int(warp_y), Int(0)
+        )
         copy_local_to_shared[thread_layout=mma_thread_layout, swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),

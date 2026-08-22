@@ -63,9 +63,9 @@ def frame_loc(
 ) -> max._mlir.ir.Location:
     """Creates an opaque MLIR location containing a Python stack frame."""
 
-def to_mlir_with_source_locations(op: max._core.Operation) -> str:
+def source_locations_bytecode(op: max._core.Operation) -> bytes:
     """
-    Serializes the operation to MLIR assembly text with each op's Python source location materialized into printable form. Does not mutate the operation.
+    Serializes the operation to MLIR bytecode with each op's Python source location materialized into printable form. Print it by reparsing through max.mlir. Does not mutate the operation.
     """
 
 def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
@@ -141,3 +141,6 @@ class Analysis:
         """
         Returns the info ``max.experimental.torch`` needs to register the named kernel as a PyTorch custom op. Raises ``ValueError`` if the kernel is unknown or has an unsupported argument type.
         """
+
+    def has_shape_function(self, name: str) -> bool:
+        """Returns true if a shape function is registered for the named kernel."""

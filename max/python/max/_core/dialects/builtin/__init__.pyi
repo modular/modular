@@ -29,23 +29,12 @@ from . import passes as passes
 
 DiagnosticHandler = Callable
 
-class DenseElementsAttr(max._core.Attribute):
-    pass
-
-class DenseResourceElementsAttr(max._core.Attribute):
-    pass
-
-class FlatSymbolRefAttr(max._core.Attribute):
-    pass
-
-class AffineMap:
-    pass
-
-class IntegerSet:
-    pass
-
-class _ElementsAttrIndexer:
-    pass
+class DenseElementsAttr(max._core.Attribute): ...
+class DenseResourceElementsAttr(max._core.Attribute): ...
+class FlatSymbolRefAttr(max._core.Attribute): ...
+class AffineMap: ...
+class IntegerSet: ...
+class _ElementsAttrIndexer: ...
 
 class SignednessSemantics(enum.Enum):
     signless = 0
@@ -1305,6 +1294,22 @@ class Float8E5M2FNUZType(max._core.Type):
       * denormals when exponent is 0
 
     Described in: https://arxiv.org/abs/2206.02915
+    """
+
+    def __init__(self) -> None: ...
+
+class Float8E5M3FNUType(max._core.Type):
+    """
+    An 8-bit floating point type with 0 sign bit, 5 bits exponent and 3 bits
+    mantissa. This is not a standard type as defined by IEEE-754, but it
+    follows similar conventions with the following characteristics:
+
+      * bit encoding: S0E5M3
+      * exponent bias: 15
+      * infinities: Not supported
+      * NaNs: Supported with all bits set to 1
+      * Zero: Supported
+      * denormals when exponent is 0
     """
 
     def __init__(self) -> None: ...

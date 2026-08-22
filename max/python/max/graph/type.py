@@ -165,8 +165,7 @@ class DeviceRef:
             self.device_type = device_type
         else:
             self.device_type = DeviceKind(device_type)
-        if id < 0:
-            id = 0
+        id = max(id, 0)
         self.id = id
 
     def __str__(self) -> str:
@@ -175,7 +174,7 @@ class DeviceRef:
     def __repr__(self) -> str:
         return str(self)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Returns ``True`` if devices are equal."""
         if not isinstance(other, DeviceRef):
             return False
@@ -232,18 +231,16 @@ class Type(Generic[MlirType]):
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
 
-    The following example shows how to work with types in a graph:
+    The following example shows how to inspect a tensor type:
 
     .. code-block:: python
 
-        from max.graph import Graph, TensorType
         from max.dtype import DType
-        with Graph() as g:
-            # Create a tensor constant with a specific type
-            tensor_type = TensorType(DType.float32, [2, 3])
-            # The type can be inspected to get information about the value
-            print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
-            print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [2, 3]
+        from max.graph import DeviceRef, TensorType
+
+        tensor_type = TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())
+        print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
+        print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [Dim(2), Dim(3)]
     """
 
     def to_mlir(self) -> MlirType:
@@ -309,7 +306,7 @@ class _TensorTypeBase(Type[MlirType]):
         """
         return len(self.shape)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Checks whether the two tensors have the same type, shape, and device.
 
         Args:
