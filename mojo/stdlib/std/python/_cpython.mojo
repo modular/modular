@@ -2104,7 +2104,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
         return self._PyRun_SimpleString(
-            command.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+            command.as_c_string_slice().ptr().as_unsafe_any_origin()
         )
 
     def PyRun_String(
@@ -2123,7 +2123,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
         """
         return self._PyRun_String(
-            str.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            str.as_c_string_slice().ptr().as_unsafe_any_origin(),
             start,
             globals,
             locals,
@@ -2144,8 +2144,8 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
         """
         return self._Py_CompileString(
-            str.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
-            filename.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            str.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            filename.as_c_string_slice().ptr().as_unsafe_any_origin(),
             start,
         )
 
@@ -2438,7 +2438,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
         return self._PyImport_ImportModule(
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+            name.as_c_string_slice().ptr().as_unsafe_any_origin()
         )
 
     def PyImport_AddModule(self, var name: String) -> PyObjectPtr:
@@ -2450,7 +2450,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
         """
         return self._PyImport_AddModule(
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+            name.as_c_string_slice().ptr().as_unsafe_any_origin()
         )
 
     # ===-------------------------------------------------------------------===#
@@ -2472,7 +2472,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
         """
         return self._PyObject_HasAttrString(
-            obj, name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+            obj, name.as_c_string_slice().ptr().as_unsafe_any_origin()
         )
 
     def PyObject_GetAttrString(
@@ -2486,7 +2486,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
         """
         return self._PyObject_GetAttrString(
-            obj, name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+            obj, name.as_c_string_slice().ptr().as_unsafe_any_origin()
         )
 
     def PyObject_SetAttrString(
@@ -2500,7 +2500,7 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyObject_SetAttrString(
             obj,
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
             value,
         )
 
@@ -3394,7 +3394,7 @@ struct CPython(Defaultable, Movable):
             .as_imm()
             .as_unsafe_any_origin(),
             Py_ssize_t(s.byte_length()),
-            "strict".as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            "strict".as_c_string_slice().ptr().as_unsafe_any_origin(),
         )
 
     # TODO: fix signature to take unicode and size as args
@@ -3722,7 +3722,7 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyCapsule_New(
             pointer,
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
             destructor,
         )
 
@@ -3739,7 +3739,7 @@ struct CPython(Defaultable, Movable):
         """
         var r = self._PyCapsule_GetPointer(
             capsule,
-            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
         )
         if self.PyErr_Occurred():
             raise self.get_error()
@@ -3761,7 +3761,7 @@ struct CPython(Defaultable, Movable):
         return (
             self._PyCapsule_IsValid(
                 capsule,
-                name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+                name.as_c_string_slice().ptr().as_unsafe_any_origin(),
             )
             != 0
         )

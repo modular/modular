@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -24,7 +23,7 @@ import argparse
 import ast
 import os
 import sys
-from collections.abc import Set
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +65,7 @@ ARCH_LABEL_OVERRIDES: dict[str, list[str]] = {
 
 
 def derive_modality_labels(
-    task: str | None, input_modalities: Set[str]
+    task: str | None, input_modalities: AbstractSet[str]
 ) -> list[str]:
     """Derive human-readable input-to-output modality labels.
 
@@ -197,6 +196,30 @@ def _resolve_module_level_collections(
     return result
 
 
+def _relative_import_modules(tree: ast.Module, package_dir: Path) -> list[Path]:
+    """Paths of the modules an ``arch.py`` pulls in by relative import.
+
+    Args:
+        tree: Parsed ``arch.py``.
+        package_dir: Directory holding that ``arch.py``.
+
+    Returns:
+        One path per ``from ..pkg.module import ...``, in source order.
+        Paths that do not exist are returned anyway and skipped by the caller.
+    """
+    modules: list[Path] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or not node.level:
+            continue
+        base = package_dir
+        for _ in range(node.level - 1):
+            base = base.parent
+        if node.module:
+            base = base.joinpath(*node.module.split("."))
+        modules.append(base.with_suffix(".py"))
+    return modules
+
+
 def _resolve_class_collections(
     tree: ast.Module,
 ) -> dict[str, dict[str, list[str]]]:
@@ -264,6 +287,13 @@ def parse_arch_file(arch_path: Path) -> list[dict[str, Any]]:
     for class_tree in (
         tree,
         _parse_optional(arch_path.parent / "model_config.py"),
+        # An arch that reuses another architecture's config (unified_mtp_qwen3_5
+        # on qwen3_5) names it through a relative import, so the constant is in
+        # neither file above and the encodings column would render empty.
+        *(
+            _parse_optional(module)
+            for module in _relative_import_modules(tree, arch_path.parent)
+        ),
     ):
         if class_tree is not None:
             class_collections.update(_resolve_class_collections(class_tree))
@@ -628,7 +658,7 @@ def main() -> None:
             "❗  - Should this architecture be listed?\n"
             "❗  - Are the model names correct? Do the Hugging Face links work?\n"
             "❗  - Are the supported modalities correct?\n"
-            "❗ This is the file for docs.modular.com/models.\n"
+            "❗ This is the file for max.modular.com/models.\n"
             "❗ If you have issues or questions, raise them in #ask-docs."
         )
 

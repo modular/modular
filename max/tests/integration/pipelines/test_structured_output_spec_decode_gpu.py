@@ -23,7 +23,6 @@ import asyncio
 import json
 import time
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
@@ -70,27 +69,15 @@ def test_eagle_structured_output_json_schema_gpu(
     """
     # Use Llama-3.2-3B-Instruct as target with EAGLE-Llama-3.2-3B-Instruct-bf16
     # as the draft model. This is the smallest EAGLE model pair available.
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
@@ -103,9 +90,11 @@ def test_eagle_structured_output_json_schema_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'David Smith is 35 years old.'"""
@@ -196,27 +185,15 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     - Structured requests use grammar-constrained bitmasks during verification
     - Free-form requests use unconstrained (all-True) bitmasks
     """
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
@@ -229,9 +206,11 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     # Request 1: Structured output with JSON schema
@@ -379,27 +358,15 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
     per iteration (50-150x), while legitimate variance from graph-capture
     jitter or KV eviction is at most 2-3x. 30x reliably separates the two.
     """
-    target_revision = hf_repo_lock.revision_for_hf_repo(
-        "meta-llama/Llama-3.2-3B-Instruct"
-    )
-    assert target_revision is not None
-
-    draft_revision = hf_repo_lock.revision_for_hf_repo(
-        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
-    )
-    assert draft_revision is not None
-
     pipeline_config = PipelineArgs(
         model_path="meta-llama/Llama-3.2-3B-Instruct",
         quantization_encoding="bfloat16",
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=target_revision,
         max_length=2048,
         draft_model=MAXModelConfig(
             model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
             quantization_encoding="bfloat16",
             device_specs=[DeviceSpec.accelerator()],
-            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
@@ -412,9 +379,11 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
         ),
     )
 
-    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+    retrieved = pipeline_registry.retrieve_factory(
         PipelineConfig.from_args(pipeline_config)
     )
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
     assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """Extract the person's name and age from: 'Maria Garcia is 42 years old.'"""

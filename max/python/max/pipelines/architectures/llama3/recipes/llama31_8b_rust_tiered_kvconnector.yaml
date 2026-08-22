@@ -13,4 +13,5 @@
 model:
   model_path: meta-llama/Llama-3.1-8B-Instruct
   kv_cache:
-    kv_connector: rust_tiered
+    kv_connector_config:
+      type: rust_tiered

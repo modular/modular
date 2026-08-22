@@ -17,7 +17,6 @@ import json
 import pickle
 from unittest.mock import MagicMock, NonCallableMock
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import requests
@@ -50,7 +49,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from test_common.mocks import mock_estimate_memory_footprint
+from test_common.mocks import mock_plan_from_sizes
 from transformers import AutoConfig
 
 
@@ -71,7 +70,6 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
 
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
-LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
 
 def convert_image_url_to_base64(image_url: str) -> bytes | None:
@@ -455,7 +453,7 @@ async def test_tokenizer__encode_and_decode(
 
 
 @pytest.mark.skip("TODO: Fix this flaky test")
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_text_tokenizer_with_constrained_decoding(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:

@@ -366,10 +366,10 @@ struct TiledMatmul[
             min(sub_tile_n, knm_bounds.N), min(sub_tile_k, knm_bounds.K)
         )
 
-        @__copy_capture(sub_tile_n_k, b_packed_tile)
-        @__parameter
         @always_inline
-        def row_iteration[tile_kernel_rows: Int](row_offset: Int):
+        def row_iteration[
+            tile_kernel_rows: Int
+        ](row_offset: Int) {var sub_tile_n_k, var b_packed_tile, imm}:
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
@@ -395,18 +395,15 @@ struct TiledMatmul[
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
-            tile[
-                row_iteration,
-                [2 * Self.config.kernel_rows, 8, 6, 4, 2, 1],
-            ](
+            tile[[2 * Self.config.kernel_rows, 8, 6, 4, 2, 1],](
                 0,  # starting row offset
                 knm_bounds.M,  # row bound
+                row_iteration,
             )
         else:
-            tile[
-                row_iteration,
-                [Self.config.kernel_rows, 4, 3, 2, 1],
-            ](0, knm_bounds.M)
+            tile[[Self.config.kernel_rows, 4, 3, 2, 1],](
+                0, knm_bounds.M, row_iteration
+            )
 
     # Iterate on the N dimension of the gemm space.
     def _outer_n_loop(
@@ -427,9 +424,10 @@ struct TiledMatmul[
         )
         var tile_n: Int = self.tile_n_k[0]
 
-        @__parameter
         @always_inline
-        def m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
+        def m_loop[
+            secondary_tile_size: Int
+        ](col_idx: Int, tile_size_n: Int) {imm}:
             self._outer_m_loop[secondary_tile_size](
                 global_offset + GemmShape(0, col_idx, 0),
                 tile_size_n,
@@ -445,20 +443,28 @@ struct TiledMatmul[
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
             ]
-            tile[secondary_tiles, Self.config.simd_size, m_loop](
+            tile[
+                secondary_tiles,
+                Self.config.simd_size,
+            ](
                 0,
                 valid_col_count,
                 tile_n,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
                 primary_cleanup_tile=Self.config.simd_size,
+                workgroup_function=m_loop,
             )
         else:
             comptime secondary_tiles_packed_b: List[Int] = [
                 Self.config.kernel_cols
             ]
-            tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
-                0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
+            tile[secondary_tiles_packed_b, Self.config.kernel_cols](
+                0,
+                valid_col_count,
+                tile_n,
+                primary_cleanup_tile=tile_n,
+                workgroup_function=m_loop,
             )
 
     # Iterate over the K dimension of the gemm space.
@@ -469,8 +475,7 @@ struct TiledMatmul[
 
         # Each tiled iteration on the k dimension.
         @always_inline
-        @__parameter
-        def k_iteration(k_offset: Int, k_tile_size: Int):
+        def k_iteration(k_offset: Int, k_tile_size: Int) {imm}:
             var last_k_tile = (
                 k_offset + k_tile_size + self.global_tile_offset.K
                 == self.global_tile_shape.K
@@ -481,10 +486,11 @@ struct TiledMatmul[
                 last_k_tile,
             )
 
-        tile[k_iteration](
+        tile(
             0,  # k offset
             self.global_tile_shape.K,  # valid K count
             self.tile_n_k[1],  # max tile k size
+            workgroup_function=k_iteration,
         )
 
 

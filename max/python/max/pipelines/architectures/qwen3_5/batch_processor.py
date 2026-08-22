@@ -39,17 +39,17 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     """Ragged batching with linear-attention state pools and optional vision inputs."""
 
     _state_cache: GatedDeltaNetStateCache | None = None
-    _slot_idx_prealloc: Buffer | None = None
-    _empty_lm_image_embeddings: Buffer | None = None
-    _empty_lm_image_token_indices: Buffer | None = None
+    _slot_idx_prealloc: list[Buffer] | None = None
+    _empty_lm_image_embeddings: list[Buffer] | None = None
+    _empty_lm_image_token_indices: list[Buffer] | None = None
 
     def bind_prepare_state(
         self,
         *,
         state_cache: GatedDeltaNetStateCache,
-        slot_idx_prealloc: Buffer,
-        empty_lm_image_embeddings: Buffer | None = None,
-        empty_lm_image_token_indices: Buffer | None = None,
+        slot_idx_prealloc: list[Buffer],
+        empty_lm_image_embeddings: list[Buffer] | None = None,
+        empty_lm_image_token_indices: list[Buffer] | None = None,
     ) -> None:
         """Wires state pools and vision placeholders created during ``load_model``."""
         self._state_cache = state_cache
@@ -95,7 +95,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         grid_thw: Buffer | None = None
         cu_seqlens: Buffer | None = None
         max_seqlen: Buffer | None = None
-        image_token_indices: Buffer | None = None
+        image_token_indices: list[Buffer] | None = None
 
         if self._empty_lm_image_embeddings is not None:
             vision_contexts = [
@@ -111,11 +111,23 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                     )
                     vision_datas.append(ctx.vision_data)
 
-            if vision_contexts:
-                np_indices = compute_multimodal_merge_indices(vision_contexts)
-                image_token_indices = Buffer.from_numpy(np_indices).to(
-                    self.runtime.devices[0]
-                )
+            # Reuse the cached empties whenever there is nothing to merge
+            # (text-only prompts and every decode step). Beyond skipping a
+            # per-step allocation, graph-capture replay depends on it: the
+            # captured buffer is the cached empty, replay's input refresh
+            # skips only identical buffer objects, and the driver rejects a
+            # zero-length copy between distinct buffers
+            # (CUDA_ERROR_INVALID_VALUE).
+            np_indices = (
+                compute_multimodal_merge_indices(vision_contexts)
+                if vision_contexts
+                else None
+            )
+            if np_indices is not None and len(np_indices) > 0:
+                indices_host = Buffer.from_numpy(np_indices)
+                image_token_indices = [
+                    indices_host.to(device) for device in self.runtime.devices
+                ]
             else:
                 image_token_indices = self._empty_lm_image_token_indices
 

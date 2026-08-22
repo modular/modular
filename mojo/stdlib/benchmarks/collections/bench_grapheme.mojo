@@ -67,7 +67,6 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_count_graphemes[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -81,7 +80,6 @@ def bench_count_graphemes[
     b.iter(call_fn)
 
 
-@__parameter
 def bench_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -95,7 +93,6 @@ def bench_count_codepoints[
     b.iter(call_fn)
 
 
-@__parameter
 def bench_grapheme_iter[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -111,7 +108,6 @@ def bench_grapheme_iter[
     b.iter(call_fn)
 
 
-@__parameter
 def bench_grapheme_slice[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -151,17 +147,21 @@ def main() raises:
         comptime for j in range(len(filenames)):
             comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", fname, ",", length, "]")
-            m.bench_function[bench_count_codepoints[length, fname]](
-                BenchId(String("bench_count_codepoints", suffix))
+            m.bench_function(
+                bench_count_codepoints[length, fname],
+                BenchId(String("bench_count_codepoints", suffix)),
             )
-            m.bench_function[bench_count_graphemes[length, fname]](
-                BenchId(String("bench_count_graphemes", suffix))
+            m.bench_function(
+                bench_count_graphemes[length, fname],
+                BenchId(String("bench_count_graphemes", suffix)),
             )
-            m.bench_function[bench_grapheme_iter[length, fname]](
-                BenchId(String("bench_grapheme_iter", suffix))
+            m.bench_function(
+                bench_grapheme_iter[length, fname],
+                BenchId(String("bench_grapheme_iter", suffix)),
             )
-            m.bench_function[bench_grapheme_slice[length, fname]](
-                BenchId(String("bench_grapheme_slice", suffix))
+            m.bench_function(
+                bench_grapheme_slice[length, fname],
+                BenchId(String("bench_grapheme_slice", suffix)),
             )
 
     var results = Dict[String, Tuple[Float64, Int]]()

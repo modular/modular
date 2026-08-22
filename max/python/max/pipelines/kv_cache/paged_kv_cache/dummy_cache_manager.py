@@ -48,7 +48,6 @@ class DummyKVCache(PagedKVCacheManager):
 
     def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """No-op."""
-        pass
 
     def alloc(self, *args: Any, **kwargs: Any) -> KVConnectorTransfer:
         """No-op; returns an already-complete transfer (nothing to onload)."""
@@ -56,7 +55,6 @@ class DummyKVCache(PagedKVCacheManager):
 
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
-        pass
 
     def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
@@ -64,7 +62,6 @@ class DummyKVCache(PagedKVCacheManager):
 
     def release(self, ctx: TextContext) -> None:
         """No-op."""
-        pass
 
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns a single block; this cache never allocates, so it stays free."""
@@ -84,4 +81,3 @@ class DummyKVCache(PagedKVCacheManager):
 
     def reset_metrics(self) -> None:
         """No-op."""
-        pass

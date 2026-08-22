@@ -2927,7 +2927,12 @@ struct RelativeLogitsMask[
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        return {TileMaskStatus.UNKNOWN_MASK}
+        # One contiguous PARTIAL band when `visibility` publishes a known
+        # partition (the bias hits every visible tile); else forward UNKNOWN.
+        comptime if _nonfull_sets_known[Self.V, BM, BN]():
+            return {TileMaskStatus.PARTIAL_MASK}
+        else:
+            return {TileMaskStatus.UNKNOWN_MASK}
 
     @staticmethod
     def mask_strategies[

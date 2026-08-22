@@ -31,31 +31,19 @@ def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) raises -> UInt8:
 
 def test_hash_byte_array() raises:
     # Test that values hash deterministically
-    assert_equal(hash("a".unsafe_ptr(), 1), hash("a".unsafe_ptr(), 1))
-    assert_equal(hash("b".unsafe_ptr(), 1), hash("b".unsafe_ptr(), 1))
-    assert_equal(hash("c".unsafe_ptr(), 1), hash("c".unsafe_ptr(), 1))
-    assert_equal(hash("d".unsafe_ptr(), 1), hash("d".unsafe_ptr(), 1))
+    assert_equal(hash("a".ptr(), 1), hash("a".ptr(), 1))
+    assert_equal(hash("b".ptr(), 1), hash("b".ptr(), 1))
+    assert_equal(hash("c".ptr(), 1), hash("c".ptr(), 1))
+    assert_equal(hash("d".ptr(), 1), hash("d".ptr(), 1))
 
     # Test that low bits are different
     var num_same: UInt8 = 0
-    num_same += same_low_bits(
-        hash("a".unsafe_ptr(), 1), hash("b".unsafe_ptr(), 1)
-    )
-    num_same += same_low_bits(
-        hash("a".unsafe_ptr(), 1), hash("c".unsafe_ptr(), 1)
-    )
-    num_same += same_low_bits(
-        hash("a".unsafe_ptr(), 1), hash("d".unsafe_ptr(), 1)
-    )
-    num_same += same_low_bits(
-        hash("b".unsafe_ptr(), 1), hash("c".unsafe_ptr(), 1)
-    )
-    num_same += same_low_bits(
-        hash("b".unsafe_ptr(), 1), hash("d".unsafe_ptr(), 1)
-    )
-    num_same += same_low_bits(
-        hash("c".unsafe_ptr(), 1), hash("d".unsafe_ptr(), 1)
-    )
+    num_same += same_low_bits(hash("a".ptr(), 1), hash("b".ptr(), 1))
+    num_same += same_low_bits(hash("a".ptr(), 1), hash("c".ptr(), 1))
+    num_same += same_low_bits(hash("a".ptr(), 1), hash("d".ptr(), 1))
+    num_same += same_low_bits(hash("b".ptr(), 1), hash("c".ptr(), 1))
+    num_same += same_low_bits(hash("b".ptr(), 1), hash("d".ptr(), 1))
+    num_same += same_low_bits(hash("c".ptr(), 1), hash("d".ptr(), 1))
 
     # This test is just really bad. We really need to re-evaluate the
     # right way to test these. Hash function behavior varies a bit  based

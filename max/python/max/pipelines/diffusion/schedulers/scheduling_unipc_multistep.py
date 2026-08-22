@@ -523,7 +523,7 @@ class UniPCMultistepScheduler:
     def step(
         self,
         model_output: np.ndarray,
-        timestep: float | int,
+        timestep: float,
         sample: np.ndarray,
     ) -> np.ndarray:
         """Predict the sample at the previous timestep using UniPC.

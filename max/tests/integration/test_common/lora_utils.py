@@ -18,7 +18,6 @@ import tempfile
 from typing import Any
 from unittest.mock import NonCallableMock
 
-import hf_repo_lock
 import torch
 from max.driver import DeviceSpec
 from max.pipelines import (
@@ -36,7 +35,6 @@ from transformers import AutoConfig
 
 # Common constants
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 def generate_test_lora_adapter(
@@ -44,7 +42,6 @@ def generate_test_lora_adapter(
     output_dir: str,
     lora_rank: int = 8,
     target_modules: list[str] | None = None,
-    revision: str | None = None,
 ) -> None:
     """Generate a minimal LoRA adapter for testing.
 
@@ -53,12 +50,11 @@ def generate_test_lora_adapter(
         output_dir: Directory to save the adapter files
         lora_rank: LoRA rank (r parameter)
         target_modules: List of module names to apply LoRA to
-        revision: Model revision
     """
     os.makedirs(output_dir, exist_ok=True)
 
     # Load base model config to get dimensions
-    config = AutoConfig.from_pretrained(base_model_id, revision=revision)
+    config = AutoConfig.from_pretrained(base_model_id)
 
     # Default target modules for transformer models
     if target_modules is None:
@@ -148,7 +144,6 @@ def create_test_lora_adapter(
     target_modules: list[str] | None = None,
     prefix: str = "lora_test",
     seed: int | None = None,
-    revision: str | None = None,
 ) -> str:
     """Create a temporary LoRA adapter for testing.
 
@@ -158,7 +153,6 @@ def create_test_lora_adapter(
         target_modules: List of module names to apply LoRA to
         prefix: Prefix for temporary directory name
         seed: Random seed for deterministic weight generation
-        revision: Model revision
     Returns:
         str: Path to the generated LoRA adapter directory
     """
@@ -174,7 +168,6 @@ def create_test_lora_adapter(
             output_dir=temp_dir,
             lora_rank=lora_rank,
             target_modules=target_modules,
-            revision=revision,
         )
         return temp_dir
 
@@ -312,7 +305,7 @@ def create_tokenizer(
     if pipeline_config is None:
         # Create a mock pipeline config with real HuggingFace config
         hf_config = AutoConfig.from_pretrained(
-            model_path, revision=REVISION, trust_remote_code=True
+            model_path, trust_remote_code=True
         )
         mock_model_config = NonCallableMock(spec=MAXModelConfig)
         mock_model_config.huggingface_config = hf_config
@@ -322,7 +315,6 @@ def create_tokenizer(
     return TextTokenizer(
         model_path,
         pipeline_config,
-        revision=REVISION,
         max_length=max_length,
         max_new_tokens=max_length,
         trust_remote_code=True,

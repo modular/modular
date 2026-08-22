@@ -353,18 +353,16 @@ class Qwen2_5VLModel(
         # Build the vision graph
         with Graph(
             "qwen2_5vl_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *rot_pos_ids_types,
-                    *window_index_types,
-                    *cu_seqlens_types,
-                    *cu_window_seqlens_types,
-                    *max_seqlen_types,
-                    *max_window_seqlen_types,
-                    *max_grid_size_types,
-                    *signals.input_types(),
-                ]
+            input_types=(
+                *pixel_values_types,
+                *rot_pos_ids_types,
+                *window_index_types,
+                *cu_seqlens_types,
+                *cu_window_seqlens_types,
+                *max_seqlen_types,
+                *max_window_seqlen_types,
+                *max_grid_size_types,
+                *signals.input_types(),
             ),
             module=module,
         ) as graph:

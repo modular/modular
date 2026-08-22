@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import io
 import itertools
 import traceback
 from collections import OrderedDict
@@ -27,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
-from max import _core, mlir
+from max import mlir
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
@@ -398,6 +399,40 @@ def _to_mlir(o: Any) -> Any:
     return o
 
 
+# MLIR assembly text must be read and written through the ``max.mlir`` bindings
+# rather than ``max._core``. ``_core`` static-links its own LLVM, so its textual
+# float parser and printer compare ``llvm::APFloat`` semantics against their own
+# copy of the ``APFloatBase::sem*`` statics and never match the ones the
+# attribute was built against. That silently turns f64 constants into denormal
+# garbage and aborts on any f32 that MLIR spells as a hex literal. ``max.mlir``
+# resolves MLIR from ``libmax``, the copy that owns the context, so a round-trip
+# through it agrees with itself. See GEX-4052.
+
+
+def _asm_via_cmlir(op: Operation) -> str:
+    """Serializes an operation to MLIR assembly text.
+
+    The cmlir wrapper is a non-owning view onto ``op``, so whatever owns ``op``
+    keeps owning it.
+    """
+    return str(mlir.Operation._CAPICreate(op._CAPIPtr))
+
+
+def _parse_module_via_cmlir(
+    asm: str, context: mlir.Context
+) -> builtin.ModuleOp:
+    """Parses MLIR assembly text into a typed ``builtin.ModuleOp``.
+
+    Parses in ``max.mlir``, then moves the module into ``max._core`` as
+    bytecode, which is a lossless transport between the two. The result is
+    detached, matching what ``_core.parse_module`` returns.
+    """
+    parsed = mlir.Module.parse(asm, context)
+    bytecode = io.BytesIO()
+    parsed.operation.write_bytecode(bytecode)
+    return Operation.from_bytecode(bytecode.getvalue(), context)
+
+
 def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
     # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
     # - nanobind doesn't allow custom metaclasses, but __instancecheck__
@@ -549,9 +584,16 @@ class Module:
         Returns:
             The module's MLIR assembly text.
         """
-        if source_locations:
-            return _graph.to_mlir_with_source_locations(self.mlir_module)
-        return self.mlir_module.asm()
+        if not source_locations:
+            return _asm_via_cmlir(self.mlir_module)
+
+        # The materialized locations come back as bytecode; reparsing through
+        # max.mlir is what puts the printing in the right LLVM image.
+        with_locations = mlir.Module.parse(
+            _graph.source_locations_bytecode(self.mlir_module),
+            self.mlir_module.context,
+        )
+        return with_locations.operation.get_asm(enable_debug_info=True)
 
 
 class GraphDebugConfig:
@@ -637,7 +679,7 @@ class Graph:
     These examples only use the :obj:`max.graph` package, but most models also
     use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
     To learn more, see `Build a model graph with Module
-    </max/develop/modules>`_.
+    </develop/modules>`_.
 
     Args:
         name: A name for the graph.
@@ -687,7 +729,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
@@ -823,7 +865,7 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
@@ -1330,7 +1372,7 @@ class Graph:
         with open(path) as f:
             context = default_mlir_context()
             with _location():
-                self._module = _core.parse_module(f.read(), context)
+                self._module = _parse_module_via_cmlir(f.read(), context)
                 # Set the mo.graph op, which is the first operation in the
                 # module body block.
                 self._mlir_op = mlir.Operation._CAPICreate(
