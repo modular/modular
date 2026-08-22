@@ -403,6 +403,18 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
                     shmem[0] = state
             barrier()
             state = shmem[0]
+            # The broadcast read above is the last shmem access of this
+            # combine, with no barrier after it — so when a kernel calls
+            # `generic` again (the block tier grid-strides several rows per
+            # block), a fast warp's next-call publish can overwrite `shmem`
+            # while a lagging warp still reads it. NVIDIA/AMD warps never
+            # drift that far in practice; Metal loses this race readily
+            # (measured: layer_norm block tier, run-to-run divergent bytes
+            # on M5, frequency scaling with rows per block). Close the
+            # reuse window on Apple only, keeping other targets' codegen
+            # byte-identical.
+            comptime if is_apple_gpu():
+                barrier()
         else:
             # Block-wide shmem tree: log2(BLOCK_SIZE) halving steps.
             var shmem = stack_allocation[
@@ -425,6 +437,10 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
                 barrier()
 
             state = shmem[0]
+            # Same cross-call shmem-reuse race as the small-state path
+            # above; same Apple-only close.
+            comptime if is_apple_gpu():
+                barrier()
 
 
 struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):

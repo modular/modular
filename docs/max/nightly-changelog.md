@@ -807,6 +807,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed run-to-run nondeterminism of `layer_norm`, `rms_norm`, and other
+  Row-API rowwise reductions on Apple Silicon GPUs: a block that reduced
+  several rows re-used its shared-memory strip across row iterations
+  without ordering the trailing broadcast read against the next combine's
+  first store. Model outputs on Metal (for example FLUX.2 image
+  generation) are now byte-identical across runs; NVIDIA and AMD codegen
+  is unchanged.
+
 - On Apple Silicon, a missing Metal Toolchain (a separate download since
   Xcode 16) now surfaces `xcrun`'s own error, which names the fix
   (`xcodebuild -downloadComponent MetalToolchain`), instead of the opaque
