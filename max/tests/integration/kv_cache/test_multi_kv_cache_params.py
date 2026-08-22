@@ -34,6 +34,7 @@ from max.nn.kv_cache.input_types import (
     KVCacheInputs,
     MultiKVCacheInputs,
 )
+from max.pipelines.kv_cache.config import KVConnectorConfig
 
 
 def create_kv_cache_params(
@@ -718,9 +719,11 @@ class TestPerLayerBuffers:
             devices=[DeviceRef.GPU()],
             page_size=128,
             per_layer_buffers=True,
-            kv_connector=KVConnectorType.tiered,
             enable_prefix_caching=True,
-            host_kvcache_swap_space_gb=1.0,
+            kv_connector_config=KVConnectorConfig(
+                type=KVConnectorType.tiered,
+                host_offload_max_gb=1.0,
+            ),
         )
         with pytest.raises(
             NotImplementedError, match="off-device KV connector"

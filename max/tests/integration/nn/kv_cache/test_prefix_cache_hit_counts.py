@@ -45,7 +45,7 @@ BLOCK_SIZE = 8
 
 def _make_ctx(
     tokens: np.ndarray,
-    request_id: RequestID = RequestID("req-1"),
+    request_id: RequestID = RequestID("req-1"),  # noqa: B008
 ) -> TextContext:
     """Build a minimal TextContext-like stub (see test_block_manager_sha256).
 
@@ -121,10 +121,6 @@ class _TierStubConnector:
     @property
     def host_block_count(self) -> BlockCount:
         return BlockCount(free=4, total=4)
-
-    @property
-    def supported_hash_algos(self) -> frozenset[str]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]

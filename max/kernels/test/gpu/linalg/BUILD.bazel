@@ -184,6 +184,8 @@ _EXTRA_CONSTRAINTS = {
     # Each test iterates dtype (FP8 / BF16 / FP16) inside `main()` —
     # HK MHA pattern; single BUILD target per file (no dtype for-loop).
     "test_4wave_matmul.mojo": ["//:mi355_gpu"],
+    # Streams a preshuffled B via CDNA4 16x16x32 bf16 MFMA; MI355X-only.
+    "test_smallm_streaming_matmul.mojo": ["//:mi355_gpu"],
     "test_4wave_epilogue.mojo": ["//:mi355_gpu"],
     "test_4wave_split_k.mojo": ["//:mi355_gpu"],
     "test_4wave_nonaligned.mojo": ["//:mi355_gpu"],

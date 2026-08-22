@@ -94,7 +94,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 

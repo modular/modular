@@ -120,7 +120,6 @@ class TokenBudget(ABC):
         :class:`BudgetStatus`. Implementations may mutate ``context`` (for
         example, via chunking) but must not update :attr:`used`.
         """
-        pass
 
     @abstractmethod
     def add_to_budget(
@@ -136,7 +135,6 @@ class TokenBudget(ABC):
         :attr:`used` by the same effective token cost that was evaluated in
         :meth:`status_after_context`.
         """
-        pass
 
 
 class TokenBudgetCollection:
@@ -171,8 +169,7 @@ class TokenBudgetCollection:
         min_val = float("inf")
         for token_budget in self.token_budgets:
             remaining = token_budget.remaining
-            if min_val > remaining:
-                min_val = remaining
+            min_val = min(min_val, remaining)
 
         if min_val == float("inf"):
             raise ValueError(

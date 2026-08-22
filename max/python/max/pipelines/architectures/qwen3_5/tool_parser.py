@@ -364,4 +364,4 @@ class Qwen3_5ToolParser:
 
         See ``ToolParser.set_streaming_tool_schemas``.
         """
-        return None
+        return

@@ -20,6 +20,7 @@ from std.math import align_up, ceildiv, rsqrt
 from std.random import seed
 
 from max.gpu.host import DeviceContext
+from max.gpu.host.info import B200
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -51,6 +52,7 @@ def execute_rel_logits_flash_attention_test[
     cache_lengths: List[Int],
     label: String,
     ctx: DeviceContext,
+    num_partitions: Optional[Int] = None,
 ) raises:
     comptime dtype = DType.bfloat16
     comptime group = num_q_heads // kv_params.num_heads
@@ -156,6 +158,7 @@ def execute_rel_logits_flash_attention_test[
         cache_table.input_row_offsets.device_tensor(),
         scale,
         ctx,
+        num_partitions=num_partitions,
     )
 
     var reference_output = ManagedLayoutTensor[dtype, tensor_layout](
@@ -215,3 +218,33 @@ def main() raises:
             page_size=128,
             extent=0,
         ]([1], [0], "prefill+empty_extent", ctx)
+
+        # TODO: Investigate MI355
+        comptime if ctx.default_device_info == B200:
+            execute_rel_logits_flash_attention_test[
+                SlidingWindowCausalMask[512](),
+                num_q_heads=32,
+                kv_params=KVCacheStaticParams(num_heads=8, head_size=128),
+                page_size=128,
+                extent=512,
+            ](
+                [1, 1],
+                [2048, 3072],
+                "decode+window+splitk_p8",
+                ctx,
+                num_partitions=8,
+            )
+
+            execute_rel_logits_flash_attention_test[
+                CausalMask(),
+                num_q_heads=32,
+                kv_params=KVCacheStaticParams(num_heads=8, head_size=128),
+                page_size=128,
+                extent=1024,
+            ](
+                [1, 1],
+                [2048, 4096],
+                "decode+global+splitk_p4",
+                ctx,
+                num_partitions=4,
+            )

@@ -340,10 +340,10 @@ def copy_pinned_to_destinations(
     if not source.pinned:
         return
     source_device = source.device
-    source_stream = source_device.default_stream
+    source_stream = source_device.default_queue
     for destination in destinations:
         if destination.device.id != source_device.id:
-            source_stream.wait_for(destination.device.default_stream)
+            source_stream.wait_for(destination.device.default_queue)
 
 
 def load_max_buffer(path: PathLike[str]) -> Buffer:

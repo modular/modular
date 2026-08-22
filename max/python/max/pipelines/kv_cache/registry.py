@@ -24,7 +24,6 @@ from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     compute_num_device_blocks,
-    compute_num_host_blocks,
 )
 
 from .paged_kv_cache import PagedKVCacheManager
@@ -49,51 +48,6 @@ def _use_jenga_cache() -> bool:
     )
 
 
-def _load_single_kv_manager(
-    params: KVCacheParamInterface,
-    total_num_pages: int,
-    total_num_host_pages: int,
-    session: InferenceSession,
-    max_batch_size: int,
-    available_cache_memory: int,
-) -> PagedKVCacheManagerInterface:
-    # In compile-only mode (virtual device mode), use the null KV manager
-    # to avoid GPU memory allocation
-    if is_virtual_device_mode():
-        logger.info(
-            "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
-        )
-        return Mock()
-
-    # TODO(KERN-1308) remove this validation as we generalize page_size
-    if params.page_size % 128 != 0 or params.page_size < 128:
-        raise ValueError(
-            "Page size must be a multiple of 128 and at least 128."
-        )
-
-    if _use_jenga_cache():
-        # TODO(bez): temporary flag for the Jenga cutover -- see
-        # PagedKVCacheManagerInterface. Delete this branch once
-        # JengaKVCacheManager replaces PagedKVCacheManager outright.
-        logger.warning(
-            "JengaKVCacheManager is experimental and incompatible with features "
-            "like KVCache offloading or Spec Decoding."
-        )
-        return JengaKVCacheManager.create(
-            params=params,
-            available_bytes=available_cache_memory,
-            max_batch_size=max_batch_size,
-        )
-
-    return PagedKVCacheManager(
-        params=params,
-        total_num_pages=total_num_pages,
-        total_num_host_pages=total_num_host_pages,
-        session=session,
-        max_batch_size=max_batch_size,
-    )
-
-
 def load_kv_manager(
     params: KVCacheParamInterface,
     max_batch_size: int | None,
@@ -110,6 +64,14 @@ def load_kv_manager(
     if isinstance(params, MagicMock):
         return MagicMock()
 
+    # In compile-only mode (virtual device mode), use the null KV manager
+    # to avoid GPU memory allocation
+    if is_virtual_device_mode():
+        logger.info(
+            "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
+        )
+        return Mock()
+
     if available_cache_memory is None:
         raise ValueError(
             "available_cache_memory should have been set during memory estimation"
@@ -123,6 +85,26 @@ def load_kv_manager(
     if max_batch_size <= 0:
         raise ValueError("max_batch_size must be greater than 0")
 
+    # TODO(KERN-1308) remove this validation as we generalize page_size
+    if params.page_size % 128 != 0 or params.page_size < 128:
+        raise ValueError(
+            "Page size must be a multiple of 128 and at least 128."
+        )
+
+    if _use_jenga_cache():
+        # TODO(bez): temporary flag for the Jenga cutover -- see
+        # PagedKVCacheManagerInterface. Delete this branch once
+        # JengaKVCacheManager replaces PagedKVCacheManager outright.
+        logger.warning(
+            "JengaKVCacheManager is experimental and incompatible with "
+            "features like KVCache offloading."
+        )
+        return JengaKVCacheManager.create(
+            params=params,
+            available_bytes=available_cache_memory,
+            max_batch_size=max_batch_size,
+        )
+
     # A single request at max_seq_len must fit in the device block pool:
     # otherwise it cannot be preempted (there is nothing else to evict) and
     # overflows the pool at runtime, crashing the model worker with
@@ -135,13 +117,9 @@ def load_kv_manager(
         require_max_seq_len_fits=True,
     )
 
-    total_num_host_pages = compute_num_host_blocks(params)
-
-    return _load_single_kv_manager(
+    return PagedKVCacheManager(
         params=params,
         total_num_pages=total_num_pages,
-        total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
-        available_cache_memory=available_cache_memory,
     )

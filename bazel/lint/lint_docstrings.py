@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -335,7 +334,7 @@ def should_skip_file(filepath: Path) -> bool:
         return True
 
     # Skip generated files
-    if path_str.endswith("_pb2.py") or path_str.endswith("_pb2.pyi"):
+    if path_str.endswith(("_pb2.py", "_pb2.pyi")):
         return True
 
     # Skip virtual environments and derived directories

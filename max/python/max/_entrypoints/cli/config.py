@@ -82,7 +82,10 @@ class JSONType(click.ParamType):
         param: click.Parameter | None,
         ctx: click.Context | None,
     ) -> Any:
-        if isinstance(value, dict):
+        # Already-structured values need no parsing: a dict from a config file,
+        # or a Pydantic model when the option's default is a model instance
+        # rather than None.
+        if not isinstance(value, str):
             return value
         # Auto-detect file path vs inline JSON/YAML
         if not value.lstrip().startswith(("{", "[")):
@@ -100,7 +103,7 @@ class JSONType(click.ParamType):
 
 
 def get_interior_type(type_hint: type | str | Any) -> type[Any]:
-    interior_args = set(get_args(type_hint)) - set([type(None)])
+    interior_args = set(get_args(type_hint)) - {type(None)}
     if len(interior_args) > 1:
         raise ValueError(
             "Parsing does not currently supported Union type, with more than"
@@ -211,7 +214,7 @@ def create_click_option(
     field_type: Any,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     # Get Help text.
-    help_text = help_for_fields.get(dataclass_field.name, None)
+    help_text = help_for_fields.get(dataclass_field.name)
 
     # Get help field.
     return click.option(

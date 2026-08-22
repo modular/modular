@@ -236,9 +236,7 @@ class StreamingToolCallPropagation(BaseScenario):
             if not isinstance(content, str):
                 continue
             stripped = content.lstrip()
-            if stripped.startswith("thought\n") or stripped.startswith(
-                "thought "
-            ):
+            if stripped.startswith(("thought\n", "thought ")):
                 thought_leak = content[:120]
                 break
 

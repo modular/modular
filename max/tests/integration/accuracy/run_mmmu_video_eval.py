@@ -659,8 +659,12 @@ def main(
 
     # No client timeout: a request must only ever end by the server
     # hitting max_tokens, never by a client-side deadline.
+    # An unconditional api_key would shadow OPENAI_API_KEY and 401 against an
+    # authenticated endpoint.
     client = OpenAI(
-        base_url=base_url.rstrip("/"), api_key="dummy", timeout=None
+        base_url=base_url.rstrip("/"),
+        api_key=os.environ.get("OPENAI_API_KEY") or "dummy",
+        timeout=None,
     )
 
     video_index = prepare_videos()

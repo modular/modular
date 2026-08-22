@@ -28,7 +28,7 @@ comptime _AssertMode[
 @always_inline
 def check_bounds[
     cpu_default: Bool = True,
-](idx: Some[Indexer], size: Int, location: OptionalReg[SourceLocation] = None):
+](idx: Some[Indexer], size: Int, location: Optional[SourceLocation] = None):
     """Bounds check which is on by default for CPU, and off by default for GPU.
 
     You can turn off CPU bounds checks for a specific collection by setting
@@ -65,9 +65,7 @@ def check_bounds[
         index(idx),
         " is out of bounds, valid range is 0 to ",
         size - 1,
-        location=location.value() if location else call_location[
-            inline_count=2
-        ](),
+        location=location.or_else(call_location[inline_count=2]()),
     )
 
 
@@ -77,7 +75,7 @@ def check_slice_bounds[
 ](
     slice: ContiguousSlice,
     len: Int,
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
 ) -> Tuple[Int, Int]:
     """Bounds check for slice indexing, which is on by default for CPU, and
     off by default for GPU.
@@ -139,10 +137,6 @@ def check_slice_bounds[
         # Combine the failure conditions here so valid slices avoid the
         # no-inline assertion helper, while invalid slices still bounds check.
         if UInt(start) > UInt(len) or UInt(end) > UInt(len) or start > end:
-            do_asserts(
-                location.unsafe_value() if location else call_location[
-                    inline_count=2
-                ]()
-            )
+            do_asserts(location.or_else(call_location[inline_count=2]()))
 
     return start, end

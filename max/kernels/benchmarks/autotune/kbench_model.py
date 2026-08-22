@@ -340,7 +340,7 @@ class KbenchCache:
     def store_failed(self, key: str) -> None:
         """Store build failure result for the specified key."""
         if not self.is_active:
-            return None
+            return
         # TODO: revise the following conflict.
         if key in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
@@ -1427,7 +1427,7 @@ class Scheduler:
         build_opts: list[str],
         dryrun: bool,
         output_suffix: str = "output.csv",
-        progress: Progress = Progress(),
+        progress: Progress = Progress(),  # noqa: B008
         use_shared_lib: bool = False,
         output_dir_list: list[Path] | None = None,
         cache_dir: Path | None = None,
@@ -1591,9 +1591,7 @@ class Scheduler:
             if bi.use_shared_lib
             else bi.spec_instance.build
         )
-        effective_output_dir = (
-            bi.build_output_dir if bi.build_output_dir else bi.output_dir
-        )
+        effective_output_dir = bi.build_output_dir or bi.output_dir
         bi.build_output = build_fn(
             output_dir=effective_output_dir,
             build_opts=bi.build_opts,

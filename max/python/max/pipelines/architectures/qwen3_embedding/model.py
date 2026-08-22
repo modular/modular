@@ -93,7 +93,7 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
     model: Model
     """Compiled and initialized model."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization method."""
 
     attention_bias: bool = False

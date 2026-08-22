@@ -103,7 +103,7 @@ from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
 from nn.topk import gumbel_sampling_fused_gpu
-from nn.topk_fi import topk_topp_masked_probs, topk_topp_sampling_from_prob
+from nn.sampling import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu

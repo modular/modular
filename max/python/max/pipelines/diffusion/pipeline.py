@@ -108,9 +108,11 @@ class PixelGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[DiffusionPipeline]
-        | type[PipelineExecutor[Any, Any, Any]]
-        | type[Module[Any, Any]],
+        pipeline_model: type[
+            DiffusionPipeline
+            | PipelineExecutor[Any, Any, Any]
+            | Module[Any, Any]
+        ],
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -390,4 +392,3 @@ class PixelGenerationPipeline(
         Args:
             request_id: The request ID to release resources for.
         """
-        pass

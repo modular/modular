@@ -13,6 +13,7 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from import_dependency_compare import check_dependencies_against_imports
@@ -50,7 +51,7 @@ def main() -> int:
         for src in srcs:
             deps_info[PythonModule.from_path(Path(src))] = label
 
-    target_srcs = set(Path(src) for src in json_content["TARGET_SOURCES"])
+    target_srcs = {Path(src) for src in json_content["TARGET_SOURCES"]}
 
     working_dir = (
         Path(json_content["WORKING_DIR"]).resolve().relative_to(Path.cwd())
@@ -120,4 +121,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

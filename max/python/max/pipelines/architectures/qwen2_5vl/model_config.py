@@ -294,7 +294,7 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         llm_state_dict: dict[str, WeightData],
         vision_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Qwen2_5VLConfig instance with state_dict dependent fields.
 

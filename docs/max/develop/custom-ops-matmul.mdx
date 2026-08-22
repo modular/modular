@@ -38,7 +38,7 @@ By the end of this tutorial, you'll be able to:
 ## Requirements
 
 <Requirements requirementsData={requirementsWithGPU}
-url="/max/packages#system-requirements" />
+url="/packages#system-requirements" />
 
 To use a GPU, your system must meet the [GPU
 requirements](/packages/#gpu-compatibility).
@@ -65,7 +65,7 @@ download the code and run the benchmark script:
 3. Run all the matmul examples:
 
     ```bash
-    cd modular/examples/custom_ops
+    cd modular/max/examples/custom_ops
 
     pixi run python matrix_multiplication.py
     ```
@@ -210,7 +210,7 @@ A single `matrix_multiplication` operation is used, and the algorithm variant is
 specified by the `algorithm` compile-time parameter.
 
 The custom operation itself is defined in Mojo within the
-`operations/matrix_multiplication.mojo` file. Tensor types such as
+`kernels/matrix_multiplication.mojo` file. Tensor types such as
 `InputTensor`, `OutputTensor`, and `ManagedTensorSlice` are imported from the
 `extensibility` package. The `MatrixMultiplication` struct
 hosts all of the setup code for taking in the matrix tensors, branching
@@ -222,7 +222,7 @@ paths used for a particular piece of hardware avoids run-time branching and
 allows full utilization of an accelerator or CPU.
 
 Each algorithm is contained within its own function in
-`operations/matrix_multiplication.mojo`. Next, we'll discuss how each works.
+`kernels/matrix_multiplication.mojo`. Next, we'll discuss how each works.
 
 ### Matrix multiplication algorithms
 

@@ -154,6 +154,16 @@ def register_all_models() -> None:
             ".unified_dspark_gemma4_12b",
             "gemma4_dspark_draft_arch",
         ),
+        _LazyArch(
+            "Gemma4ForConditionalGeneration_ModuleV3",
+            ".gemma4_modulev3",
+            "gemma4_modulev3_arch",
+        ),
+        _LazyArch(
+            "Gemma4UnifiedForConditionalGeneration_ModuleV3",
+            ".gemma4_modulev3",
+            "gemma4_unified_modulev3_arch",
+        ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch("GptOssForCausalLM", ".gpt_oss", "gpt_oss_arch"),
         _LazyArch(
@@ -332,6 +342,11 @@ def register_all_models() -> None:
             "UnifiedMTPGlmMoeDsaForCausalLM",
             ".unified_mtp_glm5_2",
             "unified_mtp_glm5_2_arch",
+        ),
+        _LazyArch(
+            "UnifiedMTPQwen3_5ForConditionalGeneration",
+            ".unified_mtp_qwen3_5",
+            "unified_mtp_qwen3_5_arch",
         ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),

@@ -18,7 +18,7 @@ from std.memory import bitcast
 
 def print_bits[dtype: DType](val: Scalar[dtype]):
     var u8 = bitcast[DType.uint8](val)
-    var bits = String(capacity=32)
+    var bits = String(capacity_bytes=32)
 
     comptime for i in reversed(range(8)):
         bits.write((u8 >> UInt8(i)) & 1)

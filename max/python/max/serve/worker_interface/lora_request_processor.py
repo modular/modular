@@ -95,7 +95,7 @@ class LoRARequestProcessor:
             _logger.exception(
                 f"Unexpected error handling LoRA request {request}"
             )
-            error_detail = str(e) if str(e) else "Unknown error"
+            error_detail = str(e) or "Unknown error"
 
             if request.operation == LoRAOperation.LOAD:
                 return LoRAResponse(
