@@ -195,9 +195,7 @@ class StateInteractionAttacks(BaseScenario):
 
         for name, payload in multimodal_tests.items():
             resp = await client.post_json(payload, timeout=config.timeout * 0.5)
-            if resp.error == "TIMEOUT":
-                v = Verdict.FAIL
-            elif resp.status >= 500:
+            if resp.error == "TIMEOUT" or resp.status >= 500:
                 v = Verdict.FAIL
             elif resp.status in (200, 400):
                 v = Verdict.PASS

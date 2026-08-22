@@ -52,12 +52,12 @@ def test_constructors() raises:
     assert_equal(3, s2.byte_length())
 
     # Construction with capacity
-    var s4 = String(capacity=1)
-    assert_true(s4.capacity() <= String.INLINE_CAPACITY)
+    var s4 = String(capacity_bytes=1)
+    assert_true(s4.capacity_bytes() <= String.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_true(s5.capacity() <= String.INLINE_CAPACITY)
+    assert_true(s5.capacity_bytes() <= String.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -384,6 +384,23 @@ def test_atol() raises:
         contains="String expresses an integer too large to store in Int."
     ):
         _ = atol("9223372036854775832")
+
+    # Overflow detection must be exact at the Int boundaries: values one past
+    # Int.MAX / Int.MIN raise instead of silently wrapping.
+    with assert_raises(
+        contains="String expresses an integer too large to store in Int."
+    ):
+        _ = atol("9223372036854775808")
+
+    with assert_raises(
+        contains="String expresses an integer too large to store in Int."
+    ):
+        _ = atol("-9223372036854775809")
+
+    assert_equal(Int.MAX, atol("9223372036854775807"))
+    assert_equal(Int.MIN, atol("-9223372036854775808"))
+    assert_equal(Int.MAX, atol("0x7FFF_FFFF_FFFF_FFFF", 16))
+    assert_equal(Int.MIN, atol("-0x8000_0000_0000_0000", 16))
 
 
 def test_atol_base_0() raises:
@@ -1476,9 +1493,9 @@ def test_slice_contains() raises:
 
 def test_reserve() raises:
     var s = String()
-    assert_equal(s.capacity(), 23)
-    s.reserve(61)
-    assert_equal(s.capacity(), 64)
+    assert_equal(s.capacity_bytes(), 23)
+    s.reserve_bytes(61)
+    assert_equal(s.capacity_bytes(), 64)
 
 
 def test_resize() raises:
@@ -1528,7 +1545,7 @@ def test_as_c_string_slice_empty() raises:
     var string = String()
     var cslice = string.as_c_string_slice()
     assert_equal(string.byte_length(), 0)
-    assert_true(string.capacity() > 0)
+    assert_true(string.capacity_bytes() > 0)
     # Safe to index `string.byte_length()` as this has a nul terminator
     assert_equal(
         string.as_bytes().unsafe_ptr()[unsafe_offset=string.byte_length()], 0
@@ -1572,7 +1589,7 @@ def test_variadic_ctors() raises:
 def test_sso() raises:
     # String literals are initially stored as indirect regardless of length
     var s = "hello"
-    assert_equal(s.capacity(), 5)
+    assert_equal(s.capacity_bytes(), 5)
     assert_equal(s.byte_length(), 5)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
@@ -1581,7 +1598,7 @@ def test_sso() raises:
     # Adding a single char should remove the nul terminator and inline it.
     s += "f"
     assert_equal(s.byte_length(), 6)
-    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s.capacity_bytes(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, "hellof")
@@ -1590,7 +1607,7 @@ def test_sso() raises:
     comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
     assert_equal(s.byte_length(), 55)
-    assert_equal(s.capacity(), 55)
+    assert_equal(s.capacity_bytes(), 55)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
     assert_equal(s.as_bytes().unsafe_ptr()[unsafe_offset=s.byte_length()], 0)
@@ -1598,20 +1615,20 @@ def test_sso() raises:
     # Modifying it should remove the nul terminator.
     s += "f"
     assert_equal(s.byte_length(), 56)
-    assert_true(s.capacity() >= 56)
+    assert_true(s.capacity_bytes() >= 56)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
     assert_equal(s, long + "f")
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s.capacity_bytes(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
     assert_equal(s._has_nul_terminator(), False)
 
     s += "f" * String.INLINE_CAPACITY
     assert_equal(s.byte_length(), String.INLINE_CAPACITY)
-    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s.capacity_bytes(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
 
     # One more byte.
@@ -1619,12 +1636,12 @@ def test_sso() raises:
 
     # The capacity should be 2x the previous amount, rounded up to 8.
     comptime expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
-    assert_equal(s.capacity(), Int(expected_capacity))
+    assert_equal(s.capacity_bytes(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
     # Shrink down to small, but stays out of line to maintain our malloc.
     s.resize(4)
-    assert_equal(s.capacity(), Int(expected_capacity))
+    assert_equal(s.capacity_bytes(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
     assert_equal(s, "ffff")
 

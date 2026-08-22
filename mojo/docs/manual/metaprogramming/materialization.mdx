@@ -44,7 +44,7 @@ the following code:
 
 ```mojo
 def lookup_fn(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     for i in range(count):
         # Some computation, doesn't matter what it is.
@@ -77,7 +77,7 @@ Here's the code above with explicit materialization added:
 
 ```mojo
 def lookup_fn(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     for i in range(count):
         var idx = dynamic_function(i)
@@ -100,7 +100,7 @@ A more efficient version would materialize the list *outside* of the loop:
 
 ```mojo
 def lookup_fn(count: Int):
-    comptime list_of_values = [1, 3, 5, 7]
+    comptime list_of_values: List[Int] = [1, 3, 5, 7]
 
     var list = materialize[list_of_values]()
     for i in range(count):

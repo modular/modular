@@ -325,21 +325,18 @@ def bench_shape[
     )
 
     # ============ FUSED: one GEMM, scatter from the epilogue ============
-    @__parameter
-    @__copy_capture(
-        cb_hs,
-        cb_w,
-        cb_asf,
-        cb_bsf,
-        iro_tensor,
-        main_collection,
-        index_collection,
-        q_out,
-        iq_out,
-        total_seq,
-    )
     @always_inline
-    def fused_launch(ctx: DeviceContext, iteration: Int) raises:
+    def fused_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {
+        mut cb_hs,
+        mut cb_w,
+        mut cb_asf,
+        mut cb_bsf,
+        mut q_out,
+        mut iq_out,
+        imm,
+    }:
         var hs = LayoutTensor[
             mut=False, OPERAND_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
         ](
@@ -409,7 +406,7 @@ def bench_shape[
     @__parameter
     @always_inline
     def fused_bench(mut b: Bencher) raises:
-        bencher_iter_custom[fused_launch](b, ctx)
+        bencher_iter_custom(b, fused_launch, ctx)
 
     m.bench_function[fused_bench](
         BenchId(
@@ -427,22 +424,18 @@ def bench_shape[
     )
 
     # ============ UNFUSED: one dense GEMM per output band ============
-    @__parameter
-    @__copy_capture(
-        cb_hs,
-        cb_w,
-        cb_asf,
-        cb_bsf,
-        iro_tensor,
-        main_collection,
-        index_collection,
-        q_out,
-        iq_out,
-        kv_out_ptr,
-        total_seq,
-    )
     @always_inline
-    def unfused_launch(ctx: DeviceContext, iteration: Int) raises:
+    def unfused_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {
+        mut cb_hs,
+        mut cb_w,
+        mut cb_asf,
+        mut cb_bsf,
+        mut q_out,
+        mut iq_out,
+        imm,
+    }:
         var hs = LayoutTensor[
             mut=False, OPERAND_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
         ](
@@ -568,7 +561,7 @@ def bench_shape[
     @__parameter
     @always_inline
     def unfused_bench(mut b: Bencher) raises:
-        bencher_iter_custom[unfused_launch](b, ctx)
+        bencher_iter_custom(b, unfused_launch, ctx)
 
     m.bench_function[unfused_bench](
         BenchId(

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -113,7 +113,7 @@ class KVCacheGroupId:
 class KVConnectorType(str, Enum):
     """Identifies which off-device backing store the KV cache uses.
 
-    Set on :attr:`KVCacheParams.kv_connector` to control whether evicted
+    Set on the connector config's ``type`` field to control whether evicted
     cache pages stay on device only, tier across host and disk, or route
     through a distributed block store.
     """
@@ -124,7 +124,7 @@ class KVConnectorType(str, Enum):
     tiered = "tiered"
     """Tiers evicted pages across host memory and disk.
 
-    Requires ``enable_prefix_caching``, ``host_kvcache_swap_space_gb``,
+    Requires ``enable_prefix_caching``, ``host_offload_max_gb``,
     and a ``disk_offload_dir`` on the connector config.
 
     .. deprecated::
@@ -140,7 +140,7 @@ class KVConnectorType(str, Enum):
     resolves to: it runs its copies and disk I/O on Rust threads (no GIL
     contention) and overlaps onloads with GPU compute via asynchronous
     transfer handles. Requires ``enable_prefix_caching``,
-    ``host_kvcache_swap_space_gb``, and a ``disk_offload_dir`` on the connector
+    ``host_offload_max_gb``, and a ``disk_offload_dir`` on the connector
     config. Raises on non-CUDA/HIP devices.
     """
 
@@ -149,6 +149,52 @@ class KVConnectorType(str, Enum):
 
     Requires a ``block_store_endpoint`` on the connector config.
     """
+
+
+@runtime_checkable
+class KVConnectorConfigInterface(Protocol):
+    """The KV connector configuration contract: a type plus per-tier settings.
+
+    Declared here because :class:`KVCacheParams` carries it, and implemented by
+    the Pydantic ``KVConnectorConfig`` in the pipelines layer (which owns CLI
+    and config-file parsing). Structural typing keeps ``max.nn`` free of a
+    Pydantic dependency, which the base ``max`` wheel does not ship, while
+    still giving every consumer a checked type instead of ``Any``.
+    """
+
+    type: KVConnectorType
+    """Which off-device backing store to use."""
+
+    host_offload_max_gb: float | None
+    """Host budget in GiB; ``None`` sizes it from the device pool."""
+
+    disk_offload_max_gb: float | None
+    """Disk budget in GiB; ``None`` sizes it from the device pool."""
+
+    disk_offload_dir: str | None
+    """Disk cache directory; ``None`` means auto-create one."""
+
+    num_disk_workers: int
+    """Disk I/O worker threads for the tiered connectors."""
+
+    block_store_endpoint: str | None
+    """Endpoint for the co-located dKV service."""
+
+
+@dataclass
+class NullKVConnectorConfig:
+    """Connector config for no off-device backing store.
+
+    The default for :attr:`KVCacheParams.kv_connector_config`, so the field is
+    never ``None`` and every reader can go straight to ``.type``.
+    """
+
+    type: KVConnectorType = KVConnectorType.null
+    host_offload_max_gb: float | None = None
+    disk_offload_max_gb: float | None = None
+    disk_offload_dir: str | None = None
+    num_disk_workers: int = 32
+    block_store_endpoint: str | None = None
 
 
 def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
@@ -176,85 +222,14 @@ def _view_as_uint8_pages(buffer: Buffer) -> Buffer:
 
 @dataclass
 class KVCacheMemory:
-    """A single KV cache shard as a 2-D ``uint8`` view.
+    """One logical ``(child, kind)`` KV tensor as per-TP-shard ``uint8`` views.
 
-    ``buffer`` has shape ``[num_pages, bytes_per_page]`` with dtype
-    ``uint8``.  This is the form consumed by the offload engine and KV
-    connectors.  :class:`ReplicatedKVCacheMemory` subclasses this for
-    caches that are replicated across TP shards (MLA).
-    """
+    A unit is one logical tensor — a cache's ``values`` or its ``scales`` —
+    holding a 2-D ``[num_pages, bytes_per_page]`` view per TP shard in canonical
+    device order, so ``buffers[s]`` is shard ``s`` regardless of ``replicated``.
 
-    buffer: Buffer
-
-    def __post_init__(self) -> None:
-        _validate_is_2d_uint8_buffer(self.buffer)
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages."""
-        return self.buffer.shape[0]
-
-    @property
-    def all_buffers(self) -> list[Buffer]:
-        """Returns every shard buffer backing this unit (rank-0 + peers)."""
-        return [self.buffer]
-
-
-@dataclass
-class ReplicatedKVCacheMemory(KVCacheMemory):
-    """A replicated KV cache unit (rank-0 shard plus its TP peers).
-
-    All shards hold identical data (MLA); D2H reads from ``buffer``
-    (rank-0) and H2D broadcasts back to ``buffer`` and every entry in
-    ``peers``.  Each buffer has shape ``[num_pages, bytes_per_page]``
-    with dtype ``uint8``.
-    """
-
-    peers: list[Buffer]
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-
-        if len(self.peers) == 0:
-            raise ValueError(
-                "ReplicatedKVCacheMemory must have at least one peer"
-            )
-
-        for peer in self.peers:
-            _validate_is_2d_uint8_buffer(peer)
-
-        unique_shapes = set(
-            buffer.shape for buffer in [self.buffer, *self.peers]
-        )
-        if len(unique_shapes) > 1:
-            raise ValueError("All buffers must have the same shape")
-
-    @property
-    def all_buffers(self) -> list[Buffer]:
-        """Returns the rank-0 shard buffer followed by every peer buffer.
-
-        For replicated caches (MLA) all shards hold identical data;
-        ``BlockManager._copy_blocks_across_replicas`` zips these against the
-        destination's shards (``strict=True``), so each shard is fanned out
-        with an independent point-to-point copy (no broadcast collective).
-        """
-        return [self.buffer, *self.peers]
-
-
-@dataclass
-class KVCacheMemoryGroup:
-    """One producer-authored NIXL group for the transfer engine.
-
-    A group is exactly one logical ``(child, kind)`` tensor — e.g. a cache's
-    ``values`` or its ``scales`` — carrying every TP-shard view of that tensor.
-    ``buffers`` are the same 2-D ``[num_pages, bytes_per_page]`` ``uint8`` views
-    that :meth:`KVCacheBuffer.to_memory` emits, one per TP shard; for a
-    replicated cache (MLA) they are the rank-0 shard followed by its peers.
-
-    Authoring the group boundary on the producer side replaces the transfer
-    engine's old shape-comparison grouping, which could silently merge two
-    distinct kinds that happened to share a ``bytes_per_page``. ``replicated``
-    rides on the group so replication becomes a per-group property.
+    ``replicated`` marks shards holding identical bytes (MLA); what a consumer
+    does with that is its own business.
     """
 
     replicated: bool
@@ -262,14 +237,14 @@ class KVCacheMemoryGroup:
 
     def __post_init__(self) -> None:
         if len(self.buffers) == 0:
-            raise ValueError("KVCacheMemoryGroup must have at least one buffer")
+            raise ValueError("KVCacheMemory must have at least one buffer")
         for buffer in self.buffers:
             _validate_is_2d_uint8_buffer(buffer)
         first_shape = self.buffers[0].shape
         for i, buffer in enumerate(self.buffers):
             if buffer.shape != first_shape:
                 raise ValueError(
-                    f"All buffers in a KVCacheMemoryGroup must share a shape, "
+                    f"All buffers in a KVCacheMemory must share a shape, "
                     f"but shard {i} has shape {buffer.shape} vs shard 0's "
                     f"{first_shape}. bytes_per_page/total_num_pages are read "
                     f"off shard 0 and would silently report the wrong value "
@@ -306,11 +281,7 @@ class KVCacheBufferInterface(Protocol):
         ...
 
     def to_memory(self) -> list[KVCacheMemory]:
-        """Returns the offload-ready KV cache memory units."""
-        ...
-
-    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
-        """Returns the transfer-engine NIXL groups, one per ``(child, kind)``."""
+        """Returns the offload-ready KV cache memory units, one per leaf kind."""
         ...
 
 
@@ -340,23 +311,15 @@ class MultiKVCacheBuffer(KVCacheBufferInterface):
         return bufs
 
     def to_memory(self) -> list[KVCacheMemory]:
-        """Returns the offload-ready KV cache memory units for all children."""
+        """Returns the offload-ready memory units for all children.
+
+        Aggregated child-major, so a nested tree yields one unit per leaf cache
+        per kind.
+        """
         memories: list[KVCacheMemory] = []
         for child in self.children.values():
             memories.extend(child.to_memory())
         return memories
-
-    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
-        """Returns the NIXL groups for all children, one per leaf ``(child, kind)``.
-
-        Children are aggregated child-major (mirroring :meth:`to_memory`), so a
-        nested tree — e.g. speculative-decode ``target``/``draft`` or
-        ``dense``/``sparse`` hybrids — yields one group per leaf cache per kind.
-        """
-        groups: list[KVCacheMemoryGroup] = []
-        for child in self.children.values():
-            groups.extend(child.to_memory_groups())
-        return groups
 
 
 @dataclass
@@ -439,17 +402,17 @@ class KVCacheBuffer(KVCacheBufferInterface):
                 "(len(values) > 1)"
             )
 
-        unique_dtype = set(b.dtype for b in self.values)
+        unique_dtype = {b.dtype for b in self.values}
         if len(unique_dtype) > 1:
             raise ValueError("All values must have the same dtype")
 
-        unique_shapes = set(b.shape for b in self.values)
+        unique_shapes = {b.shape for b in self.values}
         if len(unique_shapes) > 1:
             raise ValueError("All values must have the same shape")
 
-        unique_is_pinned = set(
+        unique_is_pinned = {
             isinstance(b, DevicePinnedBuffer) for b in all_buffers
-        )
+        }
         if len(unique_is_pinned) > 1:
             raise ValueError(
                 "All values (and scales if present) must be either all pinned "
@@ -462,15 +425,15 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(self.scales) != len(self.values):
             raise ValueError("Scales must be the same length as values")
 
-        unique_dtype = set(b.dtype for b in self.scales)
+        unique_dtype = {b.dtype for b in self.scales}
         if len(unique_dtype) > 1:
             raise ValueError("All scales must have the same dtype")
 
-        unique_shapes = set(b.shape for b in self.scales)
+        unique_shapes = {b.shape for b in self.scales}
         if len(unique_shapes) > 1:
             raise ValueError("All scales must have the same shape")
 
-        unique_num_pages = set(b.shape[0] for b in all_buffers)
+        unique_num_pages = {b.shape[0] for b in all_buffers}
         if len(unique_num_pages) > 1:
             raise ValueError(
                 "Values and scales must have the same number of pages"
@@ -500,61 +463,30 @@ class KVCacheBuffer(KVCacheBufferInterface):
         ]
 
     def to_memory(self) -> list[KVCacheMemory]:
-        """Convert to a flat list of offload-ready memory units.
+        """Converts to offload-ready memory units, one per buffer kind.
 
-        Each unit covers one buffer kind (values or scales) and one
-        logical TP group.  Non-replicated shards become individual
-        :class:`KVCacheMemory` entries; replicated shards become one
-        :class:`ReplicatedKVCacheMemory` entry (root + peers).
+        Every buffer is re-viewed as 2-D ``uint8`` pages so consumers can treat
+        all caches uniformly regardless of dtype or shape.
 
-        Every buffer is re-viewed as a 2-D ``[num_pages, bytes_per_page]``
-        ``uint8`` array so the offload engine can treat all caches
-        uniformly regardless of original dtype or shape.
+        Per-layer buffers are deliberately not enumerated -- only each shard's
+        layer-0 alias -- which is why ``allocate_buffers`` rejects
+        ``per_layer_buffers`` alongside off-device connectors and DP > 1.
 
         Returns:
-            A list of memory units ready for use by KV connectors and the
-            offload engine.
+            One :class:`KVCacheMemory` per kind (values, and scales if present).
         """
-        result: list[KVCacheMemory] = []
+        memories: list[KVCacheMemory] = []
         shard_lists: list[list[Buffer]] = [self.values]
         if self.scales is not None:
             shard_lists.append(self.scales)
         for shards in shard_lists:
-            viewed = [_view_as_uint8_pages(b) for b in shards]
-            if self.replicates_kv_across_tp:
-                result.append(
-                    ReplicatedKVCacheMemory(buffer=viewed[0], peers=viewed[1:])
-                )
-            else:
-                result.extend(KVCacheMemory(buffer=v) for v in viewed)
-        return result
-
-    def to_memory_groups(self) -> list[KVCacheMemoryGroup]:
-        """Convert to producer-authored NIXL groups, one per kind.
-
-        Emits a ``values`` group holding all its TP-shard views and, for a
-        quantized cache, a separate ``scales`` group. ``replicated`` is taken
-        from :attr:`replicates_kv_across_tp`. This is the group-preserving
-        analog of :meth:`to_memory`: it authors one group per kind rather than
-        one unit per shard, so the transfer engine never has to re-infer the
-        group boundary by comparing buffer shapes.
-
-        Returns:
-            One :class:`KVCacheMemoryGroup` per buffer kind (values, and scales
-            if present).
-        """
-        groups: list[KVCacheMemoryGroup] = []
-        shard_lists: list[list[Buffer]] = [self.values]
-        if self.scales is not None:
-            shard_lists.append(self.scales)
-        for shards in shard_lists:
-            groups.append(
-                KVCacheMemoryGroup(
+            memories.append(
+                KVCacheMemory(
                     replicated=self.replicates_kv_across_tp,
                     buffers=[_view_as_uint8_pages(b) for b in shards],
                 )
             )
-        return groups
+        return memories
 
 
 @dataclass
@@ -622,9 +554,7 @@ class KVCacheParamInterface(Protocol):
     page_size: int
     data_parallel_degree: int
     devices: Sequence[DeviceRef]
-    kv_connector: KVConnectorType | None
-    kv_connector_config: Any
-    host_kvcache_swap_space_gb: float | None
+    kv_connector_config: KVConnectorConfigInterface
     speculative_method: SpeculativeMethod | None = None
     num_draft_tokens: int = 0
 
@@ -810,9 +740,6 @@ class KVCacheParams(KVCacheParamInterface):
     to ``False`` (one multi-layer buffer), keeping all other backends and
     models byte-identical."""
 
-    kv_connector: KVConnectorType | None = None
-    """Type of KV cache connector to use (null, tiered, rust_tiered, dkv)."""
-
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for KV-cache block identity."""
 
@@ -822,11 +749,11 @@ class KVCacheParams(KVCacheParamInterface):
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
     """
 
-    kv_connector_config: Any = None
-    """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""
-
-    host_kvcache_swap_space_gb: float | None = None
-    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when the tiered connector is used."""
+    kv_connector_config: KVConnectorConfigInterface = field(
+        default_factory=NullKVConnectorConfig
+    )
+    """Connector configuration: the connector type and its settings. The
+    default is a ``null`` connector (no external caching)."""
 
     page_size: int = 128
     """Number of tokens per page (block).
@@ -883,19 +810,15 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate connector configuration
-        if self.kv_connector in (
+        connector = self.kv_connector_config.type
+        if connector in (
             KVConnectorType.tiered,
             KVConnectorType.rust_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
-                    f"KV connector '{self.kv_connector.value}' requires prefix"
+                    f"KV connector '{connector.value}' requires prefix"
                     " caching to be enabled"
-                )
-            if self.host_kvcache_swap_space_gb is None:
-                raise ValueError(
-                    "host_kvcache_swap_space_gb is required when kv_connector"
-                    f" is '{self.kv_connector.value}'"
                 )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -1169,7 +1092,8 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError(
                     f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
                 )
-            if self.kv_connector in (
+            connector = self.kv_connector_config.type
+            if connector in (
                 KVConnectorType.tiered,
                 KVConnectorType.rust_tiered,
                 KVConnectorType.dkv,
@@ -1180,7 +1104,7 @@ class KVCacheParams(KVCacheParamInterface):
                 # buffers.
                 raise NotImplementedError(
                     "per_layer_buffers is not supported with an off-device KV"
-                    f" connector ('{self.kv_connector.value}')"
+                    f" connector ('{connector.value}')"
                 )
             if self.data_parallel_degree > 1:
                 # Cross-replica block copy enumerates the same layer-0 alias.
@@ -1923,8 +1847,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     page_size: int
     data_parallel_degree: int
     devices: Sequence[DeviceRef]
-    kv_connector: KVConnectorType | None
-    host_kvcache_swap_space_gb: float | None
+    kv_connector_config: KVConnectorConfigInterface
     speculative_method: SpeculativeMethod | None = None
     num_draft_tokens: int = 0
 
@@ -1938,8 +1861,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
         :class:`MultiKVCacheParams` trees, enabling arbitrarily deep KV
         cache hierarchies (e.g. ``{target: {sliding, mla}, draft: mha}``).
         All children must share the same ``page_size``,
-        ``data_parallel_degree``, ``n_devices``, ``kv_connector``, and
-        ``host_kvcache_swap_space_gb`` values.
+        ``data_parallel_degree``, ``n_devices``, and
+        ``kv_connector_config`` values.
 
         Args:
             params: Named mapping of :class:`KVCacheParamInterface` instances
@@ -1959,8 +1882,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             page_size=first.page_size,
             data_parallel_degree=first.data_parallel_degree,
             devices=first.devices,
-            kv_connector=first.kv_connector,
-            host_kvcache_swap_space_gb=first.host_kvcache_swap_space_gb,
+            kv_connector_config=first.kv_connector_config,
             speculative_method=first.speculative_method,
             num_draft_tokens=first.num_draft_tokens,
         )
@@ -2009,12 +1931,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f" {enable_dp_cross_replica_prefix_copy}"
             )
 
-        kv_connectors = {p.kv_connector for p in params}
-        if len(kv_connectors) > 1:
-            raise ValueError(
-                f"All params must use the same kv_connector, got: {kv_connectors}"
-            )
-
         # ``KVConnectorConfig`` is not hashable, so compare by equality against
         # the first rather than collapsing into a set.
         first_kv_connector_config = params[0].kv_connector_config
@@ -2024,15 +1940,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 "All params must use the same kv_connector_config, got:"
                 f" {[p.kv_connector_config for p in params]}"
-            )
-
-        host_kvcache_swap_space_gb = {
-            p.host_kvcache_swap_space_gb for p in params
-        }
-        if len(host_kvcache_swap_space_gb) > 1:
-            raise ValueError(
-                "All params must use the same host_kvcache_swap_space_gb, got:"
-                f" {host_kvcache_swap_space_gb}"
             )
 
         speculative_methods = {p.speculative_method for p in params}
@@ -2081,11 +1988,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """Whether DP cross-replica prefix copies are enabled (shared across
         all caches)."""
         return self._first.enable_dp_cross_replica_prefix_copy
-
-    @property
-    def kv_connector_config(self) -> Any:
-        """Connector config (shared across all caches)."""
-        return self._first.kv_connector_config
 
     @property
     def kv_hash_algo(self) -> KVHashAlgo:
@@ -2483,39 +2385,3 @@ def host_bytes_per_block(params: KVCacheParamInterface) -> int:
         assert bytes_per_block % params.tensor_parallel_degree == 0
         bytes_per_block = bytes_per_block // params.tensor_parallel_degree
     return bytes_per_block
-
-
-def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
-    """Computes the number of blocks that can be allocated on the host.
-
-    The host (CPU/disk) tier is a single pool shared across all data-parallel
-    replicas via one connector (SERVOPT-1501), sized at
-    ``host_kvcache_swap_space_gb`` total (independent of
-    ``data_parallel_degree``). The connector is replica-agnostic, so a block
-    offloaded by one replica can be served as a cache hit for another.
-
-    Returns:
-        The total number of blocks that can be allocated in the shared host
-        pool.
-    """
-    if params.kv_connector not in (
-        KVConnectorType.tiered,
-        KVConnectorType.rust_tiered,
-    ):
-        return 0
-    assert params.host_kvcache_swap_space_gb is not None
-    GiB = 1024 * 1024 * 1024
-    host_bytes = params.host_kvcache_swap_space_gb * GiB
-
-    num_host_blocks = int(host_bytes // host_bytes_per_block(params))
-
-    if num_host_blocks == 0:
-        raise RuntimeError(
-            "Insufficient cache memory to allocate even a single page.\nOne"
-            " page requires"
-            f" {to_human_readable_bytes(host_bytes_per_block(params))} but only"
-            f" {to_human_readable_bytes(host_bytes)} are"
-            " available on host."
-        )
-
-    return num_host_blocks

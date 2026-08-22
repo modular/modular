@@ -32,7 +32,6 @@ comptime SIZES = [64, 256, 4096, 65536, 1048576]
 comptime FILL_VALUE = Byte(0xA5)
 
 
-@__parameter
 def bench_span_fill[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 
@@ -46,7 +45,6 @@ def bench_span_fill[size: Int](mut b: Bencher) raises:
     dealloc(allocation^)
 
 
-@__parameter
 def bench_unsafe_memset[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 
@@ -60,7 +58,6 @@ def bench_unsafe_memset[size: Int](mut b: Bencher) raises:
     dealloc(allocation^)
 
 
-@__parameter
 def bench_span_fill_elementwise[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 
@@ -83,13 +80,14 @@ def main() raises:
     # 64- and 256-byte rows below the clock's resolution.
     var m = Bench(BenchConfig(min_runtime_secs=0.01, max_iters=10_000_000))
     comptime for size in SIZES:
-        m.bench_function[bench_span_fill[size]](
-            BenchId("span_fill/" + String(size))
+        m.bench_function(
+            bench_span_fill[size], BenchId("span_fill/" + String(size))
         )
-        m.bench_function[bench_unsafe_memset[size]](
-            BenchId("unsafe_memset/" + String(size))
+        m.bench_function(
+            bench_unsafe_memset[size], BenchId("unsafe_memset/" + String(size))
         )
-        m.bench_function[bench_span_fill_elementwise[size]](
-            BenchId("span_fill_elementwise/" + String(size))
+        m.bench_function(
+            bench_span_fill_elementwise[size],
+            BenchId("span_fill_elementwise/" + String(size)),
         )
     m.dump_report()

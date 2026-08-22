@@ -79,8 +79,7 @@ def test_graph_construction() -> None:
     assert state_dict, "State dict must not be empty"
     # Weights must be namespaced under "target." or "draft." prefixes.
     assert all(
-        weight.startswith("target.") or weight.startswith("draft.")
-        for weight in state_dict
+        weight.startswith(("target.", "draft.")) for weight in state_dict
     )
     assert "draft.layers.0.mlp.up_proj.weight" in state_dict
     assert "target.layers.7.mlp.up_proj.weight" in state_dict

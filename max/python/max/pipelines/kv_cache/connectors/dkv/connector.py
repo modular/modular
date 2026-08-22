@@ -18,14 +18,6 @@ A thin :class:`~max.pipelines.kv_cache.kv_connector.KVConnector` shim over the
 owns the NIXL agent, all block transfers, the control-plane RPCs, inline
 reconnection, and metrics; this shim only adapts the MAX-side types (device
 ``KVCacheMemory``, ``KVCacheMetrics``) to the client's API.
-
-Block-hash contract: the dkv wire format carries a ``uint64 seq_hash`` and is
-unchanged by this shim. Callers may pass either the 8-byte canonical encoding
-used by ``ahash64`` / ``sha256_64`` or the 32-byte canonical encoding used by
-full ``sha256``; in the 32-byte case the shim truncates to the first 8 bytes
-at the boundary. Truncation is byte-identical to the existing ``sha256_64``
-algorithm, so configuring MAX with ``sha256`` or ``sha256_64`` yields the
-same dkv key for the same logical digest.
 """
 
 from __future__ import annotations
@@ -35,7 +27,6 @@ import hashlib
 import logging
 import math
 import os
-import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 
@@ -45,9 +36,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
-    KVHashAlgo,
     MultiKVCacheParams,
-    ReplicatedKVCacheMemory,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -58,8 +47,8 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVConnectorTransfer,
     TransferDirection,
 )
@@ -116,25 +105,13 @@ def _buffer_nbytes(buffer: Buffer) -> int:
 def _group_units_by_shard(
     kv_memory: Sequence[KVCacheMemory],
 ) -> tuple[list[tuple[int, list[tuple[int, int]]]], bool]:
-    """Groups one replica's flat KV memory units into per-shard unit lists.
+    """Groups one replica's KV memory units into per-shard unit lists.
 
-    ``kv_memory`` is the flat ``to_memory()`` output: one unit per logical
-    buffer (target values, FP8 scales, indexer, draft, and so on), where a
-    quantized or multi-cache model contributes several units. The Rust client
-    concatenates each shard's units, in this order, into one dKV block, which
-    makes the stored bytes match the CPU block the local and tiered connectors
-    build from the same units.
-
-    Two layouts exist:
-
-    * Replicated (MLA with TP > 1): every unit is a
-      :class:`ReplicatedKVCacheMemory` whose rank-0 buffer plus peers span the
-      same device topology. Shard ``s`` takes each unit's buffer for rank
-      ``s``, so every shard carries the full unit list and holds identical
-      bytes.
-    * Sharded (everything else): each unit is a plain buffer on one device,
-      and a shard is a device. Units group under their device in flat order,
-      which is the shard-restricted subsequence of the canonical unit order.
+    Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
+    whether the unit is replicated or sharded; the two layouts need no separate
+    handling. The Rust client concatenates each shard's units in this order into
+    one dKV block, matching the CPU block the tiered connector builds from the
+    same units.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
@@ -142,12 +119,12 @@ def _group_units_by_shard(
     Returns:
         A ``(shards, is_mla)`` pair, where ``shards`` has one
         ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order.
+        device order, and ``is_mla`` reports whether every unit is replicated.
 
     Raises:
         NotImplementedError: If replicated and non-replicated units are mixed.
-        ValueError: If unit page counts or per-shard unit counts disagree, or
-            if replicated units span different device topologies.
+        ValueError: If unit page counts disagree, or if units span different
+            device topologies.
     """
     if not kv_memory:
         raise ValueError("kv_memory must contain at least one unit")
@@ -161,65 +138,43 @@ def _group_units_by_shard(
             f"{unique_total_num_pages}"
         )
 
-    replicated = [
-        mem for mem in kv_memory if isinstance(mem, ReplicatedKVCacheMemory)
-    ]
+    # ``is_mla`` lets the Rust client dedup byte-identical shards, which one
+    # sharded unit falsifies for the concatenated block.
+    replicated = [mem for mem in kv_memory if mem.replicated]
     is_mla = bool(replicated)
-
-    if is_mla:
-        if len(replicated) != len(kv_memory):
-            raise NotImplementedError(
-                "the dKV connector cannot mix replicated (MLA) and "
-                "non-replicated KV memory units in one replica; every unit "
-                "must be replicated across the same TP shards"
-            )
-
-        # every replicated unit must span the same device topology so shard s
-        # names the same device in every unit (mirrors BlockOffloadEngine)
-        topologies = {
-            tuple(buffer.device.id for buffer in mem.all_buffers)
-            for mem in kv_memory
-        }
-        if len(topologies) > 1:
-            raise ValueError(
-                "all replicated KVCacheMemory units must share the same TP "
-                f"device topology; got {sorted(topologies)}"
-            )
-
-        topology = next(iter(topologies))
-        shards = [
-            (
-                device_id,
-                [
-                    (
-                        mem.all_buffers[rank]._data_ptr(),
-                        _buffer_nbytes(mem.all_buffers[rank]),
-                    )
-                    for mem in kv_memory
-                ],
-            )
-            for rank, device_id in enumerate(topology)
-        ]
-        return shards, True
-
-    # sharded layout: group the flat units under their device, preserving the
-    # canonical to_memory() order within each shard
-    units_by_device: dict[int, list[tuple[int, int]]] = {}
-    for mem in kv_memory:
-        buffer = mem.buffer
-        units_by_device.setdefault(buffer.device.id, []).append(
-            (buffer._data_ptr(), _buffer_nbytes(buffer))
+    if is_mla and len(replicated) != len(kv_memory):
+        raise NotImplementedError(
+            "the dKV connector cannot mix replicated (MLA) and "
+            "non-replicated KV memory units in one replica; every unit "
+            "must be replicated across the same TP shards"
         )
 
-    unit_counts = {len(units) for units in units_by_device.values()}
-    if len(unit_counts) > 1:
+    # every unit must span the same device topology so shard s names the same
+    # device in every unit (mirrors BlockOffloadEngine)
+    topologies = {
+        tuple(buffer.device.id for buffer in mem.buffers) for mem in kv_memory
+    }
+    if len(topologies) > 1:
         raise ValueError(
-            "every dKV shard must carry the same number of KV memory units; "
-            f"got counts {sorted(unit_counts)} across devices "
-            f"{sorted(units_by_device)}"
+            "all KVCacheMemory units must share the same TP device topology; "
+            f"got {sorted(topologies)}"
         )
 
-    return list(units_by_device.items()), False
+    topology = next(iter(topologies))
+    shards = [
+        (
+            device_id,
+            [
+                (
+                    mem.buffers[rank]._data_ptr(),
+                    _buffer_nbytes(mem.buffers[rank]),
+                )
+                for mem in kv_memory
+            ],
+        )
+        for rank, device_id in enumerate(topology)
+    ]
+    return shards, is_mla
 
 
 def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
@@ -230,9 +185,8 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     the flat per-physical-buffer list. This keeps the folded shape identical
     between replicated (MLA) and sharded layouts, where the flat list would
     otherwise repeat each unit once per shard. Shard 0 stands in for every
-    shard because :func:`_group_units_by_shard` validates a uniform unit
-    count per shard and the Rust config validates that the stride vectors
-    match.
+    shard because each shard carries one entry per unit by construction and
+    the Rust config validates that the stride vectors match.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
@@ -633,7 +587,7 @@ class DKVExternalBlockMetadata(
     seq_hash: int
 
 
-class DKVConnector:
+class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
     A single instance serves every DP replica. The underlying Rust client is
@@ -879,7 +833,7 @@ class DKVConnector:
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
     ) -> object:
-        # Group the flat to_memory() units into one (device_id, units) entry
+        # Group the to_memory() units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
@@ -896,9 +850,9 @@ class DKVConnector:
         # CPU stream) maps to 0, which routes that device's transfers over NIXL.
         compute_streams: dict[int, int] = {}
         for mem in kv_memory:
-            for buffer in mem.all_buffers:
+            for buffer in mem.buffers:
                 compute_streams[buffer.device.id] = (
-                    buffer.device.default_stream.native_stream_handle
+                    buffer.device.default_queue.native_stream_handle
                 )
 
         # Bind ``tp_shard_id`` to device identity rather than to registration
@@ -1059,16 +1013,6 @@ class DKVConnector:
         except Exception as exc:
             _logger.debug("dKV touch skipped: %s", exc)
 
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        """Returns ``(0, 0)``: block presence is tracked by the remote dKV
-        service, so there is no cheap local index to consult synchronously.
-        Callers treat dKV-resident blocks as misses for counting purposes;
-        the ``load`` path still fetches them normally.
-        """
-        return (0, 0)
-
     def wait_for_loads(self) -> None:
         for client in self._clients:
             client.wait_for_loads()
@@ -1087,16 +1031,6 @@ class DKVConnector:
     def reset_prefix_cache(self) -> None:
         # No-op: dKV manages its own external block lifecycle server-side.
         pass
-
-    @property
-    def host_block_count(self) -> BlockCount:
-        # BlockManager gates the load path on host_block_count.total > 0. dKV
-        # capacity is managed externally by the dKV service.
-        return BlockCount(free=sys.maxsize, total=sys.maxsize)
-
-    @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""
@@ -1130,15 +1064,3 @@ class DKVConnector:
                 dkv_reconnect_attempts=m["reconnect_attempts"],
             )
         return total
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        """Algos this connector accepts in :meth:`load` / :meth:`offload`.
-
-        Accepts the full ahash64-family set plus 32-byte ``sha256``: 32-byte
-        digests are truncated to their first 8 bytes at the boundary, which
-        is byte-identical to the ``sha256_64`` algo (see :func:`_to_dkv_u64`
-        and the module docstring). The dkv wire format stays ``uint64
-        seq_hash``.
-        """
-        return frozenset({"ahash64", "sha256", "sha256_64"})

@@ -21,6 +21,7 @@ Low-level LDS read primitives:
     load_lds_fragment     - Generic MFMA-fragment LDS read with swizzle.
 
 DRAM→LDS cooperative DMA loaders (expert objects, structurally composed):
+    _load_to_lds     - Single-instruction alias-scoped buffer-to-LDS DMA.
     TileLoaderLDS     - Warp-group cooperative, coord-indexed tile iteration
                         (half-tile BK-wide steps, per-iter swizzle). Matmul's
                         pattern. Uses stdlib `AMDBufferResource.load_to_lds`.
@@ -64,11 +65,20 @@ SMEM layout helpers:
         SMEM navigation (TileTensor views + offset math).
 """
 
-from std.sys import align_of, get_defined_bool, simd_width_of, size_of
+from std.sys import (
+    align_of,
+    get_defined_bool,
+    is_amd_gpu,
+    simd_width_of,
+    size_of,
+)
 from std.gpu import lane_id, thread_idx, WARP_SIZE
-from std.gpu.intrinsics import ds_read_tr8_b64
+from std.gpu.intrinsics import (
+    AMDBufferResource,
+    ds_read_tr8_b64,
+)
 from std.gpu._utils import to_i32, to_i64
-from std.gpu.intrinsics import AMDBufferResource
+from max.gpu.memory import CacheOperation
 from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
 from std.math import ceildiv, min
@@ -102,6 +112,115 @@ hands a lambda across the package boundary.
 
 comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
 comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+
+
+# ===----------------------------------------------------------------------=== #
+# _load_to_lds: Alias-scoped DRAM-to-LDS DMA
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _load_to_lds[
+    dtype: DType,
+    //,
+    width: Int,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](
+    bc: AMDBufferResource,
+    vector_offset: Int32,
+    shared_ptr: UnsafePointer[
+        Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    scalar_offset: Int32 = 0,
+):
+    """Loads one raw-buffer vector into LDS with TileIO's async-copy scope.
+
+    The hardware writes lane `l`'s `width` elements at
+    `shared_ptr + l * width`. `shared_ptr` lowers to M0 and must be
+    wave-uniform, so callers pass the wave's tile base and put the per-lane
+    source term in `vector_offset` only.
+
+    The DMA carries the `amdgpu.AsyncCopies` alias scope so consumer LDS reads
+    through `_load_from_lds` can overlap it. This makes waits software-owned:
+    issue `s_waitcnt vmcnt(0)` before consuming the tile, plus a workgroup
+    barrier unless the tile is wave-private. Drain prior LDS reads before
+    overwriting a reused tile.
+
+    Parameters:
+        dtype: Element type of both the LDS destination and source allocation.
+            The caller must ensure these match because `AMDBufferResource` is
+            dtype-erased.
+        width: Number of elements loaded by each lane.
+        cache_policy: AMD cache policy for the source load.
+
+    Args:
+        bc: Buffer resource descriptor for the source allocation.
+        vector_offset: Per-lane source offset in elements.
+        shared_ptr: Wave-uniform LDS tile base; hardware adds the lane stride.
+        scalar_offset: Wave-uniform source offset in elements.
+    """
+    comptime assert is_amd_gpu(), "_load_to_lds is AMD-only"
+    comptime num_bytes_per_lane = size_of[dtype]() * width
+    comptime assert num_bytes_per_lane in (1, 2, 4, 12, 16), (
+        "buffer_load_lds supports 1/2/4 bytes per lane on gfx9 and "
+        "additionally 12/16 on gfx950"
+    )
+    comptime assert cache_policy in (
+        CacheOperation.ALWAYS,
+        CacheOperation.STREAMING,
+    ), "_load_to_lds supports ALWAYS or STREAMING cache policy"
+    var desc_ptr = UnsafePointer[
+        Scalar[DType.bfloat16],
+        MutAnyOrigin,
+        address_space=AddressSpace.BUFFER_RESOURCE,
+    ].unsafe_dangling()
+    var ptr_to_ptr = UnsafePointer(to=desc_ptr)
+    var ptr_to_simd = UnsafePointer(to=bc.desc)
+    ptr_to_ptr[0] = ptr_to_simd.bitcast[
+        UnsafePointer[
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space=AddressSpace.BUFFER_RESOURCE,
+        ]
+    ]()[0]
+    var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<8>`
+    ](desc_ptr)
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<3>`
+    ](shared_ptr)
+    var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
+    var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
+
+    # The cache policy is an I32Attr. The parameterized stdlib emitter lowers
+    # the aux parameter as an index attribute in this toolchain, so keep the
+    # two accepted policies as literal local emissions.
+    comptime if cache_policy == CacheOperation.STREAMING:
+        __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+            alias_scopes=_alias_scope_attr,
+            aux=__mlir_attr.`2 : i32`,
+            _type=None,
+        ](
+            desc_ptr_llvm,
+            shared_ptr3,
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(vector_offset_bytes),
+            to_i32(scalar_offset_bytes),
+            to_i32(0),
+        )
+    else:
+        __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+            alias_scopes=_alias_scope_attr,
+            aux=__mlir_attr.`0 : i32`,
+            _type=None,
+        ](
+            desc_ptr_llvm,
+            shared_ptr3,
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(vector_offset_bytes),
+            to_i32(scalar_offset_bytes),
+            to_i32(0),
+        )
 
 
 # ===----------------------------------------------------------------------=== #

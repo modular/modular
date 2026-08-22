@@ -338,13 +338,12 @@ def test_sliding_window_noncausal_mask_dispatch() raises:
 
     var dispatched_name = String("")
 
-    @__parameter
-    def capture[mask_t: MHAMask](mask: mask_t) raises:
+    def capture[mask_t: MHAMask](mask: mask_t) raises {mut}:
         dispatched_name = mask_t.get_type_name()
 
-    dispatch_mask[
-        MaskName.SLIDING_WINDOW_NONCAUSAL.name, capture, local_window_size=4
-    ]()
+    dispatch_mask[MaskName.SLIDING_WINDOW_NONCAUSAL.name, local_window_size=4](
+        capture
+    )
     assert_equal(dispatched_name, "SlidingWindowNonCausalMask")
 
 

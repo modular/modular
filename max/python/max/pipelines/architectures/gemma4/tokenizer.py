@@ -163,7 +163,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
         self.enable_vision_caching = (
-            pipeline_config.runtime.max_vision_cache_entries > 0
+            pipeline_config.runtime.vision_cache_utilization != 0
         )
         # Image token IDs — try both naming conventions
         self.image_token_id: int = _require_attr(

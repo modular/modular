@@ -78,7 +78,9 @@ Utilities
 
    CompilationTimer
    HuggingFaceRepo
+   MemoryPlan
    ModelManifest
+   RetrievedPipeline
    VisionPreprocessCache
    WeightPathParser
 

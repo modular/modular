@@ -13,7 +13,7 @@
 
 """KVConnector shim over the Rust ``kv_tier_connector`` extension.
 
-The only host/disk tiered connector: it backs ``--kv-connector rust_tiered``
+The only host/disk tiered connector: it backs the ``rust_tiered`` connector type
 as well as the retired ``tiered`` alias, whose Python implementation it
 replaced. All of the host block pool, disk tier, and copy engine live in Rust
 and run on Rust OS threads with the GIL released, so the connector never
@@ -56,20 +56,37 @@ from max.driver import (
     _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import (
-    KVCacheMemory,
-    KVHashAlgo,
-    ReplicatedKVCacheMemory,
-)
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.support.human_readable_formatter import to_human_readable_bytes
 
-from ..kv_connector import BlockCount, KVConnectorTransfer
+from ..kv_connector import BlockCount, KVConnector, KVConnectorTransfer
 from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def host_bytes_per_page(memories: Sequence[KVCacheMemory]) -> int:
+    """Returns the width of one host block row for a replica's KV memory.
+
+    A replicated (MLA) unit contributes its stride once -- one copy is stored
+    and broadcast back on load, so counting its peers would double the pinned
+    host allocation. Must match across replicas, so a block written by one is
+    readable by another.
+
+    Args:
+        memories: One replica's offload-ready KV memory units.
+
+    Returns:
+        The per-page byte width of the shared host buffer.
+    """
+    return sum(
+        mem.bytes_per_page * (1 if mem.replicated else len(mem.buffers))
+        for mem in memories
+    )
 
 
 def _check_disk_capacity(
@@ -114,26 +131,26 @@ class _Replica(NamedTuple):
     compute_streams: list[tuple[int, int]]
 
 
-class RustTierConnector:
+class RustTierConnector(KVConnector):
     """KVConnector backed by the Rust host/disk tiered connector."""
 
     def __init__(
         self,
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
-        total_num_host_blocks: int,
         disk_cache_dir: str,
-        kv_hash_algo: KVHashAlgo = "ahash64",
-        max_disk_size_gb: float = 50.0,
+        host_offload_max_gb: float | None = None,
+        disk_offload_max_gb: float | None = None,
         num_disk_workers: int = 32,
     ) -> None:
         """Initializes the connector over ``replica_kv_memory``'s device buffers.
 
         Args:
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
-            total_num_host_blocks: Size of the shared host block pool.
             disk_cache_dir: Directory backing the disk last level.
-            kv_hash_algo: Hash algo the caller computes block hashes with.
-            max_disk_size_gb: Disk budget.
+            host_offload_max_gb: Host budget. ``None`` sizes the host pool to
+                hold twice the device page pool.
+            disk_offload_max_gb: Disk budget. ``None`` sizes it to hold three
+                times the device page pool.
             num_disk_workers: Disk I/O worker threads.
         """
         # Lazy import: OSS MAX can import this module without the extension.
@@ -144,25 +161,33 @@ class RustTierConnector:
         if not replica_kv_memory:
             raise ValueError("RustTierConnector requires at least one replica")
 
-        # The Rust tier stores blocks keyed by the caller-computed hash bytes,
-        # so it is hash-algo agnostic; we only validate the caller's algo is one
-        # this connector advertises.
-        if kv_hash_algo not in self.supported_hash_algos:
-            raise ValueError(
-                f"RustTierConnector does not support kv_hash_algo="
-                f"{kv_hash_algo!r}; supported: {sorted(self.supported_hash_algos)}"
-            )
-
-        gpu0 = replica_kv_memory[0][0].buffer.device
+        gpu0 = replica_kv_memory[0][0].buffers[0].device
         if gpu0.is_host:
             raise ValueError("KVCacheMemory is on the CPU; cannot offload")
 
-        # bytes_per_page (host row) = sum of each unit's per-page bytes; must
-        # match across replicas so a block written by one is readable by another.
-        bytes_per_page = sum(
-            unit.buffer.shape[1] for unit in replica_kv_memory[0]
-        )
-        total_num_pages = replica_kv_memory[0][0].buffer.shape[0]
+        bytes_per_page = host_bytes_per_page(replica_kv_memory[0])
+        total_num_pages = replica_kv_memory[0][0].total_num_pages
+
+        # Both tiers default to a multiple of the device pool: sizing them in
+        # pages keeps the ratio meaningful across models, where a fixed byte
+        # budget would be far too small for one and wasteful for another.
+        GiB = 1024**3
+        if host_offload_max_gb is None:
+            total_num_host_blocks = 2 * total_num_pages
+        else:
+            total_num_host_blocks = (
+                int(host_offload_max_gb * GiB) // bytes_per_page
+            )
+            if total_num_host_blocks == 0:
+                raise RuntimeError(
+                    "Insufficient host memory to allocate even a single KV "
+                    f"page: one page needs "
+                    f"{to_human_readable_bytes(bytes_per_page)} but "
+                    f"host_offload_max_gb={host_offload_max_gb} gives "
+                    f"{to_human_readable_bytes(int(host_offload_max_gb * GiB))}."
+                )
+        if disk_offload_max_gb is None:
+            disk_offload_max_gb = 3 * total_num_pages * bytes_per_page / GiB
 
         # The shared pinned host buffer the Rust lanes copy to/from. It is not
         # GC-managed (see `_unsafe_alloc_fast_pinned_buffer`), so it must be
@@ -170,7 +195,7 @@ class RustTierConnector:
         total_bytes = total_num_host_blocks * bytes_per_page
         _check_host_memory_capacity(total_bytes)
         Path(disk_cache_dir).mkdir(parents=True, exist_ok=True)
-        _check_disk_capacity(disk_cache_dir, int(max_disk_size_gb * (1024**3)))
+        _check_disk_capacity(disk_cache_dir, int(disk_offload_max_gb * GiB))
         total_gib = total_bytes / (1024**3)
         start = time.perf_counter()
         self._host_buffer = _unsafe_alloc_fast_pinned_buffer(
@@ -185,29 +210,32 @@ class RustTierConnector:
         )
         host_base = self._host_buffer._data_ptr()
 
-        # Per-replica device endpoints + p2p peers (MLA) + compute streams.
+        # Walked in the producer's unit order so the endpoints line up with the
+        # host row `host_bytes_per_page` sized.
         replicas: list[_Replica] = []
-        for units in replica_kv_memory:
-            # Every buffer this replica touches (primary units + MLA peers), so
-            # we can collect each device's compute stream once.
-            peers = [
-                list(u.peers) if isinstance(u, ReplicatedKVCacheMemory) else []
-                for u in units
-            ]
-            all_buffers = [u.buffer for u in units] + [
-                p for peer_list in peers for p in peer_list
-            ]
+        for memories in replica_kv_memory:
+            units: list[_Unit] = []
+            peers: list[list[_Unit]] = []
+            for mem in memories:
+                if mem.replicated:
+                    # Stored once; the rest are H2D broadcast targets.
+                    units.append(_Unit.from_buffer(mem.buffers[0]))
+                    peers.append(
+                        [_Unit.from_buffer(b) for b in mem.buffers[1:]]
+                    )
+                else:
+                    units.extend(_Unit.from_buffer(b) for b in mem.buffers)
+                    peers.extend([] for _ in mem.buffers)
+
             compute_streams = {
-                b.device.id: b.device.default_stream.native_stream_handle
-                for b in all_buffers
+                b.device.id: b.device.default_queue.native_stream_handle
+                for mem in memories
+                for b in mem.buffers
             }
             replicas.append(
                 _Replica(
-                    units=[_Unit.from_buffer(u.buffer) for u in units],
-                    peers=[
-                        [_Unit.from_buffer(p) for p in peer_list]
-                        for peer_list in peers
-                    ],
+                    units=units,
+                    peers=peers,
                     compute_streams=list(compute_streams.items()),
                 )
             )
@@ -220,7 +248,7 @@ class RustTierConnector:
             replicas,
             _resolve_only_use_kv_connector_last_level_cache(),
             disk_cache_dir,
-            max_disk_size_gb,
+            disk_offload_max_gb,
             num_disk_workers,
         )
         self._shutdown = False
@@ -322,7 +350,3 @@ class RustTierConnector:
 
     def reset_metrics(self) -> None:
         self._rust.reset_metrics()
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})

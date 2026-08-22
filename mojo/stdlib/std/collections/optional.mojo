@@ -40,7 +40,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast, rebind_var
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
-from std.memory import MaybeUninit
+from std.memory import MaybeUninit, forget_deinit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple
@@ -347,7 +347,10 @@ struct Optional[T: AnyType](
         """
         if self:
             if rhs:
-                return self.unsafe_value() == rhs.unsafe_value()
+                return (
+                    self._unsafe_unchecked_value()
+                    == rhs._unsafe_unchecked_value()
+                )
             return False
         return not rhs
 
@@ -465,16 +468,16 @@ struct Optional[T: AnyType](
         """
         if not self:
             raise EmptyOptionalError[Self.T]()
-        return self.unsafe_value()
+        return self._unsafe_unchecked_value()
 
     def _write_to[
         *, is_repr: Bool
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         if self:
             comptime if is_repr:
-                self.value().write_repr_to(writer)
+                self._unsafe_unchecked_value().write_repr_to(writer)
             else:
-                self.value().write_to(writer)
+                self._unsafe_unchecked_value().write_to(writer)
         else:
             writer.write_string("None")
 
@@ -522,7 +525,7 @@ struct Optional[T: AnyType](
         if self:
             # Tag the hash so that hash(T) != hash(Optional[T](..)).
             hasher.update(UInt8(1))
-            self.value().__hash__(hasher)
+            self._unsafe_unchecked_value().__hash__(hasher)
         else:
             hasher.update(UInt8(0))
 
@@ -587,7 +590,11 @@ struct Optional[T: AnyType](
                 location=call_location(),
             )
 
-        return self._value.unsafe_get[Self.T]()
+        return self._unsafe_unchecked_value()
+
+    @always_inline
+    def _unsafe_unchecked_value(ref self) -> ref[self._value] Self.T:
+        return self._value._unsafe_unchecked_get[Self.T]()
 
     @always_inline
     def unsafe_value(ref self) -> ref[self._value] Self.T:
@@ -618,7 +625,7 @@ struct Optional[T: AnyType](
         ```
         """
         assert self.__bool__(), "`.value()` on empty `Optional`"
-        return self._value.unsafe_get[Self.T]()
+        return self._unsafe_unchecked_value()
 
     def take(mut self) -> Self.T where conforms_to(Self.T, Movable):
         """Move the value out of the `Optional`.
@@ -783,7 +790,7 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return self._value^.unsafe_unwrap[Self.T]()
+            return self._value^._unsafe_unchecked_unwrap[Self.T]()
         return default^
 
     @__allow_legacy_custom_self_type
@@ -879,11 +886,11 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return {mapper(self._value^.unsafe_unwrap[Self.T]())}
+            return {mapper(self._value^._unsafe_unchecked_unwrap[Self.T]())}
         else:
-            # Destroy the empty `Optional` explicitly: an implicit drop here
-            # would require `T: Deinitable`, ruling out linear `T`.
-            self^.deinit_assert_empty()
+            # SAFETY:
+            # We are `None` therefore we can safely forget self.
+            forget_deinit(self^)
             return None
 
     def and_then[
@@ -938,11 +945,13 @@ struct Optional[T: AnyType](
         ```
         """
         if self:
-            return mapper(self._value^.unsafe_unwrap[Self.T]())
+            return mapper(self._value^._unsafe_unchecked_unwrap[Self.T]())
         else:
             # Destroy the empty `Optional` explicitly: an implicit drop here
             # would require `T: Deinitable`, ruling out linear `T`.
-            self^.deinit_assert_empty()
+            # SAFETY:
+            # We are `None` therefore we can safely forget self.
+            forget_deinit(self^)
             return None
 
 
@@ -1136,7 +1145,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Args:
             value: The value.
         """
-        self._value = Self._Storage.__init__(value)
+        self._value = Self._Storage(value)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
