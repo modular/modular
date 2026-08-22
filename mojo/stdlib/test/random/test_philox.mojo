@@ -16,6 +16,7 @@
 from std.random.philox import Random, NormalRandom
 from std.math import sqrt
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
+from test_utils import check_write_to
 
 
 def test_philox_basic() raises:
@@ -325,6 +326,46 @@ def test_philox_sequence_independence() raises:
     assert_false(
         vals1_eq_vals3,
         "Consecutive step() calls should produce different values",
+    )
+
+
+def test_random_write_to() raises:
+    """Test that Random produces correct write_to output."""
+    var rng = Random(seed=0)
+    check_write_to(
+        rng,
+        expected="Random[10](key=[0, 0], counter=[0, 0, 0, 0])",
+        is_repr=False,
+    )
+
+
+def test_random_write_repr_to() raises:
+    """Test that Random produces correct write_repr_to output."""
+    var rng = Random(seed=0)
+    check_write_to(
+        rng,
+        expected="Random[rounds=10](key=[0, 0], counter=[0, 0, 0, 0])",
+        is_repr=True,
+    )
+
+
+def test_normal_random_write_to() raises:
+    """Test that NormalRandom produces correct write_to output."""
+    var rng = NormalRandom(seed=0)
+    check_write_to(
+        rng,
+        expected="NormalRandom[10](key=[0, 0], counter=[0, 0, 0, 0])",
+        is_repr=False,
+    )
+
+
+def test_normal_random_write_repr_to() raises:
+    """Test that NormalRandom produces correct write_repr_to output."""
+    var rng = NormalRandom(seed=0)
+    check_write_to(
+        rng,
+        expected="NormalRandom[rounds=10](key=[0, 0], counter=[0, 0, 0, 0])",
+        is_repr=True,
     )
 
 
