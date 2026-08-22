@@ -64,6 +64,10 @@ class RunConfig:
     # Populated by fuzz.py before scenarios run; None when --validation-only is off.
     validator: ValidatorClient | None = None
     k2vv_mode: str = "quick"
+    # Node count the image stress scenarios scale their concurrency by, so a
+    # multi-node deployment is driven at the same per-node pressure a single
+    # pod sees.
+    image_stress_nodes: int = 1
 
 
 class FuzzClient:
