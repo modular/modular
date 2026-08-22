@@ -1023,6 +1023,25 @@ class TextBatchConstructor:
             return self._get_inflight_kv_transfer_count(replica_idx) > 0
         return False
 
+    def _preempt_ce_block_holder(self, replica_idx: int) -> bool:
+        """Preempts the newest queued CE request that still holds KV blocks.
+
+        Two kinds of requests sit in ce_reqs with blocks for KV they already
+        hold: a chunked prefill between chunks (advance_requests requeues it
+        without releasing), and a cordoned request whose onload completed
+        (_readmit_completed_onloads returns it with its onloaded blocks).
+        """
+        replica_requests = self.replicas[replica_idx]
+        for ctx in reversed(list(replica_requests.ce_reqs.values())):
+            if self.kv_cache.contains(ctx) and self.kv_cache.get_req_blocks(
+                ctx
+            ):
+                self._preempt_request(
+                    ctx, replica_idx, reason=PreemptionReason.KV_CACHE_MEMORY
+                )
+                return True
+        return False
+
     def _is_insufficient_blocks_fatal(
         self, replica_idx: int, no_other_work: bool
     ) -> bool:
@@ -1179,6 +1198,12 @@ class TextBatchConstructor:
                     break
                 except InsufficientBlocksError as e:
                     if len(candidate_ids) == 0:
+                        # No TG candidates left, but a request parked in
+                        # ce_reqs (a chunked prefill between chunks, or a
+                        # readmitted onload) may still hold reclaimable
+                        # blocks.
+                        if self._preempt_ce_block_holder(replica_idx):
+                            continue
                         # Only a genuine OOM is fatal: nothing left to
                         # preempt, an empty batch, and the deficit can't be
                         # covered by anything in flight.

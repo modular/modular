@@ -523,6 +523,74 @@ def test_text_batch_constructor__tg_insufficient_blocks_fatal_when_nothing_infli
         batch_constructor.construct_batch()
 
 
+def test_text_batch_constructor__tg_insufficient_blocks_preempts_ce_block_holder(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A decode request that can't get a block reclaims from a chunked
+    prefill parked in ce_reqs (which keeps its blocks between chunks)
+    instead of raising a fatal InsufficientBlocksError: the parked
+    prefill's blocks are reclaimable, so this is not a genuine OOM."""
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=True,
+        target_tokens_per_batch_ce=30,
+    )
+    holder = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(50, dtype=np.int64)),
+        max_length=100,
+    )
+    released: list[RequestID] = []
+
+    def release(ctx: TextContext) -> None:
+        released.append(ctx.request_id)
+
+    def alloc(ctx: TextContext) -> CompletedTransfer:
+        # Blocks free up only once the parked prefill is preempted.
+        if not released:
+            raise InsufficientBlocksError("insufficient blocks")
+        return CompletedTransfer(TransferDirection.LOAD)
+
+    kv_cache = Mock()
+    kv_cache.alloc = Mock(side_effect=alloc)
+    kv_cache.claim = Mock()
+    kv_cache.release = Mock(side_effect=release)
+    kv_cache.contains = Mock(
+        side_effect=lambda ctx: (
+            ctx.request_id == holder.request_id and not released
+        )
+    )
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
+    kv_cache.get_req_blocks = Mock(
+        side_effect=lambda ctx: (
+            [0] if ctx.request_id == holder.request_id else []
+        )
+    )
+    # A full cache forces TG priority, so the parked prefill is never
+    # popped by _add_ce_requests before the decode request's alloc fails.
+    set_mock_kv_usage(kv_cache, 1.0)
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+        get_inflight_kv_transfer_count=lambda replica_idx: 0,
+    )
+    tg_context = create_lora_context(seq_len=9, is_tg=True)
+    batch_constructor.enqueue_new_request(tg_context, replica_idx=0)
+    batch_constructor.enqueue_new_request(holder, replica_idx=0)
+
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], tg_context.request_id)
+    assert released == [holder.request_id]
+    assert batch_constructor.total_preemption_count == 1
+    # The preempted prefill is requeued, not dropped.
+    assert holder.request_id in batch_constructor.replicas[0].ce_reqs
+
+
 def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_preemption(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
