@@ -57,7 +57,7 @@ static std::tuple<StringRef, StringRef, bool> splitString(StringRef str) {
 /// updated if we wish to better support splitting `inline code` or
 /// hyphenated-text). Each new line is indented by `indent`.
 static raw_ostream &writeWordWrapped(raw_ostream &os, const Twine &text,
-                                     size_t indent = 0, size_t limit = 80) {
+                                     size_t indent = 0, size_t limit = 78) {
   ssize_t maxLineLength = limit - indent;
   assert(maxLineLength > 0 && "indent must not exceed line length limit");
 
@@ -76,11 +76,14 @@ static raw_ostream &writeWordWrapped(raw_ostream &os, const Twine &text,
       os.indent(indent);
 
     // If the word can't fit on this line, then start a new line and try again.
-    ssize_t size = word.size();
+    // A word that follows another word is preceded by a space, so that space
+    // counts against the line here, where the decision is made.
+    ssize_t size = word.size() + !startsNewline;
     if (size > remainingLength) {
       os << '\n';
       // If the word can't fit on *any* line, just print it on its own line.
-      if (size > maxLineLength) {
+      // Alone on a line, no space precedes it, so measure the word itself.
+      if (ssize_t(word.size()) > maxLineLength) {
         os.indent(indent) << word << '\n';
         str = rest;
       }

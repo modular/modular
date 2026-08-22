@@ -19,21 +19,24 @@
 
 include "Support/Driver/DriverCommand.td"
 
-// CHECK: This subcommand has a long description that contains newline characters.
-// CHECK-NEXT: It also contains some extra-long words.
+// Lines wrap at 78 columns, indent included. A word longer than the budget
+// still prints in full on a line of its own.
+// CHECK: This subcommand has a long description that contains newline
+// CHECK-NEXT: characters. It also contains some extra-long words.
 //
-// CHECK: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
-// CHECK-NEXT: tempor incididunt ut labore et dolore magna aliqua. Cursus sit amet
-// CHECK-NEXT: dictum sit amet justo donec enim.
+// CHECK: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+// CHECK-NEXT: eiusmod tempor incididunt ut labore et dolore magna aliqua. Cursus sit
+// CHECK-NEXT: amet dictum sit amet justo donec enim.
 //
-// CHECK: Viverra nibh cras pulvinar mattis nunc sed. Amet luctus venenatis lectus
-// CHECK-NEXT: magna
+// CHECK: Viverra nibh cras pulvinar mattis nunc sed. Amet luctus venenatis
+// CHECK-NEXT: lectus magna
 // CHECK-NEXT: fringillaurnaporttitorrhoncusinmollisnuncsedidsemperrisusinhendreritacauctorauguemaurisaugue
-// CHECK-NEXT: neque gravida. Sit amet risus nullam eget felis eget. Elit at imperdiet
-// CHECK-NEXT: dui
+// CHECK-NEXT: neque gravida. Sit amet risus nullam eget felis eget. Elit at
+// CHECK-NEXT: imperdiet dui
 // CHECK-NEXT: accumsansitametnullafacilisimorbifacilisisleovelfringillaestullamcorperegeturnaduisconvallis
-// CHECK-NEXT: convallis tellus id. Diam maecenas ultricies mi eget mauris pharetra et
-// CHECK-NEXT: ultrices neque. Vitae turpis massa sed elementum tempus egestas sed.
+// CHECK-NEXT: convallis tellus id. Diam maecenas ultricies mi eget mauris pharetra
+// CHECK-NEXT: et ultrices neque. Vitae turpis massa sed elementum tempus egestas
+// CHECK-NEXT: sed.
 def : CommandDescription<
   "driver-tblgen-test", /*subcommand=*/"splitting",
   "Test that text is split along word boundaries.",
