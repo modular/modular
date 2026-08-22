@@ -85,6 +85,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/unified_mtp_deepseekV3",
     "//max/python/max/pipelines/architectures/unified_mtp_gemma4",
     "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
+    "//max/python/max/pipelines/architectures/unified_mtp_inkling",
     "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
     "//max/python/max/pipelines/architectures/wan",
     "//max/python/max/pipelines/architectures/whisper",

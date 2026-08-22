@@ -676,6 +676,18 @@ class PipelineConfig(ConfigFileModel):
             ) > 0
             if self.draft_model is None and has_mtp:
                 target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
+        if target_archs[0] == "InklingForConditionalGeneration":
+            # Inkling bakes chained MTP depths into the target checkpoint.
+            mtp_config = getattr(
+                self.model.huggingface_config, "mtp_config", None
+            )
+            n_mtp = (
+                mtp_config.get("num_nextn_predict_layers")
+                if isinstance(mtp_config, dict)
+                else getattr(mtp_config, "num_nextn_predict_layers", None)
+            )
+            if self.draft_model is None and (n_mtp or 0) > 0:
+                target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
     def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
         """Rejects synthetic acceptance when constrained decoding can fire.

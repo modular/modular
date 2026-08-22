@@ -36,6 +36,7 @@ from max.nn.embedding import Embedding, VocabParallelEmbedding
 from max.nn.kv_cache import (
     KVCacheInputs,
     MHAKVCacheParams,
+    MultiKVCacheInputs,
     MultiKVCacheParams,
     PagedCacheValues,
 )
@@ -45,6 +46,7 @@ from max.nn.moe import make_interleaved_gated_activation_fn
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import (
+    ReturnHiddenStates,
     ReturnLogits,
     forward_sequential_layers,
     logits_postprocess,
@@ -64,7 +66,7 @@ from .model_config import (
     InklingConfig,
     InklingTextConfig,
 )
-from .state_cache import CONV_STATE_DTYPE, ConvSite, InklingConvStateLayout
+from .state_cache import ConvSite, InklingConvStateLayout
 
 
 class InklingDecoderLayer(Module):
@@ -80,6 +82,8 @@ class InklingDecoderLayer(Module):
         dtype: DType,
         devices: list[DeviceRef],
         quant_config: QuantConfig | None = None,
+        is_local: bool | None = None,
+        force_dense_mlp: bool = False,
     ) -> None:
         super().__init__()
         self.num_devices = len(devices)
@@ -99,6 +103,7 @@ class InklingDecoderLayer(Module):
             kv_params=kv_params,
             dtype=dtype,
             devices=devices,
+            is_local=is_local,
         )
         self.attn.sharding_strategy = tensor_parallel
         self.attn_shards = list(self.attn.shard(devices))
@@ -121,7 +126,7 @@ class InklingDecoderLayer(Module):
         self.mlp: InklingMoE | MLP
         # Dense layers only: the learned scalar the output is scaled by.
         self.mlp_global_scale_shards: list[Weight] | None = None
-        if text_config.is_moe_layer(layer_idx):
+        if text_config.is_moe_layer(layer_idx) and not force_dense_mlp:
             # Only routed experts quantize; sinks and gate stay at dtype.
             routed_quant = (
                 quant_config
@@ -304,6 +309,17 @@ def _subgraph_layer_groups(
     return names, shared
 
 
+def kv_collections_by_key(
+    tree: MultiKVCacheInputs[TensorValue, BufferValue],
+) -> dict[str, list[PagedCacheValues]]:
+    """Groups an unflattened KV tree by attention flavor, then by rank."""
+    collections: dict[str, list[PagedCacheValues]] = {}
+    for key, child in tree.children.items():
+        assert isinstance(child, KVCacheInputs)
+        collections[key] = list(child.inputs)
+    return collections
+
+
 class Inkling(Module):
     """The Inkling text model: embedding, decoder layers, LM head."""
 
@@ -312,6 +328,7 @@ class Inkling(Module):
         config: InklingConfig,
         *,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         super().__init__()
         text_config = config.text_config
@@ -320,6 +337,7 @@ class Inkling(Module):
         self.num_devices = len(config.devices)
         self.dtype = config.dtype
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
         device = config.devices[0]
         replicate = ShardingStrategy.replicate(self.num_devices)
 
@@ -505,6 +523,7 @@ class Inkling(Module):
                 return_logits=self.return_logits,
                 device=self.devices[0],
                 norm_shards=self.norm_shards,
+                return_hidden_states=self.return_hidden_states,
                 logits_scaling=self.text_config.logits_mup_width_multiplier,
             )
         return logits_postprocess(
@@ -514,6 +533,7 @@ class Inkling(Module):
             self.norm,
             self._lm_head,
             self.return_logits,
+            return_hidden_states=self.return_hidden_states,
             logits_scaling=self.text_config.logits_mup_width_multiplier,
         )
 
@@ -579,20 +599,6 @@ class Inkling(Module):
         signals = (
             Signals(self.devices).input_types() if self.num_devices > 1 else []
         )
-        pools: list[TensorType | BufferType] = [
-            BufferType(
-                CONV_STATE_DTYPE,
-                shape=[
-                    "max_conv_slots",
-                    channels,
-                    self.conv_layout.state_len,
-                ],
-                device=pool_device,
-            )
-            for pool_device in self.devices
-            for widths in self.conv_layout.layers
-            for channels in widths
-        ]
         return (
             TensorType(DType.int64, shape=["total_seq_len"], device=device),
             TensorType(
@@ -618,19 +624,16 @@ class Inkling(Module):
                 )
                 for slot_device in self.devices
             ),
-            *pools,
+            *self.conv_layout.buffer_types(self.devices),
         )
 
     def unflatten_kv_inputs(
         self, kv_inputs: Sequence[object]
     ) -> dict[str, list[PagedCacheValues]]:
         """Groups the flattened KV inputs by attention flavor, then by rank."""
-        tree = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
-        collections: dict[str, list[PagedCacheValues]] = {}
-        for key, child in tree.children.items():
-            assert isinstance(child, KVCacheInputs)
-            collections[key] = list(child.inputs)
-        return collections
+        return kv_collections_by_key(
+            self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
+        )
 
     def unpack_inputs(
         self, inputs: Sequence[Value[Any]]

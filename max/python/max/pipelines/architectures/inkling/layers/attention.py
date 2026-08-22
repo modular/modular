@@ -67,6 +67,7 @@ class InklingAttention(Module, Shardable):
         devices: list[DeviceRef],
         tp_size: int = 1,
         is_sharding: bool = False,
+        is_local: bool | None = None,
     ) -> None:
         super().__init__()
         device = devices[0]
@@ -74,21 +75,19 @@ class InklingAttention(Module, Shardable):
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.dtype = dtype
+        if is_local is None:
+            is_local = text_config.is_local_attention(layer_idx)
+        self._is_local = is_local
         self._sharding_strategy: ShardingStrategy | None = None
-        full_num_heads = text_config.num_heads_for_layer(layer_idx)
-        full_num_kv_heads = text_config.num_kv_heads_for_layer(layer_idx)
-        self.num_heads = full_num_heads // tp_size
-        self.num_kv_heads = full_num_kv_heads // tp_size
-        self.head_dim = text_config.head_dim_for_layer(layer_idx)
-        self.local_window_size = text_config.attention_window_for_layer(
-            layer_idx
-        )
-        self.applies_log_scaling = text_config.applies_log_scaling(layer_idx)
+        self.num_heads = text_config.num_heads(is_local) // tp_size
+        self.num_kv_heads = text_config.num_kv_heads(is_local) // tp_size
+        self.head_dim = text_config.head_dim_for(is_local)
+        self.local_window_size = text_config.attention_window(is_local)
+        self.applies_log_scaling = text_config.applies_log_scaling(is_local)
         # muP scales attention logits by 1/d, not the usual 1/sqrt(d).
         self.scale = 1.0 / self.head_dim
         self.out_dims = tuple(
-            dim // tp_size
-            for dim in text_config.qkvr_out_dims_for_layer(layer_idx)
+            dim // tp_size for dim in text_config.qkvr_out_dims(is_local)
         )
 
         if tp_size > 1 and kv_params.n_kv_heads_per_device != self.num_kv_heads:
@@ -108,7 +107,7 @@ class InklingAttention(Module, Shardable):
             has_bias=text_config.q_bias,
             _is_sharding=is_sharding,
         )
-        kv_conv_dim = text_config.kv_conv_dim_for_layer(layer_idx) // tp_size
+        kv_conv_dim = text_config.kv_conv_dim(is_local) // tp_size
         if not is_sharding:
             self.k_sconv = ShortConvolution(
                 channels=kv_conv_dim,
@@ -131,7 +130,7 @@ class InklingAttention(Module, Shardable):
         # A plain weight rather than a submodule so its name can carry the
         # checkpoint's own rel_logits_proj.proj spelling.
         self.d_rel = text_config.d_rel
-        self.rel_extent = text_config.rel_extent_for_layer(layer_idx)
+        self.rel_extent = text_config.rel_extent_for(is_local)
         if not is_sharding:
             self.rel_logits_proj = Weight(
                 "rel_logits_proj.proj",
@@ -288,6 +287,7 @@ class InklingAttention(Module, Shardable):
                 devices=[device],
                 tp_size=len(devices),
                 is_sharding=True,
+                is_local=self._is_local,
             )
             for name, per_device in part_shards.items():
                 setattr(sharded, name, per_device[shard_idx])
