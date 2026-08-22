@@ -874,6 +874,20 @@ def test_array_repeat_runs_destructors_once() raises:
     assert_equal(destructor_recorder, [0, 1, 0, 1, 0, 1])
 
 
+def test_array_fill() raises:
+    var arr = Array[Int, 5](fill=0)
+    arr.fill(7)
+    for i in range(5):
+        assert_equal(arr[i], 7)
+
+    # Overwrites existing values.
+    var arr2: Array[Int, 3] = [1, 2, 3]
+    arr2.fill(0)
+    assert_equal(arr2[0], 0)
+    assert_equal(arr2[1], 0)
+    assert_equal(arr2[2], 0)
+
+
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
     suite^.run()

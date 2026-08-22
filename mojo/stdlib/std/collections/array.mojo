@@ -938,6 +938,23 @@ struct Array[T: AnyType, length: Int](
             .unsafe_address_space_cast[address_space]()
         )
 
+    def fill(mut self, value: Self.T) where conforms_to(
+        Self.T, Copyable & Deinitable
+    ):
+        """Fills all elements of the array with the given value.
+
+        Args:
+            value: The value to assign to each element.
+
+        Examples:
+
+        ```mojo
+        var arr: Array[Int, 3] = [1, 2, 3]
+        arr.fill(0)  # arr is now [0, 0, 0]
+        ```
+        """
+        Span(self).fill(value)
+
     @always_inline
     @stable(since="1.0")
     def __contains__(
