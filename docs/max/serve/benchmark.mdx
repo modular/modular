@@ -48,10 +48,16 @@ performance measurement that's tailored to MAX. You can see the [benchmark
 script source
 here](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
 
+An AI coding agent can run this for you with the `benchmark-model` skill, which
+drives load against an endpoint you're already serving and reports the same
+throughput and latency metrics, plus GPU utilization when it runs on the same
+NVIDIA host as the server. See [Modular skills](/coding-assistants#skills) to
+install it.
+
 System requirements:
 
 <Requirements requirementsData={requirementsWithDockerAndGPU}
-url="/max/packages#system-requirements" />
+url="/packages#system-requirements" />
 
 :::note
 
@@ -317,6 +323,10 @@ optimizations:
   Learn how to deploy MAX pipelines to cloud.
 - [Using LoRA adapters](/serve/lora-adapters): Use LoRA adapters with MAX
   to serve task-specific, fine-tuned variants of LLMs.
+- [The `benchmark-model` skill](https://github.com/modular/skills/tree/main/benchmark-model):
+  An AI coding agent skill that runs this benchmark workflow for you, then hands
+  off to the `profile-model` skill when the numbers show a bottleneck. See
+  [GPU system profiling](/gpu-system-profiling) for that next step.
 
 To read more about our performance methodology, check our blog post,
 [MAX GPU: State of the Art Throughput on a New GenAI platform](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).

@@ -203,15 +203,13 @@ def _memmem_baseline[
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         keep(
             _memmem_baseline(
                 black_box(local_haystack.as_bytes()),
@@ -219,18 +217,16 @@ def bench_find_baseline(mut b: Bencher) raises:
             )
         )
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@__parameter
 def bench_find_optimized(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn() {imm}:
         keep(
             _memmem(
                 black_box(local_haystack.as_bytes()),
@@ -238,7 +234,7 @@ def bench_find_optimized(mut b: Bencher) raises:
             )
         )
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -246,6 +242,6 @@ def bench_find_optimized(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_find_baseline](BenchId("find_baseline"))
-    m.bench_function[bench_find_optimized](BenchId("find_optimized"))
+    m.bench_function(bench_find_baseline, BenchId("find_baseline"))
+    m.bench_function(bench_find_optimized, BenchId("find_optimized"))
     m.dump_report()

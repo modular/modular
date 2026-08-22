@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -11,7 +12,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-#!/usr/bin/env python3
 """Check for drift between GPU entries in info.mojo and requirements.mdx.
 
 Parses the GPU architecture registry in info.mojo and compares it against the

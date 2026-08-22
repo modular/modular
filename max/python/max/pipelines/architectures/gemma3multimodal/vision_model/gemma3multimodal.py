@@ -271,7 +271,7 @@ class Gemma3VisionModel(Module):
         )
 
         self.post_layernorm_list = []
-        for device, weight_shard, bias_shard in zip(
+        for device, weight_shard, bias_shard in zip(  # noqa: PLR1704 (FIXME)
             config.devices,
             post_layernorm_weight_shards,
             post_layernorm_bias_shards,

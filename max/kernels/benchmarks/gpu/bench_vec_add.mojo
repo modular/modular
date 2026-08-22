@@ -70,12 +70,12 @@ def bench_vec_add(
             block_dim=(block_dim),
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, context)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),
         [ThroughputMeasure(BenchMetric.flops, length)],
     )

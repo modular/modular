@@ -23,29 +23,45 @@ from max.experimental.cascade.core import (
     worker_method,
 )
 from max.experimental.cascade.core.local_runtime import LocalRuntime
-from max.experimental.cascade.interfaces.imgen import (
-    ImageGenInterface,
-    ImageGenRequest,
+from max.experimental.cascade.interfaces.gen_ai import (
+    ChatMessage,
+    GenAIChunk,
+    GenAIImageChunk,
+    GenAIInterface,
+    GenAIReasoningChunk,
+    GenAIRequest,
+    GenAITextChunk,
+    GenAITool,
+    GenAIToolCall,
+    ImageGenOptions,
+    Modality,
+    TextGenOptions,
 )
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
-from max.experimental.cascade.interfaces.textgen import (
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
+from max.experimental.cascade.interfaces.pipeline import (
+    CascadePipeline,
+    GenAIPipeline,
 )
 
 __all__ = [
     "CascadePipeline",
-    "ChatMessages",
-    "GenerateRequest",
-    "ImageGenInterface",
-    "ImageGenRequest",
+    "ChatMessage",
+    "GenAIChunk",
+    "GenAIImageChunk",
+    "GenAIInterface",
+    "GenAIPipeline",
+    "GenAIReasoningChunk",
+    "GenAIRequest",
+    "GenAITextChunk",
+    "GenAITool",
+    "GenAIToolCall",
+    "ImageGenOptions",
     "LocalRuntime",
     "MaybeAsync",
+    "Modality",
     "Result",
     "ResultIter",
     "Runtime",
-    "TextGenInterface",
+    "TextGenOptions",
     "Worker",
     "WorkerType",
     "pipeline_method",

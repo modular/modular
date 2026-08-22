@@ -436,10 +436,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         normalized_state_dict = {
             _strip(k): v
             for k, v in state_dict.items()
-            if not (
-                k.startswith("vision_model.")
-                or k.startswith("multi_modal_projector.")
-            )
+            if not (k.startswith(("vision_model.", "multi_modal_projector.")))
         }
 
         self.quant_config = _build_llama4_fp8_quant_config(

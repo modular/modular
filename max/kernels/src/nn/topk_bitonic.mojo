@@ -2312,6 +2312,11 @@ def _histsel_resident_impl[
 
     if tid == 0:
         ctl[3] = 0
+    # Only a select-all row needs this: it skips every round below, and with them
+    # the barriers that would otherwise order this store ahead of the claims.
+    # `select_all` is block-uniform, so the barrier is not divergent.
+    if select_all:
+        barrier()
 
     # Thread `t` owns columns `4*t + v*res_step .. +3` for each `v`, so
     # a warp's 32 lanes read 32 adjacent `float4` -- one fully coalesced 512-byte

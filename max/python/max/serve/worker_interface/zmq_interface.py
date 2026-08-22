@@ -293,7 +293,7 @@ class ZmqModelWorkerInterface(
     def __init__(
         self,
         pipeline_task: PipelineTask,
-        context_type: type[TextContext] | type[EmbeddingsContext],
+        context_type: type[TextContext | EmbeddingsContext],
         request_queue_size: int | None = None,
     ) -> None:
         response_type = _response_type_for_task(pipeline_task)

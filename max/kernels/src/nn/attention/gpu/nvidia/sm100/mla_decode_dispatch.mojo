@@ -75,19 +75,17 @@ def _unswitch_raises[
     if dynamic_switch_a:
 
         @always_inline
-        @__parameter
-        def switched_a_true[static_switch: Bool]() raises:
+        def switched_a_true[static_switch: Bool]() raises {imm}:
             switched_func[True, static_switch]()
 
-        unswitch[switched_a_true](dynamic_switch_b)
+        unswitch(dynamic_switch_b, switched_a_true)
     else:
 
         @always_inline
-        @__parameter
-        def switched_a_false[static_switch: Bool]() raises:
+        def switched_a_false[static_switch: Bool]() raises {imm}:
             switched_func[False, static_switch]()
 
-        unswitch[switched_a_false](dynamic_switch_b)
+        unswitch(dynamic_switch_b, switched_a_false)
 
 
 @always_inline

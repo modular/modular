@@ -35,6 +35,21 @@ mojo_test(
     ],
 )
 
+# Tests `DeviceBuffer.unsafe_host_ptr()`. Vendor-agnostic: the Metal half is
+# gated on `ctx.api()` at runtime and the remaining test asserts that devices
+# without unified memory raise. `//:has_gpu` excludes CPU-only build configs,
+# where `DeviceContext` fails the compile-time GPU-arch constraint.
+mojo_test(
+    name = "test_device_buffer_host_ptr.mojo.test",
+    srcs = ["test_device_buffer_host_ptr.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Real by-value GPU launch test for `Coord`'s `DevicePassable` conformance.
 # Vendor-agnostic: `//:has_gpu` excludes CPU-only build configs (where
 # `DeviceContext` fails the compile-time GPU-arch constraint) without pinning

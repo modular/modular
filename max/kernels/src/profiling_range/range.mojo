@@ -74,9 +74,10 @@ struct Range(ImplicitlyCopyable):
             ...  # graph build code runs inside the span
     ```
 
-    A future update will add a `category` parameter (mirroring
-    `max.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
-    overload for dynamically-built names (e.g. `Range("kernel_" + variant)`).
+    `max.runtime.tracing.Trace` now records libkineto spans natively when the
+    profiler is live, so new instrumentation should prefer `Trace` — it also
+    feeds the other tracing backends. `Range` remains for code that wants a
+    profiler-only span with no `Trace` machinery.
     """
 
     var _name: StaticString

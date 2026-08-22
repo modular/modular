@@ -164,7 +164,7 @@ def get_rope_index(
             )
             position_ids[:, i, valid_mask] = llm_positions
             mrope_position_deltas.append(
-                int(llm_positions.max() + 1 - len(total_input_ids[i]))
+                int(llm_positions.max() + 1 - len(input_ids_row))
             )
 
         mrope_position_deltas_array = np.array(

@@ -8,7 +8,7 @@ There is no attempt to keep these up-to-date as the language evolves, so they
 are more for historical reference than as a user-guide for the language.
 
 > **Note for Mojo users:** For learning Mojo, please refer to the
-> [official documentation](https://docs.modular.com/mojo/) instead. These
+> [official documentation](https://mojolang.org/docs/) instead. These
 > proposals describe internal design discussions and may not reflect the
 > current state of the language.
 

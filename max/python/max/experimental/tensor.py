@@ -2505,10 +2505,10 @@ class Tensor(DLPackArray, HasTensorValue):
     def __neg__(self) -> Tensor:
         return F.negate(self)
 
-    def __eq__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> Tensor:  # type: ignore[override]
         return F.equal(self, rhs)
 
-    def __ne__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> Tensor:  # type: ignore[override]
         return F.not_equal(self, rhs)
 
     def __ge__(self, rhs: Any) -> Tensor:

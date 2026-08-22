@@ -306,13 +306,6 @@ class BlockManager:
         self.kv_hash_algo: KVHashAlgo = kv_hash_algo
         self.kv_hash_seed: bytes | None = kv_hash_seed
 
-        if kv_hash_algo not in connector.supported_hash_algos:
-            raise ValueError(
-                f"kv_cache_hash_algo={kv_hash_algo!r} is not supported by "
-                f"connector={connector.name!r} (supports="
-                f"{sorted(connector.supported_hash_algos)})"
-            )
-
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
 
@@ -703,15 +696,17 @@ class BlockManager:
         dst_pages: list[Buffer] = []
         src_pages: list[Buffer] = []
         for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
+            # Every shard is fanned out with an independent point-to-point copy
+            # (no broadcast collective).
             for src_buf, dst_buf in zip(
-                src_unit.all_buffers, dst_unit.all_buffers, strict=True
+                src_unit.buffers, dst_unit.buffers, strict=True
             ):
                 for dst_id, src_id in block_id_pairs:
                     dst_pages.append(dst_buf[dst_id, :])
                     src_pages.append(src_buf[src_id, :])
             self._metrics.cross_replica_bytes_copied += (
-                src_unit.buffer.shape[1]
-                * len(src_unit.all_buffers)
+                src_unit.bytes_per_page
+                * len(src_unit.buffers)
                 * len(block_id_pairs)
             )
 
@@ -745,7 +740,7 @@ class BlockManager:
         """
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
-        if connector.host_block_count.total == 0 or not desired_hashes:
+        if not desired_hashes:
             return [], CompletedTransfer(TransferDirection.LOAD)
 
         # Limit by available device blocks.
@@ -837,7 +832,7 @@ class BlockManager:
         remaining = block_hashes[num_device_hits:]
         num_host_hits = 0
         num_disk_hits = 0
-        if len(remaining) > 0 and self.connector.host_block_count.total > 0:
+        if remaining:
             num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
                 remaining
             )
@@ -876,52 +871,23 @@ class BlockManager:
             uncommitted_hashes, replica_idx
         )
 
-        if self.connector.host_block_count.total == 0:
+        if self.connector.name == "NullConnector":
             return device_blocks, CompletedTransfer(TransferDirection.LOAD)
 
         # remove the hashes that were found in the device prefix cache
-        if len(device_blocks) > 0:
-            uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
+        uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
 
         # query the host prefix cache for full blocks via connector
         host_blocks, load_event = self._get_full_blocks_from_host_prefix_cache(
             uncommitted_hashes, replica_idx
         )
 
-        # Sole load-path recency anchor for this request's cached prefix.
-        # Fires AFTER the load so that, as the only load-path toucher, it
-        # reserves the last (most-recent) recency stamp and cannot be
-        # inverted by the load's own touches. The read path and dKV's
-        # `touch_hits` no longer touch. Best-effort / fire-and-forget: a
-        # dropped touch degrades to neutral, never inverted. Pass the full
-        # cached prefix from the true root, in order -- NOT a root-omitting
-        # slice. The payload MUST include the already-committed prefix
-        # (`req_hashes[:num_committed_blocks]`); omitting the root re-creates
-        # a recency inversion (the root ages below the touched subset and
-        # evicts first). It trims the tail past the served prefix -- keys not
-        # served this step. Most are genuinely uncached (absent in dKV, so
-        # touching them only costs no-op index lookups on a contended path),
-        # but the host load is capped at this replica's device free capacity
-        # (`pool.num_free_blocks`), so a dKV-resident block can also fall in
-        # the trim when capacity binds. Not refreshing that capacity-truncated
-        # remainder is an accepted best-effort recency miss: it was not loaded
-        # this step and self-heals on a later step (or a peer request) that
-        # loads it. Refreshing it would require touching the full `req_hashes`
-        # on every admission -- the contended behavior this change removes.
-        # dKV touches the resident subset and tolerates
-        # missing keys. The host_block_count early-return above gates on "has
-        # host blocks," NOT "has an external tier": it skips only a connector
-        # with no host blocks (NullConnector); the host/disk tiered connector
-        # passes the gate and calls its no-op touch -- only DKVConnector does
-        # real touch work.
-        if device_blocks or host_blocks:
-            cached_hashes = req_hashes[
-                : num_committed_blocks + len(device_blocks) + len(host_blocks)
-            ]
-            self.connector.touch(
-                cached_hashes,
-                replica_idx=replica_idx,
-            )
+        # refresh the lru status of all hit hashes associated with the request.
+        hit_hashes = req_hashes[
+            : num_committed_blocks + len(device_blocks) + len(host_blocks)
+        ]
+        if hit_hashes:
+            self.connector.touch(hit_hashes, replica_idx=replica_idx)
 
         return device_blocks + host_blocks, load_event
 

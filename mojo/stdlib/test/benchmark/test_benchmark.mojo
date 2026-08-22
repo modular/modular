@@ -275,23 +275,20 @@ def test_bencher_iter_preproc_unified() raises:
     var bencher = Bencher(2)
 
     var count = 0
-    var preproc_count = 0
+    var state = 0
 
     @always_inline
-    def work() {
-        mut count,
-    }:
+    def work(mut state: Int) {mut count}:
         count += 1
+        state += 1
 
     @always_inline
-    def preproc() {
-        mut preproc_count,
-    }:
-        preproc_count += 1
+    def preproc(mut state: Int):
+        state += 10
 
-    bencher.iter_preproc(work, preproc)
+    bencher.iter_preproc(state, work, preproc)
     assert_equal(count, 2)
-    assert_equal(preproc_count, 2)
+    assert_equal(state, 22)
 
 
 def test_bencher_iter_custom_unified() raises:
