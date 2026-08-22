@@ -83,7 +83,7 @@ def _argmaxmin_scan[
     unroll: Int,
     alignment: Int,
 ](
-    row: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    row: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
     tid: Int,
     block_size: Int,
@@ -102,7 +102,7 @@ def _argmaxmin_scan[
             fill=SIMD[dtype, simd_width](_topk_dead_val[dtype, largest]())
         )
         comptime for u in range(unroll):
-            staged[u] = row.load[width=simd_width, alignment=alignment](
+            staged[u] = row.unsafe_load[width=simd_width, alignment=alignment](
                 offset + u * lane_stride
             )
         comptime for u in range(unroll):
@@ -115,7 +115,7 @@ def _argmaxmin_scan[
         _argmaxmin_vec_update[dtype, largest](
             best_vals,
             best_idxs,
-            row.load[width=simd_width, alignment=alignment](i),
+            row.unsafe_load[width=simd_width, alignment=alignment](i),
             i,
         )
         i += lane_stride
@@ -125,7 +125,7 @@ def _argmaxmin_scan[
 def _argmaxmin_block_partial[
     dtype: DType, largest: Bool, simd_width: Int, unroll: Int
 ](
-    row: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    row: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     begin: Int,
     count: Int,
     aligned: Bool,
@@ -135,7 +135,7 @@ def _argmaxmin_block_partial[
     """Reduces `row[begin : begin + count]` to one (extremum, global index)."""
     var best_vals = SIMD[dtype, simd_width](_topk_dead_val[dtype, largest]())
     var best_idxs = SIMD[DType.int32, simd_width](0)
-    var chunk = row + begin
+    var chunk = row.unsafe_offset(begin)
 
     if aligned:
         _argmaxmin_scan[
@@ -170,7 +170,7 @@ def _argmaxmin_block_partial[
     # than anything scanned above, so a strict insert keeps first-index.
     var vec_end = align_down(count, simd_width)
     if tid < count - vec_end:
-        partial.insert(chunk[vec_end + tid], vec_end + tid)
+        partial.insert(chunk.unsafe_offset(vec_end + tid)[], vec_end + tid)
 
     partial.p += begin
     return partial
@@ -185,8 +185,8 @@ def _argmaxmin_scan_kernel[
     InputLayoutType: TensorLayout,
 ](
     input: TileTensor[dtype, InputLayoutType, ImmutAnyOrigin],
-    part_vals: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    part_idxs: UnsafePointer[Int32, MutAnyOrigin],
+    part_vals: MutPointer[Scalar[dtype], MutAnyOrigin],
+    part_idxs: MutPointer[Int32, MutAnyOrigin],
     num_elements_arg: Int32,
     split_len_arg: Int32,
     num_splits_arg: Int32,
@@ -229,7 +229,7 @@ def _argmaxmin_scan_kernel[
         var partial = _argmaxmin_block_partial[
             dtype, largest, simd_width, unroll
         ](
-            input.ptr + row_id * num_elements,
+            input.ptr.unsafe_offset(row_id * num_elements),
             begin,
             count,
             aligned_arg != 0,
@@ -240,8 +240,8 @@ def _argmaxmin_scan_kernel[
 
         if tid == 0:
             var slot = row_id * Int(num_splits_arg) + split
-            part_vals[slot] = total.u
-            part_idxs[slot] = Int32(total.p)
+            part_vals.unsafe_offset(slot)[] = total.u
+            part_idxs.unsafe_offset(slot)[] = Int32(total.p)
 
 
 @__name(t"argmaxmin_combine_{dtype}_{out_idx_type}_{largest}")
@@ -254,8 +254,8 @@ def _argmaxmin_combine_kernel[
     out_idxs: TileTensor[
         mut=True, out_idx_type, OutIdxLayoutType, MutAnyOrigin
     ],
-    part_vals: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    part_idxs: UnsafePointer[Int32, ImmutAnyOrigin],
+    part_vals: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    part_idxs: ImmPointer[Int32, ImmutAnyOrigin],
     num_splits_arg: Int32,
 ):
     """Reduces one row's per-slice winners to the final index.
@@ -283,14 +283,17 @@ def _argmaxmin_combine_kernel[
         # tie-break reproduces a single-pass first-index scan.
         var partial = TopK_2[dtype, largest]()
         for i in range(tid, num_splits, Int(block_dim.x)):
-            partial.insert(part_vals[base + i], Int(part_idxs[base + i]))
+            partial.insert(
+                part_vals.unsafe_offset(base + i)[],
+                Int(part_idxs.unsafe_offset(base + i)[]),
+            )
 
         var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
-            out_idxs.ptr[row_id] = Scalar[DType.int](total.p).cast[
-                out_idx_type
-            ]()
+            out_idxs.ptr.unsafe_offset(row_id)[] = Scalar[DType.int](
+                total.p
+            ).cast[out_idx_type]()
 
 
 def argmaxmin_gpu[

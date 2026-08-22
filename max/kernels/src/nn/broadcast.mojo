@@ -147,8 +147,8 @@ def broadcast_impl[
 
     if axis == rightmost_broadcast_axis:
         _tile_1d(
-            output.ptr + output_offset,
-            input.ptr + input_offset,
+            output.ptr.unsafe_offset(output_offset),
+            input.ptr.unsafe_offset(input_offset),
             input_axis_stride,
             Int(output.dim(axis)),
         )
@@ -177,11 +177,11 @@ def broadcast_impl[
     # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
     # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
     if Int(input.dim(axis)) != Int(output.dim(axis)):
-        var output_tile_start = output.ptr + output_offset
+        var output_tile_start = output.ptr.unsafe_offset(output_offset)
         _tile_1d(
             # AnyOrigin needed for exclusivity check
             (
-                output_tile_start + output_axis_stride
+                output_tile_start.unsafe_offset(output_axis_stride)
             ).as_unsafe_any_origin(),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
@@ -192,14 +192,12 @@ def broadcast_impl[
 def _tile_1d[
     dtype: DType,
 ](
-    init_dst_ptr: UnsafePointer[
-        mut=True,
+    init_dst_ptr: MutPointer[
         Scalar[dtype],
         _,
         address_space=AddressSpace.GENERIC,
     ],
-    src_ptr: UnsafePointer[
-        mut=False,
+    src_ptr: ImmPointer[
         Scalar[dtype],
         _,
         address_space=AddressSpace.GENERIC,
@@ -214,4 +212,4 @@ def _tile_1d[
     var dst_ptr = init_dst_ptr
     for _ in range(n):
         unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
-        dst_ptr = dst_ptr + tile_num_elems
+        dst_ptr = dst_ptr.unsafe_offset(tile_num_elems)

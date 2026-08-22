@@ -85,9 +85,9 @@ def memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[mut=True, Int8, _],
+    dest_data: MutPointer[Int8, _],
     out_byte_offset: Int,
-    src_data: UnsafePointer[mut=False, Int8, _],
+    src_data: ImmPointer[Int8, _],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -115,7 +115,9 @@ def memcpy_or_fuse[
             indices for the epilogue function.
     """
     comptime if not epilogue_fn:
-        unsafe_memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
+        unsafe_memcpy(
+            dest=dest_data.unsafe_offset(out_byte_offset), src=src_data, count=n
+        )
     else:
         comptime func = epilogue_fn.value()
         comptime simd_width = simd_width_of[dtype]()
@@ -129,7 +131,7 @@ def memcpy_or_fuse[
 
         # Cast
         var shape_1d = Coord(typed_len)
-        var typed_src = src_data.bitcast[Scalar[dtype]]()
+        var typed_src = src_data.unsafe_bitcast[Scalar[dtype]]()
         var input = TileTensor(
             typed_src,
             row_major(Coord(shape_1d)),
@@ -178,7 +180,7 @@ struct _Span(TrivialRegisterPassable):
 struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
     TrivialRegisterPassable
 ):
-    var data: UnsafePointer[Int8, Self.origin]
+    var data: Pointer[Int8, Self.origin]
     var h: Int
     var w: Int
     var c: Int
@@ -194,7 +196,7 @@ def _canonical_reshape[
     var h = product(shape, 0, axis)
     var w = Int(buf.dim(axis))
     var c = product(shape, axis + 1, buf.rank) * size_of[dtype]()
-    return _CanonicallyReshapedBuffer(buf.ptr.bitcast[Int8](), h, w, c)
+    return _CanonicallyReshapedBuffer(buf.ptr.unsafe_bitcast[Int8](), h, w, c)
 
 
 def _canonical_reshape_output[
@@ -214,7 +216,7 @@ def _canonical_reshape_output[
     for i in range(1, len(inputs)):
         out_w += Int(inputs[i].dim(axis))
     return _CanonicallyReshapedBuffer(
-        out_buf.ptr.bitcast[Int8](),
+        out_buf.ptr.unsafe_bitcast[Int8](),
         input0_canon.h,
         out_w,
         input0_canon.c,
@@ -302,7 +304,7 @@ def _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data + overlap_rel_start,
+                        input_data.unsafe_offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
                         rebind[IndexList[output.rank]](
                             coord_to_index_list(output.layout.shape_coord())
@@ -318,15 +320,19 @@ def _concat_parallel[
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
-                        input_data + overlap_rel_start,
+                        input_data.unsafe_offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
                         rebind[IndexList[output.rank]](
                             coord_to_index_list(output.layout.shape_coord())
                         ),
                     )
                     # Now, fully-aligned sections:
-                    var in_ptr = input_data + overlap_full_rel_start
-                    var end_in_ptr = input_data + overlap_full_rel_end
+                    var in_ptr = input_data.unsafe_offset(
+                        overlap_full_rel_start
+                    )
+                    var end_in_ptr = input_data.unsafe_offset(
+                        overlap_full_rel_end
+                    )
                     var out_ptr_offset = (
                         output_wc_offset
                         + overlap_full_rel_start // input_wc * output_wc
@@ -342,7 +348,7 @@ def _concat_parallel[
                                 coord_to_index_list(output.layout.shape_coord())
                             ),
                         )
-                        in_ptr += input_wc
+                        in_ptr = in_ptr.unsafe_offset(input_wc)
                         out_ptr_offset += output_wc
                     # Lastly, trailing stragglers:
                     memcpy_or_fuse[output.rank, dtype, epilogue_fn](
@@ -418,9 +424,11 @@ def _concat[
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
             memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-                output.ptr.bitcast[Int8](),
+                output.ptr.unsafe_bitcast[Int8](),
                 output_offset * size_of[dtype](),
-                (inputs[i].ptr + input_offset).bitcast[Int8](),
+                inputs[i]
+                .ptr.unsafe_offset(input_offset)
+                .unsafe_bitcast[Int8](),
                 w * c * size_of[dtype](),
                 rebind[IndexList[output.rank]](
                     coord_to_index_list(output.layout.shape_coord())
@@ -446,9 +454,9 @@ def _concat_inner[
     for i in range(len(inputs)):
         var buffer_len = inputs[i].num_elements()
         memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-            output.ptr.bitcast[Int8](),
+            output.ptr.unsafe_bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
-            inputs[i].ptr.bitcast[Int8](),
+            inputs[i].ptr.unsafe_bitcast[Int8](),
             buffer_len * size_of[dtype](),
             rebind[IndexList[output.rank]](
                 coord_to_index_list(output.layout.shape_coord())
@@ -1017,7 +1025,7 @@ def _concat_gpu[
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.ptr + input_size,
+                    output.ptr.unsafe_offset(input_size),
                     inputs[i].num_elements(),
                     owning=False,
                 )

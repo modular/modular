@@ -358,7 +358,7 @@ def gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr + indices.num_elements()
+    var end_indices_ptr = indices.ptr.unsafe_offset(indices.num_elements())
 
     @__parameter
     @__copy_capture(end_indices_ptr)
@@ -390,13 +390,13 @@ def gather[
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // size_of[indices_type]()
             # assumes that indices are laid out in row major order
-            var next_idx_ptr = indices_ptr + min(
-                indices_remaining - 1, prefetch_offset
+            var next_idx_ptr = indices_ptr.unsafe_offset(
+                min(indices_remaining - 1, prefetch_offset)
             )
             input_coords[axis] = rebind[input_coords.element_types[axis]](
                 Int64(
                     _unsafe_normalize_neg_index(
-                        next_idx_ptr.load(),
+                        next_idx_ptr.unsafe_load(),
                         Int(input.dim[axis]()),
                     )
                 )
@@ -529,7 +529,7 @@ def gather_elementwise_fn_wrapper[
     indices_shape: IndexList,
     output_shape: IndexList,
     coords: IndexList,
-    error_index_ptr: OptionalReg[UnsafePointer[Int, MutAnyOrigin]] = None,
+    error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]] = None,
 ):
     """Performs a single elementwise gather step for one output coordinate.
 
@@ -714,12 +714,10 @@ def gather[
 
         # Create an error reporting location since we cannot raise from an elementwise lambda.
         var error_index: Int = -1
-        var error_index_ptr = OptionalReg[UnsafePointer[Int, MutAnyOrigin]](
-            None
-        )
+        var error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](None)
         comptime if is_cpu[target]():
-            error_index_ptr = OptionalReg[UnsafePointer[Int, MutAnyOrigin]](
-                UnsafePointer[Int, MutAnyOrigin](to=error_index)
+            error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](
+                MutPointer[Int, MutAnyOrigin](to=error_index)
             )
 
         @always_inline
@@ -820,7 +818,7 @@ def _atomic_reduce[
     reduction_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], update: Scalar[dtype]):
+](ptr: MutPointer[Scalar[dtype], ...], update: Scalar[dtype]):
     """Applies `ptr[] = reduction_fn(ptr[], update)` atomically.
 
     Scatter reductions may receive duplicate index vectors, in which case
@@ -1069,7 +1067,7 @@ def scatter_nd_generator[
             comptime if reduce_fn:
                 for i in range(count_copy):
                     _atomic_reduce[reduce_fn.value()](
-                        output_flat.ptr + (output_offset + i),
+                        output_flat.ptr.unsafe_offset(output_offset + i),
                         updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
 
@@ -1150,7 +1148,9 @@ def scatter_nd_generator[
             comptime if reduce_fn:
                 comptime for lane in range(simd_width):
                     _atomic_reduce[reduce_fn.value()](
-                        output_flat.ptr + (output_base + elem + lane),
+                        output_flat.ptr.unsafe_offset(
+                            output_base + elem + lane
+                        ),
                         update_vec[lane],
                     )
             else:
@@ -1485,7 +1485,7 @@ def scatter_elements[
                     Int(output_tt.dynamic_stride(i)) * output_coords[i]
                 )
             _atomic_reduce[reduce_fn.value()](
-                output.unsafe_ptr() + output_offset, update_val
+                output.unsafe_ptr().unsafe_offset(output_offset), update_val
             )
         else:
             output.to_tile_tensor()[Coord(output_coords)] = update_val
