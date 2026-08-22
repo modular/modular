@@ -407,6 +407,36 @@ def test_decoding[
     ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_partial_head_group[
+    batch_size: Int,
+    mla_mask_type: MLAMaskType,
+    split_k: Bool = False,
+    num_partitions: Optional[Int] = 1,
+    against_gpu_naive: Bool = True,
+](
+    ctx: DeviceContext, use_index_input: Bool, seq_len: Int, num_keys: Int
+) raises:
+    """Covers head counts whose last head group is partial, with a
+    full-multiple control at the same shape so a failure is attributable to
+    the head count alone. The smallest count leaves a tail narrower than the
+    output swizzle atom, which checks that the store bounds rows at element
+    granularity rather than atom granularity.
+    """
+    comptime for num_heads in [128, 96, 72, 68]:
+        test[
+            mla_mask_type,
+            DType.bfloat16,  # q_type
+            DType.float8_e4m3fn,  # kv_type  (fp8 KV)
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=against_gpu_naive,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx, use_index_input=use_index_input)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
@@ -424,5 +454,16 @@ def main() raises:
             test_decoding[27, MLAMaskType.CAUSAL](ctx, False, 5, 50)
             test_decoding[64, MLAMaskType.CAUSAL](ctx, False, 6, 517)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768 * 2)
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK](
+                ctx, False, 1, 1024
+            )
+            test_decoding_partial_head_group[2, MLAMaskType.CAUSAL](
+                ctx, False, 2, 4096
+            )
+            # Under split-K a tail overrun would corrupt the next split's
+            # partials, which the combine kernel then folds into the output.
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK, True, 2](
+                ctx, False, 1, 1024
+            )
         else:
             pass

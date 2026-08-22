@@ -886,6 +886,31 @@ def test_decoding[
         ](1, 2048, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_partial_head_group[
+    batch_size: Int,
+    num_partitions: Optional[Int],
+    split_k: Bool,
+    qkv_type: DType = DType.bfloat16,
+    output_type: DType = qkv_type,
+](ctx: DeviceContext, use_index_input: Bool) raises:
+    """Covers head counts whose last head group is partial, with a
+    full-multiple control at the same shape so a failure is attributable to
+    the head count alone.
+    """
+    comptime for num_heads in [128, 96, 72]:
+        test[
+            qkv_type,
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            output_type=output_type,
+        ](1, 1024, ctx, use_index_input=use_index_input)
+
+
 def test_mla_prefill[
     batch_size: Int,
     qkv_type: DType,
@@ -1035,6 +1060,13 @@ def main() raises:
         test_decoding[27, 1, False](ctx, False)
         test_decoding[128, 1, False](ctx, False)
         test_decoding[0, 1, False](ctx, False)
+
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            test_decoding_partial_head_group[1, 1, False](ctx, False)
+            test_decoding_partial_head_group[2, 1, False](ctx, False)
+            # Under split-K a tail overrun would corrupt the next split's
+            # partials, which the combine kernel then folds into the output.
+            test_decoding_partial_head_group[1, 2, True](ctx, False)
 
         comptime if has_amd_gpu_accelerator():
             test_decoding[1, 4, False](ctx, False)
