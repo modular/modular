@@ -34,8 +34,8 @@ def _fake_plan_from_sizes(
 ) -> MemoryPlan:
     """Stands in for ``plan_from_sizes`` without touching devices.
 
-    Mirrors the config's own values so that publishing the plan back onto the
-    config is a no-op.
+    Mirrors the config's own values so readers that consume the plan see
+    the construction-resolved configuration.
     """
     return MemoryPlan(
         max_batch_size=1,

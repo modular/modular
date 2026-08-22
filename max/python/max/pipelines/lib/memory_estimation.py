@@ -233,9 +233,9 @@ class MemoryEstimator:
 
         Called by the registry's ``retrieve_factory`` after the config is
         constructed. Gathers the sizes and the draft-model bound that
-        :meth:`plan_from_sizes` needs, runs it, and publishes the
-        resulting values onto the config for readers that have not yet
-        migrated to the plan.
+        :meth:`plan_from_sizes` needs and runs it. Nothing is written back
+        to ``pipeline_config``, which keeps carrying the
+        construction-resolved values unchanged.
         """
         # Multi-component pipelines (diffusion models) have no "main" model entry
         # — they store per-component configs (transformer, vae, text_encoder, etc.)
@@ -319,14 +319,6 @@ class MemoryEstimator:
             arch=arch,
             max_batch_size=max_batch_size,
             draft_max_seq_len=draft_max_seq_len,
-        )
-
-        # The only place planning output is written onto the config. Readers still
-        # consume both fields from the config; follow-up changes repoint them at
-        # the plan, after which this publish step goes away.
-        model_config.max_length = plan.max_length
-        pipeline_config.runtime.max_batch_total_tokens = (
-            plan.max_batch_total_tokens
         )
 
         # TODO(MXF-517): Fold this into a consolidated startup logger that reports

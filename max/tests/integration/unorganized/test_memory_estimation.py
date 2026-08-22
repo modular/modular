@@ -224,9 +224,9 @@ def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
         assert plan.max_batch_total_tokens == 2048
 
 
-def test_for_pipeline__publishes_plan_values_onto_config() -> None:
-    """Until readers migrate to the plan, planning publishes its resolved
-    values onto the config in one place, at the end."""
+def test_plan__leaves_config_unchanged() -> None:
+    """Planning resolves effective values onto the plan; the config keeps
+    carrying the construction-resolved ``max_length`` unchanged."""
     config = _dummy_llama_config(max_length=4096)
     with (
         patch(
@@ -322,6 +322,44 @@ def test_shrink_to_fit__skipped_for_user_provided_max_length() -> None:
                 10 * MIB,
                 40 * MIB,
             )
+
+
+def test_plan__kv_clamp_bounds_plan_not_config() -> None:
+    """The KV-capacity clamp lowers the plan's ``max_length``, not the config.
+
+    With 64 MiB of device memory, the KV budget is ``int(0.9 * 64 MiB) - 1000``
+    weight bytes, which holds 28 pages of the dummy's 2 MiB page (2 KV tensors
+    x 4 layers x 128 tokens x 8 heads x 128 head_dim x 2 bytes), so the real
+    clamp computation bounds a request to 28 x 128 = 3584 tokens -- below the
+    construction-resolved 4096 (the model's ``max_position_embeddings``),
+    which stays on the config untouched.
+    """
+    arch = dataclasses.replace(
+        DUMMY_LLAMA_ARCH, requires_max_batch_context_length=True
+    )
+    config = _dummy_llama_config(max_length=4096)
+    with (
+        patch(
+            "max.pipelines.lib.memory_estimation.load_devices",
+            return_value=[CPU()],
+        ),
+        patch(
+            "max.driver.Device.stats", new_callable=PropertyMock
+        ) as device_mock,
+    ):
+        device_mock.return_value = {"free_memory": 64 * 1024 * 1024}
+        plan = MemoryEstimator.plan(config, arch)
+    assert plan.max_length == 3584
+    assert plan.max_batch_total_tokens == 3584
+    assert config.model.max_length == 4096
+    assert config.runtime.max_batch_total_tokens is None
+
+
+def test_estimate__draft_bound_lowers_plan_max_length() -> None:
+    """A draft model's own sequence limit bounds the plan, not the config."""
+    config = _dummy_llama_config(max_length=4096)
+    estimate = _estimate(config, draft_max_seq_len=1500)
+    assert estimate.max_length == 1500
     assert config.model.max_length == 4096
 
 

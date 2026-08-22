@@ -219,6 +219,13 @@ This version is still a work in progress.
   `ArchConfigWithAttentionKVCache.user_provided_max_length` and
   `model_max_seq_len` are removed; architectures own the rule, so Mistral,
   Mistral3 and Pixtral now bound `max_length` on their configs.
+
+- Memory planning no longer writes its planned `max_length` and
+  `max_batch_total_tokens` back onto the pipeline config. After startup,
+  `PipelineConfig.model.max_length` keeps the construction-resolved value
+  and `PipelineConfig.runtime.max_batch_total_tokens` keeps the
+  user-provided value (`None` when unset); the VRAM-clamped effective
+  values live on `MemoryPlan`.
 - Made `MemoryEstimator.free_memory`, `static_memory_size`,
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and
