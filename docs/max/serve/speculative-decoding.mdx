@@ -38,11 +38,11 @@ requirements](/packages#system-requirements).
 MAX supports common speculative-decoding methods like EAGLE, EAGLE3,
 MTP, and DFlash.
 
-| Method   | Draft source                                                                     | Supported targets and hardware                                             |
-|----------|----------------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| `eagle`  | A trained EAGLE or EAGLE3 draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                             |
-| `mtp`    | A native multi-token prediction head inside the target checkpoint                | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU). |
-| `dflash` | A trained DFlash draft (a multi-layer block transformer) paired with the target  | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                                      |
+| Method   | Draft source                                                                     | Supported targets and hardware                                                                |
+|----------|----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| `eagle`  | A trained EAGLE or EAGLE3 draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                                                |
+| `mtp`    | A native multi-token prediction head inside the target checkpoint                | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU), Inkling (8× B200). |
+| `dflash` | A trained DFlash draft (a multi-layer block transformer) paired with the target  | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                                                         |
 
 ## Serve with speculative decoding
 

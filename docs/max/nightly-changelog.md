@@ -32,6 +32,10 @@ This version is still a work in progress.
     proportional to actual sequence lengths (per-layer kernel cost measured
     flat across frozen bounds), and a weekly long-context serving benchmark
     tracks the end-to-end throughput at this configuration.
+- Added multi-token prediction (MTP) speculative decoding for Inkling
+  (`UnifiedMTPInklingForConditionalGeneration`), serving the checkpoint's
+  chained dense draft depths; enabled automatically for Inkling checkpoints
+  that ship `mtp_config` with `--speculative-method mtp`.
 - Added Laguna (`LagunaForCausalLM`) support for
   `poolside/Laguna-M.1-NVFP4`, including tool calling.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`) support for

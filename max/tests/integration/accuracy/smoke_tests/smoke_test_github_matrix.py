@@ -146,6 +146,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     # Jenga requires data_parallel_degree=1 and doesn't support KVConnector /
     # disaggregated serving yet, so it can't run on multi-GPU runners.
     "google/gemma-4-31B-it__jenga": MULTI,
+    "thinkingmachines/Inkling-Small-NVFP4__mtp": B200_2X_ONLY,
 }
 
 MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}

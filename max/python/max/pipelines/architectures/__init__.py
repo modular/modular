@@ -190,6 +190,11 @@ def register_all_models() -> None:
         _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"
         ),
+        _LazyArch(
+            "UnifiedMTPInklingForConditionalGeneration",
+            ".unified_mtp_inkling",
+            "unified_mtp_inkling_arch",
+        ),
         _LazyArch("InternVLChatModel", ".internvl", "internvl_arch"),
         _LazyArch(
             "Eagle3DeepseekV2ForCausalLM", ".kimik2_5", "eagle3_kimik25_arch"
