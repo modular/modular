@@ -11,127 +11,123 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.builtin.rebind import rebind
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Deque copy (trivial type: Int)
 # ===-----------------------------------------------------------------------===#
-@parameter
-fn bench_deque_copy_int[size: Int](mut b: Bencher) raises:
+def bench_deque_copy_int[size: Int](mut b: Bencher) raises:
     var q = Deque[Int]()
     for i in range(size):
         q.append(i)
 
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() {imm}:
         var p = black_box(q).copy()
         keep(p)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(q))
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Deque copy (non-trivial type: String)
 # ===-----------------------------------------------------------------------===#
-@parameter
-fn bench_deque_copy_string[size: Int](mut b: Bencher) raises:
+def bench_deque_copy_string[size: Int](mut b: Bencher) raises:
     var q = Deque[String]()
     for i in range(size):
         q.append(String("item_") + String(i))
 
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() {imm}:
         var p = black_box(q).copy()
-        keep(len(p[size - 1]))
+        keep(p[size - 1].byte_length())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
     keep(Bool(q))
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Deque extend (trivial type: Int)
 # ===-----------------------------------------------------------------------===#
-@parameter
-fn bench_deque_extend_int[size: Int](mut b: Bencher) raises:
+def bench_deque_extend_int[size: Int](mut b: Bencher) raises:
     var lst = List[Int]()
     for i in range(size):
         lst.append(i)
 
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() {imm}:
         var q = Deque[Int]()
         q.extend(black_box(lst).copy())
         keep(q[size - 1])
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Deque extend (non-trivial type: String)
 # ===-----------------------------------------------------------------------===#
-@parameter
-fn bench_deque_extend_string[size: Int](mut b: Bencher) raises:
+def bench_deque_extend_string[size: Int](mut b: Bencher) raises:
     var lst = List[String]()
     for i in range(size):
         lst.append(String("item_") + String(i))
 
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() {imm}:
         var q = Deque[String]()
         q.extend(black_box(lst).copy())
-        keep(len(q[size - 1]))
+        keep(q[size - 1].byte_length())
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Deque append triggering realloc (trivial type: Int)
 # ===-----------------------------------------------------------------------===#
-@parameter
-fn bench_deque_append_int[size: Int](mut b: Bencher) raises:
+def bench_deque_append_int[size: Int](mut b: Bencher) raises:
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() {imm}:
         var q = Deque[Int]()
         for i in range(size):
             q.append(black_box(i))
         keep(q[size - 1])
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=20))
     comptime sizes = (100, 1_000, 10_000, 100_000)
 
-    comptime
-    for i in range(len(sizes)):
-        comptime size = sizes[i]
-        m.bench_function[bench_deque_copy_int[size]](
-            BenchId(String("bench_deque_copy_int[", size, "]"))
+    comptime for i in range(len(sizes)):
+        comptime size = rebind[Int](sizes[i])
+        comptime suffix = String("[", size, "]")
+        m.bench_function(
+            bench_deque_copy_int[size],
+            BenchId(String("bench_deque_copy_int", suffix)),
         )
-        m.bench_function[bench_deque_copy_string[size]](
-            BenchId(String("bench_deque_copy_string[", size, "]"))
+        m.bench_function(
+            bench_deque_copy_string[size],
+            BenchId(String("bench_deque_copy_string", suffix)),
         )
-        m.bench_function[bench_deque_extend_int[size]](
-            BenchId(String("bench_deque_extend_int[", size, "]"))
+        m.bench_function(
+            bench_deque_extend_int[size],
+            BenchId(String("bench_deque_extend_int", suffix)),
         )
-        m.bench_function[bench_deque_extend_string[size]](
-            BenchId(String("bench_deque_extend_string[", size, "]"))
+        m.bench_function(
+            bench_deque_extend_string[size],
+            BenchId(String("bench_deque_extend_string", suffix)),
         )
-        m.bench_function[bench_deque_append_int[size]](
-            BenchId(String("bench_deque_append_int[", size, "]"))
+        m.bench_function(
+            bench_deque_append_int[size],
+            BenchId(String("bench_deque_append_int", suffix)),
         )
 
     results = Dict[String, Tuple[Float64, Int]]()
