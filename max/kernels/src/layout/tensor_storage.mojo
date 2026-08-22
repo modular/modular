@@ -84,20 +84,6 @@ trait TensorStorage:
     """
 
     comptime element_size: Int = 1
-    """Number of scalar elements per logical element.
-
-    A value of `1` (the default) is a non-vectorized tensor whose logical
-    elements are plain scalars; larger values describe a vectorized view whose
-    logical elements are `SIMD[dtype, element_size]` vectors. The generic
-    `copy_from` and elementwise bodies in this trait read `element_size` to
-    assert matching vectorization across operands and to size the `SIMD`
-    loads/stores against the concrete storage policy.
-
-    Conforming policies implement this as an alias of their `element_width`
-    struct parameter (`PointerStorage`, `DevicePointerStorage`,
-    `StaticOffsetStorage`); the trait exposes only `element_size` so generic
-    code does not name the per-policy parameter.
-    """
 
     comptime _BASE_TYPE_NAME: StaticString
     """The unparameterized name of the conforming storage policy.

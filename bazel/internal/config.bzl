@@ -203,18 +203,14 @@ def get_default_test_env(exec_properties):
     """Get environment variables that should be shared between different test target types.
 
     Args:
-        exec_properties: The target's 'exec_properties'. A `select()` here has
-            no load-time keys to read, so it takes the default memory limit.
+        exec_properties: The target's 'exec_properties'
 
     Returns:
         A dictionary that should be added to the test target's 'env'
     """
-    gpu_memory = DEFAULT_GPU_MEMORY
-    if type(exec_properties) == "dict":
-        gpu_memory = exec_properties.get("test.resources:gpu-memory", DEFAULT_GPU_MEMORY)
 
     # TODO(MOTO-1512): 0.6 accounts for unknown overhead
-    gpu_memory_limit = float(gpu_memory)
+    gpu_memory_limit = float(exec_properties.get("test.resources:gpu-memory", DEFAULT_GPU_MEMORY))
     adjusted_gpu_memory_limit = gpu_memory_limit - 0.6
     if adjusted_gpu_memory_limit < 0.0:
         fail("GPU memory limit must be at least 1 GiB, got: {}".format(gpu_memory_limit))

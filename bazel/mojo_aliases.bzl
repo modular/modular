@@ -43,6 +43,8 @@ INTERNAL_PACKAGES = [
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
     "//Kernels/src/mega_ffn",
+    "//max/internal/driver/src/_hal",
+    "//max/internal/driver/src/machine",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets

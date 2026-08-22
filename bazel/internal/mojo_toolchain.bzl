@@ -50,15 +50,13 @@ def _mojo_toolchain_impl(ctx):
     if ctx.attr.extra_build_env:
         build_env.update(ctx.attr.extra_build_env[MojoBuildEnvInfo].env)
 
-    # Stage the driver plugin in every mojo target's runfiles so tests can name
-    # it without repeating the dependency.  Deliberately not exported through
-    # `runtime_env`: rules_mojo applies the toolchain's runtime env *after* the
-    # target's own `env`, so setting MODULAR_DRIVER_PLUGINS here would make it
-    # impossible for a target to select a different plugin for the same
-    # accelerator.  Targets set MODULAR_DRIVER_PLUGINS themselves.
+    # Expose driver plugin for test runtime.  The runtime_env and
+    # extra_runfiles fields are merged by rules_mojo into RunEnvironmentInfo
+    # so tests find the plugin without a hardcoded --test_env in local.bazelrc.
     runtime_env = {}
     extra_runfiles = []
     if ctx.file.driver_plugin:
+        runtime_env["MODULAR_DRIVER_PLUGINS"] = ctx.file.driver_plugin.short_path
         extra_runfiles.append(ctx.file.driver_plugin)
 
     return [
