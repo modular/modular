@@ -24,12 +24,13 @@ from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import (
+    unsafe_memcmp,
     pack_bits,
     unsafe_uninit_copy_n,
 )
 from std.collections import check_bounds, check_slice_bounds
 from std.builtin.rebind import downcast
-from std.sys import align_of
+from std.sys import align_of, size_of
 from std.sys.info import simd_width_of
 from std.traits import IsTriviallyCopyable, IsTriviallyDeinitable
 
@@ -37,6 +38,29 @@ from std.algorithm import vectorize
 from std.hashlib import Hasher
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
+
+
+def _is_bitwise_eq_comparable[T: Equatable]() -> Bool:
+    """Returns True if the type has bitwise equality semantics.
+
+    This is true for integer and boolean types, where `memcmp` can safely
+    replace element-wise comparison. Float types are excluded because
+    IEEE 754 requires NaN != NaN and +0.0 == -0.0, which differ from
+    bitwise comparison.
+    """
+    return (
+        T == Byte
+        or T == Int8
+        or T == UInt16
+        or T == Int16
+        or T == UInt32
+        or T == Int32
+        or T == UInt64
+        or T == Int64
+        or T == UInt
+        or T == Int
+        or T == Bool
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -717,6 +741,16 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
+        # Fast path: use memcmp for types with bitwise equality semantics.
+        comptime if _is_bitwise_eq_comparable[Self.T]():
+            return (
+                unsafe_memcmp(
+                    self.unsafe_ptr().unsafe_bitcast[Byte](),
+                    rhs.unsafe_ptr().unsafe_bitcast[Byte](),
+                    len(self) * size_of[Self.T](),
+                )
+                == 0
+            )
         for i in range(len(self)):
             if self[i] != rhs[i]:
                 return False

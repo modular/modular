@@ -87,6 +87,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Span.__eq__` now uses `memcmp` for integer and boolean element types
+  instead of an element-by-element loop.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
