@@ -184,7 +184,7 @@ class UnifiedDflashGemma4_31BModel(
         self, state_dict: dict[str, Any]
     ) -> UnifiedDflashGemma4_31BConfig:
         unified_config = UnifiedDflashGemma4_31BConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         unified_config.validate_dflash_fields()
         target_hf_config = self.huggingface_config

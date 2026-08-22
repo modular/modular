@@ -23,7 +23,9 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
@@ -101,6 +103,19 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        model_config = model_config or pipeline_config.model
+        return upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=model_config.max_length,
+        )
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
@@ -159,6 +174,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -193,11 +210,6 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             graph_mode = "decode"
         else:
             graph_mode = "auto"
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=huggingface_config.max_position_embeddings,
-            default=model_config.max_length,
-        )
 
         return cls(
             attention_bias=huggingface_config.attention_bias,

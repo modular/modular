@@ -489,6 +489,8 @@ class InklingConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -523,9 +525,7 @@ class InklingConfig(ArchConfigWithKVCache):
             # bfloat16 even for NVFP4: FP4 covers only the routed experts.
             dtype=DType.bfloat16,
             kv_params=kv_params,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             text_config=InklingTextConfig.from_hf(
                 huggingface_config.text_config
             ),

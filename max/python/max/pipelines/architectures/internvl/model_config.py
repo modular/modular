@@ -204,9 +204,12 @@ class InternVLConfig(ArchConfigWithKVCache):
         ConfigCls = _select_llm_config_class(llm_hf_cfg)
         return ConfigCls.get_num_layers(llm_hf_cfg)
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
         """Calculate maximum sequence length for InternVL."""
         # Delegate to the selected decoder family for language model parameters.
@@ -215,8 +218,9 @@ class InternVLConfig(ArchConfigWithKVCache):
         )
         ConfigCls = _select_llm_config_class(llm_hf_cfg)
         return ConfigCls.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
+            pipeline_config,
             huggingface_config=llm_hf_cfg,
+            model_config=model_config,
         )
 
     @override
@@ -225,6 +229,8 @@ class InternVLConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an InternVLConfig instance from pipeline configuration.
 
@@ -236,12 +242,18 @@ class InternVLConfig(ArchConfigWithKVCache):
         """
         model_config = model_config or pipeline_config.model
         return cls.initialize_from_config(
-            pipeline_config, model_config.huggingface_config
+            pipeline_config,
+            model_config.huggingface_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an InternVLConfig from pipeline and HuggingFace configs.
 
@@ -272,12 +284,12 @@ class InternVLConfig(ArchConfigWithKVCache):
         llm_config: Qwen2Config | Qwen3Config
         if ConfigCls is Qwen3Config:
             llm_config = Qwen3Config.initialize_from_config(
-                pipeline_config, hf_llm_config
+                pipeline_config, hf_llm_config, max_seq_len=max_seq_len
             )
         else:
             # Qwen2 semantics (delegates to Llama3-style config under the hood)
             llm_config = Qwen2Config.initialize_from_config(
-                pipeline_config, hf_llm_config
+                pipeline_config, hf_llm_config, max_seq_len=max_seq_len
             )
 
         quantization_encoding = _select_quantization_encoding(

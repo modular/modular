@@ -114,9 +114,13 @@ class DiffusionGemmaForBlockDiffusionConfig(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         view = _diffusion_hf_config_view(huggingface_config)
-        cfg = super().initialize_from_config(pipeline_config, view)
+        cfg = super().initialize_from_config(
+            pipeline_config, view, max_seq_len=max_seq_len
+        )
         cfg.canvas_length = huggingface_config.canvas_length
         cfg.boi_token_id = huggingface_config.boi_token_id
         cfg.eoi_token_id = huggingface_config.eoi_token_id

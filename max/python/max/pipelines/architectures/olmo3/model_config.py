@@ -158,6 +158,8 @@ class Olmo3Config(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Olmo3Config instance from pipeline configuration.
 
@@ -272,9 +274,7 @@ class Olmo3Config(
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=Olmo3Config.get_head_dim(huggingface_config),
             hidden_activation=hidden_activation,
-            max_position_embeddings=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config, model_config
-            ),
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=get_rope_theta(huggingface_config),
             attention_bias=huggingface_config.attention_bias,

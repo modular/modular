@@ -132,7 +132,9 @@ class InklingModel(
     def _create_model_config(self, state_dict: dict[str, Any]) -> InklingConfig:
         # Quantization is read off the loaded weights; the checkpoint config
         # may not declare it.
-        model_config = InklingConfig.initialize(self.pipeline_config)
+        model_config = InklingConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(self.huggingface_config, state_dict)
         return model_config
 

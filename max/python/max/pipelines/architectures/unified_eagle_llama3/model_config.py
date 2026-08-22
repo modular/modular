@@ -26,6 +26,7 @@ from max.pipelines.lib.config import (
     SpeculativeConfig,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -68,18 +69,27 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
         target_config = Llama3Config.initialize_from_config(
-            pipeline_config, model_config.huggingface_config, model_config
+            pipeline_config,
+            model_config.huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
+        # Resolved at construction by PipelineConfig._resolve_max_length.
+        draft_max_length = pipeline_config.draft_model.max_length
+        assert draft_max_length is not None
         draft_config = Llama3Config.initialize_from_config(
             pipeline_config,
             pipeline_config.draft_model.huggingface_config,
             pipeline_config.draft_model,
+            max_seq_len=draft_max_length,
         )
         assert pipeline_config.speculative is not None
 
@@ -91,3 +101,14 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        return Llama3Config.calculate_max_seq_len(
+            pipeline_config, huggingface_config, model_config
+        )

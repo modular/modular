@@ -203,7 +203,7 @@ class UnifiedMTPGemma4Model(
         self, state_dict: dict[str, Any]
     ) -> Gemma4ForConditionalGenerationConfig:
         config = Gemma4ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         config.finalize(
             huggingface_config=self.huggingface_config,
@@ -523,14 +523,6 @@ class UnifiedMTPGemma4Model(
             *raw.cu_seqlens,
             *raw.pool_gather_index,
             raw.max_seq_len,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )
 
     def _convert_draft_weights(

@@ -132,7 +132,7 @@ class Gemma3MultiModalModelV3(
         assert self._max_batch_size, "Expected max_batch_size to be set"
 
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

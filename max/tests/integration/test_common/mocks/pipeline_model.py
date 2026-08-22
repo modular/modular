@@ -116,17 +116,18 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
-        derived_max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, self.huggingface_config
-        )
         planned_max_length = (
             memory_plan.max_length if memory_plan is not None else None
         )
-        self.max_seq_len = (
-            planned_max_length
-            if planned_max_length is not None
-            else derived_max_seq_len
-        )
+        if planned_max_length is not None:
+            self.max_seq_len = planned_max_length
+        else:
+            # The mock's fixed 1200 clamp, applied to the config's resolved
+            # max_length when one is set.
+            config_max_length = pipeline_config.model.max_length
+            self.max_seq_len = (
+                min(1200, config_max_length) if config_max_length else 1200
+            )
         self._lora_manager = (
             LoRAManagerV3(
                 config=self.pipeline_config.lora,
@@ -152,16 +153,6 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
                 f"model '{self.pipeline_config.model.model_path}'."
             )
         return config
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        MAX_LENGTH = 1200
-        if pipeline_config.model.max_length:
-            return min(MAX_LENGTH, pipeline_config.model.max_length)
-
-        return MAX_LENGTH
 
     @classmethod
     def get_kv_params(

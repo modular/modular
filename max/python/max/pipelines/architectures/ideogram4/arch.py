@@ -24,6 +24,7 @@ from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from .pipeline_ideogram4 import Ideogram4Pipeline
@@ -42,10 +43,22 @@ class Ideogram4ArchConfig(ArchConfig):
         return 0
 
     @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        del pipeline_config, huggingface_config, model_config
+        return 0
+
+    @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         # Diffusion pipelines have no single "main" model; component configs
         # live in ``pipeline_config.models``. Use any component to read the

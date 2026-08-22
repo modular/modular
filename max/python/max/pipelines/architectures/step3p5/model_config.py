@@ -170,6 +170,8 @@ class Step3p5Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Step3p5Config instance from pipeline configuration.
 
@@ -189,7 +191,10 @@ class Step3p5Config(Llama3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @staticmethod
@@ -250,6 +255,8 @@ class Step3p5Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Step3p5Config instance from pipeline and HuggingFace configs.
 
@@ -266,7 +273,10 @@ class Step3p5Config(Llama3Config):
         )
 
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_cache_config = pipeline_config.model.kv_cache

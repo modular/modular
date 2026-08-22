@@ -168,7 +168,9 @@ class UnifiedEagleLlama3Model(
         target_hf_config = self.huggingface_config
         assert target_hf_config is not None
 
-        target_config = Llama3Config.initialize(self.pipeline_config)
+        target_config = Llama3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         target_config.finalize(
             huggingface_config=target_hf_config,
             state_dict=state_dict,
@@ -177,7 +179,10 @@ class UnifiedEagleLlama3Model(
         )
 
         draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config, draft_model_config
+            self.pipeline_config,
+            draft_hf_config,
+            draft_model_config,
+            max_seq_len=self.max_seq_len,
         )
         # The draft model config may default to gpu:0. Override its
         # devices to match the target so weights land on the correct GPU

@@ -208,6 +208,8 @@ class Gemma3ForConditionalGenerationConfig(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3ForConditionalGenerationConfig instance from pipeline configuration.
 
@@ -225,13 +227,17 @@ class Gemma3ForConditionalGenerationConfig(
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3ForConditionalGenerationConfig from pipeline and HuggingFace configs.
 
@@ -285,6 +291,7 @@ class Gemma3ForConditionalGenerationConfig(
         text_config = Gemma3Config.initialize_from_config(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_params = cls.construct_kv_params(

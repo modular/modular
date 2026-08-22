@@ -74,7 +74,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
 
         raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
         model_config = DiffusionGemmaForBlockDiffusionConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

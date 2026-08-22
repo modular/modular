@@ -278,9 +278,7 @@ class KimiK2_5Model(
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-        )
+        max_batch_total_tokens = self.planned_max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -389,7 +387,9 @@ class KimiK2_5Model(
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = KimiK2_5TextConfig.initialize(self.pipeline_config)
+        model_config = KimiK2_5TextConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
@@ -520,6 +520,7 @@ class KimiK2_5Model(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_config=config,
+            max_seq_len=self.max_seq_len,
         )
         self.model_config = kimik2_5_config
         self.nn_model = KimiK2_5(self.model_config)

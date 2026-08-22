@@ -100,6 +100,8 @@ class MiniMaxM2Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a MiniMaxM2Config from pipeline configuration.
 
@@ -117,7 +119,9 @@ class MiniMaxM2Config(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @override
     @classmethod
@@ -126,6 +130,8 @@ class MiniMaxM2Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a MiniMaxM2Config from pipeline and HuggingFace configs.
 
@@ -139,7 +145,10 @@ class MiniMaxM2Config(Llama3Config):
         """
         # Get base config from Llama3Config
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_cache_config = pipeline_config.model.kv_cache

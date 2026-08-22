@@ -1385,6 +1385,58 @@ class TestConstructionResolution:
             assert _model(config).device_specs == [GPU_DEVICE_SPEC]
 
     @prepare_registry
+    def test_max_length_resolved_at_construction(self) -> None:
+        """With --max-length unset, construction runs each architecture's
+        sequence-length policy once: the main config carries its own
+        checkpoint bound, the draft carries the draft's, and the args keep
+        recording the raw user intent. The draft clamp is planning-only, so
+        the main value is not lowered here."""
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with (
+            tempfile.TemporaryDirectory() as target_dir,
+            tempfile.TemporaryDirectory() as draft_dir,
+        ):
+            _make_local_repo(
+                target_dir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            _make_local_repo(
+                draft_dir,
+                hf_config={**_LLAMA_CONFIG, "max_position_embeddings": 1024},
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            args = PipelineArgs(
+                model_path=target_dir,
+                device_specs=[GPU_DEVICE_SPEC],
+                draft_model=MAXModelConfig(
+                    model_path=draft_dir, device_specs=[GPU_DEVICE_SPEC]
+                ),
+                speculative=SpeculativeConfig(speculative_method="mtp"),
+            )
+            config = PipelineConfig.from_args(args)
+            assert args.max_length is None
+            assert _model(config).max_length == 2048
+            draft = config.draft_model
+            assert draft is not None
+            assert draft.max_length == 1024
+
+    @prepare_registry
+    def test_max_length_over_checkpoint_bound_rejected(self) -> None:
+        """A user max_length above a bounded architecture's checkpoint limit
+        is rejected at construction, where the policy now runs."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            # _LLAMA_CONFIG caps max_position_embeddings at 2048.
+            with pytest.raises(ValueError, match="exceeds the upper bound"):
+                self._from_args(tmpdir, max_length=4096)
+
+    @prepare_registry
     def test_unknown_arch_rejected_at_construction(self) -> None:
         """A determinable but unregistered architecture fails construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)

@@ -87,6 +87,7 @@ def _make_model(*, dtype: DType) -> NonCallableMock:
     (state-dict-independent fields are irrelevant to this bug)."""
     model = NonCallableMock(spec=UnifiedMTPDeepseekV3Model)
     model.dtype = dtype
+    model.max_seq_len = 163840
 
     huggingface_config = MagicMock()
     huggingface_config.hidden_size = 7168

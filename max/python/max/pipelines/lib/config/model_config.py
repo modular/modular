@@ -694,8 +694,9 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Maximum sequence length the model can process. If not specified, "
-            "defaults to the model's ``max_position_embeddings``. May be clamped "
-            "during resolution based on available memory."
+            "defaults to the model's ``max_position_embeddings``. Resolved to "
+            "the architecture's policy value at construction; memory planning "
+            "may lower it for VRAM on the memory plan only, never here."
         ),
     )
     """The maximum sequence length the model can process."""
@@ -707,6 +708,18 @@ class MAXModelConfig(MAXModelConfigBase):
         if v is not None and v < 0:
             raise ValueError("max_length must be non-negative")
         return v
+
+    @property
+    def max_length_is_user_provided(self) -> bool:
+        """Whether the user set ``max_length``, rather than the architecture.
+
+        Memory planning may shrink a resolved default to fit device memory,
+        but never a length the user asked for.
+        """
+        captured = getattr(self, "_max_length_user_provided", None)
+        if captured is not None:
+            return captured
+        return self.max_length is not None
 
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
@@ -886,6 +899,14 @@ class MAXModelConfig(MAXModelConfigBase):
     ``None`` when never resolved, ``(None, None)`` when resolved with no
     cast. Persisted because re-deriving against the populated
     ``weight_path`` gives a different answer for casted checkpoints."""
+
+    _max_length_user_provided: bool | None = PrivateAttr(default=None)
+    """Whether ``max_length`` was explicitly supplied, captured before the
+    architecture's sequence-length policy overwrites the field at
+    construction. A private attr (not a field) because it is derived state:
+    it must never surface as a CLI flag or a config-file key. ``None`` on
+    paths that bypass capture (e.g. ``model_construct``); readers fall back
+    to the field's presence via :attr:`max_length_is_user_provided`."""
 
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.

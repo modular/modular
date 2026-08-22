@@ -256,8 +256,18 @@ class MemoryEstimator:
             ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
         )
         devices = load_devices(effective_specs)
+        # No plan exists yet, so this config gets the resolved length; the
+        # pipeline model's config later gets the clamped one.
+        if model_config.max_length is None:
+            raise ValueError(
+                "max_length is unresolved. Construct the config through "
+                "PipelineConfig.from_args, which runs the architecture's "
+                "sequence-length policy, or set max_length explicitly."
+            )
         arch_config = arch.config.initialize(
-            pipeline_config, model_config=model_config
+            pipeline_config,
+            model_config=model_config,
+            max_seq_len=model_config.max_length,
         )
 
         max_batch_size = pipeline_config.runtime.max_batch_size
@@ -285,15 +295,18 @@ class MemoryEstimator:
                 arch_config
             )
 
-        # Under speculative decoding the draft shares the target's KV cache, so
-        # its own limit bounds the pipeline's. Resolved here because the
-        # estimator never sees the draft architecture.
+        # Under speculative decoding the draft shares the target's KV cache,
+        # so its own limit bounds the pipeline's.
         draft_max_seq_len = None
         if draft_arch is not None and pipeline_config.draft_model is not None:
-            draft_arch_config = draft_arch.config.initialize(
-                pipeline_config, model_config=pipeline_config.draft_model
-            )
-            draft_max_seq_len = draft_arch_config.get_max_seq_len()
+            draft_max_seq_len = pipeline_config.draft_model.max_length
+            if draft_max_seq_len is None:
+                raise ValueError(
+                    "The draft model's max_length is unresolved. Construct "
+                    "the config through PipelineConfig.from_args, which runs "
+                    "the draft architecture's sequence-length policy, or set "
+                    "max_length on the draft model config explicitly."
+                )
 
         plan = cls.plan_from_sizes(
             pipeline_config,
@@ -483,6 +496,16 @@ class MemoryEstimator:
         """
         device_specs = tuple(model_config.device_specs)
 
+        # Construction already applied the architecture's policy; the clamps
+        # below only lower it.
+        resolved_max_seq_len = model_config.max_length
+        if resolved_max_seq_len is None:
+            raise ValueError(
+                "max_length is unresolved. Construct the config through "
+                "PipelineConfig.from_args, which runs the architecture's "
+                "sequence-length policy, or set max_length explicitly."
+            )
+
         # In virtual device mode (cross-compilation), skip memory estimation
         # since we're only compiling and not actually running the model.
         # Use model defaults for max_batch_size and max_length.
@@ -493,7 +516,7 @@ class MemoryEstimator:
             )
             max_batch_size = max_batch_size or 1
             max_length = cls._bounded_by_draft(
-                model_config.max_length or arch_config.get_max_seq_len(),
+                resolved_max_seq_len,
                 draft_max_seq_len,
             )
             # Report a large cache budget since we're only cross-compiling, not
@@ -522,7 +545,7 @@ class MemoryEstimator:
             if isinstance(arch_config, ArchConfigWithKVCache):
                 raise
             max_length = cls._bounded_by_draft(
-                model_config.max_length or arch_config.get_max_seq_len(),
+                resolved_max_seq_len,
                 draft_max_seq_len,
             )
             return MemoryPlan(
@@ -596,14 +619,12 @@ class MemoryEstimator:
             pipeline_config, model_config, arch_config, arch
         )
 
-        user_provided_max_length = model_config.max_length is not None
+        # The field is set for every config after construction, so intent
+        # comes from the bit captured before it was resolved.
+        user_provided_max_length = model_config.max_length_is_user_provided
         user_provided_max_batch_size = max_batch_size is not None
 
-        max_length = (
-            model_config.max_length
-            if model_config.max_length is not None
-            else arch_config.get_max_seq_len()
-        )
+        max_length = resolved_max_seq_len
 
         if user_provided_max_batch_size:
             assert max_batch_size is not None
@@ -619,6 +640,7 @@ class MemoryEstimator:
             arch_config=arch_config,
             max_batch_size=max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
+            max_seq_len=resolved_max_seq_len,
         )
 
         # Committed KV byte budget (captured before the OOM-fit search below may
@@ -655,6 +677,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
+                max_seq_len=resolved_max_seq_len,
             )
             total_size = model_weights_size + actual_kv_cache_size
 
@@ -793,7 +816,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                max_seq_len_override=inferred_max_length,
+                max_seq_len=inferred_max_length,
             )
 
             if lower > upper:
@@ -845,7 +868,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=inferred_max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                max_seq_len_override=original_max_length,
+                max_seq_len=original_max_length,
             )
 
             if lower > upper:
@@ -868,7 +891,7 @@ class MemoryEstimator:
         arch_config: ArchConfig,
         max_batch_size: int,
         available_kv_cache_memory: int,
-        max_seq_len_override: int | None = None,
+        max_seq_len: int,
     ) -> int:
         """Calculate the KV cache size for the current configuration.
 
@@ -877,17 +900,13 @@ class MemoryEstimator:
                 parameters.
             max_batch_size: The maximum batch size.
             available_kv_cache_memory: Available memory for KV cache in bytes.
-            max_seq_len_override: Optional override for max sequence length.
-                If provided, this value is used instead of querying arch_config.
-                Useful during binary search over max_length.
+            max_seq_len: The per-sequence length to size the cache for,
+                normally the architecture's policy value
+                (:meth:`ArchConfig.calculate_max_seq_len`); binary searches
+                pass their candidate value.
         """
         if isinstance(arch_config, ArchConfigWithKVCache):
             params = arch_config.get_kv_params()
-            max_seq_len = (
-                max_seq_len_override
-                if max_seq_len_override is not None
-                else arch_config.get_max_seq_len()
-            )
             return estimated_memory_size(
                 params=params,
                 max_batch_size=max_batch_size,

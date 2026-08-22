@@ -23,6 +23,7 @@ from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from .pipeline_qwen_image import QwenImagePipeline
@@ -43,10 +44,22 @@ class QwenImageArchConfig(ArchConfig):
         return 0  # Not used for pixel generation.
 
     @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        del pipeline_config, huggingface_config, model_config
+        return 0
+
+    @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         if model_config is None:
             model_config = pipeline_config.models.get("transformer")

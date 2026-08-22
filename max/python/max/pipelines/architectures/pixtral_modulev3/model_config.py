@@ -90,27 +90,14 @@ class PixtralConfig(
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
-    ) -> int:
-        # Permissive on text_config (config path). PixtralModel upper-bounds
-        # max_length in model.py; divergence flagged for follow-up in PR.
-        model_config = model_config or pipeline_config.model
-        max_seq_len = model_config.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.text_config.max_position_embeddings
-
     @override
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a PixtralConfig instance from pipeline configuration.
 
@@ -164,9 +151,7 @@ class PixtralConfig(
             num_attention_heads=text_config.num_attention_heads,
             rms_norm_eps=text_config.rms_norm_eps,
             rope_theta=get_rope_theta(text_config),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             num_hidden_layers=text_config.num_hidden_layers,
             head_dim=text_config.head_dim,
             num_key_value_heads=text_config.num_key_value_heads,

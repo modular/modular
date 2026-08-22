@@ -92,7 +92,7 @@ class BertPipelineModel(GraphPipelineModel[TextContext]):
         self, state_dict: dict[str, Any]
     ) -> BertModelConfig:
         del state_dict
-        return BertModelConfig.initialize(self.pipeline_config)
+        return self.arch_config_as(BertModelConfig)
 
     def _build_graph_for_compile(
         self,

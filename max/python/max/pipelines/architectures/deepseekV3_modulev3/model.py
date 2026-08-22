@@ -187,9 +187,11 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = DeepseekV3Config.initialize(self.pipeline_config)
+        model_config = DeepseekV3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
+            self.planned_max_batch_total_tokens
             or model_config.max_batch_context_length
         )
 

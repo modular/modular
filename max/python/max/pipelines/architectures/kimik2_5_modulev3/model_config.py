@@ -31,7 +31,6 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -56,6 +55,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
@@ -100,11 +101,6 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-        )
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=config.max_position_embeddings,
-            default=model_config.max_length,
         )
 
         if pipeline_config.runtime.pipeline_role == "prefill_only":
@@ -384,6 +380,8 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
@@ -401,7 +399,9 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
@@ -409,6 +409,8 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         llm_config: KimiK2_5TextConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a KimiK2_5Config from pipeline and HuggingFace configs.
 
@@ -473,7 +475,9 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             )
 
         if llm_config is None:
-            llm_config = KimiK2_5TextConfig.initialize(pipeline_config)
+            llm_config = KimiK2_5TextConfig.initialize(
+                pipeline_config, max_seq_len=max_seq_len
+            )
 
         return cls(
             dtype=dtype,

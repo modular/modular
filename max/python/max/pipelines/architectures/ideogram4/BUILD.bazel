@@ -13,6 +13,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("pillow"),
         requirement("pydantic"),
+        requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/driver",
         "//max/python/max/dtype",

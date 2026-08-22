@@ -36,6 +36,7 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
+from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -397,6 +398,8 @@ class DSparkSpeculatorsDraftArchConfig:
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> DSparkSpeculatorsDraftArchConfig:
         del pipeline_config
         assert model_config is not None
@@ -417,3 +420,24 @@ class DSparkSpeculatorsDraftArchConfig:
 
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        del pipeline_config, model_config
+        layer_cfg = _get(huggingface_config, "transformer_layer_config")
+        max_pos = (
+            _get(layer_cfg, "max_position_embeddings")
+            if layer_cfg is not None
+            else None
+        )
+        if max_pos is None:
+            raise ValueError(
+                "DSpark speculators draft config is missing"
+                " transformer_layer_config.max_position_embeddings."
+            )
+        return int(max_pos)

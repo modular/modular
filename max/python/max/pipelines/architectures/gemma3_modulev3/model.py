@@ -119,7 +119,7 @@ class Gemma3Model(
             else self.huggingface_config
         )
         model_config = Gemma3Config.initialize_from_config(
-            self.pipeline_config, text_config
+            self.pipeline_config, text_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=text_config,

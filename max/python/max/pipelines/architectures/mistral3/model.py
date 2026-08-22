@@ -75,14 +75,3 @@ class Mistral3Model(MistralModel):
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        huggingface_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return super().calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )

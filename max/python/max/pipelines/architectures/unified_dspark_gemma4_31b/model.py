@@ -180,7 +180,7 @@ class UnifiedDSparkGemma4_31BModel(
         # to the drafter's trained width) before any KV params are derived
         # from it below.
         unified_config = UnifiedDSparkGemma4_31BConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         target_hf_config = self.huggingface_config
         assert target_hf_config is not None

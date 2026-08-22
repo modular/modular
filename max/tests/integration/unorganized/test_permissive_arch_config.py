@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Pins that permissive arch configs store the resolved max sequence length.
+"""Pins that permissive arch policies resolve the max sequence length.
 
-``ArchConfigWithPermissiveMaxSeqLen.get_max_seq_len`` returns the stored
-``max_position_embeddings`` field, so configs using the mixin must store the
-resolved value (the user's ``max_length`` when set), not the raw checkpoint
-bound — otherwise the tokenizer bound and KV-cache sizing ignore
-``--max-length``.
+``ArchConfigWithPermissiveMaxSeqLen.calculate_max_seq_len`` must return the
+user's ``max_length`` when set, not the raw checkpoint bound — otherwise the
+tokenizer bound and KV-cache sizing ignore ``--max-length``.
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ from transformers.models.olmo2.configuration_olmo2 import (
 )
 
 
-def _olmo2_arch_config(user_max_length: int | None) -> Olmo2Config:
+def _olmo2_pipeline_config(user_max_length: int | None) -> DummyPipelineConfig:
     pipeline_config = DummyPipelineConfig(
         model_path="allenai/OLMo-2-1124-7B",
         quantization_encoding="bfloat16",
@@ -51,38 +49,52 @@ def _olmo2_arch_config(user_max_length: int | None) -> Olmo2Config:
         }
     pipeline_config.model._huggingface_config = hf_config
     pipeline_config.model.weight_path = [Path("model.safetensors")]
-    return Olmo2Config.initialize(pipeline_config)
+    return pipeline_config
+
+
+def _olmo2_max_seq_len(pipeline_config: DummyPipelineConfig) -> int:
+    hf_config = pipeline_config.model.huggingface_config
+    assert hf_config is not None
+    return Olmo2Config.calculate_max_seq_len(pipeline_config, hf_config)
 
 
 @pytest.mark.parametrize("user_max_length", [None, 64])
-def test_olmo2_modulev3_stores_resolved_max_seq_len(
+def test_olmo2_modulev3_resolves_max_seq_len(
     user_max_length: int | None,
 ) -> None:
-    arch_config = _olmo2_arch_config(user_max_length)
+    pipeline_config = _olmo2_pipeline_config(user_max_length)
 
     expected = (
         user_max_length
         if user_max_length is not None
         else HFOlmo2Config().max_position_embeddings
     )
-    assert arch_config.get_max_seq_len() == expected
+    assert _olmo2_max_seq_len(pipeline_config) == expected
 
 
 def test_olmo2_modulev3_kv_sizing_honors_max_length() -> None:
-    """KV sizing derives its per-sequence bound from ``get_max_seq_len()``;
+    """KV sizing takes its per-sequence bound from the architecture policy;
     with ``--max-length`` set below the checkpoint bound, the estimate must be
     sized for the user value, not the full bound."""
     ample_memory = 1 << 40
 
+    bounded_config = _olmo2_pipeline_config(64)
+    unbounded_config = _olmo2_pipeline_config(None)
     bounded = MemoryEstimator._calculate_kv_cache_size(
-        _olmo2_arch_config(64),
+        Olmo2Config.initialize(
+            bounded_config, max_seq_len=_olmo2_max_seq_len(bounded_config)
+        ),
         max_batch_size=1,
         available_kv_cache_memory=ample_memory,
+        max_seq_len=_olmo2_max_seq_len(bounded_config),
     )
     unbounded = MemoryEstimator._calculate_kv_cache_size(
-        _olmo2_arch_config(None),
+        Olmo2Config.initialize(
+            unbounded_config, max_seq_len=_olmo2_max_seq_len(unbounded_config)
+        ),
         max_batch_size=1,
         available_kv_cache_memory=ample_memory,
+        max_seq_len=_olmo2_max_seq_len(unbounded_config),
     )
 
     assert 0 < bounded < unbounded

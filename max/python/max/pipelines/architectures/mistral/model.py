@@ -32,7 +32,6 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -66,26 +65,6 @@ class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
     batch_processor_cls: ClassVar[type[MistralBatchProcessor]] = (
         MistralBatchProcessor
     )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Bounds ``max_length`` by ``max_position_embeddings`` (config is permissive)."""
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                f"Unable to infer max_length for {cls.__qualname__}, "
-                f"the provided max_length ({pipeline_config.model.max_length}) "
-                f"exceeds the model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
 
     model: Model
     """Compiled and initialized model ready for inference."""
@@ -163,8 +142,7 @@ class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
         text_config = self._hf_config_for_weights()
         assert text_config is not None
         model_config = MistralConfig.initialize_from_config(
-            self.pipeline_config,
-            text_config,
+            self.pipeline_config, text_config, max_seq_len=self.max_seq_len
         )
         model_config.return_logits = self.return_logits
         return model_config

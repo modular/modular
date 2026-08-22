@@ -37,7 +37,9 @@ class Olmo2Model(Llama3Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = Olmo2Config.initialize(self.pipeline_config)
+        model_config = Olmo2Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,

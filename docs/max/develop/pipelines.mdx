@@ -499,10 +499,13 @@ architecture configuration class. This connection enables the base
 
 The base class delegates the following through `model_config_cls`:
 
-- **Maximum sequence length**: The `calculate_max_seq_len()` method determines
-  the model's sequence length limit. The base class calls
-  `model_config_cls.calculate_max_seq_len()` or initializes the config and
-  calls `get_max_seq_len()`.
+- **Maximum sequence length**: The architecture config's
+  `calculate_max_seq_len()` classmethod is the architecture's sequence-length
+  policy (whether the checkpoint bound is a hard cap or a default).
+  `PipelineConfig.from_args()` runs it once at construction, so
+  `config.model.max_length` carries the resolved value; the pipeline model
+  reads that value (or the memory plan's clamped one) rather than deriving
+  its own.
 
 - **KV cache parameters**: The `get_kv_params()` method constructs the KV cache
   configuration. The base class calls `model_config_cls.construct_kv_params()`
@@ -513,7 +516,8 @@ The base class delegates the following through `model_config_cls`:
   tree instead, which the cache manager consumes through the shared
   [`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
-You can override `calculate_max_seq_len()` or `get_kv_params()` if needed.
+You can override `calculate_max_seq_len()` (on the architecture config) or
+`get_kv_params()` if needed.
 
 ### When to customize `ModelInputs`
 

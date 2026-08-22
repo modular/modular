@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
@@ -56,12 +57,21 @@ class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
     # Required attributes can be implemented as dataclass fields.
     num_key_value_heads: int = 8
     head_dim: int = 64
-    model_max_seq_len: int = 2048
 
     # Or as properties.
     @property
     def num_layers(self) -> int:
         return 12
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: Any,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        del pipeline_config, huggingface_config, model_config
+        return 2048
 
 
 def create_mock_pipeline_config(
@@ -130,6 +140,15 @@ def test_arch_config_protocol_check() -> None:
         ) -> TestConfig:
             return cls()
 
+        @classmethod
+        def calculate_max_seq_len(
+            cls,
+            pipeline_config: PipelineConfig,
+            huggingface_config: Any,
+            model_config: MAXModelConfig | None = None,
+        ) -> int:
+            return 2048
+
         def get_max_seq_len(self) -> int:
             return 2048
 
@@ -152,6 +171,15 @@ def test_arch_config_with_cache_protocol_check() -> None:
         def get_kv_params(self) -> KVCacheParams:
             return mock_kv_params
 
+        @classmethod
+        def calculate_max_seq_len(
+            cls,
+            pipeline_config: PipelineConfig,
+            huggingface_config: Any,
+            model_config: MAXModelConfig | None = None,
+        ) -> int:
+            return 2048
+
         def get_max_seq_len(self) -> int:
             return 2048
 
@@ -173,7 +201,7 @@ class TestArchConfigWithAttentionKVCache:
         """
         mock_config = create_mock_pipeline_config(quantization_encoding=None)
 
-        result = ConcreteArchConfig.initialize(mock_config)
+        result = ConcreteArchConfig.initialize(mock_config, max_seq_len=2048)
         assert isinstance(result, ConcreteArchConfig)
         assert result.quantization_encoding == "bfloat16"
         assert result.dtype == DType.bfloat16
@@ -184,7 +212,7 @@ class TestArchConfigWithAttentionKVCache:
         mock_config = create_mock_pipeline_config(
             quantization_encoding="bfloat16"
         )
-        result = ConcreteArchConfig.initialize(mock_config)
+        result = ConcreteArchConfig.initialize(mock_config, max_seq_len=2048)
         assert isinstance(result, ConcreteArchConfig)
         assert result.dtype == DType.bfloat16
         assert result.cache_dtype == DType.bfloat16
@@ -193,14 +221,16 @@ class TestArchConfigWithAttentionKVCache:
         # Test with encoding that maps to different dtype/config
 
         mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
-        result = ConcreteArchConfig.initialize(mock_config)
+        result = ConcreteArchConfig.initialize(mock_config, max_seq_len=2048)
         assert result.dtype == DType.uint8
         assert result.cache_dtype == DType.float32
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:
         """Test that config can be created with only dtype specified."""
-        config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
+        config = ConcreteArchConfig(
+            dtype=DType.bfloat16, max_seq_len=2048, devices=[]
+        )
 
         assert config.dtype == DType.bfloat16
         # devices should be what we passed
@@ -214,6 +244,7 @@ class TestArchConfigWithAttentionKVCache:
         """Test that cache_dtype can be explicitly set different from dtype."""
         config = ConcreteArchConfig(
             dtype=DType.float8_e4m3fn,
+            max_seq_len=2048,
             cache_dtype=DType.bfloat16,
             devices=[],
         )
@@ -230,6 +261,7 @@ class TestArchConfigWithAttentionKVCache:
 
         config = ConcreteArchConfig(
             dtype=DType.bfloat16,
+            max_seq_len=2048,
             kv_cache=custom_kv_config,
             devices=[],
         )
@@ -241,7 +273,7 @@ class TestArchConfigWithAttentionKVCache:
         self, mock_default_devices: list[DeviceRef]
     ) -> None:
         """Test that devices defaults to scanning available devices."""
-        config = ConcreteArchConfig(dtype=DType.bfloat16)
+        config = ConcreteArchConfig(dtype=DType.bfloat16, max_seq_len=2048)
 
         # Should use the devices from the autouse fixture
         assert config.devices == mock_default_devices
@@ -249,12 +281,13 @@ class TestArchConfigWithAttentionKVCache:
 
     def test_abstract_properties_from_subclass(self) -> None:
         """Test that abstract properties are correctly implemented in subclass."""
-        config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
+        config = ConcreteArchConfig(
+            dtype=DType.bfloat16, max_seq_len=2048, devices=[]
+        )
 
         assert config.num_key_value_heads == 8
         assert config.head_dim == 64
         assert config.num_layers == 12
-        assert config.model_max_seq_len == 2048
 
     def test_get_kv_params_returns_correct_kv_cache_params(
         self, mock_default_devices: list[DeviceRef]
@@ -271,6 +304,7 @@ class TestArchConfigWithAttentionKVCache:
 
         config = ConcreteArchConfig(
             dtype=DType.bfloat16,
+            max_seq_len=2048,
             kv_cache=custom_kv_config,
             data_parallel_degree=2,
             devices=mock_default_devices,
@@ -299,15 +333,23 @@ class TestArchConfigWithAttentionKVCache:
 
     def test_model_equality(self) -> None:
         """Test that two configs with same values are equal."""
-        config1 = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
-        config2 = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
+        config1 = ConcreteArchConfig(
+            dtype=DType.bfloat16, max_seq_len=2048, devices=[]
+        )
+        config2 = ConcreteArchConfig(
+            dtype=DType.bfloat16, max_seq_len=2048, devices=[]
+        )
 
         assert config1 == config2
 
     def test_model_inequality(self) -> None:
         """Test that configs with different values are not equal."""
-        config1 = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
-        config2 = ConcreteArchConfig(dtype=DType.float32, devices=[])
+        config1 = ConcreteArchConfig(
+            dtype=DType.bfloat16, max_seq_len=2048, devices=[]
+        )
+        config2 = ConcreteArchConfig(
+            dtype=DType.float32, max_seq_len=2048, devices=[]
+        )
 
         assert config1 != config2
 
@@ -315,46 +357,13 @@ class TestArchConfigWithAttentionKVCache:
         """Test that explicitly set cache_dtype is not overwritten by default_factory."""
         config = ConcreteArchConfig(
             dtype=DType.float32,
+            max_seq_len=2048,
             cache_dtype=DType.bfloat16,
             devices=[],
         )
 
         # cache_dtype should remain as explicitly set
         assert config.cache_dtype == DType.bfloat16
-
-    def test_get_max_seq_len_defaults_to_model_max_seq_len(self) -> None:
-        """Test that get_max_seq_len returns model_max_seq_len when max_length is None."""
-        config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
-
-        # max_length is None by default, so get_max_seq_len should equal model_max_seq_len
-        assert config.user_provided_max_length is None
-        assert config.get_max_seq_len() == 2048
-
-    def test_get_max_seq_len_uses_max_length_when_set(self) -> None:
-        """Test that get_max_seq_len returns max_length when explicitly set."""
-        config = ConcreteArchConfig(
-            dtype=DType.bfloat16,
-            devices=[],
-            user_provided_max_length=1024,
-        )
-
-        assert config.get_max_seq_len() == 1024
-
-    def test_get_max_seq_len_raises_when_max_length_exceeds_default(
-        self,
-    ) -> None:
-        """Test that get_max_seq_len raises ValueError when max_length exceeds model_max_seq_len."""
-        config = ConcreteArchConfig(
-            dtype=DType.bfloat16,
-            devices=[],
-            user_provided_max_length=4096,  # Exceeds model_max_seq_len of 2048
-        )
-
-        with pytest.raises(
-            ValueError,
-            match=r"default value provided \(4096\) exceeds the upper bound \(2048\)",
-        ):
-            _ = config.get_max_seq_len()
 
 
 def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
