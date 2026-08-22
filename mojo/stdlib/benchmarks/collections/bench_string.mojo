@@ -251,13 +251,13 @@ def bench_string_find_single[
 # Benchmark string rfind single
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_rfind_single[
+def bench_string_rfind_single[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    fn call_fn() unified {read}:
+    def call_fn() {imm}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             var res = black_box(items).rfind(
