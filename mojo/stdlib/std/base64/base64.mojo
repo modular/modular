@@ -126,8 +126,28 @@ def b64encode(input_bytes: ImmSpan[Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def _next_significant_byte(data: ImmSpan[Byte, _], mut pos: Int) -> Byte:
+    """Returns the next non-whitespace byte in `data`, advancing `pos` past it.
+
+    The caller must guarantee that a non-whitespace byte remains at or after
+    `pos`; this is not checked here.
+    """
+    while Codepoint(data[pos]).is_posix_space():
+        pos += 1
+    var char = data[pos]
+    pos += 1
+    return char
+
+
 def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on the input string.
+
+    Whitespace (spaces, tabs, newlines, carriage returns, form feeds, and
+    vertical tabs) is ignored, which allows decoding base64 text that has
+    been wrapped across multiple lines. Unlike Python's `base64.b64decode`,
+    which discards *any* non-alphabet byte, Mojo only ignores whitespace and
+    still rejects other invalid characters.
 
     Args:
         str: A base64 encoded string.
@@ -136,30 +156,48 @@ def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
         The decoded bytes.
 
     Raises:
-        If the input length is not divisible by 4, or the input contains a
-        character outside the base64 alphabet.
+        If the input length (ignoring whitespace) is not divisible by 4, or
+        the input contains a non-whitespace character outside the base64
+        alphabet.
     """
     comptime `=` = Byte(ord("="))
-    var data = str.as_bytes()
-    var n = str.byte_length()
+
+    var input = str.as_bytes()
+
+    var n = 0
+    for char in input:
+        if not Codepoint(char).is_posix_space():
+            n += 1
 
     if n % 4 != 0:
-        raise Error("ValueError: Input length '", n, "' must be divisible by 4")
+        raise Error(
+            "ValueError: Input length '",
+            n,
+            "' (ignoring whitespace) must be divisible by 4",
+        )
 
-    var result = List[Byte](capacity=n)
+    var result = List[Byte](capacity=(n // 4) * 3)
 
-    # This algorithm is based on https://arxiv.org/abs/1704.00605
-    for i in range(0, n, 4):
-        var a = _ascii_to_value(data[i])
-        var b = _ascii_to_value(data[i + 1])
-        var c = _ascii_to_value(data[i + 2])
-        var d = _ascii_to_value(data[i + 3])
+    # This algorithm is based on https://arxiv.org/abs/1704.00605. It reads
+    # directly from `input`, skipping over whitespace as it goes, so it never
+    # allocates or copies a whitespace-free version of the input.
+    var pos = 0
+    for _ in range(0, n, 4):
+        var a_byte = _next_significant_byte(input, pos)
+        var b_byte = _next_significant_byte(input, pos)
+        var c_byte = _next_significant_byte(input, pos)
+        var d_byte = _next_significant_byte(input, pos)
+
+        var a = _ascii_to_value(a_byte)
+        var b = _ascii_to_value(b_byte)
+        var c = _ascii_to_value(c_byte)
+        var d = _ascii_to_value(d_byte)
 
         result.append((a << 2) | (b >> 4))
-        if data[i + 2] == `=`:
+        if c_byte == `=`:
             break
         result.append(((b & 0x0F) << 4) | (c >> 2))
-        if data[i + 3] == `=`:
+        if d_byte == `=`:
             break
         result.append(((c & 0x03) << 6) | d)
 
