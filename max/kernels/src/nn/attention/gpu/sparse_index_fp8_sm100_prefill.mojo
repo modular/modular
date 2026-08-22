@@ -406,6 +406,8 @@ def _fp8_index_score_prefill_kernel_sm100[
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     num_key_parts_dev: Int32,
+    out_row_begin_dev: Int32,
+    out_row_end_dev: Int32,
 ):
     comptime assert valid_length.flat_rank == 1
     comptime MMA_N = N_TOKENS * num_heads
@@ -449,11 +451,29 @@ def _fp8_index_score_prefill_kernel_sm100[
     var causal = causal_dev
     var tid = Int(thread_idx.x)
     var b = Int(block_idx.x)
-    var tok0 = Int32(block_idx.y) * Int32(N_TOKENS)
 
     var start_of_seq = Int32(valid_length[b])
     var end_of_seq = Int32(valid_length[b + 1])
     var seq_len = end_of_seq - start_of_seq
+
+    # This launch owns global token rows `[out_row_begin, out_row_end)` and writes
+    # them to `output` rows `[0, out_row_end - out_row_begin)`. The caller chunks
+    # that window to bound the score buffer, which is the whole point of the
+    # split; unchunked it is `[0, total_seq_len)` and everything below reduces to
+    # the unwindowed form.
+    #
+    # Clamping to the window here (rather than predicating the store) is what
+    # keeps the epilogue free: token blocks are indexed from `tok_lo`, so no block
+    # straddles a chunk boundary, no token is scored twice, and the store's
+    # liveness test just swaps `seq_len` for `tok_hi`. `seq_len` itself stays the
+    # TRUE sequence length -- the causal bound is an absolute position and must
+    # not see the window.
+    var tok_lo = max(Int32(0), out_row_begin_dev - start_of_seq)
+    var tok_hi = min(seq_len, out_row_end_dev - start_of_seq)
+    var tok0 = tok_lo + Int32(block_idx.y) * Int32(N_TOKENS)
+    # Folded once here so the store's row arithmetic is the same single add it
+    # was before the window existed.
+    var out_row0 = start_of_seq - out_row_begin_dev
 
     var num_keys = Int32(k_operand.cache_length(b))
     comptime if not _is_cache_length_accurate:
@@ -470,15 +490,22 @@ def _fp8_index_score_prefill_kernel_sm100[
 
     # Bail uniformly (every thread) before any collective op (TMA mbar / tcgen05
     # alloc); a divergent early return deadlocks them. A token block past the
-    # sequence produces no output (the caller's -inf fill covers those rows).
-    if tok0 >= seq_len or seq_len <= 0:
+    # sequence -- or outside this launch's row window -- produces no output (the
+    # caller's -inf fill covers those rows).
+    #
+    # A chunked launch retires most of its CTAs here, since the grid is sized by
+    # the whole batch, so hoisting this above the `cache_length` load to save
+    # them a global read looks free. It measured neutral (4096 tokens, 5 chunks)
+    # -- the chunking overhead is not where those CTAs spend it -- so the load
+    # stays where it was.
+    if tok0 >= tok_hi or seq_len <= 0:
         return
 
     # Keys this token block must stream: bounded by the deepest live token of
     # the block under the causal mask (each token still gets its own per-key
     # guard in the epilogue). Non-causal streams every key; causal trims the
     # triangle a zero-prefix fresh prefill leaves off the end.
-    var last_tok = min(tok0 + Int32(N_TOKENS), seq_len) - 1
+    var last_tok = min(tok0 + Int32(N_TOKENS), tok_hi) - 1
     var block_key_bound = num_keys - (seq_len - 1 - last_tok) * causal
     # `block_key_bound` can be <= 0 (a causal bound that trims the whole block), so the
     # SUBTRACTION above stays signed. The `ceildiv` does not: `SIMD.__ceildiv__`
@@ -826,27 +853,24 @@ def _fp8_index_score_prefill_kernel_sm100[
                             # `Int32` though, so this is one `IMAD.WIDE` (32x32->64)
                             # rather than a 64-bit multiply. Do NOT narrow it.
                             comptime if _PRED_STORE:
-                                var global_token = start_of_seq + tok_local
+                                var out_row = out_row0 + tok_local
                                 store_global_pred(
                                     out_base
                                     + (
-                                        Int(global_token) * Int(max_num_keys)
+                                        Int(out_row) * Int(max_num_keys)
                                         + Int(key_local)
                                     ),
                                     k_scale * (acc[0] + acc[1]),
                                     Int32(
                                         key_local < key_bound
-                                        and tok_local < seq_len
+                                        and tok_local < tok_hi
                                     ),
                                 )
                             else:
-                                if (
-                                    key_local < key_bound
-                                    and tok_local < seq_len
-                                ):
-                                    var global_token = start_of_seq + tok_local
+                                if key_local < key_bound and tok_local < tok_hi:
+                                    var out_row = out_row0 + tok_local
                                     output.raw_store(
-                                        Int(global_token) * Int(max_num_keys)
+                                        Int(out_row) * Int(max_num_keys)
                                         + Int(key_local),
                                         k_scale * (acc[0] + acc[1]),
                                     )
@@ -1134,6 +1158,7 @@ def fp8_index_score_sm100_prefill[
     max_num_keys: Int,
     causal: Int,
     ctx: DeviceContext,
+    out_row_begin: Int = 0,
 ) raises:
     """Enqueue the warp-specialized K-streaming prefill scorer into `output`.
 
@@ -1144,7 +1169,16 @@ def fp8_index_score_sm100_prefill[
     narrows it in-kernel and the surplus CTAs retire before any collective.
     Called from `fp8_index_score_sm100` for both the many-token-block prefill
     route and the key-split decode/MTP route.
+
+    `output` holds the global token rows `[out_row_begin, out_row_begin +
+    output.dim[0]())`, so a caller that cannot afford the whole
+    `total_seq_len x max_num_keys` score matrix can fill it a row-window at a
+    time. The default covers every row and is the unwindowed launch.
     """
+    # The window bounds the token blocks any entry can contribute, so a chunked
+    # launch does not pay for a grid sized to the whole batch.
+    var out_rows = Int(output.dim[0]())
+    var token_blocks = ceildiv(min(max_seq_len, out_rows), N_TOKENS)
     # Split the key range over grid.z only when the (batch, token block) grid alone
     # leaves SMs idle -- splitting an already-full grid costs pipeline depth for
     # nothing (the K-resident scorer measured -29% doing exactly that). Target
@@ -1165,7 +1199,7 @@ def fp8_index_score_sm100_prefill[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime MMA_N = N_TOKENS * num_heads
     comptime CTAS_PER_SM = _ctas_per_sm[MMA_N]()
-    var base_ctas = batch_size * ceildiv(max_seq_len, N_TOKENS)
+    var base_ctas = batch_size * token_blocks
     var key_tiles = ceildiv(max_num_keys, BM_key)
     var num_key_parts = 1
     if base_ctas < sm_count:
@@ -1254,9 +1288,11 @@ def fp8_index_score_sm100_prefill[
         Int32(max_num_keys),
         Int32(causal),
         Int32(num_key_parts),
+        Int32(out_row_begin),
+        Int32(out_row_begin + out_rows),
         grid_dim=(
             batch_size,
-            ceildiv(max_seq_len, N_TOKENS),
+            token_blocks,
             num_key_parts,
         ),
         block_dim=_prefill_nthreads[MMA_N](),

@@ -504,6 +504,72 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.1e-3
     kl_div_threshold: 7.1e-3
 
+  Qwen/Qwen3.8-27B-bfloat16:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only]
+    # Suggested by --find-tolerances on 1x B200: 3.4e-4 / 1.4e-3. Widened ~3x
+    # for cross-hardware headroom; re-confirm on the other agents.
+    cos_dist_threshold: 1.0e-3
+    kl_div_threshold: 5.0e-3
+
+  Qwen/Qwen3.8-27B-bfloat16-multi:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, nvidia-multi]
+    # Suggested by --find-tolerances on 2x B200: 7.2e-4 / 1.5e-3. Widened ~3x
+    # for cross-hardware headroom, matching the 1x entry above. Cosine
+    # distance roughly doubles against the 1x figure because the allreduce
+    # changes the reduction order; KL divergence is unchanged.
+    cos_dist_threshold: 2.5e-3
+    kl_div_threshold: 5.0e-3
+
+  RadixArk/Qwen3.8-27B-NVFP4:
+    pre_submit_agents: []
+    pipeline: "RadixArk/Qwen3.8-27B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only]
+    torch_reference_is_unquantized_source: true
+    # transformers cannot load a modelopt MIXED_PRECISION checkpoint, so the
+    # oracle's torch side is the bf16 source model (`Qwen/Qwen3.8-27B`) this
+    # was quantized from. The gate is therefore quantized-MAX vs bf16-torch and
+    # the thresholds carry the quantization error itself, which is why they sit
+    # two orders above the bf16 entry's. Suggested by --find-tolerances on
+    # 1x B200: 8.7e-02 / 6.6e-02, widened ~3x for cross-hardware headroom.
+    # This gates catastrophic regressions, not precision drift: dropping a
+    # weight scale family moves cosine distance to ~7e-01, comfortably over.
+    # A vLLM golden of this checkpoint would give the tighter gate.
+    cos_dist_threshold: 2.5e-01
+    kl_div_threshold: 2.0e-01
+
+  # FP8 KV-cache variant. The encoding table keeps a quantized checkpoint's
+  # cache in bf16, so nothing else selects the FP8 store path: without this
+  # entry `rope_split_store_ragged`, the widened frequency table and the
+  # store-time conversion are never executed.
+  RadixArk/Qwen3.8-27B-NVFP4-fp8kv:
+    pre_submit_agents: []
+    pipeline: "RadixArk/Qwen3.8-27B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only]
+    torch_reference_is_unquantized_source: true
+    config_params_override:
+      kv_cache_format: float8_e4m3fn
+    # Suggested by --find-tolerances on 1x B200: 1.3e-01 / 2.2e-01, against the
+    # bf16 entry's 8.7e-02 / 6.6e-02 -- the FP8 cache is the whole difference,
+    # the two runs are otherwise the same checkpoint and reference. Widened ~2x
+    # rather than the ~3x above: the error here is dominated by KV
+    # quantization, which is the same arithmetic on any device, so
+    # cross-hardware spread is second order. 3.0e-01 still separates from the
+    # ~7e-01 a dropped weight-scale family produces.
+    cos_dist_threshold: 3.0e-01
+    kl_div_threshold: 5.0e-01
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-Embedding-0.6B"

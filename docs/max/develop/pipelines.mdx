@@ -43,56 +43,52 @@ infrastructure, including batching, caching, compilation, and serving.
 
 ## Building blocks
 
-Before diving into pipeline components, it's helpful to understand the two
-foundational packages that pipelines build on: [`max.nn`](/api/python/nn)
-and [`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache).
+Before digging into pipeline components, it's helpful to understand the
+foundational packages that pipelines build on: [`max.nn`](/api/python/nn),
+[`max.experimental.nn`](/api/python/experimental.nn), and
+[`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache).
 
-### Neural network module
+### Neural network modules
 
-The [`max.nn`](/api/python/nn) (neural network) package provides reusable
-neural network layers that serve as the bridge between the MAX Graph API and
-model implementations.
+MAX provides two neural network module packages:
+
+- [`max.nn`](/api/python/nn) provides reusable layers that build MAX graphs.
+  Most existing pipeline architectures use this package.
+- [`max.experimental.nn`](/api/python/experimental.nn) provides the eager
+  module API used by newer ModuleV3 architectures.
 
 The `max.nn` package includes common components like:
 
 - **Core modules**:
-  [`Module`](/api/python/generated/max.experimental.nn.Module),
+  [`Module`](/api/python/generated/max.nn.Module),
   [`Linear`](/api/python/generated/max.nn.Linear),
-  [`Embedding`](/api/python/generated/max.experimental.nn.Embedding),
-  [`Sequential`](/api/python/generated/max.experimental.nn.Sequential),
-  [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList).
+  [`Embedding`](/api/python/generated/max.nn.Embedding),
+  [`Sequential`](/api/python/generated/max.nn.Sequential),
+  [`LayerList`](/api/python/generated/max.nn.LayerList).
 - **Normalization**:
-  [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm),
-  [`GemmaRMSNorm`](/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm).
+  [`RMSNorm`](/api/python/generated/max.nn.RMSNorm) and
+  [`LayerNorm`](/api/python/generated/max.nn.LayerNorm).
 - **Positional encodings**:
-  [`RotaryEmbedding`](/api/python/generated/max.experimental.nn.rope.RotaryEmbedding),
-  [`TransposedRotaryEmbedding`](/api/python/generated/max.experimental.nn.rope.TransposedRotaryEmbedding).
-- **Utilities**:
-  [`module_dataclass`](/api/python/generated/max.experimental.nn.module_dataclass)
-  for creating module dataclasses.
+  [`RotaryEmbedding`](/api/python/generated/max.nn.RotaryEmbedding).
 
-These components are core to building model architectures.
-
-:::note Graph API modules
-
-For graph-based components like attention mechanisms and transformers,
-use `max.nn`:
+For graph-based components like attention mechanisms and transformers, import
+from `max.nn`:
 
 ```python
 from max.nn import Module, Linear
 from max.nn.attention import AttentionWithRope
 ```
 
-:::
-
-The [`Module`](/api/python/generated/max.experimental.nn.Module) base class
-standardizes how layers manage weights and devices. Here's an example of
-building a simple multi-layer perceptron:
+The [`Module`](/api/python/generated/max.experimental.nn.Module) base class in
+`max.experimental.nn` standardizes how eager modules manage weights and
+devices. Here's an example of building a simple multi-layer perceptron with
+the eager API:
 
 ```python
 from max.driver import Accelerator
-from max.experimental.nn import Module, Linear
+from max.experimental.nn import Linear, Module, module_dataclass
 
+@module_dataclass
 class MLP(Module):
     fc1: Linear
     fc2: Linear
@@ -136,19 +132,22 @@ in your architecture config.
 ### How modules and pipelines work together
 
 Understanding the relationship between modules and pipelines is key to working
-with MAX. When you build a model for the pipeline system, you define your
-architecture using the
-[`Module`](/api/python/generated/max.experimental.nn.Module) class. MAX then
-compiles your module into an optimized executable for the target device, and the
-pipeline orchestrates execution.
+with MAX. When you build a model for the pipeline system, define your
+architecture as a module, using either the graph API
+([`max.nn.Module`](/api/python/generated/max.nn.Module)) or the eager API
+([`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module)).
+MAX then compiles your module into an optimized executable for the target
+device, and the pipeline orchestrates execution.
 
 Here's the workflow:
 
-1. **Define your model**: You create a
-   [`Module`](/api/python/generated/max.experimental.nn.Module) that defines
-   your model architecture. The module's
-   [`forward`](/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.forward)
-   method defines what computations happen when processing inputs.
+1. **Define your model**: Create a module that defines your model
+   architecture. The module's computation method defines what happens when
+   processing inputs:
+   [`__call__()`](/api/python/generated/max.nn.Module#max.nn.Module.__call__)
+   for the graph API, or
+   [`forward()`](/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.forward)
+   for the eager API.
 
 2. **MAX compiles your model**: MAX compiles the module into an optimized
    executable for the target device. This compilation happens once, and you can
@@ -161,8 +160,10 @@ Here's the workflow:
    method, samples output tokens, and returns results.
 
 This separation lets you work at the right level of abstraction: use
-[`max.nn`](/api/python/nn) to define model architectures, let MAX handle
-compilation, and rely on pipelines for production serving.
+[`max.nn`](/api/python/nn) or
+[`max.experimental.nn`](/api/python/experimental.nn) to define model
+architectures, let MAX handle compilation, and rely on pipelines for
+production serving.
 
 ### Request execution example
 
@@ -181,13 +182,15 @@ and a ready-to-use pipeline instance.
 ```python
 import asyncio
 from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
 
 # 1. Configure and retrieve the pipeline and tokenizer
-config = PipelineConfig.from_flat_kwargs(
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
-    max_length=512,
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+        max_length=512,
+    )
 )
 tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
@@ -306,11 +309,13 @@ You can interact with the registry directly to retrieve a model's tokenizer and
 compiled pipeline:
 
 ```python
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
 # Create configuration for a model
-config = PipelineConfig.from_flat_kwargs(
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+    )
 )
 
 # Retrieve tokenizer and compiled pipeline
@@ -407,12 +412,11 @@ type has its own execution strategy:
 For example, if you are building a model for text generation, you will set
 `task=PipelineTask.TEXT_GENERATION`.
 
-Set the `default_encoding` to the quantization format you want to use by
-default. `supported_encodings` maps quantization formats to compatible KV cache
-strategies. For example, if you are using a model that supports `q4_k`
-quantization, you will set
-`supported_encodings={"q4_k"}`. For
-more information on quantization, see the
+Set the `default_encoding` to the quantization encoding you want to use by
+default, and `supported_encodings` to the set of encodings your architecture
+supports. For example, if your model supports `q4_k`
+quantization, set `supported_encodings={"q4_k"}`. For more
+information on quantization, see the
 [quantization guide](/develop/quantize).
 
 The `pipeline_model` field is the class that builds and executes the model.
@@ -560,31 +564,35 @@ Now let's see how configuration flows from user input to a running pipeline.
 When you run a model, configuration flows through several layers:
 
 1. **Start with user arguments**: MAX collects CLI or API arguments into a
-   `PipelineConfig` object that specifies the model path, quantization settings,
+   `PipelineArgs` object that specifies the model path, quantization settings,
    and runtime parameters.
 
-2. **Load model metadata**: The registry fetches the model's Hugging Face config
-   to perform architecture lookup and extract hyperparameters like hidden size,
-   number of layers, and vocabulary size.
+2. **Resolve at construction**: `PipelineConfig.from_args()` reads the model's
+   Hugging Face config to look up the architecture, then resolves and validates
+   the quantization encoding, weight paths, and devices, and applies any
+   defaults the architecture declares. A model whose architecture isn't
+   registered fails here, before any weights are downloaded.
 
-3. **Validate compatibility**: The registry checks that the architecture
-   supports the requested encoding and KV cache strategy.
+3. **Plan memory**: The registry runs the architecture's memory planner to
+   size the KV cache and batch limits for the available devices.
 
 4. **Instantiate pipeline**: Finally, the registry constructs and returns the
    tokenizer and compiled pipeline ready for inference.
 
 ```python
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineArgs, PipelineConfig
 
-config = PipelineConfig.from_flat_kwargs(
-    # Model specification (Hugging Face repo ID or local path)
-    model_path="meta-llama/Llama-3.1-8B-Instruct",
+config = PipelineConfig.from_args(
+    PipelineArgs.from_flat_kwargs(
+        # Model specification (Hugging Face repo ID or local path)
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
 
-    # Sequence limits
-    max_length=4096,
+        # Sequence limits
+        max_length=4096,
 
-    # Batching
-    max_batch_size=32,
+        # Batching
+        max_batch_size=32,
+    )
 )
 ```
 

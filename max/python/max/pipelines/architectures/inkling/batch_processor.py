@@ -20,8 +20,9 @@ from dataclasses import dataclass
 import numpy as np
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
+from max.engine import Model
 from max.nn.kv_cache import KVCacheInputsInterface
-from max.pipelines.context import TextContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -29,6 +30,11 @@ from max.pipelines.lib.interfaces.batch_processor import (
     single_replica_context_batch,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+from max.pipelines.lib.vision_batching import (
+    create_empty_image_embeddings_single,
+    create_empty_image_token_indices_single,
+)
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 
 from .model_config import InklingConfig
 from .state_cache import InklingConvStateCache
@@ -43,6 +49,10 @@ class InklingInputs(ModelInputs):
     positions: Buffer
     return_n_logits: Buffer
 
+    image_embeddings: Buffer
+    image_indices: Buffer
+    """Token-stream row each vision row replaces; negative entries are skipped."""
+
     signal_buffers: list[Buffer]
     slot_idx: list[Buffer]
     conv_pools: list[Buffer]
@@ -56,6 +66,8 @@ class InklingInputs(ModelInputs):
             self.input_row_offsets,
             self.positions,
             self.return_n_logits,
+            self.image_embeddings,
+            self.image_indices,
             *self.signal_buffers,
             *self.kv_cache_inputs.flatten(),
             *self.slot_idx,
@@ -64,25 +76,32 @@ class InklingInputs(ModelInputs):
 
 
 class InklingBatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextContext, InklingInputs]
+    SingleReplicaRaggedBatchProcessor[TextAndVisionContext, InklingInputs]
 ):
-    """Ragged batching with Inkling's convolution slots."""
+    """Ragged batching with Inkling's convolution slots and vision operands."""
 
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
         assert isinstance(config, InklingConfig)
+        self._hidden_size = config.text_config.hidden_size
+        self._dtype = config.dtype
         self._state_cache: InklingConvStateCache | None = None
+        self._vision_model: Model | None = None
         self._conv_pools: list[Buffer] = []
         self._signal_buffers = list(runtime.signal_buffers)
         self._return_n_logits_buffers: dict[int, Buffer] = {}
+        self._no_images: tuple[Buffer, Buffer] | None = None
 
     def bind_runtime_state(
-        self, state_cache: InklingConvStateCache | None
+        self,
+        state_cache: InklingConvStateCache | None,
+        vision_model: Model,
     ) -> None:
         """Hands over what only exists once the model is compiled and loaded."""
         self._state_cache = state_cache
+        self._vision_model = vision_model
         if state_cache is None:
             return
         self._conv_pools = [
@@ -93,7 +112,7 @@ class InklingBatchProcessor(
 
     def prepare_initial_token_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextContext]],
+        replica_batches: Sequence[Sequence[TextAndVisionContext]],
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InklingInputs:
@@ -125,11 +144,15 @@ class InklingBatchProcessor(
                 return_n_logits_buffer
             )
 
+        image_embeddings, image_indices = self._image_operands(context_batch)
+
         return InklingInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             positions=positions,
             return_n_logits=return_n_logits_buffer,
+            image_embeddings=image_embeddings,
+            image_indices=image_indices,
             signal_buffers=self._signal_buffers,
             slot_idx=slot_idx,
             conv_pools=self._conv_pools,
@@ -137,7 +160,7 @@ class InklingBatchProcessor(
         )
 
     def _stage_token_inputs(
-        self, context_batch: Sequence[TextContext]
+        self, context_batch: Sequence[TextAndVisionContext]
     ) -> tuple[Buffer, Buffer, Buffer]:
         # Host staging is fresh per step so overlap writes can't clobber an
         # in-flight copy; device destinations are reused for graph replay.
@@ -149,7 +172,7 @@ class InklingBatchProcessor(
         )
         total_seq_len = int(lengths.sum())
         pinned = not device0.is_host
-        host_buffer_cls: type[Buffer] | type[DevicePinnedBuffer] = (
+        host_buffer_cls: type[Buffer | DevicePinnedBuffer] = (
             DevicePinnedBuffer if pinned else Buffer
         )
         host_tokens: Buffer = host_buffer_cls(
@@ -200,3 +223,39 @@ class InklingBatchProcessor(
             device_buffer.inplace_copy_from(host)
             staged.append(device_buffer)
         return staged[0], staged[1], staged[2]
+
+    def _empty_image_operands(self) -> tuple[Buffer, Buffer]:
+        """Zero-row operands for a batch with no images to encode."""
+        if self._no_images is None:
+            device0 = self.runtime.devices[0]
+            self._no_images = (
+                create_empty_image_embeddings_single(
+                    device0, self._hidden_size, self._dtype
+                ),
+                create_empty_image_token_indices_single(device0),
+            )
+        return self._no_images
+
+    def _image_operands(
+        self, context_batch: Sequence[TextAndVisionContext]
+    ) -> tuple[Buffer, Buffer]:
+        """Vision-tower rows for this batch, and the rows they replace."""
+        # The whole batch feeds the helper, so the row offsets it returns cover
+        # the ragged token stream. A graph-capture warmup probe batches bare
+        # TextContexts, which is why the attribute is read defensively.
+        indices = compute_multimodal_merge_indices(context_batch)
+        if indices.size == 0:
+            return self._empty_image_operands()
+        blocks = [
+            image.pixel_values
+            for context in context_batch
+            if getattr(context, "needs_vision_encoding", False)
+            for image in context.images
+        ]
+        assert self._vision_model is not None
+        device0 = self.runtime.devices[0]
+        embeddings = self._vision_model.execute(
+            Buffer.from_numpy(np.concatenate(blocks)).to(device0)
+        )[0]
+        assert isinstance(embeddings, Buffer)
+        return embeddings, Buffer.from_numpy(indices).to(device0)

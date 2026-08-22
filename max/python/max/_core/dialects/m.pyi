@@ -359,6 +359,10 @@ class TargetInfoAttr(max._core.Attribute):
     The `accelerator_arch` contains the vendor name of the accelerator in
     lowercase (e.g. nvidia or amd) along with the compute capability (e.g. 80 or
     90). For example, a valid `accelerator_arch` is `nvidia:80` or `amdgpu:gfx942`.
+
+    The `abi` names the target ABI (e.g. RISC-V's `lp64d`, MIPS's `n32`),
+    mirroring clang's `-target-abi`. When set, it is recorded as a
+    `target-abi` LLVM module flag, exactly as clang does.
     """
 
     def __init__(
@@ -373,6 +377,7 @@ class TargetInfoAttr(max._core.Attribute):
         index_bit_width: int | None,
         tune_cpu: str,
         accelerator_arch: str,
+        abi: str,
     ) -> None: ...
     @property
     def triple(self) -> max._core._TargetTriple: ...
@@ -394,6 +399,8 @@ class TargetInfoAttr(max._core.Attribute):
     def tune_cpu(self) -> str: ...
     @property
     def accelerator_arch(self) -> str: ...
+    @property
+    def abi(self) -> str: ...
 
 class TypeArrayAttr(max._core.Attribute):
     def __init__(self, value: Sequence[max._core.Type]) -> None: ...
@@ -455,8 +462,5 @@ class ArrayType(max._core.Type):
     @property
     def element_type(self) -> max._core.Type | None: ...
 
-class DataLayout:
-    pass
-
-class IntArrayElementsAttr:
-    pass
+class DataLayout: ...
+class IntArrayElementsAttr: ...

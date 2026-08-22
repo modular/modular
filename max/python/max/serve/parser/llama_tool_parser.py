@@ -82,4 +82,4 @@ class LlamaToolParser:
 
         See ``ToolParser.set_streaming_tool_schemas``.
         """
-        return None
+        return

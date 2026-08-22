@@ -40,7 +40,6 @@ comptime LOOP_SIZE = 1000
 """Number of interop calls per bench iteration."""
 
 
-@__parameter
 def bench_getattr(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -55,7 +54,6 @@ def bench_getattr(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@__parameter
 def bench_op_add(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -71,7 +69,6 @@ def bench_op_add(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@__parameter
 def bench_op_iadd(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -89,7 +86,6 @@ def bench_op_iadd(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@__parameter
 def bench_op_lt(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -105,7 +101,6 @@ def bench_op_lt(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@__parameter
 def bench_op_in(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -124,10 +119,10 @@ def bench_op_in(mut b: Bencher) raises:
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
 
-    m.bench_function[bench_getattr](BenchId("bench_getattr"))
-    m.bench_function[bench_op_add](BenchId("bench_op_add"))
-    m.bench_function[bench_op_iadd](BenchId("bench_op_iadd"))
-    m.bench_function[bench_op_lt](BenchId("bench_op_lt"))
-    m.bench_function[bench_op_in](BenchId("bench_op_in"))
+    m.bench_function(bench_getattr, BenchId("bench_getattr"))
+    m.bench_function(bench_op_add, BenchId("bench_op_add"))
+    m.bench_function(bench_op_iadd, BenchId("bench_op_iadd"))
+    m.bench_function(bench_op_lt, BenchId("bench_op_lt"))
+    m.bench_function(bench_op_in, BenchId("bench_op_in"))
 
     m.dump_report()

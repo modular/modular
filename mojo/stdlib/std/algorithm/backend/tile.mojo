@@ -17,14 +17,14 @@
 # tile
 # ===-----------------------------------------------------------------------===#
 
-comptime Static1DTileUnitFunc = def[width: Int](Int) capturing[_] -> None
+comptime Static1DTileUnitFunc = def[width: Int](Int) -> None
 """Signature of a 1D tiled function with static tile size.
 
 The function takes a static tile size parameter and an offset argument,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Dynamic1DTileUnitFunc = def(Int, Int) capturing[_] -> None
+comptime Dynamic1DTileUnitFunc = def(Int, Int) -> None
 """Signature of a 1D tiled function with dynamic tile size.
 
 The function takes a dynamic tile size and an offset argument,
@@ -32,9 +32,7 @@ i.e. `func(offset: Int, tile_size: Int)`.
 """
 
 
-comptime BinaryTile1DTileUnitFunc = def[width: Int](Int, Int) capturing[
-    _
-] -> None
+comptime BinaryTile1DTileUnitFunc = def[width: Int](Int, Int) -> None
 """
 Signature of a tiled function that performs some work with a dynamic tile size
 and a secondary static tile size.
@@ -43,8 +41,12 @@ and a secondary static tile size.
 
 @always_inline
 def tile[
-    workgroup_function: Static1DTileUnitFunc, tile_size_list: List[Int]
-](offset: Int, upperbound: Int):
+    tile_size_list: List[Int]
+](
+    offset: Int,
+    upperbound: Int,
+    workgroup_function: Some[Static1DTileUnitFunc],
+):
     """A generator that launches work groups in specified list of tile sizes.
 
     A workgroup function is a function that can process a configurable
@@ -61,14 +63,14 @@ def tile[
     than 3 from upperbound and then try `func[2]`, and then `func[1]`, etc.
 
     Parameters:
-        workgroup_function: Workgroup function that processes one tile of
-          workload.
         tile_size_list: List of tile sizes to launch work.
 
     Args:
         offset: The initial index to start the work from.
         upperbound: The runtime upperbound that the work function should not
           exceed.
+        workgroup_function: Workgroup function that processes one tile of
+            workload.
     """
 
     # Initialize where to start on the overall work load.
@@ -83,23 +85,24 @@ def tile[
 
 
 @always_inline
-def tile[
-    workgroup_function: Dynamic1DTileUnitFunc,
-](offset: Int, upperbound: Int, *tile_size_list: Int):
+def tile(
+    offset: Int,
+    upperbound: Int,
+    *tile_size_list: Int,
+    workgroup_function: Some[Dynamic1DTileUnitFunc],
+):
     """A generator that launches work groups in specified list of tile sizes.
 
     This is the version of tile generator for the case where work_group function
     can take the tile size as a runtime value.
-
-    Parameters:
-        workgroup_function: Workgroup function that processes one tile of
-          workload.
 
     Args:
         offset: The initial index to start the work from.
         upperbound: The runtime upperbound that the work function should not
           exceed.
         tile_size_list: List of tile sizes to launch work.
+        workgroup_function: Workgroup function that processes one tile of
+          workload.
     """
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
@@ -121,12 +124,12 @@ def tile[
 def tile[
     secondary_tile_size_list: List[Int],
     secondary_cleanup_tile: Int,
-    workgroup_function: BinaryTile1DTileUnitFunc,
 ](
     offset: Int,
     upperbound: Int,
     *primary_tile_size_list: Int,
     primary_cleanup_tile: Int,
+    workgroup_function: Some[BinaryTile1DTileUnitFunc],
 ):
     """A generator that launches work groups in specified list of tile sizes
     until the sum of primary_tile_sizes has exceeded the upperbound.
@@ -135,8 +138,6 @@ def tile[
         secondary_tile_size_list: List of static tile sizes to launch work.
         secondary_cleanup_tile: Last static tile to use when primary tile sizes
           don't fit exactly within the upperbound.
-        workgroup_function: Workgroup function that processes one tile of
-          workload.
 
     Args:
         offset: The initial index to start the work from.
@@ -145,6 +146,8 @@ def tile[
         primary_tile_size_list: List of dynamic tile sizes to launch work.
         primary_cleanup_tile: Last dynamic tile to use when primary tile sizes
           don't fit exactly within the upperbound.
+        workgroup_function: Workgroup function that processes one tile of
+          workload.
     """
     var work_idx = offset
     comptime num_tiles = len(secondary_tile_size_list)
@@ -169,9 +172,7 @@ def tile[
 # ===-----------------------------------------------------------------------===#
 
 
-comptime Static2DTileUnitFunc = def[tile_x: Int, tile_y: Int](
-    Int, Int
-) capturing[_] -> None
+comptime Static2DTileUnitFunc = def[tile_x: Int, tile_y: Int](Int, Int) -> None
 """Signature of a 2D tiled function with static tile size.
 
 The function takes static tile size parameters and offset arguments, i.e.
@@ -181,16 +182,20 @@ The function takes static tile size parameters and offset arguments, i.e.
 
 @always_inline
 def tile[
-    workgroup_function: Static2DTileUnitFunc,
     tile_sizes_x: List[Int],
     tile_sizes_y: List[Int],
-](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
+](
+    offset_x: Int,
+    offset_y: Int,
+    upperbound_x: Int,
+    upperbound_y: Int,
+    workgroup_function: Some[Static2DTileUnitFunc],
+):
     """Launches workgroup_function using the largest tile sizes possible in each
     dimension, starting from the x and y offset, until the x and y upperbounds
     are reached.
 
     Parameters:
-        workgroup_function: Function that is invoked for each tile and offset.
         tile_sizes_x: List of tile sizes to use for the first parameter of workgroup_function.
         tile_sizes_y: List of tile sizes to use for the second parameter of workgroup_function.
 
@@ -199,6 +204,7 @@ def tile[
         offset_y: Initial y offset passed to workgroup_function.
         upperbound_x: Max offset in x dimension passed to workgroup function.
         upperbound_y: Max offset in y dimension passed to workgroup function.
+        workgroup_function: Function that is invoked for each tile and offset.
     """
     # Initialize where to start on the overall work load.
     var current_offset_y: Int = offset_y

@@ -14,6 +14,7 @@ modular_py_library(
         "realization_context.py",
         "support.py",
         "tensor.py",
+        "tree_utils.py",
     ] + glob([
         "functional/**/*.py",
         "sharding/**/*.py",

@@ -24,16 +24,14 @@ from transformers import AutoConfig
 
 from .model_config import Gemma4ForConditionalGenerationConfig
 
-_GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3
-
 
 class Gemma4MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for Gemma4 (vision-language) models.
 
     Reserves a per-device activation budget (a base sized from the KV cache
-    dtype, plus optional graph-capture headroom), scaled by the device count to
-    match the total-across-devices budget in
-    :meth:`MemoryEstimator.estimate_memory_footprint`.  Also provides vision
+    dtype), scaled by the device count to match the total-across-devices
+    budget in
+    :meth:`MemoryEstimator.plan_from_sizes`.  Also provides vision
     cache entry byte estimation for the KV-and-vision-cache reservation path.
     """
 
@@ -70,8 +68,6 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             pipeline_config.model.kv_cache.kv_cache_format,
         )
         base = (30 // cache_dtype.size_in_bytes) * 1024**3
-        if pipeline_config.runtime.device_graph_capture:
-            base += _GRAPH_CAPTURE_HEADROOM_BYTES
         return base * len(pipeline_config.model.device_specs)
 
     def estimate_vision_cache_entry_bytes(

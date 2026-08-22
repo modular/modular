@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """TMA load warp logic for FA4 (SM100 Flash Attention)."""
 
-from std.math import ceildiv
+from std.math import ceildiv, gcd
 from std.sys import size_of
 from max.gpu.memory import CacheEviction
 from layout.tma_async import SharedMemBarrier
@@ -607,6 +607,20 @@ def fa4_load[
     # `num_v_sub_tiles=num_qk_stages` reduction split within one of those two
     # documented cases for any `page_size`.
     comptime partition_keys = config.BN // config.m_pack
+    # `p_base` below walks in `partition_keys`-row steps, NOT
+    # `base_alignment`-row steps -- `base_alignment` is the TILE-level
+    # `MaskType.start_column_alignment[...]()`, a promise about the tile's own
+    # base row (`kv_row_base`), not about the `partition_keys` stride a
+    # partition sits at inside it. The promise this walk can actually keep is
+    # only their gcd. Do NOT "simplify" this back to `base_alignment`: at
+    # `page_size == config.BN` (256 on the shipping grid) every admitted mask
+    # (Null/Causal/Chunked/SlidingWindow) has `base_alignment % page_size ==
+    # 0`, so `kv_lut.populate` would take its `num_pages == 1` fast arm and
+    # drop `tok_in_block` -- silently wrong keys (partition 1 aliases
+    # partition 0's page), not a build error. The general rule: an alignment
+    # promise is derived at the call site from the loop's OWN stride, never
+    # inherited from the enclosing tile.
+    comptime v_e_base_alignment = gcd(base_alignment, partition_keys)
     # Per-partition SMEM footprint WITHIN one reduction-chunk ring slot: one
     # reduction chunk (`v_e_chunk_rows()` chunk-keys x `v_e_box_cols()` full
     # depth) = `pv_bk_chunk * padded_ov_depth` elems. This is the REGION size,
@@ -654,7 +668,7 @@ def fa4_load[
         comptime for p in range(config.m_pack):
             var p_base = kv_row_base + UInt32(p * partition_keys)
             var p_rows = kv_lut.populate[
-                partition_keys, base_alignment, False, True
+                partition_keys, v_e_base_alignment, False, True
             ](seq_info.prompt_idx, p_base)
             # Each partition owns a DIFFERENT key range, and sub-tile `r` sits
             # `r` reduction chunks into it, so the valid-page count is per

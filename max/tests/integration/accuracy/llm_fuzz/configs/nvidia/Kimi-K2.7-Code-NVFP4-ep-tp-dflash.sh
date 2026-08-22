@@ -38,8 +38,7 @@ extra_pipelines_args=(
   --speculative-method=dflash
   --num-speculative-tokens=7
   --kv-cache-format=float8_e4m3fn
-  --kv-connector=tiered
-  --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
+  --kv-connector-config '{"type":"tiered","host_offload_max_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
   --reasoning-parser=kimik2_5
   --tool-parser=kimik2_5
   --enable-structured-output

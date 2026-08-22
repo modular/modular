@@ -5,4 +5,4 @@ the `mojo.importer` module you must import in your Python code in order to load
 a Mojo module.
 
 For details, see the [Calling Mojo from
-Python](https://docs.modular.com/mojo/manual/python/mojo-from-python) docs.
+Python](https://mojolang.org/docs/manual/python/mojo-from-python) docs.

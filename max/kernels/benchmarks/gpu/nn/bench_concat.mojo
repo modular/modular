@@ -130,9 +130,10 @@ def bench_concat[
         input1_host.as_unsafe_any_origin(),
     )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
+    def bench_func(
+        mut b: Bencher, shape: IndexList[rank]
+    ) raises {mut output_device, imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
             _concat_gpu_elementwise[epilogue_fn=None](
@@ -141,7 +142,8 @@ def bench_concat[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_with_input[IndexList[rank], bench_func](
+    b.bench_with_input(
+        bench_func,
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
@@ -209,9 +211,8 @@ def bench_concat_inner_most_single_dim[
     var out_dev = ctx.enqueue_create_buffer[dtype](n_out)
     ctx.synchronize()
 
-    @__parameter
     @always_inline
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {mut out_dev, imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {mut out_dev, imm}:
             comptime if static_shape:
@@ -299,7 +300,8 @@ def bench_concat_inner_most_single_dim[
         bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "concat_inner_most_single_dim",
             input_id=String(shape_tag, dtype, d0, d1, d2, d3, d4, sep="/"),

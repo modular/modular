@@ -347,7 +347,7 @@ class _FreeKVCacheBlockQueue(Generic[BlockT]):
 
     def __init__(self, blocks: Sequence[BlockT] = ()) -> None:
         self.num_free_blocks = len(blocks)
-        self.free_blocks = set(block.bid for block in blocks)
+        self.free_blocks = {block.bid for block in blocks}
 
         # Initialize the doubly linked list of free blocks.
         self.free_list_head: BlockT | None = blocks[0] if blocks else None

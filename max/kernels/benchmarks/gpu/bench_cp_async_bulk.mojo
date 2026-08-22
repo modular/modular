@@ -229,9 +229,8 @@ def main() raises:
         var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
         var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher):
+        def bench_func(mut b: Bencher) {imm}:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[
@@ -247,7 +246,8 @@ def main() raises:
 
             bencher_iter_custom(b, kernel_launch, ctx)
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "cp_async_bulk",
                 input_id=String(

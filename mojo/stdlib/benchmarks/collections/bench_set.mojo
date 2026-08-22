@@ -36,7 +36,6 @@ def make_string_set[size: Int]() -> Set[String]:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.__eq__ (Int keys)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_eq_int[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal Int sets."""
     var s1 = make_int_set[size]()
@@ -52,7 +51,6 @@ def bench_set_eq_int[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.__eq__ (String keys - expensive hash)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_eq_string[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal String sets."""
     var s1 = make_string_set[size]()
@@ -68,7 +66,6 @@ def bench_set_eq_string[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.__eq__ early exit (different sizes)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
     """Benchmark equality fast-path rejection when sizes differ."""
     var s1 = make_int_set[size]()
@@ -84,7 +81,6 @@ def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.__eq__ early exit (same size, different elements)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
     """Benchmark equality when sets have same size but different elements."""
     var s1 = make_int_set[size]()
@@ -102,7 +98,6 @@ def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.__contains__
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_contains[size: Int](mut b: Bencher) raises:
     """Benchmark membership check for 10 elements."""
     var s = make_int_set[size]()
@@ -119,7 +114,6 @@ def bench_set_contains[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.add
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_add[size: Int](mut b: Bencher) raises:
     """Benchmark adding 10 existing elements (duplicate check) to a set."""
     var s = make_int_set[size]()
@@ -136,7 +130,6 @@ def bench_set_add[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.union
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_union[size: Int](mut b: Bencher) raises:
     """Benchmark union of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
@@ -155,7 +148,6 @@ def bench_set_union[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.intersection
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_intersection[size: Int](mut b: Bencher) raises:
     """Benchmark intersection of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
@@ -174,7 +166,6 @@ def bench_set_intersection[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.difference
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_difference[size: Int](mut b: Bencher) raises:
     """Benchmark difference of two sets with 50% overlap."""
     var s1 = make_int_set[size]()
@@ -193,7 +184,6 @@ def bench_set_difference[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.intersection_update (50% overlap, destructive)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_intersection_update[size: Int](mut b: Bencher) raises:
     """Benchmark in-place intersection with 50% overlap.
 
@@ -202,29 +192,26 @@ def bench_set_intersection_update[size: Int](mut b: Bencher) raises:
     """
     var half = size // 2
     var s1 = make_int_set[size]()
-    var s1_orig = make_int_set[size]()
+    var s1_orig = s1.copy()
     var s2 = Set[Int]()
     for i in range(half, half + size):
         s2.add(i)
 
     @always_inline
-    @__parameter
-    def reset():
+    def reset(mut s1: Set[Int]) {imm s1_orig}:
         s1 = s1_orig.copy()
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn(mut s1: Set[Int]) {imm s2}:
         black_box(s1).intersection_update(black_box(s2))
         keep(len(s1))
 
-    b.iter_preproc[call_fn, reset]()
+    b.iter_preproc(s1, call_fn, reset)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Set.intersection_update (asymmetric: large self, small other)
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_set_intersection_update_asymmetric[
     size: Int
 ](mut b: Bencher,) raises:
@@ -234,23 +221,21 @@ def bench_set_intersection_update_asymmetric[
     Exercises the iterate-smaller-side optimization.
     """
     var s1 = make_int_set[size]()
-    var s1_orig = make_int_set[size]()
+    var s1_orig = s1.copy()
     var s2 = Set[Int]()
     for i in range(10):
         s2.add(i)
 
     @always_inline
-    @__parameter
-    def reset():
+    def reset(mut s1: Set[Int]) {imm s1_orig}:
         s1 = s1_orig.copy()
 
     @always_inline
-    @__parameter
-    def call_fn():
+    def call_fn(mut s1: Set[Int]) {s2}:
         black_box(s1).intersection_update(black_box(s2))
         keep(s1)
 
-    b.iter_preproc[call_fn, reset]()
+    b.iter_preproc(s1, call_fn, reset)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -264,44 +249,55 @@ def main() raises:
         comptime size = rebind[Int](sizes[i])
 
         # Equality benchmarks
-        m.bench_function[bench_set_eq_int[size]](
-            BenchId(String("bench_set_eq_int[", size, "]"))
+        m.bench_function(
+            bench_set_eq_int[size],
+            BenchId(String("bench_set_eq_int[", size, "]")),
         )
-        m.bench_function[bench_set_eq_string[size]](
-            BenchId(String("bench_set_eq_string[", size, "]"))
+        m.bench_function(
+            bench_set_eq_string[size],
+            BenchId(String("bench_set_eq_string[", size, "]")),
         )
-        m.bench_function[bench_set_eq_diff_size[size]](
-            BenchId(String("bench_set_eq_diff_size[", size, "]"))
+        m.bench_function(
+            bench_set_eq_diff_size[size],
+            BenchId(String("bench_set_eq_diff_size[", size, "]")),
         )
-        m.bench_function[bench_set_eq_diff_elems[size]](
-            BenchId(String("bench_set_eq_diff_elems[", size, "]"))
+        m.bench_function(
+            bench_set_eq_diff_elems[size],
+            BenchId(String("bench_set_eq_diff_elems[", size, "]")),
         )
 
         # Basic operations
-        m.bench_function[bench_set_contains[size]](
-            BenchId(String("bench_set_contains[", size, "]"))
+        m.bench_function(
+            bench_set_contains[size],
+            BenchId(String("bench_set_contains[", size, "]")),
         )
-        m.bench_function[bench_set_add[size]](
-            BenchId(String("bench_set_add[", size, "]"))
+        m.bench_function(
+            bench_set_add[size],
+            BenchId(String("bench_set_add[", size, "]")),
         )
 
         # Set algebra
-        m.bench_function[bench_set_union[size]](
-            BenchId(String("bench_set_union[", size, "]"))
+        m.bench_function(
+            bench_set_union[size],
+            BenchId(String("bench_set_union[", size, "]")),
         )
-        m.bench_function[bench_set_intersection[size]](
-            BenchId(String("bench_set_intersection[", size, "]"))
+        m.bench_function(
+            bench_set_intersection[size],
+            BenchId(String("bench_set_intersection[", size, "]")),
         )
-        m.bench_function[bench_set_difference[size]](
-            BenchId(String("bench_set_difference[", size, "]"))
+        m.bench_function(
+            bench_set_difference[size],
+            BenchId(String("bench_set_difference[", size, "]")),
         )
-        m.bench_function[bench_set_intersection_update[size]](
-            BenchId(String("bench_set_intersection_update[", size, "]"))
+        m.bench_function(
+            bench_set_intersection_update[size],
+            BenchId(String("bench_set_intersection_update[", size, "]")),
         )
-        m.bench_function[bench_set_intersection_update_asymmetric[size]](
+        m.bench_function(
+            bench_set_intersection_update_asymmetric[size],
             BenchId(
                 String("bench_set_intersection_update_asymmetric[", size, "]")
-            )
+            ),
         )
 
     print(m)

@@ -261,7 +261,7 @@ class StructuralTagToolParser(ABC):
     @property
     def _start_marker(self) -> str:
         """The marker that opens the tool-call region (section or call)."""
-        return self.SECTION_BEGIN if self.SECTION_BEGIN else self.CALL_BEGIN
+        return self.SECTION_BEGIN or self.CALL_BEGIN
 
     # ----- Public ToolParser protocol -----------------------------------
 
@@ -424,7 +424,7 @@ class StructuralTagToolParser(ABC):
         Schema-driven parsers (e.g. MiniMax-M3) override this; see
         ``ToolParser.set_streaming_tool_schemas`` for when that is required.
         """
-        return None
+        return
 
     # ----- Hooks (subclasses override) ----------------------------------
 

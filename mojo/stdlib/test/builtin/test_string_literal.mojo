@@ -256,14 +256,14 @@ def test_iter() raises:
 
 def test_layout() raises:
     # Test empty StringLiteral contents
-    var empty = "".unsafe_ptr()
+    var empty = "".ptr()
     # An empty string literal is stored as just the NUL terminator.
     assert_true(Int(empty) != 0)
     # TODO(MSTDL-596): This seems to hang?
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr = "hello".as_c_string_slice().unsafe_ptr()
+    var ptr = "hello".as_c_string_slice().ptr()
     assert_equal(ptr[unsafe_offset=0], Int8(ord("h")))
     assert_equal(ptr[unsafe_offset=1], Int8(ord("e")))
     assert_equal(ptr[unsafe_offset=2], Int8(ord("l")))
