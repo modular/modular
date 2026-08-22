@@ -242,6 +242,7 @@
             "id": "api/python/experimental"
           },
           "items": [
+            "api/python/experimental.compilation",
             "api/python/experimental.functional",
             {
               "type": "category",

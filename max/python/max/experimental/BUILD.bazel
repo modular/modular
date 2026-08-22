@@ -8,6 +8,7 @@ modular_py_library(
         "__init__.py",
         "_passes.py",
         "_tensor_repr.py",
+        "compilation.py",
         "compile_pool.py",
         "executor.py",
         "random.py",

@@ -600,6 +600,19 @@ This version is still a work in progress.
   saying whether a value reachable by two paths is one object or two. Import
   the module as a namespace: `from max.experimental import tree_utils as tree`.
 
+- Added `max.experimental.compilation`, three transforms over plain
+  callables. `stage(fn)(*args, **kwargs)` traces `fn` into a `max.graph`
+  that can be printed and inspected as MLIR. The arguments are `fn`'s own,
+  except that each tensor is given as a `TensorType`. This partially
+  evaluates `fn`: the tensor types become graph inputs, and every other
+  argument is evaluated during tracing. `compile(fn, weights=...)(*args,
+  **kwargs)` stages the same way and compiles the graph; the result is
+  callable on real tensors. Weights and device memory load only on the
+  first call, so `export_mef` can save the compiled graph to a file without
+  loading either. `as_subgraph(fn)` returns a drop-in replacement for `fn`
+  that, during tracing, calls one shared subgraph instead of inlining its
+  body, so a stack of identical layers compiles once.
+
 - `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
   argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
   contiguous groups of that many, each reducing independently, so the fused op
