@@ -66,7 +66,11 @@ class SummaryGroup(BaseModel):
 
 
 class GpuStatsGroup(BaseModel):
-    """Per-sample GPU utilization / memory sampling over the iteration."""
+    """Per-device GPU utilization / memory sampling over the iteration.
+
+    Each field is one value per GPU. The console prints those lists
+    through the shared percentile table; JSON keeps the per-GPU series.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
