@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import MagicMock
 
 import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
@@ -1021,3 +1022,52 @@ class TestCommittedInteriorEosTerminates:
         )
         # The truncated post-sequence token never reaches the matcher.
         assert [8] not in matcher.consumed, matcher.consumed
+
+
+class TestAnyConstrained:
+    """``StructuredOutputHelper.any_constrained``.
+
+    Distinguishes batches that actually use constrained decoding from
+    batches that merely have the bitmask path compiled in (feature flag on
+    or a tool parser configured).
+    """
+
+    @staticmethod
+    def _ctx(
+        *,
+        json_schema: str | None = None,
+        grammar: str | None = None,
+        matcher: MagicMock | None = None,
+    ) -> TextContext:
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+            json_schema=json_schema,
+            grammar=grammar,
+        )
+        if matcher is not None:
+            ctx.set_matcher(matcher)
+        return ctx
+
+    def test_empty_batch_is_unconstrained(self) -> None:
+        assert StructuredOutputHelper.any_constrained([]) is False
+
+    def test_plain_context_is_unconstrained(self) -> None:
+        assert StructuredOutputHelper.any_constrained([self._ctx()]) is False
+
+    def test_matcher_marks_constrained(self) -> None:
+        ctx = self._ctx(matcher=MagicMock())
+        assert StructuredOutputHelper.any_constrained([ctx]) is True
+
+    def test_json_schema_marks_constrained(self) -> None:
+        ctx = self._ctx(json_schema='{"type": "object"}')
+        assert StructuredOutputHelper.any_constrained([ctx]) is True
+
+    def test_grammar_marks_constrained(self) -> None:
+        ctx = self._ctx(grammar="root ::= 'a'")
+        assert StructuredOutputHelper.any_constrained([ctx]) is True
+
+    def test_constrained_when_any_row_constrained(self) -> None:
+        batch = [self._ctx(), self._ctx(matcher=MagicMock()), self._ctx()]
+        assert StructuredOutputHelper.any_constrained(batch) is True
