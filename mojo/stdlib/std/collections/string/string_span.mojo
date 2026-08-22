@@ -2438,13 +2438,21 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             fillchar.byte_length() == 1
         ), "fill char needs to be a one byte literal"
 
-        var result = String(capacity_bytes=width)
-        for _ in range(start):
-            result += fillchar
-        result += self
+        var self_len = self.byte_length()
+        var end_padding = width - start - self_len
+        debug_assert(start >= 0, "start padding must be non-negative")
+        debug_assert(end_padding >= 0, "end padding must be non-negative")
 
-        while result.byte_length() < width:
-            result += fillchar
+        var fill_byte = fillchar.as_bytes()[0]
+        var result = String(unsafe_uninit_length=width)
+        var buf = result.as_bytes()
+        buf[:start].fill(fill_byte)
+        unsafe_memcpy(
+            dest=buf.unsafe_ptr().unsafe_offset(start),
+            src=self.unsafe_ptr(),
+            count=self_len,
+        )
+        buf[start + self_len :].fill(fill_byte)
         return result
 
     def join[
