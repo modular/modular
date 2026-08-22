@@ -90,9 +90,7 @@ struct RawFileDescriptor(TrivialRegisterPassable, Writer):
                 abort("write() syscall failed")
 
             if bytes_written == 0:
-                abort(
-                    "write() returned 0 bytes (file may be full or closed)"
-                )
+                abort("write() returned 0 bytes (file may be full or closed)")
 
             total_written += Int(bytes_written)
 
