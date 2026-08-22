@@ -192,6 +192,8 @@ class MambaConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -201,7 +203,10 @@ class MambaConfig(ArchConfigWithKVCache):
                 "but config could not be loaded."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -210,6 +215,8 @@ class MambaConfig(ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         quantization_encoding = _select_quantization_encoding(
@@ -252,11 +259,7 @@ class MambaConfig(ArchConfigWithKVCache):
             intermediate_size=intermediate_size,
             num_hidden_layers=num_hidden_layers,
             vocab_size=huggingface_config.vocab_size,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
-            ),
+            max_seq_len=max_seq_len,
             dtype=dtype,
             devices=device_refs,
             # SSM-specific

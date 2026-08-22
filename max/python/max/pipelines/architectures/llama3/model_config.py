@@ -217,6 +217,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -227,7 +229,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -236,6 +241,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
@@ -318,11 +325,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 hidden_size=huggingface_config.hidden_size,
                 num_attention_heads=huggingface_config.num_attention_heads,
                 rope_theta=get_rope_theta(huggingface_config),
-                max_seq_len=Llama3Config.calculate_max_seq_len(
-                    pipeline_config,
-                    huggingface_config=huggingface_config,
-                    model_config=model_config,
-                ),
+                max_seq_len=max_seq_len,
                 interleaved_rope_weights=interleaved_rope_weights,
                 rope_scaling_params=rope_scaling_params,
                 longrope_scaling_params=longrope_scaling_params,
@@ -338,6 +341,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             rope_theta=get_rope_theta(huggingface_config),
             rope_scaling_params=rope_scaling_params,
             longrope_scaling_params=longrope_scaling_params,
+            max_seq_len=max_seq_len,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
@@ -348,11 +352,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             quantization_config=gptq_quant_config(
                 quantization_encoding,
                 pipeline_config.model.huggingface_config,
-            ),
-            max_seq_len=Llama3Config.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
             ),
             kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,

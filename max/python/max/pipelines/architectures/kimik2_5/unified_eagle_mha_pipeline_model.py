@@ -282,6 +282,7 @@ class Eagle3MHAKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_config=config,
+            max_seq_len=self.max_seq_len,
         )
         self.model_config = kimik2_5_config
         self.nn_model = KimiK2_5(kimik2_5_config)

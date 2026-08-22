@@ -103,6 +103,9 @@ class DummyPipelineConfig(PipelineConfig):
             weight_path=[],
         )
         model_config.kv_cache = KVCacheConfig()
+        # model_construct bypasses __init__, where user intent for max_length
+        # is captured; mirror the capture so planning sees the same bit.
+        model_config._max_length_user_provided = max_length is not None
 
         # `ArchConfig.initialize` resolves the encoding via
         # `_select_quantization_encoding`, which reads the HF weight repo's

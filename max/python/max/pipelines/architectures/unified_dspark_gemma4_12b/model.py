@@ -197,7 +197,7 @@ class UnifiedDSparkGemma4_12BModel(
         self, state_dict: dict[str, Any]
     ) -> UnifiedDSparkGemma4_12BConfig:
         unified_config = UnifiedDSparkGemma4_12BConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         target_hf_config = self.huggingface_config
         assert target_hf_config is not None

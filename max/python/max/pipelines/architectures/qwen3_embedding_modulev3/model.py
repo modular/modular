@@ -145,7 +145,6 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         huggingface_config = self.huggingface_config
 
         head_dim = huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.model.max_length or 32768
         norm_eps = getattr(huggingface_config, "rms_norm_eps", 1e-6)
         attention_multiplier = getattr(
             huggingface_config,
@@ -157,7 +156,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
             theta=huggingface_config.rope_theta,
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             device=self.devices[0],
             head_dim=head_dim,
             interleaved=False,

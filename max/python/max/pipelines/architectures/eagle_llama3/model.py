@@ -92,8 +92,7 @@ class EagleLlama3Model(LlamaModelBase):
         draft_hf_config = draft_model.huggingface_config
         assert draft_hf_config is not None
         model_config = Llama3Config.initialize_from_config(
-            self.pipeline_config,
-            draft_hf_config,
+            self.pipeline_config, draft_hf_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=draft_hf_config,

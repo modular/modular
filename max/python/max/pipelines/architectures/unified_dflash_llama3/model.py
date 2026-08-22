@@ -193,7 +193,9 @@ class UnifiedDflashLlama3Model(
         resolved_spec = self.resolved_num_speculative_tokens
         assert resolved_spec is not None
 
-        target_config = Llama3Config.initialize(self.pipeline_config)
+        target_config = Llama3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         target_config.finalize(
             huggingface_config=target_hf_config,
             state_dict=state_dict,
@@ -208,7 +210,10 @@ class UnifiedDflashLlama3Model(
         )
 
         draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config, draft_model_config
+            self.pipeline_config,
+            draft_hf_config,
+            draft_model_config,
+            max_seq_len=self.max_seq_len,
         )
         # ``initialize_from_config`` defaults the draft to ``gpu:0``;
         # pin to the target's device(s) so the weights co-locate

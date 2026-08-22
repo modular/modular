@@ -42,9 +42,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
-    upper_bounded_default,
 )
-from transformers import AutoConfig
 
 from .batch_processor import PixtralModuleV3BatchProcessor
 from .model_config import PixtralConfig
@@ -82,26 +80,6 @@ class PixtralModel(
     batch_processor_cls: ClassVar[type[PixtralModuleV3BatchProcessor]] = (
         PixtralModuleV3BatchProcessor
     )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
-        upper_bound = huggingface_config.text_config.max_position_embeddings
-        try:
-            return upper_bounded_default(
-                upper_bound=upper_bound,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                f"Unable to infer max_length for {cls.__qualname__}, "
-                f"the provided max_length ({pipeline_config.model.max_length}) "
-                f"exceeds the model's max_position_embeddings ({upper_bound})."
-            ) from e
 
     vision_model: Callable[..., Any] | None
     """Compiled vision model (encoder + projector) for a ragged batch of images."""
@@ -256,7 +234,9 @@ class PixtralModel(
             * vision_config.patch_size
         )
 
-        model_config = PixtralConfig.initialize(self.pipeline_config)
+        model_config = PixtralConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.return_logits = self.return_logits
         return model_config
 

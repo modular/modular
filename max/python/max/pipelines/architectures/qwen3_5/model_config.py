@@ -211,6 +211,21 @@ class Qwen3_5Config(Llama3Config):
         """Extract text config, handling both multimodal and text-only models."""
         return getattr(huggingface_config, "text_config", huggingface_config)
 
+    @override
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Bounds against the text config's ``max_position_embeddings``."""
+        return super().calculate_max_seq_len(
+            pipeline_config,
+            cls._get_text_config(huggingface_config),
+            model_config,
+        )
+
     @staticmethod
     def _get_layer_types(text_config: AutoConfig) -> list[str]:
         """Return the per-layer attention type list for the model.
@@ -367,6 +382,8 @@ class Qwen3_5Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -377,7 +394,10 @@ class Qwen3_5Config(Llama3Config):
                 "but config could not be loaded."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @override
@@ -387,6 +407,8 @@ class Qwen3_5Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initialize config from pipeline and HuggingFace configurations.
 
@@ -398,7 +420,7 @@ class Qwen3_5Config(Llama3Config):
 
         # Get base Llama3Config from the text config
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config
+            pipeline_config, text_config, max_seq_len=max_seq_len
         )
 
         kv_cache_config = model_config.kv_cache

@@ -209,6 +209,16 @@ This version is still a work in progress.
   `MemoryEstimator.plan` instead to plan from a `PipelineConfig` alone;
   `plan_from_sizes` is for callers that have already computed the weight,
   activation, and signal-buffer sizes.
+- The sequence-length rule now runs once, when the config is built:
+  `config.model.max_length` holds the resolved length and
+  `PipelineArgs.max_length` keeps what the user asked for.
+  `ArchConfig.initialize` receives that length instead of deriving it
+  (`max_seq_len` is now a required keyword argument), and memory planning
+  may only lower it, on the plan.
+  `PipelineModel.calculate_max_seq_len`,
+  `ArchConfigWithAttentionKVCache.user_provided_max_length` and
+  `model_max_seq_len` are removed; architectures own the rule, so Mistral,
+  Mistral3 and Pixtral now bound `max_length` on their configs.
 - Made `MemoryEstimator.free_memory`, `static_memory_size`,
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and

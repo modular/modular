@@ -217,6 +217,7 @@ class Qwen3VLModel(
         qwen3vl_config = Qwen3VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         qwen3vl_config.finalize(
             huggingface_config=self.huggingface_config,

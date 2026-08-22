@@ -196,6 +196,8 @@ class Gemma4TextConfig(Gemma3Config):
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initialize Gemma4TextConfig from pipeline and HuggingFace configs.
 
@@ -266,9 +268,7 @@ class Gemma4TextConfig(Gemma3Config):
             head_dim=huggingface_config.head_dim,
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
-            max_seq_len=Gemma4TextConfig.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             # Gemma4 uses different ropes for global and sliding window attention
             rope_theta=-1,
@@ -561,13 +561,16 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             }
         )
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
         """Calculates the maximum sequence length for the Gemma 4 model."""
         return Gemma4TextConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config.text_config
+            pipeline_config, huggingface_config.text_config, model_config
         )
 
     @override
@@ -576,6 +579,8 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes from pipeline configuration.
 
@@ -595,13 +600,17 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 " Please ensure the model repository contains a valid"
                 " config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes from pipeline and HuggingFace configs.
 
@@ -654,6 +663,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         text_config = Gemma4TextConfig.initialize_from_config(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_params = cls.construct_kv_params(

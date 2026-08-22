@@ -224,14 +224,6 @@ class KimiK2_5Model(
         )
 
     @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return KimiK2_5TextConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config.text_config
-        )
-
-    @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return KimiK2_5Config.get_num_layers(huggingface_config)
 
@@ -267,7 +259,10 @@ class KimiK2_5Model(
         model_config = KimiK2_5Config.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
-            llm_config=KimiK2_5TextConfig.initialize(self.pipeline_config),
+            max_seq_len=self.max_seq_len,
+            llm_config=KimiK2_5TextConfig.initialize(
+                self.pipeline_config, max_seq_len=self.max_seq_len
+            ),
         )
         llm = model_config.llm_config
 
@@ -305,8 +300,7 @@ class KimiK2_5Model(
         llm.mla_o_proj_quantized = False
 
         llm.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-            or llm.max_batch_context_length
+            self.planned_max_batch_total_tokens or llm.max_batch_context_length
         )
 
         if llm.topk_method == "noaux_tc":

@@ -35,12 +35,10 @@ from max.pipelines.lib import (
     CompilationTimer,
     ModelInputs,
     ModelOutputs,
-    PipelineConfig,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
-from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .batch_processor import Qwen3_5BatchProcessor
@@ -240,15 +238,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     # Used for decode/text-only steps so that buffers() always has the right input count.
     _empty_lm_image_embeddings: list[Buffer] | None = None
     _empty_lm_image_token_indices: list[Buffer] | None = None
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        text_config = Qwen3_5Config._get_text_config(huggingface_config)
-        return Qwen3_5Config.calculate_max_seq_len(pipeline_config, text_config)
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
@@ -487,7 +476,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         full_state_dict = state_dict
 
         model_config = Qwen3_5Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=Qwen3_5Config._get_text_config(

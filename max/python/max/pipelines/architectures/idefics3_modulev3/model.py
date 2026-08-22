@@ -43,7 +43,6 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
-from transformers.models.auto.configuration_auto import AutoConfig
 
 from .batch_processor import Idefics3ModuleV3BatchProcessor
 from .model_config import Idefics3Config
@@ -103,21 +102,6 @@ class Idefics3Model(
         Idefics3ModuleV3BatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
-
     vision_model: Callable[..., Any] | None
     """The compiled vision model."""
 
@@ -171,7 +155,9 @@ class Idefics3Model(
     ) -> Idefics3Config:
         del state_dict
 
-        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config = Idefics3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=self._language_weights_dict,

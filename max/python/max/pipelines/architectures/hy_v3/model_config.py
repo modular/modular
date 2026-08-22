@@ -168,10 +168,14 @@ class HYV3Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         return cls.initialize_from_config(
-            pipeline_config, model_config.huggingface_config
+            pipeline_config,
+            model_config.huggingface_config,
+            max_seq_len=max_seq_len,
         )
 
     @override
@@ -181,6 +185,8 @@ class HYV3Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         # Hy3 stores RoPE under ``rope_parameters`` (a flat dict).
         # Llama3Config reads ``rope_theta`` / ``rope_scaling`` directly,
@@ -196,7 +202,10 @@ class HYV3Config(Llama3Config):
         )
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             huggingface_config.rope_scaling = _orig_rope_scaling

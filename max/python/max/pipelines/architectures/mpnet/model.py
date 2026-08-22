@@ -102,7 +102,7 @@ class MPNetPipelineModel(GraphPipelineModel[TextContext]):
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
         del state_dict
-        return MPNetConfig.initialize(self.pipeline_config)
+        return self.arch_config_as(MPNetConfig)
 
     def _build_graph_for_compile(
         self,

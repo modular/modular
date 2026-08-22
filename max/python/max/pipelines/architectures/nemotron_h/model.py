@@ -204,6 +204,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             self.dtype,
             self.kv_params,
             [device_ref],
+            max_seq_len=self.max_seq_len,
         )
         # FP8 is per-module: a Linear is FP8 iff its weight_scale is present in
         # the checkpoint. Record which layers are FP8 from weight_scale keys.

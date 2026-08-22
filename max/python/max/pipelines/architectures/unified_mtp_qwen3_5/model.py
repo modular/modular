@@ -149,7 +149,9 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3_5Config:
         config = Qwen3_5Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         config.finalize(
             huggingface_config=Qwen3_5Config._get_text_config(
