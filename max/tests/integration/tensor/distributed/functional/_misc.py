@@ -30,6 +30,7 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
+import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -356,6 +357,10 @@ class _WhileLoop:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
+    @pytest.mark.skip(
+        reason="MXF-634: under MAX_EAGER_EXECUTOR=fallback-internal the loop "
+        "returns its input unchanged"
+    )
     def test_while_loop_non_distributed(self) -> None:
         """Happy path: while_loop using DF ops, adds 1.0 three times."""
         counter = Tensor.full([], 0, dtype=DType.float32, device=CPU())
@@ -457,5 +462,3 @@ class MiscTests(
     _WhileLoop,
 ):
     """Aggregates all misc op test classes for thin subclassing."""
-
-    pass

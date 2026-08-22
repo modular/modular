@@ -22,8 +22,7 @@ def write_to_disk(path: String, data: String) raises:
         f.write(data)
 
 
-@explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct FileBuffer(Deinitable where False):
     var path: String
     var data: String
 

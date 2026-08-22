@@ -44,6 +44,18 @@ def _coerce_dtype(value: Any) -> DType | Any:
 
 _CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 
+# Global default structured-output backend, used when neither the user nor the
+# resolved architecture specifies one. Single source of truth for the fallback
+# in ``PipelineConfig._resolve_default_structured_output_backend`` and
+# ``StructuredOutputHelper.from_tokenizer``.
+DEFAULT_STRUCTURED_OUTPUT_BACKEND = "xgrammar"
+
+# Global default for whitespace-tolerant structured-output grammars, used when
+# neither the user nor the resolved architecture specifies one. False (compact
+# JSON, no whitespace between tokens) is the Gemma-4 runaway mitigation from
+# 0c57a6bd331; flipping it is a product decision, not a per-model tweak.
+DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
+
 
 class SamplingConfig(ConfigFileModel):
     """Configuration for the sampling stage of token generation."""
@@ -64,6 +76,50 @@ class SamplingConfig(ConfigFileModel):
             "Enable structured generation/guided decoding for the server. This "
             "allows the user to pass a JSON schema in the ``response_format`` "
             "field, which the LLM will adhere to."
+        ),
+    )
+
+    structured_output_backend: str | None = Field(
+        default=None,
+        description=(
+            "Grammar backend for constrained decoding. One of ``xgrammar`` or "
+            "``llguidance``. When unset (``None``), resolved at config "
+            "construction to the architecture's default if it declares one, "
+            "else the global default ``xgrammar``. An explicit value always "
+            "wins."
+        ),
+    )
+
+    structured_output_any_whitespace: bool | None = Field(
+        default=None,
+        description=(
+            "Whether structured-output (``response_format``) grammars accept "
+            "whitespace between JSON tokens. ``False`` (the resolved default) "
+            "constrains generation to compact JSON -- no whitespace, "
+            "``','``/``':'`` separators -- which mitigates runaway generation "
+            "on some models but also masks the newline/indentation tokens "
+            "models prefer at structural boundaries. ``True`` uses the "
+            "grammar engine's whitespace-tolerant JSON. When unset "
+            "(``None``), resolved at config construction to the "
+            "architecture's default if it declares one, else ``False``. An "
+            "explicit value always wins. Tool-call grammars are unaffected."
+        ),
+    )
+
+    enable_tool_call_constrained_decode: bool = Field(
+        default=True,
+        description=(
+            "Whether tool-call requests are constrained to a server-generated "
+            "grammar during decoding. When enabled (the default), a configured "
+            "``runtime.tool_parser`` both produces a decode-time grammar and "
+            "parses the resulting output. Set to ``False`` to keep the parser "
+            "(tool calls are still parsed out of generated text) while skipping "
+            "the constrained-decode/bitmask path for tool calls -- useful when "
+            "the grammar path is undesirable but tool-call parsing is still "
+            "wanted. With this disabled, ``tool_choice=required`` or a named "
+            "function can no longer force a tool call. Independent of "
+            "``enable_structured_output``, which gates user-supplied "
+            "``response_format`` JSON schemas."
         ),
     )
 

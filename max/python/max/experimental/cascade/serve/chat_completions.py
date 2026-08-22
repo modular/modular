@@ -10,130 +10,66 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Chat-completion route adapter for cascade text generation."""
+"""Chat-completion HTTP route for cascade generative-AI pipelines.
+
+Binds :class:`OpenAIChatCompletionPipeline` to a FastAPI path. The pipeline owns
+the request and response translation, so this is only the HTTP surface.
+"""
 
 from __future__ import annotations
 
-import time
-from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
-from max.experimental.cascade.pipelines.textgen import (
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
+from fastapi.responses import Response, StreamingResponse
+from max.experimental.cascade.core import Runtime
+from max.experimental.cascade.interfaces.gen_ai import GenAIInterface
+from max.experimental.cascade.serve.openai_chat_pipeline import (
+    OpenAIChatCompletionPipeline,
 )
-from max.serve.schemas.openai import (
-    ChatCompletionResponseChoice,
-    ChatCompletionResponseMessage,
-    ChatCompletionStreamResponseChoice,
-    ChatCompletionStreamResponseDelta,
-    CreateChatCompletionRequest,
-    CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse,
-)
-from sse_starlette.sse import EventSourceResponse
+from max.serve.schemas.openai import CreateChatCompletionRequest
 
 
-def _normalize_message_content(
-    content: str | Sequence[Mapping[str, Any]],
-) -> str:
-    """Flatten a chat message content payload into plain text."""
-    if isinstance(content, str):
-        return content
-
-    text_parts: list[str] = []
-    unsupported_types: list[str] = []
-    for part in content:
-        if part.get("type") == "text" and part.get("text") is not None:
-            text_parts.append(part["text"])
-        else:
-            unsupported_types.append(part.get("type", "unknown"))
-
-    if unsupported_types:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported chat message content part types: "
-                + ", ".join(sorted(set(unsupported_types)))
-            ),
-        )
-
-    return "".join(text_parts)
-
-
-async def _stream_response(
-    response: AsyncIterable[str],
-    model: str,
-) -> AsyncIterator[str]:
-    async for text_chunk in response:
-        chunk = CreateChatCompletionStreamResponse(
-            id="chatcmpl-cascade",
-            created=int(time.time()),
-            model=model,
-            object="chat.completion.chunk",
-            choices=[
-                ChatCompletionStreamResponseChoice(
-                    index=0,
-                    delta=ChatCompletionStreamResponseDelta(
-                        content=text_chunk,
-                    ),
-                    finish_reason=None,
-                )
-            ],
-        )
-        yield chunk.model_dump_json()
-    yield "[DONE]"
-
-
-def build_router(
-    pipeline: TextGenInterface,
+async def build_router(
+    pipeline: GenAIInterface,
+    runtime: Runtime,
+    emit_reasoning_content: bool = False,
 ) -> APIRouter:
-    """Build OpenAI-style chat-completion routes for a pipeline."""
+    """Build the OpenAI-style chat-completion route for a generative pipeline.
+
+    The route pairs ``pipeline`` with an :class:`OpenAIChatCompletionPipeline`,
+    which is an implementation detail of this adapter, so callers hand over a
+    plain :class:`GenAIInterface`.
+
+    Args:
+        pipeline: The deployed pipeline to serve.
+        runtime: The runtime ``pipeline`` is already deployed on; only the
+            wrapper's own formatter worker is deployed here.
+        emit_reasoning_content: Emit reasoning under ``reasoning_content``
+            instead of ``reasoning``. A server-wide choice, so it is fixed onto
+            the formatter worker at deploy time.
+    """
+    chat = OpenAIChatCompletionPipeline(pipeline, emit_reasoning_content)
+    await chat.deploy(runtime)
+
     router = APIRouter()
 
     @router.post("/v1/chat/completions", response_model=None)
     async def chat_completions(
         request: CreateChatCompletionRequest,
-    ) -> CreateChatCompletionResponse | EventSourceResponse:
-        messages: ChatMessages = [
-            {
-                "role": message.get("role", ""),
-                "content": _normalize_message_content(
-                    message.get("content") or ""
-                ),
-            }
-            for message in request.messages
-        ]
-        req = GenerateRequest(
-            ignore_eos=request.ignore_eos,
-        )
-        if request.max_tokens is not None:
-            req.num_tokens = request.max_tokens
-        response = pipeline.generate_text(req, messages)
-
-        if request.stream:
-            return EventSourceResponse(
-                _stream_response(response, model=request.model),
-            )
-
-        chunks = [chunk async for chunk in response]
-        return CreateChatCompletionResponse(
-            id="chatcmpl-cascade",
-            created=int(time.time()),
-            model=request.model,
-            object="chat.completion",
-            choices=[
-                ChatCompletionResponseChoice(
-                    index=0,
-                    message=ChatCompletionResponseMessage(
-                        role="assistant",
-                        content="".join(chunks),
-                    ),
-                    finish_reason="stop",
+    ) -> Response | StreamingResponse:
+        # Awaiting before building the response is what keeps a rejected
+        # request a 400: a StreamingResponse commits the status line as soon as
+        # it starts.
+        try:
+            if request.stream:
+                return StreamingResponse(
+                    await chat.chat_completion_sse(request),
+                    media_type="text/event-stream",
                 )
-            ],
-        )
+            return Response(
+                content=await chat.chat_completion(request),
+                media_type="application/json",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return router

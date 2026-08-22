@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async
 def test_memset_async(ctx: DeviceContext) raises:
     print("== test_memset_async")
 
-    @parameter
+    @__parameter
     @always_inline
     def test_memset[dtype: DType](val: Scalar[dtype]) raises:
         comptime length = 4

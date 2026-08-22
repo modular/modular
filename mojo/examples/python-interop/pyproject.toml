@@ -14,7 +14,8 @@ channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 
 [tool.pixi.dependencies]
-mojo = "<1.0.0"
+max = "*"
+mojo = "*"
 
 [tool.pixi.tasks]
 hello = "python hello.py"

@@ -18,7 +18,7 @@ from std.random import random_ui64
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -135,23 +135,23 @@ def execute_ragged_flash_attention() raises:
         ),
     )
     for bs_idx in range(batch_size):
-        mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
+        var mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
-        true_ce_row_offset = true_ce_row_offsets[bs_idx]
-        mixed_ce_row_offset = mixed_ce_row_offsets[bs_idx]
+        var true_ce_row_offset = true_ce_row_offsets[bs_idx]
+        var mixed_ce_row_offset = mixed_ce_row_offsets[bs_idx]
 
-        mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
+        var mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
-        true_ce_offset = true_ce_q_ragged.ptr + true_ce_q_ragged._offset(
+        var true_ce_offset = true_ce_q_ragged.ptr + true_ce_q_ragged._offset(
             IndexList[3](
                 Int(true_ce_row_offset + UInt32(mixed_ce_cache_len)), 0, 0
             )
         )
-        mixed_ce_offset = mixed_ce_q_ragged.ptr + mixed_ce_q_ragged._offset(
+        var mixed_ce_offset = mixed_ce_q_ragged.ptr + mixed_ce_q_ragged._offset(
             IndexList[3](Int(mixed_ce_row_offset), 0, 0)
         )
 
-        memcpy(
+        unsafe_memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
             count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
@@ -221,9 +221,9 @@ def execute_ragged_flash_attention() raises:
             )
         ),
     )
-    paged_lut_set = Set[Int]()
+    var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
-        seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
+        var seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
@@ -233,7 +233,7 @@ def execute_ragged_flash_attention() raises:
             paged_lut_set.add(randval)
             paged_lut[bs, block_idx] = UInt32(randval)
 
-    true_ce_kv_collection = PagedCollectionType(
+    var true_ce_kv_collection = PagedCollectionType(
         LayoutTensor[
             kv_block_paged.dtype,
             Layout.row_major[6](),
@@ -264,7 +264,7 @@ def execute_ragged_flash_attention() raises:
         UInt32(true_ce_max_full_context_length),
     )
 
-    mixed_ce_kv_collection = PagedCollectionType(
+    var mixed_ce_kv_collection = PagedCollectionType(
         LayoutTensor[
             kv_block_paged.dtype,
             Layout.row_major[6](),
@@ -321,18 +321,18 @@ def execute_ragged_flash_attention() raises:
         mixed_ce_output,
     )
 
-    true_ce_out = true_ce_output
-    mixed_ce_out = mixed_ce_output
+    var true_ce_out = true_ce_output
+    var mixed_ce_out = mixed_ce_output
     for bs in range(batch_size):
-        mixed_ce_prompt_len = mixed_ce_prompt_lens[bs]
-        mixed_ce_row_offset = mixed_ce_row_offsets[bs]
-        true_ce_row_offset = true_ce_row_offsets[bs]
-        mixed_ce_cache_len = mixed_ce_cache_lens[bs]
+        var mixed_ce_prompt_len = mixed_ce_prompt_lens[bs]
+        var mixed_ce_row_offset = mixed_ce_row_offsets[bs]
+        var true_ce_row_offset = true_ce_row_offsets[bs]
+        var mixed_ce_cache_len = mixed_ce_cache_lens[bs]
 
-        true_ce_ragged_offset = Int(
+        var true_ce_ragged_offset = Int(
             true_ce_row_offset + UInt32(mixed_ce_cache_len)
         )
-        mixed_ce_ragged_offset = Int(mixed_ce_row_offset)
+        var mixed_ce_ragged_offset = Int(mixed_ce_row_offset)
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):

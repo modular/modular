@@ -57,9 +57,7 @@ import std.format._utils as fmt
 from .deque import Deque
 
 
-trait IntervalElement(
-    Comparable, Copyable, ImplicitlyDeletable, Intable, Writable
-):
+trait IntervalElement(Comparable, Copyable, Deinitable, Intable, Writable):
     """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
@@ -288,7 +286,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
+    U: Copyable & Comparable & Deinitable & Writable,
 ](Copyable, Writable):
     """A node containing an interval and associated data.
 
@@ -299,9 +297,7 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutUntrackedOrigin]
-    ]
+    comptime _PointerType = Optional[Pointer[Self, MutUntrackedOrigin]]
 
     var interval: Interval[Self.T]
     """The interval contained in this node."""
@@ -312,13 +308,13 @@ struct _IntervalNode[
     var max_end: Self.T
     """The maximum end value of this node."""
 
-    var _left: Self._OpaquePointer
+    var _left: Self._PointerType
     """The left child of this node."""
 
-    var _right: Self._OpaquePointer
+    var _right: Self._PointerType
     """The right child of this node."""
 
-    var _parent: Self._OpaquePointer
+    var _parent: Self._PointerType
     """The parent of this node."""
 
     var _is_red: Bool
@@ -326,27 +322,21 @@ struct _IntervalNode[
 
     def left(
         ref self,
-    ) -> ref[self._left] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._left] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the left child pointer."""
-        return UnsafePointer(to=self._left).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._left
 
     def right(
         ref self,
-    ) -> ref[self._right] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._right] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the right child pointer."""
-        return UnsafePointer(to=self._right).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._right
 
     def parent(
         ref self,
-    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
+    ) -> ref[self._parent] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the parent pointer."""
-        return UnsafePointer(to=self._parent).bitcast[
-            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._parent
 
     def __init__(
         out self,
@@ -354,9 +344,9 @@ struct _IntervalNode[
         end: Self.T,
         data: Self.U,
         *,
-        left: Self._OpaquePointer = {},
-        right: Self._OpaquePointer = {},
-        parent: Self._OpaquePointer = {},
+        left: Self._PointerType = {},
+        right: Self._PointerType = {},
+        parent: Self._PointerType = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -384,9 +374,9 @@ struct _IntervalNode[
         interval: Interval[Self.T],
         data: Self.U,
         *,
-        left: Self._OpaquePointer = {},
-        right: Self._OpaquePointer = {},
-        parent: Self._OpaquePointer = {},
+        left: Self._PointerType = {},
+        right: Self._PointerType = {},
+        parent: Self._PointerType = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -455,7 +445,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
+    U: Copyable & Comparable & Deinitable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
@@ -467,7 +457,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = Optional[
-        UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
+        Pointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
     ]
 
     var _root: Self._IntervalNodePointer
@@ -481,22 +471,22 @@ struct IntervalTree[
         self._root = Self._IntervalNodePointer()
         self._len = 0
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destructor that frees the interval tree's memory."""
         if self._root:
             Self._del_helper(self._root.value())
 
     @staticmethod
     def _del_helper(
-        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
+        node: Pointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
     ):
         if node[].left():
             Self._del_helper(node[].left().value())
         if node[].right():
             Self._del_helper(node[].right().value())
-        node.destroy_pointee()
+        node.unsafe_deinit_pointee()
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=node).unsafe_with_layout(
                 {count = 1}
             )
         )
@@ -656,10 +646,10 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc(
-            Layout[_IntervalNode[Self.T, Self.U]].single()
-        ).unsafe_leak()
-        new_node.init_pointee_move(_IntervalNode(interval, data))
+        var new_node: Pointer[
+            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
+        ] = alloc(Layout[_IntervalNode[Self.T, Self.U]].single()).unsafe_leak()
+        new_node.unsafe_write(_IntervalNode(interval, data))
         self._len += 1
 
         # If the tree is empty, set the root to the new node and color it black.
@@ -777,13 +767,14 @@ struct IntervalTree[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._draw(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._draw(w)
 
         fmt.FormatStruct(writer, "IntervalTree").params(
             fmt.TypeNames[Self.T, Self.U](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @no_inline
     def _draw[w: Writer](self, mut writer: w):

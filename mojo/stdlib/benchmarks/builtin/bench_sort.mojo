@@ -36,29 +36,26 @@ def randomize_list[
 
 @always_inline
 def insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _insertion_sort[_less_than](list)
+    _insertion_sort(list, _less_than)
 
 
 @always_inline
 def small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _small_sort[size, Scalar[dtype], _less_than](list)
+    _small_sort[size](list, _less_than)
 
 
 @always_inline
 def heap_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _heap_sort[_less_than](list)
+    _heap_sort(list, _less_than)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -71,68 +68,59 @@ def bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
 
     comptime for count in range(2, small_list_size + 1):
 
-        @parameter
-        def bench_sort_list(mut b: Bencher) raises:
+        def bench_sort_list(mut b: Bencher) raises {}:
             seed(1)
             var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
-            @parameter
-            def preproc():
+            def preproc(mut list: List[Scalar[dtype]]):
                 randomize_list(list, count)
 
             @always_inline
-            @parameter
-            def call_fn():
+            def call_fn(mut list: List[Scalar[dtype]]):
                 sort(list)
 
-            b.iter_preproc[call_fn, preproc]()
-            _ = list^
+            b.iter_preproc(list, call_fn, preproc)
 
-        @parameter
-        def bench_small_sort(mut b: Bencher) raises:
+        def bench_small_sort(mut b: Bencher) raises {}:
             seed(1)
             var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
-            @parameter
-            def preproc():
+            def preproc(mut list: List[Scalar[dtype]]):
                 randomize_list(list, count)
 
             @always_inline
-            @parameter
-            def call_fn():
+            def call_fn(mut list: List[Scalar[dtype]]):
                 small_sort[count](list)
 
-            b.iter_preproc[call_fn, preproc]()
-            _ = list^
+            b.iter_preproc(list, call_fn, preproc)
 
-        @parameter
-        def bench_insertion_sort(mut b: Bencher) raises:
+        def bench_insertion_sort(mut b: Bencher) raises {}:
             seed(1)
             var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
-            @parameter
-            def preproc():
+            def preproc(mut list: List[Scalar[dtype]]):
                 randomize_list(list, count)
 
             @always_inline
-            @parameter
-            def call_fn():
+            def call_fn(mut list: List[Scalar[dtype]]):
                 insertion_sort(list)
 
-            b.iter_preproc[call_fn, preproc]()
-            _ = list^
+            b.iter_preproc(list, call_fn, preproc)
 
-        m.bench_function[bench_sort_list](
-            BenchId(String("std_sort_random_", count, "_", dtype))
+        m.bench_function(
+            bench_sort_list,
+            BenchId(String("std_sort_random_", count, "_", dtype)),
         )
-        m.bench_function[bench_small_sort](
-            BenchId(String("sml_sort_random_", count, "_", dtype))
+        m.bench_function(
+            bench_small_sort,
+            BenchId(String("sml_sort_random_", count, "_", dtype)),
         )
-        m.bench_function[bench_insertion_sort](
-            BenchId(String("ins_sort_random_", count, "_", dtype))
+        m.bench_function(
+            bench_insertion_sort,
+            BenchId(String("ins_sort_random_", count, "_", dtype)),
         )
 
 
@@ -142,47 +130,41 @@ def bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
 
 
 def bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
-    @parameter
-    def bench_sort_list(mut b: Bencher) raises:
+    def bench_sort_list(mut b: Bencher) raises {var count}:
         seed(1)
         var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[Scalar[dtype]]) {var count}:
             randomize_list(list, count)
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[Scalar[dtype]]):
             sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    @parameter
-    def bench_insertion_sort(mut b: Bencher) raises:
+    def bench_insertion_sort(mut b: Bencher) raises {var count}:
         seed(1)
         var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[Scalar[dtype]]) {var count}:
             randomize_list(list, count)
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[Scalar[dtype]]):
             insertion_sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    m.bench_function[bench_sort_list](
-        BenchId(String("std_sort_random_", count, "_", dtype))
+    m.bench_function(
+        bench_sort_list,
+        BenchId(String("std_sort_random_", count, "_", dtype)),
     )
-    m.bench_function[bench_insertion_sort](
-        BenchId(String("ins_sort_random_", count, "_", dtype))
+    m.bench_function(
+        bench_insertion_sort,
+        BenchId(String("ins_sort_random_", count, "_", dtype)),
     )
 
 
@@ -192,48 +174,42 @@ def bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
 
 
 def bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
-    @parameter
-    def bench_sort_list(mut b: Bencher) raises:
+    def bench_sort_list(mut b: Bencher) raises {var count}:
         seed(1)
         var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[Scalar[dtype]]) {var count}:
             randomize_list(list, count)
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[Scalar[dtype]]):
             sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    @parameter
-    def bench_heap_sort(mut b: Bencher) raises:
+    def bench_heap_sort(mut b: Bencher) raises {var count}:
         seed(1)
         var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[Scalar[dtype]]) {var count}:
             randomize_list(list, count)
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[Scalar[dtype]]):
             heap_sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    m.bench_function[bench_sort_list](
-        BenchId(String("std_sort_random_", count, "_", dtype))
+    m.bench_function(
+        bench_sort_list,
+        BenchId(String("std_sort_random_", count, "_", dtype)),
     )
 
-    m.bench_function[bench_heap_sort](
-        BenchId(String("heap_sort_random_", count, "_", dtype))
+    m.bench_function(
+        bench_heap_sort,
+        BenchId(String("heap_sort_random_", count, "_", dtype)),
     )
 
 
@@ -245,47 +221,41 @@ def bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
 def bench_low_cardinality_list_sort(
     mut m: Bench, count: Int, delta: Int
 ) raises:
-    @parameter
-    def bench_sort_list(mut b: Bencher) raises:
+    def bench_sort_list(mut b: Bencher) raises {var count, var delta}:
         seed(1)
         var list = List(length=count, fill=UInt8())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[UInt8]) {var count, var delta}:
             randomize_list(list, count, UInt8(delta))
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[UInt8]):
             sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    @parameter
-    def bench_heap_sort(mut b: Bencher) raises:
+    def bench_heap_sort(mut b: Bencher) raises {var count, var delta}:
         seed(1)
         var list = List(length=count, fill=UInt8())
 
         @always_inline
-        @parameter
-        def preproc():
+        def preproc(mut list: List[UInt8]) {var count, var delta}:
             randomize_list(list, count, UInt8(delta))
 
         @always_inline
-        @parameter
-        def call_fn():
+        def call_fn(mut list: List[UInt8]):
             heap_sort(list)
 
-        b.iter_preproc[call_fn, preproc]()
-        _ = list^
+        b.iter_preproc(list, call_fn, preproc)
 
-    m.bench_function[bench_sort_list](
-        BenchId(String("std_sort_low_card_", count, "_delta_", delta))
+    m.bench_function(
+        bench_sort_list,
+        BenchId(String("std_sort_low_card_", count, "_delta_", delta)),
     )
-    m.bench_function[bench_heap_sort](
-        BenchId(String("heap_sort_low_card_", count, "_delta_", delta))
+    m.bench_function(
+        bench_heap_sort,
+        BenchId(String("heap_sort_low_card_", count, "_delta_", delta)),
     )
 
 

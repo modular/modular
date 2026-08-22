@@ -17,21 +17,20 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
-import compiler
+import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceBuffer
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
@@ -820,7 +819,7 @@ def tensor_core_matrix_multiplication[
     var warp_y, warp_x = udivmod(warp_id(), BN // WN)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
@@ -830,16 +829,16 @@ def tensor_core_matrix_multiplication[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
-    mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = LayoutTensor[
+    var A_sram_tile = LayoutTensor[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
-    B_sram_tile = LayoutTensor[
+    var B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
@@ -847,7 +846,7 @@ def tensor_core_matrix_multiplication[
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
-    c_reg = (
+    var c_reg = (
         LayoutTensor[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
@@ -863,8 +862,8 @@ def tensor_core_matrix_multiplication[
         barrier()  # Synchronize before loading new tiles
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles of A and B into shared memory asynchronously
         copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
@@ -878,23 +877,27 @@ def tensor_core_matrix_multiplication[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        var B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Iterate over the elements in the K dimension within the tiles
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
                     # Get the register tile for the current MMA operation
-                    c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
                     # Get the MMA tiles of A and B
-                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
-                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
+                        mma_m, mma_k
+                    )
+                    var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
+                        mma_k, mma_n
+                    )
 
                     # Load fragments of A and B into registers
-                    a_reg = mma_op.load_a(A_mma_tile)
-                    b_reg = mma_op.load_b(B_mma_tile)
+                    var a_reg = mma_op.load_a(A_mma_tile)
+                    var b_reg = mma_op.load_b(B_mma_tile)
 
                     # Perform MMA operation and accumulate the result
                     var d_reg_m_n = mma_op.mma_op(
@@ -920,7 +923,7 @@ def tensor_core_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@compiler.register("matrix_multiplication")
+@extensibility.register("matrix_multiplication")
 struct MatrixMultiplication[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
@@ -946,10 +949,10 @@ struct MatrixMultiplication[algorithm: StaticString]:
             var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
             var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
 
-            M = Int(a_tt.dim[0]())
-            N = Int(b_tt.dim[1]())
+            var M = Int(a_tt.dim[0]())
+            var N = Int(b_tt.dim[1]())
 
-            gpu_ctx = ctx
+            var gpu_ctx = ctx
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(
@@ -1123,7 +1126,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     comptime WM = 32
                     comptime WN = WARP_SIZE
                     # different MMA shapes for AMD and NVIDIA, see:
-                    # https://docs.modular.com/mojo/layout/tensor_core/TensorCore/
+                    # https://max.modular.com/api/mojo/layout/tensor_core/TensorCore/
                     comptime MMA_M = 16
                     comptime MMA_N = 16 if has_amd_gpu_accelerator() else 8
                     comptime MMA_K = 4

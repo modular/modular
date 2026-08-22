@@ -23,7 +23,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import huggingface_hub
+from max.driver import accelerator_api
 from max.dtype import DType
+from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
 from max.nn.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
@@ -34,7 +36,51 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
+
+
+def gptq_quant_config(
+    quantization_encoding: SupportedEncoding | None,
+    huggingface_config: AutoConfig,
+) -> QuantizationConfig | None:
+    """Builds the GPTQ ``QuantizationConfig`` for a ``"gptq"`` encoding.
+
+    Computed on demand from the resolved ``quantization_encoding`` and the
+    checkpoint's Hugging Face ``quantization_config``; returns ``None`` for any
+    non-GPTQ encoding.
+
+    Args:
+        quantization_encoding: The resolved weight encoding.
+        huggingface_config: The checkpoint's Hugging Face config.
+
+    Returns:
+        The GPTQ ``QuantizationConfig``, or ``None`` when the encoding is not
+        GPTQ.
+
+    Raises:
+        ValueError: If the GPTQ scales are not float16.
+    """
+    if quantization_encoding != "gptq":
+        return None
+
+    hf_quant_config = huggingface_config.quantization_config
+    # Alert users to a GPTQ scale format we don't support yet, rather than
+    # running the GPTQ pipeline on it and emitting gibberish.
+    if str(huggingface_config.torch_dtype) not in [
+        "float16",
+        "torch.float16",
+    ]:
+        raise ValueError(
+            f"{huggingface_config.torch_dtype} scales are not supported for GPTQ-quantized models."
+        )
+    return QuantizationConfig(
+        quant_method=hf_quant_config["quant_method"],
+        bits=hf_quant_config["bits"],
+        group_size=hf_quant_config["group_size"],
+        desc_act=hf_quant_config["desc_act"],
+        sym=hf_quant_config["sym"],
+    )
 
 
 def _get_num_hidden_layers(huggingface_config: AutoConfig) -> int:
@@ -204,18 +250,15 @@ def _quantized_layers_from_modelopt_ignore(
 
 def _modelopt_shared_experts_quantized_dtype(
     ignore_patterns: Sequence[str],
-    *,
-    modules_prefix: str = "model.",
 ) -> DType | None:
     """Return quant dtype if MoE shared experts are quantized (not in ``ignore``)."""
-    probe_paths = (
-        f"{modules_prefix}layers.0.mlp.shared_experts.gate_up_proj.weight",
-        f"{modules_prefix}layers.0.mlp.shared_experts.gate_proj.weight",
-    )
-    for probe in probe_paths:
-        for pattern in ignore_patterns:
-            if fnmatch.fnmatch(probe, pattern):
-                return DType.bfloat16
+    # modelopt leaves unquantized modules in ``ignore`` as per-layer globs like
+    # ``layers.3.mlp.shared_experts*``, so any ignore entry naming shared_experts
+    # means they stay bf16. A substring test sidesteps the ``model.`` prefix that
+    # ``_normalize_modelopt_ignore_pattern`` strips from ``layers.*`` globs.
+    for pattern in ignore_patterns:
+        if "shared_experts" in pattern:
+            return DType.bfloat16
     return None
 
 
@@ -759,6 +802,7 @@ def _load_standalone_quant_config(
                 downloaded_path = huggingface_hub.hf_hub_download(
                     repo_id=model_path,
                     filename=quant_config_filename,
+                    revision=getattr(huggingface_config, "_commit_hash", None),
                     local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
                 )
                 with open(downloaded_path) as f:
@@ -781,6 +825,11 @@ def _load_standalone_quant_config(
             }
             if "ignore" in quantization:
                 mapped["ignore"] = quantization["ignore"]
+            # modelopt records per-module algorithms here for mixed-precision
+            # checkpoints; without it a `MIXED_PRECISION` quant_algo is
+            # uninterpretable.
+            if "quantized_layers" in quantization:
+                mapped["quantized_layers"] = quantization["quantized_layers"]
             return mapped
         return None
 
@@ -789,10 +838,26 @@ def _load_standalone_quant_config(
         return None
 
 
-def _resolve_quant_config(
+def resolve_hf_quant_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
 ) -> dict[str, Any] | None:
+    """Resolves a checkpoint's Hugging Face quantization config.
+
+    Tries, in order: the config's own ``quantization_config`` field, a
+    standalone ``hf_quant_config.json`` beside the weights, and finally a sniff
+    of the state dict for modelopt NVFP4's ``weight_scale_2`` tensors.
+
+    Args:
+        huggingface_config: The config to read ``quantization_config`` from.
+            For a nested multimodal config this must be the top-level one --
+            the sub-config does not carry the field.
+        state_dict: The checkpoint weights, used only by the final sniff.
+
+    Returns:
+        The resolved quantization config, or ``None`` when the checkpoint
+        declares no quantization.
+    """
     if hf_quant_config := getattr(
         huggingface_config, "quantization_config", None
     ):
@@ -818,7 +883,7 @@ def _parse_modelopt_float4_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> QuantConfig | None:
-    resolved_quant_config = _resolve_quant_config(
+    resolved_quant_config = resolve_hf_quant_config(
         huggingface_config, state_dict
     )
     quant_method = quant_method_override
@@ -828,6 +893,16 @@ def _parse_modelopt_float4_config(
         quant_algo = resolved_quant_config.get("quant_algo", quant_algo)
     if not quant_method or not quant_algo:
         return None
+    if quant_algo != "NVFP4":
+        # Everything below hard-codes the NVFP4 two-level scheme. Returning it
+        # for another algorithm silently reinterprets the payload: a
+        # MIXED_PRECISION checkpoint's FP8 bases would be read as packed FP4.
+        raise ValueError(
+            f"modelopt quant_algo {quant_algo!r} cannot be loaded as NVFP4. "
+            "Only 'NVFP4' is uniform enough for a single QuantConfig; a "
+            "mixed-precision checkpoint needs per-module handling in its "
+            "architecture (see Qwen3.5's `_parse_quant_config`)."
+        )
 
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.BLOCK,
@@ -862,7 +937,7 @@ def _parse_modelopt_float4_config(
     )
 
     shared_experts_weight_dtype = _modelopt_shared_experts_quantized_dtype(
-        ignore_patterns, modules_prefix=ignored_modules_prefix
+        ignore_patterns
     )
 
     return QuantConfig(
@@ -893,6 +968,90 @@ def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
             and weight_cfg.get("dtype") == "fp4"
         )
     return False
+
+
+def _is_mxfp6_config(hf_quant_config: dict[str, Any]) -> bool:
+    """Checks whether a HuggingFace quantization config describes MXFP6."""
+    quant_method = hf_quant_config.get("quant_method", "").lower()
+    if quant_method == "mxfp6":
+        return True
+    # Quark-shaped config, as `amd/*-MXFP4` uses for FP4.
+    if quant_method == "quark":
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        return weight_cfg.get("scale_format") == "e8m0" and weight_cfg.get(
+            "dtype"
+        ) in ("fp6", "fp6_e2m3", "fp6_e3m2")
+    return False
+
+
+def _mxfp6_element_format(hf_quant_config: dict[str, Any]) -> str:
+    """Extracts the FP6 element encoding from a quantization config.
+
+    Both encodings occupy 6 bits, so the packed tensor shape cannot tell them
+    apart -- the config is the only record of which one the bytes hold, and
+    decoding with the wrong one silently produces garbage. Defaults to E2M3,
+    which is what the requantizer writes unless asked otherwise.
+    """
+    declared = hf_quant_config.get("fp6_format")
+    if declared is None:
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        dtype = weight_cfg.get("dtype", "")
+        declared = dtype.removeprefix("fp6_") if "_" in dtype else None
+    if declared is None:
+        return "e2m3"
+    if declared.lower() not in ("e2m3", "e3m2"):
+        raise ValueError(
+            f"Unrecognized MXFP6 element format {declared!r}; expected "
+            f"'e2m3' or 'e3m2'."
+        )
+    return declared.lower()
+
+
+def _parse_mxfp6_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parses a QuantConfig for MXFP6 quantization.
+
+    Structurally identical to MXFP4 -- float8_e8m0fnu scales over 32-element
+    blocks, no input scale in the checkpoint because activations are quantized
+    on the fly -- differing only in how many bytes the packed weight occupies
+    and in which element encoding those bytes use.
+
+    The caller must verify :func:`_is_mxfp6_config` before calling this.
+    """
+    hf_quant_config = getattr(huggingface_config, "quantization_config", {})
+
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=set(range(num_hidden_layers)),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=DType.bfloat16,
+        bias_dtype=_bias_dtype(state_dict),
+        format=QuantFormat.MXFP6,
+        _mxfp6_element_format=_mxfp6_element_format(hf_quant_config),
+        can_use_fused_mlp=can_use_fused_mlp(state_dict),
+    )
 
 
 def _parse_mxfp4_config(
@@ -950,7 +1109,7 @@ def _parse_float4_config(
     if dtype not in _FP4_DTYPES:
         return None
 
-    quant_config = _resolve_quant_config(huggingface_config, state_dict)
+    quant_config = resolve_hf_quant_config(huggingface_config, state_dict)
     if not quant_config:
         return None
 
@@ -996,6 +1155,11 @@ def parse_quant_config(
     # since only MoE weights are quantized; attention/embedding stay bf16).
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if hf_quant_config:
+        # MXFP6 is checked first: a Quark config declares both through the same
+        # fields, and only the weight `dtype` tells them apart.
+        if _is_mxfp6_config(hf_quant_config):
+            return _parse_mxfp6_config(huggingface_config, state_dict, dtype)
+
         if _is_mxfp4_config(hf_quant_config):
             return _parse_mxfp4_config(huggingface_config, state_dict, dtype)
 
@@ -1007,6 +1171,7 @@ def parse_quant_config(
             "gptq",
             "modelopt",
             "mxfp4",
+            "mxfp6",
             "mxfp8",
             "quark",
         ):
@@ -1057,8 +1222,19 @@ def parse_quant_config(
         # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
         # gate the sigma-permutation on this flag) stay byte-equal to the
         # historical chained-kernel path.
-        config.can_use_fused_swiglu = (config.is_nvfp4 or config.is_mxfp8) and (
-            os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
-        )
+        # NOTE: `accelerator_api()` probes the LOCAL machine, so this flag --
+        # and with it the sigma-permutation applied to `gate_up_proj` -- is a
+        # function of the build host, not the target device. Parsing the same
+        # checkpoint on a CPU-only host yields a different weight layout. The
+        # assumption is build-host == inference-target; fixing it properly
+        # means threading the target device spec in here.
+        # MXFP8 is cuda-only here: the fused kernel is SM100, and on AMD the
+        # MoE gate/up SwiGLU is fused by `fused_silu_mx_kernel` off the
+        # chained path instead (as MXFP4 already does). Gating the flag rather
+        # than the call site keeps the sigma-permutation and the kernel choice
+        # consistent.
+        config.can_use_fused_swiglu = (
+            config.is_nvfp4 or (config.is_mxfp8 and accelerator_api() == "cuda")
+        ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
 
     return config

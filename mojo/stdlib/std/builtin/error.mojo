@@ -15,14 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.collections.string.string_slice import _unsafe_strlen
 from std.format._utils import FormatStruct
 from std.memory import (
     ArcPointer,
     OwnedPointer,
-    memcpy,
 )
-from std.memory.alloc import alloc, Layout
 from std.ffi import CStringSlice, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
@@ -34,22 +31,26 @@ from std.sys.info import size_of, align_of
 # ===-----------------------------------------------------------------------===#
 
 
-struct StackTrace(Copyable, Movable, Writable):
+struct StackTrace(ImplicitlyCopyable, Movable, Writable):
     """Holds a stack trace captured at a specific location.
 
     A `StackTrace` instance always contains a valid stack trace. Use the
     `collect_if_enabled()` static method to conditionally capture a stack
     trace, which returns `None` if stack trace collection is disabled or
     unavailable.
+
+    Copying a `StackTrace` shares the captured trace instead of duplicating it,
+    so copies cost a reference count increment.
     """
 
-    var _data: OwnedPointer[UInt8]
-    """An owned pointer to a null-terminated C string containing the stack trace."""
+    var _data: ArcPointer[OwnedPointer[UInt8]]
+    """A reference-counted, owning pointer to a null-terminated C string
+    containing the stack trace."""
 
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutUntrackedOrigin],
+        unsafe_from_raw_pointer: Pointer[UInt8, MutUntrackedOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -61,22 +62,9 @@ struct StackTrace(Copyable, Movable, Writable):
             The pointer must be valid and point to a null-terminated string.
             The caller transfers ownership to this StackTrace.
         """
-        self._data = OwnedPointer(
-            unsafe_from_raw_pointer=unsafe_from_raw_pointer
+        self._data = ArcPointer(
+            OwnedPointer(unsafe_from_raw_pointer=unsafe_from_raw_pointer)
         )
-
-    def __init__(out self, *, copy: Self):
-        """Copy constructor - copies the stack trace string.
-
-        Args:
-            copy: The existing StackTrace to copy from.
-        """
-        # Copy the null-terminated string
-        var src_ptr = copy._data.unsafe_ptr()
-        var str_len = Int(_unsafe_strlen(src_ptr))
-        var new_ptr = alloc(Layout[UInt8](count=str_len + 1)).unsafe_leak()
-        memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
-        self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
     @staticmethod
     @no_inline
@@ -104,10 +92,10 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]()
+        var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
-            "KGEN_CompilerRT_GetStackTrace", SIMDSize
-        ](UnsafePointer(to=buffer), depth)
+            "KGEN_CompilerRT_GetStackTrace", SIMDLength
+        ](Pointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             return None
@@ -124,7 +112,7 @@ struct StackTrace(Copyable, Movable, Writable):
         writer.write_string(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=self._data.unsafe_ptr().bitcast[Int8]()
+                    unsafe_from_ptr=self._data[].ptr().unsafe_bitcast[Int8]()
                 )
             )
         )
@@ -144,10 +132,15 @@ struct StackTrace(Copyable, Movable, Writable):
 
 
 struct Error(
-    Copyable,
+    ImplicitlyCopyable,
     Writable,
 ):
-    """This type represents an Error."""
+    """This type represents an Error.
+
+    An `Error` is cheap to copy: the message and the optional stack trace are
+    both reference counted, so re-raising a caught error with `raise e` costs a
+    reference count increment. Transfer with `raise e^` to avoid even that.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Fields

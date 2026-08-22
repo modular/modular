@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -110,11 +111,13 @@ from max.nn.kv_cache import (
     KVCacheInputsInterface,
     KVCacheInputsPerDevice,
     MultiKVCacheInputs,
+    spec_decode_cache_slack,
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,
     SpecDecodingState,
+    TextAndVisionContext,
     TextContext,
     TextGenerationContextType,
     TextGenerationOutput,
@@ -123,14 +126,21 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.context.tokens import TokenBuffer
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
+from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
+    SupportsVisionEncoding,
+    VisionEncoderCache,
+    as_vision_context_batches,
+)
 from max.pipelines.modeling.types import (
     BatchType,
+    CompletedBatchStats,
     PipelineOutputsDict,
     PipelineTokenizer,
     ReasoningPipelineTokenizer,
@@ -143,11 +153,12 @@ from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
+from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
+from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     StructuredOutputHelper,
-    get_eos_tokens,
     update_context_and_prepare_responses,
     update_spec_decode_context_and_prepare_responses,
 )
@@ -172,11 +183,26 @@ from ..interfaces import (
     UnifiedEagleOutputs,
 )
 from ..utils import CompilationTimer
+from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
+
+
+def _contiguous_prefix_3d(
+    buffer: Buffer, rows: int, cols: int, depth: int
+) -> Buffer:
+    """Returns a contiguous 3D prefix view of ``buffer``, aliasing it."""
+    num_elements = rows * cols * depth
+    if num_elements > buffer.num_elements:
+        raise ValueError(
+            "Requested contiguous prefix exceeds backing buffer capacity: "
+            f"{num_elements} > {buffer.num_elements}."
+        )
+    flat = buffer.view(buffer.dtype, (buffer.num_elements,))
+    return flat[:num_elements].view(buffer.dtype, (rows, cols, depth))
 
 
 @runtime_checkable
@@ -186,6 +212,7 @@ class _UnifiedSpecDecodeInputs(Protocol):
     kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer]
 
     draft_tokens: Buffer | None
+    draft_probs_full: Buffer | None
 
     seed: Buffer | None
 
@@ -293,7 +320,7 @@ class SpecDecodeState:
     num_speculative_tokens: int
     """The number of speculative tokens to generate."""
 
-    kv_manager: PagedKVCacheManager
+    kv_manager: PagedKVCacheManagerInterface
     """The KVCache manager for model."""
 
     persistent_draft_tokens: Buffer
@@ -366,12 +393,26 @@ class SpecDecodeState:
     size). Owned for the lifetime of :class:`SpecDecodeState`.
     """
 
+    draft_probs_full_zero_row: Buffer | None = None
+    """Device-resident zeros of shape ``[K, vocab_size]``, the source of the
+    stale-row clears in ``_prepare_draft_probs_full``. Allocated once so the
+    clear stays a device-to-device copy."""
+
+    persistent_draft_probs_full: Buffer | None = None
+    """Persistent input buffer for the draft's whole proposal distribution, ``[max_batch, K, vocab_size]``, paired with
+    :attr:`persistent_draft_tokens`. ``None`` unless
+    ``draft_proposal == "sampled"``. Device-only:
+    unlike the scalar probabilities it is never mirrored to the host, since
+    only the acceptance graph reads it."""
+
     @classmethod
     def load(
         cls,
         session: InferenceSession,
         model: PipelineModelWithKVCache[Any],
         pipeline_config: PipelineConfig,
+        max_batch_size: int,
+        available_cache_memory: int | None = None,
         vocab_size: int | None = None,
     ) -> SpecDecodeState:
         """Load the spec decode state.
@@ -383,49 +424,81 @@ class SpecDecodeState:
                 "Speculative decoding is not enabled in the pipeline config."
             )
 
-        kv_manager = load_kv_manager(
-            params=model.kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_seq_len=model.max_seq_len,
-            session=session,
-            available_cache_memory=(
-                pipeline_config.model.kv_cache._available_cache_memory
-            ),
+        # In compile-only mode (virtual device mode), put the persistent buffers
+        # below on the host: they are runtime-only spec-decode state, and
+        # VirtualDevice does not support memory allocation.
+        buffer_device: Device = (
+            CPU() if is_virtual_device_mode() else model.devices[0]
         )
 
-        num_speculative_tokens = (
-            pipeline_config.speculative.num_speculative_tokens
+        kv_manager = load_kv_manager(
+            params=model.kv_params,
+            max_batch_size=max_batch_size,
+            max_seq_len=model.max_seq_len,
+            session=session,
+            available_cache_memory=available_cache_memory,
         )
-        assert pipeline_config.runtime.max_batch_size is not None
+
+        # Dflash-style block drafters resolve the draft width from the
+        # draft checkpoint at model construction and expose it on the
+        # model; eagle/mtp resolve theirs at SpeculativeConfig construction.
+        num_speculative_tokens: int | None = None
+        if isinstance(model, _UnifiedSpecDecodeModelMixin):
+            num_speculative_tokens = model.resolved_num_speculative_tokens
+        if num_speculative_tokens is None:
+            assert pipeline_config.speculative is not None
+            num_speculative_tokens = (
+                pipeline_config.speculative.num_speculative_tokens
+            )
+        assert num_speculative_tokens is not None
         total_max_batch = (
-            pipeline_config.runtime.max_batch_size
-            * pipeline_config.model.data_parallel_degree
+            max_batch_size * pipeline_config.model.data_parallel_degree
         )
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
             shape=(total_max_batch, num_speculative_tokens),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_temperature = Buffer(
             dtype=DType.float32,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_top_k = Buffer(
             dtype=DType.int64,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_top_p = Buffer(
             dtype=DType.float32,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_seed = Buffer(
             dtype=DType.uint64,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
+        persistent_draft_probs_full: Buffer | None = None
+        draft_probs_full_zero_row: Buffer | None = None
+        if pipeline_config.speculative.draft_proposal == "sampled":
+            draft_vocab_size = getattr(
+                model.huggingface_config, "vocab_size", None
+            )
+            if draft_vocab_size is not None:
+                persistent_draft_probs_full = Buffer(
+                    dtype=DType.float32,
+                    shape=(
+                        total_max_batch,
+                        num_speculative_tokens,
+                        draft_vocab_size,
+                    ),
+                    device=buffer_device,
+                )
+                zero_shape = (num_speculative_tokens, draft_vocab_size)
+                draft_probs_full_zero_row = Buffer.from_numpy(
+                    np.zeros(zero_shape, dtype=np.float32)
+                ).to(buffer_device)
 
         # The packed-int32 bitmask the async FSM callback fills lives in
         # :class:`StructuredOutputOverlapState`'s ``pinned_bitmask`` (allocated
@@ -438,7 +511,7 @@ class SpecDecodeState:
         persistent_accepted_draft_tokens_pinned: DevicePinnedBuffer | None = (
             None
         )
-        if vocab_size is not None:
+        if vocab_size is not None and not is_virtual_device_mode():
             persistent_bonus_tokens_pinned = DevicePinnedBuffer(
                 dtype=DType.int64,
                 shape=(total_max_batch,),
@@ -462,11 +535,11 @@ class SpecDecodeState:
         persistent_in_thinking_phase = Buffer(
             dtype=DType.bool,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
 
         overlap_state: StructuredOutputOverlapState | None = None
-        if vocab_size is not None:
+        if vocab_size is not None and not is_virtual_device_mode():
             overlap_state = StructuredOutputOverlapState(
                 device=model.devices[0],
                 cpu=CPU(),
@@ -489,6 +562,8 @@ class SpecDecodeState:
             persistent_in_thinking_phase=persistent_in_thinking_phase,
             persistent_seed=persistent_seed,
             overlap_state=overlap_state,
+            persistent_draft_probs_full=persistent_draft_probs_full,
+            draft_probs_full_zero_row=draft_probs_full_zero_row,
         )
 
 
@@ -503,10 +578,64 @@ class _SupportsModelCapture(Protocol):
     model: Model
 
 
+@runtime_checkable
+class SupportsSSMStateWarmup(Protocol):
+    """Protocol for pipeline models with SSM/conv state pools.
+
+    Models (e.g. Nemotron-H, Qwen3.5, LFM2) that allocate per-request state
+    pool slots outside the KV cache must implement
+    :meth:`release_warmup_state` so that graph-capture warmup can release
+    those slots after each ``(batch_size, cache_length)`` probe.  Without it,
+    warmup would exhaust the state pool before reaching steady serving.
+
+    The overlap pipeline's ``_warmup_model_inputs`` context manager calls
+    ``release_warmup_state`` after each probe's capture completes, with the
+    same request IDs that were passed to ``prepare_initial_token_inputs``
+    during that probe.
+    """
+
+    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
+        """Release state pool slots claimed for the given warmup request IDs.
+
+        Called once per ``_warmup_model_inputs`` probe, after graph capture
+        for that probe completes.  ``request_ids`` matches the list of request
+        IDs from the warmup batch constructed inside ``_warmup_model_inputs``.
+        Implementations should release slots without zeroing the underlying
+        pool memory (zeroing happens at claim time, not release time).
+        """
+        ...
+
+
 @dataclass
 class _AsyncBatchOutput:
     output_dict: PipelineOutputsDict[TextGenerationOutput]
     spec_decode_metrics: _SpeculativeDecodingMetrics | None = None
+
+
+def _merge_generation_outputs(
+    older: TextGenerationOutput, newer: TextGenerationOutput
+) -> TextGenerationOutput:
+    """Merges two consecutive per-step outputs for the same request.
+
+    Used when draining two in-flight schedule-ahead batches in one call:
+    the older batch's realized token(s) precede the newer batch's, and the
+    newer output carries the authoritative final status.
+    """
+    log_probabilities = None
+    if (
+        older.log_probabilities is not None
+        or newer.log_probabilities is not None
+    ):
+        log_probabilities = (older.log_probabilities or []) + (
+            newer.log_probabilities or []
+        )
+    return TextGenerationOutput(
+        request_id=newer.request_id,
+        tokens=older.tokens + newer.tokens,
+        log_probabilities=log_probabilities,
+        final_status=newer.final_status,
+        num_cached_tokens=newer.num_cached_tokens,
+    )
 
 
 @dataclass
@@ -555,6 +684,16 @@ class AsyncSpecDecodeBatch:
     fsm_advanced_by_callback: bool = False
     """True when a CUDA host callback already advanced the FSM for this batch."""
 
+    next_draft_probs_full_device: Buffer | None = None
+    """The distribution each next-step draft token was sampled from, retained
+    on device for the realize-future-tokens scatter. ``None`` unless
+    ``draft_proposal="sampled"``. It has no host mirror: only the acceptance
+    graph reads it, so it never leaves the GPU.
+
+    The shape of the buffer is
+    (batch_size, num_speculative_tokens, vocab_size).
+    """
+
     @property
     def num_draft_tokens_to_verify(self) -> int:
         """The number of draft tokens to verify during this batch."""
@@ -587,6 +726,12 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
     copy_event: DeviceEvent
     """Event that tracks completion of the d2h copy."""
+
+    enqueue_monotonic: float = 0.0
+    """``time.monotonic()`` timestamp taken when this batch's ``execute()``
+    call began, i.e. an upper bound on when its GPU work could have started.
+    Used together with the previous batch's sync timestamp to estimate this
+    batch's execution time when its outputs are synchronized."""
 
     _is_processed: bool = False
     """Whether the outputs have been already been processed."""
@@ -778,6 +923,12 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     prev_generated_draft_tokens: _Tensor
     prev_draft_tokens: _Tensor
     prev_num_accepted_draft_tokens: _Tensor
+    curr_draft_probs_full: _Tensor | None = None
+    """Draft proposal distributions paired with ``curr_draft_tokens``. Set
+    iff ``draft_proposal="sampled"``."""
+    prev_generated_draft_probs_full: _Tensor | None = None
+    """Previous batch's ``next_draft_probs_full`` device tensor, paired with
+    ``prev_generated_draft_tokens``."""
 
     def flatten(self) -> list[_Tensor | _Buffer]:
         return [
@@ -792,6 +943,16 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
             self.prev_generated_draft_tokens,
             self.prev_draft_tokens,
             self.prev_num_accepted_draft_tokens,
+            *(
+                (self.curr_draft_probs_full,)
+                if self.curr_draft_probs_full is not None
+                else ()
+            ),
+            *(
+                (self.prev_generated_draft_probs_full,)
+                if self.prev_generated_draft_probs_full is not None
+                else ()
+            ),
         ]
 
     def unflatten(
@@ -811,6 +972,12 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
             prev_generated_draft_tokens=next(it),
             prev_draft_tokens=next(it),
             prev_num_accepted_draft_tokens=next(it),
+            curr_draft_probs_full=next(it)
+            if self.curr_draft_probs_full is not None
+            else None,
+            prev_generated_draft_probs_full=next(it)
+            if self.prev_generated_draft_probs_full is not None
+            else None,
         )
 
 
@@ -860,8 +1027,29 @@ def build_realize_future_token_graph(
     devices: Sequence[DeviceRef],
     enable_dp: int,
     num_speculative_tokens: int,
+    data_parallel_degree: int = 1,
+    sampled_draft_vocab_size: int | None = None,
 ) -> Graph:
-    """Builds a graph that prepares the input for the next batch."""
+    """Builds a graph that prepares the input for the next batch.
+
+    Args:
+        devices: All devices spanned by the model, in replica-major order
+            (``[r0_tp0, r0_tp1, ..., r1_tp0, ...]``).
+        enable_dp: Whether data parallelism is enabled (``dp_degree > 1``).
+        num_speculative_tokens: Number of speculative tokens per step.
+        data_parallel_degree: Number of data-parallel replicas. Devices are
+            replica-major, so ``tp_degree = len(devices) // data_parallel_degree``
+            consecutive devices form one DP replica and share the same request
+            slice; this maps device ``i`` to replica ``i // tp_degree`` when
+            indexing ``data_parallel_splits`` (which is indexed by replica, not
+            device). Defaults to ``1`` (pure DP), which reproduces the
+            historical device-index-equals-replica behavior.
+        sampled_draft_vocab_size: When set (the
+            ``draft_proposal="sampled"`` path), also realize the fp32
+            ``[batch, K, vocab_size]`` ``draft_probs_full`` paired with
+            ``draft_tokens``, on the same slot indices so a distribution
+            cannot drift away from the token it proposed.
+    """
     device0 = devices[0]
     if num_speculative_tokens > 0:
         spec_decode_input_types = _RealizeFutureTokenSpecDecodeInputs[
@@ -921,6 +1109,28 @@ def build_realize_future_token_graph(
                 shape=[SymbolicDim("prev_batch_size")],
                 device=device0,
             ),
+            curr_draft_probs_full=TensorType(
+                DType.float32,
+                shape=[
+                    SymbolicDim("curr_batch_size"),
+                    SymbolicDim("num_draft_tokens"),
+                    sampled_draft_vocab_size,
+                ],
+                device=device0,
+            )
+            if sampled_draft_vocab_size is not None
+            else None,
+            prev_generated_draft_probs_full=TensorType(
+                DType.float32,
+                shape=[
+                    SymbolicDim("prev_batch_size"),
+                    SymbolicDim("num_draft_tokens"),
+                    sampled_draft_vocab_size,
+                ],
+                device=device0,
+            )
+            if sampled_draft_vocab_size is not None
+            else None,
         )
     else:
         spec_decode_input_types = None
@@ -1016,6 +1226,9 @@ def build_realize_future_token_graph(
             total_prev_draft_elems = SymbolicDim(
                 "prev_batch_size"
             ) * SymbolicDim("num_draft_tokens")
+            flat_draft_slot_indices = draft_slot_indices.reshape(
+                [total_prev_draft_elems, 1]
+            )
             realized_draft_tokens = kernels.scatter_nd_skip_oob_indices(
                 input=spec_decode.curr_draft_tokens.reshape(
                     [total_curr_draft_elems]
@@ -1023,8 +1236,26 @@ def build_realize_future_token_graph(
                 updates=spec_decode.prev_generated_draft_tokens.reshape(
                     [total_prev_draft_elems]
                 ),
-                indices=draft_slot_indices.reshape([total_prev_draft_elems, 1]),
+                indices=flat_draft_slot_indices,
             ).reshape(["curr_batch_size", "num_draft_tokens"])
+
+            # Same slot indices as the tokens, just widened by the vocabulary
+            # axis, so a distribution cannot drift away from the token it
+            # proposed. Rows not in the previous batch keep the zeros
+            # `_prepare_draft_probs_full` cleared them to.
+            realized_draft_probs_full: TensorValue | None = None
+            if spec_decode.curr_draft_probs_full is not None:
+                assert spec_decode.prev_generated_draft_probs_full is not None
+                vocab_dim = spec_decode.curr_draft_probs_full.shape[2]
+                realized_draft_probs_full = kernels.scatter_nd_skip_oob_indices(
+                    input=spec_decode.curr_draft_probs_full.reshape(
+                        [total_curr_draft_elems, vocab_dim]
+                    ),
+                    updates=spec_decode.prev_generated_draft_probs_full.reshape(
+                        [total_prev_draft_elems, vocab_dim]
+                    ),
+                    indices=flat_draft_slot_indices,
+                ).reshape(["curr_batch_size", "num_draft_tokens", vocab_dim])
 
             # Per-sequence increments in int64 (may be negative), then fold into
             # uint32 cache lengths to match :class:`~max.nn.kv_cache.KVCacheParams`
@@ -1069,7 +1300,16 @@ def build_realize_future_token_graph(
                     cache_length_adjusted.cast(DType.uint32)
                 )
             elif enable_dp:
-                # DP > 1
+                # DP > 1 (possibly mixed with TP). ``data_parallel_splits`` is
+                # indexed by DP replica (length ``dp_degree + 1``), NOT by
+                # device. Under mixed TP+DP every ``tp_degree`` consecutive
+                # devices form one replica and share the same request slice, so
+                # map device ``i`` to replica ``i // tp_degree`` before slicing.
+                # Indexing by the raw device index (the historical pure-DP
+                # assumption, valid only when ``tp_degree == 1``) walks off the
+                # end of the ``dp_degree + 1`` splits tensor for ``tp_degree >
+                # 1``, producing out-of-bounds / empty slices that corrupt
+                # ``cache_lengths`` on the non-leader TP ranks of each replica.
                 assert spec_decode.signal_buffers is not None
                 assert spec_decode.data_parallel_splits is not None
 
@@ -1077,9 +1317,11 @@ def build_realize_future_token_graph(
                     batch_increments_i64, spec_decode.signal_buffers
                 )
 
+                tp_degree = len(devices) // data_parallel_degree
                 for i in range(len(devices)):
-                    start_offset = spec_decode.data_parallel_splits[i]
-                    end_offset = spec_decode.data_parallel_splits[i + 1]
+                    replica = i // tp_degree
+                    start_offset = spec_decode.data_parallel_splits[replica]
+                    end_offset = spec_decode.data_parallel_splits[replica + 1]
 
                     batch_increments_local = ops.slice_tensor(
                         batch_increments_distributed[i],
@@ -1116,9 +1358,18 @@ def build_realize_future_token_graph(
                     )
                 )
 
+            # The realized probabilities must precede the variadic
+            # cache-lengths tail: the call site unpacks
+            # ``(tokens, draft_tokens, [draft_probs, draft_probs_full,]
+            # *cache_lengths)``.
             graph.output(
                 realized_tokens,
                 realized_draft_tokens,
+                *(
+                    (realized_draft_probs_full,)
+                    if realized_draft_probs_full is not None
+                    else ()
+                ),
                 *realized_cache_lengths,
             )
 
@@ -1141,18 +1392,23 @@ class RealizeFutureTokenProcessor:
         devices: Sequence[DeviceRef],
         num_speculative_tokens: int = 0,
         enable_dp: bool = False,
+        data_parallel_degree: int = 1,
+        sampled_draft_vocab_size: int | None = None,
     ) -> None:
         with CompilationTimer("realize_future_token") as timer:
             graph = build_realize_future_token_graph(
                 devices=devices,
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=enable_dp,
+                data_parallel_degree=data_parallel_degree,
+                sampled_draft_vocab_size=sampled_draft_vocab_size,
             )
             timer.mark_build_complete()
             self._graph = session.load(graph)
         self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
         self._num_devices = len(devices)
+        self._sampled_draft_proposal = sampled_draft_vocab_size is not None
 
     def _compute_mappings(
         self,
@@ -1236,6 +1492,9 @@ class RealizeFutureTokenProcessor:
             synchronous-fill bitmask, or ``None`` (see ``realized_draft_tokens_host``).
         """
         assert isinstance(model_inputs, _HasRaggedTokens)
+        assert not prev_batch._is_processed, (
+            "Cannot realize device inputs from an already host-processed batch"
+        )
         realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         mappings = self._compute_mappings(prev_batch, inputs)
 
@@ -1293,6 +1552,25 @@ class RealizeFutureTokenProcessor:
                 data_parallel_splits = model_inputs.data_parallel_splits
             else:
                 data_parallel_splits = None
+            curr_draft_probs_full: Buffer | None = None
+            prev_generated_draft_probs_full: Buffer | None = None
+            if self._sampled_draft_proposal:
+                assert model_inputs.draft_probs_full is not None, (
+                    "draft_proposal='sampled' requires model_inputs to carry "
+                    "draft_probs_full"
+                )
+                assert (
+                    prev_batch.spec_decode.next_draft_probs_full_device
+                    is not None
+                ), (
+                    "draft_proposal='sampled' requires the architecture to "
+                    "emit next_draft_probs_full (the 4th graph output)"
+                )
+                curr_draft_probs_full = model_inputs.draft_probs_full
+                prev_generated_draft_probs_full = (
+                    prev_batch.spec_decode.next_draft_probs_full_device
+                )
+
             if num_draft_tokens_to_verify == 0:
                 prev_batch_size = prev_generated_draft_tokens.shape[0]
                 prev_generated_draft_tokens = Buffer(
@@ -1300,6 +1578,16 @@ class RealizeFutureTokenProcessor:
                     shape=(prev_batch_size, 0),
                     device=device,
                 )
+                if prev_generated_draft_probs_full is not None:
+                    prev_generated_draft_probs_full = Buffer(
+                        dtype=prev_generated_draft_probs_full.dtype,
+                        shape=(
+                            prev_batch_size,
+                            0,
+                            prev_generated_draft_probs_full.shape[2],
+                        ),
+                        device=device,
+                    )
 
             spec_decode: (
                 _RealizeFutureTokenSpecDecodeInputs[Buffer, Buffer] | None
@@ -1311,6 +1599,8 @@ class RealizeFutureTokenProcessor:
                 prev_generated_draft_tokens=prev_generated_draft_tokens,
                 prev_draft_tokens=prev_draft_tokens,
                 prev_num_accepted_draft_tokens=num_accepted_draft_tokens,
+                curr_draft_probs_full=curr_draft_probs_full,
+                prev_generated_draft_probs_full=prev_generated_draft_probs_full,
             )
         else:
             spec_decode = None
@@ -1339,12 +1629,26 @@ class RealizeFutureTokenProcessor:
         # Execute the realize_future_tokens kernel.
         if my_inputs.spec_decode is not None:
             assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
-            (tokens, draft_tokens, *cache_lengths) = out
+            draft_probs_full = None
+            if my_inputs.spec_decode.curr_draft_probs_full is not None:
+                (
+                    tokens,
+                    draft_tokens,
+                    draft_probs_full,
+                    *cache_lengths,
+                ) = out
+            else:
+                (tokens, draft_tokens, *cache_lengths) = out
             model_inputs.tokens = tokens
             # This is pretty subtle. We copy the realized tokens into the original
             # draft tokens buffer so that when we read from draft_tokens later on
             # we get the real values...
             model_inputs.draft_tokens.inplace_copy_from(draft_tokens)
+            if draft_probs_full is not None:
+                assert model_inputs.draft_probs_full is not None
+                model_inputs.draft_probs_full.inplace_copy_from(
+                    draft_probs_full
+                )
             # Overwrite the cache_lengths with the realized cache_lengths.
             for i, kv in enumerate(kv_collections):
                 cl = cache_lengths[i % len(cache_lengths)]
@@ -1408,14 +1712,13 @@ class OverlapTextGenerationPipeline(
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
-        # TODO: This should be removed.
-        eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
             TextGenerationContextType,
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        memory_plan: MemoryPlan,
         disable_overlap: bool = False,
     ) -> None:
         """Initialize a text generation pipeline instance.
@@ -1426,10 +1729,10 @@ class OverlapTextGenerationPipeline(
         Args:
             pipeline_config: Configuration for the pipeline and runtime behavior.
             pipeline_model: Concrete model implementation to use for execution.
-            eos_token_id: Default EOS token id used when HF config does not supply
-                one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
+            memory_plan: Memory plan from the registry containing max_batch_size
+                and other resolved memory parameters.
             disable_overlap: When this flag is set, the overlap scheduler will
                 immediately synchronize after model execution. This removes any
                 potential cpu / gpu overlap.
@@ -1440,6 +1743,8 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
+        self._max_batch_size = memory_plan.max_batch_size
+        max_batch_size = memory_plan.max_batch_size
 
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -1450,14 +1755,12 @@ class OverlapTextGenerationPipeline(
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        self._devices = load_devices(model_config.device_specs)
+        self._devices = load_devices(list(memory_plan.require_device_specs()))
         if self._devices[0].is_host:
             raise ValueError(
                 "OverlapTextGenerationPipeline does not support CPU models."
             )
         self._tokenizer = tokenizer
-
-        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # -1 sentinel disables in_reasoning_phase tracking.
         self._think_start_token_id: int = -1
@@ -1481,23 +1784,28 @@ class OverlapTextGenerationPipeline(
         # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
         # decisions below are gated separately on
         # ``pipeline_config.needs_bitmask_constraints``.
+        # structured_output_backend is None only on an unresolved config;
+        # from_tokenizer falls back to "xgrammar" in that case.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
+            pipeline_config.sampling.structured_output_backend,
+            pipeline_config.sampling.structured_output_any_whitespace,
         )
         self.vocab_size = self._structured_output.vocab_size
 
-        session = InferenceSession(devices=[*self._devices])
+        session = InferenceSession(
+            devices=[*self._devices],
+            precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
+            export_mefs=pipeline_config.runtime.export_mefs,
+        )
         self.session = session
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not model_config.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = model_config.resolved_weight_paths()
 
@@ -1512,7 +1820,12 @@ class OverlapTextGenerationPipeline(
             raise ValueError(
                 "Enable Echo is not supported for speculative decoding. Please disable echo."
             )
-        elif is_spec_decode:
+        if is_spec_decode and pipeline_config.runtime.max_pending_futures > 1:
+            raise ValueError(
+                "max_pending_futures > 1 (schedule-ahead decoding) is not "
+                "supported with speculative decoding. Use the default of 1."
+            )
+        if is_spec_decode:
             return_logits = ReturnLogits.VARIABLE
         else:
             return_logits = ReturnLogits.LAST_TOKEN
@@ -1524,9 +1837,10 @@ class OverlapTextGenerationPipeline(
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=return_logits,
+            max_batch_size=max_batch_size,
         )
 
-        available_cache_memory = model_config.kv_cache._available_cache_memory
+        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
 
         # Load the KVCache manager.  For models with multiple KV caches
@@ -1536,7 +1850,7 @@ class OverlapTextGenerationPipeline(
         if not is_spec_decode:
             self._kv_manager = load_kv_manager(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.runtime.max_batch_size,
+                max_batch_size=max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -1551,6 +1865,8 @@ class OverlapTextGenerationPipeline(
                 session=session,
                 model=self._pipeline_model,
                 pipeline_config=self._pipeline_config,
+                max_batch_size=max_batch_size,
+                available_cache_memory=available_cache_memory,
                 vocab_size=(
                     self.vocab_size
                     if pipeline_config.needs_bitmask_constraints
@@ -1570,6 +1886,15 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
+        self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
+            None
+        )
+        if isinstance(self._pipeline_model, SupportsVisionEncoding):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                plan=memory_plan.vision_cache_plan,
+                devices=self._devices,
+            )
+
         # Load sampler(s) for the non-spec-decode path. The bitmask-aware
         # sampler is loaded when constrained decoding could fire (see
         # ``needs_bitmask_constraints``). The bitmask-free sampler is
@@ -1585,6 +1910,12 @@ class OverlapTextGenerationPipeline(
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
+        sampler_extensions = (
+            ()
+            if self._sampler_device.is_host
+            else self._pipeline_model.sampler_custom_extensions
+        )
+
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
@@ -1595,11 +1926,13 @@ class OverlapTextGenerationPipeline(
                         pipeline_config.sampling,
                         device=sampler_device_ref,
                         needs_bitmask_input=True,
+                        custom_extensions=sampler_extensions,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=False,
+                    custom_extensions=sampler_extensions,
                 )
                 sampler_timer.mark_build_complete()
                 if with_bitmask_graph is not None:
@@ -1621,17 +1954,22 @@ class OverlapTextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            max_batch_size = pipeline_config.runtime.max_batch_size
-            assert max_batch_size is not None, "max_batch_size must be set"
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
                 device=self._sampler_device,
             )
 
+        # Persistent pinned host buffer for the per-step generated-token D2H in
+        # `_sample_logits`. Allocated once and reused (sliced to the batch size)
+        # so the decode critical path does not pay a page-locking pinned-host
+        # allocation on every step. Lazily created on first use to match the
+        # sampler's token dtype; the host / virtual-device paths skip it.
+        self._pinned_generated_tokens_host: Buffer | None = None
+
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._sampler_device
+                pipeline_config, self._sampler_device, max_batch_size
             )
         )
 
@@ -1654,6 +1992,17 @@ class OverlapTextGenerationPipeline(
                 ],
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=model_config.data_parallel_degree > 1,
+                data_parallel_degree=model_config.data_parallel_degree,
+                # Derived from the one existing source of truth: the
+                # persistent probs buffer exists iff
+                # speculative.draft_proposal == "sampled".
+                sampled_draft_vocab_size=(
+                    self._spec_decode_state.persistent_draft_probs_full.shape[2]
+                    if self._spec_decode_state is not None
+                    and self._spec_decode_state.persistent_draft_probs_full
+                    is not None
+                    else None
+                ),
             )
             if self._pipeline_config.runtime.pipeline_role
             in ("prefill_and_decode", "decode_only")
@@ -1661,11 +2010,65 @@ class OverlapTextGenerationPipeline(
         )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
+        # Timing state for attributing execution time to completed batches.
+        # ``_last_sync_monotonic`` is when the previously synced batch's
+        # outputs were observed on the host; ``_completed_batch_stats`` holds
+        # stats for the most recently synced batch until the scheduler
+        # collects them via ``take_completed_batch_stats()``.
+        self._last_sync_monotonic: float | None = None
+        self._completed_batch_stats: CompletedBatchStats | None = None
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
 
+        # Fold greedy token selection (argmax) into the captured forward graph
+        # so all-greedy decode batches materialize the sampled token during the
+        # single replay instead of a separate blocking sampler submission.
+        # Gated on the architecture actually emitting the folded token output:
+        # for every other architecture the runtime flag (default on) is a
+        # no-op, and the capture path must not peel a trailing output that is
+        # really the logits buffer.
+        self._fold_sampler_into_graph: bool = (
+            pipeline_config.runtime.fold_sampler_into_graph
+            and self._pipeline_model.emits_folded_sampled_tokens
+        )
+
+        # Maximum unrealized future-token placeholders per request. A value of
+        # 2 enables schedule-ahead decoding: two forward passes stay in flight
+        # and each batch's outputs are consumed one step late, so the host
+        # never blocks on the just-enqueued forward. Deeper queues are not
+        # implemented. Prefill-only workers never decode ahead (they have no
+        # realize-future-token processor), so they are pinned to depth 1.
+        max_pending_futures = pipeline_config.runtime.max_pending_futures
+        if max_pending_futures < 1 or max_pending_futures > 2:
+            raise ValueError(
+                "max_pending_futures must be 1 (classic overlap) or 2 "
+                f"(schedule-ahead decoding), got {max_pending_futures}."
+            )
+        if self._realize_future_token_processor is None:
+            max_pending_futures = 1
+        self._max_pending_futures: int = max_pending_futures
+
+        # Older of the (at most two) in-flight batches under schedule-ahead
+        # decoding; always None at depth 1. Invariant: when set, `_prev_batch`
+        # is also set and holds the NEWER unsynced batch (the realize scatter
+        # always fills placeholders from the newest in-flight batch).
+        self._prev_prev_batch: AsyncBatch[TextGenerationContextType] | None = (
+            None
+        )
+        # Second pinned host slot + parity for the per-step generated-token
+        # D2H at depth 2 (see `_sample_logits`): with two batches in flight, a
+        # single reused buffer would be overwritten before the older batch's
+        # tokens are read.
+        self._pinned_generated_tokens_host_alt: Buffer | None = None
+        self._generated_tokens_host_parity: int = 0
+
         self._disable_overlap = disable_overlap
+
+    @property
+    def max_batch_size(self) -> int:
+        """Maximum number of requests that can be processed in a single batch."""
+        return self._max_batch_size
 
     @property
     def _effective_max_cache_length(self) -> int:
@@ -1678,22 +2081,14 @@ class OverlapTextGenerationPipeline(
         headroom, so capture never reserves more pages than were allocated.
         """
         params = self._kv_manager.params
-        spec_slack = 0
-        if params.num_draft_tokens > 0:
-            # Worst-case slack, matching `_compute_seq_len`: drafts verified
-            # and written next batch (2x), the prior overlap batch's drafts
-            # assumed accepted (1x), the DFlash block-draft slot, and the
-            # FUTURE_TOKEN placeholder.
-            block_draft_extra = (
-                1
-                if params.num_draft_tokens_per_step == params.num_draft_tokens
-                else 0
-            )
-            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
-        return min(
-            self._pipeline_model.max_seq_len + spec_slack,
-            self._kv_manager._total_num_pages * params.page_size,
+        max_seq_len = (
+            self._pipeline_model.max_seq_len + spec_decode_cache_slack(params)
         )
+        kv_max_seq_len = self._kv_manager.effective_max_seq_length
+        if kv_max_seq_len is None:
+            return max_seq_len
+        else:
+            return min(max_seq_len, kv_max_seq_len)
 
     @property
     def overlap_active(self) -> bool:
@@ -1776,6 +2171,68 @@ class OverlapTextGenerationPipeline(
         """
         return self._prev_batch is not None
 
+    def take_completed_batch_stats(self) -> CompletedBatchStats | None:
+        """Returns and clears stats for the most recently completed batch.
+
+        When overlap is active, a batch's outputs are synchronized one
+        ``execute()`` call after it was enqueued, so the scheduler cannot
+        attribute execution time to the batch it just submitted. After each
+        ``execute()`` call that synchronized a batch, this returns that
+        batch's composition and timing; the scheduler should publish
+        execution-time and throughput telemetry from this record instead of
+        from its own wall-clock measurement. Returns ``None`` when no batch
+        completed since the last call.
+        """
+        stats = self._completed_batch_stats
+        self._completed_batch_stats = None
+        return stats
+
+    def _record_completed_batch_stats(
+        self,
+        batch: AsyncBatch[TextGenerationContextType],
+        spec_decode_metrics: _SpeculativeDecodingMetrics | None,
+        sync_monotonic: float,
+    ) -> None:
+        """Records stats for a batch whose outputs were just synchronized.
+
+        The execution time is estimated host-side as the interval from when
+        the batch could have started executing — the later of its enqueue
+        timestamp and the previous batch's sync timestamp (batches execute
+        back-to-back on the same stream) — until its outputs were observed on
+        the host. On a saturated GPU this converges to the batch's GPU
+        duration; it overestimates by any GPU idle gap before the batch.
+        """
+        start_bound = batch.enqueue_monotonic
+        if self._last_sync_monotonic is not None:
+            start_bound = max(start_bound, self._last_sync_monotonic)
+        inputs = batch.inputs
+        stats = CompletedBatchStats(
+            batch_type=inputs.batch_type,
+            batch_size=inputs.batch_size,
+            num_input_tokens=inputs.input_tokens,
+            num_context_tokens=inputs.context_tokens,
+            execution_time_s=max(sync_monotonic - start_bound, 0.0),
+        )
+        if spec_decode_metrics is not None:
+            stats.num_output_tokens = spec_decode_metrics.output_tokens
+            stats.draft_tokens_generated = (
+                spec_decode_metrics.draft_tokens_generated
+            )
+            stats.draft_tokens_accepted = (
+                spec_decode_metrics.draft_tokens_accepted
+            )
+            stats.avg_acceptance_length = (
+                spec_decode_metrics.avg_acceptance_length
+            )
+            stats.max_acceptance_length = (
+                spec_decode_metrics.num_speculative_tokens
+            )
+            stats.acceptance_rate_per_position = (
+                spec_decode_metrics.acceptance_rate_per_position
+            )
+        self._completed_batch_stats = stats
+        self._last_sync_monotonic = sync_monotonic
+
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
@@ -1812,96 +2269,133 @@ class OverlapTextGenerationPipeline(
                     for idx in range(batch_size)
                 ]
             )
-        with self._kv_manager.reserve(replica_batches):
-            max_cache_length = self._effective_max_cache_length
-            # Prepare dispatch metadata for the probed characteristics so the
-            # captured graph matches what replay produces for the same aligned
-            # cache length.
-            kv_cache_inputs = self._kv_manager.runtime_inputs(
-                replica_batches,
-                max_cache_length=max_cache_length,
-                batch_characteristics=batch_characteristics,
+        for replica_idx, contexts in enumerate(replica_batches):
+            for context in contexts:
+                self._kv_manager.claim(context, replica_idx=replica_idx)
+                self._kv_manager.alloc(context)
+
+        max_cache_length = self._effective_max_cache_length
+        # Prepare dispatch metadata for the probed characteristics so the
+        # captured graph matches what replay produces for the same aligned
+        # cache length.
+        kv_cache_inputs = self._kv_manager.runtime_inputs(
+            replica_batches,
+            max_cache_length=max_cache_length,
+            batch_characteristics=batch_characteristics,
+        )
+
+        return_n_logits = (
+            num_speculative_tokens + 1
+            if self._spec_decode_state is not None
+            else 0
+        )
+
+        with Tracer("prepare_initial_token_inputs"):
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=replica_batches,
+                kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
             )
 
-            return_n_logits = (
-                num_speculative_tokens + 1
-                if self._spec_decode_state is not None
-                else 0
+        # Warmup packs ``.buffers`` without going through the prep phase's
+        # vision drive (or ``execute()``), so the vision-merge inputs the
+        # compiled graph unconditionally declares must be finalized here
+        # with the model's empties.
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model, model_inputs, self._devices, None
             )
 
-            with Tracer("prepare_initial_token_inputs"):
-                model_inputs = (
-                    self._pipeline_model.prepare_initial_token_inputs(
-                        replica_batches=replica_batches,
-                        kv_cache_inputs=kv_cache_inputs,
-                        return_n_logits=return_n_logits,
-                    )
+        if self._spec_decode_state is not None:
+            assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
+            draft_tokens = Buffer.from_numpy(
+                np.zeros(
+                    (batch_size * dp_size, num_speculative_tokens),
+                    dtype=np.int64,
                 )
+            )
+            persistent_draft_tokens = (
+                self._spec_decode_state.persistent_draft_tokens
+            )
+            persistent_draft_tokens = _contiguous_prefix_2d(
+                persistent_draft_tokens,
+                batch_size * dp_size,
+                num_speculative_tokens,
+            )
+            persistent_draft_tokens.inplace_copy_from(draft_tokens)
+            model_inputs.draft_tokens = persistent_draft_tokens
 
-            if self._spec_decode_state is not None:
-                assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
-                draft_tokens = Buffer.from_numpy(
-                    np.zeros(
-                        (batch_size * dp_size, num_speculative_tokens),
-                        dtype=np.int64,
-                    )
-                )
-                persistent_draft_tokens = (
-                    self._spec_decode_state.persistent_draft_tokens
-                )
-                persistent_draft_tokens = _contiguous_prefix_2d(
-                    persistent_draft_tokens,
+            if self._spec_decode_state.persistent_draft_probs_full is not None:
+                model_inputs.draft_probs_full = _contiguous_prefix_3d(
+                    self._spec_decode_state.persistent_draft_probs_full,
                     batch_size * dp_size,
                     num_speculative_tokens,
-                )
-                persistent_draft_tokens.inplace_copy_from(draft_tokens)
-                model_inputs.draft_tokens = persistent_draft_tokens
-
-                warmup_flat_batch = [
-                    ctx for replica in replica_batches for ctx in replica
-                ]
-                sampling_buffers = self._build_spec_decode_sampling_buffers(
-                    warmup_flat_batch
-                )
-                model_inputs.temperature = sampling_buffers.temperature
-                model_inputs.top_k = sampling_buffers.top_k
-                model_inputs.max_k = sampling_buffers.max_k
-                model_inputs.top_p = sampling_buffers.top_p
-                model_inputs.min_top_p = sampling_buffers.min_top_p
-                model_inputs.seed = sampling_buffers.seed
-                model_inputs.in_thinking_phase = (
-                    sampling_buffers.in_thinking_phase
+                    self._spec_decode_state.persistent_draft_probs_full.shape[
+                        2
+                    ],
                 )
 
-                # Set all-valid packed bitmask for warmup (unconstrained).
-                # Shape: [batch_size, num_speculative_tokens + 1,
-                # packed_vocab_size]; -1 = all bits set = all tokens valid.
-                # The overlap path binds a (pinned, wait_payload, scratch)
-                # triple and primes the completion flag so each warmup
-                # replay's in-graph wait passes immediately.
-                overlap_state = self._spec_decode_state.overlap_state
-                total_batch = batch_size * dp_size
-                if overlap_state is not None:
-                    num_positions = overlap_state.num_positions
-                    packed_vocab_dim = overlap_state.packed_vocab_size
-                    prime_np = np.full(
-                        (total_batch, num_positions, packed_vocab_dim),
-                        -1,
-                        dtype=np.int32,
-                    )
-                    overlap_state.prime(prime_np)
-                    # Bind via the cached-view helper: the same Buffer view
-                    # objects are returned at capture and every replay, so
-                    # GraphCaptureRunner.replay's preface inplace_copy_from
-                    # short-circuits via the self-is-src identity check.
-                    pinned_view, scratch_view = overlap_state.get_input_views(
-                        total_batch, num_positions
-                    )
-                    model_inputs.pinned_bitmask = pinned_view
-                    model_inputs.wait_payload = overlap_state.wait_payload
-                    model_inputs.device_bitmask_scratch = scratch_view
+            warmup_flat_batch = [
+                ctx for replica in replica_batches for ctx in replica
+            ]
+            sampling_buffers = self._build_spec_decode_sampling_buffers(
+                warmup_flat_batch
+            )
+            model_inputs.temperature = sampling_buffers.temperature
+            model_inputs.top_k = sampling_buffers.top_k
+            model_inputs.max_k = sampling_buffers.max_k
+            model_inputs.top_p = sampling_buffers.top_p
+            model_inputs.min_top_p = sampling_buffers.min_top_p
+            model_inputs.seed = sampling_buffers.seed
+            model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
 
+            # Set all-valid packed bitmask for warmup (unconstrained).
+            # Shape: [batch_size, num_speculative_tokens + 1,
+            # packed_vocab_size]; -1 = all bits set = all tokens valid.
+            # The overlap path binds a (pinned, wait_payload, scratch)
+            # triple and primes the completion flag so each warmup
+            # replay's in-graph wait passes immediately.
+            overlap_state = self._spec_decode_state.overlap_state
+            total_batch = batch_size * dp_size
+            if overlap_state is not None:
+                num_positions = overlap_state.num_positions
+                packed_vocab_dim = overlap_state.packed_vocab_size
+                prime_np = np.full(
+                    (total_batch, num_positions, packed_vocab_dim),
+                    -1,
+                    dtype=np.int32,
+                )
+                overlap_state.prime(prime_np)
+                # Bind via the cached-view helper: the same Buffer view
+                # objects are returned at capture and every replay, so
+                # GraphCaptureRunner.replay's preface inplace_copy_from
+                # short-circuits via the self-is-src identity check.
+                pinned_view, scratch_view = overlap_state.get_input_views(
+                    total_batch, num_positions
+                )
+                model_inputs.pinned_bitmask = pinned_view
+                model_inputs.wait_payload = overlap_state.wait_payload
+                model_inputs.device_bitmask_scratch = scratch_view
+
+        # Collect the warmup request IDs before yielding so they are
+        # available for state-pool release after the probe completes.
+        warmup_request_ids: list[RequestID] = [
+            ctx.request_id for replica in replica_batches for ctx in replica
+        ]
+
+        try:
             yield model_inputs
+        finally:
+            # Models that maintain per-request SSM / conv state pools
+            # outside the KV cache (e.g. Nemotron-H, Qwen3.5, LFM2) must
+            # release their warmup slots here; otherwise the pool is
+            # exhausted before serving begins.
+            if isinstance(self._pipeline_model, SupportsSSMStateWarmup):
+                self._pipeline_model.release_warmup_state(warmup_request_ids)
+            for replica in replica_batches:
+                for context in replica:
+                    self._kv_manager.release(context)
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
@@ -1910,25 +2404,17 @@ class OverlapTextGenerationPipeline(
                 "Device graph capture is enabled but pipeline model does not "
                 "expose a compiled model for capture/replay."
             )
-        if self._pipeline_config.runtime.max_batch_size is None:
-            raise RuntimeError(
-                "device_graph_capture requires max_batch_size to be resolved."
-            )
-
         max_capture_batch_size = min(
-            self._pipeline_config.runtime.max_batch_size,
+            self._max_batch_size,
             _MAX_GRAPH_CAPTURE_BATCH_SIZE,
         )
-        if (
-            max_capture_batch_size
-            < self._pipeline_config.runtime.max_batch_size
-        ):
+        if max_capture_batch_size < self._max_batch_size:
             logger.warning(
                 "Capping graph capture batch size to %d "
                 "(max_batch_size=%d). Decode batches above %d will fall "
                 "back to eager execution.",
                 max_capture_batch_size,
-                self._pipeline_config.runtime.max_batch_size,
+                self._max_batch_size,
                 max_capture_batch_size,
             )
 
@@ -1945,6 +2431,7 @@ class OverlapTextGenerationPipeline(
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
+            fold_sampler_into_graph=self._fold_sampler_into_graph,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -2073,6 +2560,47 @@ class OverlapTextGenerationPipeline(
             seed=seed_view,
         )
 
+    def _prepare_draft_probs_full(
+        self,
+        batch_size: int,
+        num_draft_tokens_to_verify: int,
+    ) -> Buffer | None:
+        """Binds this batch's draft-distribution view, cleared to zero.
+
+        These distributions live only on device, indexed by batch slot. The
+        realize scatter refreshes the rows carried over from the previous
+        batch; every other row still holds whatever request last occupied that
+        slot. Clearing the prefix first makes the scatter the only source of
+        truth, so a request that was preempted, resumed, or simply moved slots
+        gets zeros rather than a stranger's proposal.
+
+        Zero is what the acceptance path reads as "no distribution for this
+        row": it falls back to typical acceptance and the argmax residual,
+        which cannot re-emit the token the target just rejected.
+        """
+        assert self._spec_decode_state is not None
+        persistent = self._spec_decode_state.persistent_draft_probs_full
+        if persistent is None:
+            return None
+
+        vocab_size = persistent.shape[2]
+        view = _contiguous_prefix_3d(
+            persistent, batch_size, num_draft_tokens_to_verify, vocab_size
+        )
+        if num_draft_tokens_to_verify == 0 or batch_size == 0:
+            return view
+
+        zeros = self._spec_decode_state.draft_probs_full_zero_row
+        assert zeros is not None
+        row_elems = num_draft_tokens_to_verify * vocab_size
+        flat = view.view(view.dtype, (view.num_elements,))
+        zero_row = zeros.view(zeros.dtype, (zeros.num_elements,))[:row_elems]
+        for i in range(batch_size):
+            flat[i * row_elems : (i + 1) * row_elems].inplace_copy_from(
+                zero_row
+            )
+        return view
+
     def _replay_batch_characteristics(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> BatchCharacteristics:
@@ -2108,6 +2636,7 @@ class OverlapTextGenerationPipeline(
         draft_tokens: Buffer | None = None,
         sampling_buffers: _SpecDecodeSamplingBuffers | None = None,
         draft_tokens_np: npt.NDArray[np.int64] | None = None,
+        draft_probs_full: Buffer | None = None,
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs.
 
@@ -2124,6 +2653,8 @@ class OverlapTextGenerationPipeline(
                 compute the speculative bitmask for structured output just
                 before graph replay. Required when ``draft_tokens`` is set
                 and structured output is enabled.
+            draft_probs_full: Distributions the draft sampled ``draft_tokens``
+                from. Set iff ``draft_proposal="sampled"``.
 
         Returns:
             The model outputs containing logits and other inference results.
@@ -2181,6 +2712,20 @@ class OverlapTextGenerationPipeline(
                 return_n_logits=return_n_logits,
             )
 
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            vision_result = self._encoder_cache.run_vision_encode(
+                self._pipeline_model,
+                as_vision_context_batches(inputs.batches),
+                self._devices,
+            )
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model,
+                model_inputs,
+                self._devices,
+                vision_result,
+            )
+
         if debug_verify_replay_enabled:
             # Reuse non-KV buffers from replay inputs and only swap the
             # runtime-shaped KV inputs used for debug verification.
@@ -2207,6 +2752,8 @@ class OverlapTextGenerationPipeline(
             assert self._spec_decode_state is not None
             assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             model_inputs.draft_tokens = draft_tokens
+            if draft_probs_full is not None:
+                model_inputs.draft_probs_full = draft_probs_full
             assert sampling_buffers is not None
             model_inputs.temperature = sampling_buffers.temperature
             model_inputs.top_k = sampling_buffers.top_k
@@ -2219,6 +2766,7 @@ class OverlapTextGenerationPipeline(
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
+            and not self._prev_batch._is_processed
         ):
             realized_draft_tokens_host = (
                 self._realize_future_token_processor.realize_future_tokens(
@@ -2343,6 +2891,159 @@ class OverlapTextGenerationPipeline(
 
         return sampling_processor, bitmask
 
+    def _can_use_folded_sampler(
+        self,
+        model_outputs: ModelOutputs,
+        sampling_processor: FusedSamplingProcessor,
+        flat_batch: list[TextGenerationContextType],
+    ) -> bool:
+        """Whether the folded in-graph argmax token can replace the sampler.
+
+        The folded output selects ``argmax`` over the LAST_TOKEN logits, which
+        is token-for-token identical to the greedy sampler only when every
+        request is pure greedy and no logits-modifying feature is engaged for
+        the batch. Any deviation falls back to the separate sampler, whose
+        (ignored) folded output costs nothing.
+        """
+        if not self._fold_sampler_into_graph:
+            return False
+        if model_outputs.sampled_tokens is None:
+            return False
+        # Folded argmax is over LAST_TOKEN [B, V] logits; the variable-logit
+        # (logit_offsets) path is out of scope for the greedy fold.
+        if model_outputs.logit_offsets is not None:
+            return False
+        # Structured output, penalties, and min-token masking all rewrite the
+        # logits before selection, so the folded argmax would diverge.
+        if sampling_processor.bitmask is not None:
+            return False
+        if sampling_processor.penalty_inputs is not None:
+            return False
+        if sampling_processor.min_tokens_masks:
+            return False
+        # Every request must be pure greedy (argmax-equivalent): temperature 0
+        # (SamplingParams then forces top_k=1) with no logits-rewriting
+        # feature (penalties, custom processors). top_p / min_p need no gate
+        # at temperature 0: both filters always retain the max-probability
+        # token, so they cannot change the argmax selection — and models
+        # commonly ship generation-config defaults like top_p=0.95 that
+        # would otherwise disable the fold for all greedy traffic.
+        for ctx in flat_batch:
+            params = ctx.sampling_params
+            if params.temperature != 0.0:
+                return False
+            if params.needs_penalties:
+                return False
+            if params.logits_processors is not None:
+                return False
+        return True
+
+    def _can_defer_sync(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> bool:
+        """Whether this step may run schedule-ahead (defer the newest sync).
+
+        Deferring keeps the newest in-flight batch unsynced so this step's
+        forward queues directly behind it on the device, and consumes the
+        OLDER in-flight batch's outputs instead. It is only correct for a
+        steady pure-greedy token-generation step:
+
+        * The batch must be TG: a CE / mixed batch admits requests whose
+          host token state the deferred batch has not realized yet, and the
+          structured-output cold-start paths assume the previous batch's FSM
+          state is final.
+        * Every request must be pure greedy with no logits-modifying feature
+          (penalties / min-tokens / custom processors / structured output).
+          Those features read host token state that would be one step staler
+          than the classic overlap depth, and structured output requires the
+          previous batch's FSM advance before this batch's bitmask fill.
+        * Every request with an unrealized placeholder must be present in the
+          newest in-flight batch: the on-device realize scatter fills
+          placeholders from that batch only. A request whose placeholder came
+          from an older batch needs a host realize (drain) first.
+
+        Callers must treat a ``False`` at depth 2 as a drain-to-depth-1
+        signal (see :meth:`_drain_pending_batches`).
+        """
+        if self._max_pending_futures < 2:
+            return False
+        if self._disable_overlap:
+            return False
+        if self._spec_decode_state is not None:
+            return False
+        if self._realize_future_token_processor is None:
+            return False
+        if self._sampler_device.is_host:
+            return False
+        if not inputs or inputs.batch_type != BatchType.TG:
+            return False
+
+        newest = self._prev_batch
+        newest_request_ids: set[RequestID] = (
+            {ctx.request_id for ctx in newest.inputs.flat_batch}
+            if newest is not None and not newest._is_processed
+            else set()
+        )
+        for ctx in inputs.flat_batch:
+            if ctx._is_padding_ctx:
+                # DP padding contexts are outside the schedule-ahead scope.
+                return False
+            params = ctx.sampling_params
+            # top_p / min_p need no gate at temperature 0: both filters
+            # always retain the max-probability token, so they cannot change
+            # the argmax selection (see _can_use_folded_sampler).
+            if params.temperature != 0.0:
+                return False
+            if params.needs_penalties:
+                return False
+            if params.logits_processors is not None:
+                return False
+            if params.min_new_tokens > 0:
+                return False
+            if (
+                ctx.json_schema is not None
+                or ctx.grammar is not None
+                or ctx.matcher is not None
+            ):
+                return False
+            if (
+                ctx.pending_future_count > 0
+                and ctx.request_id not in newest_request_ids
+            ):
+                return False
+        return True
+
+    def _drain_pending_batches(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Syncs both in-flight batches (oldest first), merging outputs.
+
+        Called before building a step that cannot run schedule-ahead
+        (composition change, CE batch, or sampling features) while two
+        batches are still in flight. Draining first host-realizes every
+        outstanding placeholder, so the step's model inputs are built from
+        fully realized token buffers. A request present in both batches gets
+        both realized tokens merged into a single response.
+        """
+        merged: PipelineOutputsDict[TextGenerationOutput] = {}
+        curr_flat_batch = inputs.flat_batch if inputs else None
+        for batch in (self._prev_prev_batch, self._prev_batch):
+            if batch is None:
+                continue
+            wrapped = batch.sync_and_process_outputs(
+                curr_flat_batch=curr_flat_batch
+            )
+            for req_id, output in wrapped.output_dict.items():
+                older = merged.get(req_id)
+                merged[req_id] = (
+                    _merge_generation_outputs(older, output)
+                    if older is not None
+                    else output
+                )
+        self._prev_prev_batch = None
+        self._prev_batch = None
+        return merged
+
     def _sample_logits(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
@@ -2362,33 +3063,45 @@ class OverlapTextGenerationPipeline(
         device0 = self._devices[0]
         flat_batch = inputs.flat_batch
 
-        if model_outputs.logit_offsets is None:
-            batch_size = len(flat_batch)
-            logits_batch = int(model_outputs.logits.shape[0])
-            if logits_batch != batch_size:
-                raise AssertionError(
-                    "Model returned LAST_TOKEN logits with a leading dimension "
-                    f"that does not match request batch size: logits.shape[0]={logits_batch}, "
-                    f"batch_size={batch_size}, input_tokens={sum(ctx.tokens.active_length for ctx in flat_batch)}, "
-                    f"active_lengths={[ctx.tokens.active_length for ctx in flat_batch]}, "
-                    f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
-                )
+        # Fast path: the greedy token was already selected inside the captured
+        # forward graph (argmax folded in). Skip the separate sampler
+        # submission entirely and consume the folded output. Only taken when
+        # every request is pure-greedy; otherwise fall through to the sampler.
+        use_folded_sampler = self._can_use_folded_sampler(
+            model_outputs, sampling_processor, flat_batch
+        )
 
-        with Tracer("apply_logits_processors"):
-            sample_logits, sample_offsets = (
-                sampling_processor.logits_for_sampling(
-                    logits=model_outputs.logits,
-                    next_token_logits=model_outputs.next_token_logits,
-                    logit_offsets=model_outputs.logit_offsets,
+        if use_folded_sampler:
+            assert model_outputs.sampled_tokens is not None
+            generated_tokens = model_outputs.sampled_tokens
+        else:
+            if model_outputs.logit_offsets is None:
+                batch_size = len(flat_batch)
+                logits_batch = int(model_outputs.logits.shape[0])
+                if logits_batch != batch_size:
+                    raise AssertionError(
+                        "Model returned LAST_TOKEN logits with a leading dimension "
+                        f"that does not match request batch size: logits.shape[0]={logits_batch}, "
+                        f"batch_size={batch_size}, input_tokens={sum(ctx.tokens.active_length for ctx in flat_batch)}, "
+                        f"active_lengths={[ctx.tokens.active_length for ctx in flat_batch]}, "
+                        f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
+                    )
+
+            with Tracer("apply_logits_processors"):
+                sample_logits, sample_offsets = (
+                    sampling_processor.logits_for_sampling(
+                        logits=model_outputs.logits,
+                        next_token_logits=model_outputs.next_token_logits,
+                        logit_offsets=model_outputs.logit_offsets,
+                    )
                 )
-            )
-            apply_logits_processors(
-                context_batch=flat_batch,
-                batch_logits=sample_logits,
-                batch_logit_offsets=sample_offsets,
-                batch_processors=[sampling_processor],
-            )
-        generated_tokens = sampling_processor.generated_tokens
+                apply_logits_processors(
+                    context_batch=flat_batch,
+                    batch_logits=sample_logits,
+                    batch_logit_offsets=sample_offsets,
+                    batch_processors=[sampling_processor],
+                )
+            generated_tokens = sampling_processor.generated_tokens
         # [B, 1] -> [B]
         generated_tokens = generated_tokens.view(
             dtype=generated_tokens.dtype,
@@ -2401,18 +3114,50 @@ class OverlapTextGenerationPipeline(
                 generated_tokens_device = generated_tokens.to(device0)
             else:
                 generated_tokens_device = generated_tokens
-                # Allocate a pinned tensor on the host for faster async d2h
-                # transfer speeds.
-                generated_tokens_host = DevicePinnedBuffer(
-                    shape=generated_tokens_device.shape,
-                    dtype=generated_tokens_device.dtype,
-                    device=device0,
+                # Reuse a persistent pinned host buffer for the async D2H instead
+                # of page-locking a fresh one every decode step (this allocation
+                # was exposed host time on the per-step critical path). The
+                # overlap scheduler reads the previous batch's copy in
+                # sync_and_process_outputs strictly before _sample_logits writes
+                # the next batch's copy, so a single reused buffer is race-free.
+                d2h_batch = int(generated_tokens_device.shape[0])
+                # Under schedule-ahead decoding (depth 2) two batches are in
+                # flight, so their host token copies must land in different
+                # pinned slots: a single reused buffer would be overwritten by
+                # this batch's D2H before the older, still-unsynced batch's
+                # tokens are read. Alternate between two persistent slots. At
+                # depth 1 the single buffer is used unchanged.
+                use_alt_slot = (
+                    self._max_pending_futures > 1
+                    and self._generated_tokens_host_parity == 1
                 )
+                pinned = (
+                    self._pinned_generated_tokens_host_alt
+                    if use_alt_slot
+                    else self._pinned_generated_tokens_host
+                )
+                if (
+                    pinned is None
+                    or int(pinned.shape[0]) < d2h_batch
+                    or pinned.dtype != generated_tokens_device.dtype
+                ):
+                    pinned = DevicePinnedBuffer(
+                        shape=(max(self._max_batch_size, d2h_batch),),
+                        dtype=generated_tokens_device.dtype,
+                        device=device0,
+                    )
+                    if use_alt_slot:
+                        self._pinned_generated_tokens_host_alt = pinned
+                    else:
+                        self._pinned_generated_tokens_host = pinned
+                if self._max_pending_futures > 1:
+                    self._generated_tokens_host_parity ^= 1
+                generated_tokens_host = pinned[:d2h_batch]
                 generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # Record an event to track the completion of the copy. This ensures
             # the subsequent synchronize() call blocks until the copy is
             # complete, and no more.
-            copy_event = device0.default_stream.record_event()
+            copy_event = device0.default_queue.record_event()
 
         # Make a deep copy of the input object in case the caller modifies it!
         cloned_inputs = TextGenerationInputs(
@@ -2698,16 +3443,26 @@ class OverlapTextGenerationPipeline(
         # Cost of this fallback: when a mixed batch recurs, the cold-start
         # prime recomputes every row's bitmask synchronously, including the
         # continuing constrained rows the callback could have produced
-        # off-thread. The scheduler does not emit mixed batches today, so this
-        # is dormant. Once mixed batches are supported, preserving overlap here
-        # means enqueuing the callback for just the continuing subset and
-        # cold-starting only the genuinely new rows -- deferred until then to
-        # avoid splitting the prime/callback bitmask ownership (and the flag
-        # signalling) on a path that cannot yet be exercised or benchmarked.
-        curr_verifies = all(
-            ctx.tokens.generated_length > 0 for ctx in curr_context_batch
+        # off-thread. The scheduler does not emit mixed batches today for
+        # aggregated mode, and on a disaggregated decode-only engine a
+        # KV-transferred row arrives with generated_length > 0 yet was never
+        # in this engine's producing batch -- so the generated_length proxy is
+        # insufficient. Once mixed batches are benchmarkable, preserving
+        # overlap here means enqueuing the callback for just the continuing
+        # subset and cold-starting only the genuinely new rows -- deferred
+        # until then to avoid splitting the prime/callback bitmask ownership
+        # (and the flag signalling) on a path that cannot yet be exercised or
+        # benchmarked.
+        prev_context_batch = prev_batch.inputs.flat_batch
+        prev_rids = {ctx.request_id for ctx in prev_context_batch}
+        all_continuing = all(
+            (
+                (ctx.request_id in prev_rids and not ctx.is_initial_prompt)
+                or ctx._is_padding_ctx  # Padding contexts shouldn't affect continuation
+            )
+            for ctx in curr_context_batch
         )
-        if not curr_verifies:
+        if not all_continuing:
             return False
 
         overlap_state = spec_state.overlap_state
@@ -2715,7 +3470,6 @@ class OverlapTextGenerationPipeline(
             "Async bitmask callback requires structured output to be enabled"
         )
 
-        prev_context_batch = prev_batch.inputs.flat_batch
         prev_batch_size = len(prev_context_batch)
         next_draft_k = prev_batch.spec_decode.next_draft_tokens_host.shape[1]
         num_positions = next_draft_k + 1
@@ -2957,6 +3711,10 @@ class OverlapTextGenerationPipeline(
         )
         draft_tokens_device.inplace_copy_from(draft_tokens_pinned)
 
+        draft_probs_full_device = self._prepare_draft_probs_full(
+            len(context_batch), num_draft_tokens_to_verify
+        )
+
         sampling_buffers = self._build_spec_decode_sampling_buffers(
             context_batch
         )
@@ -2966,6 +3724,7 @@ class OverlapTextGenerationPipeline(
             draft_tokens=draft_tokens_device,
             sampling_buffers=sampling_buffers,
             draft_tokens_np=draft_tokens_np,
+            draft_probs_full=draft_probs_full_device,
         )
         assert isinstance(outputs, UnifiedEagleOutputs)
 
@@ -2996,7 +3755,7 @@ class OverlapTextGenerationPipeline(
             # Record an event to track the completion of the d2h copies.
             # This will ensure that the subsequent synchronize() call will
             # block until the d2h copy is complete, and no more.
-            copy_event = device0.default_stream.record_event()
+            copy_event = device0.default_queue.record_event()
 
             # The FSM-advance + in-order bitmask callback for THIS batch is not
             # enqueued here. It is enqueued at the head of the NEXT execute()
@@ -3021,6 +3780,7 @@ class OverlapTextGenerationPipeline(
                     num_accepted_draft_tokens_host=num_accepted_draft_tokens_host,
                     max_seq_len=self._pipeline_model.max_seq_len,
                     fsm_advanced_by_callback=False,
+                    next_draft_probs_full_device=outputs.next_draft_probs_full,
                 ),
                 think_start_token_id=(
                     self._think_start_token_id
@@ -3112,16 +3872,48 @@ class OverlapTextGenerationPipeline(
         """Executes a batch of requests asynchronously on the GPU.
 
         This method returns before the outputs for the current batch are
-        ready. The caller may need to call ``execute()`` again (possibly
-        with an empty batch) to retrieve these outputs. For example:
+        ready, so the outputs it returns belong to the *previous* batch. To
+        drain the outputs for the final batch, call ``execute()`` again with an
+        empty batch.
+
+        The batch of requests is a
+        :class:`~max.pipelines.modeling.types.TextGenerationInputs`, which wraps
+        one or more :class:`~max.pipelines.context.TextContext` objects. Build a
+        batch on CPU like this:
 
         .. code-block:: python
 
+            import numpy as np
+            from max.pipelines.context import TextContext, TokenBuffer
+            from max.pipelines.modeling.types import (
+                RequestID,
+                TextGenerationInputs,
+            )
+
+            contexts = [
+                TextContext(
+                    request_id=RequestID(),
+                    max_length=32,
+                    tokens=TokenBuffer(np.arange(8, dtype=np.int64)),
+                )
+                for _ in range(4)
+            ]
+            inputs = TextGenerationInputs(batches=[contexts])
+            empty_inputs = TextGenerationInputs(batches=[[]])
+            assert len(inputs.flat_batch) == 4
+            assert len(empty_inputs.flat_batch) == 0
+
+        Given a loaded ``pipeline``, the first ``execute`` returns no outputs
+        (they belong to a not-yet-submitted previous batch); a second, empty
+        call drains the first batch's outputs:
+
+        .. code-block:: text
+
             output_a = pipeline.execute(inputs)
-            assert len(outputs) == 0
+            assert len(output_a) == 0
 
             output_b = pipeline.execute(empty_inputs)
-            assert len(outputs) == len(inputs.flat_batch)
+            assert len(output_b) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.
@@ -3135,6 +3927,8 @@ class OverlapTextGenerationPipeline(
                 "Log probabilities are not supported with overlap pipeline"
             )
 
+        execute_start_monotonic = time.monotonic()
+
         # Initialize variables that may be set conditionally below.
         curr_batch: AsyncBatch[TextGenerationContextType] | None = None
         sampling_processor: FusedSamplingProcessor | None = None
@@ -3144,9 +3938,22 @@ class OverlapTextGenerationPipeline(
         # Set when the early-sync guard fires; reused in the normal sync path
         # below to prevent double-calling sync_and_process_outputs.
         _early_sync_outputs: _AsyncBatchOutput | None = None
+        _early_sync_monotonic: float | None = None
 
         if self._spec_decode_state is not None:
             self._spec_decode_state.batch_metrics = None
+
+        # Schedule-ahead (depth 2) decision for this step. When deferring, the
+        # newest in-flight batch stays unsynced (so this step's forward queues
+        # directly behind it on the device) and the OLDER in-flight batch is
+        # consumed instead. Any step that cannot defer drains both in-flight
+        # batches to depth 0 BEFORE building its model inputs, so every
+        # outstanding placeholder is realized on the host first.
+        defer_sync = False
+        if self._max_pending_futures > 1 and self._spec_decode_state is None:
+            defer_sync = self._can_defer_sync(inputs)
+            if not defer_sync and self._prev_prev_batch is not None:
+                outputs = self._drain_pending_batches(inputs)
 
         if inputs:
             # Spec-decode handles sampling internally.
@@ -3169,6 +3976,7 @@ class OverlapTextGenerationPipeline(
                     _early_sync_outputs = (
                         self._prev_batch.sync_and_process_outputs()
                     )
+                    _early_sync_monotonic = time.monotonic()
 
                 # FSM is advanced asynchronously by the host callback enqueued
                 # just above. The captured graph's ``mo.wait_host_value_with_dep``
@@ -3178,10 +3986,23 @@ class OverlapTextGenerationPipeline(
             else:
                 # Run the entire forward pass and output processing if the
                 # batch has at least one request.
+                #
+                # Launch the forward pass FIRST, then build the sampling
+                # processor. ``_run_forward`` enqueues the decode kernels
+                # asynchronously and returns immediately, so constructing the
+                # sampling processor (host-side param gather + small H2D copies
+                # in ``SamplerInputs.create``) overlaps with the GPU forward
+                # instead of running as exposed host time before it. The two
+                # are independent: ``_run_forward`` neither reads the sampling
+                # processor / bitmask nor mutates any state
+                # ``_create_sampling_processor`` consumes (``sampling_params``
+                # and host token lengths are unchanged by the forward launch),
+                # and both still precede the previous-batch sync / FSM advance
+                # below, so ordering and results are identical.
+                model_outputs = self._run_forward(inputs)
                 sampling_processor, bitmask = self._create_sampling_processor(
                     inputs.flat_batch
                 )
-                model_outputs = self._run_forward(inputs)
 
         elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
@@ -3189,7 +4010,23 @@ class OverlapTextGenerationPipeline(
             # for EP + DP. We skip all output processing.
             self._run_forward(inputs)
 
-        if self._prev_batch is not None:
+        if self._prev_batch is not None and defer_sync:
+            # Schedule-ahead: leave the newest in-flight batch unsynced and
+            # consume the OLDER one, if any. Its GPU work finished at least a
+            # full step ago, so this sync does not block the host between the
+            # two forward enqueues. On the ramp-up step (only one batch in
+            # flight) nothing is synced and no outputs are returned yet.
+            if self._prev_prev_batch is not None:
+                wrapped_outputs = (
+                    self._prev_prev_batch.sync_and_process_outputs(
+                        curr_flat_batch=inputs.flat_batch if inputs else None,
+                        bitmask=bitmask,
+                        sampling_processor=sampling_processor,
+                    )
+                )
+                self._prev_prev_batch = None
+                outputs = wrapped_outputs.output_dict
+        elif self._prev_batch is not None:
             assert not self._disable_overlap, (
                 "Cannot have a previous batch when overlap is disabled"
             )
@@ -3211,6 +4048,13 @@ class OverlapTextGenerationPipeline(
                 self._spec_decode_state.batch_metrics = (
                     wrapped_outputs.spec_decode_metrics
                 )
+            self._record_completed_batch_stats(
+                self._prev_batch,
+                wrapped_outputs.spec_decode_metrics,
+                sync_monotonic=_early_sync_monotonic
+                if _early_sync_monotonic is not None
+                else time.monotonic(),
+            )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
 
@@ -3226,7 +4070,7 @@ class OverlapTextGenerationPipeline(
 
         if curr_batch is not None:
             for context in inputs.flat_batch:
-                context.update_with_future_token()
+                context.update_with_future_token(self._max_pending_futures)
                 # TODO: these two fields should not both be named spec_decode_state...
                 if self._spec_decode_state is not None:
                     assert curr_batch.spec_decode is not None
@@ -3257,9 +4101,10 @@ class OverlapTextGenerationPipeline(
                         # to the GPU acceptance sampler.
                         context.spec_decoding_state.draft_tokens_to_verify = []
 
-        # Commit the new KV blocks into the prefix cache, ignoring the final
-        # placeholder future token.
-        self._kv_manager.step(inputs.batches)
+        # Commit the new KV blocks into the prefix cache, ignoring the trailing
+        # placeholder future tokens (one per pending forward).
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
 
         if curr_batch is not None:
             if self._disable_overlap:
@@ -3278,6 +4123,12 @@ class OverlapTextGenerationPipeline(
                 # For structured output, the bitmask is updated in
                 # sync_and_process_outputs() after the FSM is advanced,
                 # so overlap scheduling still works correctly.
+                curr_batch.enqueue_monotonic = execute_start_monotonic
+                if defer_sync and self._prev_batch is not None:
+                    # Schedule-ahead: two batches are now in flight. The
+                    # current batch becomes the newest; the previous one is
+                    # consumed on a later step (FIFO).
+                    self._prev_prev_batch = self._prev_batch
                 self._prev_batch = curr_batch
 
         return outputs
@@ -3290,14 +4141,42 @@ class OverlapTextGenerationPipeline(
         for DeepSeekV3.2).
         """
         # Primary KV cache release is handled by the scheduler via batch_constructor.
-        # Pipeline model may have extra KV caches to release.
+        if self._encoder_cache is not None:
+            self._encoder_cache.release_request(request_id)
         if hasattr(self._pipeline_model, "release"):
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
+
+    def batch_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns vision encoder metrics for the most recent batch.
+
+        Returns ``None`` for text-only models and for batches that did no
+        vision encoding (e.g. decode steps). The metrics come from the
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
+        otherwise, for a model that owns its encoder cache internally, from
+        :class:`SupportsPooledVisionMetrics`.
+        """
+        if self._encoder_cache is not None:
+            return self._encoder_cache.pop_metrics()
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_vision_metrics()
+        return None
+
+    def batch_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns video encoder metrics for the most recent batch.
+
+        Returns ``None`` for models with no video support and for batches
+        that did no video encoding. Video encoding has no pipeline-owned
+        cache equivalent to :class:`VisionEncoderCache`, so this only ever
+        comes from a model implementing :class:`SupportsPooledVisionMetrics`.
+        """
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_video_metrics()
+        return None
 
     def batch_spec_decode_metrics(
         self,

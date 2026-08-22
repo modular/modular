@@ -22,17 +22,21 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MHAKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
-    LoRAManager,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
 
 
@@ -85,8 +89,10 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.max_batch_size = max_batch_size
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
         self.kv_cache_config = kv_cache_config
@@ -111,7 +117,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             pipeline_config, self.huggingface_config
         )
         self._lora_manager = (
-            LoRAManager(
+            LoRAManagerV3(
                 config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.dtype,
@@ -155,7 +161,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
+        return MHAKVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=1,
             head_dim=1,

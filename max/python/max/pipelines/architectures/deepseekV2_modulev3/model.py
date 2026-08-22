@@ -15,20 +15,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, cast
 
-import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -37,13 +33,15 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
+from typing_extensions import override
 
+from .batch_processor import DeepseekV2ModuleV3BatchProcessor
 from .deepseekV2 import DeepseekV2
 from .model_config import DeepseekV2Config
 
@@ -61,9 +59,14 @@ class DeepseekV2Inputs(ModelInputs):
 
 
 class DeepseekV2Model(
-    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+    LogProbabilitiesMixin, ModuleV3PipelineModelWithKVCache[TextContext]
 ):
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
+    batch_processor_cls: ClassVar[type[DeepseekV2ModuleV3BatchProcessor]] = (
+        DeepseekV2ModuleV3BatchProcessor
+    )
+
+    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -75,6 +78,7 @@ class DeepseekV2Model(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -88,6 +92,7 @@ class DeepseekV2Model(
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
         self.model = self.load_model()
@@ -112,34 +117,6 @@ class DeepseekV2Model(
         return ModelOutputs(
             logits=cast(Buffer, model_outputs[0].driver_tensor),
             next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV2Inputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return DeepseekV2Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
         )
 
     @classmethod
@@ -176,60 +153,26 @@ class DeepseekV2Model(
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    def load_model(self) -> Callable[..., Any]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "only safetensors weights supported in DeepseekV2."
             )
+        return super()._load_state_dict()
 
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        del state_dict
         model_config = DeepseekV2Config.initialize(self.pipeline_config)
         model_config.max_batch_context_length = (
             self.pipeline_config.runtime.max_batch_total_tokens
             or model_config.max_batch_context_length
         )
+        return model_config
 
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        with F.lazy(), default_dtype(model_config.dtype):
-            nn_model = DeepseekV2(model_config, self.kv_params)
-            nn_model.to(self.devices[0])
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
-
-        return nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
-            weights=state_dict,
-        )
+    @override
+    def _instantiate_module(self, model_config: Any) -> Any:
+        nn_model = DeepseekV2(model_config, self.kv_params)
+        nn_model.to(self.devices[0])
+        return nn_model

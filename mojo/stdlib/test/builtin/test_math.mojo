@@ -48,7 +48,10 @@ def test_min() raises:
     assert_equal(1, min(1, 42))
 
     assert_equal(UInt(0), min(UInt(0), UInt(1)))
-    assert_equal(UInt(1), min(UInt(1), UInt(42)))
+    assert_equal(
+        UInt(1),
+        min(UInt(1), UInt(42)),
+    )
 
     comptime F = SIMD[DType.float32, 4]
     var f = F(-10.5, -5.0, 5.0, 10.0)

@@ -91,7 +91,20 @@ class Step3p5PretrainedConfig(PretrainedConfig):
     model_type = "step3p5"
 
     def __init__(self, **kwargs: object) -> None:
+        # >=5.4 requires len(layer_types) == num_hidden_layers, trim MTP tail.
+        # >=5.5 reads max_position_embeddings in __post_init__, so defer rope.
+        num_layers = kwargs.get("num_hidden_layers")
+        layer_types = kwargs.get("layer_types")
+        if isinstance(layer_types, list) and isinstance(num_layers, int):
+            kwargs["layer_types"] = layer_types[:num_layers]
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_scaling", "rope_parameters", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -141,6 +154,20 @@ class _KimiK2Config(PretrainedConfig):
 
     model_type = "kimi_k2"
 
+    def __init__(
+        self, max_position_embeddings: int = 262144, **kwargs: object
+    ) -> None:
+        # transformers >= 5.12 standardizes RoPE params in ``__post_init__``.
+        # For scaling rope types (the draft uses ``yarn``) it eagerly reads
+        # ``self.max_position_embeddings`` as the ``setdefault`` fallback for
+        # ``original_max_position_embeddings``. ``max_position_embeddings`` is
+        # not a declared field on the base config, so on this bare stub it is
+        # never set before ``__post_init__`` runs, raising ``AttributeError``.
+        # Bind it explicitly (from config.json, with a sane default) before
+        # delegating to ``super().__init__``.
+        self.max_position_embeddings = max_position_embeddings
+        super().__init__(**kwargs)
+
 
 AutoConfig.register("kimi_k2", _KimiK2Config, exist_ok=True)
 
@@ -178,25 +205,112 @@ except ValueError:
     pass
 
 
-class ExaoneConfig(PretrainedConfig):
-    """Local config class for EXAONE 3.5 models.
+class LagunaHFConfig(PretrainedConfig):
+    """Local config class for poolside's Laguna models (``model_type: laguna``).
 
-    The ``exaone`` model type is not natively registered in transformers, and the
-    remote ``configuration_exaone.py`` shipped in EXAONE 3.5 HuggingFace repos is
-    incompatible with the pinned transformers version.  Registering this minimal
-    subclass lets ``AutoConfig.from_pretrained`` load the repo's ``config.json``
-    without requiring ``trust_remote_code``.
+    Laguna repos point ``auto_map`` at a remote ``configuration_laguna.py`` that
+    is incompatible with the pinned ``huggingface_hub``/``transformers`` (it
+    decorates a non-dataclass config with ``@strict`` and uses
+    ``auto_docstring``). Registering this minimal subclass lets
+    ``AutoConfig.from_pretrained`` load the repo's ``config.json`` directly,
+    without ``trust_remote_code`` and without executing the remote config code.
+    ``LagunaConfig`` (the MAX config) reads the raw fields off this object
+    (``rope_parameters``, ``mlp_layer_types``, ``num_experts``, ``gating``, ...),
+    so any field present in ``config.json`` is preserved as an attribute.
     """
 
-    model_type = "exaone"
+    model_type = "laguna"
 
-    @property
-    def num_hidden_layers(self) -> int:
-        """Aliases ``num_layers`` to the standard ``num_hidden_layers`` name."""
-        return self.num_layers
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
 
 
 try:
-    AutoConfig.register("exaone", ExaoneConfig)
+    AutoConfig.register("laguna", LagunaHFConfig)
 except ValueError:
     pass
+
+
+# Register Llama4 config shims if the installed transformers version does not
+# include native ``llama4``/``llama4_text`` support.
+try:
+    from transformers import Llama4Config as _Llama4HFConfig
+    from transformers import Llama4TextConfig as _Llama4TextHFConfig
+except ImportError:
+
+    class _Llama4TextHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Minimal shim for the ``llama4_text`` model type.
+
+        Llama4 stores its text-decoder config under the ``text_config`` key.
+        This shim forwards all kwargs so that ``Llama4Config.initialize()``
+        can extract every field it needs via ``getattr``.
+        """
+
+        model_type = "llama4_text"
+
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            for k, v in kwargs.items():
+                if not hasattr(self, k):
+                    setattr(self, k, v)
+            # Provide defaults for fields that PretrainedConfig expects.
+            if not hasattr(self, "rope_scaling"):
+                self.rope_scaling = None
+
+    try:
+        AutoConfig.register("llama4_text", _Llama4TextHFConfig)
+    except ValueError:
+        pass  # Already registered
+
+    class _Llama4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Minimal shim for the top-level ``llama4`` model type.
+
+        ``Llama4ForConditionalGeneration`` config.json files nest the text
+        decoder config under a ``text_config`` key.  This shim instantiates
+        a ``_Llama4TextHFConfig`` for that sub-config so that
+        ``Llama4Config.initialize()`` can find it via
+        ``getattr(config, "text_config", config)``.
+        """
+
+        model_type = "llama4"
+        sub_configs = {"text_config": _Llama4TextHFConfig}
+
+        def __init__(
+            self,
+            text_config: dict[str, Any] | _Llama4TextHFConfig | None = None,
+            **kwargs: Any,
+        ) -> None:
+            if text_config is None:
+                text_config = {}
+            if isinstance(text_config, dict):
+                text_config = _Llama4TextHFConfig(**text_config)
+            self.text_config = text_config
+            super().__init__(**kwargs)
+
+    try:
+        AutoConfig.register("llama4", _Llama4HFConfig)
+    except ValueError:
+        pass  # Already registered
+
+
+class _InklingMMHFConfig(PretrainedConfig):
+    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
+    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+
+    model_type = "inkling_mm_model"
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)

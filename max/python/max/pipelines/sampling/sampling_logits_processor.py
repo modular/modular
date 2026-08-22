@@ -102,7 +102,7 @@ class FusedSamplingProcessor:
 
     @staticmethod
     def allocate_identity_logit_offsets(
-        pipeline_config: PipelineConfig, device: Device
+        pipeline_config: PipelineConfig, device: Device, max_batch_size: int
     ) -> Buffer | None:
         """Returns a preallocated ``[0, 1, ..., max_batch_size]`` index buffer.
 
@@ -116,8 +116,6 @@ class FusedSamplingProcessor:
             or is_virtual_device_mode()
         ):
             return None
-        max_batch_size = pipeline_config.runtime.max_batch_size
-        assert max_batch_size is not None, "max_batch_size must be set"
         return Buffer.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         ).to(device)
@@ -333,7 +331,7 @@ class FusedSamplingProcessor:
         self._pinned_new_tokens.inplace_copy_from(self.new_tokens)
 
         # Record event after copy so we can wait for it specifically
-        self._d2h_copy_event = self.device.default_stream.record_event()
+        self._d2h_copy_event = self.device.default_queue.record_event()
 
     def get_new_tokens_numpy(self) -> npt.NDArray[np.int64]:
         """Wait for D2H copy and return the new tokens as numpy array.

@@ -14,7 +14,7 @@
 # Tests for numeric-types.mdx code examples.
 #
 # Not tested (no runnable behavior to assert from this file):
-#   - `reflect[type_of(a)]().name()` prints (Int / UInt naming demos)
+#   - `reflect[type_of(a)].name()` prints (Int naming demos)
 #   - `Float8` arithmetic (requires GPU; covered in the support-matrix
 #     table; CPU execution is unsupported)
 #   - `Float4_e2m1fn` operations (requires NVIDIA Blackwell)
@@ -123,14 +123,14 @@ def test_scalar_aliases() raises:
     assert_equal(b, c)
 
 
-# --- Generic numeric function using DType ---
+# --- Parameterized numeric function using DType ---
 
 
 def double[T: DType](x: Scalar[T]) -> Scalar[T]:
     return x * UInt8(2).cast[T]()
 
 
-def test_dtype_generic() raises:
+def test_dtype_parameterized() raises:
     assert_equal(double[DType.float32](3.5), 7.0)
     assert_equal(double[DType.int16](21), 42)
 
@@ -145,12 +145,10 @@ def test_int_constants() raises:
     assert_equal(Int.MIN, -9223372036854775808)
 
 
-# --- UInt and sized integer bounds ---
+# --- Sized integer bounds ---
 
 
 def test_sized_int_bounds() raises:
-    assert_equal(UInt.MIN, 0)
-    assert_equal(UInt.MAX, 18446744073709551615)
     assert_equal(UInt8.MAX, 255)
     assert_equal(Int8.MIN, -128)
     assert_equal(UInt32.MAX, 4294967295)
@@ -330,7 +328,7 @@ def main() raises:
     test_simd_clamp()
     test_min_max()
     test_scalar_aliases()
-    test_dtype_generic()
+    test_dtype_parameterized()
     test_int_constants()
     test_sized_int_bounds()
     test_byte_alias()

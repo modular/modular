@@ -12,13 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Custom dispatch tests on simulated GPU mesh (single GPU, 2 virtual devices)."""
 
-import pytest
-
-# QUA-451 / DRIV-197: disabled due to nondeterminism
-pytestmark = pytest.mark.skip(
-    reason="QUA-451 / DRIV-197: nondeterministic, see runbook"
-)
-
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 

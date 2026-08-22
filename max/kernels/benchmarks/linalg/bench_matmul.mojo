@@ -20,6 +20,7 @@ from std.benchmark import keep
 from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
+from std.memory import ThinAllocation, dealloc, Layout
 from std.testing import assert_almost_equal
 
 
@@ -70,9 +71,8 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
 
 def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
-    m.bench_with_input[
-        MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
-    ](
+    m.bench_with_input(
+        bench_matmul[spec.static_info],
         BenchId("matmul", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric
@@ -82,20 +82,32 @@ def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
 
 def bench_matmul[
     static: MatmulSpecStatic
-](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
+](mut bencher: Bencher, spec: MatmulSpec[static]) raises:
     comptime a_type = spec.static_info.a_type
     comptime b_type = spec.static_info.b_type
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
-    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Coord(_ri(spec.m), _ri(spec.k))))
-    var b = TileTensor(b_ptr, row_major(Coord(_ri(spec.k), _ri(spec.n))))
-    var c = TileTensor(c_ptr, row_major(Coord(_ri(spec.m), _ri(spec.n))))
-    rand[a_type](a_ptr, spec.m * spec.k)
-    rand[b_type](b_ptr, spec.k * spec.n)
+    var a_alloc = alloc(
+        Layout[Scalar[a_type]].aligned[alignment](count=spec.m * spec.k)
+    ).into_managed()
+    var b_alloc = alloc(
+        Layout[Scalar[b_type]].aligned[alignment](count=spec.k * spec.n)
+    ).into_managed()
+    var c_alloc = alloc(
+        Layout[Scalar[c_type]].aligned[alignment](count=spec.m * spec.n)
+    ).into_managed()
+    var a = TileTensor(
+        a_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.k)))
+    )
+    var b = TileTensor(
+        b_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.k), _ri(spec.n)))
+    )
+    var c = TileTensor(
+        c_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.n)))
+    )
+    rand(a_alloc.unsafe_span())
+    rand(b_alloc.unsafe_span())
     _ = c.fill(Scalar[c_type](0))
 
     var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](b)
@@ -103,32 +115,34 @@ def bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = alloc[Scalar[b_type],](
-        padded_k * padded_n, alignment=alignment
+    var bp_alloc = alloc[Scalar[b_type]](
+        {count = padded_k * padded_n, alignment = alignment}
+    ).into_managed()
+    var bp = TileTensor(
+        bp_alloc.unsafe_ptr(), row_major(Coord(_ri(padded_k), _ri(padded_n)))
     )
-    var bp = TileTensor(bp_ptr, row_major(Coord(_ri(padded_k), _ri(padded_n))))
 
     if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
-    @__copy_capture(a, b, c, bp)
-    @parameter
-    def bench_fn() raises:
-        matmul[
-            transpose_b=False,
-            b_packed=b_packed,
-            saturated_vnni=False,
-        ](c, a, bp if b_packed else b)
+    def bench_fn() raises {var a, var b, var c, var bp}:
+        comptime bench_matmul = matmul[
+            transpose_b=False, b_packed=b_packed, saturated_vnni=False
+        ]
+        if b_packed:
+            bench_matmul(c, a, bp)
+        else:
+            bench_matmul(c, a, b)
         keep(c.ptr)
 
-    bencher.iter[bench_fn]()
+    bencher.iter(bench_fn)
     verify(a, b, c)
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c_ptr.free()
+    dealloc(a_alloc^)
+    dealloc(b_alloc^)
+    dealloc(bp_alloc^)
+    dealloc(c_alloc^)
 
 
 @fieldwise_init

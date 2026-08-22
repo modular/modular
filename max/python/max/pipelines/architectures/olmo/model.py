@@ -27,7 +27,7 @@ from ..llama3.model import LlamaModelBase
 class OlmoModel(LlamaModelBase):
     """Olmo pipeline model implementation."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "layer_norm"
 
     def __init__(
         self,
@@ -38,6 +38,7 @@ class OlmoModel(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -47,4 +48,5 @@ class OlmoModel(LlamaModelBase):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )

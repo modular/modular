@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -19,12 +20,12 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from std.math import exp
 from nn.topk import _top_k_cpu, _topk_topp_sampling_fi
-from nn.topk_fi import (
+from nn.sampling import (
     topk_mask_logits,
     topk_sampling_from_prob,
     topk_topp_sampling_from_prob,
@@ -40,7 +41,6 @@ comptime PRINT_OUTPUT = False
 comptime NUM_VALIDATION_TRIALS = 50
 
 
-@parameter
 def fill_random_for_test[
     dtype: DType, normalized: Bool
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -102,11 +102,10 @@ def compute_topk_mask[
         for i in range(N):
             values_list.append(values.load[width=1]((b, i)))
 
-        @parameter
         def _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
             return lhs > rhs
 
-        sort[_greater_than](values_list)
+        sort(values_list, _greater_than)
 
         # K-th largest value.
         var kth_value = values_list[K - 1]
@@ -214,13 +213,12 @@ def compute_topp_mask[
             prob_idx.append((probs.load[width=1]((b, i)), i))
 
         # Sort descending by probability.
-        @parameter
         def _greater_than(
             lhs: Tuple[Scalar[dtype], Int], rhs: Tuple[Scalar[dtype], Int]
         ) -> Bool:
             return lhs[0] > rhs[0]
 
-        sort[_greater_than](prob_idx)
+        sort(prob_idx, _greater_than)
 
         # Walk sorted list, include tokens until cumulative prob >= p.
         var cumsum = Float32(0.0)
@@ -353,16 +351,19 @@ def test_topk_topp_sampling[
                 input_host_tensor, topp_mask_tensor, p, batch_size, N
             )
 
-    # Create a 1-element seed buffer on device.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_layout = row_major(Idx[1])
+    # Per-row seed buffer: the kernel indexes rng_seed by row_idx (the
+    # request's logical row), so every row needs an entry even though all
+    # rows share the same seed value here.
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_layout = row_major(batch_size)
 
     # Run sampling trials.
     var num_passed = 0
     for trial in range(NUM_VALIDATION_TRIALS):
         var trial_seed = UInt64(42 + trial)
         with seed_buf.map_to_host() as seed_host:
-            seed_host[0] = trial_seed
+            for b in range(batch_size):
+                seed_host[b] = trial_seed
         var seed_tt = (
             TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
         )
@@ -401,6 +402,107 @@ def test_topk_topp_sampling[
         num_passed += 1
 
     print("  All", num_passed, "trials passed!")
+
+
+def test_topk_topp_rng_offset_batch_invariant[
+    dtype: DType,
+    out_idx_type: DType = DType.int32,
+    block_size: Int = 1024,
+](ctx: DeviceContext, N: Int, K: Int, p: Float32) raises:
+    """Regression test: the same request samples the same token regardless of
+    its physical batch slot.
+
+    The kernel keys the RNG offset on the request's logical row (``row_idx``),
+    not the physical batch slot (``block_idx.x``). To exercise that, we point
+    every output slot at the SAME logical row via ``indices=[0, 0, ...]`` and
+    give that row a single seed. All slots therefore read identical probs and
+    use the identical per-row seed; the only thing that differs between slots is
+    ``block_idx.x``. A batch-invariant sampler must return the same token in
+    every slot. (Before the fix the offset was ``block_idx.x``, so the slots
+    diverged.) Uses a nucleus with several tokens so the draw actually selects
+    among candidates rather than collapsing to the argmax.
+    """
+    comptime batch_size = 8
+    print(
+        "==== Running RNG-offset batch-invariance, N=",
+        N,
+        ", K=",
+        K,
+        ", p=",
+        p,
+        ", batch_size=",
+        batch_size,
+    )
+
+    var input_shape = IndexList[2](batch_size, N)
+    var input_runtime_layout = row_major(Coord(input_shape))
+    var output_runtime_layout = row_major(batch_size)
+
+    var device_input = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var device_output = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+
+    var input_tensor = TileTensor(device_input, input_runtime_layout)
+    var output_tensor = TileTensor(device_output, output_runtime_layout)
+
+    # Fill every row with normalized probabilities. Only logical row 0 is read
+    # (indices point all slots at it), but filling all rows keeps the layout
+    # well-defined.
+    with device_input.map_to_host() as input_host:
+        var input_host_tensor = TileTensor(input_host, input_runtime_layout)
+        fill_random_for_test[dtype, normalized=True](input_host_tensor)
+
+    # Single seed for logical row 0.
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_layout = row_major(Idx[1])
+    with seed_buf.map_to_host() as seed_host:
+        seed_host[0] = UInt64(12345)
+    var seed_tt = (
+        TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
+    )
+
+    # indices = [0, 0, ..., 0]: every physical slot reads logical row 0.
+    var indices_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+    var indices_layout = row_major(batch_size)
+    with indices_buf.map_to_host() as indices_host:
+        for b in range(batch_size):
+            indices_host[b] = Scalar[out_idx_type](0)
+    var indices_tt = (
+        TileTensor(indices_buf, indices_layout)
+        .as_unsafe_any_origin()
+        .as_immut()
+    )
+
+    topk_topp_sampling_from_prob[dtype, out_idx_type, block_size](
+        ctx,
+        input_tensor,
+        output_tensor,
+        K,
+        top_p_val=p,
+        deterministic=False,
+        rng_seed=seed_tt,
+        rng_offset=0,
+        indices=indices_tt,
+    )
+
+    with device_output.map_to_host() as output_host:
+        var output_host_tensor = TileTensor(output_host, output_runtime_layout)
+        var expected = Int(output_host_tensor.load[width=1]((0,)))
+        for b in range(1, batch_size):
+            var got = Int(output_host_tensor.load[width=1]((b,)))
+            if got != expected:
+                raise Error(
+                    "RNG offset is not batch-invariant: slot 0 sampled token "
+                    + String(expected)
+                    + " but slot "
+                    + String(b)
+                    + " sampled token "
+                    + String(got)
+                    + " for the same request (same probs + same seed)."
+                )
+
+    print("  All", batch_size, "slots sampled the same token!")
 
 
 def test_topk_sampling[
@@ -565,8 +667,7 @@ def test_topk_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {var}:
             comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
                     ctx,
@@ -589,9 +690,9 @@ def test_topk_sampling[
             ctx.synchronize()
 
         comptime if sampling_from_prob:
-            time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
+            time_kernel(m, ctx, "topk-sampling-from-prob", run_func)
         else:
-            time_kernel[run_func](m, ctx, "topk-softmax-sample")
+            time_kernel(m, ctx, "topk-softmax-sample", run_func)
         m.dump_report()
 
 
@@ -661,11 +762,14 @@ def extract_topk_from_masked[
 
 def test_case_batched[
     dtype: DType,
-    fill_fn: def[rank: Int, dtype: DType](
-        TileTensor[mut=True, dtype, ...]
-    ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
-](ctx: DeviceContext, test_case: TestCase) raises:
+](
+    ctx: DeviceContext,
+    test_case: TestCase,
+    fill_fn: Some[
+        def[rank: Int, dtype: DType](TileTensor[mut=True, dtype, ...]) -> None
+    ],
+) raises:
     """Test topk_mask_logits kernel by comparing with CPU reference."""
 
     var m = Bench()
@@ -723,8 +827,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {var}:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
                 in_tensor,
@@ -733,7 +836,7 @@ def test_case_batched[
             )
             ctx.synchronize()
 
-        time_kernel[run_func](m, ctx, "topk-mask-logits")
+        time_kernel(m, ctx, "topk-mask-logits", run_func)
 
     topk_mask_logits[dtype, out_idx_type, block_size](
         ctx,
@@ -793,8 +896,7 @@ def test_case_batched[
                 comptime if DEBUG_BENCH:
 
                     @always_inline
-                    @parameter
-                    def run_func_cpu(ctx: DeviceContext) raises:
+                    def run_func_cpu(ctx: DeviceContext) raises {var}:
                         _top_k_cpu[
                             dtype=dtype,
                             out_idx_type=DType.int64,
@@ -809,7 +911,7 @@ def test_case_batched[
                             True,
                         )
 
-                    time_kernel[run_func_cpu](m, ctx, "topk-cpu")
+                    time_kernel(m, ctx, "topk-cpu", run_func_cpu)
 
                 _top_k_cpu[
                     dtype=dtype, out_idx_type=DType.int64, largest=largest
@@ -857,27 +959,28 @@ def test_case_batched[
         m.dump_report()
 
 
-def time_kernel[
-    func: def(DeviceContext) raises capturing -> None
-](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+def time_kernel(
+    mut m: Bench,
+    ctx: DeviceContext,
+    kernel_name: String,
+    func: Some[def(DeviceContext) raises -> None],
+) raises:
     @always_inline
-    def bench_func(mut m: Bencher):
-        @parameter
+    def bench_func(mut m: Bencher) {imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             kernel_name
         ),  # ThroughputMeasure(BenchMetric.elements, 2 * size)
     )
 
 
-@parameter
 def fill_random[
     rank: Int, dtype: DType
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -1138,9 +1241,8 @@ def main() raises:
         print_test_case(test_case0)
         test_case_batched[
             float32_dtype,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case0)
+        ](ctx, test_case0, fill_random)
 
         comptime test_case1 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1152,9 +1254,8 @@ def main() raises:
         print_test_case(test_case1)
         test_case_batched[
             float32_dtype,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case1)
+        ](ctx, test_case1, fill_random)
 
         comptime test_case2 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1164,7 +1265,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case2)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case2)
+        test_case_batched[float32_dtype](ctx, test_case2, fill_random)
 
         comptime test_case3 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1174,7 +1275,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case3)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case3)
+        test_case_batched[float32_dtype](ctx, test_case3, fill_random)
 
         comptime test_case4 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1184,7 +1285,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case4)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case4)
+        test_case_batched[float32_dtype](ctx, test_case4, fill_random)
 
         comptime test_case5 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1194,7 +1295,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case5)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case5)
+        test_case_batched[float32_dtype](ctx, test_case5, fill_random)
 
         comptime test_case6 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1204,7 +1305,7 @@ def main() raises:
             batch_size=256,
         )
         print_test_case(test_case6)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case6)
+        test_case_batched[float32_dtype](ctx, test_case6, fill_random)
 
         comptime test_case7 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1216,9 +1317,8 @@ def main() raises:
         print_test_case(test_case7)
         test_case_batched[
             bf16_type,
-            fill_random,
             out_idx_type=DType.uint64,
-        ](ctx, test_case7)
+        ](ctx, test_case7, fill_random)
 
         comptime test_case8 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1228,7 +1328,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case8)
-        test_case_batched[bf16_type, fill_random](ctx, test_case8)
+        test_case_batched[bf16_type](ctx, test_case8, fill_random)
 
         comptime test_case9 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1238,7 +1338,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case9)
-        test_case_batched[bf16_type, fill_random](ctx, test_case9)
+        test_case_batched[bf16_type](ctx, test_case9, fill_random)
 
         comptime test_case10 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1248,7 +1348,7 @@ def main() raises:
             batch_size=16,
         )
         print_test_case(test_case10)
-        test_case_batched[bf16_type, fill_random](ctx, test_case10)
+        test_case_batched[bf16_type](ctx, test_case10, fill_random)
 
         comptime test_case11 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1258,7 +1358,7 @@ def main() raises:
             batch_size=64,
         )
         print_test_case(test_case11)
-        test_case_batched[bf16_type, fill_random](ctx, test_case11)
+        test_case_batched[bf16_type](ctx, test_case11, fill_random)
 
         comptime test_case12 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1268,7 +1368,7 @@ def main() raises:
             batch_size=2,
         )
         print_test_case(test_case12)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case12)
+        test_case_batched[float32_dtype](ctx, test_case12, fill_random)
 
         comptime test_case13 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1278,7 +1378,7 @@ def main() raises:
             batch_size=2,
         )
         print_test_case(test_case13)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case13)
+        test_case_batched[float32_dtype](ctx, test_case13, fill_random)
 
         comptime test_case14 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -1288,7 +1388,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case14)
-        test_case_batched[float32_dtype, fill_random](ctx, test_case14)
+        test_case_batched[float32_dtype](ctx, test_case14, fill_random)
 
         print("\n" + "=" * 80)
         print("All topk_mask_logits tests passed! ✓")
@@ -1477,6 +1577,13 @@ def main() raises:
         test_topk_topp_sampling[bf16_type, DType.int32, default_block_size](
             ctx, batch_size=4, N=1024, K=20, p=0.9
         )
+
+        # Regression: the RNG offset must follow the request's logical row, not
+        # the physical batch slot, so a request samples the same token wherever
+        # it lands in the batch.
+        test_topk_topp_rng_offset_batch_invariant[
+            float32_dtype, DType.int32, default_block_size
+        ](ctx, N=1024, K=50, p=0.9)
 
         print("\n" + "=" * 80)
         print("All topk_topp_sampling_from_prob tests passed! ✓")

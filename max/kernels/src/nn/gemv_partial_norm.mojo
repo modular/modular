@@ -38,25 +38,26 @@ expresses this.
 """
 
 from std.math import ceildiv, rsqrt
+from std.builtin.device_passable import DevicePassable
 from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
 from std.time import global_perf_counter_ns
 
-import std.gpu.primitives.block as block
+import max.gpu.primitives.block as block
 import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.memory import cp_async_bulk_prefetch
-from std.gpu.primitives.grid_controls import (
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.memory import cp_async_bulk_prefetch
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -151,10 +152,10 @@ def gemv_partial_norm_kernel[
     gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     trace_buf: TraceBufT,
-    eps: Scalar[a_type],
-    n: Int,
-    k: Int,
-    n_normed: Int,
+    eps: Float32,
+    n: Int32,
+    k: Int32,
+    n_normed: Int32,
     num_normed_blocks: Int32,
 ):
     """Fused GEMV (M=1) + partial RMS norm, single launch.
@@ -206,14 +207,17 @@ def gemv_partial_norm_kernel[
         n: Full output width `N` (normed + unnormed).
         k: Activation / weight inner dimension.
         n_normed: Length of the normed region.
-        num_normed_blocks: `n_normed / tile_n`, used by the global-
+        num_normed_blocks: `_n_normed / tile_n`, used by the global-
             last election (`prev == num_normed_blocks - 1`).
 
     Constraints:
-        - `n_normed` must be divisible by `tile_n`.
-        - `n_normed` must be divisible by `simd_width` (apply-norm
+        - `_n_normed` must be divisible by `tile_n`.
+        - `_n_normed` must be divisible by `simd_width` (apply-norm
           uses vectorized loads).
     """
+    var _n = Int(n)
+    var _k = Int(k)
+    var _n_normed = Int(n_normed)
     comptime assert normed_output.flat_rank == 2
     comptime assert unnormed_output.flat_rank == 2
     comptime assert act.flat_rank == 2
@@ -232,7 +236,9 @@ def gemv_partial_norm_kernel[
             )
 
     var tile_w = tt_stack_allocation[
-        dtype=b_type, address_space=AddressSpace.LOCAL
+        dtype=b_type,
+        address_space=AddressSpace.LOCAL,
+        alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
@@ -253,7 +259,7 @@ def gemv_partial_norm_kernel[
 
     # K-reduction.
     var iteration = 0
-    for _ in range(tid * simd_width, k, tile_k):
+    for _ in range(tid * simd_width, _k, tile_k):
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[1, tile_k](0, iteration)
 
@@ -298,7 +304,7 @@ def gemv_partial_norm_kernel[
                 UInt64(global_perf_counter_ns()),
             )
 
-    var is_normed_block = tile_id_n + tile_n <= n_normed
+    var is_normed_block = tile_id_n + tile_n <= _n_normed
     var is_last_block: Bool = False
 
     # Gamma prefetch to L2: any single normed block issues an async bulk
@@ -317,7 +323,7 @@ def gemv_partial_norm_kernel[
         # redundant prefetches (L2 coalesces but the issues are wasted).
         if block_idx.y == 0 and tid == 0:
             cp_async_bulk_prefetch(
-                gamma.ptr, Int32(n_normed * size_of[a_type]())
+                gamma.ptr, Int32(_n_normed * size_of[a_type]())
             )
 
     if tid == 0:
@@ -342,7 +348,7 @@ def gemv_partial_norm_kernel[
             # before the counter increment; the acquire half in the
             # global-last arriver's fetch_add makes every peer's
             # writes visible when it reads normed_output back below.
-            var prev_global = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+            var prev_global = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
                 ordering=Ordering.ACQUIRE_RELEASE
             ](finish_counter, Int32(1))
             comptime if enable_trace:
@@ -354,8 +360,10 @@ def gemv_partial_norm_kernel[
         else:
             comptime for ni in range(tile_n):
                 var col = tile_id_n + ni
-                if col < n:
-                    unnormed_output[0, col - n_normed] = vals[ni].cast[c_type]()
+                if col < _n:
+                    unnormed_output[0, col - _n_normed] = vals[ni].cast[
+                        c_type
+                    ]()
 
     # Post-atomic broadcast of `is_last_block` from tid=0 to the whole
     # block via shmem + barrier. Only tid=0 saw the fetch_add result.
@@ -393,7 +401,7 @@ def gemv_partial_norm_kernel[
             var idx = Int(tid) * simd_width
             var vec_data = SIMD[accum_type, simd_width](0)
             var gamma_val = SIMD[a_type, simd_width](0)
-            if idx < n_normed:
+            if idx < _n_normed:
                 vec_data = normed_output.load[simd_width](
                     Coord(Idx[0], idx)
                 ).cast[accum_type]()
@@ -417,10 +425,10 @@ def gemv_partial_norm_kernel[
                     )
 
             var norm_factor = rsqrt(
-                row_m2 / Scalar[accum_type](n_normed) + eps.cast[accum_type]()
+                row_m2 / Scalar[accum_type](_n_normed) + eps.cast[accum_type]()
             )
 
-            if idx < n_normed:
+            if idx < _n_normed:
                 var gamma_accum = gamma_val.cast[accum_type]()
                 var out = (vec_data * norm_factor * gamma_accum).cast[c_type]()
                 normed_output.store[simd_width](Coord(Idx[0], idx), out)
@@ -470,7 +478,7 @@ def _gemv_partial_norm_fused[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
@@ -536,10 +544,10 @@ def _gemv_partial_norm_fused[
         gamma,
         finish_counter,
         trace_buf,
-        eps,
-        n,
-        k,
-        n_normed,
+        eps.cast[DType.float32](),
+        Int32(n),
+        Int32(k),
+        Int32(n_normed),
         Int32(num_normed_blocks),
         grid_dim=(1, num_blocks),
         block_dim=num_threads,
@@ -558,7 +566,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
@@ -595,16 +603,16 @@ def _gemv_partial_norm_unfused_with_scratch[
 
     @always_inline
     @__copy_capture(y)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
         var idx = y.layout(coords)
         return y.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(normed_output)
-    @parameter
+    @__parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:
         var idx = normed_output.layout(coords)
         normed_output.ptr.store[width=width, alignment=alignment](idx, val)
@@ -619,7 +627,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     ](
         Coord(m, n_normed),
         gamma_c,
-        eps.cast[c_type](),
+        eps,
         Scalar[c_type](0.0),
         ctx,
     )
@@ -646,7 +654,7 @@ def gemv_and_partial_norm[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     ctx: DeviceContext,
 ) raises:
     """Computes `y = act @ weight.T`, then partitions `y` into a normed
@@ -737,7 +745,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -809,7 +817,7 @@ def gemv_and_partial_norm_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Scalar[a_type],
+    eps: Float32,
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     ctx: DeviceContext,
     trace_buf: TraceBufT = NullTrace(),

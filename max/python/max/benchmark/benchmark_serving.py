@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -400,10 +401,18 @@ async def benchmark(
     request_driver_class: type[RequestDriver] = get_request_driver_class(
         session.api_url, task=session.benchmark_task
     )
+    if args.extra_body and session.benchmark_task != "text-generation":
+        logger.warning(
+            "extra_body is ignored for %s; it only applies to "
+            "text-generation requests.",
+            session.benchmark_task,
+        )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class(
-        tokenizer=session.tokenizer
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
     )
 
     if args.warm_shared_prefix:
@@ -451,7 +460,11 @@ async def benchmark(
     logger.info(f"Burstiness factor: {args.burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
-    base_driver = request_driver_class(tokenizer=session.tokenizer)
+    base_driver = request_driver_class(
+        tokenizer=session.tokenizer,
+        extra_body=args.extra_body,
+        backend=args.backend,
+    )
 
     # Warm up the initial-slot sessions before starting the timer.
     # pick_warmup_population assigns each picked session a random
@@ -499,6 +512,7 @@ async def benchmark(
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
             max_concurrency=args.warmup_concurrency,
+            use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -654,6 +668,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -675,6 +690,7 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -702,6 +718,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -1119,10 +1136,53 @@ def _resolve_seed(args: ServingBenchmarkConfig) -> None:
         logger.info("Using pinned seed=%d", args.seed)
 
 
+def _seed_for_concurrency(seed: int | None, max_concurrency: int | None) -> int:
+    """Derive a per-concurrency-level seed from the base seed.
+
+    Each concurrency level gets its own request sample instead of replaying
+    the same requests as every other level, while staying reproducible from
+    the single base seed.
+    """
+    digest = hashlib.sha256(f"{seed}:{max_concurrency}".encode()).digest()
+    return int.from_bytes(digest[:4], "big")
+
+
+def _sample_for_seed(
+    args: ServingBenchmarkConfig,
+    benchmark_task: BenchmarkTask,
+    tokenizer: PreTrainedTokenizerBase | None,
+    chat: bool,
+    seed: int | None,
+) -> Samples:
+    """Draw one deterministic workload sample from ``seed``."""
+    random.seed(seed)
+    np.random.seed(seed)
+    samples = sample_requests(
+        args=args,
+        benchmark_task=benchmark_task,
+        tokenizer=tokenizer,
+        chat=chat,
+    )
+
+    # Inject response_format into all sampled requests if specified
+    if args.response_format is not None:
+        response_format = parse_response_format(args.response_format)
+        if isinstance(samples, RequestSamples):
+            for request in samples.requests:
+                request.response_format = response_format
+            logger.info(
+                f"Injected response_format into {len(samples.requests)} requests"
+            )
+        else:
+            logger.warning(
+                "response_format is only supported for single-turn benchmarks, "
+                "ignoring for multi-turn chat sessions"
+            )
+    return samples
+
+
 def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     assert args.model is not None
-    random.seed(args.seed)
-    np.random.seed(args.seed)
     set_ulimit()
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
@@ -1185,32 +1245,15 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            revision=resolve_revision(tokenizer_id),
+            # An explicit revision wins: ``resolve_revision`` asks the Hub and
+            # returns None for a repo it cannot see, which loads ``main``.
+            revision=args.tokenizer_revision or resolve_revision(tokenizer_id),
+            local_files_only=args.tokenizer_local_files_only,
             model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
-    samples = sample_requests(
-        args=args,
-        benchmark_task=benchmark_task,
-        tokenizer=tokenizer,
-        chat=chat,
-    )
-
-    # Inject response_format into all sampled requests if specified
-    if args.response_format is not None:
-        response_format = parse_response_format(args.response_format)
-        if isinstance(samples, RequestSamples):
-            for request in samples.requests:
-                request.response_format = response_format
-            logger.info(
-                f"Injected response_format into {len(samples.requests)} requests"
-            )
-        else:
-            logger.warning(
-                "response_format is only supported for single-turn benchmarks, "
-                "ignoring for multi-turn chat sessions"
-            )
+    samples = _sample_for_seed(args, benchmark_task, tokenizer, chat, args.seed)
 
     lora_manager = None
     if args.lora_paths:
@@ -1222,9 +1265,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         lora_manager = LoRABenchmarkManager(
             lora_paths=args.lora_paths,
             num_requests=num_requests,
-            traffic_ratios=args.per_lora_traffic_ratio
-            if args.per_lora_traffic_ratio
-            else None,
+            traffic_ratios=args.per_lora_traffic_ratio or None,
             uniform_ratio=args.lora_uniform_traffic_ratio,
             seed=args.seed,
             max_concurrent_lora_ops=args.max_concurrent_lora_ops,
@@ -1235,9 +1276,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     trace_path = None
     if args.trace:
         assert_nvidia_gpu()
-        trace_path = (
-            args.trace_file if args.trace_file else get_default_trace_path()
-        )
+        trace_path = args.trace_file or get_default_trace_path()
         logger.info(f"Tracing enabled, output: {trace_path}")
 
     return BenchmarkSession(
@@ -1324,6 +1363,18 @@ def _run_benchmark_sweep(
                 f" * {mc} = {args.num_prompts}"
             )
 
+        # Each concurrency level draws its own sample, derived from the base
+        # seed, so levels are reproducible individually without replaying
+        # the exact same requests at every level.
+        mc_seed = _seed_for_concurrency(args.seed, mc)
+        session.samples = _sample_for_seed(
+            args,
+            session.benchmark_task,
+            session.tokenizer,
+            session.endpoint == "/v1/chat/completions",
+            mc_seed,
+        )
+
         for rr in args.request_rate:
             iteration_results: list[BenchmarkResult] = []
             validation_passed = True
@@ -1333,7 +1384,7 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                logger.info("mc=%s seed=%d", mc, args.seed)
+                logger.info("mc=%s seed=%d", mc, mc_seed)
 
                 result, ok = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)
@@ -1515,7 +1566,7 @@ def parse_args(
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
-        ] = ServingBenchmarkConfig(),
+        ] = ServingBenchmarkConfig(),  # noqa: B008
     ) -> None:
         parsed_configs.append(config)
 

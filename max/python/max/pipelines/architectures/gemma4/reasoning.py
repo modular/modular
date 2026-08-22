@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
@@ -43,6 +43,9 @@ class Gemma4ReasoningParser(ReasoningParser):
     The tool-call token is *not* consumed as a delimiter — it stays in the
     content region for downstream tool parsing.
     """
+
+    REASONING_START: ClassVar[str] = "<|channel>"
+    REASONING_END: ClassVar[str] = "<channel|>"
 
     # The literal text that immediately follows the <|channel> token to
     # identify a thinking block (not a special token). Derived from the same
@@ -229,8 +232,10 @@ class Gemma4ReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> Gemma4ReasoningParser:
         """Construct a reasoning parser from a tokenizer."""
-        channel_start_id = await convert_token_to_id(tokenizer, "<|channel>")
-        channel_end_id = await convert_token_to_id(tokenizer, "<channel|>")
+        channel_start_id = await convert_token_to_id(
+            tokenizer, cls.REASONING_START
+        )
+        channel_end_id = await convert_token_to_id(tokenizer, cls.REASONING_END)
 
         if channel_start_id is None or channel_end_id is None:
             raise ValueError(
@@ -256,4 +261,4 @@ class Gemma4ReasoningParser(ReasoningParser):
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> int | None:
         """Returns the ``<channel|>`` token id."""
-        return await convert_token_to_id(tokenizer, "<channel|>")
+        return await convert_token_to_id(tokenizer, cls.REASONING_END)

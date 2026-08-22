@@ -44,7 +44,6 @@ from max.pipelines.request.provider_options import (
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
-    import PIL.Image
     from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -543,9 +542,10 @@ class PixelGenerationTokenizer(
         )
 
     @property
-    def eos(self) -> int:
-        """Returns the end-of-sequence token ID."""
-        return self.delegate.eos_token_id
+    def eos_token_ids(self) -> set[int]:
+        """Returns the end-of-sequence token IDs."""
+        eos = self.delegate.eos_token_id
+        return {eos} if eos is not None else set()
 
     @property
     def expects_content_wrapping(self) -> bool:

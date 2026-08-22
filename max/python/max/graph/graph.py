@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import io
 import itertools
 import traceback
 from collections import OrderedDict
@@ -27,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
-from max import _core, mlir
+from max import mlir
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
@@ -278,6 +279,26 @@ class KernelLibrary:
         else:
             self._analysis.verify_custom_op(custom_op)
 
+    def has_shape_function(self, kernel: str) -> bool:
+        """Returns whether *kernel* registers a shape function.
+
+        A kernel that registers no shape function has no way to compute its
+        output shape at run time, so the graph compiler rejects a
+        data-dependent output dimension declared for it.
+
+        Args:
+            kernel: The registered name of the kernel to check.
+
+        Returns:
+            ``True`` if a shape function is registered for *kernel*.
+
+        Raises:
+            KeyError: If no kernel named *kernel* is in the library.
+        """
+        if kernel not in self:
+            raise KeyError(f"no kernel named {kernel!r} in the kernel library")
+        return self._analysis.has_shape_function(kernel)
+
 
 _default_custom_extensions: tuple[Path, ...] = ()
 
@@ -378,6 +399,40 @@ def _to_mlir(o: Any) -> Any:
     return o
 
 
+# MLIR assembly text must be read and written through the ``max.mlir`` bindings
+# rather than ``max._core``. ``_core`` static-links its own LLVM, so its textual
+# float parser and printer compare ``llvm::APFloat`` semantics against their own
+# copy of the ``APFloatBase::sem*`` statics and never match the ones the
+# attribute was built against. That silently turns f64 constants into denormal
+# garbage and aborts on any f32 that MLIR spells as a hex literal. ``max.mlir``
+# resolves MLIR from ``libmax``, the copy that owns the context, so a round-trip
+# through it agrees with itself. See GEX-4052.
+
+
+def _asm_via_cmlir(op: Operation) -> str:
+    """Serializes an operation to MLIR assembly text.
+
+    The cmlir wrapper is a non-owning view onto ``op``, so whatever owns ``op``
+    keeps owning it.
+    """
+    return str(mlir.Operation._CAPICreate(op._CAPIPtr))
+
+
+def _parse_module_via_cmlir(
+    asm: str, context: mlir.Context
+) -> builtin.ModuleOp:
+    """Parses MLIR assembly text into a typed ``builtin.ModuleOp``.
+
+    Parses in ``max.mlir``, then moves the module into ``max._core`` as
+    bytecode, which is a lossless transport between the two. The result is
+    detached, matching what ``_core.parse_module`` returns.
+    """
+    parsed = mlir.Module.parse(asm, context)
+    bytecode = io.BytesIO()
+    parsed.operation.write_bytecode(bytecode)
+    return Operation.from_bytecode(bytecode.getvalue(), context)
+
+
 def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
     # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
     # - nanobind doesn't allow custom metaclasses, but __instancecheck__
@@ -405,8 +460,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
     )
     names = [parameter.name for parameter in result_parameters]
-    # Track any newly declared parameters.
-    if new_params := dict.fromkeys(names - params.keys()):
+    # Track newly declared parameters. Not `names - params.keys()`: set order
+    # is per-process hash order and lands in the MEF cache key (MXF-584).
+    if new_params := dict.fromkeys(n for n in names if n not in params):
         params.update(new_params)
         si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         # We can't overload the setter yet, so the interface annotation is wrong
@@ -430,14 +486,41 @@ class Module:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, Module, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         module = Module()
-        with Graph("encoder", input_types=encoder_inputs, module=module) as encoder:
-            ...
-        with Graph("decoder", input_types=decoder_inputs, module=module) as decoder:
-            ...
-        models = session.load_all(module, weights_registry=weights)
-        encoder = models[encoder.name]
-        decoder = models[decoder.name]
+        with Graph("encoder", input_types=[], module=module) as encoder:
+            encoder.output(
+                ops.constant(
+                    np.array([1.0, 2.0, 3.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+        with Graph("decoder", input_types=[], module=module) as decoder:
+            decoder.output(
+                ops.constant(
+                    np.array([4.0, 5.0, 6.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+
+        models = InferenceSession(devices=[device]).load_all(module)
+        (enc_out,) = models[encoder.name].execute()
+        (dec_out,) = models[decoder.name].execute()
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(enc_out.to_numpy(), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(dec_out.to_numpy(), [4.0, 5.0, 6.0])
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,
@@ -501,9 +584,16 @@ class Module:
         Returns:
             The module's MLIR assembly text.
         """
-        if source_locations:
-            return _graph.to_mlir_with_source_locations(self.mlir_module)
-        return self.mlir_module.asm()
+        if not source_locations:
+            return _asm_via_cmlir(self.mlir_module)
+
+        # The materialized locations come back as bytecode; reparsing through
+        # max.mlir is what puts the printing in the right LLVM image.
+        with_locations = mlir.Module.parse(
+            _graph.source_locations_bytecode(self.mlir_module),
+            self.mlir_module.context,
+        )
+        return with_locations.operation.get_asm(enable_debug_info=True)
 
 
 class GraphDebugConfig:
@@ -589,7 +679,7 @@ class Graph:
     These examples only use the :obj:`max.graph` package, but most models also
     use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
     To learn more, see `Build a model graph with Module
-    </max/develop/modules>`_.
+    </develop/modules>`_.
 
     Args:
         name: A name for the graph.
@@ -600,7 +690,7 @@ class Graph:
             include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
-            to ``.mojoc``/``.mojopkg`` or ``.mojo`` sources with custom ops.
+            to ``.mojoc`` or ``.mojo`` sources with custom ops.
         kernel_library: Optional pre-built kernel library to use. Defaults to
             ``None`` (a new library is created from ``custom_extensions`` if
             needed).
@@ -639,7 +729,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
@@ -648,6 +738,7 @@ class Graph:
         kernel_library: KernelLibrary | None = None,
         module: Module | None = None,
         strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
+        is_device_graph: bool = False,
         **kwargs,
     ) -> None:
         self.name = name
@@ -733,6 +824,10 @@ class Graph:
 
         self._subgraphs = {}
 
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
+
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
             # constructor.
@@ -770,12 +865,13 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         custom_extensions: Iterable[Path] = [],
         devices: Iterable[DeviceRef] = [],
+        is_device_graph: bool = False,
     ) -> Graph:
         """Creates a reusable subgraph for the current graph.
 
@@ -830,9 +926,11 @@ class Graph:
                 type is added automatically for operation sequencing.
             path: An optional path to a saved subgraph definition to load
                 from disk.
-            custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
+            custom_extensions: Paths to custom op libraries (``.mojoc``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
+            is_device_graph: Should the subgraph be synthesized to a device graph
+                for device graph based execution.
 
         Returns:
             A :class:`Graph` instance registered as a subgraph of this graph.
@@ -845,6 +943,7 @@ class Graph:
             # *args,
             custom_extensions=custom_extensions,
             module=self.module,
+            is_device_graph=is_device_graph,
             # **kwargs,
         )
 
@@ -852,6 +951,10 @@ class Graph:
         op = Operation._from_cmlir(subgraph._mlir_op)
         assert isinstance(op, _mo.GraphOp)
         op.is_subgraph = builtin.UnitAttr()
+
+        # If we're building a device graph, annotate the graph appropriately.
+        if is_device_graph:
+            op.is_device_graph = builtin.UnitAttr()
 
         # Union callee's existing params  with the caller's params.
         # This may over-declare but is deterministic and comprehensive.
@@ -1139,7 +1242,11 @@ class Graph:
             except Exception:
                 model = "unknown"
             info = _DeviceInfoAttr(
-                label=dev.label, api=dev.api, arch=arch, model=model
+                label=dev.label,
+                api=dev.api,
+                arch=arch,
+                model=model,
+                tile_based_fusion=False,
             )
             entries[dev.label] = mlir.Attribute._CAPICreate(info._CAPIPtr)  # type: ignore[attr-defined]
         module.attributes[_DEVICE_INFO_MAPPING_ATTR_NAME] = mlir.DictAttr.get(
@@ -1265,7 +1372,7 @@ class Graph:
         with open(path) as f:
             context = default_mlir_context()
             with _location():
-                self._module = _core.parse_module(f.read(), context)
+                self._module = _parse_module_via_cmlir(f.read(), context)
                 # Set the mo.graph op, which is the first operation in the
                 # module body block.
                 self._mlir_op = mlir.Operation._CAPICreate(

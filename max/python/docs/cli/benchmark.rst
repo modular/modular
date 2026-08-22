@@ -5,10 +5,10 @@
     Runs comprehensive benchmark tests on an active model server to measure
     performance metrics including throughput, latency, and resource utilization.
     For a complete walkthrough, see the tutorial to [benchmark MAX on a
-    GPU](/max/deploy/benchmark).
+    GPU](/serve/benchmark).
 
     Before running this command, make sure the model server is running, via [`max
-    serve`](/max/cli/serve).
+    serve`](/cli/serve).
 
     For example, here's how to benchmark the `google/gemma-3-27b-it` model
     already running on localhost:
@@ -415,7 +415,7 @@
     GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
 
     For a walkthrough of setting up an endpoint and running a benchmark, see
-    the [quickstart guide](/max/get-started).
+    the [quickstart guide](/get-started).
 
     ## Output
 

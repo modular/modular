@@ -8,14 +8,14 @@ the interface that is presented to Python must be manually defined in Mojo
 code.
 
 A full description of this functionality can be found
-[within the Mojo manual](https://docs.modular.com/mojo/manual/python/mojo-from-python/),
+[within the Mojo manual](https://mojolang.org/docs/manual/python/mojo-from-python/),
 including current
-[known limitations](https://docs.modular.com/mojo/manual/python/mojo-from-python/#known-limitations).
+[known limitations](https://mojolang.org/docs/manual/python/mojo-from-python/#known-limitations).
 
 These examples show how to perform basic to more advanced use of Mojo code from
 Python in order to progressively replace hotspots in Python code with fast
 Mojo. This includes using Mojo to drive calculations on
-[MAX-compatible GPUs](https://docs.modular.com/max/faq/#gpu-requirements).  
+[MAX-compatible GPUs](https://max.modular.com/packages/#gpu-compatibility).
 
 The two examples of Mojo functions being called from Python consist of:
 

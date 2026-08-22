@@ -51,6 +51,7 @@ from max.graph import DeviceRef, Graph, TensorType, Type, ops
 from .collective_ops import (
     allgather,
     allreduce_sum,
+    distributed_broadcast,
     reduce_scatter,
     transfer_to,
 )
@@ -112,6 +113,7 @@ from .spmd_ops import (
     exp,
     flatten,
     floor,
+    floor_div,
     fold,
     functional,
     gather,
@@ -234,6 +236,7 @@ __all__ = [
     "cumsum",
     "custom",
     "dequantize",
+    "distributed_broadcast",
     "div",
     "elementwise_max",
     "elementwise_min",
@@ -243,6 +246,7 @@ __all__ = [
     "exp",
     "flatten",
     "floor",
+    "floor_div",
     "fold",
     "full",
     "full_like",

@@ -5,11 +5,13 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "speculative",
     srcs = glob(["**/*.py"]),
+    test_docstring_examples = True,
     deps = [
         "//max/python/max/config",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("pydantic"),
+        requirement("typing-extensions"),
     ],
 )

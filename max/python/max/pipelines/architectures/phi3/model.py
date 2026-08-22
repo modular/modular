@@ -27,7 +27,7 @@ from ..llama3.model import LlamaModelBase
 class Phi3Model(LlamaModelBase):
     """Phi 3 pipeline model implementation."""
 
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     """Normalization layer."""
 
     def __init__(
@@ -39,6 +39,7 @@ class Phi3Model(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -48,4 +49,5 @@ class Phi3Model(LlamaModelBase):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )

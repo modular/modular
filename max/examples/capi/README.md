@@ -1,6 +1,6 @@
 # Using the MAX C API to execute a precompiled graph
 
-The [MAX graph API](https://docs.modular.com/max/graph/) provides a powerful
+The [MAX graph API](https://max.modular.com/graph/) provides a powerful
 framework for constructing computational graphs to be run on GPUs, CPUs, and
 more. The process of compilation and execution can be separated. This example
 demonstrates how to construct and compile a graph using the MAX Python API,
@@ -33,6 +33,20 @@ finally executing it on the GPU:
 ```sh
 pixi run test
 ```
+
+## Capturing a MEF with the new `max.experimental` API
+
+`test_capi_v3.py` is the new-API counterpart to `test_capi.py`. It builds the
+same vector-add graph as a `max.experimental.nn.Module`, compiles it with
+`Module.compile()`, and exports the compiled artifact to a MEF file using the
+public `CompiledModel.export_mef()` method. The resulting `graph.mef` is
+consumed by the same `example.c` executor: both APIs name graph inputs
+`input0`/`input1` and the output `output0`, so the C code is unchanged.
+
+`export_mef()` serializes straight from the compiled artifact, so it does not
+require the model to be initialized on a live device. This makes it usable in
+the cross-compilation and virtual-device scenarios that production serving via
+the MAX C API relies on.
 
 ## Loading models with external weights
 

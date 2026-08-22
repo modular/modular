@@ -20,7 +20,6 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
-from max.pipelines.lora import LoRAManager
 from max.pipelines.sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -48,6 +47,7 @@ from .config import (
     LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
+    PipelineArgs,
     PipelineConfig,
     PipelineRole,
     ProfilingConfig,
@@ -67,8 +67,14 @@ from .interfaces import (
     AlwaysSignalBuffersMixin,
     BatchProcessor,
     BatchProcessorRuntime,
+    GraphPipelineModel,
+    GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
+    ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3PipelineModel,
+    ModuleV3PipelineModelWithKVCache,
+    MultiGraphPipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
     RaggedBatchProcessor,
@@ -77,17 +83,19 @@ from .interfaces import (
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
-from .memory_estimation import MemoryEstimator
+from .memory_estimation import MemoryEstimator, MemoryPlan
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+    SupportsSSMStateWarmup,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,
+    RetrievedPipeline,
     SupportedArchitecture,
 )
 from .tokenizer import (
@@ -98,6 +106,7 @@ from .tokenizer import (
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
+from .vision_preprocess_cache import VisionPreprocessCache
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -108,20 +117,27 @@ __all__ = [
     "DenoisingCacheConfig",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
+    "GraphPipelineModel",
+    "GraphPipelineModelWithKVCache",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
-    "LoRAManager",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MemoryEstimator",
+    "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
     "ModelOutputs",
+    "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3PipelineModel",
+    "ModuleV3PipelineModelWithKVCache",
+    "MultiGraphPipelineModelWithKVCache",
     "OverlapTextGenerationPipeline",
+    "PipelineArgs",
     "PipelineConfig",
     "PipelineModel",
     "PipelineModelType",
@@ -133,16 +149,19 @@ __all__ = [
     "ProfilingConfig",
     "RaggedBatchProcessor",
     "RepoType",
+    "RetrievedPipeline",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "SupportsSSMStateWarmup",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
+    "VisionPreprocessCache",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",
