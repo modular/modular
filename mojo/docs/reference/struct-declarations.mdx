@@ -85,7 +85,7 @@ A struct body can contain these elements:
 | Static method         | `@staticmethod def name(...)` | Type-level behavior        |
 | Compile-time constant | `comptime name = value`       | Evaluated at compile time  |
 | Initializer           | `def __init__(out self, ...)` | Constructs an instance     |
-| Destructor            | `def __deinit__(deinit self)` | Cleanup at end of lifetime |
+| Deinitializer         | `def __deinit__(deinit self)` | Cleanup at end of lifetime |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -269,7 +269,7 @@ def main():
 ```
 
 Without `Deinitable`, the compiler can't verify that the struct
-is safe to destroy using the built-in `__deinit__()` destructor:
+is safe to destroy using the built-in `__deinit__()` deinitializer:
 
 ```mojo
 @fieldwise_init
@@ -536,7 +536,7 @@ struct Unsound:
 `__init__()` is implicitly static. Structs can define multiple `__init__()`
 overloads.
 
-## Instance tear-down with destructors
+## Instance tear-down with deinitializers
 
 `__deinit__()` runs when the compiler detects no further access to an
 instance. Its `self` uses the `deinit` convention:
@@ -546,7 +546,7 @@ def __deinit__(deinit self):
     print("cleaning up")
 ```
 
-Implicitly deletable structs get a default `__deinit__()`. A custom
+Implicitly deinitable structs get a default `__deinit__()`. A custom
 `__deinit__()` overrides the default. `__deinit__()` can't be overloaded.
 
 :::note

@@ -84,7 +84,7 @@ def test_execute_observes_pending_driver_copy(
     pending = Buffer.from_numpy(written)
 
     flag = CompletionFlag(accelerator)
-    gate_stream = accelerator.default_stream
+    gate_stream = accelerator.default_queue
     done = threading.Event()
     box: dict[str, object] = {}
 

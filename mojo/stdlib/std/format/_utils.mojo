@@ -381,6 +381,21 @@ comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 """The size of the stack buffer for IO operations from CPU."""
 
 
+@no_inline
+def _heap_buffer_exceeded() -> Never:
+    """Reports the heap buffer overflow and aborts.
+
+    Kept separate from its `@always_inline` callers (and shared between them)
+    so this rarely-taken path doesn't duplicate its `_printf`/`abort` sequence
+    at every `_WriteBufferHeap` write site.
+    """
+    _printf[
+        "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
+        " HEAP_BUFFER_BYTES=4096`\n"
+    ]()
+    abort()
+
+
 struct _WriteBufferHeap(Writable, Writer):
     var _data: Pointer[Byte, MutUntrackedOrigin]
     var _pos: Int
@@ -396,17 +411,6 @@ struct _WriteBufferHeap(Writable, Writer):
         }
         self._pos = 0
 
-    def write_list[
-        T: Copyable & Writable, //
-    ](mut self, values: List[T], *, sep: StaticString = StaticString()):
-        var length = len(values)
-        if length == 0:
-            return
-        self.write(values[0])
-        if length > 1:
-            for i in range(1, length):
-                self.write(sep, values[i])
-
     # TODO: Removing @always_inline causes some AMD tests to fail.
     # This is likely because not inlining causes _WriteBufferHeap to
     # add a conditional allocation branch which is not supported on AMD.
@@ -416,11 +420,7 @@ struct _WriteBufferHeap(Writable, Writer):
     def write_string(mut self, string: StringSlice):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
-            _printf[
-                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
-                " HEAP_BUFFER_BYTES=4096`\n"
-            ]()
-            abort()
+            _heap_buffer_exceeded()
         unsafe_memcpy(
             dest=self._data.unsafe_offset(self._pos),
             src=string.as_bytes().unsafe_ptr(),
@@ -439,11 +439,7 @@ struct _WriteBufferHeap(Writable, Writer):
         mut self,
     ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
         if self._pos + 1 > HEAP_BUFFER_BYTES:
-            _printf[
-                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
-                " HEAP_BUFFER_BYTES=4096`\n"
-            ]()
-            abort()
+            _heap_buffer_exceeded()
         self._data[unsafe_offset=self._pos] = 0
         self._pos += 1
 
@@ -484,17 +480,6 @@ struct _WriteBufferStack[
         )
         self.pos = 0
         self.writer = Pointer(to=writer)
-
-    def write_list[
-        T: Copyable & Writable, //
-    ](mut self, values: List[T], *, sep: String = String()):
-        var length = len(values)
-        if length == 0:
-            return
-        self.write(values[0])
-        if length > 1:
-            for i in range(1, length):
-                self.write(sep, values[i])
 
     def flush(mut self):
         self.writer[].write_string(

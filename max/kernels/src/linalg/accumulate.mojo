@@ -857,9 +857,8 @@ struct _Accumulator[
         """Accumulation optimized for NEON."""
         comptime assert CompilationTarget.has_neon()
 
-        @__parameter
         @always_inline
-        def micro_kernel[num_lanes: Int](offset: Int):
+        def micro_kernel[num_lanes: Int](offset: Int) {mut self, imm}:
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
@@ -891,7 +890,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, [Self.simd_width, 1]](0, length)
+        tile[[Self.simd_width, 1]](0, length, micro_kernel)
 
     @always_inline
     def _accumulate_neon[
@@ -916,9 +915,8 @@ struct _Accumulator[
             a_base_offsets.flat_rank == 1
         ), "a_base_offsets must be rank 1"
 
-        @__parameter
         @always_inline
-        def micro_kernel[num_lanes: Int](offset: Int):
+        def micro_kernel[num_lanes: Int](offset: Int) {mut self, imm}:
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
@@ -951,7 +949,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, [Self.simd_width, 1]](0, length)
+        tile[[Self.simd_width, 1]](0, length, micro_kernel)
 
 
 @always_inline

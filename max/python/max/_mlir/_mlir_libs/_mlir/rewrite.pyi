@@ -231,8 +231,7 @@ class ConversionConfig:
     @build_materializations.setter
     def build_materializations(self, arg: bool, /) -> None: ...
 
-class FrozenRewritePatternSet:
-    pass
+class FrozenRewritePatternSet: ...
 
 @overload
 def apply_patterns_and_fold_greedily(

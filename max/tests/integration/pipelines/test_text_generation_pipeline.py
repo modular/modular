@@ -17,7 +17,6 @@ import logging
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
 from max.pipelines.context import (
@@ -44,8 +43,6 @@ from test_common.mocks import (
 )
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-
 logger = logging.getLogger("max.pipelines")
 
 
@@ -53,14 +50,11 @@ def test_mock_text_tokenizer() -> None:
     tokenizer = MockTextTokenizer()
     test_prompt = "This is a test prompt"
 
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     try:
-        model_path = generate_local_model_path(REPO_ID, REVISION)
+        model_path = generate_local_model_path(REPO_ID)
     except FileNotFoundError:
         logger.warning(
-            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+            f"Model path does not exist: {REPO_ID}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
         )
         model_path = REPO_ID
 
@@ -140,14 +134,11 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
     max_length = 512
     eos_token = 998
 
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
     try:
-        model_path = generate_local_model_path(REPO_ID, REVISION)
+        model_path = generate_local_model_path(REPO_ID)
     except FileNotFoundError:
         logger.warning(
-            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+            f"Model path does not exist: {REPO_ID}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
         )
         model_path = REPO_ID
 

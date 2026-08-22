@@ -65,6 +65,7 @@ from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_int, get_defined_bool
+from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
@@ -77,6 +78,7 @@ from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     clusters_per_wave,
 )
+from nn.attention.gpu.nvidia.sm100.dispatch import ws_p_ceiling
 from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
@@ -548,6 +550,9 @@ def execute_combine_test[
 def main() raises:
     comptime MASK = get_defined_int["FA4_1Q_SPLITK_MASK", 0]()
     comptime DEPTH = get_defined_int["FA4_1Q_SPLITK_DEPTH", 64]()
+
+    assert_equal(ws_p_ceiling[148](24), UInt32(37))
+    assert_equal(ws_p_ceiling[148](25), UInt32(35))
 
     with DeviceContext() as ctx:
         comptime if MASK == 0:

@@ -75,7 +75,7 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     batch_processor_cls: ClassVar[type[HyV3BatchProcessor]] = HyV3BatchProcessor
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
     ep_comm_initializer: EPCommInitializer | None = None

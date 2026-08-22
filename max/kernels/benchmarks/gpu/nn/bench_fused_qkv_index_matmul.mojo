@@ -290,18 +290,10 @@ def bench_shape(
     ) * elt
 
     # ============ FUSED: one GEMM over the stacked weight ============
-    @__parameter
-    @__copy_capture(
-        cb_hs,
-        cb_w,
-        iro_tensor,
-        main_collection,
-        index_collection,
-        fused_out,
-        total_seq,
-    )
     @always_inline
-    def fused_launch(ctx: DeviceContext, iteration: Int) raises:
+    def fused_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_hs, mut cb_w, mut fused_out, imm,}:
         var hs_tensor = LayoutTensor[
             mut=False, DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
         ](
@@ -333,7 +325,7 @@ def bench_shape(
     @__parameter
     @always_inline
     def fused_bench(mut b: Bencher) raises:
-        bencher_iter_custom[fused_launch](b, ctx)
+        bencher_iter_custom(b, fused_launch, ctx)
 
     m.bench_function[fused_bench](
         BenchId("fused   " + regime + " total_seq=" + String(total_seq)),
@@ -344,19 +336,10 @@ def bench_shape(
     )
 
     # ============ UNFUSED: main QKV then indexer QKV (2 calls) ============
-    @__parameter
-    @__copy_capture(
-        cb_hs,
-        cb_w,
-        iro_tensor,
-        main_collection,
-        index_collection,
-        q_out,
-        iq_out,
-        total_seq,
-    )
     @always_inline
-    def unfused_launch(ctx: DeviceContext, iteration: Int) raises:
+    def unfused_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_hs, mut cb_w, mut q_out, mut iq_out, imm,}:
         var hs_tensor = LayoutTensor[
             mut=False, DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
         ](
@@ -403,7 +386,7 @@ def bench_shape(
     @__parameter
     @always_inline
     def unfused_bench(mut b: Bencher) raises:
-        bencher_iter_custom[unfused_launch](b, ctx)
+        bencher_iter_custom(b, unfused_launch, ctx)
 
     m.bench_function[unfused_bench](
         BenchId("unfused " + regime + " total_seq=" + String(total_seq)),

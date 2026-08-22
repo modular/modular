@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling architecture config and its text backbone."""
+"""Inkling architecture config and its text and vision backbones."""
 
 from __future__ import annotations
 
@@ -236,9 +236,46 @@ class InklingTextConfig:
         return cls(**values)
 
 
+@dataclass(kw_only=True, frozen=True)
+class InklingVisionConfig:
+    """Vision-tower config; ``hmlp`` is an attention-free hierarchical MLP."""
+
+    vision_encoder_type: str
+    decoder_dmodel: int
+    patch_size: int
+    temporal_patch_size: int
+    n_channels: int
+    n_layers: int
+    use_vision_norm: bool
+
+    def __post_init__(self) -> None:
+        if self.vision_encoder_type != "hmlp":
+            raise ValueError(
+                "unsupported Inkling vision_encoder_type "
+                f"{self.vision_encoder_type!r}; the tower is hmlp"
+            )
+        if self.patch_size <= 1:
+            raise ValueError(
+                f"unsupported Inkling patch_size {self.patch_size}; the tower "
+                "folds a patch down in prime-factor steps, which needs > 1"
+            )
+
+    @classmethod
+    def from_hf(cls, vision_config: PretrainedConfig) -> InklingVisionConfig:
+        return cls(
+            vision_encoder_type=vision_config.vision_encoder_type,
+            decoder_dmodel=vision_config.decoder_dmodel,
+            patch_size=vision_config.patch_size,
+            temporal_patch_size=vision_config.temporal_patch_size,
+            n_channels=vision_config.n_channels,
+            n_layers=vision_config.n_layers,
+            use_vision_norm=vision_config.use_vision_norm,
+        )
+
+
 @dataclass(kw_only=True)
 class InklingConfig(ArchConfigWithKVCache):
-    """Top-level Inkling config wrapping the text backbone."""
+    """Top-level Inkling config wrapping the text and vision backbones."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -256,10 +293,24 @@ class InklingConfig(ArchConfigWithKVCache):
 
     text_config: InklingTextConfig
 
+    vision_config: InklingVisionConfig
+
     quant_config: QuantConfig | None = None
     """Set by :meth:`finalize` when the routed experts are packed FP4."""
 
     use_subgraphs: bool = True
+
+    def __post_init__(self) -> None:
+        # Caught here so a mismatched checkpoint fails at config time with the
+        # field names, not as a shape error inside Model.execute.
+        if self.vision_config.decoder_dmodel != self.text_config.hidden_size:
+            raise ValueError(
+                "Inkling vision tower emits rows of width "
+                f"{self.vision_config.decoder_dmodel} "
+                "(vision_config.decoder_dmodel), but the decoder embeds "
+                f"tokens at width {self.text_config.hidden_size} "
+                "(text_config.hidden_size); the two must match"
+            )
 
     def get_kv_params(self) -> MultiKVCacheParams:
         return self.kv_params
@@ -374,6 +425,9 @@ class InklingConfig(ArchConfigWithKVCache):
             ),
             text_config=InklingTextConfig.from_hf(
                 huggingface_config.text_config
+            ),
+            vision_config=InklingVisionConfig.from_hf(
+                huggingface_config.vision_config
             ),
             use_subgraphs=model_config.use_subgraphs,
         )

@@ -51,9 +51,9 @@ def test_snprintf_mixed_variadic_args() raises:
     var written = external_call["snprintf", c_int, num_fixed_args=3](
         buf,
         Int(SIZE),
-        fmt.unsafe_ptr(),
+        fmt.ptr(),
         c_int(42),
-        word.unsafe_ptr(),
+        word.ptr(),
         c_int(-7),
         Float64(2.5),
         c_int(ord("z")),

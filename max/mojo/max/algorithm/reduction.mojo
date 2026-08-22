@@ -247,58 +247,6 @@ def _reduce_generator[
 
 
 @always_inline
-def _reduce_generator_wrapper[
-    dtype: DType,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
-        dtype, width
-    ],
-    output_fn: def[width: SIMDLength, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing[_] -> None,
-    reduce_function: def[width: SIMDLength](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing[_] -> SIMD[dtype, width],
-    /,
-    target: StaticString = "cpu",
-    *,
-    reduce_dim: Int,
-](shape: Coord, init: Scalar, context: Optional[DeviceContext] = None,) raises:
-    @always_inline
-    @__parameter
-    def input_fn_wrapper[
-        _dtype: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
-        return input_fn[width, rank](idx)._refine[_dtype]()
-
-    @always_inline
-    @__parameter
-    def output_fn_wrapper[
-        _dtype: DType,
-        width: SIMDLength,
-        rank: Int,
-    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        output_fn[width, rank](indices, value._refine[dtype]())
-
-    @always_inline
-    @__parameter
-    def reduce_fn[
-        ty: DType, width: SIMDLength
-    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return reduce_function(
-            v1._refine[dtype](),
-            v2._refine[dtype](),
-        )._refine[ty]()
-
-    _reduce_generator[
-        input_fn_wrapper,
-        output_fn_wrapper,
-        reduce_fn,
-        target=target,
-        reduce_dim=reduce_dim,
-    ](shape, init, context)
-
-
-@always_inline
 def _reduce_generator[
     input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
