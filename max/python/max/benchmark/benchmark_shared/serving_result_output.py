@@ -310,6 +310,13 @@ class PercentileRow(NamedTuple):
     metrics: _PercentileLike
 
 
+def format_gpu_statistics_title(n_devices: int) -> str:
+    """Section title stating GPU rows are derived across the sampled devices."""
+    assert n_devices > 0, "GPU statistics title requires at least one device"
+    device_label = "device" if n_devices == 1 else "devices"
+    return f"GPU Statistics (aggregated across {n_devices} {device_label})"
+
+
 def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
     """Render per-metric percentile stats as one table, one row per metric."""
     headers = ["Metric", "Mean", "Std", "P50", "P90", "P95", "P99"]
@@ -533,28 +540,39 @@ def print_benchmark_summary(
                     "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
                 )
 
-    # Print GPU and CPU statistics
+    # Per-GPU series stay in result_groups.gpu_stats JSON; the console
+    # reuses the same percentile table as latency / throughput.
     gpu = groups.gpu_stats
-    if collect_gpu_stats and gpu is not None and gpu.peak_gpu_memory_mib:
-        print_section(title="GPU Statistics")
-        for gpu_id in range(len(gpu.peak_gpu_memory_mib)):
-            print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} peak memory (MiB):",
-                    gpu.peak_gpu_memory_mib[gpu_id],
-                )
+    if collect_gpu_stats and gpu is not None:
+        gpu_rows = [
+            PercentileRow(
+                label,
+                StandardPercentileMetrics(
+                    [float(v) for v in values], unit=unit
+                ),
             )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} available memory (MiB):",
-                    gpu.available_gpu_memory_mib[gpu_id],
-                )
+            for label, values, unit in (
+                ("Peak GPU memory (MiB)", gpu.peak_gpu_memory_mib, "MiB"),
+                (
+                    "Available GPU memory (MiB)",
+                    gpu.available_gpu_memory_mib,
+                    "MiB",
+                ),
+                ("GPU utilization (%)", gpu.gpu_utilization, "%"),
             )
+            if values
+        ]
+        if gpu_rows:
+            n_devices = max(
+                len(gpu.peak_gpu_memory_mib),
+                len(gpu.available_gpu_memory_mib),
+                len(gpu.gpu_utilization),
+            )
+            print_section(title=format_gpu_statistics_title(n_devices))
+            print(format_percentile_table(gpu_rows))
             print(
-                "{:<40} {:<10.2f}".format(
-                    f"GPU {gpu_id} utilization (%):",
-                    gpu.gpu_utilization[gpu_id],
-                )
+                "  For per-GPU metrics, dump the result JSON instead"
+                " (--result-filename)"
             )
     if collect_cpu_stats:
         cpu = metrics.cpu_metrics

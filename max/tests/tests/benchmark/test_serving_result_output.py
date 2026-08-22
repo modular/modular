@@ -14,15 +14,22 @@
 
 from __future__ import annotations
 
+import re
+
+import pytest
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PercentileMetrics,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     PercentileRow,
     elide_data_uris_in_string,
+    format_gpu_statistics_title,
     format_percentile_table,
+    print_benchmark_summary,
 )
 
 
@@ -147,3 +154,74 @@ def test_format_percentile_table_accepts_metric_wrappers() -> None:
     lines = table.splitlines()
     assert any("Request Latency (ms)" in ln for ln in lines)
     assert any("Output throughput (tok/s)" in ln for ln in lines)
+
+
+def test_format_gpu_statistics_title_names_device_count() -> None:
+    """The section title says the percentile rows are aggregated across devices."""
+    assert format_gpu_statistics_title(1) == (
+        "GPU Statistics (aggregated across 1 device)"
+    )
+    assert format_gpu_statistics_title(2) == (
+        "GPU Statistics (aggregated across 2 devices)"
+    )
+    assert format_gpu_statistics_title(8) == (
+        "GPU Statistics (aggregated across 8 devices)"
+    )
+
+
+def _gpu_benchmark_result() -> BenchmarkResult:
+    return BenchmarkResult(
+        task_type="text",
+        max_concurrency=8,
+        peak_gpu_memory_mib=[40000.0, 40500.0],
+        available_gpu_memory_mib=[39000.0, 38500.0],
+        gpu_utilization=[95.0, 97.0],
+        text_data=TextGenAggregates(
+            duration=60.0,
+            completed=100,
+            failures=0,
+            request_throughput=1.66,
+            total_input=5000,
+            total_output=8000,
+            nonempty_response_chunks=8000,
+            max_input=100,
+            max_output=200,
+            max_total=300,
+            global_cached_token_rate=0.42,
+        ),
+    )
+
+
+def test_print_benchmark_summary_tabulates_gpu_stats(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """GPU stats reuse the shared percentile table, not one block per device."""
+    print_benchmark_summary(
+        metrics=_gpu_benchmark_result(),
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+    out = capsys.readouterr().out
+    assert "GPU Statistics (aggregated across 2 devices)" in out
+    assert "For per-GPU metrics, dump the result JSON instead" in out
+    assert "Peak GPU memory (MiB)" in out
+    assert "GPU 0 peak memory" not in out
+    assert "GPU 1 peak memory" not in out
+    # Same Mean/Std/P50/P90/P95/P99 columns as latency / throughput.
+    peak = re.search(
+        r"│\s*Peak GPU memory \(MiB\)\s*│([^│]+)│([^│]+)│([^│]+)│"
+        r"([^│]+)│([^│]+)│([^│]+)│",
+        out,
+    )
+    assert peak is not None
+    assert float(peak.group(1).strip()) == 40250.0
+    util = re.search(
+        r"│\s*GPU utilization \(%\)\s*│([^│]+)│([^│]+)│([^│]+)│"
+        r"([^│]+)│([^│]+)│([^│]+)│",
+        out,
+    )
+    assert util is not None
+    assert float(util.group(1).strip()) == 96.0
