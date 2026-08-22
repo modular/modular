@@ -40,7 +40,7 @@ from max.gpu.host import (
 )
 from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
-from std.memory import Layout, ThinAllocation, MaybeUninit, alloc, dealloc
+from std.memory import OwnedPointer, MaybeUninit, alloc, dealloc
 from std.os import abort
 from layout import (
     Coord,
@@ -1503,19 +1503,13 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         def create() -> Pointer[DeviceGraphCache, MutUntrackedOrigin]:
             # Leaked because the state context takes over ownership; `destroy`
             # below pairs the pointer back up with this layout to release it.
-            var cache = alloc(Layout[DeviceGraphCache].single()).unsafe_leak()
-            cache.unsafe_write(DeviceGraphCache())
-            return cache
+            var cache = OwnedPointer(value=DeviceGraphCache())
+            return cache^.unsafe_take_allocation().unsafe_leak()
 
-        # Paired with `create`: the state context adopts the allocation without
-        # taking over freeing it, so this both destroys and frees.
+        # The corresponding desructor function. Convert the raw pointer back to
+        # an OwnedPointer for destruction.
         def destroy(cache: Pointer[DeviceGraphCache, MutUntrackedOrigin]):
-            cache.unsafe_deinit_pointee()
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=cache).unsafe_with_layout(
-                    Layout[DeviceGraphCache].single()
-                )
-            )
+            _ = OwnedPointer(unsafe_from_raw_pointer=cache)
 
         return external_call[
             "MGP_RT_GetOrCreateDeviceGraphCache",
@@ -1796,7 +1790,7 @@ def mogg_async_error(
         error_message = "\n" + source_notes + "\n\n" + error_message
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
-        error_message.as_c_string_slice().unsafe_ptr(),
+        error_message.as_c_string_slice(),
         error_message.byte_length(),
     )
 

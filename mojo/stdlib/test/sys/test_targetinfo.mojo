@@ -21,7 +21,7 @@ from std.sys import (
 )
 from std.sys.info import stdlib_plugin
 
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
 
 
@@ -84,6 +84,30 @@ def test_target_is_apple() raises:
         assert_true(
             CompilationTarget.is_apple_silicon(),
             "Target is Apple M-Series but is_apple_silicon() returned False",
+        )
+
+
+def test_target_arch() raises:
+    # This runs on the host, which is always x86 or ARM, and the two are
+    # mutually exclusive. RISC-V is a cross-compilation target only, so
+    # `test_arch_predicates.mojo` covers it.
+    assert_true(
+        CompilationTarget.is_x86() != CompilationTarget.is_arm(),
+        "exactly one of is_x86() and is_arm() must hold",
+    )
+    assert_false(CompilationTarget.is_riscv())
+
+    # Neon implies ARM, but not the converse: 32-bit ARM can lack Neon.
+    if CompilationTarget.has_neon():
+        assert_true(
+            CompilationTarget.is_arm(),
+            "Target has Neon but is_arm() returned False",
+        )
+
+    if CompilationTarget.has_sse4():
+        assert_true(
+            CompilationTarget.is_x86(),
+            "Target has SSE4 but is_x86() returned False",
         )
 
 

@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pytest
 from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import BlockCount
@@ -55,6 +56,8 @@ def make_manager(
     enable_prefix_caching: bool = False,
     num_replicas: int = 1,
     max_num_input_tokens: int | None = None,
+    num_draft_tokens: int = 0,
+    num_draft_tokens_per_step: int = 0,
 ) -> JengaBlockManager:
     return JengaBlockManager(
         dict(leaf_infos),
@@ -63,6 +66,8 @@ def make_manager(
         enable_prefix_caching=enable_prefix_caching,
         num_replicas=num_replicas,
         max_num_input_tokens=max_num_input_tokens,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
     )
 
 
@@ -1225,6 +1230,185 @@ def test_reset_prefix_cache_clears_every_replica() -> None:
 
     assert len(bm.pools[0].prefix_caches[FULL]) == 0
     assert len(bm.pools[1].prefix_caches[FULL]) == 0
+
+
+# ===--------------------------------------------------------------------=== #
+# DP Padding Dummies
+# ===--------------------------------------------------------------------=== #
+
+
+def test_a_dummy_draws_no_pages() -> None:
+    """Padding dummies exist to equalize batch shapes, not to compute, so
+    they must not spend the pool a real request needs."""
+    bm = make_manager({FULL: full(ratio=1), SLIDING: sliding(ratio=2)})
+    free_before = bm.huge_block_count(0).free
+
+    dummy = make_ctx(num_tokens=1)
+    bm.alloc_dummy(dummy)
+
+    assert bm.get_req_blocks_per_leaf(dummy) == {FULL: [0], SLIDING: [0]}
+    assert bm.huge_block_count(0).free == free_before
+
+
+def test_a_dummy_points_at_its_own_replica_null_page() -> None:
+    bm = make_manager({FULL: full(ratio=1)}, num_replicas=2)
+    dummy = make_ctx(num_tokens=1)
+    bm.alloc_dummy(dummy, replica_idx=1)
+
+    assert (
+        bm._leaves[FULL].req_to_blocks[dummy.request_id][0]
+        is bm.pools[1].null_little_blocks[FULL]
+    )
+
+
+def test_releasing_a_dummy_gives_nothing_back() -> None:
+    """The null page is shared by every dummy, so freeing one must not put it
+    into circulation for the next allocation to hand out."""
+    bm = make_manager({FULL: full(ratio=1)}, num_huge_blocks=4)
+    dummy = make_ctx(num_tokens=1)
+    bm.alloc_dummy(dummy)
+    free_before = bm.huge_block_count(0).free
+
+    bm.release(dummy)
+
+    assert bm.huge_block_count(0).free == free_before
+    assert not bm.contains(dummy)
+
+
+# ===--------------------------------------------------------------------=== #
+# Speculative Decoding
+# ===--------------------------------------------------------------------=== #
+
+
+def test_drafts_are_sized_into_the_allocation() -> None:
+    """A speculative step verifies drafts and writes more behind them, all of
+    which need a KV slot the allocation has to have drawn up front."""
+    plain = make_manager({FULL: full(ratio=1)}, block_size=1)
+    spec = make_manager({FULL: full(ratio=1)}, block_size=1, num_draft_tokens=3)
+
+    for bm, expected in ((plain, 3), (spec, 9)):
+        ctx = make_ctx(num_tokens=3)
+        bm.claim(ctx)
+        bm.alloc(ctx)
+        assert len(bm.get_req_blocks_per_leaf(ctx)[FULL]) == expected
+
+
+def test_block_drafts_get_the_bonus_position() -> None:
+    """A block draft writes one position past the bonus token in a single
+    batched forward, which autoregressive-draft accounting does not reserve."""
+    autoregressive = make_manager(
+        {FULL: full(ratio=1)},
+        block_size=1,
+        num_draft_tokens=3,
+        num_draft_tokens_per_step=1,
+    )
+    block_draft = make_manager(
+        {FULL: full(ratio=1)},
+        block_size=1,
+        num_draft_tokens=3,
+        num_draft_tokens_per_step=3,
+    )
+
+    counts = []
+    for bm in (autoregressive, block_draft):
+        ctx = make_ctx(num_tokens=3)
+        bm.claim(ctx)
+        bm.alloc(ctx)
+        counts.append(len(bm.get_req_blocks_per_leaf(ctx)[FULL]))
+
+    assert counts == [9, 10]
+
+
+# ===--------------------------------------------------------------------=== #
+# Metrics
+# ===--------------------------------------------------------------------=== #
+
+
+def test_metrics_split_prompt_tokens_into_hits_and_misses() -> None:
+    bm = make_manager(
+        {FULL: full(ratio=1)},
+        block_size=1,
+        num_huge_blocks=20,
+        enable_prefix_caching=True,
+    )
+    warm = make_ctx(num_tokens=4)
+    bm.claim(warm, replica_idx=0)
+    decode(bm, warm)
+    bm.release(warm)
+
+    assert bm.metrics.cache_tokens == 0
+    assert bm.metrics.input_tokens == 4
+
+    bm.reset_metrics()
+
+    # Same prompt: three blocks are adopted and only the tail is recomputed.
+    again = make_ctx(num_tokens=4)
+    bm.claim(again)
+    bm.alloc(again)
+
+    assert bm.metrics.cache_tokens == 3
+    assert bm.metrics.input_tokens == 1
+    assert bm.metrics.device_blocks_served == 3
+    assert bm.metrics.prompt_tokens == 4
+    assert bm.metrics.cache_hit_rate == 0.75
+    assert again.cached_prefix_length == 3
+
+
+def test_a_miss_records_a_zero_length_cached_prefix() -> None:
+    """The scheduler reads ``cached_prefix_length`` per admission; leaving it
+    unset would drop the request from the batch's hit-rate entirely."""
+    bm = make_manager(
+        {FULL: full(ratio=1)},
+        block_size=1,
+        num_huge_blocks=20,
+        enable_prefix_caching=True,
+    )
+    ctx = make_ctx(num_tokens=4)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+
+    assert ctx.cached_prefix_length == 0
+    assert bm.metrics.cache_tokens == 0
+    assert bm.metrics.device_blocks_served == 0
+
+
+def test_a_hit_counts_a_position_once_not_once_per_leaf() -> None:
+    """Two leaves storing the same position are one reused position.
+
+    ``device_blocks_served`` and ``cache_tokens`` measure the same prefix, so
+    counting a leaf's row as its own block would make the two disagree by a
+    factor of however many caches the model happens to have.
+    """
+    bm = make_manager(
+        {FULL: full(ratio=1), SLIDING: sliding(ratio=1, window=99)},
+        block_size=1,
+        num_huge_blocks=40,
+        enable_prefix_caching=True,
+    )
+    warm = make_ctx(num_tokens=4)
+    bm.claim(warm)
+    decode(bm, warm)
+    bm.release(warm)
+    bm.reset_metrics()
+
+    again = make_ctx(num_tokens=4)
+    bm.claim(again)
+    bm.alloc(again)
+
+    assert bm.metrics.device_blocks_served == 3
+    assert bm.metrics.cache_tokens == 3
+
+
+def test_reset_metrics_zeroes_the_counters() -> None:
+    bm = make_manager({FULL: full(ratio=1)}, block_size=1)
+    ctx = make_ctx(num_tokens=4)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    assert bm.metrics.input_tokens == 4
+
+    bm.reset_metrics()
+
+    assert bm.metrics == KVCacheMetrics()
 
 
 # ===--------------------------------------------------------------------=== #

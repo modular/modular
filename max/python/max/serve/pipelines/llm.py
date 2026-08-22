@@ -633,7 +633,7 @@ class TokenGeneratorPipeline(
     ) -> EmbeddingsGenerationOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
-        self.logger.debug(
+        self.logger.debug(  # noqa: PLE1206 (maybe FIXME)
             "%s [%d]: Started: Elapsed: %0.2f ms",
             request.request_id,
             total_sw.elapsed_ms,

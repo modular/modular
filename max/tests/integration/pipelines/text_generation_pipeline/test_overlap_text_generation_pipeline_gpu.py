@@ -45,6 +45,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
+    MemoryPlan,
     ModelInputs,
     ModelOutputs,
     OverlapTextGenerationPipeline,
@@ -53,7 +54,6 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SupportedEncoding,
 )
-from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
 from max.pipelines.modeling.types import (
     RequestID,
@@ -127,7 +127,7 @@ def draw_span_rows(
     tick_line = [" "] * width
     label_line = [" "] * width
 
-    for val in range(0, max_tick + 1):
+    for val in range(max_tick + 1):
         pos = scale(float(val))
         tick_line[pos] = "|"
 
@@ -431,9 +431,10 @@ def create_overlap_pipeline(
         pipeline_model=cast(type[PipelineModel[Any]], FakePipelineModel),
         weight_adapters=MagicMock(),
         tokenizer=MagicMock(spec=[]),
-        memory_plan=_MemoryPlan(
+        memory_plan=MemoryPlan(
             max_batch_size=runtime.max_batch_size or 1,
             footprint=0,
+            max_length=None,
             device_specs=tuple(model_config.device_specs),
         ),
         disable_overlap=disable_overlap,
@@ -443,7 +444,6 @@ def create_overlap_pipeline(
 
 def fake_cpu_pre_or_post_processing() -> None:
     time.sleep(CPU_SECONDS)
-    return
 
 
 def prime_host_buffer_cache() -> None:

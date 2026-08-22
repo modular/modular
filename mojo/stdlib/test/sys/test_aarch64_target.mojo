@@ -19,6 +19,10 @@ from std.testing import TestSuite
 
 
 def test_arch_query() raises:
+    assert_true(CompilationTarget.is_arm())
+
+    assert_false(CompilationTarget.is_x86())
+
     assert_true(CompilationTarget.has_neon())
 
     assert_equal(simd_bit_width(), 128)

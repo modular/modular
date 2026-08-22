@@ -40,6 +40,13 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Binding a constrained function to a function type that declares no matching
+  `where` clause is now an error, instead of silently dropping the constraint.
+  Declare the obligation on the function type (now that a `thin` function type
+  can carry a trailing `where` clause) or bind a function that does not require
+  it. Passing an unconstrained function where a constrained type is expected is
+  still allowed and still free.
+
 - Renamed the `@parameter` decorator on parametric closures to
   `@__parameter`. The deprecated `@parameter if` / `@parameter for`
   forms are unchanged; prefer `comptime if` / `comptime for` for
@@ -73,7 +80,70 @@ This version is still a work in progress.
 
 ## Library stabilizations
 
+- String
+  - `def __init__(out self):`
+  - `def __init__(out self, *, capacity_bytes: Int):`
+  - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
+
 ## Library changes
+
+- `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
+  reports the architecture rather than SSE4 availability. Both read the
+  architecture from the target triple, so they no longer vary with
+  `--target-cpu`. This changes `is_x86()` on x86 targets without SSE4.1 — most
+  visibly the baseline `x86-64` CPU, where it used to return `False`. Use
+  `has_sse4()`, `has_avx2()`, and friends to gate code on a specific
+  instruction set.
+
+- `CompilationTarget` can now describe RISC-V targets: `is_riscv()`,
+  `is_rv32()`, and `is_rv64()` report the architecture, and
+  `has_riscv_extension["m"]()` reports a single ISA extension by its lowercase
+  LLVM name. An extension implied by another counts as present, so a target
+  built with `d` also reports `f`. It is always `False` on a non-RISC-V target,
+  and rejects an uppercase name at compile time.
+
+  Selecting a RISC-V CPU or ISA string now resolves the extensions it implies,
+  so `--target-cpu=sifive-e31` and `--march=rv32imac` both report `m`, `a`, and
+  `c`. Previously either one reported only the base integer ISA.
+
+- `Bencher.bench_function()` now takes a raising closure.
+
+- `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
+  of compile-time parameters, along with an explicit state value that is passed
+  mutably to both: the preprocessing function prepares the state before each
+  timed call of the benchmarked function, so state no longer has to be shuttled
+  through mutable captures.
+
+- `Bencher.bench_with_input()` now takes its benchmark closure as a runtime
+  argument. Its register-passable overload accepts both non-raising and raising
+  closures.
+
+- `Bencher.iter_custom()` now only takes its closure as a runtime argument. The
+  compile-time parameter form has been removed.
+
+- `std.python.numpy` now handles multi-dimensional NumPy arrays, not just 1-D:
+
+  - `copy_to_numpy_tensor()` copies a `Span` into a new NumPy array of a given
+    shape. The shape is a `Coord`, so extents may be compile-time (`Idx[N]`) or
+    runtime (`Int`) in any mix.
+
+  - `from_numpy_tensor()` borrows an N-D C-contiguous array as a `NumPyView`,
+    which holds the buffer and its shape together and indexes as
+    `view[i, j]`.
+
+  ```mojo
+  from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
+  from std.utils.coord import Coord, Idx
+
+  var values: List[Float64] = [0, 1, 2, 3, 4, 5]
+  var arr = copy_to_numpy_tensor(values, Coord(Idx[2], Idx[3]))
+
+  var view = from_numpy_tensor[DType.float64, 2](arr)
+  var value = view[1, 2]
+  ```
+
+  The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
+  unchanged.
 
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
@@ -105,6 +175,14 @@ This version is still a work in progress.
 
 - `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
 
+- `Array` now supports concatenation with the `+` operator when its type `T` is
+  `Movable`. Both operands are consumed and their elements are moved into the
+  new array, whose length is the sum of the operands' lengths.
+
+- `Array` now supports repetition with the `repeat` method when its type `T` is
+  `Copyable`. The array is consumed: its elements are copied into all but the
+  last repetition and moved into the last one.
+
 - Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
   `is_trivially_deletable()` in `std.memory` in favor of
   `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and
@@ -130,6 +208,8 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example
   `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
@@ -140,6 +220,10 @@ This version is still a work in progress.
 - `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
   mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
   is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+
+- Added `ptr()` to `StringLiteral`, `CStringSlice`, `ArcPointer`, and
+  `OwnedPointer`, deprecating their `unsafe_ptr()` methods. These types
+  always hold a valid, live value, so a pointer to it is never unsafe.
 
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
@@ -257,8 +341,23 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
-- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
-  looping until all bytes are written, matching `FileHandle.write_bytes()`.
+- `FileDescriptor.write_bytes()` now completes short writes instead of
+  aborting on them. `write(2)` may consume fewer bytes than it was given, on
+  a pipe or a socket for instance, which previously tripped the
+  all-or-nothing assertion; it now loops until every byte is written, and
+  aborts only on an actual error or a zero-byte write.
+
+- A `where` clause naming a type that an enclosing `where` clause constrained
+  to a tighter trait can now be proven. Calling a method declared
+  `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
+  prove correctness`, even though `T` was plainly in `Ts`.
+
+- `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
+  or an object for a `riscv32` or `riscv64` triple failed with `target '...'
+  is not supported by this build`.
+
+- `mojo build --print-supported-targets` no longer lists targets that the
+  compiler cannot generate code for.
 
 - `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
   files next to the host output file. Building a kernel that an earlier build
@@ -274,6 +373,21 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - An integer `range()` with a step of zero is now always empty. It previously
   used to be an infinite loop - iterating forever at runtime, and hanging the
   compiler at comptime.
+
+- A strided `range()` no longer iterates forever when the element after the
+  last one falls outside the element type, as in
+  `range(UInt8(250), UInt8(255), UInt8(2))`. The cursor used to wrap past the
+  type's limit and land back inside the range, so iteration restarted near the
+  opposite limit and never agreed with `len()`. This affected signed and
+  unsigned ranges in both step directions.
+
+- `reversed()` on a scalar `range()` no longer yields an empty iterator when
+  the range starts within one step of the element type's limit, as in
+  `reversed(range(Int8.MIN, Int8.MIN + 8, Int8(1)))`. Unsigned ranges, and
+  ranges whose span overflows their element type, are fixed by the same change.
+
+  Reversing an already-reversed range, as in `reversed(reversed(range(10)))`,
+  is now a compile-time error.
 
 - Fixed `ceildiv()` returning `0` for unsigned operands near the type's
   maximum value. The unsigned code path computed `numerator + denominator -
@@ -300,3 +414,8 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - `PythonObject` no longer leaks a CPython reference per positional argument
   when calling a Python object, nor when setting an item, attribute, or set
   literal element.
+
+- `atol()` (and therefore `Int(String)`) now raises for every value outside
+  the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
+  longer wrap silently, and `Int.MIN` parses correctly by design rather than
+  by wraparound.

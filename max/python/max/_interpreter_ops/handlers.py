@@ -248,11 +248,9 @@ def _handle_constant_scalar(
 
     attr = op.value
     value: bool | int | float
-    if isinstance(attr, builtin.BoolAttr):
-        value = attr.value
-    elif isinstance(attr, builtin.IntegerAttr):
-        value = attr.value
-    elif isinstance(attr, builtin.FloatAttr):
+    if isinstance(
+        attr, builtin.BoolAttr | builtin.IntegerAttr | builtin.FloatAttr
+    ):
         value = attr.value
     else:
         raise ValueError(

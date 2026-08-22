@@ -487,18 +487,15 @@ def test_combine[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @__parameter
-    def per_gpu_combine(i: Int) raises:
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher) raises:
-            @__parameter
-            @always_inline
-            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                var dev_id = Int(ctx.id())
-                run_combine_async(dev_id, cache_iter)
+    @always_inline
+    def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {}:
+        var dev_id = Int(ctx.id())
+        run_combine_async(dev_id, cache_iter)
 
-            bencher_iter_custom[call_fn](b, list_of_ctx[i])
+    def per_gpu_combine(i: Int) raises capturing:
+        @always_inline
+        def bench_iter(mut b: Bencher) raises capturing:
+            bencher_iter_custom(b, call_fn_combine, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
@@ -529,18 +526,15 @@ def test_combine[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @__parameter
-    def per_gpu_combine_wait(i: Int) raises:
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher) raises:
-            @__parameter
-            @always_inline
-            def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
-                var dev_id = Int(ctx.id())
-                run_combine_async_wait(dev_id, cache_iter)
+    @always_inline
+    def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {}:
+        var dev_id = Int(ctx.id())
+        run_combine_async_wait(dev_id, cache_iter)
 
-            bencher_iter_custom[call_fn](b, list_of_ctx[i])
+    def per_gpu_combine_wait(i: Int) raises capturing:
+        @always_inline
+        def bench_iter(mut b: Bencher) raises capturing:
+            bencher_iter_custom(b, call_fn_combine_wait, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False

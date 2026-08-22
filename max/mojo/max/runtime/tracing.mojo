@@ -285,6 +285,18 @@ def _is_tracy_enabled() -> Bool:
 
 
 @always_inline
+def _is_range_recording() -> Bool:
+    """Returns whether the MAX profiler is actively recording ranges.
+
+    True while a profiler trace of either origin — an explicit session enable
+    or an externally requested on-demand capture — is live. One relaxed
+    atomic load of a process-global gate behind the FFI call, so it is safe
+    on hot paths.
+    """
+    return external_call["KGEN_CompilerRT_RangeIsRecording", Int]() != 0
+
+
+@always_inline
 def _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
@@ -299,6 +311,11 @@ def _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 @always_inline
 def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
     """Returns a list of enabled tracing system names.
+
+    The MAX profiler is deliberately absent: it does not participate in the
+    one-system-at-a-time accounting this list backs, recording additively
+    alongside every system here except "Op Logging", whose branch
+    short-circuits `__enter__` before the profiler branch is reached.
 
     Returns:
         A list of strings naming the tracing systems that are enabled.
@@ -402,6 +419,19 @@ struct Trace[
     var _tracy_ctx: UInt64
     """Packed Tracy context id when a Tracy zone is active via CompilerRT."""
 
+    var _range_opened: Bool
+    """True iff `__enter__` opened a MAX profiler range; `__exit__` pairs it.
+
+    Captured at `__enter__` so a profiler stop racing with the scope cannot
+    leave the profiler's per-thread range stack unbalanced.
+
+    The profiler pairs begin/end on a per-thread stack, so a scope that
+    suspends and resumes on another thread (an `await` inside the `with`)
+    records a dropped or misattributed span, and copying an entered `Trace`
+    (as with `_tracy_ctx`) emits an extra end that can close an unrelated
+    open range. Keep profiler-visible scopes on one thread and uncopied.
+    """
+
     # This constructor is intentionally hidden because Variant is too flexible
     # about what it allows and we want to ensure that only StaticString or
     # String are used.
@@ -447,6 +477,8 @@ struct Trace[
 
         # Always initialize the tracy context to zero: it's set in __enter__.
         self._tracy_ctx = 0
+        # Set in __enter__ iff a MAX profiler range was opened.
+        self._range_opened = False
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             self._name_value = _name_value^
@@ -574,6 +606,32 @@ struct Trace[
             self._emit_op_log("LAUNCH")
             return
 
+        # Record a MAX profiler range while a profiler trace is live. Unlike
+        # the branches below this one does not return: the profiler's trace
+        # has a different audience (Perfetto/HTA/on-demand capture) than the
+        # backends below (Tracy, NVTX/nsys, the AsyncRT time-trace), so
+        # whichever of those is enabled must still record its own span.
+        # THREAD-level spans are excluded — their per-task volume would swamp
+        # the profiler's span budget.
+        comptime if Self.level <= TraceLevel.OP:
+            if _is_range_recording():
+                var color_val = UInt32(
+                    Int(self.color.value())
+                ) if self.color else 0
+                if self._name_value.isa[StaticString]():
+                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
+                        self._name_value[StaticString].as_bytes().unsafe_ptr(),
+                        self._name_value[StaticString].byte_length(),
+                        color_val,
+                    )
+                else:
+                    external_call["KGEN_CompilerRT_RangeBegin", NoneType](
+                        self._name_value[String].as_bytes().unsafe_ptr(),
+                        self._name_value[String].byte_length(),
+                        color_val,
+                    )
+                self._range_opened = True
+
         # Start a Tracy zone if the bridge is available.
         if _is_tracy_enabled():
             var name_str = self.name()
@@ -679,6 +737,10 @@ struct Trace[
             self._emit_op_log("COMPLETE")
             return
 
+        # Close the MAX profiler range opened in __enter__ (see _range_opened).
+        if self._range_opened:
+            external_call["KGEN_CompilerRT_RangeEnd", NoneType]()
+
         # End Tracy zone early to guarantee pairing even on early returns.
         if self._tracy_ctx != 0:
             external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](
@@ -709,6 +771,8 @@ struct Trace[
         """Marks the tracer with the info at the specific point of time.
 
         This creates a point event in the trace timeline rather than a range.
+        Not recorded by the MAX profiler, whose range API has no point-event
+        equivalent.
 
         Raises:
             If the operation fails.
@@ -738,6 +802,20 @@ struct Trace[
     @staticmethod
     @always_inline
     def _get_detail_str[detail_fn: def() capturing -> String]() -> String:
+        """Return the detail str when tracing is enabled and an empty string otherwise.
+        """
+
+        comptime if (
+            is_profiling_enabled[Self.category, Self.level]()
+            or _is_gpu_profiler_detailed_enabled[Self.category, Self.level]()
+        ):
+            return detail_fn()
+        else:
+            return ""
+
+    @staticmethod
+    @always_inline
+    def _get_detail_str(detail_fn: Some[def() -> String]) -> String:
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
 

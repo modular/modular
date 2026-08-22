@@ -83,7 +83,7 @@ from .interfaces import (
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
-from .memory_estimation import MemoryEstimator
+from .memory_estimation import MemoryEstimator, MemoryPlan
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
@@ -95,6 +95,7 @@ from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,
+    RetrievedPipeline,
     SupportedArchitecture,
 )
 from .tokenizer import (
@@ -127,6 +128,7 @@ __all__ = [
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MemoryEstimator",
+    "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
     "ModelOutputs",
@@ -147,6 +149,7 @@ __all__ = [
     "ProfilingConfig",
     "RaggedBatchProcessor",
     "RepoType",
+    "RetrievedPipeline",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",

@@ -97,9 +97,7 @@ def main() raises:
     var workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
     if workspace:
         # TODO: this should be in stdlib
-        _ = external_call["chdir", Int32](
-            workspace.as_c_string_slice().unsafe_ptr()
-        )
+        _ = external_call["chdir", Int32](workspace.as_c_string_slice())
 
     var target_paths = std.sys.argv()
 

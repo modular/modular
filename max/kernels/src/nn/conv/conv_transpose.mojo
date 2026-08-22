@@ -55,6 +55,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.coord import DynamicCoord
 from layout.tensor_storage import TensorStorage
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
@@ -488,7 +489,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: IndexList[2]
+    var cf_tile_size: DynamicCoord[DType.int64, 2]
 
     @staticmethod
     def run(
@@ -587,7 +588,7 @@ struct ConvTransposedPacked[
                 filter,
                 conv_shape,
                 partition,
-                task_tile_size,
+                Coord(task_tile_size),
             )
             instance._batch_group_loop()
 
@@ -630,7 +631,7 @@ struct ConvTransposedPacked[
             self._zero_output(n, g)
 
             # ConvTransposed computation
-            self._c_tile_loop(n, g, self.cf_tile_size[0])
+            self._c_tile_loop(n, g, Int(self.cf_tile_size[0].value()))
 
             # Epilogue. Avoid putting it after register tiling for now because
             # input row i may update output row i-1. It's hard to tell if a row
@@ -639,11 +640,6 @@ struct ConvTransposedPacked[
 
     def _c_tile_loop(self, n: Int, g: Int, c_tile_size: Int):
         """Loop over C tiles."""
-
-        @always_inline
-        @__parameter
-        def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
-            self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
 
         var c_offset = g * self.conv_shape.c_per_group()
         var c_round_by_tile = align_down(
@@ -675,8 +671,9 @@ struct ConvTransposedPacked[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
-        @__parameter
-        def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+        def f_tile_iteration[
+            size: Int
+        ](f_tile_offset: Int, f_tile_size: Int) {imm}:
             self.input_space_loop[
                 micro_kernel_height, size // simd_size, False, last_c_tile
             ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
@@ -699,13 +696,13 @@ struct ConvTransposedPacked[
         tile[
             [micro_kernel_f_size, simd_size],
             simd_size,
-            f_tile_iteration,
         ](
             group_f_offset,
             group_f_end_align_simd,
             micro_kernel_f_size,
             simd_size,
             primary_cleanup_tile=simd_size,
+            workgroup_function=f_tile_iteration,
         )
 
         # If this is the last partition in F and it's not a multiple of simd_size.
@@ -780,16 +777,16 @@ struct ConvTransposedPacked[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
+        comptime w_axis = Self.InputLayoutType.rank - 3
         var left_pad_impact_end = ceildiv(
-            self.conv_shape.pad_w[0],
-            self.conv_shape.stride[self.input.rank - 3],
+            self.conv_shape.pad_w_lower(),
+            self.conv_shape.stride_at[w_axis](),
         )
         var right_pad_impact_start = (
             self.conv_shape.wo()
-            + self.conv_shape.pad_w[0]
-            - self.conv_shape.s()
-            * self.conv_shape.dilation[self.input.rank - 3]
-        ) // self.conv_shape.stride[self.input.rank - 3] + 1
+            + self.conv_shape.pad_w_lower()
+            - self.conv_shape.s() * self.conv_shape.dilation_at[w_axis]()
+        ) // self.conv_shape.stride_at[w_axis]() + 1
         # print("pad effect", left_pad_impact_end, right_pad_impact_start)
 
         comptime if Self.InputLayoutType.rank == 4:
@@ -864,18 +861,24 @@ struct ConvTransposedPacked[
             # < 0 while the actual output ho index is within [0, ho). In the
             # inner loops, `ho_nbr = ho + r * dilation` where r within [0, R)
             # can tell if a row is in padding i.e. ho_nbr < 0  or ho_nbr > wo-1.
-            var ho = h * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+            var ho = (
+                h * self.conv_shape.stride_at[0]()
+                - self.conv_shape.pad_h_lower()
+            )
 
             var input_base = input + self.conv_shape.c * self.conv_shape.w() * h
 
             # Points output to the start of the row
             var output_base = output + self.conv_shape.f * (
-                -self.conv_shape.pad_w[0] + self.conv_shape.wo() * ho
+                -self.conv_shape.pad_w_lower() + self.conv_shape.wo() * ho
             )
 
-            @__parameter
+            # TODO(MOCO-4664): `var h` copy-captures the loop variable to work
+            # around wrong debug-info scopes on implicit nested-scope captures.
             @always_inline
-            def work_fn[height: Int, effected_by_padding: Bool](w: Int):
+            def work_fn[
+                height: Int, effected_by_padding: Bool
+            ](w: Int) {var h, mut input_base, mut output_base, imm}:
                 update_w_tile_2d[
                     height,
                     micro_kernel_width,
@@ -898,16 +901,17 @@ struct ConvTransposedPacked[
 
                 input_base = input_base + height * self.conv_shape.c
                 output_base = output_base + (
-                    height * self.conv_shape.stride[1] * self.conv_shape.f
+                    height * self.conv_shape.stride_at[1]() * self.conv_shape.f
                 )
 
             tile_middle_unswitch_boundaries[
-                work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
+                [micro_kernel_height, 5, 4, 3, 2, 1]
             ](
                 0,
                 left_pad_impact_end,
                 right_pad_impact_start,
                 self.conv_shape.w(),
+                work_fn,
             )
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = input_base
@@ -938,7 +942,10 @@ struct ConvTransposedPacked[
         comptime simd_size = simd_width_of[Self.output_type]()
 
         for d in range(self.conv_shape.d()):
-            var do = d * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
+            var do = (
+                d * self.conv_shape.stride_at[0]()
+                - self.conv_shape.pad_d_lower()
+            )
 
             for h in range(
                 self.partition.ho_or_howo_offset,
@@ -946,7 +953,7 @@ struct ConvTransposedPacked[
                 + self.partition.ho_or_howo_size,
             ):
                 # fmt: off
-                var ho = h * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
+                var ho = h * self.conv_shape.stride_at[1]() - self.conv_shape.pad_h_lower()
                 # fmt: on
 
                 var input_base = (
@@ -957,13 +964,17 @@ struct ConvTransposedPacked[
                 )
 
                 var output_base = output + self.conv_shape.f * (
-                    -self.conv_shape.pad_w[0]
+                    -self.conv_shape.pad_w_lower()
                     + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
                 )
 
-                @__parameter
+                # TODO(MOCO-4664): `var d`/`var h` copy-capture the loop
+                # variables to work around wrong debug-info scopes on
+                # implicit nested-scope captures.
                 @always_inline
-                def work_fn[height: Int, effected_by_padding: Bool](w: Int):
+                def work_fn[
+                    height: Int, effected_by_padding: Bool
+                ](w: Int) {var d, var h, mut input_base, mut output_base, imm}:
                     update_w_tile_3d[
                         height,
                         micro_kernel_width,
@@ -986,17 +997,19 @@ struct ConvTransposedPacked[
 
                     input_base = input_base + height * self.conv_shape.c
                     output_base = output_base + (
-                        height * self.conv_shape.stride[2] * self.conv_shape.f
+                        height
+                        * self.conv_shape.stride_at[2]()
+                        * self.conv_shape.f
                     )
 
                 tile_middle_unswitch_boundaries[
-                    work_fn,
                     [micro_kernel_height, 5, 4, 3, 2, 1],
                 ](
                     0,
                     left_pad_impact_end,
                     right_pad_impact_start,
                     self.conv_shape.w(),
+                    work_fn,
                 )
                 # TODO(MOCO-2074): Suppress false positive unused var warning.
                 _ = input_base
@@ -1099,8 +1112,8 @@ def update_w_tile_2d[
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
-    var output_stride_by_s = conv_shape.dilation[1] * conv_shape.f
-    var output_stride_by_r = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.f
+    var output_stride_by_s = conv_shape.dilation_at[1]() * conv_shape.f
+    var output_stride_by_r = conv_shape.dilation_at[0]() * conv_shape.wo() * conv_shape.f
     # fmt: on
 
     # Filter stride when s increments by 1.
@@ -1113,8 +1126,8 @@ def update_w_tile_2d[
 
     # Output coordinates
     var howo = Index(
-        hw[0] * conv_shape.stride[0] - conv_shape.pad_h[0],
-        hw[1] * conv_shape.stride[1] - conv_shape.pad_w[0],
+        hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_h_lower(),
+        hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_w_lower(),
     )
 
     # This will be all lifted to simd registers for FMA unless the micro
@@ -1122,7 +1135,7 @@ def update_w_tile_2d[
 
     for r in range(conv_shape.r()):
         # Skip the row if it falls into padding.
-        var ho_nbr = howo[0] + r * conv_shape.dilation[0]
+        var ho_nbr = howo[0] + r * conv_shape.dilation_at[0]()
         if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
             continue
 
@@ -1138,7 +1151,7 @@ def update_w_tile_2d[
                 comptime assert (
                     micro_kernel_height == 1
                 ), "The tile must only have 1 point when effected bypadding."
-                var wo_nbr = howo[1] + s * conv_shape.dilation[1]
+                var wo_nbr = howo[1] + s * conv_shape.dilation_at[1]()
                 if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                     continue
 
@@ -1150,7 +1163,7 @@ def update_w_tile_2d[
             ](
                 c_tile_size,
                 output_ptr,
-                conv_shape.f * conv_shape.stride[1],
+                conv_shape.f * conv_shape.stride_at[1](),
                 input,
                 conv_shape.c,
                 filter_ptr,
@@ -1215,9 +1228,9 @@ def update_w_tile_3d[
 
     # Output stride to neighbor point in the filter window (R, S).
     # fmt: off
-    var output_stride_by_s = conv_shape.dilation[2] * conv_shape.f
-    var output_stride_by_r = conv_shape.dilation[1] * conv_shape.wo() * conv_shape.f
-    var output_stride_by_q = conv_shape.dilation[0] * conv_shape.wo() * conv_shape.ho() * conv_shape.f
+    var output_stride_by_s = conv_shape.dilation_at[2]() * conv_shape.f
+    var output_stride_by_r = conv_shape.dilation_at[1]() * conv_shape.wo() * conv_shape.f
+    var output_stride_by_q = conv_shape.dilation_at[0]() * conv_shape.wo() * conv_shape.ho() * conv_shape.f
     # fmt: on
 
     # Filter stride when s increments by 1.
@@ -1230,21 +1243,21 @@ def update_w_tile_3d[
 
     # Output coordinates
     var howo = Index(
-        hw[0] * conv_shape.stride[0] - conv_shape.pad_d[0],
-        hw[1] * conv_shape.stride[1] - conv_shape.pad_h[0],
-        hw[2] * conv_shape.stride[2] - conv_shape.pad_w[0],
+        hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_d_lower(),
+        hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_h_lower(),
+        hw[2] * conv_shape.stride_at[2]() - conv_shape.pad_w_lower(),
     )
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
 
     for q in range(conv_shape.q()):
-        var do_nbr = howo[0] + q * conv_shape.dilation[0]
+        var do_nbr = howo[0] + q * conv_shape.dilation_at[0]()
         if do_nbr < 0 or do_nbr >= conv_shape.do():
             continue
 
         for r in range(conv_shape.r()):
-            var ho_nbr = howo[1] + r * conv_shape.dilation[1]
+            var ho_nbr = howo[1] + r * conv_shape.dilation_at[1]()
             if ho_nbr < 0 or ho_nbr >= conv_shape.ho():
                 continue
 
@@ -1262,7 +1275,7 @@ def update_w_tile_3d[
 
                 comptime if effected_by_padding:
                     comptime assert micro_kernel_height == 1
-                    var wo_nbr = howo[2] + s * conv_shape.dilation[2]
+                    var wo_nbr = howo[2] + s * conv_shape.dilation_at[2]()
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                         continue
 
@@ -1274,7 +1287,7 @@ def update_w_tile_3d[
                 ](
                     c_tile_size,
                     output_ptr,
-                    conv_shape.f * conv_shape.stride[2],
+                    conv_shape.f * conv_shape.stride_at[2](),
                     input,
                     conv_shape.c,
                     filter_ptr,
@@ -1457,10 +1470,14 @@ def pack_filter(
     for g in range(num_groups):
         var group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
+        # TODO(MOCO-4664): `var g` copy-captures the loop variable to work
+        # around wrong debug-info scopes on implicit nested-scope captures.
         @always_inline
-        @__copy_capture(group_start, C, F_per_group, F)
-        @__parameter
-        def pack[f_tile_size: Int](f_tile_start: Int):
+        def pack[
+            f_tile_size: Int
+        ](f_tile_start: Int) {
+            var g, var group_start, var C, var F_per_group, var F, imm
+        }:
             var packed_filter_ptr = (
                 group_start + f_tile_start * window_dims_prod * C
             )
@@ -1488,7 +1505,7 @@ def pack_filter(
                     filter_ptr += 1
 
         # If F % simd_size != 0, the following won't touch the remainder.
-        tile[pack, [micro_kernel_f_size, simd_size]](0, F_per_group)
+        tile[[micro_kernel_f_size, simd_size]](0, F_per_group, pack)
 
     # Check the remainder if any
     var F_round_by_simd = align_down(F_per_group, simd_size)

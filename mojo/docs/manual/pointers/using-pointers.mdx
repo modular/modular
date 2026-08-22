@@ -151,21 +151,24 @@ The following diagram shows the lifecycle of a `Pointer`:
 <!-- rumdl-disable MD033 -->
 <figure>
 
-![A state diagram with four states. A pointer declared as var ptr: Pointer[T]
-starts uninitialized. From there, Allocation.unsafe_leak() or
+![A state diagram with four states. A pointer declared as var ptr:
+Pointer[T] starts uninitialized. From there, Allocation.unsafe_leak() or
 Allocation.unsafe_ptr() leads to a pointer to uninitialized memory, and
-Pointer(to=val) leads to a pointer to initialized memory. unsafe_write() moves a
-pointer from uninitialized to initialized memory, while unsafe_take_pointee()
-and unsafe_deinit_pointee() move it back. A pointer to initialized memory can be
-read or mutated in place. Calling dealloc() on the Allocation leaves a dangling
+Pointer(to=val) leads to a pointer to initialized memory. unsafe_write()
+moves a pointer from uninitialized to initialized memory, while
+unsafe_take_pointee() and unsafe_deinit_pointee() move it back. A pointer
+to initialized memory can be read or mutated in place. Calling dealloc() on
+the Allocation leaves a dangling
 pointer.](../images/pointers/pointer-lifecycle.png#light)
-![A state diagram with four states. A pointer declared as var ptr: Pointer[T]
-starts uninitialized. From there, Allocation.unsafe_leak() or
+
+![A state diagram with four states. A pointer declared as var ptr:
+Pointer[T] starts uninitialized. From there, Allocation.unsafe_leak() or
 Allocation.unsafe_ptr() leads to a pointer to uninitialized memory, and
-Pointer(to=val) leads to a pointer to initialized memory. unsafe_write() moves a
-pointer from uninitialized to initialized memory, while unsafe_take_pointee()
-and unsafe_deinit_pointee() move it back. A pointer to initialized memory can be
-read or mutated in place. Calling dealloc() on the Allocation leaves a dangling
+Pointer(to=val) leads to a pointer to initialized memory. unsafe_write()
+moves a pointer from uninitialized to initialized memory, while
+unsafe_take_pointee() and unsafe_deinit_pointee() move it back. A pointer
+to initialized memory can be read or mutated in place. Calling dealloc() on
+the Allocation leaves a dangling
 pointer.](../images/pointers/pointer-lifecycle-dark.png#dark)
 
 <figcaption><b>Figure 2.</b> Lifecycle of a <code>Pointer</code></figcaption>
@@ -220,7 +223,7 @@ str_ptr.unsafe_write(my_string^)
 
 Note that to move the value, you usually need to add the transfer sigil (`^`),
 unless the value is an
-[implicitly copyable](/docs/std/builtin/value/ImplicitlyCopyable/) type (like
+[implicitly copyable](/docs/std/traits/copyable/ImplicitlyCopyable/) type (like
 `Int`) or a newly-constructed, "owned" value:
 
 ```mojo
@@ -262,8 +265,8 @@ ptr[] = 0
 5
 ```
 
-If you've allocated space for multiple values, you can use subscript syntax with
-the `unsafe_offset` keyword argument to access the values:
+If you've allocated space for multiple values, you can use subscript syntax
+with the `unsafe_offset` keyword argument to access the values:
 
 ```mojo no-test
 ptr[unsafe_offset=3] = 0
@@ -271,10 +274,10 @@ ptr[unsafe_offset=3] = 0
 ptr.unsafe_offset(3)[] = 0
 ```
 
-You cannot safely use the dereference operator on uninitialized memory, even to
-*initialize* a pointee. This is because assigning to a dereferenced pointer
-calls lifecycle methods on the existing pointee (such as the destructor, move
-initializer or copy initializer).
+You cannot safely use the dereference operator on uninitialized memory,
+even to *initialize* a pointee. This is because assigning to a dereferenced
+pointer calls lifecycle methods on the existing pointee (such as the
+deinitializer, move initializer or copy initializer).
 
 ```mojo
 var allocation = alloc[String]({count = 1})
@@ -294,7 +297,7 @@ leaves the memory location uninitialized.
 
 The
 [`unsafe_deinit_pointee()`](/docs/std/memory/pointer/Pointer/#unsafe_deinit_pointee)
-method calls the destructor on the pointee, and leaves the memory location
+method calls the deinitializer on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
 Both `unsafe_take_pointee()` and `unsafe_deinit_pointee()` require that the
@@ -306,8 +309,8 @@ Calling
 moves the value pointed to by `src` into the memory location pointed to by
 `self`. After this operation, ownership of that value transfers from `src` to
 `self` and the memory at `src` is uninitialized: do not read from it, and do not
-invoke destructors on it. To make the memory valid again, initialize it with a
-new value using one of the `unsafe_write*()` operations.
+invoke deinitializers on it. To make the memory valid again, initialize it with
+a new value using one of the `unsafe_write*()` operations.
 
 :::note
 Mojo assumes the destination memory is uninitialized.
@@ -317,8 +320,8 @@ It does not destroy existing contents before writing the value from `src`.
 ### Freeing memory
 
 Calling [`dealloc()`](/docs/std/memory/alloc/dealloc/) on an allocation frees
-the allocated memory. It doesn't call the destructors on any values stored in
-the memory—you need to do that explicitly (for example, using
+the allocated memory. It doesn't call the deinitializers on any values stored in
+the memory. You need to do that explicitly (for example, using
 [`unsafe_deinit_pointee()`](/docs/std/memory/pointer/Pointer/#unsafe_deinit_pointee)
 or one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
@@ -429,18 +432,19 @@ mutable and doesn't *alias* existing values. For example, it doesn't point to
 the memory allocated for any other variable. This memory isn't
 tracked by Mojo's lifetime checker and you're responsible for freeing it.
 
-If you're using a pointer in the implementation of a struct, you usually don't
-have to worry about the origin, as long as the pointer isn't exposed outside
-of the struct. For example, if you implement a static array type that allocates
-memory in its initializer, deallocates it in its destructor, and doesn't expose
-the pointer outside of the struct, the default origin is fine.
+If you're using a pointer in the implementation of a struct, you usually
+don't have to worry about the origin, as long as the pointer isn't exposed
+outside of the struct. For example, if you implement a static array type
+that allocates memory in its initializer, deallocates in its deinitializer,
+and doesn't expose the pointer outside of the struct, the default origin is
+fine.
 
-But if the struct exposes a pointer or reference to that memory, you need to set
-the origin appropriately. For example, the
+But if the struct exposes a pointer or reference to that memory, you need
+to set the origin appropriately. For example, the
 [`List`](/docs/std/collections/list/List/) type has an `unsafe_ptr()`
 method that returns a `Pointer` to the underlying storage. In this case,
-the returned pointer should share the origin of the list, since the list is the
-logical owner of the storage.
+the returned pointer should share the origin of the list, since the list is
+the logical owner of the storage.
 
 That method looks something like this:
 
@@ -577,8 +581,6 @@ def allocating_function() raises:
     var data = alloc[Float64]({count = 64})
     # ...
     raising_function(data.unsafe_ptr())
-    # error: 'data' abandoned without being explicitly destroyed: An `Allocation`
-    #   owns heap storage and must be consumed before it goes out of scope.
     dealloc(data^)
 ```
 
@@ -878,7 +880,7 @@ the vector is loaded from (pointer address) + <var>offset[n]</var>.
 
 To use `Pointer` safely, you need to ensure that the pointer
 points to a single, initialized value. If the value is logically
-owned by the pointer, you need to ensure the value's destructor is
+owned by the pointer, you need to ensure the value's deinitializer is
 called before deallocating the memory.
 
 Using `Pointer(to=value)` and the simple dereference (`ptr[]`) ensures

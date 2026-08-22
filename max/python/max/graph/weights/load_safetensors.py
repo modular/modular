@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 import difflib
-from collections.abc import Mapping, Sequence, Set
+from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from os import PathLike
 
 from max._core.safetensors import SafeTensor, safe_open
@@ -101,7 +102,7 @@ class SafetensorWeights(Weights):
     """
 
     _filepaths: Sequence[PathLike[str]]
-    _tensors: Set[str]
+    _tensors: AbstractSet[str]
     _tensors_to_file_idx: Mapping[str, int]
     _allocated: dict[str, DLPackArray]
     _st_weight_map: dict[str, Buffer]
@@ -114,7 +115,7 @@ class SafetensorWeights(Weights):
         self,
         filepaths: Sequence[PathLike[str]],
         *,
-        tensors: Set[str] | None = None,
+        tensors: AbstractSet[str] | None = None,
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated: dict[str, DLPackArray] | None = None,
@@ -238,7 +239,7 @@ class SafetensorWeights(Weights):
         dtype: DType | None = None,
         shape: ShapeLike | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
         if quantization_encoding is not None:

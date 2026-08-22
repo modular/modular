@@ -46,9 +46,9 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
-    mock_estimate_memory_footprint,
     mock_hf_repo_access,
     mock_pipeline_config_resolve,
+    mock_plan_from_sizes,
 )
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
@@ -802,7 +802,7 @@ class TestFloat32WeightFallbackScoping:
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     with pytest.raises(Exception):
@@ -850,7 +850,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
 
 @requires_hf_network
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config_post_init__other_repo_weights(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -934,7 +934,7 @@ def test_validate_model_path__correct_repo_id_provided(
 
 @requires_hf_network
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -983,7 +983,7 @@ def test_config__test_incompatible_quantization_encoding(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1019,7 +1019,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting2(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1055,7 +1055,7 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting3(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1091,7 +1091,7 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     "TODO: This test is failing due to some int vs. MagicMock mismatch"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__test_retrieve_factory_with_known_architecture(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -1107,11 +1107,11 @@ def test_config__test_retrieve_factory_with_known_architecture(
         ),
     )
 
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
+    PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 @requires_hf_network
 def test_config__test_retrieve_factory_with_unsupported_model_path(
     gemma_3_1b_it_local_path: str,
@@ -1302,7 +1302,7 @@ def test_config__validates_lora_configuration(
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 @requires_hf_network
 def test_config__validates_lora_only_supported_for_llama(
     gemma_3_1b_it_local_path: str,
@@ -1337,7 +1337,7 @@ def test_config__validates_lora_only_supported_for_llama(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 def test_config__validates_lora_works_for_llama(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1369,7 +1369,7 @@ def test_config__validates_lora_works_for_llama(
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 @requires_hf_network
 def test_config__validates_lora_incompatible_with_prefix_caching(
     llama_3_1_8b_instruct_local_path: str,
@@ -1402,7 +1402,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 @requires_hf_network
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
@@ -1437,7 +1437,7 @@ def test_config__validates_lora_single_device_only(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_plan_from_sizes
 @pytest.mark.skipif(
     accelerator_count() < 2, reason="Test requires multiple GPUs"
 )

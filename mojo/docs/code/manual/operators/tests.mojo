@@ -76,7 +76,7 @@ def test_chained_comparisons() raises:
 
 
 def test_chained_len() raises:
-    var short_item_list = [1, 2, 3, 4, 5]
+    var short_item_list: List[Int] = [1, 2, 3, 4, 5]
     var ok = 0 < len(short_item_list) <= 10
     assert_equal(ok, True)  # True
 
@@ -121,7 +121,7 @@ def test_truthiness() raises:
 
 
 def test_membership() raises:
-    var colors = ["red", "green", "blue"]
+    var colors: List[String] = ["red", "green", "blue"]
     assert_equal("red" in colors, True)  # True
     assert_equal("yellow" not in colors, True)  # True
 

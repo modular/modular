@@ -218,7 +218,7 @@ def test_dataset_registry_class_names_exist() -> None:
     """Test that all referenced class names exist in globals."""
     from max.benchmark.benchmark_shared import datasets
 
-    for _, dataset_info in DATASET_REGISTRY.items():
+    for dataset_info in DATASET_REGISTRY.values():
         class_name = dataset_info.class_name
         assert hasattr(datasets, class_name), (
             f"Class {class_name} not found in benchmark_shared.datasets"

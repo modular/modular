@@ -242,34 +242,38 @@ def execute_mla_decode_sparse[
         d_indices_device.unsafe_ptr()
     )
 
-    @__parameter
-    @__copy_capture(
-        out_tt, q_tt, row_offsets_tt, scalar_args_buf_tt, kv_cache, d_indices
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(launch_ctx: DeviceContext) raises:
-            flare_mla_decoding[
-                rank=3,
-                config=MHAConfig[q_dtype](num_heads, Q_DEPTH),
-                ragged=True,
-                sparse=True,
-            ](
-                out_tt,
-                q_tt,
-                kv_cache,
-                CausalMask(),
-                row_offsets_tt,
-                scale,
-                launch_ctx,
-                scalar_args_buf_tt,
-                d_indices=d_indices,
-                indices_stride=top_k,
-            )
+    def kernel_launch(
+        launch_ctx: DeviceContext,
+    ) raises {
+        mut out_tt,
+        imm q_tt,
+        imm kv_cache,
+        imm row_offsets_tt,
+        imm scalar_args_buf_tt,
+        imm d_indices,
+    }:
+        flare_mla_decoding[
+            rank=3,
+            config=MHAConfig[q_dtype](num_heads, Q_DEPTH),
+            ragged=True,
+            sparse=True,
+        ](
+            out_tt,
+            q_tt,
+            kv_cache,
+            CausalMask(),
+            row_offsets_tt,
+            scale,
+            launch_ctx,
+            scalar_args_buf_tt,
+            d_indices=d_indices,
+            indices_stride=top_k,
+        )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @always_inline
+    def bench_func(mut b: Bencher) raises capturing:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

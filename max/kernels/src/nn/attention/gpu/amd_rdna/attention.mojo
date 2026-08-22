@@ -525,8 +525,7 @@ struct AttentionRDNA[
         not_last_iter: Bool,
     ):
         @always_inline
-        @__parameter
-        def _mask_apply_impl[masked: Bool]():
+        def _mask_apply_impl[masked: Bool]() {imm}:
             _mask_apply_rdna[
                 masked=masked,
                 accum_type=Self.accum_type,
@@ -556,8 +555,8 @@ struct AttentionRDNA[
 
         comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(kv_tile_start_row)
-            unswitch[_mask_apply_impl](
-                mask_status == TileMaskStatus.PARTIAL_MASK
+            unswitch(
+                mask_status == TileMaskStatus.PARTIAL_MASK, _mask_apply_impl
             )
         else:
             _mask_apply_impl[masked=True]()

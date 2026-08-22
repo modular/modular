@@ -31,6 +31,9 @@ from max.pipelines.architectures.qwen3_5.memory_planner import (
     Qwen3_5MemoryPlanner,
 )
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
+from max.pipelines.architectures.qwen3_5.quantization import (
+    Qwen3_5QuantScheme,
+)
 
 _LAYER_TYPES = [
     "linear_attention",
@@ -40,7 +43,13 @@ _LAYER_TYPES = [
 ]
 
 
-def _qwen_config() -> Qwen3_5Config:
+def _qwen_config(
+    *,
+    dtype: DType = DType.bfloat16,
+    declared_dtype: DType | None = None,
+    quant_scheme: Qwen3_5QuantScheme | None = None,
+    state_pool_dtype: DType | None = None,
+) -> Qwen3_5Config:
     kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
@@ -62,7 +71,10 @@ def _qwen_config() -> Qwen3_5Config:
         intermediate_size=128,
         interleaved_rope_weights=True,
         vocab_size=1000,
-        dtype=DType.bfloat16,
+        dtype=dtype,
+        declared_dtype=declared_dtype,
+        quant_scheme=quant_scheme,
+        state_pool_dtype=state_pool_dtype,
         model_quantization_encoding=None,
         quantization_config=None,
         kv_params=kv_params,
@@ -81,11 +93,13 @@ def _devices(free_memory: int) -> list[Device]:
     )
 
 
-def _pipeline_config(max_batch_size: int | None) -> Mock:
+def _pipeline_config(
+    max_batch_size: int | None, encoding: str = "bfloat16"
+) -> Mock:
     pipeline_config = Mock()
     pipeline_config.runtime.max_batch_size = max_batch_size
     pipeline_config.model.kv_cache.device_memory_utilization = 0.9
-    pipeline_config.model.quantization_encoding = "bfloat16"
+    pipeline_config.model.quantization_encoding = encoding
     # A resolved (no-op) cast makes encoding selection take the fast path.
     pipeline_config.model._resolved_dtype_cast = (None, None)
     return pipeline_config
@@ -145,3 +159,119 @@ def test_activation_memory_prefers_user_max_batch_size() -> None:
     )
 
     assert activation == 16 * 2688
+
+
+def _nvfp4_scheme() -> Qwen3_5QuantScheme:
+    """A scheme whose quantized bases are packed uint8 over a bf16 compute."""
+    return Qwen3_5QuantScheme(
+        mlp=None,
+        attn=None,
+        mlp_layers=frozenset(),
+        attn_layers=frozenset(),
+        quantize_lm_head=False,
+        compute_dtype=DType.bfloat16,
+    )
+
+
+def test_nvfp4_state_pools_are_budgeted_at_the_compute_dtype() -> None:
+    """Quantizing the weights must not shrink the state-pool reservation.
+
+    The pools hold no quantized tensors, so they stay bf16 while ``dtype``
+    becomes 1-byte packed ``uint8``. Budgeting them from the encoding's
+    storage dtype reserved half of what the graph allocates.
+    """
+    planner = Qwen3_5MemoryPlanner(
+        _qwen_config(dtype=DType.uint8, declared_dtype=DType.bfloat16)
+    )
+    pipeline_config = _pipeline_config(
+        max_batch_size=16, encoding="float4_e2m1fnx2"
+    )
+
+    activation = planner.estimate_activation_memory(
+        pipeline_config, _hf_config()
+    )
+
+    # Not 16 * 1344: the pools are bf16 even though the weights are 4-bit.
+    assert activation == 16 * 2688
+
+
+def test_nvfp4_state_pools_use_the_scheme_once_finalize_has_run() -> None:
+    """After ``finalize`` the resolved scheme carries the compute dtype.
+
+    ``declared_dtype`` covers the pre-``finalize`` window that memory
+    planning runs in; both windows must agree.
+    """
+    planner = Qwen3_5MemoryPlanner(
+        _qwen_config(dtype=DType.uint8, quant_scheme=_nvfp4_scheme())
+    )
+
+    activation = planner.estimate_activation_memory(
+        _pipeline_config(max_batch_size=16, encoding="float4_e2m1fnx2"),
+        _hf_config(),
+    )
+
+    assert activation == 16 * 2688
+
+
+def test_inferred_batch_size_is_not_inflated_by_a_quantized_encoding() -> None:
+    """Quantizing the weights must not change the inferred batch size.
+
+    ``infer_optimal_batch_size`` divides the budget by the per-request state
+    cost, so reading the 1-byte storage dtype there doubled the batch it
+    considered safe -- the opposite of the conservative direction. The pools
+    are bf16 in both configs, so both must infer the same bound.
+    """
+    # Sized so the result lands below the `min(512, ...)` clamp; above it
+    # both configs saturate and the difference is invisible.
+    devices = _devices(free_memory=8 * 1024**3)
+    weights_size = 5 * 1024**3
+
+    bf16 = _qwen_config().infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+    nvfp4 = _qwen_config(
+        dtype=DType.uint8, declared_dtype=DType.bfloat16
+    ).infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+
+    assert nvfp4 == bf16
+
+
+def test_float32_state_pools_double_the_reservation() -> None:
+    """``state_pool_dtype="float32"`` doubles the pool, so must double the
+    reservation.
+
+    The knob is the only input that changes here, and it is read through
+    ``state_dtype`` rather than the model dtype, so an accounting path bound
+    to the model dtype would reserve half.
+    """
+    planner = Qwen3_5MemoryPlanner(_qwen_config(state_pool_dtype=DType.float32))
+
+    activation = planner.estimate_activation_memory(
+        _pipeline_config(max_batch_size=16), _hf_config()
+    )
+
+    assert activation == 16 * 5376  # 2 * 2688
+
+
+def test_float32_state_pools_shrink_the_inferred_batch_size() -> None:
+    """A 4-byte pool costs twice as much per request, so fewer fit.
+
+    ``infer_optimal_batch_size`` divides by the per-request cost; if that
+    cost ignored the override the inferred bound would be twice what the
+    device can hold.
+    """
+    devices = _devices(free_memory=8 * 1024**3)
+    weights_size = 5 * 1024**3
+
+    bf16 = _qwen_config().infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+    fp32 = _qwen_config(
+        state_pool_dtype=DType.float32
+    ).infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+
+    assert fp32 == bf16 // 2
