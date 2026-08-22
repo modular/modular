@@ -150,7 +150,7 @@ def gemv_partial_norm_kernel[
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
     weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
-    finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: MutPointer[Scalar[DType.int32], MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Float32,
     n: Int32,
@@ -444,7 +444,7 @@ def gemv_partial_norm_kernel[
             # between successive kernel launches provides visibility
             # for the next launch's readers.
             if tid == 0:
-                finish_counter[0] = Scalar[DType.int32](0)
+                finish_counter.unsafe_store(Scalar[DType.int32](0))
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -479,7 +479,7 @@ def _gemv_partial_norm_fused[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
+    finish_counter: MutPointer[Scalar[DType.int32], _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
 ) raises:
@@ -567,7 +567,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
+    y_scratch: MutPointer[Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
     """Unfused 2-launch path using caller-provided y scratch.
@@ -606,7 +606,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
         var idx = y.layout(coords)
-        return y.ptr.load[width=width](idx)
+        return y.ptr.unsafe_load[width=width](idx)
 
     @always_inline
     @__copy_capture(normed_output)
@@ -615,7 +615,9 @@ def _gemv_partial_norm_unfused_with_scratch[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:
         var idx = normed_output.layout(coords)
-        normed_output.ptr.store[width=width, alignment=alignment](idx, val)
+        normed_output.ptr.unsafe_store[width=width, alignment=alignment](
+            idx, val
+        )
 
     var gamma_c = rebind[TileTensor[c_type, gamma.LayoutType, gamma.origin]](
         gamma
@@ -746,7 +748,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_scratch: MutPointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     """Unfused 2-launch path with caller-provided y scratch.
@@ -818,7 +820,7 @@ def gemv_and_partial_norm_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: MutPointer[Scalar[DType.int32], MutAnyOrigin],
     ctx: DeviceContext,
     trace_buf: TraceBufT = NullTrace(),
 ) raises:

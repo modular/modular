@@ -146,11 +146,11 @@ def _bitonic_local_sort_kernel[
     ]()
 
     if gid < _n_arg:
-        shared_vals[tid] = vals[gid]
-        shared_idxs[tid] = idxs[gid]
+        shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
+        shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
     else:
-        shared_vals[tid] = _sentinel_val[input_dtype, ascending]()
-        shared_idxs[tid] = Scalar[indices_dtype](-1)
+        shared_vals.unsafe_store(tid, _sentinel_val[input_dtype, ascending]())
+        shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
 
     var k = 2
     while k <= BLOCK_SIZE:
@@ -159,8 +159,8 @@ def _bitonic_local_sort_kernel[
             barrier()
             var partner = tid ^ j
             if partner > tid:
-                var vi = shared_vals[tid]
-                var vp = shared_vals[partner]
+                var vi = shared_vals.unsafe_load(tid)
+                var vp = shared_vals.unsafe_load(partner)
 
                 var cmp_val: Bool
                 comptime if ascending:
@@ -170,18 +170,20 @@ def _bitonic_local_sort_kernel[
 
                 var direction = (tid & k) == 0
                 if cmp_val == direction:
-                    shared_vals[tid] = vp
-                    shared_vals[partner] = vi
-                    var ii = shared_idxs[tid]
-                    shared_idxs[tid] = shared_idxs[partner]
-                    shared_idxs[partner] = ii
+                    shared_vals.unsafe_store(tid, vp)
+                    shared_vals.unsafe_store(partner, vi)
+                    var ii = shared_idxs.unsafe_load(tid)
+                    shared_idxs.unsafe_store(
+                        tid, shared_idxs.unsafe_load(partner)
+                    )
+                    shared_idxs.unsafe_store(partner, ii)
             j >>= 1
         k <<= 1
 
     barrier()
     if gid < _n_arg:
-        vals[gid] = shared_vals[tid]
-        idxs[gid] = shared_idxs[tid]
+        vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
+        idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -226,16 +228,16 @@ def _bitonic_merge_local_kernel[
         address_space=AddressSpace.SHARED,
     ]()
 
-    shared_vals[tid] = vals[gid]
-    shared_idxs[tid] = idxs[gid]
+    shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
+    shared_idxs.unsafe_store(tid, idxs.unsafe_load(gid))
 
     var j = BLOCK_SIZE >> 1
     while j > 0:
         barrier()
         var partner = tid ^ j
         if partner > tid:
-            var vi = shared_vals[tid]
-            var vp = shared_vals[partner]
+            var vi = shared_vals.unsafe_load(tid)
+            var vp = shared_vals.unsafe_load(partner)
 
             var cmp_val: Bool
             comptime if ascending:
@@ -245,16 +247,16 @@ def _bitonic_merge_local_kernel[
 
             var direction = (gid & _stage) == 0
             if cmp_val == direction:
-                shared_vals[tid] = vp
-                shared_vals[partner] = vi
-                var ii = shared_idxs[tid]
-                shared_idxs[tid] = shared_idxs[partner]
-                shared_idxs[partner] = ii
+                shared_vals.unsafe_store(tid, vp)
+                shared_vals.unsafe_store(partner, vi)
+                var ii = shared_idxs.unsafe_load(tid)
+                shared_idxs.unsafe_store(tid, shared_idxs.unsafe_load(partner))
+                shared_idxs.unsafe_store(partner, ii)
         j >>= 1
 
     barrier()
-    vals[gid] = shared_vals[tid]
-    idxs[gid] = shared_idxs[tid]
+    vals.unsafe_store(gid, shared_vals.unsafe_load(tid))
+    idxs.unsafe_store(gid, shared_idxs.unsafe_load(tid))
 
 
 def _argsort_gpu_impl[
@@ -423,7 +425,7 @@ def _argsort_gpu[
                 iota[indices.dtype, width](Scalar[indices.dtype](i)),
             )
             input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
-                i, input.ptr.load[width=width](i)
+                i, input.ptr.unsafe_load[width=width](i)
             )
 
         elementwise[
