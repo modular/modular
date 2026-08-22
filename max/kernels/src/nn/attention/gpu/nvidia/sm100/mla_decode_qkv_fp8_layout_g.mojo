@@ -92,6 +92,9 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ORaggedTMATile,
+    rows_owned,
+    store_row_coords,
     MLA_Decode_Pack,
     OffsetPosition,
     KVPipelineGeneric,
@@ -756,7 +759,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         out_smem: SharedMemPointer[Scalar[Self.output_type]],
         # TMA-tile BK is anchored to BN_PV/4 (the per-warp stripe width),
         # not BN_QK — Layout-G-128 has BN_QK=128 but still writes 64-col stripes.
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             BK=Self.config.BN_PV // 4,
@@ -791,6 +794,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
+        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
 
         # col = n * BN_PV + m * (BN_PV // 2) + k * BK_PV
         comptime slot_col_stride_LG: Int = Self.BN_PV // 2
@@ -828,13 +832,14 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             ](q_stage_ptr_LG, o_tt_layout_LG)
                             if is_leader:
                                 fence_async_view_proxy()
-                                o_tma.async_store(
+                                o_tma.async_store_3d(
                                     smem_tensor_LG,
-                                    (
+                                    store_row_coords[Self.config.out_rows](
                                         col_LG,
                                         offset_position.out_row_offset_at(
                                             q_local_LG
                                         ),
+                                        rows_to_store,
                                     ),
                                 )
                     else:
@@ -846,7 +851,12 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         ](stage_ptr_LG, o_tt_layout_LG)
                         if is_leader:
                             fence_async_view_proxy()
-                            o_tma.async_store(smem_tensor_LG, (col_LG, row))
+                            o_tma.async_store_3d(
+                                smem_tensor_LG,
+                                store_row_coords[Self.config.out_rows](
+                                    col_LG, row, rows_to_store
+                                ),
+                            )
                 out_cons.release(elect_mask)
 
         if is_leader:
@@ -1036,7 +1046,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             BN=Self.config.BN_QK,
             BK=Self.config.BK_QK,
         ],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             # Per-warp output stripe (BF16/SWIZZLE_128B clamps innermost to 64).

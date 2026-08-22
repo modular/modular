@@ -181,8 +181,10 @@ def _unbucketed_split_error(num_partitions: Int) -> Error:
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     QOTMATile,
+    ORaggedTMATile,
     ScalesTMATile,
     tma_tile_qo,
+    tma_tile_o,
     tma_tile_scales,
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
@@ -1717,7 +1719,7 @@ def mla_decode_sm100_sink_split_k[
         output.ptr
     )
     var num_rows_o = num_matrix_view_rows_decode(output)
-    var o_tma_op = tma_tile_qo[
+    var o_tma_op = tma_tile_o[
         swizzle_mode=mla_config.swizzle_mode,
         BM=mla_config.out_rows,
         BK=mla_config.BN_PV // 4,
@@ -2824,7 +2826,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
         BN=config.BK_PV,  # tile_m =64
         BK=config.BK_QK,  # tile_n =576
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -2998,7 +3000,7 @@ def launch_mla_sm100_decode_native_fp8[
         BN=config.BK_PV,
         BK=config.BK_QK,
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -3106,7 +3108,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         BN=config_e.BK_PV,
         BK=config_e.BK_QK,
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config_e.out_rows,
         BK=config_e.BN_PV // 4,
@@ -3229,7 +3231,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         BK=config.rope_depth,  # 64
     ],
     scale_tma: ScalesTMATile[BN_QK=config.BN_QK],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -3371,7 +3373,7 @@ def launch_mla_sm100_decode_sparse[
             ](),
         ),
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -3572,7 +3574,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             ](),
         ),
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -3750,7 +3752,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
             ](),
         ),
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,
@@ -3920,7 +3922,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             ](),
         ),
     ],
-    o_tma: QOTMATile[
+    o_tma: ORaggedTMATile[
         dtype=output_type,
         BM=config.out_rows,
         BK=config.BN_PV // 4,

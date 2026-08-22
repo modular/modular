@@ -77,6 +77,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ORaggedTMATile,
     MLA_Decode_Pack,
     OffsetPosition,
     KVPipelineGeneric,
@@ -220,7 +221,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
             desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
         ],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             BK=Self.config.BN_PV // 4,

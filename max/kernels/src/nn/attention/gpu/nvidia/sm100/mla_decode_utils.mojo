@@ -25,8 +25,8 @@ from std.sys import size_of, _RegisterPackType
 from std.gpu import thread_idx, block_idx, warp_id
 from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.host.info import B200
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.primitives.grid_controls import launch_dependent_grids
@@ -152,6 +152,88 @@ def tma_tile_qo[
             swizzle_mode=swizzle_mode,
         ](ctx, tensor)
     )
+
+
+# Output TMA tile whose stored row count is chosen per copy. The row axis is
+# its own descriptor dim of extent BM, so a row coordinate of
+# BM - rows_to_store leaves rows_to_store box rows in bounds and the TMA
+# masks the rest. tma_tile_o builds the descriptor and store_row_coords the
+# coordinate.
+# Similar ragged masking technique as RaggedTMA3DTile in
+# layout/tma_async.mojo; consider merging the two in the future.
+comptime ORaggedTMATile[
+    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+] = TMATensorTile[
+    dtype,
+    3,
+    IndexList[3](1, BM, BK),
+    _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+    is_k_major=True,
+]
+
+
+@always_inline
+def tma_tile_o[
+    dtype: DType,
+    //,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    BK: Int,
+    depth: Int,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    rows: Int,
+    out res: ORaggedTMATile[dtype, BM, BK, swizzle_mode],
+) raises:
+    """Creates the MLA decode output TMA descriptor.
+
+    The row axis is its own descriptor dim of extent BM, reached through a
+    separate outer dim with the same row stride. This makes the stored row
+    count a per-copy coordinate, built by store_row_coords. Box row r lands
+    on tensor row row + r, and box rows at or past rows_to_store fall
+    outside the extent and are dropped. The descriptor base sits BM rows
+    before ptr, but masked rows are never written, so memory before ptr is
+    never touched.
+
+    Parameters:
+        dtype: Element type of the output tensor (inferred).
+        swizzle_mode: TMA swizzle mode applied to the descriptor.
+        BM: Row extent of the box.
+        BK: Tile width in columns for each TMA copy.
+        depth: Column count of the full output tensor.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base pointer of the output tensor in device memory.
+        rows: Number of rows in the full output tensor.
+    """
+    # Outer coordinates run up to rows, so the extent is one past that. Its
+    # box is 1, so it never masks.
+    res = create_tma_descriptor[dtype, 3, swizzle_mode](
+        DeviceBuffer(ctx, ptr - depth * BM, 1, owning=False),
+        IndexList[3](rows + 1, BM, depth),
+        IndexList[3](depth, depth, 1),
+        _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+    )
+
+
+@always_inline
+def store_row_coords[
+    BM: Int
+](col: Int, row: Int, rows_to_store: Int) -> Tuple[Int, Int, Int]:
+    """Builds the ORaggedTMATile store coordinate for a partial row count.
+
+    Args:
+        col: Column offset within the output row.
+        row: First output tensor row the copy writes.
+        rows_to_store: How many rows of the box are real, at most BM.
+
+    Returns:
+        Coordinates for async_store_3d, ordered innermost dim first.
+    """
+    return (col, BM - rows_to_store, row + rows_to_store)
 
 
 # Per-token scales TMA tile: loads BN_QK contiguous float32 values via TMA.
@@ -735,6 +817,26 @@ struct MLA_SM100_Decode_Config:
             and self.MMA_M == 32
             and self.num_kv_stages >= 4
         )
+
+
+@always_inline
+def rows_owned[config: MLA_SM100_Decode_Config](block_x: Int) -> Int:
+    """Returns the number of output rows the CTA at grid x-index block_x
+    owns.
+
+    Every head group is out_rows tall except the last, which holds the
+    remainder of num_q_heads.
+
+    Parameters:
+        config: Decode config supplying the head-group geometry.
+
+    Args:
+        block_x: The CTA's grid x-index.
+
+    Returns:
+        The number of output rows the CTA owns, at most out_rows.
+    """
+    return min(config.out_rows, config.num_q_heads - block_x * config.BM)
 
 
 # ------------------------------------------------------------------------------
@@ -3326,7 +3428,7 @@ struct MLA_SM100_Decode_Common[
         out_row_offset: Int,
         batch_size: Int,
         lse_accum_split_ptr: Self.SplitAccumType,
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             # BN_PV/4 (per-warp stripe), not BN_QK — must match `store`'s
@@ -4531,7 +4633,7 @@ struct MLA_SM100_Decode_Common[
             num_consumer=1,
         ],
         out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             # BF16/SWIZZLE_128B clamps innermost to 64 (= BN_PV/4).
@@ -4564,6 +4666,7 @@ struct MLA_SM100_Decode_Common[
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: Int = offset_position.out_row_offset
+        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
 
         #   0       64     128     192      256      320      384     448     512
         #   |-------|-------|-------|--------|--------|--------|-------|-------|
@@ -4600,13 +4703,14 @@ struct MLA_SM100_Decode_Common[
                             ](q_stage_ptr, o_tt_layout)
                             if is_leader:
                                 fence_async_view_proxy()
-                                o_tma.async_store(
+                                o_tma.async_store_3d(
                                     smem_tensor,
-                                    (
+                                    store_row_coords[Self.config.out_rows](
                                         col,
                                         offset_position.out_row_offset_at(
                                             q_local
                                         ),
+                                        rows_to_store,
                                     ),
                                 )
                     else:
@@ -4617,7 +4721,12 @@ struct MLA_SM100_Decode_Common[
                         ](stage_ptr, o_tt_layout)
                         if is_leader:
                             fence_async_view_proxy()
-                            o_tma.async_store(smem_tensor, (col, row))
+                            o_tma.async_store_3d(
+                                smem_tensor,
+                                store_row_coords[Self.config.out_rows](
+                                    col, row, rows_to_store
+                                ),
+                            )
                 out_cons.release(elect_mask)
         if is_leader:
             o_tma.commit_group()
