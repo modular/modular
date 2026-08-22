@@ -463,10 +463,14 @@ struct Array[T: AnyType, length: Int](
         var base = self.unsafe_ptr()
         var ptr = base
 
-        for _ in range(0, unroll_end, batch_size):
-            comptime for _ in range(batch_size):
-                ptr.unsafe_write(copy=fill)
-                ptr = ptr.unsafe_offset(1)
+        # Skip the batched loop entirely when it cannot run. Emitting it for
+        # `unroll_end == 0` leaves the inlined iterator's line-table marker
+        # behind as an irremovable barrier, even though the loop is dead.
+        comptime if unroll_end > 0:
+            for _ in range(0, unroll_end, batch_size):
+                comptime for _ in range(batch_size):
+                    ptr.unsafe_write(copy=fill)
+                    ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
         comptime for _ in range(unroll_end, Self.length):
@@ -750,6 +754,43 @@ struct Array[T: AnyType, length: Int](
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
+    @always_inline
+    def __add__(
+        deinit self,
+        deinit rhs: Array[Self.T, _],
+        out result: Array[Self.T, Self.length + rhs.length],
+    ) where conforms_to(Self.T, Movable):
+        """Concatenates this array with another array.
+
+        Both arrays are consumed and their elements are moved into the
+        result.
+
+        Args:
+            rhs: The array whose elements follow this array's elements in
+                the result.
+
+        Returns:
+            An array of length `Self.length + rhs.length` containing the
+            elements of `self` followed by the elements of `rhs`.
+
+        Examples:
+
+        ```mojo
+        var a: Array[Int, 2] = [1, 2]
+        var b: Array[Int, 3] = [3, 4, 5]
+        var c = (a^) + (b^)  # [1, 2, 3, 4, 5]
+        ```
+        """
+        result = {uninitialized = True}
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr(), src=self.unsafe_ptr(), count=Self.length
+        )
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr().unsafe_offset(Self.length),
+            src=rhs.unsafe_ptr(),
+            count=rhs.length,
+        )
+
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
@@ -1023,4 +1064,43 @@ struct Array[T: AnyType, length: Int](
         return _ArrayIter[forward=False](
             Self.length,
             Pointer(to=self),
+        )
+
+    @always_inline
+    def repeat[
+        n: Int
+    ](
+        deinit self,
+        out result: Array[Self.T, Self.length * n],
+    ) where (
+        conforms_to(Self.T, Copyable) and (n > 0),
+        "`Array * n` requires n > 0",
+    ):
+        """Repeats this array's elements the given number of times.
+
+
+        Parameters:
+            n: The number of repetitions. Must be greater than 0.
+
+        Returns:
+            An array of length `Self.length * rhs` containing the elements
+            of `self` repeated `rhs` times.
+
+        Examples:
+
+        ```mojo
+        var a = [1, 2].repeat[3]()  # Array[Int, 6](1, 2, 1, 2, 1, 2)
+        ```
+        """
+        result = {uninitialized = True}
+        for rep in range(n - 1):
+            unsafe_uninit_copy_n[overlapping=False](
+                dest=result.unsafe_ptr().unsafe_offset(rep * Self.length),
+                src=self.unsafe_ptr(),
+                count=Self.length,
+            )
+        unsafe_uninit_move_n[overlapping=False](
+            dest=result.unsafe_ptr().unsafe_offset((n - 1) * Self.length),
+            src=self.unsafe_ptr(),
+            count=Self.length,
         )

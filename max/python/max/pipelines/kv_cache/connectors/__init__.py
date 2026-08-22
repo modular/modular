@@ -26,20 +26,17 @@ import logging
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from max.driver import Device, accelerator_api
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
+    KVConnectorConfigInterface,
     KVConnectorType,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
 from .null_connector import NullConnector
-
-if TYPE_CHECKING:
-    from max.pipelines.kv_cache.config import KVConnectorConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -87,7 +84,7 @@ def warn_stale_offload_dirs(offload_dir: str) -> None:
     )
 
 
-def _resolve_disk_offload_dir(cfg: KVConnectorConfig) -> str:
+def _resolve_disk_offload_dir(cfg: KVConnectorConfigInterface) -> str:
     """Returns the disk offload dir, auto-creating one if unset.
 
     A single connector serves every DP replica, so the directory is created
@@ -104,59 +101,54 @@ def _resolve_disk_offload_dir(cfg: KVConnectorConfig) -> str:
 
 
 def create_connector(
-    kv_connector: KVConnectorType | None,
-    kv_connector_config: KVConnectorConfig | None,
     devices: Sequence[Device],
     replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
-    total_num_host_blocks: int,
     params: KVCacheParamInterface,
 ) -> KVConnector:
-    """Create a KV cache connector instance based on ``kv_connector``.
+    """Create a KV cache connector instance from ``params.kv_connector_config``.
 
     A single connector serves every DP replica for all connector types:
     ``replica_kv_memory`` holds each replica's device buffers, and load/offload
     select the replica via ``replica_idx`` (SERVOPT-1501). The host/disk tiers
-    back this with one shared pinned host buffer / disk cache; the distributed
-    ``dkv`` connector owns one Rust client per replica internally.
+    back this with one shared pinned host buffer / disk cache, which the tiered
+    connector sizes from the config's ``host_offload_max_gb`` /
+    ``disk_offload_max_gb`` (or from its own device page pool when either is
+    unset); the distributed ``dkv`` connector owns one Rust client per replica
+    internally.
 
     ``tiered`` is a backward-compatible alias for the Rust ``rust_tiered``
     connector, which replaced its deleted Python implementation, and therefore
     inherits ``rust_tiered``'s CUDA/HIP requirement.
 
     Args:
-        kv_connector: Connector type to instantiate (or None for no-op).
-        kv_connector_config: Connector-specific configuration object.
         devices: Devices for the KV cache tensors (all participating devices).
         replica_kv_memory: Per-replica offload-ready KV memory units (one inner
             sequence per DP replica).
-        total_num_host_blocks: Total number of host blocks for swapping (the
-            full shared pool across replicas for ``tiered``).
-        params: KV-cache parameters; the ``dkv`` connector uses them to derive
-            its multi-tenant per-GPU handshake identity.
+        params: KV-cache parameters. Carries the connector config (type and
+            settings); the ``dkv`` connector also uses them to derive its
+            multi-tenant per-GPU handshake identity.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
     """
-    connector = kv_connector
+    cfg = params.kv_connector_config
+    connector = cfg.type
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
 
-        if (
-            kv_connector_config is None
-            or not kv_connector_config.block_store_endpoint
-        ):
+        if not cfg.block_store_endpoint:
             raise ValueError(
                 "kv_connector_config must include 'block_store_endpoint' "
-                "when kv_connector is 'dkv'"
+                "when its type is 'dkv'"
             )
         logger.info(
             "Creating DKVConnector: endpoint=%s",
-            kv_connector_config.block_store_endpoint,
+            cfg.block_store_endpoint,
         )
         return DKVConnector(
             replica_kv_memory=replica_kv_memory,
-            local_block_store_endpoint=kv_connector_config.block_store_endpoint,
+            local_block_store_endpoint=cfg.block_store_endpoint,
             devices=devices,
             params=params,
         )
@@ -164,11 +156,13 @@ def create_connector(
     # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
     # its Python implementation was deleted.
     if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
-        cfg = kv_connector_config
         # Check the KV memory's own device before the build's accelerator API,
         # so a CPU-device pipeline fails the same way on every host rather than
         # reporting "no CUDA/HIP" only on GPU-less ones.
-        if replica_kv_memory and replica_kv_memory[0][0].buffer.device.is_host:
+        if (
+            replica_kv_memory
+            and replica_kv_memory[0][0].buffers[0].device.is_host
+        ):
             raise ValueError("KVCacheMemory is on the CPU; cannot offload")
         # The Rust connector drives the GPU copy engines directly via its own
         # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not
@@ -179,11 +173,6 @@ def create_connector(
                 f"kv_connector '{connector.value}' requires a CUDA or HIP GPU, "
                 f"found incompatible accelerator API: '{api}'."
             )
-        if cfg is None:
-            raise ValueError(
-                "kv_connector_config is required when kv_connector is "
-                f"'{connector.value}'"
-            )
         from .rust_tier_connector import RustTierConnector
 
         disk_dir = _resolve_disk_offload_dir(cfg)
@@ -191,22 +180,24 @@ def create_connector(
             logger.warning(
                 "kv_connector '%s' is deprecated: its Python implementation "
                 "was removed and it now runs the Rust 'rust_tiered' connector. "
-                "Pass '--kv-connector rust_tiered' instead.",
+                'Pass --kv-connector-config \'{"type": "rust_tiered"}\' '
+                "instead.",
                 connector.value,
             )
         logger.debug(
             "Creating RustTierConnector: "
-            f"host_blocks={total_num_host_blocks}, "
+            f"host_max_gb={cfg.host_offload_max_gb}, "
             f"disk_dir={disk_dir}, "
             f"disk_max_gb={cfg.disk_offload_max_gb}, "
             f"num_disk_workers={cfg.num_disk_workers}"
         )
+        # Both budgets may be None: the connector then sizes each tier from its
+        # own device page pool.
         return RustTierConnector(
             replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_blocks,
-            kv_hash_algo=params.kv_hash_algo,
             disk_cache_dir=disk_dir,
-            max_disk_size_gb=cfg.disk_offload_max_gb,
+            host_offload_max_gb=cfg.host_offload_max_gb,
+            disk_offload_max_gb=cfg.disk_offload_max_gb,
             num_disk_workers=cfg.num_disk_workers,
         )
 

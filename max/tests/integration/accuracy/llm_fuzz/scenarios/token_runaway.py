@@ -300,8 +300,7 @@ def _detect_repetition_loop(
         for i in range(p, m):
             if tail[i] == tail[i - p]:
                 run += 1
-                if run > max_run:
-                    max_run = run
+                max_run = max(max_run, run)
             else:
                 run = 0
         if max_run == 0:

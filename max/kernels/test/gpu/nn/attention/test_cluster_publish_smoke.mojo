@@ -58,7 +58,7 @@ from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
 from layout.tma_async import SharedMemBarrier
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 comptime BASE = 1000

@@ -108,7 +108,7 @@ class WanLayerNorm(Module):
         elementwise_affine: bool = True,
         use_bias: bool = True,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -151,7 +151,7 @@ class WanRMSNorm(Module):
         eps: float = 1e-6,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> None:
         super().__init__()
         self.weight = Weight("weight", dtype, [dim], device)
@@ -168,7 +168,7 @@ class WanTextProjection(Module):
         hidden_size: int,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -214,7 +214,7 @@ class WanImageEmbedder(Module):
         out_dim: int,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -269,7 +269,7 @@ class WanTimeTextImageEmbedding(Module):
         *,
         image_dim: int | None = None,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -347,7 +347,7 @@ class WanSelfAttention(Module):
         eps: float,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -449,7 +449,7 @@ class WanCrossAttention(Module):
         *,
         added_kv_proj_dim: int | None = None,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -620,7 +620,7 @@ class WanFeedForward(Module):
         ffn_dim: int,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -693,7 +693,7 @@ class WanTransformerBlock(Module):
         *,
         added_kv_proj_dim: int | None = None,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
         quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
@@ -805,7 +805,7 @@ class WanTransformerPreProcess(Module):
         config: WanConfigBase,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> None:
         super().__init__()
         dim = config.num_attention_heads * config.attention_head_dim
@@ -887,7 +887,7 @@ class WanTransformerPostProcess(Module):
         config: WanConfigBase,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> None:
         super().__init__()
         dim = config.num_attention_heads * config.attention_head_dim
@@ -962,7 +962,7 @@ class WanTransformer3DModel(Module):
         config: WanConfigBase,
         *,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> None:
         super().__init__()
         self.config = config

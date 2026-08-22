@@ -27,7 +27,6 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
@@ -70,10 +69,6 @@ class RecordingConnector:
     @property
     def name(self) -> str:
         return "recording"
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})
 
     def offload(
         self,
@@ -227,9 +222,9 @@ class _FakeKVMemory:
     copies without touching device memory, so a cross-replica prefix-cache hit
     can be exercised CPU-only.
 
-    ``buffer`` mirrors ``KVCacheMemory.buffer`` so
+    ``bytes_per_page`` mirrors ``KVCacheMemory.bytes_per_page`` so
     ``_copy_blocks_across_replicas`` can accumulate
-    ``cross_replica_bytes_copied`` from ``buffer.shape[1]``.
+    ``cross_replica_bytes_copied``.
     """
 
     def __init__(
@@ -241,8 +236,8 @@ class _FakeKVMemory:
         self._recorder = (
             recorder if recorder is not None else _BatchCopyRecorder()
         )
-        self.buffer = SimpleNamespace(shape=(1, _FAKE_BYTES_PER_PAGE))
-        self.all_buffers = [
+        self.bytes_per_page = _FAKE_BYTES_PER_PAGE
+        self.buffers = [
             _FakeBuffer(self._recorder, device_id=did) for did in device_ids
         ]
 
@@ -280,10 +275,10 @@ def _make_block_manager(
     # one recorder: submits land on destination page views, but tests often
     # assert via a source unit handle.
     #
-    # ``unit_device_ids[u]`` is the per-buffer device-id list for unit ``u``:
-    # MLA-like replicated = same ids across units (e.g. ((0,1),(0,1)));
-    # MHA-like sharded = one buffer per unit on distinct devices
-    # (e.g. ((0,),(1,))).
+    # ``unit_device_ids[u]`` is the per-shard device-id list for unit ``u``. Each
+    # unit carries every TP shard, so a quantized cache is two units over the
+    # same devices (e.g. ((0,1),(0,1))) whether it is MLA-replicated or sharded;
+    # a single-kind cache is one unit (e.g. ((0,1),)).
     replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
     if num_replicas > 1:
         recorder = _BatchCopyRecorder()
@@ -591,11 +586,13 @@ def test_cross_replica_hit_merges_units_into_one_submit() -> None:
 def test_cross_replica_hit_covers_every_device_in_one_submit() -> None:
     """MHA-like layout reaches both TP devices from the single submit.
 
-    Two units with one buffer each on devices 0 and 1 (non-replicated TP).
-    Every unit's pages must be present and attributed to its own destination
-    device; dropping a unit would silently leave one device's pages stale.
+    One unit carrying its two TP shards on devices 0 and 1 (non-replicated TP),
+    which is what ``to_memory()`` authors for a sharded cache. Every shard's
+    pages must be present and attributed to its own destination device; dropping
+    a shard would silently leave one device's pages stale.
     """
-    unit_device_ids = ((0,), (1,))
+    unit_device_ids = ((0, 1),)
+    num_buffers = sum(len(ids) for ids in unit_device_ids)
     bm, _ = _make_block_manager(num_replicas=2, unit_device_ids=unit_device_ids)
     rid = RequestID("req-xrep-mha")
     hashes = [_b(111), _b(222)]
@@ -612,7 +609,7 @@ def test_cross_replica_hit_covers_every_device_in_one_submit() -> None:
 
     assert len(served) == 2
     assert src_unit.batched_calls == 1
-    assert len(src_unit.copies) == len(unit_device_ids) * len(hashes)
+    assert len(src_unit.copies) == num_buffers * len(hashes)
     assert sorted(src_unit.dst_device_ids) == sorted([0, 1] * len(hashes))
 
 
@@ -669,30 +666,6 @@ def test_cross_replica_copy_disabled_count_is_local_only() -> None:
         )
         == 2
     )
-
-
-def test_touch_not_fired_without_external_tier() -> None:
-    """A connector with no external tier is never touched on a device hit.
-
-    The G0 recency ``touch`` is gated behind the ``host_block_count.total == 0``
-    early-return, so a NullConnector-style connector (``host_block_count.total == 0``,
-    whose ``touch`` is a pure no-op) sees no ``touch`` call at all and pays no
-    per-hit payload cost. A plain ``RecordingConnector`` reports
-    ``host_block_count.total == 0`` and records any touch, so the empty ``touches``
-    assertion verifies the gate rather than a silent no-op.
-    """
-    bm, connector = (
-        _make_block_manager()
-    )  # RecordingConnector: no external tier
-    rid = RequestID("req-null")
-    bm.req_to_hashes[rid] = [_b(111), _b(222)]
-    _commit_device_block(bm.device_block_pool, 111)
-    _commit_device_block(bm.device_block_pool, 222)
-
-    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
-
-    assert len(device_blocks) == 2
-    assert connector.touches == []
 
 
 def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:

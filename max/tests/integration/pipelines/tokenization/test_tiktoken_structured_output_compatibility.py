@@ -19,7 +19,6 @@ output / grammar-guided decoding.
 
 import json
 
-import hf_repo_lock
 import llguidance
 import llguidance.numpy
 import pytest
@@ -40,10 +39,8 @@ KIMI_K27_HF_REPO_ID = "nvidia/Kimi-K2.7-Code-NVFP4"
 @pytest.fixture(scope="module")
 def kimi_tokenizer() -> PreTrainedTokenizerBase:
     """Load Kimi K2.7 tokenizer (TikTokenTokenizer)."""
-    revision = hf_repo_lock.revision_for_hf_repo(KIMI_K27_HF_REPO_ID)
     return AutoTokenizer.from_pretrained(
         KIMI_K27_HF_REPO_ID,
-        revision=revision,
         trust_remote_code=True,
     )
 

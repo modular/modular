@@ -123,7 +123,6 @@ pkg_tar(
         ":max-docs",
         ":max-kernels-public-docs",
         ":max-mojo-public-docs",
-        ":pixi.mdx",
         ":requirements.js",
         ":sidebars.json",
         ":static",

@@ -73,7 +73,7 @@ Not alone. Mojo is one component of the Modular Platform, which
 makes it easier for you to author highly performant, portable CPU and GPU graph
 operations, but you'll also need a runtime (or "OS") that supports graph-level
 transformations and heterogeneous compute, which the
-[MAX framework](https://docs.modular.com) provides.
+[MAX framework](https://max.modular.com) provides.
 
 ### How do I convert Python programs or libraries to Mojo?
 
@@ -114,9 +114,9 @@ contribute additional hardware support in the future.
 
 Remember that we designed Mojo as a general-purpose programming language, and
 any AI-related benchmarks rely heavily upon other framework components. For
-example, our in-house CPU and GPU graph operations that power the Modular
-Platform are all written in Mojo. You can learn more about performance in our
-blog posts on
+example, we write all of the in-house CPU and GPU graph operations that power
+the Modular Platform in Mojo. You can learn more about performance in our blog
+posts on
 [bringing the Modular Platform up on AMD MI355](https://www.modular.com/blog/achieving-state-of-the-art-performance-on-amd-mi355----in-just-14-days)
 and
 [optimizing matmul performance on the NVIDIA Blackwell GPU](https://www.modular.com/blog/matrix-multiplication-on-blackwell-part-4---breaking-sota).
@@ -147,7 +147,7 @@ It includes:
 
 The `mojo-compiler` package is smaller and is useful for environments where you
 only need to call or build existing Mojo code. For example, this is good if
-you're running Mojo in a production environment or when you're programming in
+you're running Mojo in a production environment or if you're programming in
 Python and [calling a Mojo
 package](/docs/manual/python/mojo-from-python)—situations where you don't need
 the LSP and debugger tools. It includes:
@@ -159,12 +159,14 @@ the LSP and debugger tools. It includes:
 
 If you're interested in GPU programming, install the `max` package, which
 includes the MAX framework and Mojo. For details, see
-[Get started with GPU programming](https://docs.modular.com/gpu/intro-tutorial/)
+[Get started with GPU programming](https://max.modular.com/gpu/intro-tutorial/)
 in the MAX documentation.
 
 ### What are the license terms for the SDK?
 
-Please read the [Terms of use](https://www.modular.com/legal/terms).
+The Mojo SDK is licensed under the Apache License v2.0 with LLVM Exceptions. For
+details, see the
+[LICENSE](https://github.com/modular/modular/blob/main/LICENSE).
 
 ### What operating systems does Mojo support?
 
@@ -187,19 +189,33 @@ or the
 
 ### Does the Mojo SDK collect telemetry?
 
-Yes, the Mojo SDK collects some basic system information, crash reports, and
-some LSP events that enable us to identify, analyze, and prioritize Mojo
-issues. v25.6 and earlier versions also collected compiler/runtime events,
-but we've since removed them.
+Yes, the Mojo SDK collects some basic system information, tool invocation
+events, crash reports, and some LSP performance events that enable us to
+identify, analyze, and prioritize Mojo issues.
 
 Specifically, we collect:
 
-- **Crash reports**: When the Mojo compiler crashes with a stack trace, the
-  only information used in the report is the OS version and MAX/Mojo version.
+- **Invocation events**: Each Mojo tool (the `mojo` CLI, the Mojo language
+  server, and the Mojo debugger) reports a single event when it starts. The
+  event includes the tool name and subcommand (such as `build` or `run`), and
+  whether crash reporting is enabled. It does not include your command-line
+  arguments, file names, or source code.
+- **Crash reports**: When a Mojo tool crashes, it uploads a crash report
+  containing the stack trace of the crashed process, along with the tool name
+  and the Mojo version, so we can attribute the crash to a specific release
+  and fix it.
 - **LSP performance metrics**: The Mojo LSP reports aggregate data on how long
-  it takes to respond to user input (parsing latency). The only information
-  used in the report is the milliseconds between user keystrokes and when the
-  Mojo LSP is able to show appropriate error or warning messages.
+  it takes to respond to user input (parsing latency). The report includes only
+  the milliseconds between user keystrokes and when the Mojo LSP is able to
+  show appropriate error or warning messages.
+
+Every event also includes the Mojo/MAX version, basic system information (OS
+type and version; CPU architecture, model name, core count, and supported CPU
+features), and two anonymous identifiers: a machine identifier (a one-way
+hash, which cannot be reversed to identify you or your hardware) and a
+randomly generated per-session identifier. These identifiers let us count
+active installations and connect a crash report to its invocation event - for
+example, to compute a crash rate per release.
 
 We never collect or transmit any user information, such as source code,
 keystrokes, or any other user data.
@@ -209,6 +225,9 @@ products. Without this telemetry, we would have to rely on user-submitted bug
 reports, and in our decades of experience building developer products, we know
 that most people don't do that. The telemetry provides us the insights we need
 to build better products for you.
+
+Telemetry can be disabled by setting the environment variable
+`MODULAR_TELEMETRY_ENABLED=false`.
 
 ## Versioning & compatibility
 
@@ -221,7 +240,7 @@ We consider language features stable unless we explicitly identify them as
 experimental or unstable.
 
 We consider standard library APIs **unstable** unless we explicitly identify
-them as stable. Stable APIs are marked in the API documentation.
+them as stable. The API documentation identifies the stable APIs.
 
 For more information, see
 [Mojo stability guarantees](/docs/api-docs/stability/).
@@ -241,17 +260,22 @@ Join the [Mojo Discord channel](http://discord.gg/modular) for notifications and
 
 ## Open source
 
-### Will Mojo be open-sourced?
+### Is Mojo open source?
 
-We have committed to open-sourcing Mojo in Fall 2026.
+Mojo is open source under the Apache License v2.0 with LLVM Exceptions. For
+details, see the
+[LICENSE](https://github.com/modular/modular/blob/main/LICENSE).
 
-### Why not develop Mojo in the open from the beginning?
+### Why didn't you develop Mojo in the open from the beginning?
+
+Though we always intended to open source Mojo eventually, we started developing
+it in private and took a gradual approach to open sourcing the entire language.
 
 Mojo is a big project and has several architectural differences from previous
 languages. We believe a tight-knit group of engineers with a common vision can
-move faster than a community effort. This development approach is also
-well-established from other projects that are now open source (such as LLVM,
-Clang, Swift, MLIR, etc.).
+move faster than a community effort. Other projects that are now open source
+(such as LLVM, Clang, Swift, MLIR, etc.) also followed this well-established
+development approach.
 
 ## Community
 

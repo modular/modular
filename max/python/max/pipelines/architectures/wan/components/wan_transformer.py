@@ -609,9 +609,7 @@ class WanTransformer(CompiledComponent):
         ]
 
         for key, value in state_dict.items():
-            if key.startswith("patch_embedding.") or key.startswith(
-                "condition_embedder."
-            ):
+            if key.startswith(("patch_embedding.", "condition_embedder.")):
                 pre_weights[key] = value
             elif key.startswith("blocks."):
                 rest = key[len("blocks.") :]

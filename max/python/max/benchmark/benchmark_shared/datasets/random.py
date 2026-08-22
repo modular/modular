@@ -101,7 +101,6 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         Random datasets are generated synthetically and don't require file fetching.
         """
-        pass
 
     def gen_multiturn_random_requests(
         self,

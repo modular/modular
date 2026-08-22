@@ -28,6 +28,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.modeling.types import RequestID
@@ -322,6 +323,7 @@ class JengaBlockManager:
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
         max_num_input_tokens: int | None = None,
+        num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 0,
     ) -> None:
         self._block_size = block_size
@@ -329,7 +331,9 @@ class JengaBlockManager:
         self._kv_hash_algo = kv_hash_algo
         self._kv_hash_seed = kv_hash_seed
         self._max_num_input_tokens = max_num_input_tokens
+        self._num_draft_tokens = num_draft_tokens
         self._num_draft_tokens_per_step = num_draft_tokens_per_step
+        self._metrics = KVCacheMetrics()
 
         ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
         self.pools = [
@@ -425,6 +429,8 @@ class JengaBlockManager:
         if ctx.tokens.processed_length == 0:
             self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
 
+        self._metrics.input_tokens += ctx.tokens.active_length
+
         # Check if we have enough blocks available to satisfy the demand.
         pool = self.pools[replica_idx]
         demand = {
@@ -440,6 +446,23 @@ class JengaBlockManager:
                 req_blocks.append(pool.alloc_block(leaf_id))
 
         return CompletedTransfer(direction=TransferDirection.LOAD)
+
+    @traced
+    def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
+        """Claims a dummy request and points it at the replica's null page."""
+        self.claim(ctx, replica_idx)
+        pool = self.pools[replica_idx]
+        seq_len = _compute_seq_len(
+            ctx,
+            num_draft_tokens=self._num_draft_tokens,
+            num_draft_tokens_per_step=self._num_draft_tokens_per_step,
+        )
+        num_required_blocks = ceildiv(seq_len, self._block_size)
+        for leaf_id, leaf in self._leaves.items():
+            null_block = pool.null_little_blocks[leaf_id]
+            leaf.req_to_blocks[ctx.request_id] = [
+                null_block
+            ] * num_required_blocks
 
     @traced
     def step(self, ctx: TextContext) -> None:
@@ -465,6 +488,15 @@ class JengaBlockManager:
     # ============================================================================
     # Misc
     # ============================================================================
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        """Returns the block manager's metrics."""
+        return self._metrics
+
+    def reset_metrics(self) -> None:
+        """Resets the block manager's metrics to zero."""
+        self._metrics = KVCacheMetrics()
 
     @property
     def effective_max_seq_length(self) -> int | None:
@@ -579,11 +611,9 @@ class JengaBlockManager:
         num_current_blocks = len(
             self._leaves[leaf_id].req_to_blocks[ctx.request_id]
         )
-        # Jenga doesn't support speculative decoding yet, so num_draft_tokens
-        # is always 0 here.
         seq_len = _compute_seq_len(
             ctx,
-            num_draft_tokens=0,
+            num_draft_tokens=self._num_draft_tokens,
             num_draft_tokens_per_step=self._num_draft_tokens_per_step,
             max_num_input_tokens=self._max_num_input_tokens,
         )
@@ -740,6 +770,12 @@ class JengaBlockManager:
         hit_blocks, num_hit_blocks = self._find_longest_prefix_cache_hit(
             ctx, replica_idx
         )
+
+        # Updates cache hit metrics
+        self._metrics.device_blocks_served += num_hit_blocks
+        self._metrics.cache_tokens += num_hit_blocks * self._block_size
+        ctx.cached_prefix_length = num_hit_blocks * self._block_size
+
         if num_hit_blocks == 0:
             return 0
 

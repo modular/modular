@@ -21,7 +21,12 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
-from std.sys import _RegisterPackType, llvm_intrinsic
+from std.bit import next_power_of_two
+from std.gpu import thread_idx
+from std.gpu.primitives.warp import _ReduceFn
+from std.memory import bitcast
+from std.sys import _RegisterPackType, llvm_intrinsic, size_of
+from max.gpu.sync import barrier
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
@@ -410,3 +415,403 @@ def cluster_mask_base[
         mask |= UInt16(1 << (i * cluster_shape[0]))
 
     return mask
+
+
+# ===----------------------------------------------------------------------=== #
+# Distributed shared memory (DSMEM) cluster-peer access
+#
+# These wrap the only in-tree mechanism for cross-CTA shared-memory access:
+# the `mapa.shared::cluster` PTX instruction (see `layout/tma_async.mojo`), which
+# rebases a local `.shared` address onto a peer CTA's window within the same
+# thread-block cluster. There is no high-level Mojo primitive for this, so the
+# helpers are thin inline-PTX wrappers. The split-K combine (M3/M4) uses these to
+# read peer partitions' `(max, sum)` and partial-O after a `cluster_sync()`.
+#
+# Peers are addressed by their *cluster rank* (`block_rank_in_cluster()`), which
+# is the rank the hardware cluster-shared instructions consume. For the split-K
+# `(P,1,1)` cluster shape this equals `block_idx.x % P` (see `splitk_partition_idx`).
+
+
+@always_inline
+def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
+    """Map a local `.shared` byte address to peer `peer_rank`'s window in the cluster.
+
+    Wraps `mapa.shared::cluster.u32`. `local_addr` is the 32-bit shared-state-space
+    address of an object in *this* CTA's shared memory (e.g. `UInt32(Int(ptr))`); the
+    result is the corresponding `.shared::cluster` address of the same object in CTA
+    `peer_rank`'s shared memory. Pure address arithmetic; no memory access.
+
+    Args:
+        local_addr: The 32-bit shared-state-space address of an object in
+            this CTA's shared memory.
+        peer_rank: Cluster rank of the CTA whose shared-memory window the
+            address maps into.
+
+    Returns:
+        The `.shared::cluster` address of the same object in CTA
+        `peer_rank`'s shared memory.
+    """
+    return inlined_assembly[
+        "mapa.shared::cluster.u32 $0, $1, $2;",
+        UInt32,
+        constraints="=r,r,r",
+        has_side_effect=False,
+    ](local_addr, peer_rank)
+
+
+@always_inline
+def load_cluster_smem[
+    dtype: DType, width: Int
+](
+    local_ptr: Pointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    peer_rank: UInt32,
+) -> SIMD[dtype, width]:
+    """Load `width` elements from peer `peer_rank`'s shared memory at `local_ptr`.
+
+    `local_ptr` is a pointer into *this* CTA's shared memory; the returned vector is
+    the value of the same shared object as it exists in CTA `peer_rank`. Must be
+    called after a `cluster_sync()` so the peer's writes are visible. Restricted to
+    32-bit element dtypes (covers f32/u32, all the split-K combine needs); moved
+    with the widest vectorized `ld.shared::cluster.{v4,v2,b32}` that fits `width`
+    (16 B groups first), so a `width`-element read costs ceil(width/4) memory ops.
+
+    Parameters:
+        dtype: Element dtype of the shared buffer; must be a 32-bit dtype
+            (inferred).
+        width: Number of elements to load (inferred).
+
+    Args:
+        local_ptr: Pointer into this CTA's shared memory identifying the
+            shared object to read.
+        peer_rank: Cluster rank of the CTA whose copy of the shared object
+            is read.
+
+    Returns:
+        The `width` elements of the shared object as they exist in CTA
+        `peer_rank`'s shared memory.
+    """
+    comptime assert (
+        size_of[dtype]() == 4
+    ), "load_cluster_smem supports only 32-bit element dtypes"
+    var base: UInt32 = UInt32(Int(local_ptr))
+    var words: SIMD[DType.uint32, width] = {}
+    # Fuse `mapa` + `ld.shared::cluster.{v4,v2,b32}` into ONE asm block per group
+    # so the rebased `.shared::cluster` address stays in a `.reg` local and never
+    # round-trips through a Mojo SSA general register. The split form (a `mapa`
+    # returning a `UInt32`, then a separate `ld.shared::cluster`) verified OK in
+    # the trivial DSMEM smoke kernel but read garbage inside the register-dense
+    # FA4 kernel: ptxas loses the shared-state-space association of the address
+    # across the two asm blocks. One `mapa` per vector group keeps that property;
+    # the redundant address arithmetic is cheap. Emit the widest vector that
+    # fits -- v4 (16 B) groups, then a v2 (8 B), then a scalar -- so a `width`
+    # peer read costs ceil(width/4) memory ops, not `width`. Mirrors the in-tree
+    # idiom in `layout/tma_async.mojo`.
+    comptime ld_v4 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $4, $5;
+        ld.shared::cluster.v4.b32 {$0, $1, $2, $3}, [ra];
+    }"""
+    comptime ld_v2 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $2, $3;
+        ld.shared::cluster.v2.b32 {$0, $1}, [ra];
+    }"""
+    comptime ld_b32 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $1, $2;
+        ld.shared::cluster.b32 $0, [ra];
+    }"""
+    comptime n4 = width // 4
+    comptime for g in range(n4):
+        comptime o = g * 4
+        var r4 = inlined_assembly[
+            ld_v4,
+            _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
+            constraints="=r,=r,=r,=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o), peer_rank)
+        words[o] = r4[0]
+        words[o + 1] = r4[1]
+        words[o + 2] = r4[2]
+        words[o + 3] = r4[3]
+    comptime rem = width - n4 * 4
+    comptime o2 = n4 * 4
+    comptime if rem >= 2:
+        var r2 = inlined_assembly[
+            ld_v2,
+            _RegisterPackType[UInt32, UInt32],
+            constraints="=r,=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o2), peer_rank)
+        words[o2] = r2[0]
+        words[o2 + 1] = r2[1]
+    comptime if rem == 1 or rem == 3:
+        comptime o1 = o2 + (2 if rem == 3 else 0)
+        words[o1] = inlined_assembly[
+            ld_b32,
+            UInt32,
+            constraints="=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o1), peer_rank)
+    return bitcast[dtype, width](words)
+
+
+@always_inline
+def store_cluster_smem[
+    dtype: DType, width: Int
+](
+    local_ptr: Pointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    peer_rank: UInt32,
+    val: SIMD[dtype, width],
+):
+    """Store `val` into peer `peer_rank`'s shared memory at `local_ptr`.
+
+    Symmetric to `load_cluster_smem`: writes the `width` elements into the same
+    shared object as it exists in CTA `peer_rank`. Bracket cross-CTA writes with
+    `cluster_sync()` so the peer observes them. 32-bit element dtypes only.
+
+    Parameters:
+        dtype: Element dtype of the shared buffer; must be a 32-bit dtype
+            (inferred).
+        width: Number of elements in `val` to store (inferred).
+
+    Args:
+        local_ptr: Pointer into this CTA's shared memory identifying the
+            shared object to write.
+        peer_rank: Target CTA rank whose copy of the shared object
+            receives the write.
+        val: Vector of `width` elements to store into the peer's shared
+            memory.
+    """
+    comptime assert (
+        size_of[dtype]() == 4
+    ), "store_cluster_smem supports only 32-bit element dtypes"
+    var base: UInt32 = UInt32(Int(local_ptr))
+    var words = bitcast[DType.uint32, width](val)
+    # Fused `mapa` + `st.shared::cluster.{v4,v2,b32}`, widest-first (see
+    # `load_cluster_smem` for why the split form is unsafe in the dense kernel;
+    # mirrors `layout/tma_async.mojo`).
+    comptime st_v4 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.v4.b32 [ra], {$2, $3, $4, $5};
+    }"""
+    comptime st_v2 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.v2.b32 [ra], {$2, $3};
+    }"""
+    comptime st_b32 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.b32 [ra], $2;
+    }"""
+    comptime n4 = width // 4
+    comptime for g in range(n4):
+        comptime o = g * 4
+        inlined_assembly[
+            st_v4,
+            NoneType,
+            constraints="r,r,r,r,r,r",
+            has_side_effect=True,
+        ](
+            base + UInt32(4 * o),
+            peer_rank,
+            words[o],
+            words[o + 1],
+            words[o + 2],
+            words[o + 3],
+        )
+    comptime rem = width - n4 * 4
+    comptime o2 = n4 * 4
+    comptime if rem >= 2:
+        inlined_assembly[
+            st_v2,
+            NoneType,
+            constraints="r,r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o2), peer_rank, words[o2], words[o2 + 1])
+    comptime if rem == 1 or rem == 3:
+        comptime o1 = o2 + (2 if rem == 3 else 0)
+        inlined_assembly[
+            st_b32,
+            NoneType,
+            constraints="r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o1), peer_rank, words[o1])
+
+
+@always_inline
+def cluster_allreduce[
+    dtype: DType,
+    width: SIMDLength,
+    //,
+    combine_fn: _ReduceFn,
+    cluster_size: Int,
+    need_tail_sync: Bool = True,
+](
+    slot: Pointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    vals: SIMD[dtype, width],
+) -> SIMD[dtype, width]:
+    """Combines one block-reduced vector across every CTA of a cluster.
+
+    The caller reduces within its own CTA first, leaving the CTA's values in
+    thread 0; this function folds the CTAs together and returns the combined
+    vector in every thread of the block. Every CTA gathers every peer rather
+    than reducing to one and broadcasting back, and every CTA folds in rank
+    order, so the result is bit-identical across the cluster -- callers may
+    branch on it.
+
+    Give every CTA of the cluster the same `slot` allocation and pass the
+    allocation itself, never an offset into one: peer access maps this CTA's
+    address onto a peer's shared-memory window, and an offset breaks that
+    mapping even when it is a compile-time constant. The low `width` elements
+    are what the peers read; the elements above them carry the combined
+    result from thread 0 to the rest of the block.
+
+    With `need_tail_sync` (the default) a trailing `cluster_sync` retires the
+    slot, so the same slot may serve the next combine. A caller that combines
+    in a loop can drop the trailing sync and alternate between two slots
+    instead: a CTA that races ahead then writes the slot its peers are not
+    reading, and it cannot get further than one combine ahead of any peer.
+
+    Parameters:
+        dtype: Element type of the combined vector; must be 32-bit.
+            Inferred.
+        width: Number of elements combined. Inferred.
+        combine_fn: Associative binary reduction (e.g. add, max, min).
+        cluster_size: Number of CTAs in the cluster. With 1 the cross-CTA
+            traffic disappears and the call only publishes thread 0's values
+            to the rest of the block.
+        need_tail_sync: If True, retire the slot with a trailing sync.
+
+    Args:
+        slot: Cluster-invariant shared-memory scratch of `2 * width`
+            elements.
+        vals: This CTA's block-reduced values, valid in thread 0.
+
+    Returns:
+        The values combined across the cluster, in every thread.
+    """
+    comptime assert (
+        _is_sm_9x_or_newer()
+    ), "cluster_allreduce requires an NVIDIA SM90+ GPU"
+
+    comptime if cluster_size == 1:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=width + i] = vals[i]
+        barrier()
+        var out = vals
+        comptime for i in range(width):
+            out[i] = slot[unsafe_offset=width + i]
+        comptime if need_tail_sync:
+            barrier()
+        return out
+    else:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=i] = vals[i]
+        cluster_sync()
+
+        var acc = vals
+        if thread_idx.x == 0:
+            acc = load_cluster_smem[dtype, width](slot, 0)
+            comptime for r in range(1, cluster_size):
+                var peer = load_cluster_smem[dtype, width](slot, UInt32(r))
+                acc = combine_fn(acc, peer)
+            comptime for i in range(width):
+                slot[unsafe_offset=width + i] = acc[i]
+        barrier()
+        comptime for i in range(width):
+            acc[i] = slot[unsafe_offset=width + i]
+        comptime if need_tail_sync:
+            cluster_sync()
+        return acc
+
+
+@always_inline
+def cluster_allgather[
+    dtype: DType,
+    width: SIMDLength,
+    //,
+    cluster_size: Int,
+    need_tail_sync: Bool = True,
+](
+    slot: Pointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    vals: SIMD[dtype, width],
+) -> SIMD[dtype, width * next_power_of_two(cluster_size)]:
+    """Gathers one block-reduced vector from every CTA of a cluster.
+
+    `cluster_allreduce` folds the per-CTA vectors into one; this keeps them
+    apart, for callers that need each rank's contribution -- a prefix over
+    the ranks of a cluster, for example. The slot rules are the same: give
+    every CTA the same allocation and pass the allocation itself, never an
+    offset into one. The low `width` elements are what the peers read; the
+    elements above them carry the gathered table from thread 0 to the rest
+    of the block, which peers never touch.
+
+    `need_tail_sync` works as on `cluster_allreduce`: keep the default to
+    reuse one slot across consecutive calls, or drop it and alternate
+    between two slots.
+
+    Parameters:
+        dtype: Element type of the gathered vector; must be 32-bit.
+            Inferred.
+        width: Number of elements each CTA contributes. Inferred.
+        cluster_size: Number of CTAs in the cluster. With 1 the cross-CTA
+            traffic disappears and the call only publishes thread 0's values
+            to the rest of the block.
+        need_tail_sync: If True, retire the slot with a trailing sync.
+
+    Args:
+        slot: Cluster-invariant shared-memory scratch of
+            `width * (1 + next_power_of_two(cluster_size))` elements.
+        vals: This CTA's block-reduced values, valid in thread 0.
+
+    Returns:
+        The per-rank values in every thread, rank-major: element
+        `r * width + i` holds rank r's `vals[i]`. Elements for ranks at or
+        beyond `cluster_size` are zero.
+    """
+    comptime assert (
+        _is_sm_9x_or_newer()
+    ), "cluster_allgather requires an NVIDIA SM90+ GPU"
+
+    var out = SIMD[dtype, width * next_power_of_two(cluster_size)](0)
+    comptime if cluster_size == 1:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=width + i] = vals[i]
+        barrier()
+        comptime for i in range(width):
+            out[i] = slot[unsafe_offset=width + i]
+        comptime if need_tail_sync:
+            barrier()
+        return out
+    else:
+        if thread_idx.x == 0:
+            comptime for i in range(width):
+                slot[unsafe_offset=i] = vals[i]
+        cluster_sync()
+
+        if thread_idx.x == 0:
+            comptime for r in range(cluster_size):
+                var peer = load_cluster_smem[dtype, width](slot, UInt32(r))
+                comptime for i in range(width):
+                    slot[unsafe_offset=width + r * width + i] = peer[i]
+        barrier()
+        comptime for r in range(cluster_size):
+            comptime for i in range(width):
+                out[r * width + i] = slot[unsafe_offset=width + r * width + i]
+        comptime if need_tail_sync:
+            cluster_sync()
+        return out

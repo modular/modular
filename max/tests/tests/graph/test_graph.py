@@ -205,6 +205,57 @@ def test_load_from_file() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        # f32 needing 7 significant digits, so MLIR spells it as a hex
+        # literal. GLM-5.2's rope range stop; used to abort on print.
+        (DType.float32, 2097152.0),
+        (DType.float32, 1.0),
+        # Any f64 at all: used to abort on parse against an assertions build
+        # and silently reload as a denormal otherwise.
+        (DType.float64, 10000.0),
+        (DType.float64, 1.0),
+    ],
+)
+def test_float_constants_survive_text_round_trip(
+    dtype: DType, value: float
+) -> None:
+    """Tests that a float constant is unchanged by a dump-and-reload."""
+    graph = Graph(
+        "floats",
+        forward=lambda: ops.constant(value, dtype, device=DeviceRef.CPU()),
+        input_types=[],
+    )
+    text = graph.module._to_mlir_str()
+    # Without a constant to carry the value, the comparison below would pass
+    # for the wrong reason.
+    assert "mo.constant" in text
+
+    with NamedTemporaryFile("w") as mlir_text_file:
+        print(text, file=mlir_text_file, flush=True)
+        reloaded = Graph("floats", path=Path(mlir_text_file.name))
+
+    assert reloaded.module._to_mlir_str() == text
+
+
+def test_source_locations_round_trip_floats() -> None:
+    """Tests that the source-location dump keeps float constants intact."""
+    graph = Graph(
+        "floats",
+        forward=lambda: ops.constant(
+            2097152.0, DType.float32, device=DeviceRef.CPU()
+        ),
+        input_types=[],
+    )
+
+    annotated = graph.module._to_mlir_str(source_locations=True)
+
+    assert "mo.constant" in annotated
+    # 0x4A000000 is 2097152.0; MLIR prints f32 needing 7 digits as hex.
+    assert "0x4A000000" in annotated
+
+
 def test_device_graph() -> None:
     with Graph(
         "device_graph",

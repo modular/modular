@@ -393,22 +393,18 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     @abc.abstractmethod
     def num_key_value_heads(self) -> int:
         """Number of key-value heads to use for the KV cache."""
-        pass
 
     @property
     @abc.abstractmethod
     def head_dim(self) -> int:
         """Dimensionality of each attention head."""
-        pass
 
     @property
     @abc.abstractmethod
     def num_layers(self) -> int:
         """Number of hidden layers in the model."""
-        pass
 
     @property
     @abc.abstractmethod
     def model_max_seq_len(self) -> int:
         """The maximum sequence length that can be processed by the model."""
-        pass

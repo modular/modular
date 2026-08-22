@@ -1265,9 +1265,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         lora_manager = LoRABenchmarkManager(
             lora_paths=args.lora_paths,
             num_requests=num_requests,
-            traffic_ratios=args.per_lora_traffic_ratio
-            if args.per_lora_traffic_ratio
-            else None,
+            traffic_ratios=args.per_lora_traffic_ratio or None,
             uniform_ratio=args.lora_uniform_traffic_ratio,
             seed=args.seed,
             max_concurrent_lora_ops=args.max_concurrent_lora_ops,
@@ -1278,9 +1276,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     trace_path = None
     if args.trace:
         assert_nvidia_gpu()
-        trace_path = (
-            args.trace_file if args.trace_file else get_default_trace_path()
-        )
+        trace_path = args.trace_file or get_default_trace_path()
         logger.info(f"Tracing enabled, output: {trace_path}")
 
     return BenchmarkSession(
@@ -1570,7 +1566,7 @@ def parse_args(
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
-        ] = ServingBenchmarkConfig(),
+        ] = ServingBenchmarkConfig(),  # noqa: B008
     ) -> None:
         parsed_configs.append(config)
 
