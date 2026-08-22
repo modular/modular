@@ -144,6 +144,29 @@ from rich.pretty import pretty_repr
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
 
+_SHARD_INFIX = "._shard."
+
+
+def external_shard_names(name: str, num_shards: int) -> list[str]:
+    """Names the external constants a declaration of ``name`` emits, one per shard.
+
+    A distributed weight arrives as one array per device, so it needs one name
+    per device. This is the whole convention, and the inverse is
+    :attr:`Tensor.external_name`, so a caller matching checkpoint data to a
+    graph's externals never has to spell the suffix itself.
+
+    Args:
+        name: The name the weight was declared under.
+        num_shards: How many devices it is spread over.
+
+    Returns:
+        ``[name]`` for a single device, otherwise one ``name._shard.N`` per
+        shard in mesh order.
+    """
+    if num_shards == 1:
+        return [name]
+    return [f"{name}{_SHARD_INFIX}{i}" for i in range(num_shards)]
+
 
 def _fold_sharded_shape(
     shape: graph.Shape, mapping: DeviceMapping
@@ -990,6 +1013,55 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._state = state
         instance._mapping = PlacementMapping(mesh, placements)
         return instance
+
+    @property
+    def external_name(self) -> str | None:
+        """The name a weight loads under, which for a plain tensor is nothing.
+
+        Only a weight is a weight, and it answers with its own name. Every
+        other tensor -- a constant, a random draw, the result of an op, or
+        anything computed *from* a weight -- is not one, which is what makes
+        this the authoritative answer to "which registry entry loads here".
+
+        Returns:
+            :obj:`None`.
+        """
+        return None
+
+    def __tree_flatten__(
+        self,
+    ) -> tuple[tuple[GraphValue, ...], DeviceMapping | None]:
+        """Returns this tensor's per-device graph values and its mapping.
+
+        Implementing the tree protocol makes a tensor a container rather than a
+        leaf, so a tree of tensors flattens straight to the per-device value
+        list a graph boundary needs. Callers wanting a tensor treated as one
+        opaque leaf pass ``leaf=Tensor`` instead.
+
+        Realized tensors are sourced into the surrounding graph by
+        :attr:`graph_values`, so this is only meaningful while building a graph.
+        """
+        return self.graph_values, self._mapping
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, mapping: DeviceMapping | None, children: Sequence[Any]
+    ) -> Tensor:
+        """Rebuilds a tensor from the pieces :meth:`__tree_flatten__` produced.
+
+        Args:
+            mapping: The distribution the tensor was flattened with.
+            children: One graph value or buffer per device.
+        """
+        if isinstance(children[0], driver.Buffer):
+            if mapping is None or mapping.mesh.num_devices == 1:
+                return cls(storage=children[0])
+            return cls._from_shards(
+                tuple(children), mapping.mesh, mapping.to_placements()
+            )
+        return current_realization_context().create_unrealized(
+            tuple(children), mapping=mapping
+        )
 
     def _as_constant_external(
         self,
