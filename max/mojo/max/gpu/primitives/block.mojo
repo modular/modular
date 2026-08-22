@@ -39,6 +39,7 @@ from std.utils.static_tuple import StaticTuple
 
 from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
 from std.gpu.primitives import warp
+from std.sys.info import is_apple_gpu
 
 from max.gpu import barrier
 
@@ -126,6 +127,18 @@ def _block_reduce_with_padding[
         # All threads read the final results from shared memory
         comptime for i in range(num_reductions):
             warp_results[i] = shared_mem[unsafe_offset=i]
+
+    # The trailing shared-memory reads above (warp 0's per-warp loads, and
+    # every thread's broadcast load) have no barrier after them, so a warp
+    # that finishes this combine can begin the caller's next one and
+    # overwrite the strip while a lagging warp still reads it. On
+    # NVIDIA/AMD warps never
+    # drift that far in practice; Metal's threadgroup scheduling loses this
+    # race readily (measured: rms_norm block tier, run-to-run divergent
+    # bytes on M5). Close the reuse window on Apple only, keeping other
+    # targets' codegen byte-identical.
+    comptime if is_apple_gpu():
+        barrier()
 
     return warp_results
 
