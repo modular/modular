@@ -45,12 +45,12 @@ def matrix_mul_tiled_kernel(
     var sA = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var sB = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Get global and shared indices

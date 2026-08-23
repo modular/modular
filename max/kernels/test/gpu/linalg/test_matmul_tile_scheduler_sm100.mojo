@@ -35,35 +35,35 @@ def test_kernel[
     var clc_response = unsafe_stack_allocation[
         num_stages,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var clc_full_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var clc_empty_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_full_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_empty_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 

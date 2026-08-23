@@ -99,7 +99,7 @@ def topk_wrapper[
     var topk_sram = unsafe_stack_allocation[
         block_size,
         TopK_2[input_type, largest],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
@@ -327,27 +327,27 @@ def radix_sort_pairs_kernel[
     var s_counts = unsafe_stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var total_counts = unsafe_stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var total_offsets = unsafe_stack_allocation[
         (NUM_BUCKETS + 1),  # +1 extended size for descending
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var total_offsets_descending = unsafe_stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var s_thread_offsets = unsafe_stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize counts[NUM_BUCKETS]
@@ -722,9 +722,9 @@ def _topp_minp_sampling_gpu[
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -906,9 +906,9 @@ def top_p_sampling_gpu[
 ](
     ctx: DeviceContext,
     top_ps: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -936,10 +936,10 @@ def min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    min_ps: TileTensor[dtype, address_space=.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

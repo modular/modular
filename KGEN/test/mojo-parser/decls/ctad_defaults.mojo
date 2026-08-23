@@ -21,7 +21,7 @@ struct MyUnsafePointer[
     x: Int = 3,
     *,
     origin: Origin[mut=True],
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     exclusive: Bool = False,
     alignment: Int = 1,
 ](Movable where False):

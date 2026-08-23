@@ -320,19 +320,19 @@ def matmul_stream_k[
     c: TileTensor[
         mut=True,
         c_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
     a: TileTensor[
         a_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
     b: TileTensor[
         b_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],

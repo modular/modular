@@ -279,7 +279,7 @@ def test_case[
 ) raises:
     var data = stack_allocation[dtype=dtype](row_major[d0, d1, d2]())
     linear_fill(data, data_vals)
-    var indices = stack_allocation[dtype=DType.int64](row_major[id0, id1]())
+    var indices = stack_allocation[dtype=.int64](row_major[id0, id1]())
     linear_fill(indices, indices_vals)
     var updates = stack_allocation[dtype=dtype](row_major[ud0, ud1, ud2]())
     linear_fill(updates, updates_vals)

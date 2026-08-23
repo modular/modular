@@ -91,7 +91,7 @@ def _mask_apply_rdna[
         accum_type,
         _,
         _,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         linear_idx_type=_,
     ],
     not_last_iter: Bool,
@@ -356,14 +356,10 @@ struct AttentionRDNA[
     var softmax: Self.SoftmaxType
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[Self.k_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     var v_smem_ptr: UnsafePointer[
-        Scalar[Self.v_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     var q_buffer: Self.QRegisterBufferType
@@ -589,13 +585,13 @@ struct AttentionRDNA[
         self.k_smem_ptr = unsafe_stack_allocation[
             Self._k_smem_size,
             Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
         self.v_smem_ptr = unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
 
@@ -605,7 +601,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self.BM * Self.BK,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -614,7 +610,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -702,7 +698,7 @@ struct AttentionRDNA[
         var warp_scratch = TileTensor[
             Self.accum_type,
             type_of(Self._warp_scratch_layout),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
             Self._warp_scratch_layout,

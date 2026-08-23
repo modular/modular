@@ -239,7 +239,7 @@ comptime SMemTile[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
 
@@ -662,9 +662,7 @@ struct SMemTileArrayWithLayout[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -681,11 +679,7 @@ struct SMemTileArrayWithLayout[
     def __init__(
         out self,
         # TODO: this should correctly propagate mutability.
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -744,7 +738,7 @@ struct SMemTileArrayWithLayout[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -794,7 +788,7 @@ struct SMemTileArray[
         Self.dtype,
         Layout[shape_types=Self.shape_types, stride_types=Self.stride_types],
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     # Layout type for constructing tiles
@@ -816,9 +810,7 @@ struct SMemTileArray[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -835,11 +827,7 @@ struct SMemTileArray[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -907,7 +895,7 @@ struct SMemTileArray[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -986,9 +974,7 @@ struct SMemTileArray2D[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1005,11 +991,7 @@ struct SMemTileArray2D[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -1103,7 +1085,7 @@ struct SMemTileArray2D[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)
 
@@ -1161,9 +1143,7 @@ struct SMemTileArray2DRowMajor[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     def __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1180,11 +1160,7 @@ struct SMemTileArray2DRowMajor[
     def __init__(
         out self,
         # TODO: This should correctly propagate mutability
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            _,
-            address_space=AddressSpace.SHARED,
-        ],
+        unsafe_ptr: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
     ):
         """Initialize with a shared memory pointer.
 
@@ -1246,6 +1222,6 @@ struct SMemTileArray2DRowMajor[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         return Self(ptr)

@@ -741,16 +741,16 @@ struct GenericToSharedAsyncTileCopier[
         # trapping any failure here.
         comptime dtype = src.dtype
         var src_global_ptr: UnsafePointer[
-            Scalar[dtype], ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
+            Scalar[dtype], ImmutAnyOrigin, address_space=.GLOBAL
         ]
         var dst_shared_ptr: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ]
         try:
             src_global_ptr = (
                 type_of(src_fragments)
                 .Storage.unsafe_ptr(src_fragments._storage)
-                .address_space_cast[AddressSpace.GLOBAL]()
+                .address_space_cast[.GLOBAL]()
                 .unsafe_mut_cast[False]()
                 .unsafe_origin_cast[ImmutAnyOrigin]()
                 .bitcast[Scalar[dtype]]()
@@ -759,7 +759,7 @@ struct GenericToSharedAsyncTileCopier[
                 type_of(dst_fragments)
                 .Storage.unsafe_ptr(dst_fragments._storage)
                 .unsafe_mut_cast[True]()
-                .address_space_cast[AddressSpace.SHARED]()
+                .address_space_cast[.SHARED]()
                 .unsafe_origin_cast[MutAnyOrigin]()
                 .bitcast[Scalar[dtype]]()
             )
@@ -907,10 +907,10 @@ def copy_dram_to_sram[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to SRAM (shared).
 
@@ -946,10 +946,10 @@ def copy_sram_to_dram[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.SHARED, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to DRAM (generic).
 
@@ -985,10 +985,10 @@ def copy_local_to_dram[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.LOCAL, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to DRAM (generic).
 
@@ -1022,10 +1022,10 @@ def copy_dram_to_local[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to registers.
 
@@ -1060,10 +1060,10 @@ def copy_local_to_shared[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.LOCAL, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to SRAM (shared).
 
@@ -1100,10 +1100,10 @@ def copy_sram_to_local[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.SHARED, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to registers.
 
@@ -1137,10 +1137,10 @@ def copy_dram_to_sram_async[
 ](
     dst: TileTensor[
         mut=True,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
     src_num_valid_rows: OptionalReg[Int] = None,
 ):
     """Asynchronously copies a tile from DRAM (generic memory) to SRAM (shared).

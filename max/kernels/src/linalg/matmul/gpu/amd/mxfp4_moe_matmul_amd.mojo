@@ -265,7 +265,7 @@ struct MXFP4MoERoutedMatmul[
             (b_pre_tt.ptr + expert_id * b_per_expert_bytes)
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[AddressSpace.GENERIC](),
+            .address_space_cast[.GENERIC](),
             row_major(Coord(Idx[1], Idx[b_per_expert_bytes])),
         )
         var sfb_pre_expert = TileTensor[
@@ -274,7 +274,7 @@ struct MXFP4MoERoutedMatmul[
             (sfb_pre_tt.ptr + expert_id * sfb_per_expert_bytes)
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[AddressSpace.GENERIC](),
+            .address_space_cast[.GENERIC](),
             row_major(Coord(Idx[1], Idx[sfb_per_expert_bytes])),
         )
         var sfa_pre_block = TileTensor[
@@ -283,7 +283,7 @@ struct MXFP4MoERoutedMatmul[
             (sfa_pre_tt.ptr + bx * sfa_per_block_bytes)
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[AddressSpace.GENERIC](),
+            .address_space_cast[.GENERIC](),
             row_major(Coord(Idx[1], Idx[sfa_per_block_bytes])),
         )
 
@@ -298,7 +298,7 @@ struct MXFP4MoERoutedMatmul[
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
-        var a_smem = stack_allocation[.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[.uint8, address_space=.SHARED](
             row_major[Self.BM, Self.BK_BYTES]()
         )
 

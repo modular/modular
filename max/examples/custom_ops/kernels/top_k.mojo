@@ -98,7 +98,7 @@ struct TopK:
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=align_of[TopKElement[dtype]](),
             ]()
 

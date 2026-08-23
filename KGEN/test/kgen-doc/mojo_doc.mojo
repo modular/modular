@@ -774,7 +774,7 @@ def parametric_ref_origin[b: Int](ref c: Int):
 # CHECK:  "convention": "register_passable_trivial",
 struct HMyUnsafePointer[
     T: AnyType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](TrivialRegisterPassable):
     # CHECK: "signature": "def __getitem__(self) -> ref[MutUnsafeAnyOrigin, address_space] T",
     def __getitem__(

@@ -67,7 +67,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -80,7 +80,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -215,12 +215,12 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = unsafe_stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -248,7 +248,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -381,12 +381,12 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = unsafe_stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -431,7 +431,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 

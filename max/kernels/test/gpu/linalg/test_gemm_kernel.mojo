@@ -72,14 +72,14 @@ def gemm_kernel[
         a_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_tile_sram = LayoutTensor[
         b_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var num_warps = NUM_THREADS // WARP_SIZE
@@ -93,20 +93,20 @@ def gemm_kernel[
         a_type,
         Layout.row_major(TN),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         b_type,
         Layout.row_major(TN),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     var c_reg = (
         LayoutTensor[
             c_type,
             Layout.row_major(TM, TN),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)

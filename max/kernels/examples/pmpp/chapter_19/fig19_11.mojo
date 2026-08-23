@@ -79,12 +79,12 @@ def conv_layer_mm_kernel(
     var Fds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var Bds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var bx = block_idx.x

@@ -3338,20 +3338,16 @@ def conv_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter_buf: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_buf: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter_buf: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     strides_buf: TileTensor[
-        mut=False, strides_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, strides_type, address_space=.GENERIC, ...
     ],
     dilations_buf: TileTensor[
-        mut=False, dilations_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, dilations_type, address_space=.GENERIC, ...
     ],
     paddings_buf: TileTensor[
-        mut=False, paddings_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, paddings_type, address_space=.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.flat_rank]:
@@ -3475,15 +3471,9 @@ def conv_nhwc_direct[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     stride: IndexList[conv_info_rank],
     dilation: IndexList[conv_info_rank],
     pad_d: IndexList[2],
@@ -4881,13 +4871,9 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: TileTensor[
-        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
     padding: IndexList[2 * conv_rank],
@@ -4965,7 +4951,7 @@ def conv_gpu[
     if has_asymmetric_padding:
         # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
         comptime full_rank = input_layout.rank()
-        var paddings_tensor = tt_stack_allocation[dtype=DType.int](
+        var paddings_tensor = tt_stack_allocation[dtype=.int](
             row_major[2 * full_rank]()
         )
 

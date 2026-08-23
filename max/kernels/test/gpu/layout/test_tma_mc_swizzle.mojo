@@ -69,7 +69,7 @@ def tma_swizzle_multicast_load_kernel[
         dtype,
         cluster_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -78,7 +78,7 @@ def tma_swizzle_multicast_load_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:

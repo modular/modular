@@ -100,7 +100,7 @@ def sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -109,7 +109,7 @@ def sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -328,7 +328,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -337,7 +337,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -364,7 +364,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
             DType.float32,
             Layout.row_major(2, 2),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)

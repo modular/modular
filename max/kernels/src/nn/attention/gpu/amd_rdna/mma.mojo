@@ -26,9 +26,9 @@ from .buffers import RDNA_AB_FRAG_SIZE, RDNA_CD_FRAG_SIZE
 
 @always_inline
 def rdna_mma(
-    a_reg: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-    b_reg: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-    c_reg: TileTensor[mut=True, _, _, address_space=AddressSpace.LOCAL, ...],
+    a_reg: TileTensor[_, _, address_space=.LOCAL, ...],
+    b_reg: TileTensor[_, _, address_space=.LOCAL, ...],
+    c_reg: TileTensor[mut=True, _, _, address_space=.LOCAL, ...],
 ):
     """Per-fragment WMMA loop. Derives MMA counts from operand shapes;
     accumulator indexing is col-major over (M, N): c_idx = m + n*num_m.

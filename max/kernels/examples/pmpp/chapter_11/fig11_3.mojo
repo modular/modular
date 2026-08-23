@@ -39,7 +39,7 @@ def scan_kernel(
     var buffer_s = unsafe_stack_allocation[
         SEG_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x

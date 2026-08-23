@@ -92,7 +92,7 @@ comptime LocalTensor[
         stride_types=layout.stride_types,
     ],
     MutUntrackedOrigin,
-    address_space=AddressSpace.LOCAL,
+    address_space=.LOCAL,
 ]
 comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
@@ -101,7 +101,7 @@ comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutUntrackedOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]
 
 # Legacy LayoutTensor aliases for TMA/MMA API boundaries
@@ -111,11 +111,11 @@ comptime LocalLT[
     dtype,
     layout,
     MutAnyOrigin,
-    address_space=AddressSpace.LOCAL,
+    address_space=.LOCAL,
     element_layout=element_layout,
 ]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, MutAnyOrigin, address_space=AddressSpace.SHARED
+    type, MutAnyOrigin, address_space=.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
@@ -509,9 +509,7 @@ def st_shared_v4_b32[
     dtype: DType,
     //,
 ](
-    dst: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    dst: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     elem_off: Int,
     packed: SIMD[.uint32, 4],
 ):
@@ -744,9 +742,7 @@ struct TMemTile[
         comptime load_dtype = DType.uint32
         var ptr = rebind[
             UnsafePointer[
-                Scalar[load_dtype],
-                MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL
             ]
         ](dst.ptr)
 
@@ -2619,10 +2615,7 @@ def exp2_emulation[
 @always_inline
 def elect_mma_arrive[
     cta_group: Int = 1
-](
-    mbar_ptr: UnsafePointer[address_space=AddressSpace.SHARED, ...],
-    elect: Int32,
-):
+](mbar_ptr: UnsafePointer[address_space=.SHARED, ...], elect: Int32,):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -2655,7 +2648,7 @@ def elect_mma_arrive[
 
 @always_inline
 def expect_bytes_pred(
-    mbar_ptr: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+    mbar_ptr: UnsafePointer[address_space=.SHARED, ...],
     bytes: Int32,
     pred: Int32,
 ):
@@ -2738,8 +2731,7 @@ def store_global_pred[
         pred: Runtime predicate; the store is skipped when this is 0.
     """
     comptime assert (
-        address_space == AddressSpace.GENERIC
-        or address_space == AddressSpace.GLOBAL
+        address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
     comptime assert size in (4, 8), (
@@ -3031,7 +3023,7 @@ struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
         Self.dtype,
         type_of(tt_row_major[Self.smem_elems]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields

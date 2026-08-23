@@ -73,7 +73,7 @@ def poison_smem_kernel(sink: UnsafePointer[Float32, MutAnyOrigin]):
     """Fills this block's whole dynamic SMEM allocation with bf16 NaN."""
     var smem = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
         name="poison_smem",
     ]()

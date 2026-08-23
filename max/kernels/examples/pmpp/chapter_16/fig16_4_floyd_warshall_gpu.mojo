@@ -47,7 +47,7 @@ def floyd_warshall_kernel(
     var k_row_shared = unsafe_stack_allocation[
         1,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j

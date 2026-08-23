@@ -1480,11 +1480,9 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         v227_layout: Bool = False,
     ](
         v_slot_ptr: UnsafePointer[
-            Scalar[Self.T], origin, address_space=AddressSpace.SHARED
+            Scalar[Self.T], origin, address_space=.SHARED
         ],
-    ) -> UnsafePointer[
-        Scalar[Self.T], origin, address_space=AddressSpace.SHARED
-    ]:
+    ) -> UnsafePointer[Scalar[Self.T], origin, address_space=.SHARED]:
         """Computes the per-lane V LDS base pointer for the FP8 32x32x64
         path ONCE per V SMEM slot (caller passes `v_smem_<stage>.ptr`).
         Hoisting this base out of the per-fragment readout collapses the
@@ -1624,9 +1622,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         layout_dst: TensorLayout,
     ](
         mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
-        v_lane_base: UnsafePointer[
-            Scalar[Self.T], _, address_space=AddressSpace.SHARED
-        ],
+        v_lane_base: UnsafePointer[Scalar[Self.T], _, address_space=.SHARED],
     ):
         """FP8 32x32x64 V load consuming a pre-computed per-lane base
         pointer (hoisted by the caller). Each call site adds ONLY
@@ -1708,9 +1704,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         j_depth: Int,
         v_full_v227: Bool = False,
     ](
-        v_lane_base: UnsafePointer[
-            Scalar[Self.T], _, address_space=AddressSpace.SHARED
-        ],
+        v_lane_base: UnsafePointer[Scalar[Self.T], _, address_space=.SHARED],
     ) -> SIMD[Self.T, Self.FRAG_ELTS]:
         """Loads ONE V MFMA fragment `(i_strip, j_depth)` from the
         pre-computed per-lane V LDS base and returns it as a SIMD value:

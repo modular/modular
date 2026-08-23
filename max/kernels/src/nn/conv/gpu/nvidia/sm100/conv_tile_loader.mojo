@@ -72,7 +72,7 @@ struct TileLoaderTMAIm2col[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,

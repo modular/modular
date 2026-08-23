@@ -307,31 +307,31 @@ struct BlockScaledMmaOp_PreB[
         DType.uint8,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
         DType.uint8,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
         DType.float32,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _a_scale_packed: TileTensor[
         DType.int32,
         type_of(Self._a_scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
         DType.int32,
         type_of(Self._b_scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     # Per-kernel runtime parity shifts for BM=16 / WN=16 cell-straddle.
@@ -355,23 +355,23 @@ struct BlockScaledMmaOp_PreB[
             Self.num_k_mmas % 2 == 0
         ), "preb scale path requires num_k_mmas % 2 == 0 (k_pack=2)"
 
-        self._a_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[.uint8, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[.uint8, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[.float32, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[.float32, address_space=.LOCAL](
             Self._c_reg_layout
         )
         _ = self._c_reg.fill(Float32(0))
 
         self._a_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._a_scale_layout)
 
         self._b_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._b_scale_layout)
 
         # WM=16 / WN=16 cell-straddle: when warp_*_off // 16 is odd, the CTA's
@@ -390,9 +390,7 @@ struct BlockScaledMmaOp_PreB[
         mma_k_idx: Int
     ](
         self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        a_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
     ):
         """Load A fragment for MFMA-K position `mma_k_idx` from row-major SMEM.
 
@@ -862,7 +860,7 @@ struct BlockScaledMatmulAMD_PreB[
 
         # SMEM for A only — B and scales come direct from preshuffled DRAM.
         # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
-        var a_smem = stack_allocation[.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[.uint8, address_space=.SHARED](
             row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
         )
 
@@ -898,7 +896,7 @@ struct BlockScaledMatmulAMD_PreB[
         var a_blockrow = a.tile[Self.BM, A_K_BYTES](m_tile_idx, 0)
 
         # A DRAM-load landing ring (num_a_load_slots; 1 at the depth-2 default).
-        var a_load_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[.uint8, address_space=.LOCAL](
             row_major[Self.num_a_load_slots, a_reg_elems]()
         )
 

@@ -221,7 +221,7 @@ def _gemm_smallm_streaming_kernel[
     var c_smem = unsafe_stack_allocation[
         warps_per_block * WARP_SIZE * lane_slot,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # The runtime column loop exists only where its iterations reuse the

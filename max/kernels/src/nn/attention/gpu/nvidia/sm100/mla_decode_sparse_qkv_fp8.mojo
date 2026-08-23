@@ -339,7 +339,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -411,7 +411,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var q_smem = external_memory[
             Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -933,7 +933,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.fp8_type,
                 type_of(q_tt_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](q_smem.bitcast[Scalar[Self.fp8_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 

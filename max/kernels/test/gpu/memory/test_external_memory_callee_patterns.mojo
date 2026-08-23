@@ -39,7 +39,7 @@ def _callee_fill_and_reduce(
     """
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="callee_ext",
     ]()
@@ -99,7 +99,7 @@ def _deep_baz(
     """Innermost callee — owns the external_memory reference."""
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="deep_ext",
     ]()

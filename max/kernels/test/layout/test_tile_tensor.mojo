@@ -952,7 +952,7 @@ def test_linear_idx_type_shared_address_space() raises:
         DType.float32,
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     comptime assert TensorType.linear_idx_type == .int32
 

@@ -77,11 +77,11 @@ def publish_smoke_kernel[
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
     # The publish mbarrier (one SharedMemBarrier = one 8-byte slot).
     var mbar = unsafe_stack_allocation[
-        1, DType.int64, address_space=AddressSpace.SHARED, alignment=8
+        1, DType.int64, address_space=.SHARED, alignment=8
     ]().bitcast[SharedMemBarrier]()
 
     var me = block_rank_in_cluster()

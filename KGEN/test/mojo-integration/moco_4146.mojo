@@ -34,9 +34,7 @@ struct Tile[
     *,
     Storage: TensorStorage = PointerStorage,
 ](ImplicitlyCopyable, TrivialRegisterPassable):
-    var _storage: Self.Storage.StorageType[
-        Self.dtype, Self.origin, AddressSpace.GENERIC
-    ]
+    var _storage: Self.Storage.StorageType[Self.dtype, Self.origin, .GENERIC]
 
 
 struct PointerStorage(TensorStorage):

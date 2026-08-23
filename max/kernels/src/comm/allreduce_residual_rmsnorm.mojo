@@ -458,7 +458,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # +1 advances the Signal pointer by sizeof(Signal) bytes, stepping
     # past the Signal header to reach the scratch region of the buffer.
     var scratch_fp8 = (
-        rank_sigs[_my_rank].address_space_cast[AddressSpace.GENERIC]() + 1
+        rank_sigs[_my_rank].address_space_cast[.GENERIC]() + 1
     ).bitcast[Scalar[out_dtype]]()
     var scratch_scale = (scratch_fp8 + fp8_per_rank).bitcast[
         Scalar[scales_dtype]
@@ -480,9 +480,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
     comptime for i in range(ngpus):
         # +1 advances by sizeof(Signal) bytes (see local scratch note above).
-        var base_i = (
-            rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
-        ).bitcast[Scalar[out_dtype]]()
+        var base_i = (rank_sigs[i].address_space_cast[.GENERIC]() + 1).bitcast[
+            Scalar[out_dtype]
+        ]()
         fp8_ptrs[i] = base_i
         scale_ptrs[i] = (base_i + fp8_per_rank).bitcast[Scalar[scales_dtype]]()
         comptime if has_residual:

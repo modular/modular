@@ -1051,7 +1051,7 @@ def _mha_sm90[
     comptime q_smem_size = 2 * q_size if persistent else q_size
     var q_smem = external_memory[
         Scalar[kv_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
@@ -1281,7 +1281,7 @@ def _mha_sm90[
             kv_type,
             k_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,
             alignment=128,
@@ -1298,7 +1298,7 @@ def _mha_sm90[
             kv_type,
             v_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,
             alignment=128,
@@ -1388,7 +1388,7 @@ def _mha_sm90[
             kv_type,
             q_smem_layout_consumer,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]:
             return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
@@ -1406,14 +1406,14 @@ def _mha_sm90[
             accum_type,
             s_reg_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var output_reg_tile = (
             LayoutTensor[
                 accum_type,
                 o_reg_tile_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
             ]
             .stack_allocation()
             .fill(0)
@@ -1425,7 +1425,7 @@ def _mha_sm90[
             kv_type,
             p_reg_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
 
         @__parameter
@@ -1435,7 +1435,7 @@ def _mha_sm90[
                 accum_type,
                 p_vec_output_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
                 element_layout=element_layout,
             ],
         ):
@@ -1448,7 +1448,7 @@ def _mha_sm90[
                 accum_type,
                 o_vec_output_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
                 element_layout=element_layout,
             ],
         ):
@@ -1458,13 +1458,13 @@ def _mha_sm90[
             accum_type,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var rowsum = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
 
         # Mask global memory iterator.

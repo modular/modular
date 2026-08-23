@@ -60,14 +60,14 @@ def matmul_qint4_pack_b[
     b: TileTensor[
         mut=False,
         DType.uint8,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=PointerStorage[],
         ...,
     ],
     b_rot: TileTensor[
         mut=True,
         DType.uint8,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=PointerStorage[],
         ...,
     ],
@@ -161,7 +161,7 @@ def _quantize_a_buffer[
     *,
     aq_interleave: Int = group_size,
 ](
-    a: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     a_quant: LayoutTensor[mut=True, aq_type, ...],
     a_scale: LayoutTensor[mut=True, DType.float32, ...],
 ):
@@ -427,9 +427,7 @@ trait _MatmulQInt4Kernel:
     def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[
-            mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-        ],
+        a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
         a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
@@ -476,9 +474,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[
-            mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-        ],
+        a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
         a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
@@ -614,9 +610,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[
-            mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-        ],
+        a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
         a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
@@ -777,9 +771,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[
-            mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-        ],
+        a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
         a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
@@ -890,9 +882,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     def quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[
-            mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-        ],
+        a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
         a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
@@ -1002,22 +992,18 @@ def _matmul_qint4_m_1[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_quant: LayoutTensor[
-        mut=False, aq_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_quant: LayoutTensor[mut=False, aq_type, address_space=.GENERIC, ...],
     a_scale: LayoutTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.float32, address_space=.GENERIC, ...
     ],
     b: LayoutTensor[
         mut=False,
         DType.uint8,
         b_layout,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a_quant.rank == 2
@@ -1094,22 +1080,18 @@ def _matmul_qint4_m_any[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_quant: LayoutTensor[
-        mut=False, aq_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_quant: LayoutTensor[mut=False, aq_type, address_space=.GENERIC, ...],
     a_scale: LayoutTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.float32, address_space=.GENERIC, ...
     ],
     b: LayoutTensor[
         mut=False,
         DType.uint8,
         b_layout,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
@@ -1267,19 +1249,15 @@ def _matmul_qint4[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a: LayoutTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
     b: LayoutTensor[
         mut=False,
         DType.uint8,
         b_layout,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
@@ -1330,15 +1308,9 @@ def matmul_qint4[
     group_size: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_tt: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_tt: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes a matrix multiply of a float32 A matrix against block-wise

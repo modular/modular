@@ -536,10 +536,10 @@ struct PreShuffledBGroupedGEMM[
         a_scales: TileTensor[.float8_e8m0fnu, ...],
         b_scales: TileTensor[.float8_e8m0fnu, ...],
         a_offsets: TileTensor[
-            mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.uint32, address_space=.GENERIC, ...
         ],
         expert_ids: TileTensor[
-            mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.int32, address_space=.GENERIC, ...
         ],
         max_num_tokens_per_expert: Int,
         num_active_experts: Int,
@@ -846,12 +846,8 @@ def block_scaled_grouped_matmul_amd[
     b: TileTensor[.uint8, ...],
     a_scales: TileTensor[.float8_e8m0fnu, ...],
     b_scales: TileTensor[.float8_e8m0fnu, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -949,12 +945,8 @@ def _launch_block_scaled_grouped[
     b: TileTensor[.uint8, ...],
     a_scales: TileTensor[.float8_e8m0fnu, ...],
     b_scales: TileTensor[.float8_e8m0fnu, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1048,12 +1040,8 @@ def block_scaled_grouped_matmul_amd_preb[
     b_pre: TileTensor[.uint8, ...],
     a_scales: TileTensor[.float8_e8m0fnu, ...],
     b_scales: TileTensor[.float8_e8m0fnu, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,

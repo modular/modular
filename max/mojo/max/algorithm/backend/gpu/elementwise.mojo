@@ -65,7 +65,7 @@ comptime _PDL_LEVEL = PDLLevel.ON
 
 @always_inline("nodebug")
 def _mbarrier_wait_acquire_cta(
-    mbar: Pointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
+    mbar: Pointer[mut=True, Int64, _, address_space=.SHARED],
     phase: UInt32,
 ):
     """Spin-waits on an mbarrier until the given phase completes, with acquire
@@ -179,25 +179,25 @@ struct _ClcKernel[
         var result = unsafe_stack_allocation[
             1,
             UInt128,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=16,
         ]()
         var mbar = unsafe_stack_allocation[
             1,
             Int64,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=8,
         ]()
         # Shared variables for single-barrier broadcast of cancel results.
         var canceled = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var next_tile = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
 
         var tile_id = block_idx.x

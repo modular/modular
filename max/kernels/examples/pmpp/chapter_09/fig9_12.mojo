@@ -43,7 +43,7 @@ def histogram_kernel(
     var bins_s = unsafe_stack_allocation[
         NUM_BINS,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize shared memory bins to zero

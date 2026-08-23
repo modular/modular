@@ -67,9 +67,9 @@ def co_rank(
 
 def co_rank_circular(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
     A_S_start: Int,
     B_S_start: Int,
@@ -120,9 +120,9 @@ def co_rank_circular(
 
 
 def merge_sequential_circular(
-    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
     A_S_start: Int,
@@ -197,12 +197,12 @@ def merge_circular_buffer_kernel(
     var A_S = unsafe_stack_allocation[
         1024,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var B_S = unsafe_stack_allocation[
         1024,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Block-level co-rank (same as tiled version)

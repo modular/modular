@@ -59,7 +59,7 @@ def async_copy_kernel[
         DType.float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     smem_tile.copy_from_async(input_tile)
@@ -158,7 +158,7 @@ def swizzle_copy[
             dtype,
             Layout.row_major(BM, BK),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -320,7 +320,7 @@ def partial_copy_dram_to_sram_async_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -426,7 +426,7 @@ def copy_dram_to_sram_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -536,7 +536,7 @@ def copy_sram_to_dram_kernel[
         DType.float32,
         Layout.row_major(M, N),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     arange(smem_tile)
 
@@ -701,7 +701,7 @@ def copy_local_to_local_kernel[
         DType.float32,
         Layout.row_major(MMA_M, MMA_N * simd_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
 
@@ -710,7 +710,7 @@ def copy_local_to_local_kernel[
             DType.bfloat16,
             Layout.row_major(MMA_M, MMA_N * simd_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -845,7 +845,7 @@ def copy_dram_to_local_kernel[
                 layout.size() // num_active_threads // simd_width, simd_width
             ),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -958,7 +958,7 @@ def copy_local_to_sram_kernel[
         DType.float32,
         Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
 
@@ -967,7 +967,7 @@ def copy_local_to_sram_kernel[
             dtype,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(0)

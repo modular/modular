@@ -150,9 +150,7 @@ def _cluster_cutoff_search[
     low_init: Float32,
     high_init: Float32,
     mass_above_low_init: Float32,
-    staged: UnsafePointer[
-        mut=True, Float32, _, address_space=AddressSpace.SHARED
-    ],
+    staged: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     vec_begin: Int,
     vec_end: Int,
 ) -> Tuple[Float32, Float32]:
@@ -197,7 +195,7 @@ def _cluster_cutoff_search[
         2 * _CLUSTER_SLOT_FLOATS,
         Float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var phase = 0
 
@@ -359,9 +357,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # re-reads them from the SM rather than from L2 on every iteration. The
     # host guarantees the slice fits before choosing this kernel; a row too
     # wide for the budget goes to the single-block kernel instead.
-    var smem = external_memory[
-        Float32, address_space=AddressSpace.SHARED, alignment=16
-    ]()
+    var smem = external_memory[Float32, address_space=.SHARED, alignment=16]()
 
     # Publish slots for this kernel's own cross-CTA combines, used in turn so
     # neither needs a sync to retire it. The cutoff search brings its own
@@ -370,7 +366,7 @@ def TopKTopPMaskedProbsClusterKernel[
         2 * _CLUSTER_SLOT_FLOATS,
         Float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     wait_on_dependent_grids()
@@ -708,9 +704,7 @@ def _sampling_rejection_loop_cluster[
     p_eff: Float32,
     z: Float32,
     mut generator: Random,
-    smem: UnsafePointer[
-        mut=True, Float32, _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     rank: Int,
     vec_begin: Int,
     vec_end: Int,
@@ -760,7 +754,7 @@ def _sampling_rejection_loop_cluster[
     """
     var tx = Int(thread_idx.x)
     var sampled_id_sram = unsafe_stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
+        1, Int, address_space=.SHARED
     ]()
 
     # Publish slots for this loop's combines, sized for the widest (the
@@ -771,7 +765,7 @@ def _sampling_rejection_loop_cluster[
         2 * slot_floats,
         Float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var phase = 0
 
@@ -1053,9 +1047,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # memory, so the sampling trials and the search re-read them from the SM
     # rather than from L2. The host guarantees the slice fits before choosing
     # this kernel.
-    var smem = external_memory[
-        Float32, address_space=AddressSpace.SHARED, alignment=16
-    ]()
+    var smem = external_memory[Float32, address_space=.SHARED, alignment=16]()
 
     # Publish slots for this kernel's own cross-CTA combines; the loop and
     # the search bring their own pairs.
@@ -1063,7 +1055,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
         2 * _CLUSTER_SLOT_FLOATS,
         Float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     wait_on_dependent_grids()

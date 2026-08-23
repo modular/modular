@@ -164,7 +164,7 @@ struct BlockwiseFP8Accumulator[
         Self.accum_type,
         Self.AccumLayout,
         MutUntrackedOrigin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ]
 
     # Fragment load parameters (match TmemFragments defaults)

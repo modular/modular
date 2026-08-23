@@ -48,14 +48,14 @@ def cluster_launch_control(
     var result = unsafe_stack_allocation[
         1,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -113,21 +113,21 @@ def pipeline_test_kernel[
     var clc_response = unsafe_stack_allocation[
         num_stages,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var full_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var empty_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 

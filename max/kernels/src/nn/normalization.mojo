@@ -96,10 +96,10 @@ def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var warp_m2 = warp.sum(val)
@@ -137,17 +137,13 @@ def block_reduce_dual_sum[
 ]:
     """Combined block reduction for two sums using only 2 barriers."""
     var shared0 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var shared1 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
-    var broadcast0 = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var broadcast1 = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var broadcast0 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
+    var broadcast1 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
 
     var warp_sum0 = warp.sum(val0)
     var warp_sum1 = warp.sum(val1)
@@ -252,22 +248,22 @@ def welford_block_all_reduce[
     mut res_count: Scalar[dtype],
 ):
     var mean_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var m2_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var count_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var mean_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
     var count_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var warp_idx = warp_id()

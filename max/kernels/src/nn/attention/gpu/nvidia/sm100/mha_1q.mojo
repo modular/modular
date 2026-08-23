@@ -274,7 +274,7 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -305,7 +305,7 @@ def local_tensor_type[
         dtype,
         layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=element_layout,
     ]
 ):
@@ -349,7 +349,7 @@ trait AccumulatorTile(TrivialRegisterPassable):
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
     ):
         ...
@@ -558,7 +558,7 @@ struct TMemAccumulator[
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
     ):
         Self.check_constraints()
@@ -755,7 +755,7 @@ struct TMemOperand[
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -799,7 +799,7 @@ struct TMemOperand[
                 IntTuple(Self.frag_size),
             ),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=Layout.row_major(Self.frag_size),
         ](src.ptr)
         # frags = src.vectorize[1, Self.frag_size]()
@@ -917,7 +917,7 @@ struct TMemOperand[
             dst_type,
             dst_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=dst_element_layout,
         ],
     ):
@@ -1078,9 +1078,7 @@ struct SM100TensorAccumulatorSS[
     comptime num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
 
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.operand_t], MutAnyOrigin, address_space=.SHARED
     ]
 
     comptime a_offset = MMAOperandOffsetFn[
@@ -1124,7 +1122,7 @@ struct SM100TensorAccumulatorSS[
 
     @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
     var pipeline: PipelineState[Self.pipeline_stages]
 
@@ -1150,7 +1148,7 @@ struct SM100TensorAccumulatorSS[
     def __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1171,10 +1169,10 @@ struct SM100TensorAccumulatorSS[
         dtype_a: DType, dtype_b: DType
     ](
         p_a: UnsafePointer[
-            Scalar[dtype_a], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_a], MutAnyOrigin, address_space=.SHARED
         ],
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self.ab_t:
         Self.check_constraints()
@@ -1341,9 +1339,7 @@ struct SM100TensorAccumulatorTS[
         UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
     )
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.operand_t], MutAnyOrigin, address_space=.SHARED
     ]
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
@@ -1392,7 +1388,7 @@ struct SM100TensorAccumulatorTS[
 
     @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
     var phase: UInt32
 
@@ -1413,7 +1409,7 @@ struct SM100TensorAccumulatorTS[
     def __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1437,7 +1433,7 @@ struct SM100TensorAccumulatorTS[
         dtype_b: DType
     ](
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self.ab_t.b_t:
         Self.check_constraints()
@@ -2424,7 +2420,7 @@ def _mha_sm100[
     comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
     var q_smem = external_memory[
         Scalar[kv_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
@@ -2977,26 +2973,26 @@ def _mha_sm100[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var rowsum = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         comptime VecPType = LayoutTensor[
             accum_type,
             p_vec_output_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=element_layout,
         ]
         comptime VecOType = LayoutTensor[
             accum_type,
             o_vec_output_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=element_layout,
         ]
 
@@ -3116,7 +3112,7 @@ def _mha_sm100[
             var accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
             var accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
                 Int(warp_y), Int(warp_x)
@@ -3317,7 +3313,7 @@ def _mha_sm100[
                 var p_smem_tile = LayoutTensor[
                     kv_type,
                     Layout.row_major(BM, MMA_N0),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](p_smem.bitcast[Scalar[kv_type]]())
                 var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](
                     Int(warp_y), 0
@@ -3395,7 +3391,7 @@ def _mha_sm100[
             var p_smem_tile = LayoutTensor[
                 kv_type,
                 Layout.row_major(BM, MMA_N0),
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](p_smem.bitcast[Scalar[kv_type]]())
             var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](Int(warp_y), 0)
             copy_local_to_shared[

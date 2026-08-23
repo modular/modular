@@ -129,9 +129,7 @@ def bulk_mma_pair_cta_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
@@ -144,14 +142,14 @@ def bulk_mma_pair_cta_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -427,9 +425,7 @@ def bulk_mma_pair_cta_ts_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
@@ -442,14 +438,14 @@ def bulk_mma_pair_cta_ts_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 

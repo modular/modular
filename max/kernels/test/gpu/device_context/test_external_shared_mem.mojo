@@ -23,7 +23,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
 
     def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var dynamic_sram = external_memory[
-            Float32, address_space=AddressSpace.SHARED, alignment=4
+            Float32, address_space=.SHARED, alignment=4
         ]()
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()

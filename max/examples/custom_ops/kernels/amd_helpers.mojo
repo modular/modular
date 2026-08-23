@@ -249,7 +249,7 @@ struct AMD_MMA[
         Self.in_type,
         type_of(Self.MMARegTileLayout[num_mmas]),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
 
@@ -343,7 +343,7 @@ struct MMATileBuffers[
         Self.mma_type.in_type,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=Self.mma_type.type_alignment,
     ]
 
@@ -420,12 +420,12 @@ struct MMATileBuffers[
         ](warp_idx, warp_k_idx)
         self.load_reg_tile = stack_allocation[
             dtype=Self.mma_type.in_type,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             alignment=Self.mma_type.type_alignment,
         ](Self.MMARegTileLayout)
         self.mma_reg_tile = stack_allocation[
             dtype=Self.mma_type.in_type,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             alignment=Self.mma_type.type_alignment,
         ](Self.MMARegTileLayout)
         # Bridge the incoming `TileTensor` once for the AMD DMA path.

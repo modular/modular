@@ -124,7 +124,7 @@ def top_k_shape_impl[
 @always_inline
 def _adjust_top_p[
     T: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](
     top_p: Scalar[T],
     values: UnsafePointer[Scalar[T], _, address_space=address_space],
@@ -917,12 +917,12 @@ def _block_reduce_topk[
     var p_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
         Int,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var u_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * u_width,
         Scalar[T],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Calculate warp id and thread information
@@ -1032,9 +1032,7 @@ def _topk_stage1[
 
     # Shared memory to broadcast the winner index so the owning thread
     # can write the dead value (better L1 locality than thread 0).
-    var winner_sram = unsafe_stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
+    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
     comptime HEAP_SIZE = 8
 
@@ -1183,10 +1181,10 @@ def _topk_stage2[
     var vals_sram = unsafe_stack_allocation[
         _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
         Scalar[T],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]() if comptime (is_apple_gpu()) else external_memory[
         Scalar[T],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Scalar[T]](),
     ]()
 
@@ -1226,7 +1224,7 @@ def _topk_stage2[
             s_val2 = (s_id + 2 * k_batch).bitcast[Scalar[T]]()
 
         var s_sum = unsafe_stack_allocation[
-            1, Scalar[T], address_space=AddressSpace.SHARED
+            1, Scalar[T], address_space=.SHARED
         ]()
         s_sum[0] = Scalar[T](0)
         var max_logit = Scalar[T](0)

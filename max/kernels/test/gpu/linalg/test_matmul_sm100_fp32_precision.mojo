@@ -95,7 +95,7 @@ def _run_matmul[
 ](
     a_host: TileTensor[
         f32,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
@@ -103,7 +103,7 @@ def _run_matmul[
     c_host: TileTensor[
         mut=True,
         f32,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],

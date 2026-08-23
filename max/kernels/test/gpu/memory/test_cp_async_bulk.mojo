@@ -49,10 +49,10 @@ def kernel_bulk_g2s[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
     var mbar = unsafe_stack_allocation[
-        1, SharedMemBarrier, address_space=AddressSpace.SHARED
+        1, SharedMemBarrier, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -115,7 +115,7 @@ def kernel_bulk_s2g[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -163,7 +163,7 @@ def kernel_bulk_reduce_s2g[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x

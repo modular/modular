@@ -77,7 +77,7 @@ def kernel_case_a(
 ):
     # SMEM destination: (BN, DEPTH) row-major.
     comptime dst_layout = row_major[BN, DEPTH]()
-    var dst_smem = tt_stack_allocation[.bfloat16, AddressSpace.SHARED](
+    var dst_smem = tt_stack_allocation[.bfloat16, address_space=.SHARED](
         dst_layout
     )
 
@@ -113,7 +113,7 @@ def kernel_case_b(
 ):
     # SMEM destination: (BN, DEPTH) row-major, same as Case A.
     comptime dst_layout = row_major[BN, DEPTH]()
-    var dst_smem = tt_stack_allocation[.bfloat16, AddressSpace.SHARED](
+    var dst_smem = tt_stack_allocation[.bfloat16, address_space=.SHARED](
         dst_layout
     )
 

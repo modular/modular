@@ -268,10 +268,10 @@ struct Q4sym[
         input_rank: Int
     ](
         input_tt: TileTensor[
-            mut=False, Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=False, Self.float_dtype, address_space=.GENERIC, ...
         ],
         output_tt: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+            mut=True, DType.uint8, address_space=.GENERIC, ...
         ],
         input_shape: IndexList[input_rank],
     ):
@@ -354,12 +354,12 @@ struct Q4sym[
         output_rank: Int
     ](
         input_tt: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.uint8, address_space=.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True,
             Self.float_dtype,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         output_shape: IndexList[output_rank],
@@ -460,7 +460,7 @@ struct block_Q4_K:
 
 
 def scale_min_k4(
-    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
+    src_ptr: UnsafePointer[block_Q4_K, address_space=.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     """Extracts the 6-bit quantized scale and min for group `g` from a Q4_K block.
@@ -489,12 +489,8 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
 ):
     """Dequantizes a Q4_K encoded tensor into a float32 output tensor.
 
@@ -591,12 +587,8 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     output_shape: IndexList[output_rank],
 ):
     """Dequantizes a Q6_K encoded tensor into a float32 output tensor.

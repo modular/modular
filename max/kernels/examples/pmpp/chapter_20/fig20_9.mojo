@@ -62,17 +62,17 @@ def flashattention_forward_kernel(
     var KT_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var S_i = unsafe_stack_allocation[
         B_r * B_c,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var V_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Per-thread register storage (like CUDA)

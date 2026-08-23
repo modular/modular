@@ -189,7 +189,7 @@ struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
 def _canonical_reshape[
     dtype: DType
 ](
-    buf: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    buf: TileTensor[dtype, address_space=.GENERIC, ...],
     axis: Int,
 ) -> _CanonicallyReshapedBuffer[buf.origin]:
     var shape = coord_to_index_list(buf.layout.shape_coord())
@@ -205,9 +205,7 @@ def _canonical_reshape_output[
     //,
     dtype: DType,
 ](
-    out_buf: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    out_buf: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) -> _CanonicallyReshapedBuffer[out_buf.origin]:
@@ -230,9 +228,7 @@ def _concat_parallel[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     ctx: Optional[DeviceContext] = None,
@@ -381,9 +377,7 @@ def _concat[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -445,9 +439,7 @@ def _concat_inner[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     var num_elems_copied: Int = 0
@@ -491,9 +483,7 @@ def _concat_serial[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -522,9 +512,7 @@ def _concat_cpu[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     ctx: Optional[DeviceContext] = None,
@@ -623,9 +611,7 @@ def concat[
     target: StaticString = "cpu",
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin],
@@ -826,7 +812,7 @@ def _concat_gpu_elementwise[
     output: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -859,7 +845,7 @@ def _concat_gpu_elementwise[
     output: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -996,7 +982,7 @@ def _concat_gpu[
     output: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -1095,7 +1081,7 @@ def _fused_concat_cpu[
     output: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -1330,7 +1316,7 @@ def _fused_concat_gpu_elementwise[
     output: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -1425,7 +1411,7 @@ def _fused_dual_concat_gpu_elementwise[
     output_0: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],
@@ -1433,7 +1419,7 @@ def _fused_dual_concat_gpu_elementwise[
     output_1: TileTensor[
         mut=True,
         dtype,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=_,
         ...,
     ],

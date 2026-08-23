@@ -83,9 +83,9 @@ def generic_to_shared_to_generic_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedTileCopier[thread_layout]().copy(smem, src)
     barrier()
@@ -105,9 +105,9 @@ def generic_to_local_to_generic_kernel(
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
     # Per-thread fragment of a 4x4 tile under a 2x2 thread layout.
-    var local = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.LOCAL
-    ](row_major[2, 2]())
+    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+        row_major[2, 2]()
+    )
 
     GenericToLocalTileCopier[thread_layout]().copy(local, src)
     LocalToGenericTileCopier[thread_layout]().copy(dst, local)
@@ -129,15 +129,15 @@ def shared_local_shared_kernel(
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
 
-    var smem_in = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
-    var smem_out = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
-    var local = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.LOCAL
-    ](row_major[2, 2]())
+    var smem_in = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
+    var smem_out = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
+    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+        row_major[2, 2]()
+    )
 
     GenericToSharedTileCopier[thread_layout]().copy(smem_in, src)
     barrier()
@@ -166,12 +166,12 @@ def swizzled_local_to_shared_to_generic_kernel(
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
 
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
-    var local = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.LOCAL
-    ](row_major[2, 2]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
+    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+        row_major[2, 2]()
+    )
 
     GenericToLocalTileCopier[thread_layout]().copy(local, src)
     LocalToSharedTileCopier[thread_layout, swizzle=swizzle]().copy(smem, local)
@@ -195,9 +195,9 @@ def async_generic_to_shared_to_generic_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout]().copy(smem, src)
     async_copy_commit_group()
@@ -220,9 +220,9 @@ def async_generic_to_shared_to_generic_8b_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout]().copy(
         smem.vectorize[1, 2](), src.vectorize[1, 2]()
@@ -247,9 +247,9 @@ def async_generic_to_shared_to_generic_16b_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout]().copy(
         smem.vectorize[1, 4](), src.vectorize[1, 4]()
@@ -283,9 +283,9 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
 
     var src = TileTensor(src_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
     var dst = TileTensor(dst_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
-    var smem = stack_allocation[
-        dtype=DType.bfloat16, address_space=AddressSpace.SHARED
-    ](row_major[_BF16_ROWS, _BF16_COLS]())
+    var smem = stack_allocation[dtype=.bfloat16, address_space=.SHARED](
+        row_major[_BF16_ROWS, _BF16_COLS]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout]().copy(
         smem.vectorize[1, 8](), src.vectorize[1, 8]()
@@ -319,9 +319,9 @@ def masked_async_generic_to_shared_to_generic_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout, masked=True]().copy(smem, src)
     async_copy_commit_group()
@@ -350,9 +350,9 @@ def access_size_swizzled_vectorized_async_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout, swizzle=swizzle]().copy(
         smem.vectorize[1, simd_size](),
@@ -384,9 +384,9 @@ def swizzled_async_generic_to_shared_to_generic_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[
-        dtype=DType.float32, address_space=AddressSpace.SHARED
-    ](row_major[_N, _N]())
+    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[_N, _N]()
+    )
 
     GenericToSharedAsyncTileCopier[thread_layout, swizzle=swizzle]().copy(
         smem, src

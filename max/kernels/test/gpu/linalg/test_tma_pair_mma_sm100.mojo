@@ -112,9 +112,7 @@ def tma_umma_kernel_pair_cta[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -127,14 +125,14 @@ def tma_umma_kernel_pair_cta[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 

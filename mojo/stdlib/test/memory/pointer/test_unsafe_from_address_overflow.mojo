@@ -25,7 +25,7 @@ from std.memory.address_space import AddressSpace
 def _kernel(addr: Int64):
     # `addr` is a runtime value larger than a 32-bit `SHARED` pointer can hold.
     # `Int` is not device-passable, so it arrives as a fixed-width `Int64`.
-    var p = Pointer[Int, MutAnyOrigin, address_space=AddressSpace.SHARED](
+    var p = Pointer[Int, MutAnyOrigin, address_space=.SHARED](
         unsafe_from_address=Int(addr)
     )
     _ = p

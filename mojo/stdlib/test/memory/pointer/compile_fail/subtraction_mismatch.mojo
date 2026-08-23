@@ -21,7 +21,7 @@ def main():
     var x = 42
     var y = 4.2
     var p = Pointer(to=x)
-    var p_global = p.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var p_global = p.unsafe_address_space_cast[.GLOBAL]()
     var p_float = Pointer(to=y)
 
     # CHECK: invalid call to 'offset_from'

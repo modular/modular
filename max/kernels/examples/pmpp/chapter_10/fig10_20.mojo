@@ -76,7 +76,7 @@ def coarsened_sum_reduction_kernel(
     var partial_sums_s = unsafe_stack_allocation[
         BLOCK_DIM // WARP_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Store warp results to shared memory

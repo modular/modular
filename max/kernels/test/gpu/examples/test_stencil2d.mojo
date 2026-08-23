@@ -95,7 +95,7 @@ def stencil2d_smem(
     var a_shared_ptr = unsafe_stack_allocation[
         (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var a_shared = TileTensor(
         a_shared_ptr, row_major[BLOCK_DIM + 2, BLOCK_DIM + 2]()

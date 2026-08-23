@@ -24,11 +24,7 @@ def loadTile(
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[
-        Float32,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    T_s: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,

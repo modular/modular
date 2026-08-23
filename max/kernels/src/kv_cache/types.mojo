@@ -475,7 +475,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -823,7 +823,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,
@@ -983,7 +983,7 @@ struct PagedRowIndices[
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         *,

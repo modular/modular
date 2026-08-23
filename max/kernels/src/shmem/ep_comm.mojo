@@ -209,7 +209,7 @@ def block_prefix_sum[
     var warp_prefix_sum = unsafe_stack_allocation[
         n_warps,
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var val = Scalar[dtype](0)
@@ -412,7 +412,7 @@ trait TokenFormat(Deinitable, DevicePassable):
     def copy_token_to_send_buf[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -423,7 +423,7 @@ trait TokenFormat(Deinitable, DevicePassable):
 
     @always_inline
     def copy_msg_to_output_tensor[
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
@@ -576,7 +576,7 @@ struct BF16TokenFormat[
     def copy_token_to_send_buf[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -590,7 +590,7 @@ struct BF16TokenFormat[
 
     @always_inline
     def copy_msg_to_output_tensor[
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
@@ -783,7 +783,7 @@ struct BlockwiseFP8TokenFormat[
     def copy_token_to_send_buf[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -830,7 +830,7 @@ struct BlockwiseFP8TokenFormat[
 
     @always_inline
     def copy_msg_to_output_tensor[
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
@@ -1160,7 +1160,7 @@ struct NVBlockScaledTokenFormat[
     def copy_token_to_send_buf[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -1229,7 +1229,7 @@ struct NVBlockScaledTokenFormat[
 
     @always_inline
     def copy_msg_to_output_tensor[
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
@@ -1246,7 +1246,7 @@ struct NVBlockScaledTokenFormat[
             self.scales_tma_op.prefetch_descriptor()
 
         var smem_base = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
+            UInt8, address_space=.SHARED, alignment=128
         ]()
         var mbar_base = (smem_base + Self._mbar_smem_offset).bitcast[
             SharedMemBarrier
@@ -1285,7 +1285,7 @@ struct NVBlockScaledTokenFormat[
         )
         var smem_ptr = external_memory[
             Scalar[Self.scales_dtype],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]()
         var scales_tile = TileTensor(
@@ -1587,7 +1587,7 @@ struct MXTokenFormat[
     def _copy_token_to_send_buf_fp6[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -1651,7 +1651,7 @@ struct MXTokenFormat[
     def copy_token_to_send_buf[
         src_type: DType,
         block_size: Int,
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
@@ -1728,7 +1728,7 @@ struct MXTokenFormat[
 
     @always_inline
     def copy_msg_to_output_tensor[
-        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+        buf_addr_space: AddressSpace = .GENERIC,
     ](
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
@@ -1871,7 +1871,7 @@ struct EPLocalSyncCounters[n_experts: Int](
     def __init__(out self, ptr: UnsafePointer[mut=True, Int32, ...]):
         self.ptr = ptr.unsafe_origin_cast[
             MutUntrackedOrigin
-        ]().address_space_cast[AddressSpace.GENERIC]()
+        ]().address_space_cast[.GENERIC]()
 
     @always_inline
     def __init__(out self, mut buffer: DeviceBuffer[.int32]):
@@ -2463,7 +2463,7 @@ struct EPDispatchKernel[
         var tid = thread_idx.x
 
         var prefix_sum_arr = unsafe_stack_allocation[
-            Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
+            Self.n_experts, DType.uint32, address_space=.SHARED
         ]()
 
         if tid < Self.n_local_experts + shared_expert_offset:
@@ -2644,13 +2644,13 @@ struct EPDispatchKernel[
         # Shared memory: rank prefix sums, per-tile token-to-rank map,
         # expert start, and chunk_start broadcast slot.
         var rank_prefix = unsafe_stack_allocation[
-            Self.n_ranks, DType.int32, address_space=AddressSpace.SHARED
+            Self.n_ranks, DType.int32, address_space=.SHARED
         ]()
         var tok_rank_map = unsafe_stack_allocation[
-            tile_size, DType.int32, address_space=AddressSpace.SHARED
+            tile_size, DType.int32, address_space=.SHARED
         ]()
         var smem_vals = unsafe_stack_allocation[
-            2, DType.int32, address_space=AddressSpace.SHARED
+            2, DType.int32, address_space=.SHARED
         ]()
 
         @always_inline

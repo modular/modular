@@ -168,7 +168,7 @@ def fp8_index_kernel[
 
     ref smem_ptr = external_memory[
         UInt8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
@@ -179,17 +179,17 @@ def fp8_index_kernel[
     var q_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(num_heads, depth),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](k_smem.unsafe_ptr())
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(k_smem), address_space=AddressSpace.SHARED
+        Scalar[dtype], origin_of(k_smem), address_space=.SHARED
     ] = k_smem.unsafe_ptr()
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
@@ -210,28 +210,28 @@ def fp8_index_kernel[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime QSRegTileType = LayoutTensor[
         DType.float32,
         Layout.row_major(1, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime LogitsSumType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, 1),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime ScratchType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN, thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     var q_tile = QTileType(q_ptr)
@@ -259,7 +259,7 @@ def fp8_index_kernel[
     # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
     comptime q_vecs = num_heads * depth // simd_width
     var q_smem_dst: UnsafePointer[
-        Scalar[dtype], origin_of(q_smem), address_space=AddressSpace.SHARED
+        Scalar[dtype], origin_of(q_smem), address_space=.SHARED
     ] = q_smem.unsafe_ptr()
     for v in range(Int(tid), q_vecs, num_threads):
         q_smem_dst.store(

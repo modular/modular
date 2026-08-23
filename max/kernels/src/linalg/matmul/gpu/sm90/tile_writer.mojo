@@ -158,7 +158,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
         src: TileTensor[
             mut=True,
             dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             ...,
         ],
         coords: Tuple[Int, Int],
@@ -221,7 +221,7 @@ struct TileWriterTMA[
         src: TileTensor[
             mut=True,
             dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             ...,
         ],
         coords: Tuple[Int, Int],
@@ -292,7 +292,7 @@ struct TileWriterThreadwise[
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType
@@ -319,7 +319,7 @@ struct TileWriterThreadwise[
         src: TileTensor[
             mut=True,
             dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             ...,
         ],
         coords: Tuple[Int, Int],
@@ -502,7 +502,7 @@ struct FragmentToSMemWriter[
         dtype=Self.c_type,
         LayoutType=Self.c_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
@@ -516,7 +516,7 @@ struct FragmentToSMemWriter[
             dtype=Self.c_type,
             LayoutType=Self.c_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -569,7 +569,7 @@ struct FragmentToSMemWriter[
             mut=True,
             dtype=Self.c_type,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -627,7 +627,7 @@ struct FragmentToSMemWriter[
             dtype=Self.c_type,
             LayoutType=type_of(flat_tile_layout),
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             self.c_tile._storage + tile_linear_idx * elements_per_tile,
             flat_tile_layout,
@@ -746,7 +746,7 @@ struct RegisterToGMemWriter[
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType

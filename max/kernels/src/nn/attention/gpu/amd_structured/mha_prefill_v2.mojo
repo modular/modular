@@ -2208,7 +2208,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             DType.float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)
         # Partial-Q-tile bound: for sequences whose length is not a

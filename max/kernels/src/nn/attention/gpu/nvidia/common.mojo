@@ -107,7 +107,7 @@ comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.LOCAL,
+    address_space=.LOCAL,
 ]
 comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
@@ -116,7 +116,7 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
@@ -552,7 +552,7 @@ def get_seq_info[
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
     )

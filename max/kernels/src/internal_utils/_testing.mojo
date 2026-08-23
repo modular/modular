@@ -349,8 +349,8 @@ def assert_with_measure[
         -0.5 * Float64(FPUtils[dtype].mantissa_width())
     ).cast[.float64]()
     var m = measure(
-        x.address_space_cast[AddressSpace.GENERIC](),
-        y.address_space_cast[AddressSpace.GENERIC](),
+        x.address_space_cast[.GENERIC](),
+        y.address_space_cast[.GENERIC](),
         num_elements,
     )
     var t = threshold.or_else(sqrt_eps)

@@ -316,7 +316,7 @@ comptime tile_layout = Layout.row_major(16, 16)
 var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ].stack_allocation()
 ```
 
@@ -624,7 +624,7 @@ def copy_from_async_example():
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         # Create thread layouts for copying

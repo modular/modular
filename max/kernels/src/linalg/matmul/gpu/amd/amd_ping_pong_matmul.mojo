@@ -361,31 +361,31 @@ struct AMDPingPongMatmul[
         # === SMEM: double-buffered half-tiles ===
         # A: 2 stages x 2 warp_m groups
         comptime a_half_layout = row_major[half_BM, BK]()
-        var a_s0_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s0_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
 
         # B: 2 stages x 2 warp_n groups
         comptime b_half_layout = row_major[half_BN, BK]()
-        var b_s0_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s0_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
 

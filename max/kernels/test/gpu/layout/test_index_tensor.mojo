@@ -26,11 +26,9 @@ def execute_index_tensor_test[
     //,
     batch_dims: Int,
 ](
-    data_device: TileTensor[data_type, address_space=AddressSpace.GENERIC, ...],
-    indices_device: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    expected_output_device: TileTensor[
-        data_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    data_device: TileTensor[data_type, address_space=.GENERIC, ...],
+    indices_device: TileTensor[address_space=.GENERIC, ...],
+    expected_output_device: TileTensor[data_type, address_space=.GENERIC, ...],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,
 ) raises:

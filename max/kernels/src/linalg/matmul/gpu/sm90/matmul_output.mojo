@@ -129,7 +129,7 @@ struct MatmulTileWriter[
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
         Storage=Self.tensor_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     comptime lambda_type = def[
@@ -146,7 +146,7 @@ struct MatmulTileWriter[
         dtype=Self.dtype,
         LayoutType=Self.smem_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
@@ -163,7 +163,7 @@ struct MatmulTileWriter[
             dtype=Self.dtype,
             LayoutType=Self.smem_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -464,7 +464,7 @@ struct MatmulTileWriter[
                             dtype=Self.dtype,
                             LayoutType=type_of(tma_smem_layout),
                             origin=MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ](smem_offset, tma_smem_layout)
 
                         var tma_coords = (
@@ -488,9 +488,7 @@ struct MatmulTileWriter[
                         half_tile=is_partial_tile,
                         swapAB=Self.swapAB,
                     ](
-                        workgroup_tile.address_space_cast[
-                            AddressSpace.GENERIC
-                        ](),
+                        workgroup_tile.address_space_cast[.GENERIC](),
                         self.local_thread_idx,
                     )
 

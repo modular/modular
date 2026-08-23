@@ -34,12 +34,7 @@ def loadTile(
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[
-        mut=True,
-        Float32,
-        _,
-        address_space=AddressSpace.SHARED,
-    ],
+    T_s: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,
@@ -108,12 +103,12 @@ def mm_tiled_kernel(
     var A_s = unsafe_stack_allocation[
         bM * bK,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var B_s = unsafe_stack_allocation[
         bK * bN,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Iterate over tiles

@@ -47,12 +47,12 @@ def matrix_mul_tiled_boundary_kernel(
     var Mds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var Nds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x

@@ -48,7 +48,7 @@ def global_load_store_kernel(
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
 ):
     """Load and store through a TileTensor backed by global memory."""
@@ -61,14 +61,14 @@ def shared_load_kernel(
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
     dst: TileTensor[
         mut=True,
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
 ):
     """Load from a shared-memory TileTensor, store to global."""
@@ -82,13 +82,13 @@ def shared_store_kernel(
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
     src: TileTensor[
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
 ):
     """Load from global, store to a shared-memory TileTensor."""
@@ -101,14 +101,14 @@ def invariant_load_kernel(
         DType.float32,
         _4x4,
         ImmutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
     dst: TileTensor[
         mut=True,
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
 ):
     """Invariant load should produce a non-coherent (ld.global.nc) instruction.
@@ -123,7 +123,7 @@ def vectorized_load_store_kernel(
         DType.float32,
         _4x4,
         MutAnyOrigin,
-        address_space=AddressSpace.GLOBAL,
+        address_space=.GLOBAL,
     ],
 ):
     """Width-4 load/store should produce vectorized (v4) instructions."""

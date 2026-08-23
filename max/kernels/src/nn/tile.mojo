@@ -29,11 +29,9 @@ from std.utils import IndexList
 def tile[
     dtype: DType, type_repeats: DType
 ](
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    repeats: TileTensor[type_repeats, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy

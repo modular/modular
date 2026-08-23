@@ -130,10 +130,10 @@ def sgemm_warp_tiling_kernel[
     # Use 4 to comply with f4 alignment used in accumulation.
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
-    var a_sram = stack_allocation[a_type, address_space=AddressSpace.SHARED](
+    var a_sram = stack_allocation[a_type, address_space=.SHARED](
         row_major[BK * BM_padded]()
     )
-    var b_sram = stack_allocation[b_type, address_space=AddressSpace.SHARED](
+    var b_sram = stack_allocation[b_type, address_space=.SHARED](
         row_major[BK * BN]()
     )
 

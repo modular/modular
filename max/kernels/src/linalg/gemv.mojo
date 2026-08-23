@@ -595,14 +595,14 @@ def gemv_split_k[
     var tid = thread_idx.x
     var tile_w = tt_stack_allocation[
         dtype=b_type,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
-    ](row_major[tile_m, tile_n]()).fill(0)
+    var acc = tt_stack_allocation[dtype=accum_type, address_space=.LOCAL](
+        row_major[tile_m, tile_n]()
+    ).fill(0)
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
 
@@ -681,9 +681,9 @@ def gemv_split_k[
     comptime k_warp_num = num_threads // WARP_SIZE
     var warp_id = warp_id()
     var lane_id = lane_id()
-    var shmem = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1, tile_m * tile_n * k_warp_num]())
+    var shmem = tt_stack_allocation[dtype=accum_type, address_space=.SHARED](
+        row_major[1, tile_m * tile_n * k_warp_num]()
+    )
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
@@ -890,7 +890,7 @@ def gevm_kernel[
     var x_shared = unsafe_stack_allocation[
         tile_size,
         accum_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     comptime if pdl_level > PDLLevel.OFF:
@@ -1861,9 +1861,7 @@ struct _MmaCpAsyncGmemLoaderA[
                     1 + next_stage * 2
                 ][].try_wait(next_phase)
 
-            var gmem_base = self.act.ptr.address_space_cast[
-                AddressSpace.GLOBAL
-            ]()
+            var gmem_base = self.act.ptr.address_space_cast[.GLOBAL]()
             var smem_tile_ptr = self.smem_a[self.stage].ptr
             comptime for v in range(Self.vec_per_iter):
                 var linear = (
@@ -2003,9 +2001,7 @@ struct _MmaCpAsyncGmemLoaderB[
                     1 + next_stage * 2
                 ][].try_wait(next_phase)
 
-            var gmem_base = self.weight.ptr.address_space_cast[
-                AddressSpace.GLOBAL
-            ]()
+            var gmem_base = self.weight.ptr.address_space_cast[.GLOBAL]()
             var smem_tile_ptr = self.smem_b[self.stage].ptr
             comptime for v in range(Self.vec_per_iter):
                 var linear = (
@@ -2323,7 +2319,7 @@ def gemm_mma_cpasync_kernel[
     ]
     ref smem = external_memory[
         UInt8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
     var smem_a = smem.a_tiles()

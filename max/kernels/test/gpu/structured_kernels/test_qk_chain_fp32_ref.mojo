@@ -151,7 +151,7 @@ def kernel_qk_chain[
     comptime smem_layout_k = row_major[_K_SLOT_ROWS, _K_SUB_COLS]()
 
     # ---- K SMEM allocation + cooperative fill from gmem image -------------
-    var k_smem = tt_stack_allocation[T, AddressSpace.SHARED](smem_layout_k)
+    var k_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_k)
     var tid = Int(thread_idx.x)
     comptime _smem_total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
@@ -161,7 +161,7 @@ def kernel_qk_chain[
     barrier()
 
     # ---- K register tile + load_K -----------------------------------------
-    var k_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.K_LAYOUT)
+    var k_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.K_LAYOUT)
     _Op.load_K(k_reg, k_smem)
 
     # ---- Q register tile + per-lane fill from gmem ------------------------
@@ -171,7 +171,7 @@ def kernel_qk_chain[
     #     Q_reg[register_row, register_col].frag[f]
     #         = Q[register_row * MMA_M + (lid % 32),
     #             register_col * MMA_K + ROWL_STRIDE * (lid // 32) + f]
-    var q_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.Q_LAYOUT)
+    var q_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.Q_LAYOUT)
     var lid = Int(lane_id())
     var row_offset = lid % 32
     var col_offset = _ROWL_STRIDE * (lid // 32)
@@ -189,7 +189,7 @@ def kernel_qk_chain[
             q_v[m, kk, 0] = rebind[q_v.ElementType](frag)
 
     # ---- Accumulator + mma_QK ---------------------------------------------
-    var att_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](
+    var att_reg = tt_stack_allocation[.float32, address_space=.LOCAL](
         _Op.ATT_LAYOUT
     )
     comptime _AH = _Op.ATT_LAYOUT.static_shape[0]

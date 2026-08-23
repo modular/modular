@@ -32,11 +32,9 @@ from std.utils.index import Index
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def kernel_copy_async_tma(descriptor: TMADescriptor):
     var shmem = unsafe_stack_allocation[
-        16, DType.float32, alignment=16, address_space=AddressSpace.SHARED
+        16, DType.float32, alignment=16, address_space=.SHARED
     ]()
-    var mbar = unsafe_stack_allocation[
-        1, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 

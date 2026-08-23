@@ -364,7 +364,7 @@ def ld_matrix[
 def st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
-    ptr: Pointer[mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    ptr: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     d: SIMD[.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.
@@ -517,11 +517,7 @@ struct WGMMADescriptor[dtype: DType](
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
-        smem_ptr: Pointer[
-            Scalar[Self.dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        smem_ptr: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> Self:
         """Create a descriptor for shared memory operand.
 

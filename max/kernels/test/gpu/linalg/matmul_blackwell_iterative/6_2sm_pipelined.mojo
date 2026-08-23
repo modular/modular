@@ -147,7 +147,7 @@ def load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -155,15 +155,15 @@ def load_AB[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -255,7 +255,7 @@ def consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -263,15 +263,15 @@ def consumer_main_loop[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -334,7 +334,7 @@ def store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
@@ -600,7 +600,7 @@ def store_C[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_offset)
 
@@ -682,20 +682,18 @@ def kernel_6[
         c_type,
         c_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
     var base_ptr_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]()
     )  # pointer to first byte of scratchpad
@@ -715,7 +713,7 @@ def kernel_6[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -726,7 +724,7 @@ def kernel_6[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](

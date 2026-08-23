@@ -310,7 +310,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 simd_width=simd_width,
             ](
                 wrap,
-                scales.address_space_cast[AddressSpace.GENERIC](),
+                scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
             )
 
@@ -328,8 +328,8 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_groups=num_cols // group_size,
             ](
                 wrap,
-                scaled_output.address_space_cast[AddressSpace.GENERIC](),
-                scales.address_space_cast[AddressSpace.GENERIC](),
+                scaled_output.address_space_cast[.GENERIC](),
+                scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
                 Int32(num_rows),
             )
@@ -347,8 +347,8 @@ def quantize_tensor_dynamic_scaled_fp8[
                 simd_width=simd_width,
             ](
                 wrap,
-                scaled_output.address_space_cast[AddressSpace.GENERIC](),
-                scales.address_space_cast[AddressSpace.GENERIC](),
+                scaled_output.address_space_cast[.GENERIC](),
+                scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
             )
 
@@ -450,8 +450,8 @@ def quantize_dynamic_scaled_fp8[
                 simd_width=simd_width,
             ](
                 wrap,
-                scaled_output.address_space_cast[AddressSpace.GENERIC](),
-                scales.address_space_cast[AddressSpace.GENERIC](),
+                scaled_output.address_space_cast[.GENERIC](),
+                scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
             )
 
@@ -839,8 +839,8 @@ def batched_quantize_dynamic_scaled_fp8[
         simd_width=simd_width,
     ](
         wrap,
-        scaled_output.address_space_cast[AddressSpace.GENERIC](),
-        scales.address_space_cast[AddressSpace.GENERIC](),
+        scaled_output.address_space_cast[.GENERIC](),
+        scales.address_space_cast[.GENERIC](),
         scale_ub.cast[scales_dtype](),
     )
 
@@ -975,15 +975,11 @@ def matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """TileTensor primary implementation of dynamic scaled FP8 matmul."""
@@ -1050,15 +1046,11 @@ def _matmul_dynamic_scaled_fp8_impl[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """TileTensor implementation of dynamic scaled FP8 matmul."""
@@ -1348,14 +1340,14 @@ def naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: LayoutTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: LayoutTensor[mut=False, b_type, address_space=.GENERIC, ...],
     a_scales: LayoutTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1950,15 +1942,11 @@ def blockwise_scaled_fp8_with_epilogue[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 blockwise scaled fp8 matmul kernel still does not support fusion of elementwise

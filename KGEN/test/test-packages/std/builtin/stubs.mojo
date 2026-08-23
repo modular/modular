@@ -1307,7 +1307,7 @@ struct Pointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](Defaultable, TrivialRegisterPassable):
     comptime type = Self.T
 
@@ -1421,19 +1421,13 @@ struct Pointer[
     ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Pointer[
-                U,
-                Self.origin,
-                address_space=Self.address_space,
+                U, Self.origin, address_space=Self.address_space
             ]._mlir_type,
         ](self._mlir_value)
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = Pointer[
-        Self.T,
-        target_origin,
-        address_space=Self.address_space,
-    ]
+    ] = Pointer[Self.T, target_origin, address_space=Self.address_space]
 
     @always_inline("builtin")
     def unsafe_mut_cast[
@@ -1485,7 +1479,7 @@ comptime UnsafePointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[T, origin, address_space=address_space]
 
 
@@ -1519,7 +1513,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
 comptime MutOpaquePointer[
     origin: Origin[mut=True],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[NoneType, origin, address_space=address_space]
 
 

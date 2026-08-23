@@ -569,12 +569,8 @@ def _pack_block_Q6_K[
 
 
 def matmul_Q4_K_pack_b(
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_packed_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
 ):
     """Packs Q4_K quantized weights into the blocked layout consumed by the compute kernel.
 
@@ -609,12 +605,8 @@ def matmul_Q4_K_pack_b(
 
 
 def matmul_Q6_K_pack_b(
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_packed_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
 ):
     """Packs Q6_K quantized weights into the blocked layout consumed by the compute kernel.
 
@@ -1492,15 +1484,9 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b: LayoutTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c: LayoutTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a: LayoutTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    b: LayoutTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a.rank == 2
@@ -1595,15 +1581,9 @@ def _matmul_Qb_K[
 def matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_tt: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes a matrix multiplication with Q4_K block-quantized weights.
@@ -1639,15 +1619,9 @@ def matmul_Q4_K[
 def matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    a_tt: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes a matrix multiplication with Q6_K block-quantized weights.

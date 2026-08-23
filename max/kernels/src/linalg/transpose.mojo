@@ -582,12 +582,8 @@ def _process_tile[
 def _transpose_2d_serial_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -645,12 +641,8 @@ def _should_run_parallel(
 def _transpose_2d_parallel_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -713,12 +705,8 @@ def _transpose_2d_parallel_tiled[
 def transpose_2d[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -844,12 +832,8 @@ def _transpose_4d_swap_middle_helper[
 def transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -890,12 +874,8 @@ def transpose_4d_swap_middle[
 def transpose_3d_swap_outer[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -935,12 +915,8 @@ def transpose_3d_swap_outer[
 def transpose_3d_swap_inner[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -987,12 +963,8 @@ def transpose_3d_swap_inner[
 def transpose_trivial_memcpy[
     dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Copies the input buffer to the output buffer as a trivial transpose.
@@ -1183,12 +1155,8 @@ def transpose_strided[
     rank: Int,
     dtype: DType,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -1266,12 +1234,8 @@ def transpose_strided[
 def transpose[
     dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:

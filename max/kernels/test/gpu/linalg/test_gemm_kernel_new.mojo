@@ -82,12 +82,12 @@ def gemm_kernel[
 
     var a_tile_sram = stack_allocation[
         mat_a.dtype,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](row_major[BM, BK]())
 
     var b_tile_sram = stack_allocation[
         mat_b.dtype,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
@@ -97,20 +97,22 @@ def gemm_kernel[
     # Allocate register tiles.
     var a_reg = stack_allocation[
         mat_a.dtype,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ](
         row_major[TM]()
     )  # TM elements for M-dimension vector
     var b_reg = stack_allocation[
         mat_b.dtype,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ](
         row_major[TN]()
     )  # TN elements for N-dimension vector
     var c_reg = stack_allocation[
         mat_c.dtype,
-        address_space=AddressSpace.LOCAL,
-    ](row_major[TM, TN]()).fill(0)
+        address_space=.LOCAL,
+    ](
+        row_major[TM, TN]()
+    ).fill(0)
 
     comptime warp_layout = row_major[8, 4]()
 

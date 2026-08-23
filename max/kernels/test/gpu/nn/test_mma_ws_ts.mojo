@@ -227,7 +227,7 @@ def dense_mma_ws_ts_kernel[
 
     # ---- Dynamic shared memory base pointer ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
 
     # ---- Q SMEM region ----
@@ -235,7 +235,7 @@ def dense_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         OP_TYPE,
         Q_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](q_smem_ptr.as_unsafe_any_origin())
 
@@ -244,7 +244,7 @@ def dense_mma_ws_ts_kernel[
     var k_smem_tile = LayoutTensor[
         OP_TYPE,
         K_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](k_smem_ptr.as_unsafe_any_origin())
 
@@ -506,7 +506,7 @@ def sparse_mma_ws_ts_kernel[
 
     # ---- Dynamic shared memory base pointer ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
 
     # ---- Q SMEM region ----
@@ -514,7 +514,7 @@ def sparse_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         op_type,
         q_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](q_smem_ptr.as_unsafe_any_origin())
 
@@ -602,7 +602,7 @@ def sparse_mma_ws_ts_kernel[
                 var smem_dst_tile = LayoutTensor[
                     op_type,
                     Layout.row_major(4, box_width),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=128,
                 ](smem_dst_ptr.as_unsafe_any_origin())
 
