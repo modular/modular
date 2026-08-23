@@ -115,7 +115,7 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
             for e in range(MXFP8_SF_VECTOR_SIZE):
                 group_max = max(group_max, abs(values[base + e]))
 
-            var want_scale: Scalar[DType.float8_e8m0fnu]
+            var want_scale: Float8_e8m0fnu
             var multiplier: Float32
             var block_is_dead: Bool
             want_scale, multiplier, block_is_dead = compute_mxfp8_block_scale[

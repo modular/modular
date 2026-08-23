@@ -998,13 +998,13 @@ struct AppleInt8ActQuant[in_type: DType = DType.bfloat16, *, THREADS: Int = 64]:
         var scale = row_max / 127.0 if row_max != 0.0 else Float32(0)
         var mult = 127.0 / row_max if row_max != 0.0 else Float32(0)
         if tid == 0:
-            a_scale.store[width=1](Coord(row), SIMD[DType.float32, 1](scale))
+            a_scale.store[width=1](Coord(row), Float32(scale))
 
         # Pass 2: quantize.
         j = tid
         while j < K:
             var qi = Int(round(Float32(a[row, j]) * mult))
-            q.store[width=1](Coord(row, j), SIMD[DType.int8, 1](qi))
+            q.store[width=1](Coord(row, j), Int8(qi))
             j += Self.THREADS
 
 

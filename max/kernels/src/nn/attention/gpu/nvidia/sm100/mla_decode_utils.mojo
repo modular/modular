@@ -259,7 +259,7 @@ def tma_tile_scales[
     BN_QK: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     total_elements: Int,
     out res: ScalesTMATile[BN_QK],
 ) raises:
@@ -3162,7 +3162,7 @@ def st_shared_v4_b32_at_fp8_elem_off[
 @always_inline
 def ld_shared_v4_u32(
     src_u8: UnsafePointer[
-        mut=True, Scalar[DType.uint8], _, address_space=AddressSpace.SHARED
+        mut=True, UInt8, _, address_space=AddressSpace.SHARED
     ],
     byte_off: Int,
 ) -> SIMD[DType.uint32, 4]:
@@ -3797,15 +3797,9 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: OptionalReg[
-            SharedMemPointer[Scalar[DType.float32]]
-        ] = None,
-        q_scale_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-        ] = None,
-        attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
-            min_or_neg_inf[DType.float32]()
-        ),
+        scale_k_smem: OptionalReg[SharedMemPointer[Float32]] = None,
+        q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+        attn_sink_log2: Float32 = Float32(min_or_neg_inf[DType.float32]()),
         # Logical sparse indices and their valid per-q_token length, forwarded
         # to the inner apply_mask (documented there); required non-null when
         # SparseCausalLogical is derived below.

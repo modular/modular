@@ -314,12 +314,8 @@ def execute_dual_cache_fused_bf16[
     var q_max_rel = Float32(0)
     for m in range(total_length):
         for c in range(q_dim):
-            var a = rebind[Scalar[DType.float32]](
-                fused_host[m, c].cast[DType.float32]()
-            )
-            var b = rebind[Scalar[DType.float32]](
-                q_host[m, c].cast[DType.float32]()
-            )
+            var a = rebind[Float32](fused_host[m, c].cast[DType.float32]())
+            var b = rebind[Float32](q_host[m, c].cast[DType.float32]())
             var d = abs(a - b)
             if a != b:
                 q_mism += 1
@@ -336,12 +332,10 @@ def execute_dual_cache_fused_bf16[
     var iq_max_rel = Float32(0)
     for m in range(total_length):
         for c in range(iq_dim):
-            var a = rebind[Scalar[DType.float32]](
+            var a = rebind[Float32](
                 fused_host[m, q_dim + c].cast[DType.float32]()
             )
-            var b = rebind[Scalar[DType.float32]](
-                iq_host[m, c].cast[DType.float32]()
-            )
+            var b = rebind[Float32](iq_host[m, c].cast[DType.float32]())
             var d = abs(a - b)
             if a != b:
                 iq_mism += 1

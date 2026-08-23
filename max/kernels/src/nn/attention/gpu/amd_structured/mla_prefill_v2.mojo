@@ -1785,15 +1785,11 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         scale: Float32,
         num_keys_dev: Int32,
         start_pos_dev: Int32,
-        work_indptr_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_indptr_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        work_info_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_info_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
         num_works_dev: Int32 = 0,
     ):
@@ -2135,9 +2131,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry. Per-sequence setup mirrors
         `MlaPrefillV2Core.ragged_kernel` (self-attention; `num_keys =
@@ -2242,7 +2236,7 @@ def mla_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

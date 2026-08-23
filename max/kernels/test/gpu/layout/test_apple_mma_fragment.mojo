@@ -49,8 +49,8 @@ comptime _FRAG_SIZE = 8  # 8 elements per thread
 def _host_matmul_ref[
     ta: Bool, tb: Bool
 ](
-    a: UnsafePointer[Scalar[DType.float16], ...],
-    b: UnsafePointer[Scalar[DType.float16], ...],
+    a: UnsafePointer[Float16, ...],
+    b: UnsafePointer[Float16, ...],
     M: Int,
     N: Int,
     K: Int,
@@ -81,7 +81,7 @@ def _host_matmul_ref[
 
 
 def _verify_fragments(
-    out_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    out_ptr: UnsafePointer[mut=True, Float32, _],
 ) -> Bool:
     """Verify 32 threads' fragment outputs against the canonical layout.
 
@@ -136,8 +136,8 @@ def _verify_fragments(
 
 
 def fragment_load_kernel(
-    input_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    output_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    input_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    output_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Each thread loads its 8-element fragment and writes to output.
 
@@ -170,9 +170,9 @@ def fragment_load_kernel(
 
 
 def mma_1x1_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """1x1 MMA: 16x16 @ 16x16 -> 16x16 (NN, F16 -> F32)."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -189,9 +189,9 @@ comptime _K_2x2 = 64
 
 
 def mma_2x2_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """2x2 MMA: A[32,64] @ B[64,32] -> D[32,32], K-loop with 4 iters."""
     var a_mat = TileTensor(a_ptr, row_major[32, _K_2x2]())
@@ -211,9 +211,9 @@ def mma_2x2_kernel(
 
 # Transpose kernels: each needs its own comptime transpose_a/transpose_b.
 def mma_tn_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """TN: transpose_a=True, transpose_b=False."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -229,9 +229,9 @@ def mma_tn_kernel(
 
 
 def mma_nt_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """NT: transpose_a=False, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -248,9 +248,9 @@ def mma_nt_kernel(
 
 
 def mma_tt_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """TT: transpose_a=True, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -267,9 +267,9 @@ def mma_tt_kernel(
 
 # Parent stride kernel: operates on a 16x16 subtile of a 256x256 matrix.
 def mma_parent_stride_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """MMA on subtile at (1,2) of a 256x256 parent matrix.
 
@@ -292,10 +292,10 @@ def mma_parent_stride_kernel(
 
 # zero_accum kernel: two matmuls with reset between them.
 def zero_accum_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d1_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    d2_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d1_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    d2_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Two successive matmuls with zero_accum between them.
 
@@ -377,11 +377,11 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -421,9 +421,9 @@ def _check_matmul_result[
     ta: Bool, tb: Bool
 ](
     name: String,
-    a_ptr: UnsafePointer[Scalar[DType.float16], ...],
-    b_ptr: UnsafePointer[Scalar[DType.float16], ...],
-    d_ptr: UnsafePointer[Scalar[DType.float32], ...],
+    a_ptr: UnsafePointer[Float16, ...],
+    b_ptr: UnsafePointer[Float16, ...],
+    d_ptr: UnsafePointer[Float32, ...],
     M: Int,
     N: Int,
     K: Int,
@@ -464,9 +464,9 @@ def _check_matmul_result[
 
 
 def mma_k32_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """16x16 matmul with K=32: single mma() call handles two K steps."""
     var a_tile = TileTensor(a_ptr, row_major[16, 32]())
@@ -490,9 +490,9 @@ def test_mma_k32(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](Int(random_si64(-2, 2)))
+        a_host[i] = Float16(Int(random_si64(-2, 2)))
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](Int(random_si64(-2, 2)))
+        b_host[i] = Float16(Int(random_si64(-2, 2)))
 
     var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
     var b_dev = ctx.enqueue_create_buffer[DType.float16](K * N)
@@ -522,9 +522,9 @@ def test_mma_k32(ctx: DeviceContext) raises:
 
 
 def mma_shared_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """1x1 MMA with operands staged through threadgroup shared memory.
 
@@ -563,9 +563,9 @@ def test_mma_shared_mem(ctx: DeviceContext) raises:
 
 
 def mma_i8_k32_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Int8, MutAnyOrigin],
+    b_ptr: UnsafePointer[Int8, MutAnyOrigin],
+    d_ptr: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """16x16 matmul with K=32 and i8 inputs, i32 accumulator.
 
@@ -593,9 +593,9 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.int8](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.int8](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.int8](Int(random_si64(-5, 5)))
+        a_host[i] = Int8(Int(random_si64(-5, 5)))
     for i in range(K * N):
-        b_host[i] = Scalar[DType.int8](Int(random_si64(-5, 5)))
+        b_host[i] = Int8(Int(random_si64(-5, 5)))
 
     var a_dev = ctx.enqueue_create_buffer[DType.int8](M * K)
     var b_dev = ctx.enqueue_create_buffer[DType.int8](K * N)
@@ -663,10 +663,10 @@ def test_parent_stride(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
     for i in range(_P * _P):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -730,8 +730,8 @@ def test_zero_accum(ctx: DeviceContext) raises:
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16]((i * 3 + j * 7) % 5 - 2)
-            b_host[idx] = Scalar[DType.float16]((i * 11 + j * 5) % 5 - 2)
+            a_host[idx] = Float16((i * 3 + j * 7) % 5 - 2)
+            b_host[idx] = Float16((i * 11 + j * 5) % 5 - 2)
 
     var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
     var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
@@ -776,9 +776,9 @@ def test_zero_accum(ctx: DeviceContext) raises:
 
 
 def bounded_mma_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m_valid_dev: Int32,
     k_valid_dev: Int32,
 ):
@@ -802,9 +802,9 @@ def bounded_mma_kernel(
 
 
 def bounded_store_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m_valid_dev: Int32,
     n_valid_dev: Int32,
 ):
@@ -844,10 +844,10 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16](
+            a_host[idx] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
-            b_host[idx] = Scalar[DType.float16](
+            b_host[idx] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
 
@@ -924,10 +924,10 @@ def test_store_bounded(ctx: DeviceContext) raises:
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16](
+            a_host[idx] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
-            b_host[idx] = Scalar[DType.float16](
+            b_host[idx] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
 
@@ -1013,9 +1013,9 @@ def test_store_bounded(ctx: DeviceContext) raises:
 
 
 def mma_col_major_a_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """A stored col-major, B stored row-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
@@ -1029,9 +1029,9 @@ def mma_col_major_a_kernel(
 
 
 def mma_col_major_b_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """A stored row-major, B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -1045,9 +1045,9 @@ def mma_col_major_b_kernel(
 
 
 def mma_col_major_ab_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Both A and B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
@@ -1061,9 +1061,9 @@ def mma_col_major_ab_kernel(
 
 
 def mma_col_major_a_transpose_a_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """A col-major + transpose_a=True. XOR cancels: hw_flag=False.
 
@@ -1085,9 +1085,9 @@ def mma_col_major_a_transpose_a_kernel(
 
 
 def mma_col_major_b_transpose_b_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """B col-major + transpose_b=True. XOR cancels: hw_flag=False.
 
@@ -1108,9 +1108,9 @@ def mma_col_major_b_transpose_b_kernel(
 
 def _run_16x16_mma_test[
     kernel_fn: def(
-        UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        UnsafePointer[Float16, MutAnyOrigin],
+        UnsafePointer[Float16, MutAnyOrigin],
+        UnsafePointer[Float32, MutAnyOrigin],
     ) thin -> None,
     a_col_major: Bool = False,
     b_col_major: Bool = False,
@@ -1129,10 +1129,10 @@ def _run_16x16_mma_test[
     var b_logical = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
-            a_logical[i * _N + j] = Scalar[DType.float16](
+            a_logical[i * _N + j] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
-            b_logical[i * _N + j] = Scalar[DType.float16](
+            b_logical[i * _N + j] = Float16(
                 random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
             )
 

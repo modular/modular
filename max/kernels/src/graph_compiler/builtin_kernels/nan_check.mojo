@@ -48,8 +48,8 @@ def _nan_check_gpu_kernel[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     total_elements: Int32,
-    out_nan: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    out_inf: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    out_nan: UnsafePointer[Int32, MutAnyOrigin],
+    out_inf: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
     var nan_local = unsafe_stack_allocation[
@@ -108,12 +108,8 @@ def nan_check_count[
 
     comptime if is_cpu[target]():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
-        var nan_acc = alloc(
-            AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_managed()
-        var inf_acc = alloc(
-            AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_managed()
+        var nan_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
+        var inf_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
 
         var nan_acc_ptr = nan_acc.unsafe_ptr()
         var inf_acc_ptr = inf_acc.unsafe_ptr()
@@ -148,8 +144,8 @@ def nan_check_count[
         @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
-            nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-            inf_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+            nan_ptr: UnsafePointer[Int32, MutAnyOrigin],
+            inf_ptr: UnsafePointer[Int32, MutAnyOrigin],
         ):
             nan_ptr[] = Int32(0)
             inf_ptr[] = Int32(0)

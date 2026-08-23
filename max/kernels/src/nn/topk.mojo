@@ -240,7 +240,7 @@ def top_k[
                 k=k,
             )
         else:
-            if normalized_axis != Scalar[DType.int](input.rank - 1):
+            if normalized_axis != Int(input.rank - 1):
                 raise Error("axis other than -1 not supported on GPU")
             if not sorted:
                 print(
@@ -920,7 +920,7 @@ def _block_reduce_topk[
     # Allocate shared memory for indices and values
     var p_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
-        Scalar[DType.int],
+        Int,
         address_space=AddressSpace.SHARED,
     ]()
     var u_sram = unsafe_stack_allocation[
@@ -939,7 +939,7 @@ def _block_reduce_topk[
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < num_warps_needed:
         # Note: Potential bank conflict for sub 4 byte data elements
-        p_sram[warp * p_width] = Scalar[DType.int](warp_accum.p)
+        p_sram[warp * p_width] = Int(warp_accum.p)
         u_sram[warp * u_width] = warp_accum.u
     barrier()
 
@@ -1064,7 +1064,7 @@ def _topk_stage1[
 
             if tid == 0:
                 out_vals[k] = total.u
-                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
+                out_idxs[k] = Int(total.p).cast[out_idx_type]()
                 winner_sram[0] = total.p
             barrier()
 
@@ -1088,7 +1088,7 @@ def _topk_stage1[
 
             if tid == 0:
                 out_vals[k] = total.u
-                out_idxs[k] = Scalar[DType.int](total.p).cast[out_idx_type]()
+                out_idxs[k] = Int(total.p).cast[out_idx_type]()
                 winner_sram[0] = total.p
             barrier()
 
@@ -2518,9 +2518,7 @@ def _gumbel_argmax_fused_kernel[
         var total = _block_reduce_topk[ascending=True](partial)
 
         if tid == 0:
-            out_idxs.ptr[batch_id] = Scalar[DType.int](total.p).cast[
-                out_idx_type
-            ]()
+            out_idxs.ptr[batch_id] = Int(total.p).cast[out_idx_type]()
 
 
 @always_inline

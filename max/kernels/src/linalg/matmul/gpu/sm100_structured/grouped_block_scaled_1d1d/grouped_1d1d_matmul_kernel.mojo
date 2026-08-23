@@ -1563,7 +1563,7 @@ struct Grouped1D1DMatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
+            UInt8,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
@@ -2628,7 +2628,7 @@ struct Grouped1D1DMatmulKernel[
             # batched-stores-then-one-wait shape as
             # TmemFragments.store() + wait_store().
             var _sfb_st_vals = Array[
-                Array[Scalar[DType.uint32], 1],
+                Array[UInt32, 1],
                 Self.config.num_sf_k_tiles,
             ](uninitialized=True)
 
@@ -2701,7 +2701,7 @@ struct Grouped1D1DMatmulKernel[
         m_coord: UInt32,
         n_coord: UInt32,
         expert_id: Int32,
-        a_scale_offset: Scalar[DType.uint32],
+        a_scale_offset: UInt32,
         m_start: UInt32,
     ) -> Tuple[Int, Int]:
         """Return (sfa_m_coord, sfb_n_coord), swapped when AB_swapped."""

@@ -1419,9 +1419,7 @@ def mla_prefill_branch_sparse_fp8[
     ctx: DeviceContext,
     d_indices: UnsafePointer[Int32, MutAnyOrigin],
     topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
 ) raises:
     """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, FP8 weights).
 
@@ -1529,11 +1527,11 @@ def mla_prefill_branch_sparse_fp8[
     # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
     # `idx >= 0` gather producer.
     var indices_tt = TileTensor(
-        d_indices.bitcast[Scalar[DType.uint32]](),
+        d_indices.bitcast[UInt32](),
         row_major(seq_len * indices_stride),
     )
     var topk_lengths_tt = TileTensor(
-        topk_lengths.bitcast[Scalar[DType.uint32]](),
+        topk_lengths.bitcast[UInt32](),
         row_major(seq_len),
     )
     var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
@@ -1566,7 +1564,7 @@ def mla_prefill_branch_sparse_fp8[
                 row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
             )
             var mla_decode_input_bf16 = TileTensor(
-                mla_decode_input.ptr.bitcast[Scalar[DType.bfloat16]](),
+                mla_decode_input.ptr.bitcast[BFloat16](),
                 row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
             )
             convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
@@ -2358,9 +2356,7 @@ def mla_decode_branch_bf16[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
@@ -2613,9 +2609,7 @@ def mla_prefill_branch_sparse_bf16[
     ctx: DeviceContext,
     d_indices: UnsafePointer[Int32, MutAnyOrigin],
     topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
 ) raises:
     """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, BF16 weights).
 
@@ -2735,11 +2729,11 @@ def mla_prefill_branch_sparse_bf16[
     # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
     # `idx >= 0` gather producer.
     var indices_tt = TileTensor(
-        d_indices.bitcast[Scalar[DType.uint32]](),
+        d_indices.bitcast[UInt32](),
         row_major(seq_len * indices_stride),
     )
     var topk_lengths_tt = TileTensor(
-        topk_lengths.bitcast[Scalar[DType.uint32]](),
+        topk_lengths.bitcast[UInt32](),
         row_major(seq_len),
     )
     var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)

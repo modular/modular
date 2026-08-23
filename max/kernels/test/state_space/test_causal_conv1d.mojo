@@ -41,7 +41,7 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 

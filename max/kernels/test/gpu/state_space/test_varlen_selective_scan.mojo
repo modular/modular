@@ -77,8 +77,8 @@ def run_varlen_selective_scan_fwd_gpu[
     var z_gpu_h = alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
     var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var query_start_loc_h = alloc[Scalar[DType.int32]](batch + 1)
-    var cache_indices_h = alloc[Scalar[DType.int32]](batch)
+    var query_start_loc_h = alloc[Int32](batch + 1)
+    var cache_indices_h = alloc[Int32](batch)
     var has_initial_state_h = alloc[Scalar[DType.bool]](batch)
 
     # Create LayoutTensors for initialization
@@ -141,14 +141,14 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Initialize query_start_loc (cumulative lengths)
     var cumsum = 0
-    query_start_loc_h.store(0, Scalar[DType.int32](0))
+    query_start_loc_h.store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h.store(i + 1, Int32(cumsum))
 
     # Initialize cache_indices (identity mapping)
     for i in range(batch):
-        cache_indices_h.store(i, Scalar[DType.int32](i))
+        cache_indices_h.store(i, Int32(i))
 
     # Initialize has_initial_state (all False)
     for i in range(batch):

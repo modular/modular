@@ -131,7 +131,7 @@ def bench_rms_norm_fused_residual_add_gpu[
                 output_fn,
                 residual_output_fn,
                 Coord(shape),
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma1,
                 epsilon1.cast[dtype](),
                 weight_offset1,

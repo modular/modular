@@ -104,9 +104,9 @@ def _emask_load[
     comptime full_mask = Int16((1 << width) - 1)
     comptime elt_size = Int16(size_of[dtype]())
 
-    var byte_ptr = ptr.unsafe_bitcast[
-        Scalar[DType.uint8]
-    ]().unsafe_address_space_cast[target_space]()
+    var byte_ptr = ptr.unsafe_bitcast[UInt8]().unsafe_address_space_cast[
+        target_space
+    ]()
     var raw = external_call[name, SIMD[lane_dtype, width]](
         byte_ptr, mask, full_mask, elt_size
     )

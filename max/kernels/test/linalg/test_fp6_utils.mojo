@@ -48,7 +48,7 @@ def _assert_bit_identical[
 def _check_decode_matches_table[fmt: FP6Format]() raises:
     comptime table = fp6_reference_table[fmt]()
     for code in range(64):
-        var got = decode_fp6_to_f32[fmt](SIMD[DType.uint8, 1](UInt8(code)))
+        var got = decode_fp6_to_f32[fmt](UInt8(UInt8(code)))
         _assert_bit_identical[fmt](code, got[0], table[code])
 
 
@@ -85,8 +85,8 @@ def test_decode_e3m2_vectorized() raises:
 def _check_decode_bf16_exact[fmt: FP6Format]() raises:
     """Every FP6 value fits bfloat16 exactly, so the cast must not round."""
     for code in range(64):
-        var as_f32 = decode_fp6_to_f32[fmt](SIMD[DType.uint8, 1](UInt8(code)))
-        var as_bf16 = decode_fp6_to_bf16[fmt](SIMD[DType.uint8, 1](UInt8(code)))
+        var as_f32 = decode_fp6_to_f32[fmt](UInt8(UInt8(code)))
+        var as_bf16 = decode_fp6_to_bf16[fmt](UInt8(UInt8(code)))
         assert_equal(
             Int(bitcast[DType.uint32](as_bf16[0].cast[DType.float32]())),
             Int(bitcast[DType.uint32](as_f32[0])),
@@ -105,7 +105,7 @@ def test_decode_e3m2_bf16_exact() raises:
 def _check_encode_round_trip[fmt: FP6Format]() raises:
     """Decode then encode must return the original code for all 64 codes."""
     for code in range(64):
-        var value = decode_fp6_to_f32[fmt](SIMD[DType.uint8, 1](UInt8(code)))
+        var value = decode_fp6_to_f32[fmt](UInt8(UInt8(code)))
         var back = encode_f32_to_fp6[fmt](value)
         assert_equal(
             Int(back[0]),
@@ -127,55 +127,39 @@ def test_encode_e2m3_ties_to_even() raises:
     comptime fmt = FP6Format.E2M3
 
     # Subnormal grid (step 0.125): 0.0625 sits between codes 0 and 1 -> 0.
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](0.0625))[0]), 0
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(0.0625))[0]), 0)
     # 0.1875 sits between codes 1 and 2 -> 2 (even mantissa).
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](0.1875))[0]), 2
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(0.1875))[0]), 2)
 
     # Normal regime: 3.125 lies between 3.0 (mantissa 4) and 3.25 (mantissa 5).
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](3.125))[0]), 20
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(3.125))[0]), 20)
     # 3.375 lies between 3.25 (mantissa 5) and 3.5 (mantissa 6) -> 6.
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](3.375))[0]), 22
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(3.375))[0]), 22)
 
 
 def test_encode_e3m2_ties_to_even() raises:
     comptime fmt = FP6Format.E3M2
 
     # Subnormal grid (step 0.0625): 0.03125 -> code 0, 0.09375 -> code 2.
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](0.03125))[0]), 0
-    )
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](0.09375))[0]), 2
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(0.03125))[0]), 0)
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(0.09375))[0]), 2)
 
     # Normal regime: 1.125 lies between 1.0 (mantissa 0) and 1.25 (mantissa 1).
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](1.125))[0]), 12
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(1.125))[0]), 12)
 
 
 def _check_encode_saturates[fmt: FP6Format]() raises:
     """FP6 has no Inf, so out-of-range magnitudes clamp to the extreme code."""
     comptime max_magnitude_code = 31
-    var big = encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](1.0e30))
+    var big = encode_f32_to_fp6[fmt](Float32(1.0e30))
     assert_equal(Int(big[0]), max_magnitude_code)
 
-    var negative_big = encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](-1.0e30))
+    var negative_big = encode_f32_to_fp6[fmt](Float32(-1.0e30))
     assert_equal(Int(negative_big[0]), max_magnitude_code | 0x20)
 
     # Exactly the format maximum must encode to the same code, not overflow.
     comptime table = fp6_reference_table[fmt]()
-    var at_max = encode_f32_to_fp6[fmt](
-        SIMD[DType.float32, 1](table[max_magnitude_code])
-    )
+    var at_max = encode_f32_to_fp6[fmt](Float32(table[max_magnitude_code]))
     assert_equal(Int(at_max[0]), max_magnitude_code)
 
 
@@ -188,10 +172,8 @@ def test_encode_e3m2_saturates() raises:
 
 
 def _check_encode_preserves_signed_zero[fmt: FP6Format]() raises:
-    assert_equal(Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](0.0))[0]), 0)
-    assert_equal(
-        Int(encode_f32_to_fp6[fmt](SIMD[DType.float32, 1](-0.0))[0]), 0x20
-    )
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(0.0))[0]), 0)
+    assert_equal(Int(encode_f32_to_fp6[fmt](Float32(-0.0))[0]), 0x20)
 
 
 def test_encode_e2m3_signed_zero() raises:
@@ -304,9 +286,7 @@ def _check_even_scale_round_trip[fmt: FP6Format]() raises:
         var scale_f32 = scale.cast[DType.float32]()
         assert_true(scale_f32 > 0.0, "scale must be positive and finite")
 
-        var code = encode_f32_to_fp6[fmt](
-            SIMD[DType.float32, 1](block_max / scale_f32)
-        )
+        var code = encode_f32_to_fp6[fmt](Float32(block_max / scale_f32))
         var recovered = decode_fp6_to_f32[fmt](code)[0] * scale_f32
         var relative_error = abs(recovered - block_max) / block_max
         assert_true(

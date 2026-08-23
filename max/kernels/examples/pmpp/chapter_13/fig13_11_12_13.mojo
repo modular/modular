@@ -67,9 +67,9 @@ def co_rank(
 
 def co_rank_shared(
     k: Int,
-    A: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
     m: Int,
-    B: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
     n: Int,
 ) -> Int:
     """Find the co-rank for shared memory arrays.
@@ -147,9 +147,9 @@ def merge_sequential(
 
 
 def merge_sequential_shared(
-    A: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
     m: Int,
-    B: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
 ):
@@ -212,12 +212,12 @@ def merge_tiled_kernel(
     # Allocate shared memory
     var A_S = unsafe_stack_allocation[
         1024,
-        Scalar[DType.int32],
+        Int32,
         address_space=AddressSpace.SHARED,
     ]()
     var B_S = unsafe_stack_allocation[
         1024,
-        Scalar[DType.int32],
+        Int32,
         address_space=AddressSpace.SHARED,
     ]()
 
@@ -229,8 +229,8 @@ def merge_tiled_kernel(
 
     if thread_idx.x == 0:
         # Store co-rank values in first two elements of A_S
-        A_S[0] = Scalar[DType.int32](co_rank(C_curr, A, m, B, n))
-        A_S[1] = Scalar[DType.int32](co_rank(C_next, A, m, B, n))
+        A_S[0] = Int32(co_rank(C_curr, A, m, B, n))
+        A_S[1] = Int32(co_rank(C_next, A, m, B, n))
 
     barrier()
 
@@ -259,13 +259,13 @@ def merge_tiled_kernel(
 
         for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
             if i + thread_idx.x < leftover_A:
-                A_S[i + thread_idx.x] = Scalar[DType.int32](
+                A_S[i + thread_idx.x] = Int32(
                     A[Int(A_curr) + A_consumed + i + thread_idx.x]
                 )
 
         for i in range(0, tile_size, Int(128)):  # blockDim.x = 128
             if i + thread_idx.x < leftover_B:
-                B_S[i + thread_idx.x] = Scalar[DType.int32](
+                B_S[i + thread_idx.x] = Int32(
                     B[B_curr + B_consumed + i + thread_idx.x]
                 )
 

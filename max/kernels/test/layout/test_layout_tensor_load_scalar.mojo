@@ -39,22 +39,22 @@ def test_load_scalar_static_layout() raises:
     var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
 
     # Test scalar access at various positions
-    var v00: Scalar[DType.float32] = tensor.load_scalar(0, 0)
+    var v00: Float32 = tensor.load_scalar(0, 0)
     assert_equal(v00, 0.0)
 
-    var v01: Scalar[DType.float32] = tensor.load_scalar(0, 1)
+    var v01: Float32 = tensor.load_scalar(0, 1)
     assert_equal(v01, 1.0)
 
-    var v02: Scalar[DType.float32] = tensor.load_scalar(0, 2)
+    var v02: Float32 = tensor.load_scalar(0, 2)
     assert_equal(v02, 2.0)
 
-    var v10: Scalar[DType.float32] = tensor.load_scalar(1, 0)
+    var v10: Float32 = tensor.load_scalar(1, 0)
     assert_equal(v10, 3.0)
 
-    var v11: Scalar[DType.float32] = tensor.load_scalar(1, 1)
+    var v11: Float32 = tensor.load_scalar(1, 1)
     assert_equal(v11, 4.0)
 
-    var v12: Scalar[DType.float32] = tensor.load_scalar(1, 2)
+    var v12: Float32 = tensor.load_scalar(1, 2)
     assert_equal(v12, 5.0)
 
 
@@ -81,13 +81,13 @@ def test_load_scalar_dynamic_layout() raises:
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar at various positions
-    var v00: Scalar[DType.float32] = tensor.load_scalar(0, 0)
+    var v00: Float32 = tensor.load_scalar(0, 0)
     assert_equal(v00, 0.0)
 
-    var v11: Scalar[DType.float32] = tensor.load_scalar(1, 1)
+    var v11: Float32 = tensor.load_scalar(1, 1)
     assert_equal(v11, 5.0)  # row 1, col 1 = 1*4 + 1 = 5
 
-    var v23: Scalar[DType.float32] = tensor.load_scalar(2, 3)
+    var v23: Float32 = tensor.load_scalar(2, 3)
     assert_equal(v23, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 
@@ -115,7 +115,7 @@ def test_load_scalar_with_runtime_tuple() raises:
 
     # Test load_scalar with RuntimeTuple
     var coord = RuntimeTuple[layout.shape, element_type=DType.int32](2, 3)
-    var val: Scalar[DType.float32] = tensor.load_scalar(coord)
+    var val: Float32 = tensor.load_scalar(coord)
     assert_equal(val, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 

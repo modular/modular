@@ -229,8 +229,8 @@ def _run_block_scaled_mma_amd_smoke[
     )
     ctx.synchronize()
 
-    var baseline_host = alloc[Scalar[DType.float32]](num_values)
-    var scaled_host = alloc[Scalar[DType.float32]](num_values)
+    var baseline_host = alloc[Float32](num_values)
+    var scaled_host = alloc[Float32](num_values)
     ctx.enqueue_copy(baseline_host, baseline_device)
     ctx.enqueue_copy(scaled_host, scaled_device)
     ctx.synchronize()

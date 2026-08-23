@@ -150,7 +150,7 @@ def gemv_partial_norm_kernel[
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
     weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
-    finish_counter: MutPointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: MutPointer[Int32, MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Float32,
     n: Int32,
@@ -444,7 +444,7 @@ def gemv_partial_norm_kernel[
             # between successive kernel launches provides visibility
             # for the next launch's readers.
             if tid == 0:
-                finish_counter.unsafe_store(Scalar[DType.int32](0))
+                finish_counter.unsafe_store(Int32(0))
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -479,7 +479,7 @@ def _gemv_partial_norm_fused[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: MutPointer[Scalar[DType.int32], _],
+    finish_counter: MutPointer[Int32, _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
 ) raises:
@@ -700,7 +700,7 @@ def gemv_and_partial_norm[
 
     comptime if fused:
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        ctx.enqueue_memset(counter_buf, Int32(0))
         _gemv_partial_norm_fused[
             transpose_b=transpose_b,
             pdl_level=pdl_level,
@@ -820,7 +820,7 @@ def gemv_and_partial_norm_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: MutPointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: MutPointer[Int32, MutAnyOrigin],
     ctx: DeviceContext,
     trace_buf: TraceBufT = NullTrace(),
 ) raises:

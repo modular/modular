@@ -261,7 +261,7 @@ def outerShadowingLoad[
 
 
 def testShadowingNestedClosureParam():
-    var buf = ShadowingLoadBuf[DType.int32](SIMD[DType.int32, 1](13))
+    var buf = ShadowingLoadBuf[DType.int32](Int32(13))
     print(outerShadowingLoad(buf)[0])
 
 

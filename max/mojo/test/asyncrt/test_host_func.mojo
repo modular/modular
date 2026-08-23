@@ -22,7 +22,7 @@ def _bump_counter(user_data: OpaquePointer[MutAnyOrigin]):
     """Host-side CUDA callback: atomically increments the counter behind
     `user_data`. Runs on a driver thread with no GIL / CUDA context.
     """
-    var counter_ptr = user_data.unsafe_bitcast[Scalar[DType.int32]]()
+    var counter_ptr = user_data.unsafe_bitcast[Int32]()
     _ = Atomic[Int32].fetch_add(counter_ptr, 1)
 
 

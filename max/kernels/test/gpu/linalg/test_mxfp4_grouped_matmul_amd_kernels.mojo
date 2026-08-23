@@ -294,7 +294,7 @@ def _run_preb[
 
     # GPU preshuffle of A-scales into per-expert fixed-stride slots.
     var a_sc_raw_u8_tt = TileTensor[mut=False](
-        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        a_sc_d.unsafe_ptr().bitcast[UInt8](),
         row_major(Coord(total_tokens, Idx[scale_K])),
     )
     var a_sc_pre_tt = TileTensor[mut=True](
@@ -322,7 +322,7 @@ def _run_preb[
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        b_sc_h.unsafe_ptr().bitcast[UInt8](),
         row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
@@ -354,11 +354,11 @@ def _run_preb[
         b_pre_d, row_major[num_experts, N * packed_K]()
     )
     var a_sc_tt = TileTensor[mut=False](
-        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var b_sc_tt = TileTensor[mut=False](
-        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     )
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))

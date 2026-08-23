@@ -1069,7 +1069,7 @@ struct Pointer[
         Args:
             writer: The object to write to.
         """
-        _write_int[radix=16](writer, Scalar[DType.int](Int(self)), prefix="0x")
+        _write_int[radix=16](writer, Int(Int(self)), prefix="0x")
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -1436,7 +1436,7 @@ struct Pointer[
             # packs bits. Load as uint8 and convert to bool so each
             # element occupies its own byte boundary.
             return rebind[SIMD[dtype, width]](
-                self.unsafe_bitcast[Scalar[DType.uint8]]()
+                self.unsafe_bitcast[UInt8]()
                 .unsafe_load[
                     width=width,
                     alignment=alignment,
@@ -1861,7 +1861,7 @@ struct Pointer[
             # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.
-            self.unsafe_bitcast[Scalar[DType.uint8]]()._store[
+            self.unsafe_bitcast[UInt8]()._store[
                 alignment=alignment,
                 volatile=volatile,
                 non_temporal=non_temporal,

@@ -422,7 +422,7 @@ def bench_copy_roundtrip[
     for i in range(num_elements):
         # Uses a small prime modulus to create a deterministic, non-power-of-two
         # input pattern while keeping values compact across dtypes.
-        src_host[i] = Scalar[DType.float32](i % 251).cast[dtype]()
+        src_host[i] = Float32(i % 251).cast[dtype]()
 
     var src_dev = ctx.enqueue_create_buffer[dtype](num_elements)
     var tile_io_dst_dev = ctx.enqueue_create_buffer[dtype](num_elements)

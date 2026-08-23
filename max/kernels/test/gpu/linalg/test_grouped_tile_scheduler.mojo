@@ -73,7 +73,7 @@ def test_scheduler_kernel[
     from std.memory import UnsafePointer as NewPtr
 
     var problem_sizes_tt = _ProblemSizesTile[max_groups](
-        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
+        ptr=NewPtr[Int32, MutAnyOrigin](
             unsafe_from_address=Int(problem_sizes.ptr)
         ),
         layout=new_row_major[max_groups, 4](),

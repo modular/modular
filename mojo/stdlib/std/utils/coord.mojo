@@ -1472,9 +1472,9 @@ Example:
 
     ```mojo
     from std.utils.coord import _CoordToDynamic, ComptimeInt, CoordLike
-    # All elements become Scalar[DType.int64]
-    comptime types = _CoordToDynamic[DType.int64, TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar[DType.int32], ComptimeInt[5]]()]
-    # types is equivalent to TypeList.of[Trait=CoordLike, Scalar[DType.int64], Scalar[DType.int64], Scalar[DType.int64]]()
+    # All elements become Int64
+    comptime types = _CoordToDynamic[DType.int64, TypeList.of[Trait=CoordLike, ComptimeInt[3], Int32, ComptimeInt[5]]()]
+    # types is equivalent to TypeList.of[Trait=CoordLike, Int64, Int64, Int64]()
     ```
 """
 

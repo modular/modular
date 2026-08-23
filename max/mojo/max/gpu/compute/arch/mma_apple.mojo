@@ -315,7 +315,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         comptime for s in range(2):
             a_wide[s] = a[s]
             b_wide[s] = b[s]
-            c_wide[s] = rebind[Scalar[DType.float32]](c[s])
+            c_wide[s] = rebind[Float32](c[s])
 
         var d_wide = llvm_intrinsic[
             "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",

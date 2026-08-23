@@ -1436,9 +1436,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var group_offsets_lt = LayoutTensor[
         DType.uint32, _group_offsets_lt_type.layout, MutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint32], MutAnyOrigin]](
-            group_offsets.ptr
-        ),
+        rebind[UnsafePointer[UInt32, MutAnyOrigin]](group_offsets.ptr),
         group_offsets.to_layout_tensor().runtime_layout,
     )
     comptime _group_scale_offsets_lt_type = type_of(
@@ -1447,18 +1445,14 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var group_scale_offsets_lt = LayoutTensor[
         DType.uint32, _group_scale_offsets_lt_type.layout, MutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint32], MutAnyOrigin]](
-            group_scale_offsets.ptr
-        ),
+        rebind[UnsafePointer[UInt32, MutAnyOrigin]](group_scale_offsets.ptr),
         group_scale_offsets.to_layout_tensor().runtime_layout,
     )
     comptime _expert_ids_lt_type = type_of(expert_ids.to_layout_tensor())
     var expert_ids_lt = LayoutTensor[
         DType.int32, _expert_ids_lt_type.layout, MutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            expert_ids.ptr
-        ),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](expert_ids.ptr),
         expert_ids.to_layout_tensor().runtime_layout,
     )
 
@@ -1481,9 +1475,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var expert_scales_lt = LayoutTensor[
         DType.float32, _expert_scales_lt_type.layout, MutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
-            expert_scales.ptr
-        ),
+        rebind[UnsafePointer[Float32, MutAnyOrigin]](expert_scales.ptr),
         expert_scales.to_layout_tensor().runtime_layout,
     )
 
@@ -2099,7 +2091,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ]
 
     ref smem_storage = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]

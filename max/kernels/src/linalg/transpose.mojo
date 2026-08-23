@@ -386,7 +386,7 @@ def _permute_data[
 ](
     input: UnsafePointer[mut=False, Scalar[dtype], _],
     output: UnsafePointer[mut=True, Scalar[dtype], _],
-    perms: UnsafePointer[mut=False, Scalar[DType.int], _],
+    perms: UnsafePointer[mut=False, Int, _],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
@@ -538,7 +538,7 @@ def _simplify_transpose_perms[
 @always_inline
 def _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: UnsafePointer[mut=False, Scalar[DType.int], _]) -> IndexList[rank]:
+](perms: UnsafePointer[mut=False, Int, _]) -> IndexList[rank]:
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
@@ -588,7 +588,7 @@ def _transpose_2d_serial_tiled[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -651,7 +651,7 @@ def _transpose_2d_parallel_tiled[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -719,7 +719,7 @@ def transpose_2d[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -850,7 +850,7 @@ def transpose_4d_swap_middle[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     ctx: Optional[DeviceContext] = None,
@@ -896,7 +896,7 @@ def transpose_3d_swap_outer[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -941,7 +941,7 @@ def transpose_3d_swap_inner[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -1045,8 +1045,8 @@ def _copy_with_strides[
     output_shape: IndexList[rank],
     output_bytecount: Int,
     input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
-    input_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
-    output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
+    input_strides: UnsafePointer[mut=False, Int, _],
+    output_strides: UnsafePointer[mut=False, Int, _],
     input_offset: Int,
     output_offset: Int,
     ctx: Optional[DeviceContext] = None,
@@ -1189,7 +1189,7 @@ def transpose_strided[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Transposes a tensor with arbitrary strides via a generic strided copy.
@@ -1208,7 +1208,7 @@ def transpose_strided[
         ctx: The context to execute the work on.
     """
     # Compute row-major strides for input.
-    var input_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
+    var input_strides_arr = Array[Int, rank](uninitialized=True)
     input_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1217,9 +1217,7 @@ def transpose_strided[
         ](Int(input.dim[axis + 1]()))
 
     # Permute input strides.
-    var permuted_strides_arr = Array[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var permuted_strides_arr = Array[Int, rank](uninitialized=True)
     _permute_data[rank, DType.int](
         input_strides_arr.unsafe_ptr(),
         permuted_strides_arr.unsafe_ptr(),
@@ -1227,7 +1225,7 @@ def transpose_strided[
     )
 
     # Compute row-major strides for output.
-    var output_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
+    var output_strides_arr = Array[Int, rank](uninitialized=True)
     output_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1274,7 +1272,7 @@ def transpose[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """

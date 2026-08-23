@@ -3654,7 +3654,7 @@ def row_mean_of_squares[
         # the axis size is always the dynamic form.
         var row = rowwise.Row[
             params, accum, in_dtype, reduce_dim, row_rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx_p, load)
+        ](row_coords, Int(axis_size), ctx_p, load)
 
         # Reduce: sum of squares -> mean of squares.
         @always_inline

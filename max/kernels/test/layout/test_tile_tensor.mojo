@@ -875,7 +875,7 @@ def test_load_store_linear_row_major() raises:
     assert_equal(Int(vec[1]), 50)
 
     # Verify store_linear.
-    tensor.store_linear(IndexList[2](0, 1), SIMD[DType.int32, 1](999))
+    tensor.store_linear(IndexList[2](0, 1), Int32(999))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 999)
 
     # Verify vectorized store (width=2).
@@ -918,7 +918,7 @@ def test_load_store_linear_non_trivial_stride() raises:
     assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 2))), 5)
 
     # Store and verify.
-    tensor.store_linear(IndexList[2](1, 1), SIMD[DType.int32, 1](42))
+    tensor.store_linear(IndexList[2](1, 1), Int32(42))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 42)
     # Verify underlying data: offset 3 should be 42.
     assert_equal(Int(data[3]), 42)
@@ -939,7 +939,7 @@ def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
         DType.float32,
-        RowMajorLayout[Scalar[DType.int], ComptimeInt[4]],
+        RowMajorLayout[Int, ComptimeInt[4]],
         MutAnyOrigin,
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64

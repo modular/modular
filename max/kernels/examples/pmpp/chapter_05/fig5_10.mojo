@@ -44,12 +44,12 @@ def matrix_mul_tiled_kernel(
     # Allocate shared memory tiles
     var sA = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var sB = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
 
@@ -64,10 +64,10 @@ def matrix_mul_tiled_kernel(
     # Go through tiles
     for ph in range(Width // TILE_WIDTH):
         # Load tiles into shared memory
-        sA[s_row * TILE_WIDTH + s_col] = Scalar[DType.float32](
+        sA[s_row * TILE_WIDTH + s_col] = Float32(
             M[g_row * Width + (ph * TILE_WIDTH + s_col)]
         )
-        sB[s_row * TILE_WIDTH + s_col] = Scalar[DType.float32](
+        sB[s_row * TILE_WIDTH + s_col] = Float32(
             N[(s_row + ph * TILE_WIDTH) * Width + g_col]
         )
         barrier()

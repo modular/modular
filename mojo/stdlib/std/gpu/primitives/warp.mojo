@@ -431,7 +431,7 @@ def _shuffle_apple_helper[
         var merged = s1.interleave(s2)
         return bitcast[dtype, simd_width](merged)
     elif dtype == DType.bool:
-        var val1 = rebind[SIMD[DType.int32, 1]](val.cast[DType.int32]())
+        var val1 = rebind[Int32](val.cast[DType.int32]())
         var tmp = _shuffle_apple_helper[op, DType.int32, 1](mask, val1, offset)
         return tmp.cast[dtype]()
     elif (

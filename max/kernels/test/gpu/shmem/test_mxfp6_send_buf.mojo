@@ -60,7 +60,7 @@ comptime TokenFmt = MXTokenFormat[
 @__name("mxfp6_send_buf_probe")
 def _send_buf_probe_kernel(
     buf: Pointer[UInt8, MutAnyOrigin],
-    src: Pointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    src: Pointer[BFloat16, MutAnyOrigin],
 ):
     """Runs one token through the dispatch packer, as `ep_dispatch` would."""
     TokenFmt.copy_token_to_send_buf[DType.bfloat16, BLOCK](
@@ -80,7 +80,7 @@ def main() raises:
     var src_h = ctx.enqueue_create_host_buffer[DType.bfloat16](HID)
     ctx.synchronize()
     for i in range(HID):
-        src_h[i] = Scalar[DType.bfloat16](random_float64(-6.0, 6.0))
+        src_h[i] = BFloat16(random_float64(-6.0, 6.0))
 
     var src_d = ctx.enqueue_create_buffer[DType.bfloat16](HID)
     ctx.enqueue_copy(src_d, src_h)

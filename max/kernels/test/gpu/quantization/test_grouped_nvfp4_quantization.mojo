@@ -50,10 +50,10 @@ def test_grouped_nvfp4_quantization[
     comptime SENTINEL = 0xEE
 
     # Derive row_offsets, tile_starts, scales_offsets from expert_counts.
-    var row_offsets_host = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var scales_offsets_host = alloc[Scalar[DType.uint32]](num_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_experts)
-    var sf_tensor_host = alloc[Scalar[DType.float32]](num_experts)
+    var row_offsets_host = alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = alloc[UInt32](num_experts)
+    var expert_ids_host = alloc[Int32](num_experts)
+    var sf_tensor_host = alloc[Float32](num_experts)
     var tile_starts = alloc[Int](num_experts + 1)
 
     row_offsets_host[0] = 0

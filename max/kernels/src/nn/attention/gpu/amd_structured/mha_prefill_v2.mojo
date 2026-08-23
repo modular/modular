@@ -1174,7 +1174,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            var v_fp32 = Float32(o_reg_t.ptr[k_local])
             if q_in_bounds:
                 comptime if output_dtype == DType.float32:
                     epilogue_writer.store(
@@ -2259,12 +2259,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
-        kv_input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+        kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
         sink_weights_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry: per-sequence setup + `run`.
@@ -2409,10 +2405,8 @@ def mha_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    kv_input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], ImmutAnyOrigin
-    ],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+    kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

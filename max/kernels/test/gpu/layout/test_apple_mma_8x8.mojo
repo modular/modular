@@ -49,7 +49,7 @@ def mma_kernel[
 ](
     a_ptr: UnsafePointer[Scalar[a_dtype], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[b_dtype], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var a_frag = apple_mma_load_8x8[a_dtype](a_ptr, _N)
     var b_frag = apple_mma_load_8x8[b_dtype](b_ptr, _N)

@@ -87,7 +87,7 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     var a_any = TileTensor[dtype, type_of(a_layout), ImmutAnyOrigin](
         a_ptr, a_layout
     )
-    var c_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+    var c_ptr = UnsafePointer[Float32, MutAnyOrigin](
         unsafe_from_address=Int(device_c.unsafe_ptr())
     )
     comptime c_layout = row_major[max_m, N]()

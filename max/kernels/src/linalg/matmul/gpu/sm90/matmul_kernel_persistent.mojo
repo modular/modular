@@ -77,7 +77,7 @@ __extension HopperMatmulSM90Kernel:
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
-            Scalar[DType.uint8],
+            UInt8,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]
@@ -201,7 +201,7 @@ __extension HopperMatmulSM90Kernel:
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
-            Scalar[DType.uint8],
+            UInt8,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]

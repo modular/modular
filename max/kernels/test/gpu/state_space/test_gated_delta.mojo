@@ -112,10 +112,10 @@ def run_slot_indexed_gpu[
         RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
     )
     var cumsum = 0
-    offsets_h.ptr.store(0, Scalar[DType.uint32](0))
+    offsets_h.ptr.store(0, UInt32(0))
     for b in range(batch_size):
         cumsum += seq_lengths[b]
-        offsets_h.ptr.store(b + 1, Scalar[DType.uint32](cumsum))
+        offsets_h.ptr.store(b + 1, UInt32(cumsum))
 
     # Pool [max_slots, nv, KD, VD] zeroed so initial state for any slot is 0.
     var pool_size = max_slots * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
@@ -137,7 +137,7 @@ def run_slot_indexed_gpu[
         RuntimeLayout[layout_1d].row_major(Index(batch_size)),
     )
     for b in range(batch_size):
-        slot_idx_h.ptr.store(b, Scalar[DType.uint32](slot_assignments[b]))
+        slot_idx_h.ptr.store(b, UInt32(slot_assignments[b]))
 
     var recur_out_gpu_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * value_dim
@@ -304,7 +304,7 @@ def run_slot_indexed_gpu[
                 # Load initial state column for this (batch, value_head, vd_element)
                 var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
                 comptime for kd in range(KEY_HEAD_DIM):
-                    state_col[kd] = Scalar[DType.float32](
+                    state_col[kd] = Float32(
                         pool_ref_h.ptr[
                             UInt32(slot) * pool_slot_stride
                             + UInt32(vh) * pool_value_head_stride

@@ -44,7 +44,7 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 
@@ -91,9 +91,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
     )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = List(
-        length=batch + 1, fill=Scalar[DType.int32](0)
-    )
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
     var query_start_loc_h = TileTensor(
         query_start_loc_heap,
         row_major(
@@ -101,13 +99,13 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     var cumsum = 0
-    query_start_loc_h.raw_store(0, Scalar[DType.int32](0))
+    query_start_loc_h.raw_store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.raw_store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_heap = List(length=batch, fill=Int32(0))
     var cache_indices_h = TileTensor(
         cache_indices_heap,
         row_major(
@@ -115,7 +113,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     for i in range(batch):
-        cache_indices_h.raw_store(i, Scalar[DType.int32](i))
+        cache_indices_h.raw_store(i, Int32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(
@@ -816,7 +814,7 @@ def run_varlen_causal_conv1d_update_gpu[
     )
 
     # cache_seqlens: (batch,) - all zeros
-    var cache_seqlens_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_seqlens_heap = List(length=batch, fill=Int32(0))
     var cache_seqlens_h = TileTensor(
         cache_seqlens_heap,
         row_major(
@@ -824,12 +822,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ),
     )
     for i in range(batch):
-        cache_seqlens_h.raw_store(i, Scalar[DType.int32](0))
+        cache_seqlens_h.raw_store(i, Int32(0))
 
     # conv_state_indices: (batch,) - identity mapping
-    var conv_state_indices_heap = List(
-        length=batch, fill=Scalar[DType.int32](0)
-    )
+    var conv_state_indices_heap = List(length=batch, fill=Int32(0))
     var conv_state_indices_h = TileTensor(
         conv_state_indices_heap,
         row_major(
@@ -837,7 +833,7 @@ def run_varlen_causal_conv1d_update_gpu[
         ),
     )
     for i in range(batch):
-        conv_state_indices_h.raw_store(i, Scalar[DType.int32](i))
+        conv_state_indices_h.raw_store(i, Int32(i))
 
     # output: (batch, dim, seqlen)
     var output_gpu_heap = List(

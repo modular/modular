@@ -276,7 +276,7 @@ def _run_fusion_check[
     var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         slot_bytes
     )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](
@@ -420,7 +420,7 @@ def _run_activation_probe[
         num_tokens * scale_K
     )
     out_d.enqueue_fill(UInt8(0))
-    scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](

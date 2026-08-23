@@ -79,8 +79,8 @@ def test_vendor[
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -272,8 +272,8 @@ def test_negative_lora_id_vendor[
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,

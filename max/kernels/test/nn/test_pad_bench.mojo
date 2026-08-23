@@ -100,14 +100,14 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = List(length=in_size, fill=Scalar[DType.int](0))
+    var input_ptr = List(length=in_size, fill=Int(0))
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
+    var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):
@@ -115,14 +115,14 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = List(length=out_size, fill=Scalar[DType.int](0))
+    var output_ptr = List(length=out_size, fill=Int(0))
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
     )
 
     # constant padding value = 7
-    var constant = Scalar[DType.int](7)
+    var constant = Int(7)
 
     # pad
     pad_constant(output, input, paddings._storage, constant)
@@ -169,14 +169,14 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = List(length=in_size, fill=Scalar[DType.int](0))
+    var input_ptr = List(length=in_size, fill=Int(0))
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
+    var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):
@@ -184,7 +184,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = List(length=out_size, fill=Scalar[DType.int](0))
+    var output_ptr = List(length=out_size, fill=Int(0))
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),

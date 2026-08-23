@@ -86,7 +86,7 @@ def _bench_fp8_shape(
     var w_fp8_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](n * k)
     var w_bf16_host = ctx.enqueue_create_host_buffer[DType.bfloat16](n * k)
     for i in range(m * k):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     for i in range(n * k):
         var v = Float32((i % 7) - 3) * Float32(0.5)
         w_fp8_host[i] = v.cast[DType.float8_e4m3fn]()

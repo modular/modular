@@ -362,7 +362,7 @@ def _run_fusion_check[
     var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         slot_bytes
     )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
     var fused_slots_tt = TileTensor[origin=MutAnyOrigin](
         fused_scales_d,
         row_major(Coord(num_active * max_padded_M, Idx[scale_K])),

@@ -35,7 +35,7 @@ def _cpu_ref[
     proj_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     norm_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     eps: Float32,
-    out_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    out_h: UnsafePointer[Float32, MutUntrackedOrigin],
 ):
     for t in range(tokens):
         var scores = List[Float64]()
@@ -75,11 +75,11 @@ def _cpu_ref[
 
 
 def _producer_kernel(
-    dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    src: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int32,
     spin: Int32,
-    sink: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    sink: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Stand-in for the real graph's `concat`: a GPU grid that writes the
     exact buffer `attn_res_mix_gpu` reads next, immediately before it on the
@@ -100,9 +100,7 @@ def _producer_kernel(
     # so neither the loop nor the stall can be folded away.
     var acc = src[0]
     for _ in range(Int(spin)):
-        acc = acc * Scalar[DType.float32](1.0000001) + Scalar[DType.float32](
-            1e-9
-        )
+        acc = acc * Float32(1.0000001) + Float32(1e-9)
 
     var start = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
     var stride = Int(grid_dim.x) * Int(block_dim.x)
@@ -120,7 +118,7 @@ def _assert_finite_contract[
     dtype: DType
 ](
     got: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    want: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    want: UnsafePointer[Float32, MutUntrackedOrigin],
     n: Int,
     context: String,
 ) raises:
@@ -161,7 +159,7 @@ def _check[
     var v_h = alloc[Scalar[dtype]](tokens * C * hidden)
     var proj_h = alloc[Scalar[dtype]](hidden)
     var norm_h = alloc[Scalar[dtype]](hidden)
-    var ref_out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var ref_out_h = alloc[Float32](tokens * hidden)
 
     # Quantize the fill through `dtype` so the fp64 reference consumes exactly
     # the values the device sees -- otherwise a low-precision run is charged
@@ -346,9 +344,9 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
     # the sum regardless of `hidden`.
     comptime BIG = Float32(1e20)
 
-    var v_h = alloc[Scalar[DType.float32]](tokens * C * hidden)
-    var proj_h = alloc[Scalar[DType.float32]](hidden)
-    var norm_h = alloc[Scalar[DType.float32]](hidden)
+    var v_h = alloc[Float32](tokens * C * hidden)
+    var proj_h = alloc[Float32](hidden)
+    var norm_h = alloc[Float32](hidden)
     for t in range(tokens):
         for c in range(C):
             for h in range(hidden):
@@ -396,7 +394,7 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
         block_dim=(BLOCK,),
     )
 
-    var out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var out_h = alloc[Float32](tokens * hidden)
     with ctx.push_context():
         ctx.enqueue_copy(out_h, out_dev)
     ctx.synchronize()
@@ -459,15 +457,13 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
     comptime PRODUCER_SPIN = 2000000
     comptime ITERATIONS = 20
 
-    var proj_h = alloc[Scalar[DType.float32]](hidden)
-    var norm_h = alloc[Scalar[DType.float32]](hidden)
-    var ref_out_h = alloc[Scalar[DType.float32]](tokens * hidden)
-    var out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var proj_h = alloc[Float32](hidden)
+    var norm_h = alloc[Float32](hidden)
+    var ref_out_h = alloc[Float32](tokens * hidden)
+    var out_h = alloc[Float32](tokens * hidden)
     for i in range(hidden):
-        proj_h[i] = Scalar[DType.float32](
-            std.math.cos(Float32(i + 3) * Float32(0.091))
-        )
-        norm_h[i] = Scalar[DType.float32](
+        proj_h[i] = Float32(std.math.cos(Float32(i + 3) * Float32(0.091)))
+        norm_h[i] = Float32(
             Float32(1.0)
             + std.math.sin(Float32(i + 2) * Float32(0.043)) * Float32(0.2)
         )
@@ -494,11 +490,11 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
     var n = tokens * C * hidden
 
     for iteration in range(ITERATIONS):
-        var v_h = alloc[Scalar[DType.float32]](n)
+        var v_h = alloc[Float32](n)
         # Vary the data per iteration so a stale read (previous iteration's
         # or uninitialized `v_dev`) doesn't accidentally match by construction.
         for i in range(n):
-            v_h[i] = Scalar[DType.float32](
+            v_h[i] = Float32(
                 std.math.sin(Float32(i + 1 + iteration * 97) * Float32(0.173))
                 * Float32(0.7)
             )

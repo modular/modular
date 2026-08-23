@@ -1995,7 +1995,7 @@ struct MatmulSwiGLUBias:
             b.to_tile_tensor[DType.int64](),
             ctx,
             OptionalReg(
-                UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+                UnsafePointer[BFloat16, ImmutAnyOrigin](
                     unsafe_from_address=Int(bias.unsafe_ptr())
                 )
             ),
@@ -2218,10 +2218,10 @@ struct Struct_smallm_streaming_matmul:
         ), "smallm streaming matmul requires a static [N, K] weight shape"
 
         if M <= 32:
-            var b_ptr = UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+            var b_ptr = UnsafePointer[BFloat16, ImmutAnyOrigin](
                 unsafe_from_address=Int(b_shuffled.unsafe_ptr())
             )
-            var c_ptr = UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin](
+            var c_ptr = UnsafePointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(c.unsafe_ptr())
             )
             var c_tt = TileTensor[
@@ -2229,7 +2229,7 @@ struct Struct_smallm_streaming_matmul:
                 type_of(row_major(Coord(1, Idx[N]))),
                 MutAnyOrigin,
             ](c_ptr, row_major(Coord(M, Idx[N])))
-            var a_ptr = UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+            var a_ptr = UnsafePointer[BFloat16, ImmutAnyOrigin](
                 unsafe_from_address=Int(a.unsafe_ptr())
             )
             var a_tt = TileTensor[
@@ -2237,9 +2237,9 @@ struct Struct_smallm_streaming_matmul:
                 type_of(row_major(Coord(1, Idx[K]))),
                 ImmutAnyOrigin,
             ](a_ptr, row_major(Coord(M, Idx[K])))
-            var scratch_ptr = UnsafePointer[
-                Scalar[DType.bfloat16], MutAnyOrigin
-            ](unsafe_from_address=Int(a_scratch.unsafe_ptr()))
+            var scratch_ptr = UnsafePointer[BFloat16, MutAnyOrigin](
+                unsafe_from_address=Int(a_scratch.unsafe_ptr())
+            )
             smallm_streaming_matmul[k_static=K](
                 c_tt, a_tt, b_ptr, scratch_ptr, M, N, context
             )

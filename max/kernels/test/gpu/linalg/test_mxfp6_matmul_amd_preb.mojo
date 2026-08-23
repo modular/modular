@@ -83,12 +83,12 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -349,8 +349,8 @@ def _test_case[
     ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
         a_d.unsafe_ptr(),
         b_d.unsafe_ptr(),
-        sfa_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        sfb_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         c_ref_d.unsafe_ptr(),
         mag_d.unsafe_ptr(),
         Int32(M_static),
@@ -370,11 +370,11 @@ def _test_case[
     # kernel reads the underlying bytes through `PreshuffledScaleLoader`, so
     # the TileTensor layout is unused.
     var sfa_tt = TileTensor[mut=False](
-        sfa_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
     )
     var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())

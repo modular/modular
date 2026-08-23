@@ -184,13 +184,13 @@ def test_hex_digits_to_hex_chars() raises:
 
 def test_write_hex() raises:
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, Scalar[DType.int](ord("🔥")))
+    _write_hex[amnt_hex_bytes=8](s, Int(ord("🔥")))
     assert_equal(r"\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, Scalar[DType.int](ord("你")))
+    _write_hex[amnt_hex_bytes=4](s, Int(ord("你")))
     assert_equal(r"\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, Scalar[DType.int](ord("Ö")))
+    _write_hex[amnt_hex_bytes=2](s, Int(ord("Ö")))
     assert_equal(r"\xd6", s)
 
 

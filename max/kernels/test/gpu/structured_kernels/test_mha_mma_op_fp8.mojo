@@ -284,8 +284,8 @@ def kernel_load_K_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_swz_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
+    src_swz_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Loads K SMEM from `src_swz_ptr` (already swizzled), calls
     `MhaMmaOp.load_K`, and dumps each lane's fragment to `dump_ptr`.
@@ -338,7 +338,7 @@ def kernel_load_K_fp8[
             var frag = k_reg_v[rr, rc, 0]
             comptime for f in range(_F):
                 var idx = lid * _total_per_lane + (rr * _W + rc) * _F + f
-                dump_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](frag[f])
+                dump_ptr[idx] = rebind[Float8_e4m3fn](frag[f])
 
 
 def test_load_K_fp8[
@@ -508,8 +508,8 @@ def kernel_load_V_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
+    src_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Fills V SMEM from `src_ptr` (no swizzle), calls
     `MhaMmaOp.load_V`, and dumps each lane's fragment to `dump_ptr`.
@@ -562,7 +562,7 @@ def kernel_load_V_fp8[
             var frag = v_reg_v[rr, rc, 0]
             comptime for f in range(_F):
                 var idx = lid * _total_per_lane + (rr * _W + rc) * _F + f
-                dump_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](frag[f])
+                dump_ptr[idx] = rebind[Float8_e4m3fn](frag[f])
 
 
 def test_load_V_fp8[

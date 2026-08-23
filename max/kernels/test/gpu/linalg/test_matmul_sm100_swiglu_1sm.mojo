@@ -58,8 +58,8 @@ from std.utils.static_tuple import StaticTuple
 
 
 def swiglu_reference(
-    full_ptr: UnsafePointer[Scalar[DType.float32], _],
-    ref_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    full_ptr: UnsafePointer[Float32, _],
+    ref_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
     M: Int,
     N: Int,
 ):
@@ -73,7 +73,7 @@ def swiglu_reference(
         for h in range(H):
             var gate = full_ptr[m * N + 2 * h]
             var up = full_ptr[m * N + 2 * h + 1]
-            var sigmoid = recip(Scalar[DType.float32](1.0) + exp(-gate))
+            var sigmoid = recip(Float32(1.0) + exp(-gate))
             var result = gate * sigmoid * up
             ref_ptr.store(m * H + h, result.cast[DType.bfloat16]())
 

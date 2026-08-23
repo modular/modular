@@ -62,34 +62,28 @@ def test_slice[
     print("In shape:", shape)
     print("In strides:", stride)
 
-    var start_tensor_mem = Array[Scalar[DType.int], outer_rank](
-        uninitialized=True
-    )
+    var start_tensor_mem = Array[Int, outer_rank](uninitialized=True)
     var start_tensor = TileTensor(
         start_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var end_tensor_mem = Array[Scalar[DType.int], outer_rank](
-        uninitialized=True
-    )
+    var end_tensor_mem = Array[Int, outer_rank](uninitialized=True)
     var end_tensor = TileTensor(
         end_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
-    var step_tensor_mem = Array[Scalar[DType.int], outer_rank](
-        uninitialized=True
-    )
+    var step_tensor_mem = Array[Int, outer_rank](uninitialized=True)
     var step_tensor = TileTensor(
         step_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
     for dim in range(outer_rank):
-        start_tensor[dim] = Scalar[DType.int](starts[dim])
-        end_tensor[dim] = Scalar[DType.int](stops[dim])
-        step_tensor[dim] = Scalar[DType.int](steps[dim])
+        start_tensor[dim] = Int(starts[dim])
+        end_tensor[dim] = Int(stops[dim])
+        step_tensor[dim] = Int(steps[dim])
 
     for i in range(numelems):
         in_tensor.raw_store(i, Scalar[dtype](i))

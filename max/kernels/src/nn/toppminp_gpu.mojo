@@ -123,9 +123,7 @@ def topk_wrapper[
             # Store the local top-_K values and indices in global memory
             var vector_idx = total.p
             local_topk_vals[bid * _K + k] = total.u
-            local_topk_idxs[bid * _K + k] = Scalar[DType.int](vector_idx).cast[
-                index_type
-            ]()
+            local_topk_idxs[bid * _K + k] = Int(vector_idx).cast[index_type]()
 
             comptime if is_top_p:
                 # In top-p sampling, we check if the highest probability token exceeds

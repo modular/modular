@@ -316,7 +316,7 @@ def _run_case[
                     )
             else:
                 var quantized: SIMD[DType.float8_e4m3fn, width]
-                var e8m0: Scalar[DType.float8_e8m0fnu]
+                var e8m0: Float8_e8m0fnu
                 # The block max is a cross-lane reduction: lanes past
                 # `num_cols` must participate (carrying 0) but must not store.
                 quantized, e8m0 = quantize_mxfp8_lane_group[

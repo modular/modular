@@ -101,7 +101,7 @@ def gated_group_rmsnorm_kernel[
     var lane = Int(lane_id())
 
     # Pass 1: group sum-of-squares of the silu-gated value (fp32 accumulate).
-    var acc = SIMD[DType.float32, 1](0)
+    var acc = Float32(0)
     var j = lane
     while j < group_size:
         var col = base + j
@@ -198,7 +198,7 @@ def gated_group_rmsnorm_cpu[
     for n in range(n_rows):
         for g in range(num_groups):
             var base = g * group_size
-            var m2 = SIMD[DType.float32, 1](0)
+            var m2 = Float32(0)
             for j in range(group_size):
                 var col = base + j
                 var yv = y.load[width=1](Coord(n, col)).cast[DType.float32]()

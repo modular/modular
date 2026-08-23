@@ -235,7 +235,7 @@ struct MLA_SM100_Decode_KV_BF16[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
             DType.int64,
             RowMajorLayout[ComptimeInt[3]],

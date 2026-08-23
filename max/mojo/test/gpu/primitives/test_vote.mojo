@@ -45,7 +45,7 @@ comptime _TARGET_API = GPUInfo.from_name[_accelerator_arch()]().api
 def _vote_probe[
     ret_type: DType
 ](
-    preds: Pointer[Scalar[DType.uint8], MutAnyOrigin],
+    preds: Pointer[UInt8, MutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())

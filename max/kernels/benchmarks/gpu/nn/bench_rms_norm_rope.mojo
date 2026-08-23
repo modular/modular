@@ -122,7 +122,7 @@ def bench_rms_norm_rope_gpu[
                 sin_fn,
                 output_fn,
                 Coord(shape),
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 epsilon,
                 weight_offset,

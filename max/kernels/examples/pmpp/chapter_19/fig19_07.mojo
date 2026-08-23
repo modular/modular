@@ -38,9 +38,9 @@ def conv_layer_forward_kernel(
     W_dev: Int32,
     K_dev: Int32,
     W_grid_dev: Int32,
-    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    X: UnsafePointer[Float32, ImmutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
+    Y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Convolution layer forward kernel.
 

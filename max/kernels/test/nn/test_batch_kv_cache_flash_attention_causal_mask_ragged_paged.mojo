@@ -63,16 +63,12 @@ def execute_ragged_flash_attention[
     ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var input_row_offsets_heap = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
     var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
         input_row_offsets_heap,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var cache_lengths_nd_heap = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_nd_heap = List(length=batch_size, fill=UInt32(0))
     var cache_lengths_nd = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_nd_heap,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
@@ -144,9 +140,7 @@ def execute_ragged_flash_attention[
 
     random(kv_block_continuous)
 
-    var lookup_table_continuous_heap = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var lookup_table_continuous_heap = List(length=batch_size, fill=UInt32(0))
     var lookup_table_continuous = LayoutTensor[DType.uint32, layout_1d](
         lookup_table_continuous_heap,
         RuntimeLayout[layout_1d].row_major(
@@ -223,7 +217,7 @@ def execute_ragged_flash_attention[
 
     var paged_lut_heap = List(
         length=batch_size * ceildiv(max_full_context_length, page_size),
-        fill=Scalar[DType.uint32](0),
+        fill=UInt32(0),
     )
     var paged_lut = LayoutTensor[DType.uint32, Layout.row_major[2]()](
         paged_lut_heap,

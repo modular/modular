@@ -125,7 +125,7 @@ def fp4_gemv_kernel[
 
     # Each lane owns whole 16-col FP8 scale-blocks, strided by WARP_SIZE blocks.
     # (K is a multiple of 16 for every NVFP4-quantized Linear -> no K tail.)
-    var acc = SIMD[DType.float32, 1](0)
+    var acc = Float32(0)
     var nblk = k // SF
     var blk = lid
     while blk < nblk:

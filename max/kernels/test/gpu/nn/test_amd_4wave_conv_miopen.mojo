@@ -38,8 +38,8 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
 
 def _cast_fp8_to_bf16_host(
-    fp8_ptr: UnsafePointer[mut=False, Scalar[DType.float8_e4m3fn], _],
-    bf16_ptr: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
+    fp8_ptr: UnsafePointer[mut=False, Float8_e4m3fn, _],
+    bf16_ptr: UnsafePointer[mut=True, BFloat16, _],
     count: Int,
 ):
     for i in range(count):

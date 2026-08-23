@@ -113,9 +113,9 @@ def testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.fn @"testSIMD(
-def testSIMD(a: SIMD[DType.float32, 1],
-            b: SIMD[DType.int32, 1],
-            mut reff: SIMD[DType.int32, 1]):
+def testSIMD(a: Float32,
+            b: Int32,
+            mut reff: Int32):
   # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>
   var field1 = a._mlir_value
   # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>

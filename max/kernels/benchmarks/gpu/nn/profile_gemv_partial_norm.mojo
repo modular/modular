@@ -196,7 +196,7 @@ def main() raises:
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        ctx.enqueue_memset(counter_buf, Int32(0))
 
         ctx.synchronize()
 

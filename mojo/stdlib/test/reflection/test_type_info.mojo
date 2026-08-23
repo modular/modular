@@ -285,7 +285,7 @@ struct UIndexParam[value: UInt]:
     pass
 
 
-struct IndexParam[value: Scalar[DType.int]]:
+struct IndexParam[value: Int]:
     pass
 
 
@@ -310,7 +310,7 @@ def test_get_type_name_uint_int_simd_value() raises:
         )
 
     # Test signed index value for comparison - should print as -1
-    comptime neg_one: Scalar[DType.int] = -1
+    comptime neg_one: Int = -1
     name = reflect[IndexParam[neg_one]].name()
     assert_equal(
         name,

@@ -855,14 +855,14 @@ struct MLADispatchScalarArgs[
             ctx, self.gpu_buf.unsafe_ptr(), 3, owning=False
         )
         output_buf.enqueue_copy_from(
-            UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
+            UnsafePointer(to=host_args).bitcast[Int64]()
         )
 
     def gpu_layout_tensor(
         self,
     ) -> Self.MLAScalarArgsLT:
         return Self.MLAScalarArgsLT(
-            rebind[UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]](
+            rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
             ),
         )
@@ -871,7 +871,7 @@ struct MLADispatchScalarArgs[
         self,
     ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
         return TileTensor(
-            rebind[UnsafePointer[Scalar[DType.int64], MutAnyOrigin]](
+            rebind[UnsafePointer[Int64, MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
             ),
             row_major((Idx[3],)),
@@ -922,23 +922,17 @@ def mla_decode_sm100_dispatch[
     q_max_seq_len: Int,
     max_cache_valid_length: Int,
     ctx: DeviceContext,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV parameters (forwarded to mla_decode_sm100_sink_split_k).
     extra_k: OptionalReg[k_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Pre-computed grid-time scalar from the dispatcher input list (capturable
     # graph path). When provided, the value bypasses the local recompute so
     # the host-side grid sizing matches the device-side divmod on
@@ -1167,7 +1161,7 @@ def _mla_decode_sm100_dispatch_impl[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1176,23 +1170,17 @@ def _mla_decode_sm100_dispatch_impl[
     num_partitions: Int,
     effective_max_cache_len: Int,
     ctx: DeviceContext,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV parameters (forwarded to mla_decode_sm100_sink_split_k).
     extra_k: OptionalReg[k_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     comptime hw_info = ctx.default_device_info
@@ -1262,7 +1250,7 @@ def _mla_decode_sm100_dispatch_impl[
 
         # Get input_row_offsets pointer for combine kernel's ragged output writes.
         var input_row_offsets_ptr = rebind[
-            UnsafePointer[Scalar[DType.uint32], origin=MutAnyOrigin]
+            UnsafePointer[UInt32, origin=MutAnyOrigin]
         ](valid_length.ptr)
 
         # Inner function parameterized on has_attn_sink to specialize both
@@ -1625,20 +1613,16 @@ def mla_decode_sm100_sink_split_k[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV: separate always-attend cache. When extra_k is provided
     # (non-default), the sparse kernel appends extra_topk tokens after
     # the original topk tokens in a unified loop.
@@ -1646,9 +1630,7 @@ def mla_decode_sm100_sink_split_k[
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Effective max cache length.  Layout G structural eligibility uses
     # `num_heads * q_len <= BM_G(32)`.  Defaults to 0 so unrelated callers
     # (BF16, sparse, etc.) pass through to the BN_QK=64 branch unchanged.
@@ -2361,7 +2343,7 @@ def mla_decode_sm100_sink_split_k[
 
         # Q_nope TMA: FP8 content, SWIZZLE_64B, BM x padded_depth (512)
         var q_ptr_fp8_content = rebind[
-            UnsafePointer[Scalar[DType.float8_e4m3fn], origin=MutAnyOrigin]
+            UnsafePointer[Float8_e4m3fn, origin=MutAnyOrigin]
         ](q.ptr)
         var q_nope_tma = tma_tile_qo[
             swizzle_mode=mla_config.content_swizzle_mode,  # SWIZZLE_64B
@@ -2373,7 +2355,7 @@ def mla_decode_sm100_sink_split_k[
         # Q_rope TMA: BF16 rope, SWIZZLE_128B, BM x rope_depth (64)
         # Rope starts at byte offset padded_depth (512) from Q row start.
         var q_ptr_bf16_rope = rebind[
-            UnsafePointer[Scalar[DType.bfloat16], origin=MutAnyOrigin]
+            UnsafePointer[BFloat16, origin=MutAnyOrigin]
         ](q.ptr + mla_config.padded_depth)
         var q_rope_tma = tma_tile_qo[
             swizzle_mode=mla_config.rope_swizzle_mode,  # SWIZZLE_128B
@@ -2841,7 +2823,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3015,7 +2997,7 @@ def launch_mla_sm100_decode_native_fp8[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3123,7 +3105,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3246,9 +3228,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3391,10 +3371,8 @@ def launch_mla_sm100_decode_sparse[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     # Extra KV parameters (separate always-attend cache).
     extra_k_nope_tma: TMATensorTile[
         DType.int64,
@@ -3440,9 +3418,7 @@ def launch_mla_sm100_decode_sparse[
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3592,10 +3568,8 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     # Extra KV parameters (separate always-attend cache).
     extra_k_tma: TMATensorTile[
         DType.int64,
@@ -3621,9 +3595,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3770,9 +3742,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     # Extra KV TMA (separate always-attend cache): BF16, SWIZZLE_128B,
     # same descriptor shape as the main K TMA.
     extra_k_tma: TMATensorTile[
@@ -3940,10 +3910,8 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     extra_k_tma: TMATensorTile[
         DType.int64,
         2,
@@ -3968,9 +3936,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],

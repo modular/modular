@@ -224,9 +224,7 @@ def _apply_mask_generic[
                     + row_extra
                     + Int32(ACC_ROW_OFFSETS_32x32[k_local])
                 )
-                var score = SIMD[DType.float32, 1](
-                    frag[k_local].cast[DType.float32]()
-                )
+                var score = Float32(frag[k_local].cast[DType.float32]())
                 var masked = mask_functor.mask(
                     IndexList[4, element_type=DType.uint32](
                         Int(batch_idx),

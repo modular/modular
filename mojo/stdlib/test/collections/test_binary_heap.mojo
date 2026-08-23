@@ -38,20 +38,18 @@ def test_binary_heap() raises:
 
 
 def test_binary_heap_heap_property() raises:
-    def properties(forward: List[Scalar[DType.int]]) raises:
-        var heap = BinaryHeap[Scalar[DType.int]]()
+    def properties(forward: List[Int]) raises:
+        var heap = BinaryHeap[Int]()
         for i in forward:
             heap.push(i)
             assert_true(_is_heap(heap, 0, len(heap)))
         assert_true(_is_heap(heap, 0, len(heap)))
-        var list = List[Scalar[DType.int]]()
+        var list = List[Int]()
         while len(heap) > 0:
             list.append(heap.pop())
             assert_true(_is_heap(heap, 0, len(heap)))
 
-    PropTest().test[properties](
-        List[Int].strategy(Scalar[DType.int].strategy())
-    )
+    PropTest().test[properties](List[Int].strategy(Int.strategy()))
 
 
 def test_binary_heap_peek() raises:

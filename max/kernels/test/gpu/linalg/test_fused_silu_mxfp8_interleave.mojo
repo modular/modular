@@ -109,12 +109,8 @@ def _test_silu_mxfp8[
     var out_tensor = TileTensor(out_device, out_shape)
 
     # ---- Per-expert offsets ----
-    var row_offsets_host_ptr = alloc[Scalar[DType.uint32]](
-        num_active_experts + 1
-    )
-    var scales_offsets_host_ptr = alloc[Scalar[DType.uint32]](
-        num_active_experts
-    )
+    var row_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var scales_offsets_host_ptr = alloc[UInt32](num_active_experts)
 
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1

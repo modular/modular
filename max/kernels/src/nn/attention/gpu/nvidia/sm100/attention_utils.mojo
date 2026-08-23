@@ -360,7 +360,7 @@ def o_store_tma_blocks_per_op[
 @always_inline
 def pack_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
-](o_vals: Array[Scalar[DType.float32], n]) -> SIMD[DType.uint32, 4]:
+](o_vals: Array[Float32, n]) -> SIMD[DType.uint32, 4]:
     """Cast the `w` f32 O lanes `o_vals[start : start + w]` to `output_type` and
     pack them into one 16 B SWIZZLE_NONE store register (exactly four u32).
 
@@ -435,7 +435,7 @@ def blasst_vote_unanimous(
 @always_inline
 def scale_pack_o_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
-](o_vals: Array[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
+](o_vals: Array[Float32, n], inv_row_sum: Float32) -> SIMD[
     DType.uint32, w // 2
 ]:
     """Scale the `w` f32 O lanes `o_vals[start : start + w]` by `inv_row_sum`,
@@ -481,8 +481,8 @@ def scale_pack_o_row[
 def combine_pack_o_row[
     n: Int, //, output_type: DType
 ](
-    own: Array[Scalar[DType.float32], n],
-    peer: Array[Scalar[DType.float32], n],
+    own: Array[Float32, n],
+    peer: Array[Float32, n],
     scale_own: Float32,
     scale_peer: Float32,
 ) -> SIMD[DType.uint32, n // 2]:
@@ -659,9 +659,9 @@ struct TMemTile[
                         m_mma=m_mma,
                     ]()
                     var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = Array[
-                        Scalar[DType.uint32], offsets.local_frag_size_b32
-                    ](uninitialized=True)
+                    var frag = Array[UInt32, offsets.local_frag_size_b32](
+                        uninitialized=True
+                    )
 
                     comptime for _i in range(offsets.local_frag_size_b32):
                         frag[_i] = ptr.load(offsets.ptr_offset + _i)
@@ -840,9 +840,7 @@ struct TMemTile[
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
-                var frag = Array[Scalar[DType.uint32], frag_width](
-                    uninitialized=True
-                )
+                var frag = Array[UInt32, frag_width](uninitialized=True)
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
@@ -899,9 +897,7 @@ struct TMemTile[
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
-                var frag = Array[Scalar[DType.uint32], frag_width](
-                    uninitialized=True
-                )
+                var frag = Array[UInt32, frag_width](uninitialized=True)
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
@@ -2787,7 +2783,7 @@ def store_global_pred[
 @always_inline
 def maximum[
     BN: Int, //, *, width: Int = 4
-](x: Array[Scalar[DType.float32], BN], out res: StaticTuple[Float32, width],):
+](x: Array[Float32, BN], out res: StaticTuple[Float32, width],):
     """Reduces `BN` float32 scores into `width` lane-maxima using FTZ max."""
     comptime assert 3 * width <= BN
     res = {}
@@ -2831,7 +2827,7 @@ def maximum[
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: Array[Scalar[DType.float32], BN],
+    x: Array[Float32, BN],
     init: StaticTuple[Float32, width],
     out res: StaticTuple[Float32, width],
 ):
@@ -3695,7 +3691,7 @@ def apply_mask[
     mask_strategy: MaskStrategy,
     skip_scale: Bool = False,
 ](
-    mut srow: Array[Scalar[DType.float32], BN],
+    mut srow: Array[Float32, BN],
     mask: MaskType,
     scale_log2e: Float32,
     *,

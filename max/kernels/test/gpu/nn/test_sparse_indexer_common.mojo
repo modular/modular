@@ -69,10 +69,10 @@ def _select_test_kernel[
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
     var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var scores_row = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         s_lt.ptr_at_offset(Index(row, 0))
     )
-    var out_row = rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+    var out_row = rebind[UnsafePointer[Int32, MutAnyOrigin]](
         o_lt.ptr_at_offset(Index(row, 0))
     )
     block_select_topk[DType.float32, DType.int32](
@@ -81,7 +81,7 @@ def _select_test_kernel[
 
 
 def _host_topk_set(
-    scores: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    scores: UnsafePointer[Float32, MutAnyOrigin],
     num_blocks: Int,
     k: Int,
 ) -> Set[Int]:
@@ -104,7 +104,7 @@ def _host_topk_set(
 
 
 def _fill_row(
-    row_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    row_ptr: UnsafePointer[mut=True, Float32, _],
     num_blocks: Int,
     k: Int,
     mode: Int,
@@ -206,7 +206,7 @@ def _run_case(
     ctx.synchronize()
     assert_equal(full_host[0], canary, "OOB write to scores[-1] before row 0")
 
-    var host_ptr = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var host_ptr = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         scores_host.unsafe_ptr()
     )
     var no_winner = mode == MODE_ALL_DEAD or mode == MODE_ALL_NAN
@@ -281,7 +281,7 @@ def _launch_select(
     num_rows: Int,
     num_blocks: Int,
     k: Int,
-    scores_host: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    scores_host: UnsafePointer[Float32, MutAnyOrigin],
     block_dim: Int,
     ctx: DeviceContext,
 ) raises -> List[Int32]:
@@ -367,7 +367,7 @@ def _run_block_dim_invariance(
                 scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
             )
     ctx.synchronize()
-    var host_ptr = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var host_ptr = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         scores_host.unsafe_ptr()
     )
 

@@ -102,7 +102,7 @@ def _run_arm[
     cache_len: Int,
     q_len: Int,
     topk: Int,
-    out_host: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    out_host: UnsafePointer[BFloat16, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     """Runs the fused decode branch once and copies its output to the host.

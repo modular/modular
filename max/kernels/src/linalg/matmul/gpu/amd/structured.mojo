@@ -234,7 +234,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     def increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
-                Scalar[DType.int32],
+                Int32,
                 MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
             ]

@@ -95,16 +95,12 @@ def _run_and_check(
 
     with scores_dev.map_to_host() as buf:
         for i in range(N):
-            buf[i] = Scalar[DType.float32](scores_host[i])
+            buf[i] = Float32(scores_host[i])
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=1,
@@ -335,12 +331,8 @@ def test_multi_batch(ctx: DeviceContext) raises:
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=BATCH,
@@ -576,16 +568,12 @@ def _run_and_check_split(
 
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Scalar[DType.float32](scores_host[i])
+            buf[i] = Float32(scores_host[i])
 
     persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -749,16 +737,12 @@ def _run_and_check_block_multirow(
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Scalar[DType.float32](scores_host[i])
+            buf[i] = Float32(scores_host[i])
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -1024,16 +1008,12 @@ def _run_split[
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Scalar[DType.float32](scores_host[i])
+            buf[i] = Float32(scores_host[i])
 
     persistent_topk_block_split[ordered=ordered, deterministic=deterministic](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -1569,24 +1549,20 @@ def _run_and_check_bounded(
 
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Scalar[DType.float32](scores_host[i])
+            buf[i] = Float32(scores_host[i])
     with bounds_dev.map_to_host() as buf:
         for b in range(B):
             buf[b] = Int32(bounds[b])
 
     persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_dev.unsafe_ptr()
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            idxs_dev.unsafe_ptr()
-        ),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
         row_bounds=Optional(
-            rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](
+            rebind[UnsafePointer[Int32, ImmutAnyOrigin]](
                 bounds_dev.unsafe_ptr()
             )
         ),

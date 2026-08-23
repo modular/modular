@@ -71,13 +71,9 @@ def _make_view[
     var stride_c = Coord[*ConcLayout.stride_types]()
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
-            shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](shape[i])
-            )
+            shape_c[i] = rebind[shape_c.element_types[i]](Int64(shape[i]))
         comptime if not stride_c.element_types[i].is_static_value:
-            stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](strides[i])
-            )
+            stride_c[i] = rebind[stride_c.element_types[i]](Int64(strides[i]))
     return TileTensor[
         dtype, ConcLayout, ImmutAnyOrigin, linear_idx_type=DType.int64
     ](ptr=immut_ptr, layout=ConcLayout(shape_c, stride_c))

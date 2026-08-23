@@ -1043,7 +1043,7 @@ struct NVBlockScaledTokenFormat[
             output_tokens.layout,
         }
         self.output_scales_offset = {
-            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin](
+            UnsafePointer[UInt32, MutUntrackedOrigin](
                 unsafe_from_address=Int(output_scales_offset._storage)
             ),
             output_scales_offset.layout,
@@ -2095,7 +2095,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    def recv_count_layout(coord: Coord, out offset: Scalar[DType.int32]):
+    def recv_count_layout(coord: Coord, out offset: Int32):
         comptime if Self.skip_a2a:
             var _coord = Coord((coord[0], Idx[0]))
             offset = Self._recv_count_layout[linear_idx_type=DType.int32](
@@ -2106,7 +2106,7 @@ struct EPDispatchKernel[
 
     @staticmethod
     @always_inline
-    def send_buf_layout(coord: Coord, out offset: Scalar[DType.int32]):
+    def send_buf_layout(coord: Coord, out offset: Int32):
         offset = Self._send_layout[linear_idx_type=DType.int32](coord)
 
     # ===-------------------------------------------------------------------===#
@@ -3214,7 +3214,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    def recv_buf_layout(coord: Coord) -> Scalar[DType.int32]:
+    def recv_buf_layout(coord: Coord) -> Int32:
         return Self._recv_layout[linear_idx_type=DType.int32](coord)
 
     @staticmethod
@@ -3240,7 +3240,7 @@ struct EPCombineKernel[
 
     @staticmethod
     @always_inline
-    def recv_count_layout(coord: Coord) -> Scalar[DType.int32]:
+    def recv_count_layout(coord: Coord) -> Int32:
         comptime if Self.skip_a2a:
             var _coord = Coord((coord[0], Idx[0]))
             return Self._recv_count_layout[linear_idx_type=DType.int32](_coord)

@@ -116,14 +116,14 @@ def test_fp8_e4m3fn_poison_pattern_not_flagged():
     sentinel (0x7E = 448.0) collides with legitimate saturate-to-max values
     in narrow-fp8 quantization. Constructing a value with the would-be-
     poison bit pattern must not abort."""
-    _ = Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7E))
+    _ = Float8_e4m3fn(from_bits=UInt8(0x7E))
 
 
 def test_fp8_e5m2_poison_pattern_not_flagged():
     """The poison check excludes `float8_e5m2` for the same reason as
     `float8_e4m3fn`. Constructing a value with the would-be-poison bit
     pattern (0x7B = 57344.0) must not abort."""
-    _ = Scalar[DType.float8_e5m2](from_bits=UInt8(0x7B))
+    _ = Float8_e5m2(from_bits=UInt8(0x7B))
 
 
 def main() raises:

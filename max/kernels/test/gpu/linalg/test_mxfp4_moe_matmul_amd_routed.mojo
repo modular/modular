@@ -136,7 +136,7 @@ def cpu_routed_reference(
     # Zero-fill output (inactive pairs / out-of-range t,s leave zeros here).
     for c_row in range(num_tokens * topk):
         for n in range(N):
-            c_out[Coord(c_row, n)] = SIMD[DType.float32, 1](0.0)
+            c_out[Coord(c_row, n)] = Float32(0.0)
 
     for t in range(num_tokens):
         for s in range(topk):
@@ -161,7 +161,7 @@ def cpu_routed_reference(
                         acc += a_pair[0] * a_scale * b_pair[0] * b_scale
                         acc += a_pair[1] * a_scale * b_pair[1] * b_scale
 
-                c_out[Coord(c_row, n)] = SIMD[DType.float32, 1](acc)
+                c_out[Coord(c_row, n)] = Float32(acc)
 
 
 # ===----------------------------------------------------------------------=== #

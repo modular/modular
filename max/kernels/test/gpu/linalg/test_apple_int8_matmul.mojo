@@ -70,7 +70,7 @@ def _host_quant_rows(
         var mult = 127.0 / amax if amax != 0.0 else Float32(0)
         for j in range(cols):
             var qi = Int(round(fp[i * cols + j] * mult))
-            q[i * cols + j] = Scalar[DType.int8](qi)
+            q[i * cols + j] = Int8(qi)
 
 
 def _fill_fp32(

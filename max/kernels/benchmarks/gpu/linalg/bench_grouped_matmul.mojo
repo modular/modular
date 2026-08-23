@@ -221,15 +221,9 @@ def bench_grouped_matmul[
     var b_size = num_experts * N * b_packed_K
 
     # Host allocations
-    var a_offsets_host_ptr = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
-    )
-    var a_scale_offsets_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.uint32](0)
-    )
-    var expert_ids_host_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
-    )
+    var a_offsets_host_ptr = List(length=num_active_experts + 1, fill=UInt32(0))
+    var a_scale_offsets_ptr = List(length=num_active_experts, fill=UInt32(0))
+    var expert_ids_host_ptr = List(length=num_active_experts, fill=Int32(0))
 
     # Setup offsets and expert ids
     var a_scale_dim0 = 0
@@ -400,9 +394,7 @@ def bench_grouped_matmul[
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
         )
-        var expert_scales_host_ptr = List(
-            length=num_experts, fill=Scalar[DType.float32](0)
-        )
+        var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -579,9 +571,7 @@ def bench_grouped_matmul[
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
         )
-        var expert_scales_host_ptr = List(
-            length=num_experts, fill=Scalar[DType.float32](0)
-        )
+        var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts

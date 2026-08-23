@@ -74,7 +74,7 @@ def test_cast() raises:
     # Test with a number right on the boundary of 32 bit and 64 bit, to make
     # sure the compiler can cast between the platform dependent types.
     comptime u1 = UInt(4294967296)
-    comptime i1 = Scalar[DType.int](4294967296)
+    comptime i1 = Int(4294967296)
     comptime uc1 = i1.cast[DType.uint]()
     comptime ic1 = u1.cast[DType.int]()
     assert_equal(uc1, u1)
@@ -83,11 +83,11 @@ def test_cast() raises:
     comptime if is_64bit():
         assert_equal(
             UInt(18446744073709551615).cast[DType.int](),
-            Scalar[DType.int](-1),
+            Int(-1),
         )
 
         comptime u2 = UInt(18446744073709551615)
-        comptime i2 = Scalar[DType.int](-1)
+        comptime i2 = Int(-1)
         comptime uc2 = i2.cast[DType.uint]()
         comptime ic2 = u2.cast[DType.int]()
         assert_equal(uc2, u2)
@@ -95,11 +95,11 @@ def test_cast() raises:
     else:
         assert_equal(
             UInt(4294967295).cast[DType.int](),
-            Scalar[DType.int](-1),
+            Int(-1),
         )
 
         comptime u3 = UInt(4294967295)
-        comptime i3 = Scalar[DType.int](-1)
+        comptime i3 = Int(-1)
         comptime uc3 = i3.cast[DType.uint]()
         comptime ic3 = u3.cast[DType.int]()
         assert_equal(uc3, u3)
@@ -2607,7 +2607,7 @@ def test_int_literal_init() raises:
     assert_equal(Int64(-9223372036854775808), Int64(9223372036854775808))
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
-    comptime Index = Scalar[DType.int]
+    comptime Index = Int
     comptime UIndex = UInt
 
     comptime if is_64bit():

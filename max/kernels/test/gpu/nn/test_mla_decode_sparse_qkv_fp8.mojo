@@ -118,9 +118,9 @@ def _coprime_multiplier(n: Int) -> Int:
 
 
 def host_reference_with_attn_sink(
-    q_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], _],
-    k_bf16_ptr: UnsafePointer[Scalar[DType.bfloat16], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
+    q_ptr: UnsafePointer[Float8_e4m3fn, _],
+    k_bf16_ptr: UnsafePointer[BFloat16, _],
+    output_ptr: UnsafePointer[mut=True, BFloat16, _],
     attn_sink_host: UnsafePointer[Float32, _],
     batch_size: Int,
     num_heads: Int,
@@ -179,9 +179,9 @@ def host_reference_with_attn_sink(
 
 
 def host_reference_varkeys(
-    q_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], _],
-    k_bf16_ptr: UnsafePointer[Scalar[DType.bfloat16], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
+    q_ptr: UnsafePointer[Float8_e4m3fn, _],
+    k_bf16_ptr: UnsafePointer[BFloat16, _],
+    output_ptr: UnsafePointer[mut=True, BFloat16, _],
     batch_size: Int,
     num_heads: Int,
     num_keys_per_batch: List[Int],
@@ -254,8 +254,8 @@ def host_reference_varkeys(
 
 def verify_mla_output(
     name: StringLiteral,
-    ref_ptr: UnsafePointer[Scalar[DType.bfloat16], _],
-    out_ptr: UnsafePointer[Scalar[DType.bfloat16], _],
+    ref_ptr: UnsafePointer[BFloat16, _],
+    out_ptr: UnsafePointer[BFloat16, _],
     num_elems: Int,
     atol: Float64 = 5e-2,
     mean_err_max: Float64 = 0.01,
@@ -1653,9 +1653,9 @@ def run_test_sparse_qkv_fp8_attn_sink[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,
-        attn_sink_ptr=rebind[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ](attn_sink_device.unsafe_ptr()),
+        attn_sink_ptr=rebind[UnsafePointer[Float32, origin=MutAnyOrigin]](
+            attn_sink_device.unsafe_ptr()
+        ),
     )
     ctx.synchronize()
 

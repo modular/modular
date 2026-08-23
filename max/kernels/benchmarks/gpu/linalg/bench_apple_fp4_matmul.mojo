@@ -49,8 +49,8 @@ from linalg.matmul.gpu.apple.fp4_matmul import (
 
 
 def _fill_packed(
-    packed: UnsafePointer[mut=True, Scalar[DType.uint8], _],
-    scales: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
+    packed: UnsafePointer[mut=True, UInt8, _],
+    scales: UnsafePointer[mut=True, Float8_e4m3fn, _],
     npacked: Int,
     nscale: Int,
     seed: UInt64,
@@ -85,7 +85,7 @@ def _bench_fp4_shape(
         n * scale_k
     )
     for i in range(m * k):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     _fill_packed(
         packed_host.unsafe_ptr(),
         scale_host.unsafe_ptr(),

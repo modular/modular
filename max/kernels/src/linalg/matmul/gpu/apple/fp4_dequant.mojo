@@ -117,10 +117,8 @@ def fp4_materialize_kernel[
     if n >= N or k >= K:
         return
 
-    var byte = rebind[Scalar[DType.uint8]](packed[n, k // 2])
-    var scale = rebind[Scalar[DType.float8_e4m3fn]](
-        scales[n, k // NVFP4_SF_VECTOR_SIZE]
-    )
+    var byte = rebind[UInt8](packed[n, k // 2])
+    var scale = rebind[Float8_e4m3fn](scales[n, k // NVFP4_SF_VECTOR_SIZE])
     var scale_abs = abs(scale.cast[DType.float32]())
     out_w[n, k] = rebind[out_w.ElementType](
         dequant_fp4_nibble[out_type](byte, (k % 2) == 1, scale_abs)

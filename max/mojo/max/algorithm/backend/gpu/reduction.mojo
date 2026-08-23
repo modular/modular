@@ -573,7 +573,7 @@ def twophase_reduce_kernel[
     # that device memory has no tracked Mojo origin; the safe `Pointer` matches
     # the buffers' `UnsafePointer` `device_type` at the enqueue boundary.
     partials: Pointer[Scalar[accum_type], MutAnyOrigin],
-    counters: Pointer[Scalar[DType.int32], MutAnyOrigin],
+    counters: Pointer[Int32, MutAnyOrigin],
     # `Int` is not device-passable; use a fixed-width `Int32`.
     blocks_per_row: Int32,
 ):

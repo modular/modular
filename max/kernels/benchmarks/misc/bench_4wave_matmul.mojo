@@ -61,7 +61,7 @@ def _verify_buffers_gpu[
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -221,7 +221,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host_alloc = alloc[Scalar[DType.float32]](
+    var result_host_alloc = alloc[Float32](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()

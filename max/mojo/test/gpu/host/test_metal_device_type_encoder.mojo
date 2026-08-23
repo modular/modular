@@ -37,8 +37,8 @@ from max.gpu.host._device_context_metal import MetalDeviceTypeEncoder
 # lifetime, and `Pointer._is_convertible_to_device_type` accepts the spelling.
 @fieldwise_init
 struct PtrPairDevice(ImplicitlyCopyable, TrivialRegisterPassable):
-    var first: Pointer[Scalar[DType.float32], MutUntrackedOrigin]
-    var second: Pointer[Scalar[DType.float32], MutUntrackedOrigin]
+    var first: Pointer[Float32, MutUntrackedOrigin]
+    var second: Pointer[Float32, MutUntrackedOrigin]
 
 
 # A register-passable aggregate holding `DevicePassable` `DevicePointer`

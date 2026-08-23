@@ -60,7 +60,7 @@ def _verify_buffers_gpu[
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -214,7 +214,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -441,9 +441,7 @@ def bench_matmul[
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
         var c_dummy = TileTensor(
-            UnsafePointer[
-                Scalar[DType.bfloat16], MutUntrackedOrigin
-            ].unsafe_dangling(),
+            UnsafePointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
             row_major(shape_c),
         )
 

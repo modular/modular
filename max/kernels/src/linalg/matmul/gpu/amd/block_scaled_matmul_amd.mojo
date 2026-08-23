@@ -347,15 +347,15 @@ struct BlockScaledMmaOp[
         self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
             Self._c_reg_layout
         )
-        _ = self._c_reg.fill(Scalar[DType.float32](0))
+        _ = self._c_reg.fill(Float32(0))
         self._a_scale_packed = stack_allocation[
             DType.int32, AddressSpace.LOCAL
         ](Self._scale_layout)
         self._b_scale_packed = stack_allocation[
             DType.int32, AddressSpace.LOCAL
         ](Self._scale_layout)
-        _ = self._a_scale_packed.fill(Scalar[DType.int32](0))
-        _ = self._b_scale_packed.fill(Scalar[DType.int32](0))
+        _ = self._a_scale_packed.fill(Int32(0))
+        _ = self._b_scale_packed.fill(Int32(0))
 
     @always_inline
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
@@ -962,8 +962,8 @@ struct BlockScaledMatmulAMD[
         var warp_m, warp_n = divmod(_warp_id, Self.num_warps_n)
 
         # === GMEM views ===
-        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[DType.uint8]](), a.layout)
-        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[DType.uint8]](), b.layout)
+        var a_gmem = TileTensor(a.ptr.bitcast[UInt8](), a.layout)
+        var b_gmem = TileTensor(b.ptr.bitcast[UInt8](), b.layout)
 
         # === SMEM tiles (row-major allocation; access is conditionally
         # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
@@ -1184,14 +1184,12 @@ struct BlockScaledMatmulAMD[
                 if row < M:
                     var src_word_base = (row * K_SCALES + base_scale_k) // 4
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfa_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfa.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
-                        ]
+                        ] = sfa.ptr.bitcast[Int32]()[src_word_base + w]
                 else:
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfa_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
             # B scales: guard N-OOB rows (B is transposed).
@@ -1200,14 +1198,12 @@ struct BlockScaledMatmulAMD[
                 if row < N:
                     var src_word_base = (row * K_SCALES + base_scale_k) // 4
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfb_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfb.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
-                        ]
+                        ] = sfb.ptr.bitcast[Int32]()[src_word_base + w]
                 else:
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfb_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
 

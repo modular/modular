@@ -74,9 +74,9 @@ def _frag_row_sum(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
 
 
 def _frag_reduce_kernel(
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_max: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_sum: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_max: UnsafePointer[Float32, MutAnyOrigin],
+    out_sum: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """One simdgroup loads a 16x16 fp32 tile into the MMA fragment layout, row-
     reduces, and writes the 16 per-row max/sum results."""

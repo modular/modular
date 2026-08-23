@@ -59,7 +59,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         def task_body(
             task_id: Int,
         ) {mut checksum, imm per_task,}:
-            var acc = Scalar[DType.int64](0)
+            var acc = Int64(0)
             var j = 0
             while j < per_task:
                 var n_elems = Int(black_box(ELEMENTS_PER_ALLOC))
@@ -75,10 +75,10 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                     p[unsafe_offset=k] = seed ^ k
                     k += 1
 
-                var fold = Scalar[DType.int64](0)
+                var fold = Int64(0)
                 k = 0
                 while k < n_elems:
-                    fold ^= Scalar[DType.int64](p[unsafe_offset=k])
+                    fold ^= Int64(p[unsafe_offset=k])
                     k += 1
                 acc += fold
 

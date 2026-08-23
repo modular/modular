@@ -327,7 +327,7 @@ struct MLAPrefillSparseFP8[
         kv_lut: Self.KVLUTType,
         k_smem_fp8_ptr: UnsafePointer[
             mut=True,
-            Scalar[DType.float8_e4m3fn],
+            Float8_e4m3fn,
             address_space=AddressSpace.SHARED,
             ...,
         ],
@@ -347,7 +347,7 @@ struct MLAPrefillSparseFP8[
         comptime num_warps = 4
         comptime num_rows_per_warp = 4
 
-        var k_smem_i64 = k_smem_fp8_ptr.bitcast[Scalar[DType.int64]]()
+        var k_smem_i64 = k_smem_fp8_ptr.bitcast[Int64]()
         var k_smem_tensor_i64 = TileTensor(
             k_smem_i64,
             row_major[Self.B_TOPK_PER_CTA, Self.k_tma_tile_width_fp8](),
@@ -439,7 +439,7 @@ struct MLAPrefillSparseFP8[
     ](
         k_smem_fp8_ptr: UnsafePointer[
             mut=True,
-            Scalar[DType.float8_e4m3fn],
+            Float8_e4m3fn,
             address_space=AddressSpace.SHARED,
             ...,
         ],
@@ -502,7 +502,7 @@ struct MLAPrefillSparseFP8[
         var sw1_a = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16))
         var sw1_b = Int(sw_bf16(row_1 * UInt32(BN_QK) + col_bf16 + UInt32(8)))
 
-        var src_u8 = k_smem_fp8_ptr.bitcast[Scalar[DType.uint8]]()
+        var src_u8 = k_smem_fp8_ptr.bitcast[UInt8]()
 
         var p0a_all = tt_stack_allocation[
             dtype=DType.uint32, address_space=AddressSpace.LOCAL
@@ -601,7 +601,7 @@ struct MLAPrefillSparseFP8[
         kv_lut: Self.KVLUTType,
         v_smem_fp8_ptr: UnsafePointer[
             mut=True,
-            Scalar[DType.float8_e4m3fn],
+            Float8_e4m3fn,
             address_space=AddressSpace.SHARED,
             ...,
         ],
@@ -622,7 +622,7 @@ struct MLAPrefillSparseFP8[
             Self.config.B_TOPK
         ) // ROWS_PER_GATHER // num_warps
 
-        var v_smem_i64 = v_smem_fp8_ptr.bitcast[Scalar[DType.int64]]()
+        var v_smem_i64 = v_smem_fp8_ptr.bitcast[Int64]()
         # gather4 writes its 4 gathered rows PACKED at the descriptor box
         # width (v_tma_tile_width_fp8 int64s per row) starting at dst.ptr;
         # the dst tile's row stride is NOT consulted. Stage atom-major --
@@ -743,7 +743,7 @@ struct MLAPrefillSparseFP8[
     ](
         v_smem_fp8_ptr: UnsafePointer[
             mut=True,
-            Scalar[DType.float8_e4m3fn],
+            Float8_e4m3fn,
             address_space=AddressSpace.SHARED,
             ...,
         ],
@@ -795,7 +795,7 @@ struct MLAPrefillSparseFP8[
         var idx_in_group = lane % UInt32(GROUP_SIZE)
         var col_bf16 = idx_in_group * UInt32(16)
 
-        var src_u8 = v_smem_fp8_ptr.bitcast[Scalar[DType.uint8]]()
+        var src_u8 = v_smem_fp8_ptr.bitcast[UInt8]()
 
         # The SWIZZLE_128B BF16 writes clobber the aliased FP8 staging region,
         # so within a key-half every FP8 read must complete (barrier) before
@@ -1105,12 +1105,10 @@ struct MLAPrefillSparseFP8[
         # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
         # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
         var k_smem_fp8_ptr = (
-            k_smem_ptr.bitcast[Scalar[DType.float8_e4m3fn]]()
-            + Self.SMemType.K_SIZE
+            k_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.K_SIZE
         )
         var v_smem_fp8_ptr = (
-            v_smem_ptr.bitcast[Scalar[DType.float8_e4m3fn]]()
-            + Self.SMemType.V_SIZE
+            v_smem_ptr.bitcast[Float8_e4m3fn]() + Self.SMemType.V_SIZE
         )
 
         if warp_idx == 0:
@@ -1294,9 +1292,9 @@ struct MLAPrefillSparseFP8[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = Array[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
+                var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                    uninitialized=True
+                )
                 if k > 0 and should_scale_o:
                     tcgen05_fence_after()
                     o_chunk_prefetch = tcgen05_ld[
@@ -1334,9 +1332,9 @@ struct MLAPrefillSparseFP8[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
+                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled_0[j] = mul_ftz(
                             o_chunk_prefetch[j],
@@ -1361,9 +1359,9 @@ struct MLAPrefillSparseFP8[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[
-                            Scalar[DType.float32], O_RESCALE_CHUNK
-                        ](uninitialized=True)
+                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
+                            uninitialized=True
+                        )
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
                                 o_chunk[j],
@@ -1449,7 +1447,7 @@ struct MLAPrefillSparseFP8[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Float32, CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,

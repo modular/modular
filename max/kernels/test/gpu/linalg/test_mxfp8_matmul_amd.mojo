@@ -47,11 +47,11 @@ comptime FP8_LANE_BYTES = 32
 
 
 def block_scaled_matmul_fp8_ref(
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_arg: Int32,
     N_arg: Int32,
     K_arg: Int32,
@@ -70,8 +70,8 @@ def block_scaled_matmul_fp8_ref(
     var am_scales = a_scales_ptr + m * k_groups
     var bn_scales = b_scales_ptr + n * k_groups
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am = (a_ptr + m * K).bitcast[Scalar[DType.float8_e4m3fn]]()
-    var bn = (b_ptr + n * K).bitcast[Scalar[DType.float8_e4m3fn]]()
+    var am = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
+    var bn = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
     for ko in range(k_groups):
@@ -91,7 +91,7 @@ def block_scaled_matmul_fp8_ref(
 def _e4m3_byte(f: Float32) -> UInt8:
     """Byte encoding of `f` as E4M3."""
     return bitcast[DType.uint8, 1](
-        SIMD[DType.float8_e4m3fn, 1](f.cast[DType.float8_e4m3fn]())
+        Float8_e4m3fn(f.cast[DType.float8_e4m3fn]())
     )[0]
 
 
@@ -158,11 +158,11 @@ def _test_case[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -196,12 +196,8 @@ def _test_case[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),
@@ -302,11 +298,11 @@ def test_mxfp8_matmul_split_k[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -324,12 +320,8 @@ def test_mxfp8_matmul_split_k[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),
@@ -405,11 +397,11 @@ def _test_dispatch[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -421,12 +413,8 @@ def _test_dispatch[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),

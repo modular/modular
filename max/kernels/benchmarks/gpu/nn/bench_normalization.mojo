@@ -123,7 +123,7 @@ def bench_layer_norm_gpu[
                 input_fn,
                 output_fn,
                 shape_coord,
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 beta,
                 epsilon,

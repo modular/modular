@@ -380,7 +380,7 @@ comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = Scalar[DType.int] if Int(
+]: CoordLike = Int if Int(
     permutations[idx]
 ) == UNKNOWN_VALUE else input_stride_types[
     Int(permutations[idx])

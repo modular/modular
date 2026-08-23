@@ -71,7 +71,7 @@ def run_layer_norm_cpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon,

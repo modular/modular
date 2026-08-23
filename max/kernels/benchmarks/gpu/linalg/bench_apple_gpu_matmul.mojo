@@ -48,7 +48,7 @@ def _verify[
 ](
     a_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
     b_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    d_host: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    d_host: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

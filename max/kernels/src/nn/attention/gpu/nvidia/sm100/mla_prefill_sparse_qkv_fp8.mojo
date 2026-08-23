@@ -402,7 +402,7 @@ struct MLAPrefillSparseQKVFP8[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-        nums: Array[Scalar[DType.float32], n],
+        nums: Array[Float32, n],
         query: UInt32,
         key_base: UInt32,
     ):
@@ -1349,9 +1349,7 @@ struct MLAPrefillSparseQKVFP8[
             mi = new_max
             li = mul_ftz(li, scale_for_old)
 
-            var nums = Array[Scalar[DType.float32], P_PER_THREAD](
-                uninitialized=True
-            )
+            var nums = Array[Float32, P_PER_THREAD](uninitialized=True)
             # +P_FP8_BIAS lifts P out of the e4m3 subnormal floor; it scales
             # `li` and every P uniformly and cancels in O/li (and in the biased
             # sink term below).  Overflow-safe: max P = exp2(|RESCALE_THRESHOLD|
@@ -1370,9 +1368,9 @@ struct MLAPrefillSparseQKVFP8[
                 var prev_phase = ((k - 1) / UInt32(Self.config.num_mbars)) & 1
                 sv_done_ptr[prev_buf].wait(prev_phase)
 
-            var o_chunk_prefetch = Array[
-                Scalar[DType.float32], O_RESCALE_CHUNK
-            ](uninitialized=True)
+            var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                uninitialized=True
+            )
             if k > 0 and should_scale_o:
                 tcgen05_fence_after()
                 o_chunk_prefetch = tcgen05_ld[
@@ -1395,7 +1393,7 @@ struct MLAPrefillSparseQKVFP8[
 
             if k > 0 and should_scale_o:
                 tcgen05_load_wait()
-                var o_scaled_0 = Array[Scalar[DType.float32], O_RESCALE_CHUNK](
+                var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
                     uninitialized=True
                 )
                 comptime for j in range(O_RESCALE_CHUNK):
@@ -1416,9 +1414,9 @@ struct MLAPrefillSparseQKVFP8[
                         + UInt32(chunk_idx * O_RESCALE_CHUNK)
                     )
                     tcgen05_load_wait()
-                    var o_scaled = Array[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
+                    var o_scaled = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled[j] = mul_ftz(o_chunk[j], scale_for_old)
                     tcgen05_st[

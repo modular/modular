@@ -112,24 +112,24 @@ def pool[
         ref_host_buffer[i] = 0
 
     # Create parameter tensors
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 0
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 2
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 2
     stride_tensor[1] = 3
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
@@ -220,24 +220,24 @@ def pool_ceil_test[
         ref_host_buffer[i] = 0
 
     # Create parameter tensors
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 0
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 3
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 2
     stride_tensor[1] = 2
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
@@ -334,24 +334,24 @@ def test_avg_pool_2d_with_padding_gpu[
         ref_host_buffer[i] = 0
 
     # Create parameter tensors
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 1
     paddings_tensor[1] = 1
     paddings_tensor[2] = 1
     paddings_tensor[3] = 1
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 3
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 1
     stride_tensor[1] = 1
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
@@ -423,24 +423,24 @@ def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
         ref_host_buffer[i] = 0
 
     # Create parameter tensors
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 2
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 2
     filter_tensor[1] = 2
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 1
     stride_tensor[1] = 1
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 3
     dilation_tensor[1] = 3

@@ -926,9 +926,9 @@ struct AppleM5MatMul[
         )
         var accum: Mma.AccumType
         comptime if do_seed:
-            var c_ptr_fp32_seed = rebind[
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-            ](c_ptr_shifted)
+            var c_ptr_fp32_seed = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+                c_ptr_shifted
+            )
             var c_mat_fp32_seed = TileTensor[
                 linear_idx_type=Self.linear_idx_type
             ](c_ptr_fp32_seed, row_major(m, n))
@@ -1053,9 +1053,9 @@ struct AppleM5MatMul[
         def _fast_path_store[
             bounded: Bool
         ](valid_rows: Int = 0, valid_cols: Int = 0):
-            var c_ptr_fp32 = rebind[
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-            ](c_ptr_shifted)
+            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+                c_ptr_shifted
+            )
             var c_mat_fp32 = TileTensor[linear_idx_type=Self.linear_idx_type](
                 c_ptr_fp32, row_major(m, n)
             )
@@ -1474,7 +1474,7 @@ struct AppleM5MatMul[
         a_storage: TensorStorage,
         b_storage: TensorStorage,
     ](
-        partials_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        partials_ptr: UnsafePointer[Float32, MutAnyOrigin],
         a: TileTensor[
             Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
         ],
@@ -1666,7 +1666,7 @@ struct AppleM5MatMul[
         c_storage: TensorStorage,
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
-        partials_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
     ):
         """Sum `num_splits` fp32 partials per output element, cast, store / fuse.

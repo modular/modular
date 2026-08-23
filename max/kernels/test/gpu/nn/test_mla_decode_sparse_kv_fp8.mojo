@@ -1649,9 +1649,9 @@ def run_test_sparse_kv_fp8_attn_sink[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        attn_sink_ptr=rebind[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ](attn_sink_device.unsafe_ptr()),
+        attn_sink_ptr=rebind[UnsafePointer[Float32, origin=MutAnyOrigin]](
+            attn_sink_device.unsafe_ptr()
+        ),
     )
     ctx.synchronize()
 

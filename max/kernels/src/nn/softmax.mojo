@@ -1208,7 +1208,7 @@ def _softmax_gpu[
                         simd_width if use_vectorized else 1
                     )
                     var null_temp_arr = Optional[
-                        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
+                        UnsafePointer[Float32, ImmutAnyOrigin]
                     ]()
 
                     if num_splits > 1:
@@ -2794,12 +2794,10 @@ def _rowmax_online_softmax[
             comptime assert (
                 dtype == DType.float32 and frag_size == 2
             ), "fold_scale_fma needs the f32x2 score pair"
-            var vscale = SIMD[DType.float32, 2](
-                rebind[Scalar[DType.float32]](scale_log2e)
-            )
+            var vscale = SIMD[DType.float32, 2](rebind[Float32](scale_log2e))
             var neg_m_scaled = SIMD[DType.float32, 2](
-                rebind[Scalar[DType.float32]](score_frag_rowmax[col_tile])
-                * rebind[Scalar[DType.float32]](scale_log2e)
+                rebind[Float32](score_frag_rowmax[col_tile])
+                * rebind[Float32](scale_log2e)
                 * -1.0
             )
             comptime for row_tile in range(num_rowwise_tiles):

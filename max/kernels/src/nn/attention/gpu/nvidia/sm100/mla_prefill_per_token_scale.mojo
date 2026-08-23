@@ -135,10 +135,10 @@ struct MLASmemStorage[
 
     comptime correction_smem_size = Self.config.correction_smem_elements()
 
-    var q_smem: Array[Scalar[DType.uint8], Self.q_bytes]
-    var kv_smem: Array[Scalar[DType.uint8], Self.kv_bytes]
-    var q_scale_smem: Array[Scalar[DType.uint8], Self.q_scale_bytes]
-    var k_scale_smem: Array[Scalar[DType.uint8], Self.k_scale_bytes]
+    var q_smem: Array[UInt8, Self.q_bytes]
+    var kv_smem: Array[UInt8, Self.kv_bytes]
+    var q_scale_smem: Array[UInt8, Self.q_scale_bytes]
+    var k_scale_smem: Array[UInt8, Self.k_scale_bytes]
     var correction_smem: Array[Float32, Self.correction_smem_size]
     var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
     var tmem_addr: Array[UInt32, 1]
@@ -1195,10 +1195,9 @@ __extension SM100MLA:
                     )
                     q_rope_tma_op.async_copy_elect(
                         QRopeType(
-                            (
-                                q_smem.bitcast[Scalar[DType.uint8]]()
-                                + q_nope_bytes
-                            ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                            (q_smem.bitcast[UInt8]() + q_nope_bytes).bitcast[
+                                Scalar[config.rope_gmem_dtype]
+                            ](),
                             tt_row_major[q_rope_elems](),
                         ),
                         mbar[],
@@ -1474,7 +1473,7 @@ __extension SM100MLA:
                 q_nope_tma_op.async_copy_elect(
                     QNopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                         ).bitcast[Scalar[Self.qkv_dtype]](),
@@ -1490,7 +1489,7 @@ __extension SM100MLA:
                 q_rope_tma_op.async_copy_elect(
                     QRopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                             + q_nope_bytes
@@ -1722,10 +1721,9 @@ __extension SM100MLA:
                     )
                     q_rope_tma_op.async_copy_elect(
                         QRopeType(
-                            (
-                                q_smem.bitcast[Scalar[DType.uint8]]()
-                                + q_nope_bytes
-                            ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                            (q_smem.bitcast[UInt8]() + q_nope_bytes).bitcast[
+                                Scalar[config.rope_gmem_dtype]
+                            ](),
                             tt_row_major[q_rope_elems](),
                         ),
                         mbar[],
@@ -1812,7 +1810,7 @@ __extension SM100MLA:
                 q_nope_tma_op.async_copy_elect(
                     QNopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                         ).bitcast[Scalar[Self.qkv_dtype]](),
@@ -1828,7 +1826,7 @@ __extension SM100MLA:
                 q_rope_tma_op.async_copy_elect(
                     QRopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                             + q_nope_bytes

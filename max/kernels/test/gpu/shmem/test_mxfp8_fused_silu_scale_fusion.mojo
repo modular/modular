@@ -48,7 +48,7 @@ def _fill_random_bf16(
     hi: Float64 = 4.0,
 ):
     for i in range(n):
-        buf[i] = Scalar[DType.bfloat16](random_float64(lo, hi))
+        buf[i] = BFloat16(random_float64(lo, hi))
 
 
 def _build_routing(
@@ -225,7 +225,7 @@ def _run_check[
     var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         slot_bytes
     )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](

@@ -171,7 +171,7 @@ def execute_topk_bitonic[
                     v = _sample(dist, r, c, N)
                 else:
                     v = Float32(-3.0e38)  # min_or_neg_inf sentinel
-                h[r * N + c] = Scalar[DType.float32](v)
+                h[r * N + c] = Float32(v)
                 csum = (
                     csum ^ UInt64(bitcast[DType.uint32, 1](v))
                 ) * 0x100000001B3
@@ -187,12 +187,8 @@ def execute_topk_bitonic[
             ordered=ordered, deterministic=deterministic
         ](
             c,
-            rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-                scores_t.ptr
-            ),
-            rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-                idxs_t.ptr
-            ),
+            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             N,
             K,
             rows,

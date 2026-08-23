@@ -46,15 +46,11 @@ def next_power_of_two_int_v2(val: Int) -> Int:
 
 
 def next_power_of_two_int_v3(val: Int) -> Int:
-    var v = Scalar[DType.int](val)
+    var v = Int(val)
     return Int(
         mlir_value=v.gt(1)
         .select(
-            1
-            << (
-                Scalar[DType.int](bit_width_of[Int]())
-                - count_leading_zeros(v - 1)
-            ),
+            1 << (Int(bit_width_of[Int]()) - count_leading_zeros(v - 1)),
             1,
         )
         .__mlir_index__()

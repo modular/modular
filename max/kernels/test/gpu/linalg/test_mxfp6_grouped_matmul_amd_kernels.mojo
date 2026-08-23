@@ -125,12 +125,12 @@ def _build_routing(
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -382,7 +382,7 @@ def _run_preb[
     # path is format-independent: one E8M0 byte per 32 elements per lane, for
     # every f8f6f4 format.
     var a_sc_raw_u8_tt = TileTensor[mut=False](
-        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        a_sc_d.unsafe_ptr().bitcast[UInt8](),
         row_major(Coord(total_tokens, Idx[scale_K])),
     )
     # A fresh test buffer reads as zeros, which is a *valid* E8M0 exponent --
@@ -418,7 +418,7 @@ def _run_preb[
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        b_sc_h.unsafe_ptr().bitcast[UInt8](),
         row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
@@ -450,11 +450,11 @@ def _run_preb[
         b_pre_d, row_major[num_experts, N * K_BYTES]()
     )
     var a_sc_tt = TileTensor[mut=False](
-        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var b_sc_tt = TileTensor[mut=False](
-        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     )
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))

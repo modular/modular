@@ -281,9 +281,7 @@ def _run_case[
     var mismatch_f = 0  # fused-vs-f32 exact-mismatch (headroom, reported)
     var sum_mismatch = 0  # sum_out vs standalone RS shard
     var sum_max_ulp = 0
-    var accum = List[Scalar[DType.float32]](
-        length=num_cols, fill=Scalar[DType.float32](0)
-    )
+    var accum = List[Float32](length=num_cols, fill=Float32(0))
 
     for i in range(ngpus):
         var local_rows = config.rank_units(i)
@@ -1165,9 +1163,7 @@ def _run_residual_case[
     var normed_arm_max_ulp = 0
     var woff = weight_offset.cast[DType.float32]()
     # One row's oracle sum, so the norm reference can take a second pass.
-    var want_row = List[Scalar[DType.float32]](
-        length=num_cols, fill=Scalar[DType.float32](0)
-    )
+    var want_row = List[Float32](length=num_cols, fill=Float32(0))
 
     for i in range(ngpus):
         var local = i % group_size

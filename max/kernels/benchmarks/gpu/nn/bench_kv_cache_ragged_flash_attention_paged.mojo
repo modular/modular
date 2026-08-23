@@ -139,12 +139,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_host_ptr = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_host_ptr = List(length=batch_size + 1, fill=UInt32(0))
+    var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -235,9 +231,7 @@ def execute_kv_cache_ragged_flash_attention[
     def _ri(v: Int) -> Int64:
         return Int64(v)
 
-    var paged_lut_host_ptr = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),

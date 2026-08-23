@@ -245,8 +245,8 @@ def _verify_results[
         )
 
     # Compare per-row scale factors (fused vs fully-fused).
-    var fused_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
-    var ff_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
+    var fused_scales_h = List(length=num_rows, fill=Float32(0))
+    var ff_scales_h = List(length=num_rows, fill=Float32(0))
     ctx0.enqueue_copy(fused_scales_h, v_fused_scales_dev)
     ctx0.enqueue_copy(ff_scales_h, v_ff_scales_dev)
     ctx0.synchronize()
@@ -507,8 +507,8 @@ def _verify_add_results[
         )
 
     # Compare per-row scale factors.
-    var ep_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
-    var ff_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
+    var ep_scales_h = List(length=num_rows, fill=Float32(0))
+    var ff_scales_h = List(length=num_rows, fill=Float32(0))
     ctx0.enqueue_copy(ep_scales_h, v_ep_scales_dev)
     ctx0.enqueue_copy(ff_scales_h, v_ff_scales_dev)
     ctx0.synchronize()
@@ -727,20 +727,20 @@ def bench_allreduce_rmsnorm_fp8[
     var fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_scales_ptrs = Array[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var fused_scales_ptrs = Array[UnsafePointer[Float32, MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     var fully_fused_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var fully_fused_scales_ptrs = Array[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
+        UnsafePointer[Float32, MutAnyOrigin], ngpus
     ](uninitialized=True)
     var fused_add_fp8_out_ptrs = Array[
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var fused_add_scales_ptrs = Array[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin], ngpus
+        UnsafePointer[Float32, MutAnyOrigin], ngpus
     ](uninitialized=True)
     var residual_output_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus

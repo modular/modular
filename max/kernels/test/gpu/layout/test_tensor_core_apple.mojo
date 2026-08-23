@@ -215,9 +215,9 @@ def mma_rt_transpose_kernel(
 
 def _check_transpose(
     name: String,
-    a: UnsafePointer[Scalar[DType.float32], ...],
-    b: UnsafePointer[Scalar[DType.float32], ...],
-    d: UnsafePointer[Scalar[DType.float32], ...],
+    a: UnsafePointer[Float32, ...],
+    b: UnsafePointer[Float32, ...],
+    d: UnsafePointer[Float32, ...],
     ta: Bool,
     tb: Bool,
 ) -> Bool:

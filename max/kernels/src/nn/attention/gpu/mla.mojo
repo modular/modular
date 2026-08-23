@@ -259,9 +259,7 @@ def flare_mla_decoding[
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Sparse indices: when non-null, the kernel uses gather4 TMA with
     # pre-computed physical row indices instead of page-table lookups.
     # d_indices[batch * indices_stride + token] = physical KV row index.
@@ -271,18 +269,14 @@ def flare_mla_decoding[
     # the actual number of valid sparse indices for that batch. indices_stride
     # is the allocation stride (max topk across all batches).
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the Python resolver. When set, the
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
@@ -569,9 +563,7 @@ def flare_mla_decoding[
     )
 
     var valid_length = TileTensor(
-        UnsafePointer[
-            Scalar[DType.uint32], MutUntrackedOrigin
-        ].unsafe_dangling(),
+        UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(Idx[0])),
     )
 
@@ -644,23 +636,17 @@ def flare_mla_decoding_dispatch[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
@@ -941,9 +927,9 @@ def flare_mla_decoding_dispatch[
                 valid_length,
                 mask_functor,
                 TileTensor(
-                    rebind[
-                        UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]
-                    ](local_args.gpu_buf.unsafe_ptr()),
+                    rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
+                        local_args.gpu_buf.unsafe_ptr()
+                    ),
                     row_major[3](),
                 ),
                 local_args.batch_size,

@@ -41,8 +41,8 @@ def _cpu_dequant_mxfp4[
     out_dtype: DType = DType.bfloat16
 ](
     expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    input_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
-    scales_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    input_data: UnsafePointer[mut=False, UInt8, _],
+    scales_data: UnsafePointer[mut=False, UInt8, _],
     num_rows: Int,
     num_cols: Int,
 ):

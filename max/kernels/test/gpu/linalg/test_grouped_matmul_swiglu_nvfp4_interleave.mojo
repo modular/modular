@@ -167,11 +167,11 @@ def _test_swiglu_interleave[
 
     # ---- Per-expert offsets / IDs (static lengths so the SwiGLU kernel's
     # ----  comptime n_groups = scales_offsets.static_shape[0] resolves) ----
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
-    var input_scales_host_ptr = alloc[Scalar[DType.float32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var a_scale_offsets_ptr = alloc[UInt32](num_active_experts)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
+    var expert_scales_host_ptr = alloc[Float32](num_experts)
+    var input_scales_host_ptr = alloc[Float32](num_active_experts)
 
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1

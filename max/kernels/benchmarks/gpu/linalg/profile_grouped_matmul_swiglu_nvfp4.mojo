@@ -325,23 +325,23 @@ def main() raises:
         ctx.enqueue_memset(s_buf, Scalar[scales_dtype](0))
 
         # Per-expert offsets / IDs (small, host-built once).
-        var a_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts + 1}
         ).into_managed()
         var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
-        var a_scale_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_scale_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts}
         ).into_managed()
         var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
-        var expert_ids_host_alloc = alloc[Scalar[DType.int32]](
+        var expert_ids_host_alloc = alloc[Int32](
             {count = num_active_experts}
         ).into_managed()
         var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
-        var expert_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var expert_scales_host_alloc = alloc[Float32](
             {count = num_experts}
         ).into_managed()
         var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
-        var input_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var input_scales_host_alloc = alloc[Float32](
             {count = num_active_experts}
         ).into_managed()
         var input_scales_host = input_scales_host_alloc.unsafe_ptr()
@@ -731,7 +731,7 @@ def main() raises:
         # Issue latency = X_S − X_D. Real-work span = X_E − X_S.
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
-            var trace_host_alloc = alloc[Scalar[DType.uint64]](
+            var trace_host_alloc = alloc[UInt64](
                 {count = trace_buf_size}
             ).into_managed()
             var trace_host = trace_host_alloc.unsafe_ptr()

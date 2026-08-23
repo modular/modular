@@ -115,7 +115,7 @@ def run_gated_group_rmsnorm[
     for n in range(n_rows):
         for g in range(num_groups):
             var base = g * group_size
-            var m2 = SIMD[DType.float32, 1](0)
+            var m2 = Float32(0)
             for j in range(group_size):
                 var col = base + j
                 var yv = y_h[n * intermediate + col].cast[DType.float32]()

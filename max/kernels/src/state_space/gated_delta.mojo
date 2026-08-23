@@ -271,12 +271,12 @@ def gated_delta_recurrence_fwd_gpu[
     # Shared memory: raw Q and K for the current token (one element per kd).
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
 
@@ -289,7 +289,7 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        state_col[kd] = Scalar[DType.float32](recurrent_state._storage[off])
+        state_col[kd] = Float32(recurrent_state._storage[off])
 
     var sequence_start_flat_idx = Int(
         input_row_offsets._storage[batch_item_idx]

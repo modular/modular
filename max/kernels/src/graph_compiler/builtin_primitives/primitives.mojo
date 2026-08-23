@@ -158,7 +158,7 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
         self = Self(view, storage^)
 
-    def unsafe_ptr(self) -> Pointer[Scalar[DType.int8], MutAnyOrigin]:
+    def unsafe_ptr(self) -> Pointer[Int8, MutAnyOrigin]:
         """Returns the view's raw device data pointer.
 
         Returns:

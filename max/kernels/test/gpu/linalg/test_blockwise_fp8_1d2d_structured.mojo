@@ -114,21 +114,11 @@ def test_blockwise_fp8_1d2d_structured[
     var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
     var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
     var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var a_offsets_host_ptr = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
-    )
-    var expert_ids_host_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
-    )
-    var a_scales_host_ptr = List(
-        length=a_scales_size, fill=Scalar[DType.float32](0)
-    )
-    var b_scales_host_ptr = List(
-        length=b_scales_size, fill=Scalar[DType.float32](0)
-    )
-    var expert_scales_host_ptr = List(
-        length=num_experts, fill=Scalar[DType.float32](0)
-    )
+    var a_offsets_host_ptr = List(length=num_active_experts + 1, fill=UInt32(0))
+    var expert_ids_host_ptr = List(length=num_active_experts, fill=Int32(0))
+    var a_scales_host_ptr = List(length=a_scales_size, fill=Float32(0))
+    var b_scales_host_ptr = List(length=b_scales_size, fill=Float32(0))
+    var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
 
     var a_host = TileTensor(
         a_host_ptr,

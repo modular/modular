@@ -414,7 +414,7 @@ def accuracy_test() raises:
 
     var deltas_ptr = unsafe_stack_allocation[delta_range, DType.int32]()
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
-    _ = deltas.fill(Scalar[DType.int32](0))
+    _ = deltas.fill(Int32(0))
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):
         var f = bitcast[DType.float32, 1](UInt32(i))

@@ -35,7 +35,7 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 
@@ -76,9 +76,7 @@ def run_varlen_causal_conv1d_fwd[
     )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = List(
-        length=batch + 1, fill=Scalar[DType.int32](0)
-    )
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
     var query_start_loc_tt = TileTensor(
         query_start_loc_heap,
         row_major(
@@ -86,13 +84,13 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     var cumsum = 0
-    query_start_loc_tt.raw_store(0, Scalar[DType.int32](0))
+    query_start_loc_tt.raw_store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_tt.raw_store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_tt.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_heap = List(length=batch, fill=Int32(0))
     var cache_indices_tt = TileTensor(
         cache_indices_heap,
         row_major(
@@ -100,7 +98,7 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Scalar[DType.int32](i))
+        cache_indices_tt.raw_store(i, Int32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(
@@ -289,7 +287,7 @@ def run_varlen_causal_conv1d_update[
     )
 
     # cache_seqlens: (batch,) - can be empty
-    var cache_seqlens_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_seqlens_heap = List(length=batch, fill=Int32(0))
     var cache_seqlens_tt = TileTensor(
         cache_seqlens_heap,
         row_major(
@@ -298,9 +296,7 @@ def run_varlen_causal_conv1d_update[
     )
 
     # conv_state_indices: (batch,) - identity mapping
-    var conv_state_indices_heap = List(
-        length=batch, fill=Scalar[DType.int32](0)
-    )
+    var conv_state_indices_heap = List(length=batch, fill=Int32(0))
     var conv_state_indices_tt = TileTensor(
         conv_state_indices_heap,
         row_major(
@@ -308,7 +304,7 @@ def run_varlen_causal_conv1d_update[
         ),
     )
     for i in range(batch):
-        conv_state_indices_tt.raw_store(i, Scalar[DType.int32](i))
+        conv_state_indices_tt.raw_store(i, Int32(i))
 
     # output: (batch, dim, seqlen)
     var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
@@ -528,7 +524,7 @@ def run_varlen_causal_conv1d_states[
     var x_tt3 = TileTensor(x_heap, row_major(total_tokens, dim))
 
     # cu_seqlens: (batch + 1,) - cumulative sequence lengths
-    var cu_seqlens_heap = List(length=batch + 1, fill=Scalar[DType.int32](0))
+    var cu_seqlens_heap = List(length=batch + 1, fill=Int32(0))
     var cu_seqlens_tt = TileTensor(
         cu_seqlens_heap,
         row_major(
@@ -536,10 +532,10 @@ def run_varlen_causal_conv1d_states[
         ),
     )
     var cumsum = 0
-    cu_seqlens_tt.raw_store(0, Scalar[DType.int32](0))
+    cu_seqlens_tt.raw_store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        cu_seqlens_tt.raw_store(i + 1, Scalar[DType.int32](cumsum))
+        cu_seqlens_tt.raw_store(i + 1, Int32(cumsum))
 
     # states: (batch, dim, state_len)
     var states_heap = List(
@@ -653,19 +649,17 @@ def run_conv_state_writeback[
     rand[dtype](x_tt._storage, dim * total_seqlen)
     rand[dtype](weight_tt._storage, dim * width)
 
-    var query_start_loc_heap = List(
-        length=batch + 1, fill=Scalar[DType.int32](0)
-    )
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
     var query_start_loc_tt = TileTensor(
         query_start_loc_heap, row_major(batch + 1)
     )
     for i in range(batch + 1):
-        query_start_loc_tt.raw_store(i, Scalar[DType.int32](i * seqlen))
+        query_start_loc_tt.raw_store(i, Int32(i * seqlen))
 
-    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_heap = List(length=batch, fill=Int32(0))
     var cache_indices_tt = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Scalar[DType.int32](i))
+        cache_indices_tt.raw_store(i, Int32(i))
 
     var has_initial_state_heap = List(
         length=batch, fill=Scalar[DType.bool](True)

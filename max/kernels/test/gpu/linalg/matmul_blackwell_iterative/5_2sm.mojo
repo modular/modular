@@ -398,16 +398,12 @@ def kernel_5[
                     i + tma_n * (TMA_BN // 16)
                 ) * 8 + 2 * _ei
                 var upper_pair = SIMD[DType.float32, 2](
-                    rebind[Scalar[DType.float32]](c_frag_upper[_src_offset]),
-                    rebind[Scalar[DType.float32]](
-                        c_frag_upper[_src_offset + 1]
-                    ),
+                    rebind[Float32](c_frag_upper[_src_offset]),
+                    rebind[Float32](c_frag_upper[_src_offset + 1]),
                 )
                 var lower_pair = SIMD[DType.float32, 2](
-                    rebind[Scalar[DType.float32]](c_frag_lower[_src_offset]),
-                    rebind[Scalar[DType.float32]](
-                        c_frag_lower[_src_offset + 1]
-                    ),
+                    rebind[Float32](c_frag_lower[_src_offset]),
+                    rebind[Float32](c_frag_lower[_src_offset + 1]),
                 )
                 var upper_casted = upper_pair.cast[DType.bfloat16]()
                 var lower_casted = lower_pair.cast[DType.bfloat16]()

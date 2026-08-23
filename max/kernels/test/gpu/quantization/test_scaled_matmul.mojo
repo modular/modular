@@ -54,7 +54,7 @@ def test_matmul_dynamic_scaled_fp8[
     var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Float32](c_size)
 
     var a_layout = row_major(Coord(m, k))
     var b_layout = row_major(
@@ -188,7 +188,7 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Float32](c_size)
 
     var a_layout = row_major(Coord(m, k))
     var b_layout = row_major(

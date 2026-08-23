@@ -82,7 +82,7 @@ def sw_kernel_square(
     # Allocate shared memory for tile
     var swTile = unsafe_stack_allocation[
         MAX_TILE_WIDTH * MAX_TILE_WIDTH,
-        Scalar[DType.int32],
+        Int32,
         address_space=AddressSpace.SHARED,
     ]()
 
@@ -141,9 +141,7 @@ def sw_kernel_square(
                     Int(w) + DELETION,
                     Int(n) + INSERTION,
                 )
-                swTile[r_tile * tile_width + q_tile] = Scalar[DType.int32](
-                    score
-                )
+                swTile[r_tile * tile_width + q_tile] = Int32(score)
 
             barrier()  # Thread block synchronization
 
