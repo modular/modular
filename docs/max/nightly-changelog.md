@@ -745,6 +745,14 @@ This version is still a work in progress.
 - `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
   now immutable (pydantic `frozen=True`); assigning to a field after
   construction raises a `ValidationError`. Construct with the desired values.
+
+- `KVCacheConfig` and nested `KVConnectorConfig` are now immutable:
+  assigning to a field after construction raises a pydantic
+  `ValidationError`. Construct them with the values you need.
+  Architectures that need KV-head replication declare
+  `requires_kv_head_replication`; construction sets the flag on the
+  model's KV-cache config.
+
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with

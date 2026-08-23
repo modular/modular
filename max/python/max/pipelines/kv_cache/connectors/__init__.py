@@ -90,14 +90,15 @@ def _resolve_disk_offload_dir(cfg: KVConnectorConfigInterface) -> str:
     A single connector serves every DP replica, so the directory is created
     once here (not per replica). Warns about leftovers from previous runs.
     """
-    if cfg.disk_offload_dir is None:
-        cfg.disk_offload_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
+    disk_dir = cfg.disk_offload_dir
+    if disk_dir is None:
+        disk_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
         logger.info(
             "Tiered connector: auto-created disk offload dir %s",
-            cfg.disk_offload_dir,
+            disk_dir,
         )
-    warn_stale_offload_dirs(cfg.disk_offload_dir)
-    return cfg.disk_offload_dir
+    warn_stale_offload_dirs(disk_dir)
+    return disk_dir
 
 
 def create_connector(

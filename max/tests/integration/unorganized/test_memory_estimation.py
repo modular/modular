@@ -161,6 +161,19 @@ def _dummy_llama_config(max_length: int | None) -> DummyPipelineConfig:
     return config
 
 
+def _set_kv_connector(
+    cfg: DummyPipelineConfig, kv_connector: KVConnectorType
+) -> None:
+    kv = cfg.model.kv_cache
+    cfg.model.kv_cache = kv.model_copy(
+        update={
+            "kv_connector_config": kv.kv_connector_config.model_copy(
+                update={"type": kv_connector}
+            )
+        }
+    )
+
+
 def _estimate(config: DummyPipelineConfig, **kwargs: Any) -> MemoryPlan:
     """Runs a successful estimate against ample mocked device memory."""
     with patch(
@@ -594,7 +607,7 @@ def test_estimate_signal_buffer_memory__default(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector_config.type = kv_connector
+    _set_kv_connector(cfg, kv_connector)
 
     expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
     assert cfg.estimate_signal_buffer_memory() == expected
@@ -626,7 +639,7 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
         max_length=1024,
         device_specs=device_specs,
     )
-    cfg.model.kv_cache.kv_connector_config.type = kv_connector
+    _set_kv_connector(cfg, kv_connector)
 
     arch_config = DUMMY_LLAMA_ARCH.config.initialize(
         cfg, max_seq_len=cfg.model.max_length or 4096
