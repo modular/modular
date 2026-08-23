@@ -201,7 +201,7 @@ This version is still a work in progress.
 ## MAX framework
 
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
-  pipeline is loaded: the effective `max_length`, `max_batch_size`,
+  pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
   and its schedulers consume.
 - Renamed `MemoryEstimator.estimate_memory_footprint` to
@@ -224,12 +224,13 @@ This version is still a work in progress.
   `max_batch_total_tokens` back onto the pipeline config. After startup,
   `PipelineConfig.model.max_length` keeps the construction-resolved value
   and `PipelineConfig.runtime.max_batch_total_tokens` keeps the
-  user-provided value (`None` when unset); the VRAM-clamped effective
+  user-provided value (`None` when unset); the effective
   values live on `MemoryPlan`.
 - `PipelineModel` now requires the `memory_plan` constructor argument
   (keyword-only; constructing a pipeline model without a plan raises a
   `TypeError`), and `PipelineModel.max_seq_len` is a read-only view of the
-  plan's `max_length` rather than a stored copy with a config fallback.
+  plan's `planned_max_length` rather than a stored copy with a config
+  fallback.
 - Made `MemoryEstimator.free_memory`, `static_memory_size`,
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and
@@ -838,6 +839,11 @@ This version is still a work in progress.
   `start_model_worker`, the scheduler loaders, and the startup log helpers
   (`log_basic_config`, `log_pipeline_info`) take the memory plan as a
   parameter. Resolved values are unchanged.
+
+- Renamed `MemoryPlan.max_length` to `MemoryPlan.planned_max_length` to
+  distinguish the plan's value from the user intent on
+  `PipelineArgs.max_length` and the construction-resolved
+  `PipelineConfig.model.max_length`, which keep their names.
 
 ## Fixes
 

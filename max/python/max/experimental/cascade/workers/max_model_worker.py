@@ -142,8 +142,10 @@ class MAXModelWorker(Worker):
             "MAXModelWorker needs a model_factory to deploy; construct it via "
             "build_pipeline, which resolves the config and builds the factory."
         )
-        max_length = self._memory_plan.max_length
-        assert max_length is not None, "memory plan must carry a max_length"
+        max_length = self._memory_plan.planned_max_length
+        assert max_length is not None, (
+            "memory plan must carry a planned_max_length"
+        )
         self.max_length = max_length
         t0 = time.monotonic()
         register_all_models()

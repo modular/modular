@@ -409,7 +409,7 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 side_effect=lambda config, *a, **kw: MemoryPlan(
                     max_batch_size=1,
                     footprint=0,
-                    max_length=config.model.max_length,
+                    planned_max_length=config.model.max_length,
                     device_specs=tuple(config.model.device_specs),
                 ),
             ),

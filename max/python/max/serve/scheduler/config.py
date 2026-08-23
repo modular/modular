@@ -148,7 +148,9 @@ class TokenGenerationSchedulerConfig:
             max_batch_size=max_batch_size,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=(
-                memory_plan.max_length if memory_plan is not None else None
+                memory_plan.planned_max_length
+                if memory_plan is not None
+                else None
             ),
             max_batch_total_tokens=(
                 memory_plan.max_batch_total_tokens

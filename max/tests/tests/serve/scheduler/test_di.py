@@ -2465,7 +2465,7 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     memory_plan = MemoryPlan(
         max_batch_size=1,
         footprint=0,
-        max_length=2048,
+        planned_max_length=2048,
         max_batch_total_tokens=8192,
     )
 

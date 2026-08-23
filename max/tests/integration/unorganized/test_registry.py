@@ -189,9 +189,10 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
 @prepare_registry
 @mock_pipeline_config_resolve
 def test_registry__retrieve_factory_tokenizer_uses_planned_max_length() -> None:
-    """The text tokenizer bound is the memory plan's max_length, even when the
-    arch config's get_max_seq_len ignores the user's --max-length (the
-    permissive configs return the raw checkpoint bound, here 123)."""
+    """The text tokenizer bound is the memory plan's planned_max_length,
+    even when the arch config's get_max_seq_len ignores the user's
+    --max-length (the permissive configs return the raw checkpoint bound,
+    here 123)."""
     text_arch = SupportedArchitecture(
         name="DummyPermissiveTextModel",
         task=PipelineTask.TEXT_GENERATION,

@@ -125,6 +125,6 @@ def assert_load_model_succeeds(
         memory_plan=MemoryPlan(
             max_batch_size=1,
             footprint=0,
-            max_length=pipeline_config.model.max_length,
+            planned_max_length=pipeline_config.model.max_length,
         ),
     )

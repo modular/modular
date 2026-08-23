@@ -723,7 +723,7 @@ class PipelineRegistry:
             memory_plan = MemoryPlan(
                 max_batch_size=pipeline_config.runtime.max_batch_size or 1,
                 footprint=0,
-                max_length=pipeline_config.model.max_length,
+                planned_max_length=pipeline_config.model.max_length,
                 device_specs=tuple(pipeline_config.model.device_specs),
                 max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
@@ -740,9 +740,9 @@ class PipelineRegistry:
         if arch.pipeline_cls is not None:
             pipeline_class = arch.pipeline_cls
 
-        # The tokenizer bound is the memory plan's effective max_length; pixel
+        # The tokenizer bound is the memory plan's planned_max_length; pixel
         # generation resolves its own per-arch bounds below.
-        max_length = memory_plan.max_length
+        max_length = memory_plan.planned_max_length
 
         # For pixel generation (diffusion models), we don't need HuggingFace transformers config
         if task == PipelineTask.PIXEL_GENERATION:
