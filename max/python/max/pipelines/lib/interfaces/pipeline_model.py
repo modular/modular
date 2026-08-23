@@ -375,9 +375,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        *,
+        memory_plan: MemoryPlan,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.memory_plan = memory_plan
@@ -389,24 +390,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.adapter = adapter
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states
-
-        # Prefer the plan's clamped length; without a plan the config's
-        # resolved value is the best available.
-        planned_max_length = (
-            memory_plan.max_length if memory_plan is not None else None
-        )
-        max_seq_len = (
-            planned_max_length
-            if planned_max_length is not None
-            else pipeline_config.model.max_length
-        )
-        if max_seq_len is None:
-            raise ValueError(
-                f"{type(self).__qualname__} requires a resolved max_length: "
-                "pass a memory plan or construct the config through "
-                "PipelineConfig.from_args."
-            )
-        self.max_seq_len = max_seq_len
 
         # Graph modules read the length off this config.
         model_config_cls = type(self).model_config_cls
@@ -493,15 +476,22 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return self.arch_config
 
     @property
-    def planned_max_batch_total_tokens(self) -> int | None:
-        """The plan's batch token budget, falling back to the config's value.
+    def max_seq_len(self) -> int:
+        """The effective maximum sequence length, read from the memory plan.
 
-        Readers consume this value directly, so the plan-less fallback lives
-        here rather than in the callee.
+        A view of the plan's ``max_length`` — the model stores no copy of it.
         """
-        if self.memory_plan is not None:
-            return self.memory_plan.max_batch_total_tokens
-        return self.pipeline_config.runtime.max_batch_total_tokens
+        max_length = self.memory_plan.max_length
+        assert max_length is not None, (
+            f"{type(self).__qualname__} requires a memory plan with a max "
+            "length; only multi-component plans carry none"
+        )
+        return max_length
+
+    @property
+    def planned_max_batch_total_tokens(self) -> int | None:
+        """The plan's batch token budget."""
+        return self.memory_plan.max_batch_total_tokens
 
     def _maybe_release_host_weights(self, *models: Any) -> None:
         """Releases the host copies of the weights after the model is loaded.
@@ -865,9 +855,10 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        *,
+        memory_plan: MemoryPlan,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config=pipeline_config,

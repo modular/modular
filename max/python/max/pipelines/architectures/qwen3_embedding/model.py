@@ -109,10 +109,11 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         """Initialize the Qwen3 embedding pipeline model.
 
@@ -131,8 +132,8 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
