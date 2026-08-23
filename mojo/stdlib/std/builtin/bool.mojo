@@ -159,7 +159,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    def __init__(out self, value: Scalar[DType.bool]):
+    def __init__(out self, value: Scalar[.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -466,7 +466,7 @@ struct Bool(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_simd(Scalar[DType.bool](self))
+        hasher._update_with_simd(Scalar[.bool](self))
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
@@ -522,7 +522,7 @@ def any(value: SIMD) -> Bool:
         `True` if **any** element in the simd vector is truthy, `False`
         otherwise.
     """
-    return value.cast[DType.bool]().reduce_or()
+    return value.cast[.bool]().reduce_or()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -564,4 +564,4 @@ def all(value: SIMD) -> Bool:
         `True` if **all** elements in the simd vector are truthy, `False`
         otherwise.
     """
-    return value.cast[DType.bool]().reduce_and()
+    return value.cast[.bool]().reduce_and()

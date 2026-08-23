@@ -59,15 +59,15 @@ def test_concat() raises:
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
-    var x1_dyn = x1.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
 
     var input_tuple = StaticTuple[
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
         x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
-        x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
     )
 
     @__parameter
@@ -83,7 +83,7 @@ def test_concat() raises:
         )
 
     concat[dtype, epilogue_fn=epilogue_plus_one](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         concat_axis,
         input_tuple,
         DeviceContext(api="cpu"),
@@ -124,9 +124,9 @@ def test_concat_parallel() raises:
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
-    var x3_dyn = x3.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
+    var x3_dyn = x3.make_dynamic[.int64]()
 
     comptime out_layout = row_major[2, 2, 6, 2]()
     var out_stack = Array[Scalar[dtype], out_layout.product()](
@@ -157,7 +157,7 @@ def test_concat_parallel() raises:
 
     var input_vec = _tuple_to_list(input_tuple)
     _concat_parallel[dtype, epilogue_plus_one](
-        output.make_dynamic[DType.int64](), concat_axis, input_vec
+        output.make_dynamic[.int64](), concat_axis, input_vec
     )
 
     # CHECK: == test_concat_parallel
@@ -196,9 +196,9 @@ def test_concat_inner() raises:
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
-    var x3_dyn = x3.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
+    var x3_dyn = x3.make_dynamic[.int64]()
 
     comptime out_layout = row_major[1, 1, 6, 2, 2]()
     var out_stack = Array[Scalar[dtype], out_layout.product()](
@@ -230,7 +230,7 @@ def test_concat_inner() raises:
         )
 
     _concat_serial[dtype, epilogue_plus_one](
-        output.make_dynamic[DType.int64](), concat_axis, input_vec
+        output.make_dynamic[.int64](), concat_axis, input_vec
     )
 
     # CHECK-COUNT-4: 1.0

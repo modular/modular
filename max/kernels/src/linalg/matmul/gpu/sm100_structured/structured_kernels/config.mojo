@@ -193,7 +193,7 @@ def _compute_output_tile_shape(
     # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
     var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
 
-    if c_type == DType.bfloat16:
+    if c_type == .bfloat16:
         var c_tile_n = mma_shape[1] if (
             mma_shape[0] == 256 or cta_group == 1
         ) else (mma_shape[1] // 2)
@@ -210,7 +210,7 @@ def _compute_output_tile_shape(
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
             output_tile_m, output_tile_n
         )
-    elif c_type == DType.float32:
+    elif c_type == .float32:
         var c_tile_n = mma_shape[1] if (
             mma_shape[0] == 256 or cta_group == 1
         ) else (mma_shape[1] // 2)
@@ -240,7 +240,7 @@ def _compute_swizzle_modes(
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    if c_type == DType.bfloat16 or c_type == DType.float32:
+    if c_type == .bfloat16 or c_type == .float32:
         if AB_swapped:
             c_swizzle = (
                 TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
@@ -249,7 +249,7 @@ def _compute_swizzle_modes(
             # When not swapped, output_tile_shape[1] is the N dimension.
             # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
-            var elem_size = 2 if c_type == DType.bfloat16 else 4
+            var elem_size = 2 if c_type == .bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
             if row_bytes == 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -430,11 +430,11 @@ def _write_common_config[
 
 
 def _get_dtype_name(dtype: DType) -> String:
-    if dtype == DType.bfloat16:
+    if dtype == .bfloat16:
         return "bf16"
-    elif dtype == DType.float8_e4m3fn:
+    elif dtype == .float8_e4m3fn:
         return "e4m3"
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return "e2m1"
     else:
         return String(dtype)
@@ -623,7 +623,7 @@ struct MatmulConfig[
     ):
         comptime assert Self.a_type == Self.b_type
         comptime assert (
-            Self.a_type != DType.float32 or Self.c_type == DType.float32
+            Self.a_type != .float32 or Self.c_type == .float32
         ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
@@ -892,7 +892,7 @@ def choose_config[
     # a larger range than mma_m.
     if M < M_pivote:
         # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 16 as the granularity for 1CTA.
-        var MMA_N_GRANULARITY = 16 if c_type == DType.float8_e4m3fn else 8
+        var MMA_N_GRANULARITY = 16 if c_type == .float8_e4m3fn else 8
         for bm, mma_n in product(
             [64, 128],
             range(
@@ -921,7 +921,7 @@ def choose_config[
                 var N_aligned = align_up(N, 16)
                 var MMA_N_GRANULARITY = 16
                 # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 32 as the granularity for 2CTA and MMA_M=128.
-                if c_type == DType.float8_e4m3fn and bm == 64:
+                if c_type == .float8_e4m3fn and bm == 64:
                     N_aligned = align_up(N, 32)
                     MMA_N_GRANULARITY = 32
 
@@ -1462,7 +1462,7 @@ def choose_block_scaled_config[
         sfa_dtype == sfb_dtype
     ), "sfa_dtype and sfb_dtype must be the same"
 
-    comptime is_fp4 = a_type == DType.uint8
+    comptime is_fp4 = a_type == .uint8
 
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.

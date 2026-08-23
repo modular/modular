@@ -654,7 +654,7 @@ def _dispatch_ag_norm[
     # Threshold is bf16-row-count in bytes; another element size fuses a diverging
     # shape. Fail loud.
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "_dispatch_ag_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
 
     # Gates on the full replicated row count, identical on every rank: the two
@@ -750,7 +750,7 @@ def _dispatch_ag_norm_quant[
         local_rank: Optional group-local rank of THIS GPU; defaults to the
             physical device id. Required when grouped.
     """
-    comptime assert in_dtype == DType.bfloat16, (
+    comptime assert in_dtype == .bfloat16, (
         "_dispatch_ag_norm_quant fuse threshold is bf16-calibrated (bf16 in/out"
         " only)"
     )

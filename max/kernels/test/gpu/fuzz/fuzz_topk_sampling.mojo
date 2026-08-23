@@ -266,18 +266,18 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     # Per-row temperature (float32). 0 == greedy (the unclamped-divide trigger).
     var temp_val = Float32(spec.temp_milli) / 1000.0
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
     for r in range(batch_size):
         temp_host[r] = temp_val
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](batch_size)
     ctx.enqueue_copy(temp_dev, temp_host)
     var temp_tt = TileTensor(temp_dev, row_major(batch_size))
 
     # Per-row seed for the sampler RNG (uint64).
-    var rng_host = ctx.enqueue_create_host_buffer[DType.uint64](batch_size)
+    var rng_host = ctx.enqueue_create_host_buffer[.uint64](batch_size)
     for r in range(batch_size):
         rng_host[r] = UInt64(spec.seed + r)
-    var rng_dev = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var rng_dev = ctx.enqueue_create_buffer[.uint64](batch_size)
     ctx.enqueue_copy(rng_dev, rng_host)
     var rng_tt = TileTensor(rng_dev, row_major(batch_size))
 

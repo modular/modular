@@ -296,19 +296,19 @@ def rand[
 
     comptime if dtype.is_signed():
         var min_ = std.math.max(
-            Scalar[dtype].MIN.cast[DType.int64](), min.cast[DType.int64]()
+            Scalar[dtype].MIN.cast[.int64](), min.cast[.int64]()
         )
         var max_ = std.math.min(
-            max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
+            max.cast[.int64](), Scalar[dtype].MAX.cast[.int64]()
         )
         for i in range(size):
             ptr.unsafe_offset(i)[] = random_si64(min_, max_).cast[dtype]()
         return
 
-    comptime if dtype == DType.bool or dtype.is_unsigned():
-        var min_ = std.math.max(min.cast[DType.uint64](), 0)
+    comptime if dtype == .bool or dtype.is_unsigned():
+        var min_ = std.math.max(min.cast[.uint64](), 0)
         var max_ = std.math.min(
-            max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
+            max.cast[.uint64](), Scalar[dtype].MAX.cast[.uint64]()
         )
         for i in range(size):
             ptr.unsafe_offset(i)[] = random_ui64(min_, max_).cast[dtype]()

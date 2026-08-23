@@ -36,9 +36,7 @@ def test_compile_atomic() raises:
     ](mut x: Atomic[Scalar[dtype], scope="agent"]) -> Scalar[dtype]:
         return x.fetch_add(1)
 
-    var asm = compile_info[
-        my_add_function[DType.float32], emission_kind="llvm"
-    ]()
+    var asm = compile_info[my_add_function[.float32], emission_kind="llvm"]()
 
     assert_true(
         'atomicrmw fadd ptr %2, float 1.000000e+00 syncscope("agent") seq_cst'

@@ -68,9 +68,9 @@ def apply_mask_kernel[
     vl_origin: ImmOrigin,
     CLLayoutType: TensorLayout,
 ](
-    output: TileTensor[DType.float32, ScoresLayoutType, scores_origin],
-    valid_length: TileTensor[DType.uint32, VLLayoutType, vl_origin],
-    cache_lengths: TileTensor[DType.uint32, CLLayoutType, ImmutAnyOrigin],
+    output: TileTensor[.float32, ScoresLayoutType, scores_origin],
+    valid_length: TileTensor[.uint32, VLLayoutType, vl_origin],
+    cache_lengths: TileTensor[.uint32, CLLayoutType, ImmutAnyOrigin],
     mask: mask_t,
     max_num_keys: Int32,
 ):
@@ -131,7 +131,7 @@ def fill_invalid_topk_kernel[
 ](
     output_indices: UnsafePointer[Int32, MutAnyOrigin],
     topk_indices: UnsafePointer[Int32, MutAnyOrigin],
-    input_row_offsets: TileTensor[DType.uint32, IROLayoutType, iro_origin],
+    input_row_offsets: TileTensor[.uint32, IROLayoutType, iro_origin],
     cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
     ],
@@ -249,7 +249,7 @@ def topk_row_bounds_kernel[
     use_causal_mask: Bool,
 ](
     row_bounds: UnsafePointer[Int32, MutAnyOrigin],
-    input_row_offsets: TileTensor[DType.uint32, IROLayoutType, iro_origin],
+    input_row_offsets: TileTensor[.uint32, IROLayoutType, iro_origin],
     cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
     ],
@@ -325,9 +325,9 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
     scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
 ](
-    output_indices: TileTensor[DType.int32, ...],
+    output_indices: TileTensor[.int32, ...],
     q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[DType.float32, ...],
+    q_s: TileTensor[.float32, ...],
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
@@ -456,14 +456,14 @@ def mla_indexer_ragged_float8_paged[
             scores_budget_bytes // row_bytes, 1, total_seq_len
         )
 
-    var scores_buf = ctx.enqueue_create_buffer[DType.float32](
+    var scores_buf = ctx.enqueue_create_buffer[.float32](
         rows_per_chunk * max_num_keys
     )
 
     # Per-row live-key bounds let the top-k scan each row's real length instead
     # of the full max_num_keys stride. They depend only on the ragged metadata,
     # so this runs once for the whole batch and each chunk reads its own slice.
-    var row_bounds_buf = ctx.enqueue_create_buffer[DType.int32](total_seq_len)
+    var row_bounds_buf = ctx.enqueue_create_buffer[.int32](total_seq_len)
     var row_bounds_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
         row_bounds_buf.unsafe_ptr()
     )
@@ -487,7 +487,7 @@ def mla_indexer_ragged_float8_paged[
     # topk_gpu strides its index output by effective_k, so when effective_k <
     # top_k we use a compact buffer here and scatter into the top_k-strided
     # output_indices in fill_invalid (writing directly would misplace rows).
-    var topk_vals_buf = ctx.enqueue_create_buffer[DType.float32](
+    var topk_vals_buf = ctx.enqueue_create_buffer[.float32](
         total_seq_len * effective_k
     )
     var topk_vals_tile = TileTensor(
@@ -495,7 +495,7 @@ def mla_indexer_ragged_float8_paged[
         row_major(total_seq_len, effective_k),
     )
 
-    var topk_idxs_buf = ctx.enqueue_create_buffer[DType.int32](
+    var topk_idxs_buf = ctx.enqueue_create_buffer[.int32](
         total_seq_len * effective_k
     )
     var topk_idxs_tile = TileTensor(

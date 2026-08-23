@@ -97,11 +97,11 @@ def _run_case[
     var normed_fused = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_fused = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var quant_ref = List[DeviceBuffer[DType.float8_e4m3fn]](capacity=ngpus)
-    var quant_fused = List[DeviceBuffer[DType.float8_e4m3fn]](capacity=ngpus)
-    var scales_ref = List[DeviceBuffer[DType.float8_e8m0fnu]](capacity=ngpus)
-    var scales_fused = List[DeviceBuffer[DType.float8_e8m0fnu]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var quant_ref = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
+    var quant_fused = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
+    var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
+    var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -144,24 +144,24 @@ def _run_case[
         sum_ref.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
         sum_fused.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
         quant_ref.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e4m3fn](full_n)
+            list_of_ctx[i].enqueue_create_buffer[.float8_e4m3fn](full_n)
         )
         quant_fused.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e4m3fn](full_n)
+            list_of_ctx[i].enqueue_create_buffer[.float8_e4m3fn](full_n)
         )
         scales_ref.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e8m0fnu](
+            list_of_ctx[i].enqueue_create_buffer[.float8_e8m0fnu](
                 num_rows * scale_cols
             )
         )
         scales_fused.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e8m0fnu](
+            list_of_ctx[i].enqueue_create_buffer[.float8_e8m0fnu](
                 num_rows * scale_cols
             )
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -310,7 +310,7 @@ def _run_case[
                 if col < num_cols:
                     quant_view.store[width=width](
                         Coord(row, col),
-                        bitcast[DType.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
+                        bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
                 var quantized: SIMD[.float8_e4m3fn, width]
@@ -381,10 +381,10 @@ def _run_case[
     var distinct_scales = List[UInt8]()
 
     for i in range(ngpus):
-        var qa = list_of_ctx[i].enqueue_create_host_buffer[DType.float8_e4m3fn](
+        var qa = list_of_ctx[i].enqueue_create_host_buffer[.float8_e4m3fn](
             full_n
         )
-        var qb = list_of_ctx[i].enqueue_create_host_buffer[DType.float8_e4m3fn](
+        var qb = list_of_ctx[i].enqueue_create_host_buffer[.float8_e4m3fn](
             full_n
         )
         var sa = list_of_ctx[i].enqueue_create_host_buffer[
@@ -404,8 +404,8 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
         for e in range(full_n):
-            var a = bitcast[DType.uint8](qa[e])
-            var b = bitcast[DType.uint8](qb[e])
+            var a = bitcast[.uint8](qa[e])
+            var b = bitcast[.uint8](qb[e])
             if a != b:
                 total_quant_mismatch += 1
             if b != UInt8(0):
@@ -413,8 +413,8 @@ def _run_case[
             if na[e] != nb[e]:
                 total_normed_mismatch += 1
         for e in range(num_rows * scale_cols):
-            var a = bitcast[DType.uint8](sa[e])
-            var b = bitcast[DType.uint8](sb[e])
+            var a = bitcast[.uint8](sa[e])
+            var b = bitcast[.uint8](sb[e])
             if a != b:
                 total_scale_mismatch += 1
             if i == 0 and b not in distinct_scales:

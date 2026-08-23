@@ -138,7 +138,7 @@ def _test_kernel_impl_base[
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
@@ -147,23 +147,21 @@ def _test_kernel_impl_base[
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
         row_major(Coord(Int(num_active_experts))),
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
         row_major(Coord(Int(num_active_experts))),
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
         row_major(Coord(Idx[num_experts])),
@@ -173,16 +171,16 @@ def _test_kernel_impl_base[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     # Initialize expert_scales to non-trivial values: 1 + (i+1)/num_experts
@@ -476,7 +474,7 @@ def _test_kernel_impl_base[
         comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )

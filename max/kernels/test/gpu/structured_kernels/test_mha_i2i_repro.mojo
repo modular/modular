@@ -114,10 +114,10 @@ def run_partial_k_case[
         output_dtype=DType.bfloat16,
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](q_size)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](kv_size)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](kv_size)
-    var dev_out = ctx.enqueue_create_buffer[DType.bfloat16](o_size)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](q_size)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](kv_size)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](kv_size)
+    var dev_out = ctx.enqueue_create_buffer[.bfloat16](o_size)
 
     # Q = 1 everywhere → uniform Q@K over the (uniform) valid keys.
     with dev_q.map_to_host() as host_q:

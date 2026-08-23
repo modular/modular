@@ -691,7 +691,7 @@ def strided_load[
     var offset = (
         SIMD[.int, simd_width](Int(addr))
         + SIMD[.int, simd_width](stride * size_of[dtype]())
-        * std.math.iota[DType.int, simd_width]()
+        * std.math.iota[.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -732,7 +732,7 @@ def strided_store[
     var offset = (
         SIMD[.int, simd_width](Int(addr))
         + SIMD[.int, simd_width](stride * size_of[dtype]())
-        * std.math.iota[DType.int, simd_width]()
+        * std.math.iota[.int, simd_width]()
     )
     scatter(value, offset, mask)
 
@@ -985,6 +985,6 @@ def ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     """
     comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     comptime assert (
-        dtype == DType.int32 or dtype == DType.int64
+        dtype == .int32 or dtype == .int64
     ), "This intrinsic is only defined for i32 or i64"
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

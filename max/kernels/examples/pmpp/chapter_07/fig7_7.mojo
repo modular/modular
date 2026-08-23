@@ -176,9 +176,9 @@ def main() raises:
 
     # Initialize input and filter with random values
     for i in range(in_elements):
-        h_in[i] = random_float64().cast[DType.float32]()
+        h_in[i] = random_float64().cast[.float32]()
     for i in range(filter_elements):
-        h_filter[i] = random_float64().cast[DType.float32]()
+        h_filter[i] = random_float64().cast[.float32]()
 
     # Run GPU convolution
     with DeviceContext() as ctx:

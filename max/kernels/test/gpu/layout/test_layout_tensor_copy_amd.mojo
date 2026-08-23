@@ -85,7 +85,7 @@ def run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
 
     comptime thread_layout = Layout.row_major(4, 2)
     comptime layout = Layout.row_major(4, 16)
-    var input = ManagedLayoutTensor[DType.bfloat16, layout](ctx)
+    var input = ManagedLayoutTensor[.bfloat16, layout](ctx)
     var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
@@ -174,7 +174,7 @@ def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     comptime thread_layout = Layout.row_major(4, 4)
     comptime input_layout = Layout.row_major(4, 16)
-    var input = ManagedLayoutTensor[DType.bfloat16, input_layout](ctx)
+    var input = ManagedLayoutTensor[.bfloat16, input_layout](ctx)
     var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
     comptime kernel = copy_dram_to_local_buffer_load_kernel[

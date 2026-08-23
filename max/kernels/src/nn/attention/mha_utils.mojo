@@ -400,21 +400,21 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 32 if Self.dtype
-                == DType.float32 else (128 if has_amd_gpu_accelerator() else 64)
+                == .float32 else (128 if has_amd_gpu_accelerator() else 64)
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
+            var bk_type_factor = 1 if Self.dtype == .float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
             ) if has_nvidia_gpu_accelerator() else BK.or_else(
                 64 if Self.dtype.is_float8() else 32
             )
             self.WN = WN.or_else(
-                32 if Self.dtype == DType.float32 else self.num_keys_per_block
+                32 if Self.dtype == .float32 else self.num_keys_per_block
             )
         self.WM = WM.or_else(
             32 if Self.dtype
-            == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
+            == .float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
 
     def write_to(self, mut writer: Some[Writer]):

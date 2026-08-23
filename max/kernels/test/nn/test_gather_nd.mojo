@@ -50,8 +50,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -60,8 +60,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -94,8 +94,8 @@ def main():
             DType.int64,
             batch_dims,
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -104,8 +104,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -148,8 +148,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -158,8 +158,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -202,8 +202,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -212,8 +212,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -254,8 +254,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -264,8 +264,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -331,8 +331,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -341,8 +341,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -387,8 +387,8 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank, data_type, DType.int64, batch_dims
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -397,8 +397,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )
@@ -449,8 +449,8 @@ def main():
             DType.int64,
             batch_dims,
         ](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
         )
         print("Output shape: ", output_shape)
 
@@ -459,8 +459,8 @@ def main():
             output_data_data, row_major(Coord(output_shape))
         )
         gather_nd[batch_dims](
-            data.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            data.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             output_data_buffer,
             DeviceContext(api="cpu"),
         )

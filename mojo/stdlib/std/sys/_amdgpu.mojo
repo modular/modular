@@ -62,9 +62,9 @@ def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
         var mb_ptr = Pointer[
             UInt64, UntrackedOrigin[mut=True], address_space=AddressSpace.GLOBAL
         ](unsafe_from_address=Int(mb))
-        var id = sig[].event_id.cast[DType.uint64]()
+        var id = sig[].event_id.cast[.uint64]()
         Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
-        sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
+        sendmsg(1 | (0 << 4), readfirstlane(id.cast[.int32]()) & 0xFF)
 
 
 @always_inline
@@ -123,9 +123,7 @@ def msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
     var reset_mask = ~(
         ((UInt64(1) << DescriptorWidth.len) - 1) << DescriptorOffset.len
     )
-    return (pd & reset_mask) | (
-        len.cast[DType.uint64]() << DescriptorOffset.len
-    )
+    return (pd & reset_mask) | (len.cast[.uint64]() << DescriptorOffset.len)
 
 
 @always_inline
@@ -169,7 +167,7 @@ def append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte.cast[DType.uint64]() << UInt64(ii * 8)
+                arg |= byte.cast[.uint64]() << UInt64(ii * 8)
                 ii += 1
             data = data[0:0]
         return arg
@@ -317,7 +315,7 @@ def begin_fprintf(flags: UInt32) -> UInt64:
     # using the lowest bits in the control qword. For now, all other
     # bits are required to be zero.
     var msg_desc = msg_set_begin_flag(0)
-    var control = flags.cast[DType.uint64]()
+    var control = flags.cast[.uint64]()
 
     var retval = message_append_args(
         ServiceId.fprintf,
@@ -542,7 +540,7 @@ struct Header(TrivialRegisterPassable):
         me: UInt32,
         low: UInt32,
     ):
-        var active = ballot[DType.int64](True).cast[DType.uint64]()
+        var active = ballot[.int64](True).cast[.uint64]()
         if me == low:
             var control = set_ready_flag(0)
             self._handle[].control = control

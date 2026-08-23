@@ -675,7 +675,7 @@ def _dispatch_rs_norm[
     # Threshold is a bf16 row-count crossover in bytes; another element size
     # maps to the wrong row count and could fuse a diverging shape. Fail loud.
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "_dispatch_rs_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
 
     # Fuse-vs-two-launch MUST be group-invariant: the paths issue different

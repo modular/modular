@@ -149,7 +149,7 @@ def memcpy_or_fuse[
             )
 
             func[dtype, rank, simd_width](
-                out_index.cast[DType.int64](),
+                out_index.cast[.int64](),
                 load,
             )
             return

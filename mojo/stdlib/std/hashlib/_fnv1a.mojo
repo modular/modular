@@ -41,7 +41,7 @@ struct Fnv1a(Defaultable, Hasher):
             data: Span of bytes to hash.
         """
         for i in range(len(data)):
-            self._value ^= data[i].cast[DType.uint64]()
+            self._value ^= data[i].cast[.uint64]()
             self._value *= 0x100000001B3
 
     def _update_with_simd(mut self, value: SIMD[_, _]):
@@ -62,7 +62,7 @@ struct Fnv1a(Defaultable, Hasher):
             var v = bits[i]
 
             comptime for r in range(rounds):
-                self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
+                self._value ^= (v >> type_of(v)(r * 64)).cast[.uint64]()
                 self._value *= 0x100000001B3
 
     def update(mut self, value: Some[Hashable]):

@@ -158,11 +158,11 @@ struct ImageData[
             data layout.
         """
         if self.get_image_layout() == Image2DLayout.NCHW:
-            return Int(self.data.layout(dyn_coord[DType.int64]((n, c, h, w))))
+            return Int(self.data.layout(dyn_coord[.int64]((n, c, h, w))))
 
         if self.get_image_layout() == Image2DLayout.RSCF:
-            return Int(self.data.layout(dyn_coord[DType.int64]((h, w, c, n))))
-        return Int(self.data.layout(dyn_coord[DType.int64]((n, h, w, c))))
+            return Int(self.data.layout(dyn_coord[.int64]((h, w, c, n))))
+        return Int(self.data.layout(dyn_coord[.int64]((n, h, w, c))))
 
     def get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying

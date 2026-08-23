@@ -47,9 +47,9 @@ def test_memset_async(ctx: DeviceContext) raises:
     # CHECK: 3
     # CHECK: 3
     # CHECK: 3
-    test_memset[DType.float32](1.0)
-    test_memset[DType.float16](1.0)
-    test_memset[DType.int8](3)
+    test_memset[.float32](1.0)
+    test_memset[.float16](1.0)
+    test_memset[.int8](3)
 
 
 def main() raises:

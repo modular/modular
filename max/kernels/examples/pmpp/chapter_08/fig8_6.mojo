@@ -207,7 +207,7 @@ def main() raises:
 
     # Initialize input with random values
     for i in range(total_elements):
-        h_in[i] = random_float64().cast[DType.float32]()
+        h_in[i] = random_float64().cast[.float32]()
 
     # Initialize output to zero
     for i in range(total_elements):

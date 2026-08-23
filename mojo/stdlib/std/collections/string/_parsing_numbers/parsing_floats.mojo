@@ -220,7 +220,7 @@ def create_float64(m: UInt64, p: Int64) -> Float64:
     var m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     var p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
     var representation_as_int = (m & m_mask) | p_shifted
-    return std.memory.bitcast[DType.float64](representation_as_int)
+    return std.memory.bitcast[.float64](representation_as_int)
 
 
 def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:

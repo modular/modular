@@ -98,7 +98,7 @@ def test_arrange_basic() raises:
     # CHECK-NEXT: 5
 
     # print(np.arange(0, 6, 1))
-    test_arange[DType.int32](0, 6, 1)
+    test_arange[.int32](0, 6, 1)
 
     # CHECK-NEXT: Expected output shape:
     # CHECK-NEXT: (3,)
@@ -109,7 +109,7 @@ def test_arrange_basic() raises:
     # CHECK-NEXT: -8
 
     # print(np.arange(38, -13, -23))
-    test_arange[DType.int32](38, -13, -23)
+    test_arange[.int32](38, -13, -23)
 
 
 def main() raises:

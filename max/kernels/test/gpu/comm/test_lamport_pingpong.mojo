@@ -233,10 +233,10 @@ def run_variant[
     reader_ctx.enqueue_copy(shared, init_host)
     reader_ctx.synchronize()
 
-    var torn_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    var seen_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    reader_ctx.enqueue_memset[DType.int64](torn_buf, 0)
-    reader_ctx.enqueue_memset[DType.int64](seen_buf, 0)
+    var torn_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    var seen_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    reader_ctx.enqueue_memset[.int64](torn_buf, 0)
+    reader_ctx.enqueue_memset[.int64](seen_buf, 0)
     reader_ctx.synchronize()
 
     var shared_ptr = shared.unsafe_ptr().as_unsafe_any_origin()

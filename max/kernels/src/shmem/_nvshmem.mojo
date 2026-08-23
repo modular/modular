@@ -260,31 +260,31 @@ def _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == DType.float16:
+    comptime if dtype == .float16:
         return get_static_string[prefix, "half", suffix, scope]()
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return get_static_string[prefix, "bfloat16", suffix, scope]()
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return get_static_string[prefix, "float", suffix, scope]()
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return get_static_string[prefix, "double", suffix, scope]()
-    elif dtype == DType.int8:
+    elif dtype == .int8:
         return get_static_string[prefix, "int8", suffix, scope]()
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return get_static_string[prefix, "uint8", suffix, scope]()
-    elif dtype == DType.int16:
+    elif dtype == .int16:
         return get_static_string[prefix, "int16", suffix, scope]()
-    elif dtype == DType.uint16:
+    elif dtype == .uint16:
         return get_static_string[prefix, "uint16", suffix, scope]()
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return get_static_string[prefix, "int32", suffix, scope]()
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return get_static_string[prefix, "uint32", suffix, scope]()
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return get_static_string[prefix, "int64", suffix, scope]()
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype == DType.int:
+    elif dtype == .int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         CompilationTarget.unsupported_target_error[

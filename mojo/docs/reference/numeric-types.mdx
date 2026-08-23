@@ -167,36 +167,39 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 
 ### Integer DType specifications
 
-| Signed         | Width   | Unsigned        | Width   |
-|----------------|---------|-----------------|---------|
-| `DType.int8`   | 8-bit   | `DType.uint8`   | 8-bit   |
-| `DType.int16`  | 16-bit  | `DType.uint16`  | 16-bit  |
-| `DType.int32`  | 32-bit  | `DType.uint32`  | 32-bit  |
-| `DType.int64`  | 64-bit  | `DType.uint64`  | 64-bit  |
-| `DType.int128` | 128-bit | `DType.uint128` | 128-bit |
-| `DType.int256` | 256-bit | `DType.uint256` | 256-bit |
-| `DType.int`    | Machine | `DType.uint`    | Machine |
+In contexts that expect a `DType` value, write the contextual form (for
+example `.int32` instead of `DType.int32`). The tables list every member:
+
+| Signed    | Width   | Unsigned     | Width   |
+|-----------|---------|--------------|---------|
+| `.int8`   | 8-bit   | `.uint8`     | 8-bit   |
+| `.int16`  | 16-bit  | `.uint16`    | 16-bit  |
+| `.int32`  | 32-bit  | `.uint32`    | 32-bit  |
+| `.int64`  | 64-bit  | `.uint64`    | 64-bit  |
+| `.int128` | 128-bit | `.uint128`   | 128-bit |
+| `.int256` | 256-bit | `.uint256`   | 256-bit |
+| `.int`    | Machine | `.uint`      | Machine |
 
 ### Floating-point DType specifications
 
-| Value                   | Selects                    |
-|-------------------------|----------------------------|
-| `DType.float16`         | 16-bit IEEE half           |
-| `DType.bfloat16`        | 16-bit brain float         |
-| `DType.float32`         | 32-bit IEEE single         |
-| `DType.float64`         | 64-bit IEEE double         |
-| `DType.float8_e4m3fn`   | 8-bit (4-exp, 3-mantissa)  |
-| `DType.float8_e4m3fnuz` | 8-bit, unsigned zero       |
-| `DType.float8_e5m2`     | 8-bit (5-exp, 2-mantissa)  |
-| `DType.float8_e5m2fnuz` | 8-bit, unsigned zero       |
-| `DType.float8_e8m0fnu`  | 8-bit (8-exp, no mantissa) |
-| `DType.float4_e2m1fn`   | 4-bit (2-exp, 1-mantissa)  |
+| Value              | Selects                    |
+|--------------------|----------------------------|
+| `.float16`         | 16-bit IEEE half           |
+| `.bfloat16`        | 16-bit brain float         |
+| `.float32`         | 32-bit IEEE single         |
+| `.float64`         | 64-bit IEEE double         |
+| `.float8_e4m3fn`   | 8-bit (4-exp, 3-mantissa)  |
+| `.float8_e4m3fnuz` | 8-bit, unsigned zero       |
+| `.float8_e5m2`     | 8-bit (5-exp, 2-mantissa)  |
+| `.float8_e5m2fnuz` | 8-bit, unsigned zero       |
+| `.float8_e8m0fnu`  | 8-bit (8-exp, no mantissa) |
+| `.float4_e2m1fn`   | 4-bit (2-exp, 1-mantissa)  |
 
 ### Other DType specifications
 
-| Value        | Selects         |
-|--------------|-----------------|
-| `DType.bool` | Boolean (1-bit) |
+| Value   | Selects         |
+|---------|-----------------|
+| `.bool` | Boolean (1-bit) |
 
 ## Integers
 
@@ -421,7 +424,7 @@ There's no single `Float8` type in Mojo. It's a colloquial umbrella for
 the five 8-bit floating-point variants exposed as `Scalar` aliases:
 `Float8_e4m3fn`, `Float8_e4m3fnuz`, `Float8_e5m2`, `Float8_e5m2fnuz`,
 and `Float8_e8m0fnu`. Each has its own exponent/mantissa layout and set
-of supported operations. `DType.float8_e3m4` also exists as a dtype
+of supported operations. `.float8_e3m4` also exists as a dtype
 value but has no `Scalar` alias; use `Scalar[.float8_e3m4]`
 directly.
 
@@ -463,20 +466,20 @@ types support arithmetic at runtime on CPU.
 
 **Arithmetic support** (tested on ARM CPU, NVPTX sm_90a, AMDGCN gfx942):
 
-| Type                | Comptime | CPU | NVPTX | AMDGCN |
-|---------------------|----------|-----|-------|--------|
-| `Float8_e4m3fn`     | ✅       | ❌  | ✅    | ❌     |
-| `Float8_e4m3fnuz`   | ✅       | ❌  | ❌    | ❌     |
-| `Float8_e5m2`       | ✅       | ❌  | ✅    | ❌     |
-| `Float8_e5m2fnuz`   | ✅       | ❌  | ❌    | ❌     |
-| `DType.float8_e3m4` | ❌       | ❌  | ❌    | ❌     |
+| Type              | Comptime | CPU | NVPTX | AMDGCN |
+|-------------------|----------|-----|-------|--------|
+| `Float8_e4m3fn`   | ✅       | ❌  | ✅    | ❌     |
+| `Float8_e4m3fnuz` | ✅       | ❌  | ❌    | ❌     |
+| `Float8_e5m2`     | ✅       | ❌  | ✅    | ❌     |
+| `Float8_e5m2fnuz` | ✅       | ❌  | ❌    | ❌     |
+| `.float8_e3m4`    | ❌       | ❌  | ❌    | ❌     |
 
 NVPTX support for `Float8_e4m3fn` and `Float8_e5m2` is emulated by
 the compiler: operands are upconverted to a wider type, the operation
 runs in that wider type, and the result is downconverted back. There
 are no native fp8 arithmetic instructions.
 
-- `DType.float8_e3m4` has no arithmetic support at any stage,
+- `Float8_e3m4` has no arithmetic support at any stage,
   including comptime. Most of its conversions work only at comptime.
 
 - `Float4_e2m1fn` requires NVIDIA Blackwell (B200) or later.

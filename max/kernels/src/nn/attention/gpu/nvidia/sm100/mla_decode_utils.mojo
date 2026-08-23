@@ -286,9 +286,7 @@ def tma_tile_scales[
     var rt_layout = RuntimeLayout[layout].row_major(
         IndexList[2](1, total_elements)
     )
-    var tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        ptr, rt_layout
-    )
+    var tensor = LayoutTensor[.float32, layout, MutAnyOrigin](ptr, rt_layout)
     res = rebind[ScalesTMATile[BN_QK]](
         create_tensor_tile[
             IndexList[2](1, BN_QK),
@@ -3030,7 +3028,7 @@ def write_bf16x2_row_to_smem_chunked[
                 vec_val *= scale
 
             var bf16_vec = vec_val.cast[out_dtype]()
-            var packed = bitcast[DType.uint32, 4](bf16_vec)
+            var packed = bitcast[.uint32, 4](bf16_vec)
             st_shared_v4_b32_at_bf16_elem_off[out_dtype=out_dtype](
                 shared_mem,
                 phys_offsets[vec_idx],
@@ -3123,7 +3121,7 @@ def write_fp8_row_to_smem_chunked[
                 comptime if scale_needed:
                     vec_val *= scale
                 var fp8_vec = vec_val.cast[out_dtype]()
-                packed[sub] = bitcast[DType.uint32, 1](fp8_vec)
+                packed[sub] = bitcast[.uint32, 1](fp8_vec)
 
             st_shared_v4_b32_at_fp8_elem_off[out_dtype=out_dtype](
                 shared_mem,
@@ -3206,7 +3204,7 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
     var u32x2: SIMD[.uint32, 2] = SIMD[.uint32, 2](w0, w1)
     var fp8x8: SIMD[fp8_dtype, 8] = bitcast[fp8_dtype, 8](u32x2)
     var bf16x8: SIMD[out_dtype, 8] = fp8x8.cast[out_dtype]()
-    return bitcast[DType.uint32, 4](bf16x8)
+    return bitcast[.uint32, 4](bf16x8)
 
 
 @always_inline
@@ -3799,7 +3797,7 @@ struct MLA_SM100_Decode_Common[
         batch_size: Int,
         scale_k_smem: OptionalReg[SharedMemPointer[Float32]] = None,
         q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
-        attn_sink_log2: Float32 = Float32(min_or_neg_inf[DType.float32]()),
+        attn_sink_log2: Float32 = Float32(min_or_neg_inf[.float32]()),
         # Logical sparse indices and their valid per-q_token length, forwarded
         # to the inner apply_mask (documented there); required non-null when
         # SparseCausalLogical is derived below.
@@ -4326,10 +4324,10 @@ struct MLA_SM100_Decode_Common[
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
         # --------------------------------------------------------------------------
         comptime assert (
-            Self.AccumType == DType.float32
+            Self.AccumType == .float32
         ), "accumulator type should be float32"
         comptime assert (
-            Self.output_dtype == DType.bfloat16
+            Self.output_dtype == .bfloat16
         ), "output type should be bfloat16"
 
         comptime DecodeOutProducerType = DecodeOutProducer[

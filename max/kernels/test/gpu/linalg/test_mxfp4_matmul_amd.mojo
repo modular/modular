@@ -87,12 +87,12 @@ def block_scaled_matmul_ref(
     var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
-        var a_scale = am_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = bn_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](

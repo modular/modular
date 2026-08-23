@@ -489,7 +489,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[DType.int64, 2]
+    var cf_tile_size: DynamicCoord[.int64, 2]
 
     @staticmethod
     def run(
@@ -1887,9 +1887,7 @@ def _conv_transposed_cudnn[
         )
     )
 
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size
-    )
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](workspace_size)
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)

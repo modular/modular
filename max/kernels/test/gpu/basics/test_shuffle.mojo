@@ -90,35 +90,35 @@ def _shuffle_idx_launch_helper[
 
 
 def test_shuffle_idx_fp32(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.float32, 1](ctx)
+    _shuffle_idx_launch_helper[.float32, 1](ctx)
 
 
 def test_shuffle_idx_bf16(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.bfloat16, 1](ctx)
+    _shuffle_idx_launch_helper[.bfloat16, 1](ctx)
 
 
 def test_shuffle_idx_bf16_packed(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.bfloat16, 2](ctx)
+    _shuffle_idx_launch_helper[.bfloat16, 2](ctx)
 
 
 def test_shuffle_idx_fp16(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.float16, 1](ctx)
+    _shuffle_idx_launch_helper[.float16, 1](ctx)
 
 
 def test_shuffle_idx_fp16_packed(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.float16, 2](ctx)
+    _shuffle_idx_launch_helper[.float16, 2](ctx)
 
 
 def test_shuffle_idx_int64(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.int64, 1](ctx)
+    _shuffle_idx_launch_helper[.int64, 1](ctx)
 
 
 def test_shuffle_idx_int(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.int, 1](ctx)
+    _shuffle_idx_launch_helper[.int, 1](ctx)
 
 
 def test_shuffle_idx_uint(ctx: DeviceContext) raises:
-    _shuffle_idx_launch_helper[DType.uint, 1](ctx)
+    _shuffle_idx_launch_helper[.uint, 1](ctx)
 
 
 def _shuffle_up_launch_helper[
@@ -160,35 +160,35 @@ def _shuffle_up_launch_helper[
 
 
 def test_shuffle_up_fp32(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.float32, 1](ctx)
+    _shuffle_up_launch_helper[.float32, 1](ctx)
 
 
 def test_shuffle_up_bf16(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.bfloat16, 1](ctx)
+    _shuffle_up_launch_helper[.bfloat16, 1](ctx)
 
 
 def test_shuffle_up_bf16_packed(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.bfloat16, 2](ctx)
+    _shuffle_up_launch_helper[.bfloat16, 2](ctx)
 
 
 def test_shuffle_up_fp16(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.float16, 1](ctx)
+    _shuffle_up_launch_helper[.float16, 1](ctx)
 
 
 def test_shuffle_up_fp16_packed(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.float16, 2](ctx)
+    _shuffle_up_launch_helper[.float16, 2](ctx)
 
 
 def test_shuffle_up_int64(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.int64, 1](ctx)
+    _shuffle_up_launch_helper[.int64, 1](ctx)
 
 
 def test_shuffle_up_int(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.int, 1](ctx)
+    _shuffle_up_launch_helper[.int, 1](ctx)
 
 
 def test_shuffle_up_uint(ctx: DeviceContext) raises:
-    _shuffle_up_launch_helper[DType.uint, 1](ctx)
+    _shuffle_up_launch_helper[.uint, 1](ctx)
 
 
 def _shuffle_down_launch_helper[
@@ -230,35 +230,35 @@ def _shuffle_down_launch_helper[
 
 
 def test_shuffle_down_fp32(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.float32, 1](ctx)
+    _shuffle_down_launch_helper[.float32, 1](ctx)
 
 
 def test_shuffle_down_bf16(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.bfloat16, 1](ctx)
+    _shuffle_down_launch_helper[.bfloat16, 1](ctx)
 
 
 def test_shuffle_down_bf16_packed(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.bfloat16, 2](ctx)
+    _shuffle_down_launch_helper[.bfloat16, 2](ctx)
 
 
 def test_shuffle_down_fp16(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.float16, 1](ctx)
+    _shuffle_down_launch_helper[.float16, 1](ctx)
 
 
 def test_shuffle_down_fp16_packed(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.float16, 2](ctx)
+    _shuffle_down_launch_helper[.float16, 2](ctx)
 
 
 def test_shuffle_down_int64(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.int64, 1](ctx)
+    _shuffle_down_launch_helper[.int64, 1](ctx)
 
 
 def test_shuffle_down_int(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.int, 1](ctx)
+    _shuffle_down_launch_helper[.int, 1](ctx)
 
 
 def test_shuffle_down_uint(ctx: DeviceContext) raises:
-    _shuffle_down_launch_helper[DType.uint, 1](ctx)
+    _shuffle_down_launch_helper[.uint, 1](ctx)
 
 
 def _shuffle_xor_launch_helper[
@@ -294,35 +294,35 @@ def _shuffle_xor_launch_helper[
 
 
 def test_shuffle_xor_fp32(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.float32, 1](ctx)
+    _shuffle_xor_launch_helper[.float32, 1](ctx)
 
 
 def test_shuffle_xor_bf16(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.bfloat16, 1](ctx)
+    _shuffle_xor_launch_helper[.bfloat16, 1](ctx)
 
 
 def test_shuffle_xor_bf16_packed(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.bfloat16, 2](ctx)
+    _shuffle_xor_launch_helper[.bfloat16, 2](ctx)
 
 
 def test_shuffle_xor_fp16(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.float16, 1](ctx)
+    _shuffle_xor_launch_helper[.float16, 1](ctx)
 
 
 def test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.float16, 2](ctx)
+    _shuffle_xor_launch_helper[.float16, 2](ctx)
 
 
 def test_shuffle_xor_int64(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.int64, 1](ctx)
+    _shuffle_xor_launch_helper[.int64, 1](ctx)
 
 
 def test_shuffle_xor_int(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.int, 1](ctx)
+    _shuffle_xor_launch_helper[.int, 1](ctx)
 
 
 def test_shuffle_xor_uint(ctx: DeviceContext) raises:
-    _shuffle_xor_launch_helper[DType.uint, 1](ctx)
+    _shuffle_xor_launch_helper[.uint, 1](ctx)
 
 
 def _warp_reduce_launch_helper[
@@ -357,23 +357,23 @@ def _warp_reduce_launch_helper[
 
 
 def test_warp_reduce_fp32(ctx: DeviceContext) raises:
-    _warp_reduce_launch_helper[DType.float32, 1](ctx)
+    _warp_reduce_launch_helper[.float32, 1](ctx)
 
 
 def test_warp_reduce_bf16(ctx: DeviceContext) raises:
-    _warp_reduce_launch_helper[DType.bfloat16, 1](ctx)
+    _warp_reduce_launch_helper[.bfloat16, 1](ctx)
 
 
 def test_warp_reduce_bf16_packed(ctx: DeviceContext) raises:
-    _warp_reduce_launch_helper[DType.bfloat16, 2](ctx)
+    _warp_reduce_launch_helper[.bfloat16, 2](ctx)
 
 
 def test_warp_reduce_fp16(ctx: DeviceContext) raises:
-    _warp_reduce_launch_helper[DType.float16, 1](ctx)
+    _warp_reduce_launch_helper[.float16, 1](ctx)
 
 
 def test_warp_reduce_fp16_packed(ctx: DeviceContext) raises:
-    _warp_reduce_launch_helper[DType.float16, 2](ctx)
+    _warp_reduce_launch_helper[.float16, 2](ctx)
 
 
 def _warp_sum_launch_helper[
@@ -401,11 +401,11 @@ def _warp_sum_launch_helper[
 
 
 def test_warp_sum(ctx: DeviceContext) raises:
-    _warp_sum_launch_helper[DType.float32](ctx)
-    _warp_sum_launch_helper[DType.bfloat16](ctx)
-    _warp_sum_launch_helper[DType.float16](ctx)
+    _warp_sum_launch_helper[.float32](ctx)
+    _warp_sum_launch_helper[.bfloat16](ctx)
+    _warp_sum_launch_helper[.float16](ctx)
     comptime if has_amd_gpu_accelerator():
-        _warp_sum_launch_helper[DType.float64](ctx)
+        _warp_sum_launch_helper[.float64](ctx)
 
 
 def _lane_group_sum_broadcast_stride1_helper[
@@ -444,28 +444,26 @@ def _lane_group_sum_broadcast_stride1_helper[
 
 def test_lane_group_sum_stride1(ctx: DeviceContext) raises:
     # Full warp
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, WARP_SIZE](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 2](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 4](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 8](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 16](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 32](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 2](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 8](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 16](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 32](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if has_amd_gpu_accelerator():
-        _lane_group_sum_broadcast_stride1_helper[DType.float64, 1, 4](ctx)
-        _lane_group_sum_broadcast_stride1_helper[DType.float64, 1, WARP_SIZE](
-            ctx
-        )
+        _lane_group_sum_broadcast_stride1_helper[.float64, 1, 4](ctx)
+        _lane_group_sum_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
 
 
 def test_lane_group_sum_stride1_half(
     ctx: DeviceContext,
 ) raises:
-    _lane_group_sum_broadcast_stride1_helper[DType.bfloat16, 1, 4](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float16, 1, 4](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.bfloat16, 2, 4](ctx)
-    _lane_group_sum_broadcast_stride1_helper[DType.float16, 2, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.bfloat16, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float16, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.bfloat16, 2, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[.float16, 2, 4](ctx)
 
 
 def _lane_group_max_broadcast_stride1_helper[
@@ -500,22 +498,20 @@ def _lane_group_max_broadcast_stride1_helper[
 
 def test_lane_group_max(ctx: DeviceContext) raises:
     # Full warp
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, WARP_SIZE](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 2](ctx)
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 4](ctx)
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 8](ctx)
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 16](ctx)
-    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 32](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, 2](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, 4](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, 8](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, 16](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float32, 1, 32](ctx)
     # Half precision
-    _lane_group_max_broadcast_stride1_helper[DType.bfloat16, 1, 4](ctx)
-    _lane_group_max_broadcast_stride1_helper[DType.float16, 1, 4](ctx)
+    _lane_group_max_broadcast_stride1_helper[.bfloat16, 1, 4](ctx)
+    _lane_group_max_broadcast_stride1_helper[.float16, 1, 4](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if has_amd_gpu_accelerator():
-        _lane_group_max_broadcast_stride1_helper[DType.float64, 1, 4](ctx)
-        _lane_group_max_broadcast_stride1_helper[DType.float64, 1, WARP_SIZE](
-            ctx
-        )
+        _lane_group_max_broadcast_stride1_helper[.float64, 1, 4](ctx)
+        _lane_group_max_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
 
 
 def _lane_group_reduce_launch_helper[
@@ -566,10 +562,8 @@ def _lane_group_reduce_launch_helper[
 
 
 def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
-    _lane_group_reduce_launch_helper[DType.float32, 1, 4, 8](ctx)
-    _lane_group_reduce_launch_helper[DType.float32, 1, 4, 8, broadcast=True](
-        ctx
-    )
+    _lane_group_reduce_launch_helper[.float32, 1, 4, 8](ctx)
+    _lane_group_reduce_launch_helper[.float32, 1, 4, 8, broadcast=True](ctx)
 
     comptime if has_amd_gpu_accelerator():
         # these two use permlane_shuffle on CDNA4+
@@ -582,19 +576,19 @@ def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
 
 
 def test_lane_group_reduce_bf16(ctx: DeviceContext) raises:
-    _lane_group_reduce_launch_helper[DType.bfloat16, 1, 4, 8](ctx)
+    _lane_group_reduce_launch_helper[.bfloat16, 1, 4, 8](ctx)
 
 
 def test_lane_group_reduce_bf16_packed(ctx: DeviceContext) raises:
-    _lane_group_reduce_launch_helper[DType.bfloat16, 2, 4, 8](ctx)
+    _lane_group_reduce_launch_helper[.bfloat16, 2, 4, 8](ctx)
 
 
 def test_lane_group_reduce_fp16(ctx: DeviceContext) raises:
-    _lane_group_reduce_launch_helper[DType.float16, 1, 4, 8](ctx)
+    _lane_group_reduce_launch_helper[.float16, 1, 4, 8](ctx)
 
 
 def test_lane_group_reduce_fp16_packed(ctx: DeviceContext) raises:
-    _lane_group_reduce_launch_helper[DType.float16, 2, 4, 8](ctx)
+    _lane_group_reduce_launch_helper[.float16, 2, 4, 8](ctx)
 
 
 def _lane_group_min_broadcast_helper[
@@ -641,26 +635,26 @@ def _lane_group_min_broadcast_helper[
 
 def test_lane_group_min(ctx: DeviceContext) raises:
     # Full warp
-    _lane_group_min_broadcast_helper[DType.float32, 1, WARP_SIZE](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_min_broadcast_helper[DType.float32, 1, 2](ctx)
-    _lane_group_min_broadcast_helper[DType.float32, 1, 4](ctx)
-    _lane_group_min_broadcast_helper[DType.float32, 1, 8](ctx)
-    _lane_group_min_broadcast_helper[DType.float32, 1, 16](ctx)
-    _lane_group_min_broadcast_helper[DType.float32, 1, 32](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 2](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 4](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 8](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 16](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 32](ctx)
     # Half precision
-    _lane_group_min_broadcast_helper[DType.bfloat16, 1, 4](ctx)
-    _lane_group_min_broadcast_helper[DType.float16, 1, 4](ctx)
+    _lane_group_min_broadcast_helper[.bfloat16, 1, 4](ctx)
+    _lane_group_min_broadcast_helper[.float16, 1, 4](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
     comptime if has_amd_gpu_accelerator():
-        _lane_group_min_broadcast_helper[DType.float64, 1, 4](ctx)
-        _lane_group_min_broadcast_helper[DType.float64, 1, WARP_SIZE](ctx)
+        _lane_group_min_broadcast_helper[.float64, 1, 4](ctx)
+        _lane_group_min_broadcast_helper[.float64, 1, WARP_SIZE](ctx)
     # Stride > 1 (exercises shuffle_xor fallback path)
-    _lane_group_min_broadcast_helper[DType.float32, 1, 4, stride=8](ctx)
+    _lane_group_min_broadcast_helper[.float32, 1, 4, stride=8](ctx)
     # CDNA4 permlane path (stride=16 and stride=32)
     comptime if has_amd_gpu_accelerator():
-        _lane_group_min_broadcast_helper[DType.float32, 1, 2, stride=32](ctx)
-        _lane_group_min_broadcast_helper[DType.float32, 1, 4, stride=16](ctx)
+        _lane_group_min_broadcast_helper[.float32, 1, 2, stride=32](ctx)
+        _lane_group_min_broadcast_helper[.float32, 1, 4, stride=16](ctx)
 
 
 def main() raises:

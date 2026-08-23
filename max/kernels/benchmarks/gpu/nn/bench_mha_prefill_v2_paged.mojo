@@ -122,7 +122,7 @@ def run_mha_prefill_v2_paged[
     comptime num_layers = 1
     comptime layer_idx = 0
 
-    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
+    comptime assert qkv_type == .bfloat16, "MhaPrefillV2 is BF16-only"
     comptime assert (
         page_size >= _KV_BLOCK
     ), "page_size must be >= the kernel's KV_BLOCK (64)"
@@ -142,7 +142,7 @@ def run_mha_prefill_v2_paged[
 
     comptime simd_size = 4
     var cb_q = CacheBustingBuffer[qkv_type](q_size, simd_size, ctx)
-    var cb_o = CacheBustingBuffer[DType.float32](o_size, simd_size, ctx)
+    var cb_o = CacheBustingBuffer[.float32](o_size, simd_size, ctx)
 
     comptime random_distribution = InitializationType.uniform_distribution
     cb_q.init_on_device(random_distribution, ctx)
@@ -153,7 +153,7 @@ def run_mha_prefill_v2_paged[
     var max_seq_length: UInt32 = UInt32(seq_len)
     var max_context_length: UInt32 = UInt32(seq_len)
 
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
 
     # Paged LUT: random unique page index per (batch, block).
@@ -178,7 +178,7 @@ def run_mha_prefill_v2_paged[
             seen.add(p)
             paged_lut_view[bs, block_idx] = UInt32(p)
 
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](paged_lut_size)
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](paged_lut_size)
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
 
     # KV block tensor: (num_pages, 2 [K|V], num_layers, page_size, kv_num_heads, depth)

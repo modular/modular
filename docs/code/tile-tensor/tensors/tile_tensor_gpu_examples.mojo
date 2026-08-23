@@ -135,10 +135,8 @@ def tile_tensor_distribute_example() raises:
 
     try:
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[DType.int32](rows * columns)
-        var host_buf = ctx.enqueue_create_host_buffer[DType.int32](
-            rows * columns
-        )
+        var dev_buf = ctx.enqueue_create_buffer[.int32](rows * columns)
+        var host_buf = ctx.enqueue_create_host_buffer[.int32](rows * columns)
         for i in range(rows * columns):
             host_buf[i] = Int32(i)
         var tensor = TileTensor(dev_buf, layout)

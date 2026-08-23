@@ -113,7 +113,7 @@ def mojo_block_hasher(
     block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = Pointer[PyArrayObject[DType.int32]](
+    var py_array_object_ptr = Pointer[PyArrayObject[.int32]](
         unchecked_downcast_value=py_array_object
     )
 

@@ -185,17 +185,17 @@ struct Naive2dConvolution[
     var output: UnsafePointer[Scalar[Self.output_type], Self.output_origin]
     var input: UnsafePointer[Scalar[Self.input_type], Self.input_origin]
     var filter: UnsafePointer[Scalar[Self.filter_type], Self.filter_origin]
-    var pad_d: DynamicCoord[DType.int64, 2]
-    var pad_h: DynamicCoord[DType.int64, 2]
-    var pad_w: DynamicCoord[DType.int64, 2]
-    var stride: DynamicCoord[DType.int64, 3]
-    var dilation: DynamicCoord[DType.int64, 3]
+    var pad_d: DynamicCoord[.int64, 2]
+    var pad_h: DynamicCoord[.int64, 2]
+    var pad_w: DynamicCoord[.int64, 2]
+    var stride: DynamicCoord[.int64, 3]
+    var dilation: DynamicCoord[.int64, 3]
     var num_groups: Int
 
     # Derived params.
-    var output_shape: DynamicCoord[DType.int64, 5]  # NDHWC layout.
-    var input_shape: DynamicCoord[DType.int64, 5]  # NDHWC layout.
-    var filter_shape: DynamicCoord[DType.int64, 5]  # QRSCF layout.
+    var output_shape: DynamicCoord[.int64, 5]  # NDHWC layout.
+    var input_shape: DynamicCoord[.int64, 5]  # NDHWC layout.
+    var filter_shape: DynamicCoord[.int64, 5]  # QRSCF layout.
 
     @staticmethod
     def run(
@@ -507,7 +507,7 @@ struct ConvDirectNHWC[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[DType.int64, 2]
+    var cf_tile_size: DynamicCoord[.int64, 2]
 
     # If shapes and attributes are known at compile time
     comptime packed_and_fully_static = Self.conv_attr.all_known() and Self.input_layout.shape.all_known[
@@ -3906,11 +3906,11 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         If the dtype is not supported by cuDNN.
     """
 
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return cudnnDataType_t.CUDNN_DATA_FLOAT
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return cudnnDataType_t.CUDNN_DATA_HALF
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return cudnnDataType_t.CUDNN_DATA_BFLOAT16
     else:
         raise Error("unsupported dtype", dtype, "for cuDNN")
@@ -4156,7 +4156,7 @@ def _conv_cudnn[
         # Use ALLOW_CONVERSION only for half-precision types to enable tensor
         # core acceleration. For float32, use DEFAULT_MATH to avoid incorrect
         # results on some GPU architectures (e.g., B200).
-        comptime if input_type == DType.float16 or input_type == DType.bfloat16:
+        comptime if input_type == .float16 or input_type == .bfloat16:
             check_cudnn_error(
                 cudnnSetConvolutionMathType(
                     ptr_meta[].ptr_conv_desc,
@@ -4222,7 +4222,7 @@ def _conv_cudnn[
         ptr_meta[].dil = dil
 
     # Allocate workspace per-call using ctx (runtime-managed buffer)
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](
         ptr_meta[].workspace_size
     )
 
@@ -4688,7 +4688,7 @@ def _conv_miopen[
             )
         )
 
-        var find_workspace = ctx.enqueue_create_buffer[DType.uint8](
+        var find_workspace = ctx.enqueue_create_buffer[.uint8](
             Int(workspace_size)
         )
 
@@ -4730,7 +4730,7 @@ def _conv_miopen[
         ptr_meta[].dilation = dilation.copy()
 
     # Run forward convolution
-    var forward_workspace = ctx.enqueue_create_buffer[DType.uint8](
+    var forward_workspace = ctx.enqueue_create_buffer[.uint8](
         Int(ptr_meta[].workspace_size)
     )
 
@@ -5083,7 +5083,7 @@ def conv_gpu[
     comptime if input_lt.rank == 4:
         # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
         comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
-        comptime _is_supported_dtype = input_type == DType.bfloat16
+        comptime _is_supported_dtype = input_type == .bfloat16
 
         comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv.gpu.nvidia.sm100.dispatch import (
@@ -5712,7 +5712,7 @@ def conv_gpu[
             # (which uses tcgen05 / Blackwell-only intrinsics) is not
             # instantiated when compiling for non-SM100 targets.
             comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
-            comptime _is_supported_dtype = input_type == DType.bfloat16
+            comptime _is_supported_dtype = input_type == .bfloat16
             comptime if _is_sm100 and _is_supported_dtype:
                 if dispatch_qslice_conv3d_sm100[
                     filter_is_fcrs,
@@ -6254,7 +6254,7 @@ def _conv3d_cudnn_depth_tiled[
             ws_size = 0
 
         # --- Execute tile ---
-        var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](ws_size)
+        var workspace_buffer = ctx.enqueue_create_buffer[.uint8](ws_size)
 
         # Compute pointer offsets for input and output tiles.
         var in_offset = d_in_start * in_d_stride
@@ -6517,7 +6517,7 @@ def _conv3d_cudnn[
         workspace_size_var = entry[].workspace_size
     else:
         # Cache miss — run FindEx to find the fastest algorithm.
-        var find_ws = ctx.enqueue_create_buffer[DType.uint8](FIND_WS_CAP)
+        var find_ws = ctx.enqueue_create_buffer[.uint8](FIND_WS_CAP)
 
         # CRITICAL: The Mojo cudnnConvolutionFwdAlgoPerfStruct uses Int8 for
         # enum fields, but the C struct uses int (4 bytes). This causes a
@@ -6642,9 +6642,7 @@ def _conv3d_cudnn[
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size_var
-    )
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](workspace_size_var)
     var fwd_status = cudnnConvolutionForward(
         ptr_meta[].ptr_handle,
         UnsafePointer(to=alpha).bitcast[NoneType](),
@@ -6683,7 +6681,7 @@ def _conv3d_cudnn[
         algo = IMPLICIT_GEMM
         workspace_size_var = 0
 
-        var retry_workspace = ctx.enqueue_create_buffer[DType.uint8](0)
+        var retry_workspace = ctx.enqueue_create_buffer[.uint8](0)
         fwd_status = cudnnConvolutionForward(
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),

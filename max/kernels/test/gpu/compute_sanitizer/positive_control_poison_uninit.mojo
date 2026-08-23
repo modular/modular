@@ -46,10 +46,8 @@ def copy_uninitialized(
 def main() raises:
     with DeviceContext() as ctx:
         var n = 16
-        var src = ctx.enqueue_create_buffer[DType.float32](
-            n
-        )  # never initialized
-        var dst = ctx.enqueue_create_buffer[DType.float32](n)
+        var src = ctx.enqueue_create_buffer[.float32](n)  # never initialized
+        var dst = ctx.enqueue_create_buffer[.float32](n)
         ctx.enqueue_function[copy_uninitialized](
             src, dst, grid_dim=(1,), block_dim=(n,)
         )

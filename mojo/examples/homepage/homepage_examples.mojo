@@ -121,7 +121,7 @@ def run_gpu_programming_example() raises:
 
 def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
-    var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[.int64]()
 
     def pow[width: Int](i: Int) {mut ptr}:
         var elem = ptr.unsafe_load[width=width](i)

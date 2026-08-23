@@ -746,7 +746,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             # FlashMLA reference: kernel.cuh:149
             # When attn_sink_ptr is null, attn_sink_log2 stays at -inf,
             # and exp2(-inf - mi) = 0, so the denominator is unchanged.
-            var attn_sink_log2 = Float32(min_or_neg_inf[DType.float32]())
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
@@ -1312,8 +1312,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             # if it sees the opportunity.
             comptime for s in range(scales_per_token):
                 var fp32_val = row_base[s]
-                scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
-                    fp32_val.cast[DType.float8_e8m0fnu]()
+                scale_smem_stage[smem_off + s] = bitcast[.uint8](
+                    fp32_val.cast[.float8_e8m0fnu]()
                 )
 
     @staticmethod
@@ -1468,8 +1468,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
             comptime for s in range(scales_per_token):
                 var fp32_val = row_base[s]
-                scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
-                    fp32_val.cast[DType.float8_e8m0fnu]()
+                scale_smem_stage[smem_off + s] = bitcast[.uint8](
+                    fp32_val.cast[.float8_e8m0fnu]()
                 )
 
     @staticmethod

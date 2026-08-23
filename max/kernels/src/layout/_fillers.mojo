@@ -126,7 +126,7 @@ def arange[
         from layout._fillers import arange
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
@@ -190,7 +190,7 @@ def random[
         from layout._fillers import random
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
@@ -198,9 +198,9 @@ def random[
 
     @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
-        return random_float64(
-            min.cast[DType.float64](), max.cast[DType.float64]()
-        ).cast[tensor.dtype]()
+        return random_float64(min.cast[.float64](), max.cast[.float64]()).cast[
+            tensor.dtype
+        ]()
 
     _filler_impl[filler, use_runtime_layout](tensor)
 
@@ -298,7 +298,7 @@ def arange[
         from layout._fillers import arange
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
@@ -365,7 +365,7 @@ def random[
         from layout._fillers import random
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
@@ -373,8 +373,8 @@ def random[
 
     @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
-        return random_float64(
-            min.cast[DType.float64](), max.cast[DType.float64]()
-        ).cast[tensor.dtype]()
+        return random_float64(min.cast[.float64](), max.cast[.float64]()).cast[
+            tensor.dtype
+        ]()
 
     _filler_impl[filler, use_runtime_layout](tensor)

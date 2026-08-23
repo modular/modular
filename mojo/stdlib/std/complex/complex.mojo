@@ -26,10 +26,10 @@ from std.format._utils import FormatStruct
 
 comptime ComplexScalar = ComplexSIMD[..., length=1]
 """Represents a scalar complex value."""
-comptime ComplexFloat32 = ComplexScalar[DType.float32]
+comptime ComplexFloat32 = ComplexScalar[.float32]
 """A complex number with 32-bit floating point components."""
 
-comptime ComplexFloat64 = ComplexScalar[DType.float64]
+comptime ComplexFloat64 = ComplexScalar[.float64]
 """A complex number with 64-bit floating point components."""
 
 

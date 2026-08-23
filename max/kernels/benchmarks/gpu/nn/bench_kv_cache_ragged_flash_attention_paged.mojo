@@ -176,13 +176,13 @@ def execute_kv_cache_ragged_flash_attention[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     # Device allocations and copies for row offsets
-    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev_buffer, input_row_offsets_host_ptr)
 
     # Device allocation and copy for cache lengths
-    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
     ctx.enqueue_copy(cache_lengths_dev_buffer, cache_lengths_host_ptr)
@@ -247,7 +247,7 @@ def execute_kv_cache_ragged_flash_attention[
             paged_lut_set.add(randval)
             paged_lut_host[bs, block_idx] = UInt32(randval)
 
-    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         paged_lut_size
     )
     ctx.enqueue_copy(paged_lut_dev_buffer, paged_lut_host_ptr)

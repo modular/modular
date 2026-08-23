@@ -1972,10 +1972,10 @@ def _mla_prefill_sm100_valid_length_dispatch[
         UInt32(fa4_config.num_q_heads),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]
-    comptime KVRowOffsetsType = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[DType.float32]
+    comptime KVRowOffsetsType = NullPointer[.uint32]
+    comptime PartitionType = NoPartition[.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

@@ -183,7 +183,7 @@ def run_varlen_selective_scan_fwd[
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
     var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
-    var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, _](
+    var query_start_loc_h = LayoutTensor[.int32, layout_1d, _](
         query_start_loc_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
@@ -195,16 +195,14 @@ def run_varlen_selective_scan_fwd[
 
     # cache_indices: (batch,) - can be empty or identity mapping
     var cache_indices_heap = List(length=batch, fill=Int32(0))
-    var cache_indices_h = LayoutTensor[DType.int32, layout_1d, _](
+    var cache_indices_h = LayoutTensor[.int32, layout_1d, _](
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
         cache_indices_h.ptr.store(i, Int32(i))
 
     # has_initial_state: (batch,) - can be empty or all False
-    var has_initial_state_heap = List(
-        length=batch, fill=Scalar[DType.bool](False)
-    )
+    var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
 
     # Initialize input data
     random(u_h)
@@ -459,7 +457,7 @@ def run_varlen_selective_state_update[
 
     # state_batch_indices: (batch,) - can be empty or identity
     var state_batch_indices_heap = List(length=batch, fill=Int32(0))
-    var state_batch_indices_h = LayoutTensor[DType.int32, layout_1d, _](
+    var state_batch_indices_h = LayoutTensor[.int32, layout_1d, _](
         state_batch_indices_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )

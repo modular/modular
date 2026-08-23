@@ -98,16 +98,16 @@ def _softmax_ref(
     """FP64 CPU softmax over the inner axis (the higher-precision oracle)."""
     for r in range(rows):
         var base = r * inner
-        var m = src[base].cast[DType.float64]()
+        var m = src[base].cast[.float64]()
         for c in range(1, inner):
-            var v = src[base + c].cast[DType.float64]()
+            var v = src[base + c].cast[.float64]()
             if v > m:
                 m = v
         var s = Float64(0)
         for c in range(inner):
-            s += exp(src[base + c].cast[DType.float64]() - m)
+            s += exp(src[base + c].cast[.float64]() - m)
         for c in range(inner):
-            var e = exp(src[base + c].cast[DType.float64]() - m)
+            var e = exp(src[base + c].cast[.float64]() - m)
             dst[base + c] = (e / s).cast[sm_type]()
 
 

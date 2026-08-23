@@ -26,9 +26,7 @@ def gpu_kernel(
         + lhs[block_idx.x * 4 + thread_idx.x]
     )
 
-    _ = LayoutTensor[DType.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))](
-        dst
-    )
+    _ = LayoutTensor[.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))](dst)
 
 
 def main() raises:
@@ -37,9 +35,9 @@ def main() raises:
         var vec_b_ptr = alloc[Float32](16)
         var vec_c_ptr = alloc[Float32](16)
 
-        var vec_a_dev = ctx.enqueue_create_buffer[DType.float32](16)
-        var vec_b_dev = ctx.enqueue_create_buffer[DType.float32](16)
-        var vec_c_dev = ctx.enqueue_create_buffer[DType.float32](16)
+        var vec_a_dev = ctx.enqueue_create_buffer[.float32](16)
+        var vec_b_dev = ctx.enqueue_create_buffer[.float32](16)
+        var vec_c_dev = ctx.enqueue_create_buffer[.float32](16)
 
         for i in range(16):
             vec_a_ptr[i] = Float32(i)

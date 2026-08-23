@@ -308,17 +308,17 @@ def main() raises:
         # reliable canary on Metal; bf16's window is intermittent. The
         # 4096-row shapes put ~13 rows on each block at a 320-block grid,
         # which is where the pre-fix race manifested.
-        ok &= _probe_layer_norm[DType.float32, 4096, 3072](ctx)
-        ok &= _probe_layer_norm[DType.bfloat16, 4096, 3072](ctx)
+        ok &= _probe_layer_norm[.float32, 4096, 3072](ctx)
+        ok &= _probe_layer_norm[.bfloat16, 4096, 3072](ctx)
         # Warp tier (register-only combine, no shared memory): guards
         # tier-selection changes.
-        ok &= _probe_layer_norm[DType.bfloat16, 512, 1024](ctx)
+        ok &= _probe_layer_norm[.bfloat16, 512, 1024](ctx)
         # Block tier through block.sum (_block_reduce_with_padding).
-        ok &= _probe_rms_norm[DType.float32, 4096, 3072](ctx)
-        ok &= _probe_rms_norm[DType.bfloat16, 4096, 3072](ctx)
+        ok &= _probe_rms_norm[.float32, 4096, 3072](ctx)
+        ok &= _probe_rms_norm[.bfloat16, 4096, 3072](ctx)
         # Two dependent combines per row (block.max then block.sum).
-        ok &= _probe_softmax[DType.float32, 4096, 3072](ctx)
-        ok &= _probe_softmax[DType.bfloat16, 4096, 3072](ctx)
+        ok &= _probe_softmax[.float32, 4096, 3072](ctx)
+        ok &= _probe_softmax[.bfloat16, 4096, 3072](ctx)
         if not ok:
             raise Error(
                 "run-to-run nondeterminism (or NaNs) detected; see the"

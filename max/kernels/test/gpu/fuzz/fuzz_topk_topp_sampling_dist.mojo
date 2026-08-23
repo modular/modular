@@ -349,22 +349,22 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
     var top_p = Float32(spec.top_p_milli) / 1000.0
     var temp = Float32(spec.temp_milli) / 1000.0
     var min_p = Float32(spec.min_p_milli) / 1000.0
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
     var top_k_host = ctx.enqueue_create_host_buffer[out_idx_type](rows)
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var min_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var seed_host = ctx.enqueue_create_host_buffer[DType.uint64](rows)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var min_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var seed_host = ctx.enqueue_create_host_buffer[.uint64](rows)
     for r in range(rows):
         top_p_host[r] = top_p
         top_k_host[r] = Scalar[out_idx_type](spec.k)
         temp_host[r] = temp
         min_p_host[r] = min_p
         seed_host[r] = UInt64(spec.seed + r)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
     var top_k_dev = ctx.enqueue_create_buffer[out_idx_type](rows)
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var min_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var seed_dev = ctx.enqueue_create_buffer[DType.uint64](rows)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var min_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var seed_dev = ctx.enqueue_create_buffer[.uint64](rows)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
     ctx.enqueue_copy(temp_dev, temp_host)
@@ -374,7 +374,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
     # FRESH outputs every case: an unwritten token row or distribution element
     # is visible to the poison / initcheck / memcheck oracles.
     var tokens_dev = ctx.enqueue_create_buffer[out_idx_type](rows)
-    var dist_dev = ctx.enqueue_create_buffer[DType.float32](in_len)
+    var dist_dev = ctx.enqueue_create_buffer[.float32](in_len)
 
     topk_topp_sampling_from_prob[
         from_logits=True, emit_dist=True, dist_dtype=DType.float32
@@ -405,7 +405,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
     )
 
     var tokens_host = ctx.enqueue_create_host_buffer[out_idx_type](rows)
-    var dist_host = ctx.enqueue_create_host_buffer[DType.float32](in_len)
+    var dist_host = ctx.enqueue_create_host_buffer[.float32](in_len)
     ctx.enqueue_copy(tokens_host, tokens_dev)
     ctx.enqueue_copy(dist_host, dist_dev)
     ctx.synchronize()

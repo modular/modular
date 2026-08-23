@@ -186,19 +186,19 @@ def quantize_dynamic_scaled_fp4fp8[
 
     comptime assert (
         (
-            out_dtype == DType.uint8
+            out_dtype == .uint8
             and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-            and scales_dtype == DType.float8_e4m3fn
+            and scales_dtype == .float8_e4m3fn
         )
         or (
-            out_dtype == DType.uint8
+            out_dtype == .uint8
             and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
-            and scales_dtype == DType.float8_e8m0fnu
+            and scales_dtype == .float8_e8m0fnu
         )
         or (
-            out_dtype == DType.float8_e4m3fn
+            out_dtype == .float8_e4m3fn
             and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
-            and scales_dtype == DType.float8_e8m0fnu
+            and scales_dtype == .float8_e8m0fnu
         )
     ), "output dtype should be uint8 for NVFP4/MXFP4 or float8_e4m3fn for MXFP8"
 
@@ -288,7 +288,7 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
         2,
         4,
     ), "NUM_THREADS_PER_SF must be 2 or 4"
-    comptime OUTPUT_WIDTH = 4 if out_dtype == DType.uint8 else 8
+    comptime OUTPUT_WIDTH = 4 if out_dtype == .uint8 else 8
 
     comptime assert (
         input.shape[1]() % ELEMENTS_PER_THREAD == 0
@@ -359,13 +359,13 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
                                 shuffle_xor(thread_max, 2), thread_max
                             )
 
-                        var group_max = thread_max.cast[DType.float32]()
+                        var group_max = thread_max.cast[.float32]()
 
                         # get the scale factor for these 16/32 elements by dividing it by the maximum value of fp4-e2m1/fp8-e4m3
                         var scale_factor: Float32
                         scale_factor = tensor_sf * (
                             group_max * recip(Float32(6.0))
-                        ) if out_dtype == DType.uint8 else (
+                        ) if out_dtype == .uint8 else (
                             group_max * recip(Float32(448.0))
                         )
 
@@ -377,10 +377,10 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
                         var output_scale = Float32(0.0)
                         if group_max != 0:
                             output_scale = recip(
-                                fp8_scale_factor.cast[DType.float32]()
+                                fp8_scale_factor.cast[.float32]()
                                 * recip(tensor_sf)
-                            ) if out_dtype == DType.uint8 else (
-                                recip(fp8_scale_factor.cast[DType.float32]())
+                            ) if out_dtype == .uint8 else (
+                                recip(fp8_scale_factor.cast[.float32]())
                             )
 
                         # write back the scale factor
@@ -393,12 +393,12 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
                             )
 
                         var input_f32 = (
-                            input_vector.cast[DType.float32]() * output_scale
+                            input_vector.cast[.float32]() * output_scale
                         )
 
                         var output_vector: SIMD[out_dtype, OUTPUT_WIDTH]
 
-                        comptime if out_dtype == DType.uint8:
+                        comptime if out_dtype == .uint8:
                             output_vector = bitcast[out_dtype, OUTPUT_WIDTH](
                                 cast_fp32_to_fp4e2m1(input_f32)
                             )
@@ -561,7 +561,7 @@ def naive_block_scaled_matmul[
     *,
     scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
@@ -630,19 +630,19 @@ def naive_block_scaled_matmul[
     comptime assert (
         (
             scaling_kind == UMMAKind.KIND_MXF4NVF4
-            and a_type == DType.uint8
+            and a_type == .uint8
             and a_scales_type == NVFP4_SF_DTYPE
             and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         )
         or (
             scaling_kind == UMMAKind.KIND_MXF4
-            and a_type == DType.uint8
+            and a_type == .uint8
             and a_scales_type == MXFP4_SF_DTYPE
             and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
         )
         or (
             scaling_kind == UMMAKind.KIND_MXF8F6F4
-            and a_type == DType.float8_e4m3fn
+            and a_type == .float8_e4m3fn
             and a_scales_type == MXFP8_SF_DTYPE
             and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
         )
@@ -751,7 +751,7 @@ def naive_block_scaled_matmul[
     *,
     scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
@@ -1158,7 +1158,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         ](temp)
 
                     var group_max = (
-                        abs(group_elements).reduce_max().cast[DType.float32]()
+                        abs(group_elements).reduce_max().cast[.float32]()
                     )
 
                     var scale_factor = (
@@ -1171,10 +1171,9 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     ] = fp8_scale_factor
 
                     var output_scale = Float32(0.0)
-                    if fp8_scale_factor.cast[DType.float32]() != 0:
+                    if fp8_scale_factor.cast[.float32]() != 0:
                         output_scale = recip(
-                            fp8_scale_factor.cast[DType.float32]()
-                            * recip(tensor_sf)
+                            fp8_scale_factor.cast[.float32]() * recip(tensor_sf)
                         )
 
                     comptime for slice_idx in range(2):
@@ -1184,7 +1183,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         quantized_elements[
                             group_idx * 2 + slice_idx
                         ] = cast_fp32_to_fp4e2m1(
-                            slice_elements.cast[DType.float32]() * output_scale
+                            slice_elements.cast[.float32]() * output_scale
                         )
 
                 comptime for idx in range(2):
@@ -1292,12 +1291,10 @@ def quantize_dynamic_scaled_fp4_async[
     comptime output_layout = output_tensor.layout
     comptime scales_layout = scales_tensor.layout
     comptime input_layout = input_tensor.layout
-    comptime assert (
-        input_dtype == DType.bfloat16
-    ), "input_dtype must be bfloat16"
+    comptime assert input_dtype == .bfloat16, "input_dtype must be bfloat16"
 
     comptime assert (
-        output_dtype == DType.uint8
+        output_dtype == .uint8
         and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
         and scales_dtype == NVFP4_SF_DTYPE
     ), (
@@ -1451,11 +1448,11 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
     ],
     input_tensor: TileTensor[input_dtype, input_layout, ImmutAnyOrigin],
-    row_offsets: TileTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin],
+    row_offsets: TileTensor[.uint32, row_offsets_layout, ImmutAnyOrigin],
     scales_offsets: TileTensor[
         DType.uint32, scales_offsets_layout, ImmutAnyOrigin
     ],
-    expert_ids: TileTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     sf_tensor: TileTensor[
         DType.float32, sf_layout, ImmutAnyOrigin
     ],  # tensor-wise scale factor
@@ -1589,7 +1586,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
         comptime ELEMENTS_PER_THREAD = 8
         comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
-        comptime OUTPUT_WIDTH = 4 if output_dtype == DType.uint8 else 8
+        comptime OUTPUT_WIDTH = 4 if output_dtype == .uint8 else 8
         comptime num_threads_per_row = SF_K_GROUP_SIZE // ELEMENTS_PER_THREAD
         comptime rows_per_iter = num_threads // num_threads_per_row
         comptime num_iters = SF_MN_GROUP_SIZE // rows_per_iter
@@ -1601,8 +1598,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             k_idx * SF_K_GROUP_SIZE + col_thread_idx * ELEMENTS_PER_THREAD
         )
         var output_col = (
-            ufloordiv(input_col, 2) if output_dtype
-            == DType.uint8 else input_col
+            ufloordiv(input_col, 2) if output_dtype == .uint8 else input_col
         )
 
         # The k_idx grid covers whole SF_K_GROUP_SIZE column blocks, so when
@@ -1628,10 +1624,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             thread_max = max(shuffle_xor(thread_max, 1), thread_max)
             comptime if NUM_THREADS_PER_SF == 4:
                 thread_max = max(shuffle_xor(thread_max, 2), thread_max)
-            var group_max = thread_max.cast[DType.float32]()
+            var group_max = thread_max.cast[.float32]()
 
             var scale_factor: Float32
-            comptime if output_dtype == DType.uint8:
+            comptime if output_dtype == .uint8:
                 scale_factor = input_sf * group_max * recip(Float32(6.0))
             else:
                 scale_factor = group_max * recip(Float32(448.0))
@@ -1639,20 +1635,18 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
             var output_scale = Float32(0.0)
             if group_max != 0:
-                comptime if output_dtype == DType.uint8:
+                comptime if output_dtype == .uint8:
                     output_scale = recip(
-                        fp8_scale_factor.cast[DType.float32]() * recip(input_sf)
+                        fp8_scale_factor.cast[.float32]() * recip(input_sf)
                     )
                 else:
-                    output_scale = recip(fp8_scale_factor.cast[DType.float32]())
+                    output_scale = recip(fp8_scale_factor.cast[.float32]())
 
             if is_valid:
                 var global_row = token_start + local_row
-                var input_f32 = (
-                    input_vector.cast[DType.float32]() * output_scale
-                )
+                var input_f32 = input_vector.cast[.float32]() * output_scale
                 var output_vector: SIMD[output_dtype, OUTPUT_WIDTH]
-                comptime if output_dtype == DType.uint8:
+                comptime if output_dtype == .uint8:
                     output_vector = bitcast[output_dtype, OUTPUT_WIDTH](
                         cast_fp32_to_fp4e2m1(input_f32)
                     )
@@ -1918,7 +1912,7 @@ def block_scaled_matmul_with_epilogue[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var _k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+    var _k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -1942,7 +1936,7 @@ def block_scaled_matmul_with_epilogue[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         get_static_string[
             "block_scaled_matmul_with_epilogue_",
-            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+            String("nvfp4_" if a_type == .uint8 else "mxfp8_"),
             String(SF_VECTOR_SIZE) + String("_sfvs"),
         ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
@@ -2128,7 +2122,7 @@ def block_scaled_matmul[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+    var k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
 
     if m == 0 or n == 0:
         return
@@ -2179,7 +2173,7 @@ def block_scaled_matmul[
 
     comptime static_N = c_device.static_shape[1]
     comptime static_K = a_device.static_shape[1] * (
-        2 if a_type == DType.uint8 else 1
+        2 if a_type == .uint8 else 1
     )
     comptime static_NK = Index(static_N, static_K)
 
@@ -2268,7 +2262,7 @@ def block_scaled_matmul[
         # AsyncRT profiler, whose event labels must be `StaticString`s.
         get_static_string[
             "block_scaled_matmul_",
-            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+            String("nvfp4_" if a_type == .uint8 else "mxfp8_"),
             String(SF_VECTOR_SIZE) + String("_sfvs"),
             _trace_description if _trace_description else "",
         ](),
@@ -2421,9 +2415,9 @@ def quantize_dynamic_block_scaled[
 
     comptime static_input_N = input_tensor.static_shape[1]
     comptime static_output_N = output_tensor.static_shape[1]
-    comptime is_nvfp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    comptime is_mxfp4 = out_dtype == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
-    comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    comptime is_nvfp4 = out_dtype == .uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp4 = out_dtype == .uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+    comptime is_fp8 = out_dtype == .float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     comptime assert is_nvfp4 or is_mxfp4 or is_fp8, "invalid scaling kind"
 
     comptime is_packed_fp4 = is_nvfp4 or is_mxfp4
@@ -2467,7 +2461,7 @@ def quantize_dynamic_block_scaled[
                 tensor_sf=tensor_sf,
             )
     elif (
-        out_dtype == DType.float8_e4m3fn
+        out_dtype == .float8_e4m3fn
         and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
         and ctx.default_device_info == MI355X
     ):
@@ -2597,9 +2591,9 @@ def quantize_mxfp8_lane_group[
     comptime assert (
         num_lanes * width == SF_VECTOR_SIZE
     ), "width must divide SF_VECTOR_SIZE"
-    comptime assert in_dtype == DType.bfloat16, "input dtype should be bfloat16"
+    comptime assert in_dtype == .bfloat16, "input dtype should be bfloat16"
     comptime assert (
-        out_dtype == DType.float8_e4m3fn
+        out_dtype == .float8_e4m3fn
     ), "output dtype should be float8_e4m3fn"
     comptime assert (
         scales_dtype == MXFP8_SF_DTYPE
@@ -2616,9 +2610,9 @@ def quantize_mxfp8_lane_group[
     var block_is_dead: Bool
     e8m0_scale, out_scale, block_is_dead = compute_mxfp8_block_scale[
         scales_dtype
-    ](thread_max.cast[DType.float32]())
+    ](thread_max.cast[.float32]())
 
-    var data = val.cast[DType.float32]()
+    var data = val.cast[.float32]()
     # A dead block's multiplier is 0; zeroing avoids storing `inf * 0.0 = NaN`.
     if block_is_dead:
         data = type_of(data)(0.0)
@@ -2640,8 +2634,8 @@ def _quantize_mx_amd_kernel[
     num_max_threads: Int = 512,
 ](
     output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    scales: TileTensor[DType.float8_e8m0fnu, scales_layout, MutAnyOrigin],
-    input: TileTensor[DType.bfloat16, input_layout, MutAnyOrigin],
+    scales: TileTensor[.float8_e8m0fnu, scales_layout, MutAnyOrigin],
+    input: TileTensor[.bfloat16, input_layout, MutAnyOrigin],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -2656,7 +2650,7 @@ def _quantize_mx_amd_kernel[
     element. Only the scale derivation and the store width differ.
     """
     # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
-    comptime elems_per_byte = 2 if out_dtype == DType.uint8 else 1
+    comptime elems_per_byte = 2 if out_dtype == .uint8 else 1
     var _num_rows = Int(num_rows)
     var _num_cols = Int(num_cols)
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
@@ -2694,10 +2688,10 @@ def _quantize_mx_amd_kernel[
                 var thread_max = lane_group_max[num_lanes=NUM_THREADS_PER_SF](
                     abs(input_vector).reduce_max()
                 )
-                var group_max = thread_max.cast[DType.float32]()
+                var group_max = thread_max.cast[.float32]()
                 e8m0_scale = compute_mxfp4_even_scale(group_max)
                 var packed = cast_float_to_fp4e2m1_amd(
-                    input_vector, e8m0_scale.cast[DType.float32]()
+                    input_vector, e8m0_scale.cast[.float32]()
                 )
                 output.store[width=4](
                     Coord(global_row_idx, col_thread_idx * 4),
@@ -2712,9 +2706,9 @@ def _quantize_mx_amd_kernel[
 
 @always_inline
 def quantize_mx_amd[
-    out_dtype: DType = DType.uint8,
-    scales_dtype: DType = DType.float8_e8m0fnu,
-    in_dtype: DType = DType.bfloat16,
+    out_dtype: DType = .uint8,
+    scales_dtype: DType = .float8_e8m0fnu,
+    in_dtype: DType = .bfloat16,
     //,
     *,
     num_max_threads: Int = 512,
@@ -2756,12 +2750,12 @@ def quantize_mx_amd[
         input_tile: Input [M, K] bfloat16.
     """
     comptime assert (
-        out_dtype == DType.uint8 or out_dtype == DType.float8_e4m3fn
+        out_dtype == .uint8 or out_dtype == .float8_e4m3fn
     ), "output must be uint8 (MXFP4) or float8_e4m3fn (MXFP8)"
     comptime assert (
-        scales_dtype == DType.float8_e8m0fnu
+        scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == DType.bfloat16, "input must be bfloat16"
+    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
     comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
     comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
     comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
@@ -2790,7 +2784,7 @@ def quantize_mx_amd[
     )
 
     var input_tt = rebind[
-        TileTensor[DType.bfloat16, type_of(input_tile).LayoutType, MutAnyOrigin]
+        TileTensor[.bfloat16, type_of(input_tile).LayoutType, MutAnyOrigin]
     ](input_tile)
 
     comptime kernel = _quantize_mx_amd_kernel[
@@ -2832,20 +2826,18 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
         return
 
     var loaded_vec = input_ptr.load[width=8](n)
-    var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
+    var thread_max = abs(loaded_vec).reduce_max().cast[.float32]()
     var group_max = warp.lane_group_max[num_lanes=threads_per_group](thread_max)
 
     var fp8_scale_factor = compute_mxfp4_even_scale(group_max)
-    var scale_f32 = fp8_scale_factor.cast[DType.float32]()
+    var scale_f32 = fp8_scale_factor.cast[.float32]()
 
     if thread_idx.x % threads_per_group == 0:
         output_scales_ptr[n // MXFP4_SF_VECTOR_SIZE] = fp8_scale_factor
 
     output_ptr.store[alignment=4](
         n // 2,
-        bitcast[DType.uint8, 4](
-            cast_float_to_fp4e2m1_amd(loaded_vec, scale_f32)
-        ),
+        bitcast[.uint8, 4](cast_float_to_fp4e2m1_amd(loaded_vec, scale_f32)),
     )
 
 
@@ -2940,18 +2932,18 @@ def _mxfp4_dotprod[
     var accum = SIMD[.float32, BLOCK_N](0)
 
     for ko in range(k_groups):
-        var a_scale = a_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = a_scales_ptr[ko].cast[.float32]()
         var b_scale = Array[Float32, BLOCK_N](uninitialized=True)
 
         comptime for bn in range(BLOCK_N):
-            b_scale[bn] = b_scales_ptr[bn * k_groups + ko].cast[DType.float32]()
+            b_scale[bn] = b_scales_ptr[bn * k_groups + ko].cast[.float32]()
 
         comptime for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](a_local_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](a_local_ptr.load[width=4](ki))
             var b_data = Array[Int32, BLOCK_N](uninitialized=True)
 
             comptime for bn in range(BLOCK_N):
-                b_data[bn] = bitcast[DType.int32, 1](
+                b_data[bn] = bitcast[.int32, 1](
                     b_local_ptr.load[width=4](bn * (K // 2) + ki)
                 )
 

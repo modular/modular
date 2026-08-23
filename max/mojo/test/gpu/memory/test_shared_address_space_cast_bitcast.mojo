@@ -50,7 +50,7 @@ def main() raises:
     print("== test_shared_address_space_cast_bitcast")
 
     with DeviceContext() as ctx:
-        var out_device = ctx.enqueue_create_buffer[DType.uint16](2)
+        var out_device = ctx.enqueue_create_buffer[.uint16](2)
         var compiled = ctx.compile_function[_kernel]()
         ctx.enqueue_function(
             compiled, out_device, grid_dim=(1,), block_dim=(32,)

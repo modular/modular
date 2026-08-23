@@ -34,7 +34,7 @@ def test_cumsum_1d():
     var cumsum_stack = Array[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -65,12 +65,12 @@ def test_cumsum_1d_precision():
     var cumsum_f64_stack = Array[Float64, size](uninitialized=True)
     var cumsum_f64 = TileTensor(cumsum_f64_stack, row_major[size]())
 
-    cumsum[DType.float32, exclusive, reverse, axis=axis](cumsum_f32, f32_matrix)
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_f64, f64_matrix)
+    cumsum[.float32, exclusive, reverse, axis=axis](cumsum_f32, f32_matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_f64, f64_matrix)
 
     var passed = True
     for i in range(size):
-        var f64_cast = cumsum_f64[i].cast[DType.float32]()
+        var f64_cast = cumsum_f64[i].cast[.float32]()
         if not isclose(cumsum_f32[i], f64_cast, atol=1e-6, rtol=1e-6):
             passed = False
             break
@@ -94,7 +94,7 @@ def test_cumsum_1d_exclusive():
     var cumsum_stack = Array[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -117,7 +117,7 @@ def test_cumsum_1d_reverse():
     var cumsum_stack = Array[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -140,7 +140,7 @@ def test_cumsum_1d_reverse_exclusive():
     var cumsum_stack = Array[Float64, 5](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -163,7 +163,7 @@ def test_cumsum_2d_axis_0():
     var cumsum_stack = Array[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):
@@ -187,7 +187,7 @@ def test_cumsum_2d_axis_1():
     var cumsum_stack = Array[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):
@@ -211,7 +211,7 @@ def test_cumsum_2d_negative_axis():
     var cumsum_stack = Array[Float64, 6](uninitialized=True)
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):

@@ -82,11 +82,11 @@ def run_elementwise[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float16](ctx)
-        run_elementwise[DType.float32](ctx)
-        run_elementwise[DType.float16, "normal"](ctx)
-        run_elementwise[DType.float32, "normal"](ctx)
+        run_elementwise[.float16](ctx)
+        run_elementwise[.float32](ctx)
+        run_elementwise[.float16, "normal"](ctx)
+        run_elementwise[.float32, "normal"](ctx)
         comptime if not has_apple_gpu_accelerator():
             # Metal does not support DType.float64
-            run_elementwise[DType.float64](ctx)
-            run_elementwise[DType.float64, "normal"](ctx)
+            run_elementwise[.float64](ctx)
+            run_elementwise[.float64, "normal"](ctx)

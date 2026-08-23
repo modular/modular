@@ -91,7 +91,7 @@ def calculate_symmetric_vector[
     ) else result_range / Scalar[input_dtype](positive_steps)
 
     # TODO: consider clipping values
-    var data_rounded = round(data / f32_scale).cast[DType.int8]()
+    var data_rounded = round(data / f32_scale).cast[.int8]()
 
     # each bit pattern in `data_quantized`
     var data_quantized = (data_rounded + Int8(negative_steps)).cast[
@@ -103,7 +103,7 @@ def calculate_symmetric_vector[
 
 struct Q4sym[
     group_size: Int,
-    float_dtype: DType = DType.float32,
+    float_dtype: DType = .float32,
 ](Defaultable):
     """
     Q4sym: compresses values of type `float_dtype` to 4bit unsigned integers
@@ -173,8 +173,8 @@ struct Q4sym[
         var f_scale = quantization_tuple[1]
 
         # TODO: add warning if we overflow/underflow
-        var f16_scale = f_scale.cast[DType.float16]()
-        self.scale = _to_StaticTuple(bitcast[DType.uint8, 2](f16_scale))
+        var f16_scale = f_scale.cast[.float16]()
+        self.scale = _to_StaticTuple(bitcast[.uint8, 2](f16_scale))
         self.bits = _to_StaticTuple(self._encode_bits(qdata))
         self._check_constraints()
 
@@ -211,10 +211,10 @@ struct Q4sym[
         var scale_bytes: SIMD[.uint8, 2] = _to_SIMD[.uint8, 2](self.scale)
 
         # NOTE: this may break on different endian systems...
-        var upcast_bytes: SIMD[.uint16, 2] = scale_bytes.cast[DType.uint16]()
+        var upcast_bytes: SIMD[.uint16, 2] = scale_bytes.cast[.uint16]()
         upcast_bytes[1] = upcast_bytes[1] << 8
         var final_result: UInt16 = upcast_bytes.reduce_add()
-        var scale_decoded = bitcast[DType.float16, 1](final_result)
+        var scale_decoded = bitcast[.float16, 1](final_result)
         return scale_decoded
 
     @always_inline
@@ -242,7 +242,7 @@ struct Q4sym[
           0.
         """
         var decoded_result = self.decode_unsigned()
-        return decoded_result.cast[DType.int8]() - 8
+        return decoded_result.cast[.int8]() - 8
 
     @always_inline
     def decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
@@ -476,7 +476,7 @@ def scale_min_k4(
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
         var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63
 
-        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+        return q_scale.cast[.float32](), q_min.cast[.float32]()
     else:
         var q_scale_lo = src_ptr[].q_scales_and_mins[g + 4] & 15
         var q_min_lo = src_ptr[].q_scales_and_mins[g + 4] >> 4
@@ -485,7 +485,7 @@ def scale_min_k4(
         var q_scale = (q_scale_hi << 4) | q_scale_lo
         var q_min = (q_min_hi << 4) | q_min_lo
 
-        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+        return q_scale.cast[.float32](), q_min.cast[.float32]()
 
 
 def q4_k_dequantize_impl(
@@ -518,9 +518,9 @@ def q4_k_dequantize_impl(
         var dst_ptr = output_ptr + (block_idx * block_nelems)
 
         # d
-        var b_scale = src_ptr[].base_scale.cast[DType.float32]()
+        var b_scale = src_ptr[].base_scale.cast[.float32]()
         # min
-        var b_min = src_ptr[].base_min.cast[DType.float32]()
+        var b_min = src_ptr[].base_min.cast[.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
         comptime for group_idx in range(0, block_Q4_K.group_count, 2):
@@ -622,7 +622,7 @@ def q6_k_dequantize_impl[
     for block_idx in range(num_blocks):
         var src_ptr = input_q6_k_ptr + block_idx
 
-        var d = src_ptr[].base_scale.cast[DType.float32]()
+        var d = src_ptr[].base_scale.cast[.float32]()
 
         var ql: UnsafePointer[
             UInt8, origin_of(src_ptr[].q_bits_lo)
@@ -652,24 +652,16 @@ def q6_k_dequantize_impl[
                 ]() - 32
 
                 dst_ptr[l + 0] = (
-                    d
-                    * sc[sc_idx + 0].cast[DType.float32]()
-                    * q1.cast[DType.float32]()
+                    d * sc[sc_idx + 0].cast[.float32]() * q1.cast[.float32]()
                 )
                 dst_ptr[l + 32] = (
-                    d
-                    * sc[sc_idx + 2].cast[DType.float32]()
-                    * q2.cast[DType.float32]()
+                    d * sc[sc_idx + 2].cast[.float32]() * q2.cast[.float32]()
                 )
                 dst_ptr[l + 64] = (
-                    d
-                    * sc[sc_idx + 4].cast[DType.float32]()
-                    * q3.cast[DType.float32]()
+                    d * sc[sc_idx + 4].cast[.float32]() * q3.cast[.float32]()
                 )
                 dst_ptr[l + 96] = (
-                    d
-                    * sc[sc_idx + 6].cast[DType.float32]()
-                    * q4.cast[DType.float32]()
+                    d * sc[sc_idx + 6].cast[.float32]() * q4.cast[.float32]()
                 )
 
             dst_ptr += 128

@@ -352,7 +352,7 @@ def kernel_4[
                         rebind[Float32](c_frag[_src_offset]),
                         rebind[Float32](c_frag[_src_offset + 1]),
                     )
-                    var casted = pair.cast[DType.bfloat16]()
+                    var casted = pair.cast[.bfloat16]()
                     d_reg[2 * _ei] = casted[0]
                     d_reg[2 * _ei + 1] = casted[1]
 
@@ -372,7 +372,7 @@ def kernel_4[
                     + BM * TMA_BN * tma_n
                 )
 
-                var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
+                var d_reg_f32_packed = bitcast[.float32, 4](d_reg)
 
                 st_matrix[simd_width=4](offset, d_reg_f32_packed)
     barrier()

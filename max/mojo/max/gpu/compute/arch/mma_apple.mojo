@@ -261,7 +261,7 @@ def _mma_apple_transposable(
         and b.dtype in (DType.int8, DType.uint8)
     )
 
-    comptime if _valid_float_input and d.dtype == DType.float32:
+    comptime if _valid_float_input and d.dtype == .float32:
         d = rebind[type_of(d)](
             llvm_intrinsic[
                 "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
@@ -294,7 +294,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ), "Apple 8x8 MMA requires 2-element fragments (8x8 / 32 threads)"
 
     comptime assert (
-        c.dtype == DType.float32 and d.dtype == DType.float32
+        c.dtype == .float32 and d.dtype == .float32
     ), "Apple 8x8 MMA accumulator (C and D) must be F32"
 
     comptime _valid_float_input = (

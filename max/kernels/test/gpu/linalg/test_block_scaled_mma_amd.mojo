@@ -41,7 +41,7 @@ from linalg.arch.amd.block_scaled_mma import (
 def _pack_e8m0_scale_word(value: Float32) -> Int32:
     """Packs one exact E8M0 scale into all four bytes of the MFMA scale word."""
     var scale = _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](value)
-    var scale_byte = bitcast[DType.uint8](scale)
+    var scale_byte = bitcast[.uint8](scale)
     return Int32(
         UInt32(scale_byte)
         | (UInt32(scale_byte) << 8)
@@ -59,8 +59,8 @@ def _block_scaled_mma_smoke_kernel[
     accum_width: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
 ](
-    baseline_out: TileTensor[DType.float32, BaselineLayout, MutAnyOrigin],
-    scaled_out: TileTensor[DType.float32, ScaledLayout, MutAnyOrigin],
+    baseline_out: TileTensor[.float32, BaselineLayout, MutAnyOrigin],
+    scaled_out: TileTensor[.float32, ScaledLayout, MutAnyOrigin],
 ):
     comptime assert accum_width == 4 or accum_width == 16, (
         "AMD block-scaled MMA smoke test only supports 4- or 16-lane"
@@ -104,8 +104,8 @@ def _fp6_padding_kernel[
     accum_width: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
 ](
-    zero_pad_out: TileTensor[DType.float32, ZeroPadLayout, MutAnyOrigin],
-    one_pad_out: TileTensor[DType.float32, OnePadLayout, MutAnyOrigin],
+    zero_pad_out: TileTensor[.float32, ZeroPadLayout, MutAnyOrigin],
+    one_pad_out: TileTensor[.float32, OnePadLayout, MutAnyOrigin],
 ):
     """Runs the same FP6 MFMA under two padding patterns; results must match."""
     comptime assert (
@@ -154,8 +154,8 @@ def _run_fp6_padding_check[
 ](ctx: DeviceContext) raises:
     comptime num_values = WARP_SIZE * accum_width
 
-    var zero_pad_device = ctx.enqueue_create_buffer[DType.float32](num_values)
-    var one_pad_device = ctx.enqueue_create_buffer[DType.float32](num_values)
+    var zero_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
+    var one_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var zero_pad_tt = TileTensor(
         zero_pad_device, row_major[WARP_SIZE, accum_width]()
@@ -179,10 +179,8 @@ def _run_fp6_padding_check[
     )
     ctx.synchronize()
 
-    var zero_pad_host = ctx.enqueue_create_host_buffer[DType.float32](
-        num_values
-    )
-    var one_pad_host = ctx.enqueue_create_host_buffer[DType.float32](num_values)
+    var zero_pad_host = ctx.enqueue_create_host_buffer[.float32](num_values)
+    var one_pad_host = ctx.enqueue_create_host_buffer[.float32](num_values)
     ctx.enqueue_copy(zero_pad_host, zero_pad_device)
     ctx.enqueue_copy(one_pad_host, one_pad_device)
     ctx.synchronize()
@@ -204,8 +202,8 @@ def _run_block_scaled_mma_amd_smoke[
 ](ctx: DeviceContext) raises:
     comptime num_values = WARP_SIZE * accum_width
 
-    var baseline_device = ctx.enqueue_create_buffer[DType.float32](num_values)
-    var scaled_device = ctx.enqueue_create_buffer[DType.float32](num_values)
+    var baseline_device = ctx.enqueue_create_buffer[.float32](num_values)
+    var scaled_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var baseline_tt = TileTensor(
         baseline_device, row_major[WARP_SIZE, accum_width]()

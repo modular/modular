@@ -68,8 +68,8 @@ def _test_exp_libm[dtype: DType]() raises where dtype.is_floating_point():
 
 
 def test_exp_libm() raises:
-    _test_exp_libm[DType.float32]()
-    _test_exp_libm[DType.float64]()
+    _test_exp_libm[.float32]()
+    _test_exp_libm[.float64]()
 
 
 @fieldwise_init

@@ -310,9 +310,7 @@ def amd_4wave_conv[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type.is_float8()
-        or a_type == DType.bfloat16
-        or a_type == DType.float16
+        a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
     ), "4-wave conv supports float8_e4m3fn, bfloat16, or float16"
 
     # MMA K-dim selection: FP8 uses MFMA 16x16x128; bf16/fp16 use MFMA

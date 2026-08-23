@@ -100,8 +100,8 @@ def cpu_qk_naive(
             var acc: Float32 = 0.0
             for d in range(D):
                 acc += (
-                    Q.ptr.load(m * D + d).cast[DType.float32]()
-                    * K.ptr.load(n * D + d).cast[DType.float32]()
+                    Q.ptr.load(m * D + d).cast[.float32]()
+                    * K.ptr.load(n * D + d).cast[.float32]()
                 )
             O.ptr.store(m * N + n, acc.cast[O.dtype]())
 

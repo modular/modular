@@ -77,7 +77,7 @@ from linalg.utils import elementwise_epilogue_type
 
 
 struct Matmul2dFp8[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     block_m: Int = 64,
     block_n: Int = 64,
@@ -396,7 +396,7 @@ struct Matmul2dFp8[
 
 @always_inline
 def enqueue_matmul2d_fp8[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     block_m: Int = 64,
     block_n: Int = 64,
@@ -405,8 +405,8 @@ def enqueue_matmul2d_fp8[
     sg_n: Int = 32,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the tiled W8A16 GEMM: `out = a @ W_fp8^T` (raw, unscaled).
@@ -430,9 +430,7 @@ def enqueue_matmul2d_fp8[
     _require_apple_m5(ctx)
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp8: c_type must be one of {fp16, bf16, fp32}"
 
     comptime MM = AppleM5MatMul[
@@ -499,7 +497,7 @@ def enqueue_matmul2d_fp8[
 
 @always_inline
 def enqueue_grouped_matmul2d_fp8[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
@@ -507,8 +505,8 @@ def enqueue_grouped_matmul2d_fp8[
     sg_n: Int = 32,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    b: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    b: TileTensor[.float8_e4m3fn, ...],
     a_offsets: TileTensor[mut=False, DType.uint32, ...],
     expert_ids: TileTensor[mut=False, DType.int32, ...],
     max_num_tokens_per_expert: Int,
@@ -533,9 +531,7 @@ def enqueue_grouped_matmul2d_fp8[
     _require_apple_m5(ctx)
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_grouped_matmul2d_fp8: c_type must be one of {fp16, bf16, fp32}"
 
     comptime MM = Matmul2dFp8[

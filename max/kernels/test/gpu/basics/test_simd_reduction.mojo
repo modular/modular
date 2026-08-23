@@ -24,8 +24,8 @@ comptime simd_width = 4
 
 
 def test_simd_reduction(ctx: DeviceContext) raises:
-    var input_host = ctx.enqueue_create_host_buffer[DType.int](buffer_size)
-    var output_host = ctx.enqueue_create_host_buffer[DType.int](
+    var input_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](
         buffer_size // simd_width
     )
 
@@ -38,9 +38,9 @@ def test_simd_reduction(ctx: DeviceContext) raises:
             else:
                 input_host[i + j] = Int(j)
 
-    var input_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var input_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
 
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](
+    var output_buffer = ctx.enqueue_create_buffer[.int](
         buffer_size // simd_width
     )
     output_buffer.enqueue_fill(9)

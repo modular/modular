@@ -460,9 +460,7 @@ struct KVMmaOp[
                 shared memory.
         """
         comptime assert not Self.transpose_b, "load_v_bf16 is V-operand only"
-        comptime assert (
-            Self.in_type == DType.bfloat16
-        ), "load_v_bf16 is bf16 only"
+        comptime assert Self.in_type == .bfloat16, "load_v_bf16 is bf16 only"
 
         comptime _MmaTileLayout = MixedLayout[
             Coord[

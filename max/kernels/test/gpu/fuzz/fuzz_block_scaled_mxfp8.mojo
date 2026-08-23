@@ -188,7 +188,7 @@ def run_one_case(
             if idx0 < m and idx1 < K:
                 var sv = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -206,7 +206,7 @@ def run_one_case(
             if idx0 < N and idx1 < K:
                 var sv = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](

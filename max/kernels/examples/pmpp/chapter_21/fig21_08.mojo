@@ -152,8 +152,8 @@ def main() raises:
         h_energygrid_gpu[i] = 0.0
 
     # Allocate device memory
-    var d_atoms = ctx.enqueue_create_buffer[DType.float32](atoms_size)
-    var d_energygrid = ctx.enqueue_create_buffer[DType.float32](grid_size)
+    var d_atoms = ctx.enqueue_create_buffer[.float32](atoms_size)
+    var d_energygrid = ctx.enqueue_create_buffer[.float32](grid_size)
 
     ctx.enqueue_copy(d_atoms, h_atoms)
 

@@ -331,7 +331,7 @@ def test_tma_load_row_major[
         dtype, Layout.row_major(M_roundup, N_roundup)
     ](ctx)
 
-    comptime if dtype == DType.float8_e4m3fn:
+    comptime if dtype == .float8_e4m3fn:
         random(src.tensor())
     else:
         arange(src.tensor(), 0)
@@ -380,11 +380,11 @@ def test_tma_load_row_major[
         for n in range(N_roundup):
             if m < M and n < N:
                 assert_equal(
-                    src_host[m, n].cast[DType.float32](),
-                    dst_host[m, n].cast[DType.float32](),
+                    src_host[m, n].cast[.float32](),
+                    dst_host[m, n].cast[.float32](),
                 )
             else:
-                assert_equal(dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(dst_host[m, n].cast[.float32](), 0.0)
     ctx.synchronize()
     _ = src^
     _ = dst^
@@ -483,8 +483,8 @@ def test_tma_async_store[
     comptime dst_M = dst_layout.shape[0].value()
     comptime dst_N = dst_layout.shape[1].value()
 
-    var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
     arange(src.tensor(), 1)
     arange(dst.tensor(), 100001)
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, dst.device_tensor())
@@ -532,8 +532,8 @@ def test_tma_async_store[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                src_host[m, n].cast[DType.float32](),
-                dst_host[m, n].cast[DType.float32](),
+                src_host[m, n].cast[.float32](),
+                dst_host[m, n].cast[.float32](),
             )
 
     ctx.synchronize()
@@ -632,8 +632,8 @@ def test_tma_async_reduce[
     comptime dst_M = dst_layout.shape[0].value()
     comptime dst_N = dst_layout.shape[1].value()
 
-    var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
     arange(src.tensor(), 1)
     arange(dst.tensor(), 3546)
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, dst.device_tensor())
@@ -682,11 +682,11 @@ def test_tma_async_reduce[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                src_host[m, n].cast[DType.float32]()
+                src_host[m, n].cast[.float32]()
                 + 3546
                 + Float32(m * dst_N)
                 + Float32(n),
-                dst_host[m, n].cast[DType.float32](),
+                dst_host[m, n].cast[.float32](),
             )
 
     ctx.synchronize()
@@ -790,8 +790,8 @@ def test_tma_load_two_buffers_row_major[
     comptime M_roundup = align_up(M, tileM)
     comptime N_roundup = align_up(N, tileN)
 
-    var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
+    var a_src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var b_src = ManagedLayoutTensor[.float32, src_layout](ctx)
 
     var a_dst = ManagedLayoutTensor[
         DType.float32, Layout.row_major(M_roundup, N_roundup)
@@ -843,18 +843,18 @@ def test_tma_load_two_buffers_row_major[
         for n in range(N_roundup):
             if m < M and n < N:
                 assert_equal(
-                    a_src_host[m, n].cast[DType.float32](),
-                    a_dst_host[m, n].cast[DType.float32](),
+                    a_src_host[m, n].cast[.float32](),
+                    a_dst_host[m, n].cast[.float32](),
                 )
 
                 assert_equal(
-                    b_src_host[m, n].cast[DType.float32](),
-                    b_dst_host[m, n].cast[DType.float32](),
+                    b_src_host[m, n].cast[.float32](),
+                    b_dst_host[m, n].cast[.float32](),
                 )
 
             else:
-                assert_equal(a_dst_host[m, n].cast[DType.float32](), 0.0)
-                assert_equal(b_dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(a_dst_host[m, n].cast[.float32](), 0.0)
+                assert_equal(b_dst_host[m, n].cast[.float32](), 0.0)
     ctx.synchronize()
     _ = a_src^
     _ = a_dst^
@@ -975,10 +975,10 @@ def test_tma_load_and_store_two_buffers_row_major[
     comptime dst_M = dst_layout.shape[0].value()
     comptime dst_N = dst_layout.shape[1].value()
 
-    var a_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var a_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
-    var b_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var a_src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var b_src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var a_dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
+    var b_dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
 
     # Initialize destinations to known values.
     comptime a_dst_value = 1.5
@@ -1039,22 +1039,18 @@ def test_tma_load_and_store_two_buffers_row_major[
         for n in range(dst_N):
             if m < M and n < N:
                 assert_equal(
-                    a_src_host[m, n].cast[DType.float32](),
-                    a_dst_host[m, n].cast[DType.float32](),
+                    a_src_host[m, n].cast[.float32](),
+                    a_dst_host[m, n].cast[.float32](),
                 )
 
                 assert_equal(
-                    b_src_host[m, n].cast[DType.float32](),
-                    b_dst_host[m, n].cast[DType.float32](),
+                    b_src_host[m, n].cast[.float32](),
+                    b_dst_host[m, n].cast[.float32](),
                 )
 
             else:
-                assert_equal(
-                    a_dst_host[m, n].cast[DType.float32](), a_dst_value
-                )
-                assert_equal(
-                    b_dst_host[m, n].cast[DType.float32](), b_dst_value
-                )
+                assert_equal(a_dst_host[m, n].cast[.float32](), a_dst_value)
+                assert_equal(b_dst_host[m, n].cast[.float32](), b_dst_value)
 
     ctx.synchronize()
     _ = a_src^

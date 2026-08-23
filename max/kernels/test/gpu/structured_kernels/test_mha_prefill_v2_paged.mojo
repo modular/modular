@@ -106,11 +106,11 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
-    var dev_kv_block = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV_BLOCK)
-    var dev_cache_lengths = ctx.enqueue_create_buffer[DType.uint32](BATCH)
-    var dev_paged_lut = ctx.enqueue_create_buffer[DType.uint32](
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_out = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
+    var dev_kv_block = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV_BLOCK)
+    var dev_cache_lengths = ctx.enqueue_create_buffer[.uint32](BATCH)
+    var dev_paged_lut = ctx.enqueue_create_buffer[.uint32](
         BATCH * PAGES_PER_SEQ
     )
 

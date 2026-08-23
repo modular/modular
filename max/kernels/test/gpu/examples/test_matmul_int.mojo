@@ -128,9 +128,9 @@ def run_matmul(ctx: DeviceContext) raises:
         for j in range(n):
             c_host[i, j] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.int](m * k)
-    var b_device = ctx.enqueue_create_buffer[DType.int](k * n)
-    var c_device = ctx.enqueue_create_buffer[DType.int](m * n)
+    var a_device = ctx.enqueue_create_buffer[.int](m * k)
+    var b_device = ctx.enqueue_create_buffer[.int](k * n)
+    var c_device = ctx.enqueue_create_buffer[.int](m * n)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

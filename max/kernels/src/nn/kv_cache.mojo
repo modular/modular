@@ -1201,7 +1201,7 @@ def fused_qk_rms_norm_ragged_paged[
             q_gamma,
             k_gamma,
             epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_num_heads),
@@ -1727,7 +1727,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             k_gamma,
             freqs_cis,
             epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_num_heads),
@@ -2176,7 +2176,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             freqs_cis,
             main_epsilon,
             index_epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_main_num_heads),
@@ -3015,10 +3015,10 @@ def generic_get_paged_cache[
     dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -3200,8 +3200,8 @@ def copy_kv_pages_d2h[
 ](
     device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
     host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
-    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
+    src_page_ids: LayoutTensor[.int64, Layout.row_major[1](), _],
+    dst_page_ids: LayoutTensor[.int64, Layout.row_major[1](), _],
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:

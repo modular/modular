@@ -33,9 +33,9 @@ def vec_func(
 def test_vec_add(ctx: DeviceContext) raises:
     comptime length = 1024
 
-    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0_device = ctx.enqueue_create_buffer[.float32](length)
+    var in1_device = ctx.enqueue_create_buffer[.float32](length)
+    var out_device = ctx.enqueue_create_buffer[.float32](length)
 
     with in0_device.map_to_host() as in0_host, in1_device.map_to_host() as in1_host, out_device.map_to_host() as out_host:
         for i in range(length):

@@ -591,7 +591,7 @@ def store_cluster_smem[
         size_of[dtype]() == 4
     ), "store_cluster_smem supports only 32-bit element dtypes"
     var base: UInt32 = UInt32(Int(local_ptr))
-    var words = bitcast[DType.uint32, width](val)
+    var words = bitcast[.uint32, width](val)
     # Fused `mapa` + `st.shared::cluster.{v4,v2,b32}`, widest-first (see
     # `load_cluster_smem` for why the split form is unsafe in the dense kernel;
     # mirrors `layout/tma_async.mojo`).

@@ -67,7 +67,7 @@ def test_static_scaled_fp8_quant[
         for j in range(n):
             var in_val_scaled_f32: Float32
 
-            in_val_scaled_f32 = in_host[i, j][0].cast[DType.float32]() * (
+            in_val_scaled_f32 = in_host[i, j][0].cast[.float32]() * (
                 1.0 / scale
             )
 
@@ -77,10 +77,8 @@ def test_static_scaled_fp8_quant[
             )
 
             assert_equal(
-                in_val_scaled_f32.cast[DType.float8_e4m3fn]().cast[
-                    DType.float64
-                ](),
-                out_host[i, j][0].cast[DType.float64](),
+                in_val_scaled_f32.cast[.float8_e4m3fn]().cast[DType.float64](),
+                out_host[i, j][0].cast[.float64](),
             )
 
     in_host_ptr.free()
@@ -170,8 +168,8 @@ def test_dynamic_scaled_fp8_quant[
     var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
     assert_equal(
-        scales_host[0, 0].cast[DType.float32](),
-        scale_factor.cast[DType.float32](),
+        scales_host[0, 0].cast[.float32](),
+        scale_factor.cast[.float32](),
     )
 
     for i in range(Int(m.value())):
@@ -179,10 +177,10 @@ def test_dynamic_scaled_fp8_quant[
             var in_val = in_host[i, j]
             var out_val = out_host[i, j]
             assert_equal(
-                out_val.cast[DType.float32](),
+                out_val.cast[.float32](),
                 (in_val.cast[accum_dtype]() * scale_factor_recip)
                 .cast[out_dtype]()
-                .cast[DType.float32](),
+                .cast[.float32](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
@@ -265,7 +263,7 @@ def test_dynamic_fp8_quant[
 
             var scale_factor: Scalar[scales_dtype]
 
-            comptime if scales_dtype == DType.float8_e8m0fnu:
+            comptime if scales_dtype == .float8_e8m0fnu:
                 scale_factor = max(
                     group_max.cast[accum_dtype]()
                     / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
@@ -279,18 +277,18 @@ def test_dynamic_fp8_quant[
             var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
             assert_equal(
-                scales_host[group_idx, i].cast[DType.float32](),
-                scale_factor.cast[DType.float32](),
+                scales_host[group_idx, i].cast[.float32](),
+                scale_factor.cast[.float32](),
             )
 
             for j in range(group_size):
                 var in_val = in_host[i, j + group_idx * group_size]
                 var out_val = out_host[i, j + group_idx * group_size]
                 assert_equal(
-                    out_val.cast[DType.float32](),
+                    out_val.cast[.float32](),
                     (in_val.cast[accum_dtype]() * scale_factor_recip)
                     .cast[out_dtype]()
-                    .cast[DType.float32](),
+                    .cast[.float32](),
                     msg="At ["
                     + String(i)
                     + ", "
@@ -389,8 +387,8 @@ def test_batched_dynamic_fp8_quant[
                 var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
                 assert_equal(
-                    scales_host[batch_idx, group_idx, i].cast[DType.float64](),
-                    scale_factor.cast[DType.float64](),
+                    scales_host[batch_idx, group_idx, i].cast[.float64](),
+                    scale_factor.cast[.float64](),
                 )
 
                 for j in range(group_size):
@@ -402,10 +400,10 @@ def test_batched_dynamic_fp8_quant[
                     ]
 
                     assert_equal(
-                        out_val.cast[DType.float32](),
+                        out_val.cast[.float32](),
                         (in_val.cast[accum_dtype]() * scale_factor_recip)
                         .cast[out_dtype]()
-                        .cast[DType.float32](),
+                        .cast[.float32](),
                         msg="At ["
                         + String(i)
                         + ", "
@@ -493,7 +491,7 @@ def test_dynamic_fp8_quant_near_zero[
     var n_nonfinite = 0
     var n_nonzero = 0
     for i in range(total_size):
-        var v = out_host_ptr[i].cast[DType.float32]()
+        var v = out_host_ptr[i].cast[.float32]()
         if isnan(v) or isinf(v):
             n_nonfinite += 1
         if v != 0.0:
@@ -587,7 +585,7 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var n_nonfinite = 0
     var n_nonzero = 0
     for i in range(total_size):
-        var v = out_host_ptr[i].cast[DType.float32]()
+        var v = out_host_ptr[i].cast[.float32]()
         if isnan(v) or isinf(v):
             n_nonfinite += 1
         if v != 0.0:

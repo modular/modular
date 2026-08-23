@@ -1267,7 +1267,7 @@ def test_copy_subtiles_scalars_back():
     print("== test_copy_subtiles_scalars_back")
 
     var tensor_13x7 = (
-        LayoutTensor[DType.float32, Layout.row_major(13, 7), MutAnyOrigin]
+        LayoutTensor[.float32, Layout.row_major(13, 7), MutAnyOrigin]
         .stack_allocation[stack_alignment=16]()
         .fill(-1)
     )
@@ -1982,7 +1982,7 @@ def test_nested_tile() raises:
     comptime base_layout = Layout.row_major(8, 8)
     comptime tiler_layout = Layout.row_major(2, 2)
     comptime layout = blocked_product(base_layout, tiler_layout)
-    var managed_tensor_a = ManagedLayoutTensor[DType.float32, layout]()
+    var managed_tensor_a = ManagedLayoutTensor[.float32, layout]()
     arange(managed_tensor_a.tensor())
     var tensor_a = managed_tensor_a.tensor()
     var vt = tensor_a.tile[4, 4](0, 0)
@@ -1994,10 +1994,10 @@ def test_nested_tile() raises:
 def test_tensor_size() raises:
     comptime layout = Layout.row_major(4, 4)
     var stack = Array[UInt32, layout.size()](uninitialized=True)
-    var tensor = LayoutTensor[DType.uint32, layout](stack)
+    var tensor = LayoutTensor[.uint32, layout](stack)
     assert_equal(tensor.size(), 16)
     comptime layout2 = Layout.row_major(4, UNKNOWN_VALUE)
-    var runtime_tensor = LayoutTensor[DType.uint32, layout2](
+    var runtime_tensor = LayoutTensor[.uint32, layout2](
         stack,
         RuntimeLayout[layout2].row_major(IndexList[2](4, 4)),
     )
@@ -2008,9 +2008,9 @@ def test_tensor_size() raises:
 def test_merge():
     comptime layout = Layout.row_major(4, 4)
     var stack = Array[UInt32, layout.size()](uninitialized=True)
-    var tensor = LayoutTensor[DType.uint32, layout](stack)
+    var tensor = LayoutTensor[.uint32, layout](stack)
     var stack2 = Array[UInt32, layout.size()](uninitialized=True)
-    var tensor2 = LayoutTensor[DType.uint32, layout](stack2)
+    var tensor2 = LayoutTensor[.uint32, layout](stack2)
     var a = tensor if tensor.size() > 1 else tensor2
     print(a)
 
@@ -2022,7 +2022,7 @@ def test_flatten_vectorize() raises:
     causing bounds-check assertions to fire on valid accesses.
     """
     comptime W = 4
-    var managed = ManagedLayoutTensor[DType.float32, Layout.row_major(W, W)]()
+    var managed = ManagedLayoutTensor[.float32, Layout.row_major(W, W)]()
     var t = managed.tensor()
     for i in range(W * W):
         t.ptr[i] = Float32(i)

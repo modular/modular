@@ -54,7 +54,7 @@ def bench_gather_reduce(mut b: Bencher):
     var indices = TileTensor(indices_storage, row_major(Coord(indices_shape)))
     for i in range(Int(indices.dim[0]())):
         for j in range(Int(indices.dim[1]())):
-            indices[i, j] = random_si64(0, num_rows).cast[DType.int32]()
+            indices[i, j] = random_si64(0, num_rows).cast[.int32]()
 
     @__parameter
     def to_bench():

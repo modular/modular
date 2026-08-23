@@ -765,7 +765,7 @@ def stsm_helper[
                 v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=4, transpose=transpose_c](
             dst.ptr.unsafe_mut_cast[True]() + offset,
-            bitcast[DType.float32, 4](v),
+            bitcast[.float32, 4](v),
         )
 
 
@@ -1426,7 +1426,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
         b_gmem: B operand tensor used only by the CUDA-core fallback when
             `use_tma` is False.
     """
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime if not use_tma:
         comptime assert (
             K_actual > 0

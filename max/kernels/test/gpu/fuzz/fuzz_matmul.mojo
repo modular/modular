@@ -78,8 +78,8 @@ def naive_matmul_ref_kernel(
         var acc = Float32(0)
         for k_i in range(k):
             acc += (
-                a[row * k + k_i].cast[DType.float32]()
-                * b[col * k + k_i].cast[DType.float32]()
+                a[row * k + k_i].cast[.float32]()
+                * b[col * k + k_i].cast[.float32]()
             )
         c[row * n + col] = acc.cast[dtype]()
 
@@ -260,8 +260,8 @@ def _row_bit_diff(
     var n_diff = 0
     var max_abs = Float64(0)
     for j in range(N):
-        var a = row_out[off + j].cast[DType.float64]()
-        var b = ref_out[ref_off + j].cast[DType.float64]()
+        var a = row_out[off + j].cast[.float64]()
+        var b = ref_out[ref_off + j].cast[.float64]()
         if a != b:
             n_diff += 1
             var ad = abs(a - b)

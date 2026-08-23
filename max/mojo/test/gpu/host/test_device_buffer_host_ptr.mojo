@@ -38,7 +38,7 @@ def test_host_ptr_reads_kernel_writes() raises:
     with DeviceContext() as ctx:
         if ctx.api() != "metal":
             return
-        var dev = ctx.enqueue_create_buffer[DType.int32](3)
+        var dev = ctx.enqueue_create_buffer[.int32](3)
         ctx.enqueue_function[_fill_kernel](
             dev.unsafe_ptr(), grid_dim=1, block_dim=1
         )
@@ -53,7 +53,7 @@ def test_kernel_reads_host_writes() raises:
     with DeviceContext() as ctx:
         if ctx.api() != "metal":
             return
-        var dev = ctx.enqueue_create_buffer[DType.int32](1)
+        var dev = ctx.enqueue_create_buffer[.int32](1)
         dev.unsafe_host_ptr()[] = 21
         ctx.enqueue_function[_double_kernel](
             dev.unsafe_ptr(), grid_dim=1, block_dim=1
@@ -66,8 +66,8 @@ def test_host_ptr_carries_sub_buffer_offset() raises:
     with DeviceContext() as ctx:
         if ctx.api() != "metal":
             return
-        var dev = ctx.enqueue_create_buffer[DType.int32](8)
-        var sub = dev.create_sub_buffer[DType.int32](2, 4)
+        var dev = ctx.enqueue_create_buffer[.int32](8)
+        var sub = dev.create_sub_buffer[.int32](2, 4)
         dev.unsafe_host_ptr()[unsafe_offset=2] = 55
         assert_equal(Int(sub.unsafe_host_ptr()[]), 55)
 
@@ -76,7 +76,7 @@ def test_host_ptr_raises_without_unified_memory() raises:
     with DeviceContext() as ctx:
         if ctx.api() == "metal":
             return
-        var dev = ctx.enqueue_create_buffer[DType.int32](4)
+        var dev = ctx.enqueue_create_buffer[.int32](4)
         with assert_raises():
             _ = dev.unsafe_host_ptr()
 

@@ -25,7 +25,7 @@ def roundeven_to_int32[
     # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
     comptime if (
         CompilationTarget.has_avx512f()
-        and dtype == DType.float32
+        and dtype == .float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[.int32, simd_width]()
@@ -50,7 +50,7 @@ def roundeven_to_int32[
     # replaces a `frintn` and `fcvtzs` instruction pair.
     comptime if (
         CompilationTarget.has_neon()
-        and dtype == DType.float32
+        and dtype == .float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[.int32, simd_width]()
@@ -65,4 +65,4 @@ def roundeven_to_int32[
 
         return x_i32
 
-    return round(x).cast[DType.int32]()
+    return round(x).cast[.int32]()

@@ -81,8 +81,8 @@ def fp4_gemv_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
-    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
-    packed: TileTensor[DType.uint8, p_layout, ImmutAnyOrigin],  # [N, K//2]
+    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
+    packed: TileTensor[.uint8, p_layout, ImmutAnyOrigin],  # [N, K//2]
     scales: TileTensor[
         DType.float8_e4m3fn, s_layout, ImmutAnyOrigin
     ],  # [N,K//16]
@@ -143,14 +143,14 @@ def fp4_gemv_kernel[
             nib[2 * j] = bj & UInt16(0xF)
             nib[2 * j + 1] = (bj >> UInt16(4)) & UInt16(0xF)
 
-        var scale_abs = abs(scales[n_idx, blk][0].cast[DType.float32]())
+        var scale_abs = abs(scales[n_idx, blk][0].cast[.float32]())
         # F16-domain decode (Preston's inject) then cast f32: dodges the M5
         # bf16/f32 subnormal-FTZ trap that zeroes +-0.5 -- f16 subnormals
         # survive on M5 (verified on-device). Bit-identical to
         # `decode_e2m1_to_f32(nib)` (all 16 E2M1 values are exact in f16->f32),
         # so `* scale_abs` still matches the materialize->dense oracle exactly.
-        var w_f32 = decode_e2m1_to_f16(nib).cast[DType.float32]() * scale_abs
-        var xv = a.load[width=SF](Coord(0, k0)).cast[DType.float32]()
+        var w_f32 = decode_e2m1_to_f16(nib).cast[.float32]() * scale_abs
+        var xv = a.load[width=SF](Coord(0, k0)).cast[.float32]()
         acc[0] += (xv * w_f32).reduce_add()
         blk += WARP_SIZE
 
@@ -167,13 +167,13 @@ def fp4_gemv_kernel[
 
 @always_inline
 def enqueue_apple_fp4_gemv[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     n: Int,
     k: Int,
     ctx: DeviceContext,

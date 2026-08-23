@@ -51,7 +51,7 @@ def run_elementwise[
         var val = (
             in_buffer.unsafe_ptr()
             .unsafe_load[width=simd_width](idx)
-            .cast[DType.bfloat16]()
+            .cast[.bfloat16]()
         )
         var result: SIMD[.bfloat16, simd_width]
 
@@ -60,7 +60,7 @@ def run_elementwise[
         else:
             result = val**exponent
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
-            idx, result.cast[DType.float32]()
+            idx, result.cast[.float32]()
         )
 
     elementwise[func, pack_size, target="gpu"](Coord(length), ctx)

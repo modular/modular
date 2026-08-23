@@ -351,11 +351,11 @@ def test_mla_vs_fp32_ref[
     comptime SIZE_OUT = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
 
     # ---- BF16 source buffers + FP8 round-trip --------------------------
-    var host_q_src = ctx.enqueue_create_host_buffer[DType.bfloat16](SIZE_Q)
-    var host_knope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_q_src = ctx.enqueue_create_host_buffer[.bfloat16](SIZE_Q)
+    var host_knope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
     )
-    var host_krope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_krope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
     )
     ctx.synchronize()
@@ -372,7 +372,7 @@ def test_mla_vs_fp32_ref[
         var q_bf16 = host_q_src[i] * scale_factor
         var q_t = q_bf16.cast[qkv_type]()
         host_q[i] = q_t
-        host_q_src[i] = q_t.cast[DType.bfloat16]()
+        host_q_src[i] = q_t.cast[.bfloat16]()
 
     var host_knope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
@@ -381,7 +381,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_knope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_knope[i] = k_t
-        host_knope_src[i] = k_t.cast[DType.bfloat16]()
+        host_knope_src[i] = k_t.cast[.bfloat16]()
 
     var host_krope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
@@ -390,7 +390,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_krope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_krope[i] = k_t
-        host_krope_src[i] = k_t.cast[DType.bfloat16]()
+        host_krope_src[i] = k_t.cast[.bfloat16]()
 
     # ---- Latent K cache build ------------------------------------------
     var host_k_latent = ctx.enqueue_create_host_buffer[qkv_type](SIZE_K_LATENT)
@@ -436,15 +436,15 @@ def test_mla_vs_fp32_ref[
     var num_cu = len(md.work_indptr) - 1
     var n_indptr = len(md.work_indptr)
     var n_info = len(md.work_info)
-    var host_work_indptr = ctx.enqueue_create_host_buffer[DType.int32](n_indptr)
-    var host_work_info = ctx.enqueue_create_host_buffer[DType.int32](n_info)
+    var host_work_indptr = ctx.enqueue_create_host_buffer[.int32](n_indptr)
+    var host_work_info = ctx.enqueue_create_host_buffer[.int32](n_info)
     ctx.synchronize()
     for i in range(n_indptr):
         host_work_indptr[i] = md.work_indptr[i]
     for i in range(n_info):
         host_work_info[i] = md.work_info[i]
-    var dev_work_indptr = ctx.enqueue_create_buffer[DType.int32](n_indptr)
-    var dev_work_info = ctx.enqueue_create_buffer[DType.int32](n_info)
+    var dev_work_indptr = ctx.enqueue_create_buffer[.int32](n_indptr)
+    var dev_work_info = ctx.enqueue_create_buffer[.int32](n_info)
     ctx.enqueue_copy(dev_work_indptr, host_work_indptr)
     ctx.enqueue_copy(dev_work_info, host_work_info)
     ctx.synchronize()
@@ -546,7 +546,7 @@ def test_mla_vs_fp32_ref[
             for h in range(NUM_HEADS):
                 for d in range(D_NOPE):
                     var idx = ((b * SEQ_LEN + s) * NUM_HEADS + h) * D_NOPE + d
-                    var a_val = host_out[idx].cast[DType.float32]()
+                    var a_val = host_out[idx].cast[.float32]()
                     var r_val = host_out_ref_fp32[idx]
                     if not _is_finite(a_val):
                         num_nonfinite += 1

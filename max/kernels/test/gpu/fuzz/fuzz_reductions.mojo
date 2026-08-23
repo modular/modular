@@ -257,7 +257,7 @@ def _reduce_ref(
                 # Integer dtypes substitute a divisor; float lets IEEE-754
                 # answer, and `0 * inf` is the NaN numpy.mean reports.
                 if axis_size == 0:
-                    ref_vals[row] = (Float64(0) * inf[DType.float64]()).cast[
+                    ref_vals[row] = (Float64(0) * inf[.float64]()).cast[
                         rd_type
                     ]()
                 else:
@@ -524,7 +524,7 @@ def _run_shaped[
             elif op == OP_SUM or op == OP_MEAN:
                 var max_abs = Float64(0)
                 for i in range(total):
-                    var v = in_h[i].cast[DType.float64]()
+                    var v = in_h[i].cast[.float64]()
                     var a = -v if v < 0 else v
                     if isfinite(a) and a > max_abs:
                         max_abs = a

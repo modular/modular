@@ -206,8 +206,8 @@ def learnable_2d_interp_pos_emb[
     output: TileTensor[mut=True, dtype, ...],
     x: TileTensor[dtype, ...],
     weight: TileTensor[dtype, ...],
-    grid_thws: TileTensor[DType.int64, ...],
-    time_weight: TileTensor[DType.float32, ...],
+    grid_thws: TileTensor[.int64, ...],
+    time_weight: TileTensor[.float32, ...],
     ctx: DeviceContext,
 ) raises:
     """Applies learnable 2D interpolated position embedding on GPU.

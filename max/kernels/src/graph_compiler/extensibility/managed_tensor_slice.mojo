@@ -223,14 +223,14 @@ Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 comptime _RowMajorIntTupleTileLayout[
     shape: IntTuple,
-] = _RowMajorTileLayout[_IntTupleToCoordLike[DType.int, shape]]
+] = _RowMajorTileLayout[_IntTupleToCoordLike[.int, shape]]
 """A TileLayout with row-major strides derived from an IntTuple shape."""
 
 
 comptime _IntTupleShapeIndexListStridesToTileLayout[
     shape: IntTuple, strides: IndexList
 ] = TileLayout[
-    shape_types=_IntTupleToCoordLike[DType.int, shape],
+    shape_types=_IntTupleToCoordLike[.int, shape],
     stride_types=_IndexListToCoordLike[strides],
 ]
 """Convert an IntTuple shape and IndexList strides to a TileLayout."""
@@ -878,8 +878,8 @@ def simd_store_into_managed_tensor_slice[
     @__parameter
     @always_inline
     def store_stride1():
-        comptime if dtype == DType.bool:
-            var v = value.cast[DType.uint8]()
+        comptime if dtype == .bool:
+            var v = value.cast[.uint8]()
             tensor._ptr.unsafe_bitcast[UInt8]().unsafe_store(flat_index, v)
         else:
             tensor._ptr.unsafe_store[alignment=max_alignment](flat_index, value)
@@ -888,8 +888,8 @@ def simd_store_into_managed_tensor_slice[
     @__parameter
     @always_inline
     def store_strided(stride: Int):
-        comptime if dtype == DType.bool:
-            var v = value.cast[DType.uint8]()
+        comptime if dtype == .bool:
+            var v = value.cast[.uint8]()
             strided_store(
                 v,
                 tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
@@ -1047,7 +1047,7 @@ def simd_load_from_managed_tensor_slice[
     @__parameter
     @always_inline
     def load_stride1() -> SIMD[dtype, simd_width]:
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var v = tensor._ptr.unsafe_bitcast[UInt8]().unsafe_load[
                 width=simd_width,
                 invariant=invariant,
@@ -1062,7 +1062,7 @@ def simd_load_from_managed_tensor_slice[
     @__parameter
     @always_inline
     def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
                 stride,
@@ -2271,7 +2271,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def to_tile_tensor[
-        coord_dtype: DType = DType.int64
+        coord_dtype: DType = .int64
     ](
         self,
         out result: TileTensor[

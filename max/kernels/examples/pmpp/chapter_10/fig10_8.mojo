@@ -78,7 +78,7 @@ def main() raises:
 
     # Initialize input with random values
     for i in range(N):
-        h_input[i] = random_float64().cast[DType.float32]()
+        h_input[i] = random_float64().cast[.float32]()
 
     print(
         "Launching convergent sum reduction kernel (Fig 10.8) with 1 block and",
@@ -89,8 +89,8 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_input = ctx.enqueue_create_buffer[DType.float32](N)
-        var d_output = ctx.enqueue_create_buffer[DType.float32](1)
+        var d_input = ctx.enqueue_create_buffer[.float32](N)
+        var d_output = ctx.enqueue_create_buffer[.float32](1)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)

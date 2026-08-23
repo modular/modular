@@ -21,7 +21,7 @@ from std.testing import assert_equal
 
 
 def get_expert_dictionary(
-    topk_ids: HostBuffer[DType.uint32], num_tokens: Int
+    topk_ids: HostBuffer[.uint32], num_tokens: Int
 ) -> Dict[UInt32, UInt32]:
     var expert_dictionary = Dict[UInt32, UInt32]()
 
@@ -35,8 +35,8 @@ def get_expert_dictionary(
 
 
 def check_token_expert_order(
-    token_expert_order: HostBuffer[DType.uint32],
-    topk_ids: HostBuffer[DType.uint32],
+    token_expert_order: HostBuffer[.uint32],
+    topk_ids: HostBuffer[.uint32],
     num_tokens: Int,
 ) raises:
     """
@@ -67,8 +67,8 @@ def check_token_expert_order(
 
 
 def check_expert_stats(
-    expert_usage_stats: HostBuffer[DType.uint32],
-    topk_ids: HostBuffer[DType.uint32],
+    expert_usage_stats: HostBuffer[.uint32],
+    topk_ids: HostBuffer[.uint32],
     num_tokens: Int,
 ) raises:
     """
@@ -89,11 +89,11 @@ def check_expert_stats(
 
 
 def check_expert_indices(
-    expert_start_indices: HostBuffer[DType.uint32],
-    expert_ids: HostBuffer[DType.int32],
-    token_expert_order: HostBuffer[DType.uint32],
-    expert_usage_stats: HostBuffer[DType.uint32],
-    topk_ids: HostBuffer[DType.uint32],
+    expert_start_indices: HostBuffer[.uint32],
+    expert_ids: HostBuffer[.int32],
+    token_expert_order: HostBuffer[.uint32],
+    expert_usage_stats: HostBuffer[.uint32],
+    topk_ids: HostBuffer[.uint32],
     num_tokens: Int,
 ) raises:
     """
@@ -115,8 +115,8 @@ def check_expert_indices(
 
 
 def check_restore_token_order(
-    restore_token_order: HostBuffer[DType.uint32],
-    token_expert_order: HostBuffer[DType.uint32],
+    restore_token_order: HostBuffer[.uint32],
+    token_expert_order: HostBuffer[.uint32],
     num_tokens: Int,
 ) raises:
     """
@@ -134,9 +134,9 @@ def check_restore_token_order(
 def check_scales_offset[
     scale_alignment: Int = 128,
 ](
-    scales_offset: HostBuffer[DType.uint32],
-    expert_start_indices: HostBuffer[DType.uint32],
-    expert_usage_stats: HostBuffer[DType.uint32],
+    scales_offset: HostBuffer[.uint32],
+    expert_start_indices: HostBuffer[.uint32],
+    expert_usage_stats: HostBuffer[.uint32],
 ) raises:
     """Validates scales_offset values against expert_start_indices.
 
@@ -170,7 +170,7 @@ def test_moe_create_indices[
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](token_expert_order_length)
-    var top_k_buffer_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var top_k_buffer_host = ctx.enqueue_create_host_buffer[.uint32](
         token_expert_order_length
     )
     var restore_token_order_buffer_host = ctx.enqueue_create_host_buffer[
@@ -182,22 +182,22 @@ def test_moe_create_indices[
     var expert_start_indices_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](num_experts + 1)
-    var expert_ids_buffer_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_buffer_host = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
     var token_expert_order_buffer_device = ctx.enqueue_create_buffer[
         DType.uint32
     ](token_expert_order_length)
-    var expert_start_indices_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var expert_start_indices_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var restore_token_order_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var restore_token_order_buffer = ctx.enqueue_create_buffer[.uint32](
         token_expert_order_length
     )
-    var expert_ids_buffer = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[DType.uint32](2)
-    var top_k_buffer_device = ctx.enqueue_create_buffer[DType.uint32](
+    var expert_ids_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
+    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[.uint32](2)
+    var top_k_buffer_device = ctx.enqueue_create_buffer[.uint32](
         token_expert_order_length
     )
 
@@ -245,9 +245,7 @@ def test_moe_create_indices[
     var scales_offset_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](num_experts)
-    var scales_offset_buffer = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts
-    )
+    var scales_offset_buffer = ctx.enqueue_create_buffer[.uint32](num_experts)
 
     comptime if test_scales_offset:
         moe_create_indices["gpu", expected_count=expected_count](

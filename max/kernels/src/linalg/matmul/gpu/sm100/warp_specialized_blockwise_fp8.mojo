@@ -616,7 +616,7 @@ def promote_accumulators[
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime assert (
-        a_scales_type == b_scales_type and accum_type == DType.float32
+        a_scales_type == b_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales, b_scales, and accum_type"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
@@ -987,7 +987,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type and accum_type == DType.float32
+        b_scales_type == a_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales and b_scales"
     comptime assert transpose_b, "only support k-major B"
 
@@ -1516,7 +1516,7 @@ def sm100_warp_specialized_blockwise_fp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (

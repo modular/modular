@@ -93,7 +93,7 @@ def run_null_block_test[
     comptime lut_layout = Layout.row_major[2]()
     var lut_shape = IndexList[2](1, lut_columns)
     var lut_runtime = RuntimeLayout[lut_layout].row_major(lut_shape)
-    var lut = ManagedLayoutTensor[DType.uint32, lut_layout](lut_runtime, ctx)
+    var lut = ManagedLayoutTensor[.uint32, lut_layout](lut_runtime, ctx)
     var lut_host = lut.tensor[update=False]()
     for c in range(lut_columns):
         # Fill every column with N — the null block index.
@@ -105,7 +105,7 @@ def run_null_block_test[
     var cache_lengths_runtime = RuntimeLayout[cache_lengths_layout].row_major(
         cache_lengths_shape
     )
-    var cache_lengths = ManagedLayoutTensor[DType.uint32, cache_lengths_layout](
+    var cache_lengths = ManagedLayoutTensor[.uint32, cache_lengths_layout](
         cache_lengths_runtime, ctx
     )
     var cache_lengths_host = cache_lengths.tensor[update=False]()
@@ -127,8 +127,8 @@ def run_null_block_test[
     unsafe_memset_zero(blocks_host.ptr, blocks_runtime.size())
 
     comptime _MAX_PAGES = 16
-    var output_buf = ctx.enqueue_create_buffer[DType.uint32](_MAX_PAGES)
-    var output_init = ctx.enqueue_create_host_buffer[DType.uint32](_MAX_PAGES)
+    var output_buf = ctx.enqueue_create_buffer[.uint32](_MAX_PAGES)
+    var output_init = ctx.enqueue_create_host_buffer[.uint32](_MAX_PAGES)
     for i in range(_MAX_PAGES):
         output_init[i] = UInt32(0xDEADBEEF)
     ctx.enqueue_copy(output_buf, output_init)
@@ -154,7 +154,7 @@ def run_null_block_test[
         block_dim=1,
     )
 
-    var output_host = ctx.enqueue_create_host_buffer[DType.uint32](_MAX_PAGES)
+    var output_host = ctx.enqueue_create_host_buffer[.uint32](_MAX_PAGES)
     ctx.enqueue_copy(output_host, output_buf)
     ctx.synchronize()
 

@@ -60,7 +60,7 @@ def _run_ownership_transfer(ctx: DeviceContext) raises:
     var ctx_copy = _ownership_helper(ctx)
     print("ctx_copy: ", ctx_copy.name())
 
-    var buf = ctx.create_buffer_sync[DType.float32](32)
+    var buf = ctx.create_buffer_sync[.float32](32)
     print("buf: ", len(buf))
     var buf_copy = _ownership_helper_buf(buf)
     print("buf_copy: ", len(buf_copy))
@@ -75,7 +75,7 @@ def _run_device_info(ctx: DeviceContext) raises:
 
     var (free_before, total_before) = ctx.get_memory_info()
 
-    var buf = ctx.create_buffer_sync[DType.float32](20 * 1024 * 1024)
+    var buf = ctx.create_buffer_sync[.float32](20 * 1024 * 1024)
 
     var (free_after, total_after) = ctx.get_memory_info()
     print(

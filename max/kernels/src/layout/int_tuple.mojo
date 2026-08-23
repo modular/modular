@@ -82,7 +82,7 @@ def _get_index_type(address_space: AddressSpace) -> DType:
 
 def _get_index_type(layout: Layout) -> DType:
     """Returns int32 if layout size fits in int32 range, int64 otherwise."""
-    if layout.cosize() <= Int(max_finite[DType.int32]()):
+    if layout.cosize() <= Int(max_finite[.int32]()):
         return DType.int32
 
     return DType.int64
@@ -99,13 +99,11 @@ def _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
 def _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns int32 if layout fits in int32 range or index type is int32, otherwise index.
     """
-    if layout.all_dims_known() and layout.cosize() < Int(
-        max_finite[DType.int32]()
-    ):
+    if layout.all_dims_known() and layout.cosize() < Int(max_finite[.int32]()):
         return DType.int32
     else:
         var dtype = _get_index_type(address_space)
-        return DType.int32 if dtype == DType.int32 else DType.int64
+        return DType.int32 if dtype == .int32 else DType.int64
 
 
 def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
@@ -116,7 +114,7 @@ def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         var shape = layout.shape.flatten()
 
         for i in range(len(shape)):
-            if shape[i].value() > Int(max_finite[DType.int32]()):
+            if shape[i].value() > Int(max_finite[.int32]()):
                 return DType.int64
 
         return DType.int32
@@ -588,7 +586,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    def __init__(out self, existing: Self, rng: _StridedRange[DType.int]):
+    def __init__(out self, existing: Self, rng: _StridedRange[.int]):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing
@@ -2893,7 +2891,7 @@ def compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 
 
 def to_index_list[
-    rank: Int, element_type: DType = DType.int64
+    rank: Int, element_type: DType = .int64
 ](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """
     Converts an IntTuple to a flattened IndexList with the same values.
@@ -3021,7 +3019,7 @@ Example:
 
     # Known values become ComptimeInt, UNKNOWN_VALUE becomes Scalar
     comptime shape = IntTuple(3, -1, 5)
-    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    comptime coord_types = _IntTupleToCoordLike[.int32, shape]
     # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar, ComptimeInt[5]]()
 
     # Can be used to create a Coord type

@@ -226,6 +226,6 @@ def main() raises:
         var iters = get_defined_int["ITERS", 100]()
 
         # Test with bfloat16 (common for SM90 matmul)
-        run_pdl_race_test[DType.bfloat16, M, N, K](ctx, iters)
+        run_pdl_race_test[.bfloat16, M, N, K](ctx, iters)
 
         print("All PDL race tests passed!")

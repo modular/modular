@@ -226,8 +226,8 @@ def main() raises:
     var m = Bench()
 
     with DeviceContext() as ctx:
-        var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
-        var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
+        var src_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
+        var dst_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
 
         @always_inline
         def bench_func(mut b: Bencher) {imm}:

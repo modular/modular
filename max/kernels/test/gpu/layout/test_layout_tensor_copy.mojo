@@ -52,7 +52,7 @@ def async_copy_kernel[
     input_layout: Layout,
     BM: Int,
     BN: Int,
-](input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin]):
+](input: LayoutTensor[.float32, input_layout, MutAnyOrigin]):
     var input_tile = input.tile[BM, BN](block_idx.y, block_idx.x)
 
     var smem_tile = LayoutTensor[
@@ -89,7 +89,7 @@ def test_async_copy[
         layout, element_type=element_type, linear_idx_type=idx_type
     ].row_major(IndexList[2, element_type=element_type](M, N))
 
-    var input = ManagedLayoutTensor[DType.float32, layout](runtime_layout, ctx)
+    var input = ManagedLayoutTensor[.float32, layout](runtime_layout, ctx)
 
     arange(input.tensor())
 
@@ -312,8 +312,8 @@ def partial_copy_dram_to_sram_async_kernel[
     num_threads: Int,
     block_dim_count: Int,
 ](
-    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, layout, MutAnyOrigin],
 ):
     var smem_tile = (
         LayoutTensor[
@@ -418,8 +418,8 @@ def copy_dram_to_sram_kernel[
     num_threads: Int,
     block_dim_count: Int,
 ](
-    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, layout, MutAnyOrigin],
 ):
     var smem_tile = (
         LayoutTensor[
@@ -831,8 +831,8 @@ def run_copy_local_to_local_tests(ctx: DeviceContext) raises:
 def copy_dram_to_local_kernel[
     layout: Layout, num_threads: Int, block_dim_count: Int
 ](
-    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, layout, MutAnyOrigin],
 ):
     comptime thread_layout = Layout.row_major(4, 2)
     comptime num_active_threads = thread_layout.size()

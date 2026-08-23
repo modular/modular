@@ -174,7 +174,7 @@ def st_shared_frag_to_smem[
     per-store offsets are even.
     """
     comptime assert (
-        dst.dtype == DType.float32 or stageN == 16
+        dst.dtype == .float32 or stageN == 16
     ), "stageN must be 16 for FP8 output type"
     comptime assert vec_dtype == dst.dtype and dst.dtype in (
         DType.float8_e4m3fn,
@@ -348,7 +348,7 @@ def store_fragment_to_smem[
 
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
             dst._storage.unsafe_mut_cast[True]() + offset,
-            bitcast[DType.float32, stmtx_simd_width](v),
+            bitcast[.float32, stmtx_simd_width](v),
         )
 
 
@@ -2305,16 +2305,16 @@ def shared_memory_epilogue[
 
             else:
                 # MMA_M=256: simple row-major indexing
-                comptime fast_div = FastDiv[DType.uint32](shared_n)
+                comptime fast_div = FastDiv[.uint32](shared_n)
 
                 local_upper_row = (
                     Int(offset_upper).cast[fast_div.uint_type]() / fast_div
-                ).cast[DType.int64]()
+                ).cast[.int64]()
                 local_upper_col = Int64(offset_upper % shared_n)
 
                 local_lower_row = (
                     Int(offset_lower).cast[fast_div.uint_type]() / fast_div
-                ).cast[DType.int64]()
+                ).cast[.int64]()
                 local_lower_col = Int64(offset_lower % shared_n)
 
             # Convert local SMEM coords to global memory coords

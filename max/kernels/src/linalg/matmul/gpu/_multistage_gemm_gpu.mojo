@@ -212,8 +212,8 @@ def multistage_mma[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_masked: Bool = False,
     next_op_b_iter_alignment: Int = align_of[b_type](),
-    next_op_b_layout_int_type: DType = DType.int64,
-    next_op_b_linear_idx_type: DType = DType.int64,
+    next_op_b_layout_int_type: DType = .int64,
+    next_op_b_linear_idx_type: DType = .int64,
     k_group_size: Int = 1,
 ](
     c: LayoutTensor[
@@ -734,7 +734,7 @@ def multistage_gemm_kernel[
     ) or (
         a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
         and a_type == b_type
-        and c_type == DType.float32
+        and c_type == .float32
     ), "Pipeline gemm only supports tf32, F16, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 

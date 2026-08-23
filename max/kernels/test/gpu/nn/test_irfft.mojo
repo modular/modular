@@ -23,7 +23,7 @@ def test_irfft_basic[
     batch_size: Int,
     input_size: Int,  # Size of complex input (number of complex values)
     output_size: Int,  # Size of real output
-    dtype: DType = DType.float32,
+    dtype: DType = .float32,
 ](ctx: DeviceContext) raises:
     """
     Basic IRFFT test.
@@ -64,7 +64,7 @@ def test_irfft_basic[
     with input_device.map_to_host() as input_host:
         var input_tensor = TileTensor(
             input_host, input_runtime_layout
-        ).make_dynamic[DType.int64]()
+        ).make_dynamic[.int64]()
         for b in range(batch_size):
             # DC component: real=1.0, imag=0.0
             input_tensor[b, 0] = 1.0  # real part
@@ -102,7 +102,7 @@ def test_irfft_basic[
     with output_device.map_to_host() as output_host:
         var output_tensor = TileTensor(
             output_host, output_runtime_layout
-        ).make_dynamic[DType.int64]()
+        ).make_dynamic[.int64]()
         var first_value = output_tensor[0, 0]
         print("First output value:", first_value)
 

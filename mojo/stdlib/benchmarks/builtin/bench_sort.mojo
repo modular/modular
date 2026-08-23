@@ -31,7 +31,7 @@ def randomize_list[
         for i in range(size):
             var res = random_float64()
             # GCC doesn't support cast from float64 to float16
-            list[i] = res.cast[DType.float32]().cast[dt]()
+            list[i] = res.cast[.float32]().cast[dt]()
 
 
 @always_inline

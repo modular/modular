@@ -87,9 +87,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         C: InputTensor[dtype=dtype, rank=3, ...],
         D: InputTensor[dtype=dtype, rank=1, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var dim = u.dim_size(0)
@@ -97,18 +97,18 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         var ngroups = B.dim_size(0)
         var batch = query_start_loc.dim_size(0) - 1
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var ssm_states_tt = ssm_states.to_tile_tensor[DType.int32]()
-        var u_tt = u.to_tile_tensor[DType.int32]()
-        var delta_tt = delta.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var delta_bias_tt = delta_bias.to_tile_tensor[DType.int32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var ssm_states_tt = ssm_states.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+        var cache_indices_tt = cache_indices.to_tile_tensor[.int32]()
         var has_initial_state_tt = has_initial_state.to_tile_tensor[
             DType.int32
         ]()
@@ -437,9 +437,9 @@ def varlen_selective_scan_fwd_shape[
     C: InputTensor[dtype=dtype, rank=3, ...],
     D: InputTensor[dtype=dtype, rank=1, ...],
     delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+    query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
 ) -> IndexList[2]:
     """Returns the output shape for the `varlen_selective_scan_fwd` op.
 
@@ -511,7 +511,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=2, ...],
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -521,16 +521,16 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         var ngroups = B.dim_size(1)
         var nheads_ngroups_ratio = nheads // ngroups
 
-        var state_tt = state.to_tile_tensor[DType.int32]()
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var dt_tt = dt.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
+        var state_tt = state.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
         var state_batch_indices_tt = state_batch_indices.to_tile_tensor[
             DType.int32
         ]()
@@ -872,7 +872,7 @@ def varlen_selective_state_update_shape[
     D: InputTensor[dtype=dtype, rank=2, ...],
     z: InputTensor[dtype=dtype, rank=3, ...],
     dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
 ) -> Tuple[IndexList[4], IndexList[3]]:
     """Returns the output shapes for the `varlen_selective_state_update` op.
 

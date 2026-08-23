@@ -49,11 +49,11 @@ def ring_bcast(
 
 def test_ring_bcast(ctx: SHMEMContext) raises:
     comptime data_len = 32
-    var destination = ctx.enqueue_create_buffer[DType.int32](1)
+    var destination = ctx.enqueue_create_buffer[.int32](1)
 
-    var data = ctx.enqueue_create_buffer[DType.int32](data_len)
+    var data = ctx.enqueue_create_buffer[.int32](data_len)
     var data_h = alloc[Int32](data_len)
-    var psync = shmem_calloc[DType.uint64](1)
+    var psync = shmem_calloc[.uint64](1)
 
     for i in range(data_len):
         data_h[i] = shmem_my_pe() + Int32(i)
@@ -66,7 +66,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
         data,
         Int32(data_len),
         root,
-        DeviceBuffer[DType.uint64](ctx._ctx, psync, 1, owning=False),
+        DeviceBuffer[.uint64](ctx._ctx, psync, 1, owning=False),
         grid_dim=1,
         block_dim=1,
     )

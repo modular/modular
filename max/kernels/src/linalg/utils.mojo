@@ -61,7 +61,7 @@ def partial_simd_load[
     # Create a mask based on input bounds.
     var effective_lbound = SIMD[.int32, width](max(lbound, 0))
     var effective_rbound = SIMD[.int32, width](min(width, rbound))
-    var incr = iota[DType.int32, width]()
+    var incr = iota[.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_load[width](storage, mask, pad_value)
@@ -100,7 +100,7 @@ def partial_simd_store[
     # Create a mask based on input bounds.
     var effective_lbound = SIMD[.int32, width](max(lbound, 0))
     var effective_rbound = SIMD[.int32, width](min(width, rbound))
-    var incr = iota[DType.int32, width]()
+    var incr = iota[.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_store(data, storage, mask)
@@ -1035,15 +1035,11 @@ def use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
         and not CompilationTarget.has_neon_int8_matmul()
     ):
         return (
-            (a_type == DType.int8 and b_type == DType.int8)
-            or (a_type == DType.uint8 and b_type == DType.uint8)
-        ) and c_type == DType.int32
+            (a_type == .int8 and b_type == .int8)
+            or (a_type == .uint8 and b_type == .uint8)
+        ) and c_type == .int32
     elif CompilationTarget.has_avx2():
-        return (
-            a_type == DType.uint8
-            and b_type == DType.int8
-            and c_type == DType.int32
-        )
+        return a_type == .uint8 and b_type == .int8 and c_type == .int32
     else:
         return False
 
@@ -1062,11 +1058,11 @@ def use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # SIMD vectors.
     return (
         CompilationTarget.has_neon_int8_matmul()
-        and (c_type == DType.int32 or c_type == DType.uint32)
+        and (c_type == .int32 or c_type == .uint32)
         and (
-            (a_type == DType.uint8 and b_type == DType.uint8)
-            or (a_type == DType.uint8 and b_type == DType.int8)
-            or (a_type == DType.int8 and b_type == DType.int8)
+            (a_type == .uint8 and b_type == .uint8)
+            or (a_type == .uint8 and b_type == .int8)
+            or (a_type == .int8 and b_type == .int8)
         )
     )
 

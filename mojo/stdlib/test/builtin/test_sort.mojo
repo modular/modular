@@ -32,17 +32,13 @@ def random_numbers[
     var result = List[Scalar[dtype]](capacity=size)
     for _ in range(size):
         comptime if (
-            dtype == DType.int8
-            or dtype == DType.int16
-            or dtype == DType.int32
-            or dtype == DType.int64
+            dtype == .int8
+            or dtype == .int16
+            or dtype == .int32
+            or dtype == .int64
         ):
             result.append(random_si64(0, Int64(max)).cast[dtype]())
-        elif (
-            dtype == DType.float16
-            or dtype == DType.float32
-            or dtype == DType.float64
-        ):
+        elif (dtype == .float16 or dtype == .float32 or dtype == .float64):
             result.append(random_float64(0, Float64(max)).cast[dtype]())
         else:
             result.append(random_ui64(0, UInt64(max)).cast[dtype]())
@@ -491,7 +487,7 @@ def test_sort_custom() raises:
 
 
 def test_sort_string_small_list() raises:
-    var list = random_numbers[DType.int32](10)
+    var list = random_numbers[.int32](10)
     var string_list = List[String]()
     for n in list:
         string_list.append(String(Int(n)))
@@ -500,7 +496,7 @@ def test_sort_string_small_list() raises:
 
 
 def test_sort_string_big_list() raises:
-    var list = random_numbers[DType.int32](1000)
+    var list = random_numbers[.int32](1000)
     var string_list = List[String]()
     for n in list:
         string_list.append(String(Int(n)))
@@ -539,7 +535,7 @@ def test_sort_comparamble_elements_list() raises:
 
     def gen_list(count: Int) {mut list}:
         list = List[Person]()
-        var ages = random_numbers[DType.uint8](count)
+        var ages = random_numbers[.uint8](count)
         var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]
         for age in ages:
             var name = names[Int(age) % len(names)]
@@ -605,14 +601,14 @@ def test_stable_sort_stress() raises:
 
 
 def test_sort_scalar() raises:
-    var listi32 = random_numbers[DType.int32](50, max=Int(Int32.MAX))
+    var listi32 = random_numbers[.int32](50, max=Int(Int32.MAX))
     sort(listi32)
     assert_sorted(listi32)
 
     # Note: We'd use Float32.MAX_FINITE here, but it doesn't fit in Int
     # (random_numbers takes Int max). Float32.MAX returns inf, so we use Int.MAX
     # which is safe and provides good coverage (9.2e18 >> typical float32 values)
-    var listf32 = random_numbers[DType.float32](50, max=Int.MAX)
+    var listf32 = random_numbers[.float32](50, max=Int.MAX)
     sort(listf32)
     assert_sorted(listf32)
 

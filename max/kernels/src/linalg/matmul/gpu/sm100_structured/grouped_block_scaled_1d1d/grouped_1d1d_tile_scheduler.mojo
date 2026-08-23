@@ -300,7 +300,7 @@ struct GroupedWorkIterator1D1D[
         Self.tile_shape[0],
         Self.tile_shape[1] * Self.cta_group,
     )
-    comptime div_dynamic_block = FastDiv[DType.uint32](
+    comptime div_dynamic_block = FastDiv[.uint32](
         Self.cta_group_tile_shape[0]  # M dimension is dynamic
     )
     comptime num_static_dim_blocks: UInt32 = UInt32(
@@ -468,9 +468,7 @@ struct GroupedWorkIterator1D1D[
         """Compute swizzled (m_block_idx, n_block_idx) for L2 cache efficiency.
         """
         var primary_num_blocks = num_dynamic_dim_blocks  # M blocks
-        var div_primary_num_blocks = FastDiv[DType.uint32](
-            Int(primary_num_blocks)
-        )
+        var div_primary_num_blocks = FastDiv[.uint32](Int(primary_num_blocks))
         comptime uint_type = div_primary_num_blocks.uint_type
         var block_idx_val = rebind[Scalar[uint_type]](_block_idx)
 
@@ -486,7 +484,7 @@ struct GroupedWorkIterator1D1D[
         var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
-        var div_num_blocks_per_group = FastDiv[DType.uint32](
+        var div_num_blocks_per_group = FastDiv[.uint32](
             Int(num_blocks_per_group)
         )
         var group_idx = UInt32(block_idx_val / div_num_blocks_per_group)
@@ -495,9 +493,7 @@ struct GroupedWorkIterator1D1D[
         var num_blocks_in_group = min(
             Self.kNum1DBlocksPerGroup, primary_num_blocks - first_block_idx
         )
-        var div_num_blocks_in_group = FastDiv[DType.uint32](
-            Int(num_blocks_in_group)
-        )
+        var div_num_blocks_in_group = FastDiv[.uint32](Int(num_blocks_in_group))
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         var m_block_idx = first_block_idx + UInt32(
             rebind[Scalar[uint_type2]](in_group_idx) % div_num_blocks_in_group

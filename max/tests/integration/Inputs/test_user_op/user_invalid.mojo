@@ -19,6 +19,6 @@ from extensibility import OutputTensor
 struct FailsToElaborate:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         comptime assert False, "oops"

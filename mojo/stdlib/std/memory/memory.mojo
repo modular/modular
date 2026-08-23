@@ -88,7 +88,7 @@ def _memcmp_opt_impl_unconstrained[
         if any(diff):
             var index = Int(
                 diff.select(
-                    iota[DType.uint8, simd_width](),
+                    iota[.uint8, simd_width](),
                     SIMD[.uint8, simd_width](255),
                 ).reduce_min()
             )
@@ -100,7 +100,7 @@ def _memcmp_opt_impl_unconstrained[
     if any(diff):
         var index = Int(
             diff.select(
-                iota[DType.uint8, simd_width](),
+                iota[.uint8, simd_width](),
                 SIMD[.uint8, simd_width](255),
             ).reduce_min()
         )

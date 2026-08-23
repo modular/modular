@@ -707,7 +707,7 @@ def amd_ping_pong_matmul[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type == DType.bfloat16 or a_type.is_float8()
+        a_type == .bfloat16 or a_type.is_float8()
     ), "A must be bfloat16 or float8_e4m3fn"
 
     comptime is_fp8 = a_type.is_float8()

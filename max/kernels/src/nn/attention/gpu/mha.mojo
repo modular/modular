@@ -348,7 +348,7 @@ def _mha_decode_fold_ok[
         and not has_amd_rdna_gpu_accelerator()
         # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
         # is tested through the fold; widen once a test covers them.
-        and (dtype == DType.bfloat16 or dtype.is_float8())
+        and (dtype == .bfloat16 or dtype.is_float8())
         # The row bounds below count `_MHA_DECODE_FOLD_WM`-row M-tiles, so this
         # arm's starting shape must be that tall. Asks for the UNFOLDED shape on
         # purpose: a width that clears `mha_decode_fold_wide_mma` overrides it
@@ -527,7 +527,7 @@ def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     """
 
     return has_nvidia_gpu_accelerator() or (
-        (qkv_type == DType.bfloat16 or qkv_type.is_float8())
+        (qkv_type == .bfloat16 or qkv_type.is_float8())
         and has_amd_gpu_accelerator()
     )
 
@@ -562,9 +562,7 @@ def depth_supported_by_gpu[
         depth == 64
         and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
     ) or (
-        depth == 80
-        and config.dtype == DType.bfloat16
-        and has_amd_gpu_accelerator()
+        depth == 80 and config.dtype == .bfloat16 and has_amd_gpu_accelerator()
     ) or (
         depth == 256
         and (
@@ -694,7 +692,7 @@ def flash_attention[
     comptime is_native_fp8_bf16_out = (
         q.dtype.is_float8()
         and cache_t.dtype.is_float8()
-        and output.dtype == DType.bfloat16
+        and output.dtype == .bfloat16
         and (
             _is_sm10x_gpu(ctx.default_device_info) or has_amd_gpu_accelerator()
         )
@@ -707,7 +705,7 @@ def flash_attention[
         " output=bfloat16 for the native FP8 path."
     )
     comptime assert (
-        q.dtype == DType.float32
+        q.dtype == .float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
         or is_native_fp8_bf16_out
@@ -1000,7 +998,7 @@ def flash_attention_dispatch[
         batch_size = q.dim[0]()
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
-    comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
+    comptime q_half_float_or_fp32 = dtype == .float32 or q_half_float
     comptime q_fp8_depth512 = dtype.is_float8() and (
         depth == 256 or depth == 512
     )
@@ -1496,7 +1494,7 @@ def flash_attention_dispatch[
                 comptime BK = (
                     (128 if _fp8_small_mma else 64) if dtype.is_float8() else 32
                 ) if has_amd_gpu_accelerator() else (
-                    16 if q.dtype == DType.float32 else 32
+                    16 if q.dtype == .float32 else 32
                 )
                 comptime WM = BM
                 comptime WN = 32
@@ -2611,7 +2609,7 @@ def flash_attention_ragged[
     ), "Q, K, V, output should have same type."
 
     comptime assert (
-        q.dtype == DType.float32
+        q.dtype == .float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
     ), "Only support single, half, and float8 (AMD only) precision."
@@ -5206,7 +5204,7 @@ def mha_decoding_single_batch[
     var scale_log2e: Float32 = (
         scale.cast[
             DType.float32
-        ]() if mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
+        ]() if mask_t.apply_log2e_after_mask else scale.cast[.float32]()
         * log2e
     )
 
@@ -5897,7 +5895,7 @@ def mha_decoding_single_batch_pipelined[
     var scale_log2e: Float32 = (
         scale.cast[
             DType.float32
-        ]() if mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
+        ]() if mask_t.apply_log2e_after_mask else scale.cast[.float32]()
         * log2e
     )
 
@@ -6729,8 +6727,8 @@ def _bmm1_bs[
             UInt32(batch), UInt32(i), UInt32(kv_head), UInt32(x)
         )
         accum += (
-            p[y * padded_num_keys + i].cast[DType.float32]()
-            * v_ptr[0].cast[DType.float32]()
+            p[y * padded_num_keys + i].cast[.float32]()
+            * v_ptr[0].cast[.float32]()
         )
 
     output[y * _num_heads * _depth + x] = accum.cast[output_type]()

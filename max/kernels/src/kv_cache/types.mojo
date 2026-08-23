@@ -135,11 +135,11 @@ def _kv_cache_out_slot[
 def _compute_kv_cache_dynamic_shape_strides[
     dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
 ](blocks: TileTensor[dtype, ...]) -> Tuple[
-    DynamicCoord[DType.int64, kv_cache_rank],
-    DynamicCoord[DType.int64, kv_cache_rank],
+    DynamicCoord[.int64, kv_cache_rank],
+    DynamicCoord[.int64, kv_cache_rank],
 ]:
-    var kv_cache_shape = DynamicCoord[DType.int64, kv_cache_rank]()
-    var kv_cache_strides = DynamicCoord[DType.int64, kv_cache_rank]()
+    var kv_cache_shape = DynamicCoord[.int64, kv_cache_rank]()
+    var kv_cache_strides = DynamicCoord[.int64, kv_cache_rank]()
     var stride = 1
 
     comptime for i in reversed(range(blocks.flat_rank)):
@@ -169,8 +169,8 @@ def _make_cache_tt[
     rank: Int,
 ](
     ptr: UnsafePointer[mut=_, Scalar[dtype], _],
-    shape: DynamicCoord[DType.int64, rank],
-    strides: DynamicCoord[DType.int64, rank],
+    shape: DynamicCoord[.int64, rank],
+    strides: DynamicCoord[.int64, rank],
 ) -> TileTensor[
     dtype,
     InternalLayout[
@@ -1139,7 +1139,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
     def cache_lengths_nd(
         self,
-    ) -> TileTensor[DType.uint32, _1d_tt_layout, ImmutAnyOrigin,]:
+    ) -> TileTensor[.uint32, _1d_tt_layout, ImmutAnyOrigin,]:
         """Returns the cache lengths as a TileTensor."""
         ...
 
@@ -1445,11 +1445,11 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
@@ -1575,7 +1575,7 @@ struct ContinuousBatchingKVCache[
     @always_inline
     def _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> DynamicCoord[DType.int64, 4]:
+    ) -> DynamicCoord[.int64, 4]:
         assert (
             head_idx < Self.kv_params.num_heads
         ), "KVCache head_idx out of range"
@@ -1585,7 +1585,7 @@ struct ContinuousBatchingKVCache[
         assert tok_idx < Int(
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
-        return dyn_coord[DType.int64](
+        return dyn_coord[.int64](
             (
                 block_idx,
                 tok_idx,
@@ -1963,11 +1963,11 @@ struct ContinuousBatchingKVCache[
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
     ]:
         """Not supported for ContinuousBatchingKVCache."""
@@ -2612,7 +2612,7 @@ struct PagedKVCache[
         expressed in BF16 units: (padded_depth + BK * 2) // 2.
         """
         comptime assert (
-            BK % swizzle_granularity[DType.bfloat16, swizzle_mode]()
+            BK % swizzle_granularity[.bfloat16, swizzle_mode]()
         ) == 0, "BK must be a multiple of swizzle granularity for BF16"
         # Compute the total row width in BF16 elements:
         #   padded_depth FP8 bytes + BK BF16 elements
@@ -2650,11 +2650,11 @@ struct PagedKVCache[
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
@@ -2681,7 +2681,7 @@ struct PagedKVCache[
     @always_inline
     def _get_idx(
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> DynamicCoord[DType.int64, 4]:
+    ) -> DynamicCoord[.int64, 4]:
         debug_assert(
             head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
@@ -2707,7 +2707,7 @@ struct PagedKVCache[
             Int(self.lookup_table.dim[1]()),
         )
         var block_idx = Int(self.lookup_table[bs, lut_block_idx])
-        return dyn_coord[DType.int64](
+        return dyn_coord[.int64](
             (
                 block_idx,
                 tok_in_block_idx,
@@ -2723,7 +2723,7 @@ struct PagedKVCache[
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-    ) -> DynamicCoord[DType.int64, 4]:
+    ) -> DynamicCoord[.int64, 4]:
         debug_assert(
             head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
@@ -2752,7 +2752,7 @@ struct PagedKVCache[
         # (wrong — element 63 is still in block 0). floordiv correctly maps
         # any element at position d to block d // granularity.
         var scale_block_idx = head_dim_idx // Self.quantization_granularity
-        return dyn_coord[DType.int64](
+        return dyn_coord[.int64](
             (
                 block_idx,
                 tok_in_block_idx,
@@ -3109,8 +3109,8 @@ struct ContinuousBatchingKVCacheCollection[
     var lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
-    var kv_cache_dynamic_shape: DynamicCoord[DType.int64, 4]
-    var kv_cache_dynamic_strides: DynamicCoord[DType.int64, 4]
+    var kv_cache_dynamic_shape: DynamicCoord[.int64, 4]
+    var kv_cache_dynamic_strides: DynamicCoord[.int64, 4]
 
     def __init__(
         out self,
@@ -3174,7 +3174,7 @@ struct ContinuousBatchingKVCacheCollection[
         ), "invalid kv_idx for MLA cache"
         var offset = Int(
             self.blocks.layout(
-                dyn_coord[DType.int64](
+                dyn_coord[.int64](
                     (
                         0,
                         kv_idx,
@@ -3328,8 +3328,8 @@ struct PagedKVCacheCollection[
     ]
 
     var scales: OptionalReg[Self.scales_tt_type]
-    var kv_cache_scales_dynamic_shape: DynamicCoord[DType.int64, 4]
-    var kv_cache_scales_dynamic_strides: DynamicCoord[DType.int64, 4]
+    var kv_cache_scales_dynamic_shape: DynamicCoord[.int64, 4]
+    var kv_cache_scales_dynamic_strides: DynamicCoord[.int64, 4]
     var blocks: Self.blocks_tt_type
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
     var lookup_table: Self.CacheType.lookup_table_tt_type
@@ -3339,8 +3339,8 @@ struct PagedKVCacheCollection[
     var scales_lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
-    var kv_cache_dynamic_shape: DynamicCoord[DType.int64, 4]
-    var kv_cache_dynamic_strides: DynamicCoord[DType.int64, 4]
+    var kv_cache_dynamic_shape: DynamicCoord[.int64, 4]
+    var kv_cache_dynamic_strides: DynamicCoord[.int64, 4]
 
     def __init__[
         scales_dtype: DType = Self.scale_dtype
@@ -3424,7 +3424,7 @@ struct PagedKVCacheCollection[
             )
         else:
             self.scales = None
-            self.kv_cache_scales_dynamic_shape = DynamicCoord[DType.int64, 4]()
+            self.kv_cache_scales_dynamic_shape = DynamicCoord[.int64, 4]()
             self.kv_cache_scales_dynamic_strides = DynamicCoord[
                 DType.int64, 4
             ]()
@@ -3464,7 +3464,7 @@ struct PagedKVCacheCollection[
             )
         else:
             self.scales = None
-            self.kv_cache_scales_dynamic_shape = DynamicCoord[DType.int64, 4]()
+            self.kv_cache_scales_dynamic_shape = DynamicCoord[.int64, 4]()
             self.kv_cache_scales_dynamic_strides = DynamicCoord[
                 DType.int64, 4
             ]()
@@ -3486,7 +3486,7 @@ struct PagedKVCacheCollection[
             kv_idx >= 0 and kv_idx < 2
         ), "Invalid kv_idx for KV cache"
 
-        var kv_layer_coord = dyn_coord[DType.int64](
+        var kv_layer_coord = dyn_coord[.int64](
             (
                 0,
                 kv_idx,

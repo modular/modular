@@ -32,8 +32,8 @@ def reshape[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=DynamicCoord[DType.int64, output_rank].element_types,
-        stride_types=DynamicCoord[DType.int64, output_rank].element_types,
+        shape_types=DynamicCoord[.int64, output_rank].element_types,
+        stride_types=DynamicCoord[.int64, output_rank].element_types,
     ],
     input.origin,
     address_space=input.address_space,

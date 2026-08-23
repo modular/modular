@@ -34,9 +34,9 @@ def _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
 
 
 def test_sort_issue_1018() raises:
-    _sort_test[DType.int8, "int8"](300, 3_000)
-    _sort_test[DType.float32, "float32"](3_000, 3_000)
-    _sort_test[DType.float64, "float64"](300_000, 3_000_000_000)
+    _sort_test[.int8, "int8"](300, 3_000)
+    _sort_test[.float32, "float32"](3_000, 3_000)
+    _sort_test[.float64, "float64"](300_000, 3_000_000_000)
 
 
 def main() raises:

@@ -57,9 +57,9 @@ def ldexp_libm[
 def test_ldexp_extensive_float32() raises:
     var i = -1e3
     while i < 1e3:
-        var out = frexp(i.cast[DType.float32]())
+        var out = frexp(i.cast[.float32]())
         var frac = out[0]
-        var exp = out[1].cast[DType.int32]()
+        var exp = out[1].cast[.int32]()
         assert_almost_equal(
             ldexp(frac, exp),
             ldexp_libm(frac, exp),

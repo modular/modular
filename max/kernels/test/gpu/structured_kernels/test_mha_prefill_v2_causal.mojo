@@ -82,10 +82,10 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_out = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
 
     var total_k = NUM_TILES * KV_BLOCK
     with dev_q.map_to_host() as host_q, dev_k.map_to_host() as host_k, dev_v.map_to_host() as host_v:

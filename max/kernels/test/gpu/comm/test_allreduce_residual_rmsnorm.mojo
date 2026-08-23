@@ -64,12 +64,12 @@ def _assert_fp8_close[
     var num_errors = 0
     var num_ulp_errors = 0
     for i in range(length):
-        var ref_val = ref_host[i].cast[DType.float32]()
-        var fused_val = fused_host[i].cast[DType.float32]()
+        var ref_val = ref_host[i].cast[.float32]()
+        var fused_val = fused_host[i].cast[.float32]()
         if ref_val != fused_val:
             num_errors += 1
-            var ref_bits = Int(bitcast[DType.uint8](ref_host[i]))
-            var fused_bits = Int(bitcast[DType.uint8](fused_host[i]))
+            var ref_bits = Int(bitcast[.uint8](ref_host[i]))
+            var fused_bits = Int(bitcast[.uint8](fused_host[i]))
             if abs(ref_bits - fused_bits) > 1:
                 num_ulp_errors += 1
 
@@ -82,8 +82,8 @@ def _assert_fp8_close[
         for i in range(length):
             if printed >= 5:
                 break
-            var ref_val = ref_host[i].cast[DType.float32]()
-            var fused_val = fused_host[i].cast[DType.float32]()
+            var ref_val = ref_host[i].cast[.float32]()
+            var fused_val = fused_host[i].cast[.float32]()
             if ref_val != fused_val:
                 print(
                     "  FP8 mismatch at",
@@ -116,8 +116,8 @@ def _assert_scales_close[
     """
     var scale_errors = 0
     for i in range(rows):
-        var ref_s = ref_host[i].cast[DType.float32]()
-        var fused_s = fused_host[i].cast[DType.float32]()
+        var ref_s = ref_host[i].cast[.float32]()
+        var fused_s = fused_host[i].cast[.float32]()
         var denom = max(abs(ref_s), Float32(1e-12))
         var rel_diff = abs(ref_s - fused_s) / denom
         if rel_diff > max_rel_diff:
@@ -158,12 +158,12 @@ def _assert_bf16_close[
     var num_errors = 0
     var num_ulp_errors = 0
     for i in range(length):
-        var ref_val = ref_host[i].cast[DType.float32]()
-        var fused_val = fused_host[i].cast[DType.float32]()
+        var ref_val = ref_host[i].cast[.float32]()
+        var fused_val = fused_host[i].cast[.float32]()
         if ref_val != fused_val:
             num_errors += 1
-            var ref_bits = Int(bitcast[DType.uint16](ref_host[i]))
-            var fused_bits = Int(bitcast[DType.uint16](fused_host[i]))
+            var ref_bits = Int(bitcast[.uint16](ref_host[i]))
+            var fused_bits = Int(bitcast[.uint16](fused_host[i]))
             if abs(ref_bits - fused_bits) > max_ulp:
                 num_ulp_errors += 1
                 if num_ulp_errors <= 5:
@@ -198,7 +198,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     out_dtype: DType,
     rows: Int,
     cols: Int,
-    scales_dtype: DType = DType.float32,
+    scales_dtype: DType = .float32,
 ](list_of_ctx: List[DeviceContext]) raises:
     """Verify fused kernel against separate allreduce → fused RMSNorm+FP8."""
     comptime length = rows * cols
@@ -222,7 +222,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -237,7 +237,7 @@ def test_fused_allreduce_rmsnorm_fp8[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
@@ -271,7 +271,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
-    var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
+    var scale_ub = max_finite[out_dtype]().cast[.float32]()
 
     # --- Reference path: host-side float32 sum → fused RMSNorm+FP8 ---
     # The fused kernel accumulates the P2P loads in float32, then casts to
@@ -281,7 +281,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     for i in range(length):
         var sum_f32 = Float32(0)
         for g in range(ngpus):
-            sum_f32 += host_bufs[g][i].cast[DType.float32]()
+            sum_f32 += host_bufs[g][i].cast[.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
 
     # Upload sum to device for the reference fused RMSNorm+FP8 input_fn.
@@ -428,7 +428,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -443,7 +443,7 @@ def test_fused_allreduce_rmsnorm_noquant[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
@@ -478,16 +478,16 @@ def test_fused_allreduce_rmsnorm_noquant[
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Host reference: allreduce in f32, then RMSNorm in f32 ---
-    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         var s = Float32(0)
         for g in range(ngpus):
-            s += host_bufs[g][i].cast[DType.float32]()
+            s += host_bufs[g][i].cast[.float32]()
         ref_sum_f32[i] = s
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
     var eps_f32 = epsilon
-    var woff_f32 = weight_offset.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[.float32]()
     for r in range(rows):
         var m2 = Float32(0)
         for c in range(cols):
@@ -496,7 +496,7 @@ def test_fused_allreduce_rmsnorm_noquant[
         var norm = rsqrt(m2 / Float32(cols) + eps_f32)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
-            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            var g_f32 = gamma_host[c].cast[.float32]() + woff_f32
             ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
@@ -507,7 +507,7 @@ def test_fused_allreduce_rmsnorm_noquant[
 
     var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
     # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
-    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
         fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
@@ -586,7 +586,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -601,7 +601,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
@@ -634,7 +634,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
-    var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
+    var scale_ub = max_finite[out_dtype]().cast[.float32]()
 
     # --- Residual buffer: deterministic values ---
     var residual_dev = ctx.enqueue_create_buffer[in_dtype](length)
@@ -653,8 +653,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     for i in range(length):
         var sum_f32 = Float32(0)
         for g in range(ngpus):
-            sum_f32 += host_bufs[g][i].cast[DType.float32]()
-        sum_f32 += residual_host[i].cast[DType.float32]()
+            sum_f32 += host_bufs[g][i].cast[.float32]()
+        sum_f32 += residual_host[i].cast[.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
 
     # Upload sum to device for the reference fused RMSNorm+FP8 input_fn.
@@ -663,7 +663,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     ctx.synchronize()
 
     var ref_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var ref_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var ref_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var ref_sum_ptr = ref_sum_dev.unsafe_ptr()
 
@@ -713,7 +713,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         list_of_ctx[i].synchronize()
 
     var fused_fp8_dev = ctx.enqueue_create_buffer[out_dtype](length)
-    var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var fused_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
     var fused_residual_output_dev = ctx.enqueue_create_buffer[in_dtype](length)
 
     var fused_fp8_tile = TileTensor(
@@ -761,8 +761,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     var res_errors = 0
     for i in range(length):
-        var ref_val = ref_sum_host[i].cast[DType.float32]()
-        var fused_val = fused_res_out_host[i].cast[DType.float32]()
+        var ref_val = ref_sum_host[i].cast[.float32]()
+        var fused_val = fused_res_out_host[i].cast[.float32]()
         # The fused 1-stage/2-stage kernel accumulates allreduce + residual
         # in f32 before casting to bf16, giving exact match. The split
         # (2-kernel) path has an inherent bf16 round-trip for the allreduce
@@ -797,8 +797,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     )
 
     # --- Compare per-row scale factors ---
-    var ref_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var fused_scales_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var ref_scales_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var fused_scales_host = ctx.enqueue_create_host_buffer[.float32](rows)
     ctx.enqueue_copy(ref_scales_host, ref_scales_dev)
     ctx.enqueue_copy(fused_scales_host, fused_scales_dev)
     ctx.synchronize()
@@ -855,7 +855,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     # --- Setup: per-GPU input buffers ---
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -870,7 +870,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         host_bufs.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
@@ -913,20 +913,20 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     ctx.synchronize()
 
     # --- Host reference: allreduce + residual in f32, then RMSNorm in f32 ---
-    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[.float32](length)
     var ref_sum_host = ctx.enqueue_create_host_buffer[dtype](length)
     for i in range(length):
         var s = Float32(0)
         for g in range(ngpus):
-            s += host_bufs[g][i].cast[DType.float32]()
-        s += residual_host[i].cast[DType.float32]()
+            s += host_bufs[g][i].cast[.float32]()
+        s += residual_host[i].cast[.float32]()
         ref_sum_f32[i] = s
         # bf16-rounded pre-norm sum (matches kernel's residual_output write).
         ref_sum_host[i] = s.cast[dtype]()
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
     var eps_f32 = epsilon
-    var woff_f32 = weight_offset.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[.float32]()
     for r in range(rows):
         var m2 = Float32(0)
         for c in range(cols):
@@ -935,7 +935,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         var norm = rsqrt(m2 / Float32(cols) + eps_f32)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
-            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            var g_f32 = gamma_host[c].cast[.float32]() + woff_f32
             ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
@@ -947,7 +947,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
     var fused_res_out_dev = ctx.enqueue_create_buffer[dtype](length)
     # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
-    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
         fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
@@ -993,8 +993,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 
     var res_errors = 0
     for i in range(length):
-        var ref_val = ref_sum_host[i].cast[DType.float32]()
-        var fused_val = fused_res_out_host[i].cast[DType.float32]()
+        var ref_val = ref_sum_host[i].cast[.float32]()
+        var fused_val = fused_res_out_host[i].cast[.float32]()
         var max_mag = max(abs(ref_val), abs(fused_val))
         var bf16_ulp = max_mag * Float32(2.0**-7)
         if abs(ref_val - fused_val) > bf16_ulp:

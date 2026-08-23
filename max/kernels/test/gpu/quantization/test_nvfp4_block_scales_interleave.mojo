@@ -124,8 +124,8 @@ def test_block_scales_interleave_fp4[
                     if row_idx < m and col_idx < n:
                         var ref_sf = input_host_tensor[row_idx, col_idx]
                         assert_equal(
-                            ref_sf.cast[DType.float64](),
-                            swizzled_sf.cast[DType.float64](),
+                            ref_sf.cast[.float64](),
+                            swizzled_sf.cast[.float64](),
                         )
                     else:
                         # Compare against the dtype's stored zero representation
@@ -133,8 +133,8 @@ def test_block_scales_interleave_fp4[
                         # round-trips a different exact bit pattern here.
                         var zero_sf = Scalar[scales_dtype](0.0)
                         assert_equal(
-                            zero_sf.cast[DType.float64](),
-                            swizzled_sf.cast[DType.float64](),
+                            zero_sf.cast[.float64](),
+                            swizzled_sf.cast[.float64](),
                         )
 
 

@@ -141,7 +141,7 @@ def _quantize_a_block[
 
     var fp_data = a_ptr.unsafe_load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
-    var scale = (max_value / 127.0).cast[DType.float32]()
+    var scale = (max_value / 127.0).cast[.float32]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
     var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[
@@ -261,7 +261,7 @@ def _unpack_weights[
             var b_scale = (
                 b_packed_ptr.unsafe_bitcast[Float16]()
                 .unsafe_load[width=simd_width](col * simd_width)
-                .cast[DType.float32]()
+                .cast[.float32]()
             )
             b_scale_ptr.unsafe_store(col * simd_width, b_scale)
 
@@ -276,15 +276,15 @@ def _unpack_weights[
             comptime for col in range(tile_n):
                 var b_data_packed = b_packed_ptr.unsafe_load[
                     width=simd_width * 4
-                ](col * simd_width * 4).cast[DType.uint8]()
-                var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
-                var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
+                ](col * simd_width * 4).cast[.uint8]()
+                var b_data_i4_lo = (b_data_packed & 15).cast[.int8]() - 8
+                var b_data_i4_hi = (b_data_packed >> 4).cast[.int8]() - 8
 
                 comptime if needs_correction:
                     comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
-                    var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
-                    var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
-                    var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
+                    var a_zp = bitcast[.int32, simd_width](a_zero_point)
+                    var b_lo = bitcast[.int32, simd_width](b_data_i4_lo)
+                    var b_hi = bitcast[.int32, simd_width](b_data_i4_hi)
 
                     comptime if CompilationTarget.has_vnni():
                         b_column_sums[col] = dot_i8_to_i32_saturated_x86(
@@ -297,30 +297,28 @@ def _unpack_weights[
                         # Get the partial 16-bit dot product low and high.
                         # The full 32-bit dot product is finished in the
                         # apply_a_scale_avx2 function.
-                        var pdot_lo = bitcast[DType.int16, 2 * simd_width](
+                        var pdot_lo = bitcast[.int16, 2 * simd_width](
                             pmaddubs(a_zp, b_lo)
                         )
-                        var pdot_hi = bitcast[DType.int16, 2 * simd_width](
+                        var pdot_hi = bitcast[.int16, 2 * simd_width](
                             pmaddubs(a_zp, b_hi)
                         )
-                        var ci16 = bitcast[DType.int16, 2 * simd_width](
+                        var ci16 = bitcast[.int16, 2 * simd_width](
                             b_column_sums[col]
                         )
                         # Add the low and high 16-bit partial dot products.
                         ci16 -= pdot_lo + pdot_hi
 
-                        b_column_sums[col] = bitcast[DType.int32, simd_width](
-                            ci16
-                        )
+                        b_column_sums[col] = bitcast[.int32, simd_width](ci16)
 
                 comptime if is_i8mm:
-                    var intl = bitcast[DType.int32, simd_width](
+                    var intl = bitcast[.int32, simd_width](
                         b_data_i4_lo
-                    ).interleave(bitcast[DType.int32, simd_width](b_data_i4_hi))
-                    b_data_i4_lo = bitcast[DType.int8, simd_width * 4](
+                    ).interleave(bitcast[.int32, simd_width](b_data_i4_hi))
+                    b_data_i4_lo = bitcast[.int8, simd_width * 4](
                         intl.slice[simd_width, offset=0]()
                     )
-                    b_data_i4_hi = bitcast[DType.int8, simd_width * 4](
+                    b_data_i4_hi = bitcast[.int8, simd_width * 4](
                         intl.slice[simd_width, offset=simd_width]()
                     )
 
@@ -364,8 +362,8 @@ def _scale_and_accumulate[
 ](
     a_scale_ptr: ImmPointer[Float32, _],
     b_scale_ptr: ImmPointer[Scalar[b_scale_type], _],
-    mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_int32: _Accumulator[.int32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
 ):
     var b_scale = Array[SIMD[.float32, simd_width], tile_n](uninitialized=True)
 
@@ -373,7 +371,7 @@ def _scale_and_accumulate[
     comptime for col in range(tile_n):
         b_scale[col] = b_scale_ptr.unsafe_load[width=simd_width](
             col * simd_width
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     @__parameter
     @always_inline
@@ -390,14 +388,12 @@ def _scale_and_accumulate[
             ):
                 dot = pmaddw(
                     dot,
-                    bitcast[DType.int32, simd_width](
+                    bitcast[.int32, simd_width](
                         SIMD[.int16, 2 * simd_width](1)
                     ),
                 )
 
-            c_float[row, col] += (
-                dot.cast[DType.float32]() * a_scale * b_scale[col]
-            )
+            c_float[row, col] += dot.cast[.float32]() * a_scale * b_scale[col]
 
     # Convert and rescale the integer accumulators and accumulate to the output
     # float accumulators.
@@ -446,7 +442,7 @@ trait _MatmulQInt4Kernel:
         a_ptr: ImmPointer[Int8, _],
         a_scale_ptr: ImmPointer[Float32, _],
         b_ptr: ImmPointer[Int8, _],
-        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, 1, tile_n, simd_width],
     ):
         ...
 
@@ -459,7 +455,7 @@ trait _MatmulQInt4Kernel:
         b_base_ptr: ImmPointer[Int8, _],
         b_ptr: ImmPointer[Float32, _],
         b_correction_ptr: ImmPointer[Int32, _],
-        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     ):
         ...
 
@@ -498,9 +494,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         a_ptr: ImmPointer[Int8, _],
         a_scale_ptr: ImmPointer[Float32, _],
         b_ptr: ImmPointer[Int8, _],
-        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, 1, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, 1, tile_n, simd_width]()
 
         c_int32.init()
 
@@ -510,44 +506,40 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         var b_column_sums = Array[SIMD[.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
-            var a_val_lo = bitcast[DType.int32, 1](
-                a_ptr.unsafe_load[width=4](k)
-            )
-            var a_val_hi = bitcast[DType.int32, 1](
-                a_ptr.unsafe_load[width=4](k + 4)
-            )
+            var a_val_lo = bitcast[.int32, 1](a_ptr.unsafe_load[width=4](k))
+            var a_val_hi = bitcast[.int32, 1](a_ptr.unsafe_load[width=4](k + 4))
 
             comptime for col in range(tile_n):
                 var b_data_packed = b_ptr.unsafe_load[width=simd_width * 4](
                     b_offset
-                ).cast[DType.uint8]()
+                ).cast[.uint8]()
                 b_offset += simd_width * 4
 
-                var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
-                var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
+                var b_data_i4_lo = (b_data_packed & 15).cast[.int8]() - 8
+                var b_data_i4_hi = (b_data_packed >> 4).cast[.int8]() - 8
 
                 comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
 
                 b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                     b_column_sums[col],
-                    bitcast[DType.int32, simd_width](a_zero_point),
-                    bitcast[DType.int32, simd_width](b_data_i4_lo),
+                    bitcast[.int32, simd_width](a_zero_point),
+                    bitcast[.int32, simd_width](b_data_i4_lo),
                 )
                 b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                     b_column_sums[col],
-                    bitcast[DType.int32, simd_width](a_zero_point),
-                    bitcast[DType.int32, simd_width](b_data_i4_hi),
+                    bitcast[.int32, simd_width](a_zero_point),
+                    bitcast[.int32, simd_width](b_data_i4_hi),
                 )
 
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
                     SIMD[.int32, simd_width](a_val_lo),
-                    bitcast[DType.int32, simd_width](b_data_i4_lo),
+                    bitcast[.int32, simd_width](b_data_i4_lo),
                 )
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
                     SIMD[.int32, simd_width](a_val_hi),
-                    bitcast[DType.int32, simd_width](b_data_i4_hi),
+                    bitcast[.int32, simd_width](b_data_i4_hi),
                 )
 
         comptime for col in range(tile_n):
@@ -569,9 +561,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         b_ptr: ImmPointer[Int8, _],
         b_scale_ptr: ImmPointer[Float32, _],
         b_correction_ptr: ImmPointer[Int32, _],
-        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         # Initialize the integer accumulators with the zero point corrections.
         comptime for col in range(tile_n):
@@ -586,14 +578,14 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
 
         comptime for k in range(0, group_size, 4):
             comptime for col in range(tile_n):
-                var b_val = bitcast[DType.int32, simd_width](
+                var b_val = bitcast[.int32, simd_width](
                     b_ptr.unsafe_load[width=simd_width * 4](b_offset)
                 )
                 b_offset += simd_width * 4
 
                 comptime for row in range(tile_m):
                     var a_val = SIMD[.int32, simd_width](
-                        bitcast[DType.int32, 1](
+                        bitcast[.int32, 1](
                             a_ptr.unsafe_load[width=4](row * group_size + k)
                         )
                     )
@@ -640,9 +632,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         a_ptr: ImmPointer[Int8, _],
         a_scale_ptr: ImmPointer[Float32, _],
         b_ptr: ImmPointer[Int8, _],
-        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, 1, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, 1, tile_n, simd_width]()
 
         c_int32.init()
 
@@ -653,63 +645,63 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
 
         comptime for k in range(0, group_size, 8):
             var a_lo = SIMD[.int32, simd_width](
-                bitcast[DType.int32, 1](a_ptr.unsafe_load[width=4](k + 0))
+                bitcast[.int32, 1](a_ptr.unsafe_load[width=4](k + 0))
             )
             var a_hi = SIMD[.int32, simd_width](
-                bitcast[DType.int32, 1](a_ptr.unsafe_load[width=4](k + 4))
+                bitcast[.int32, 1](a_ptr.unsafe_load[width=4](k + 4))
             )
 
             comptime for col in range(tile_n):
                 var b_data_packed = b_ptr.unsafe_load[width=simd_width * 4](
                     b_offset
-                ).cast[DType.uint8]()
+                ).cast[.uint8]()
                 b_offset += simd_width * 4
 
-                var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
-                var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
+                var b_data_i4_lo = (b_data_packed & 15).cast[.int8]() - 8
+                var b_data_i4_hi = (b_data_packed >> 4).cast[.int8]() - 8
 
                 comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
 
-                var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
-                var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
-                var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
+                var a_zp = bitcast[.int32, simd_width](a_zero_point)
+                var b_lo = bitcast[.int32, simd_width](b_data_i4_lo)
+                var b_hi = bitcast[.int32, simd_width](b_data_i4_hi)
 
                 # Get the partial 16-bit dot product low and high.
                 # The full 32-bit dot product is finished in the
                 # apply_a_scale function.
-                var pdot_lo = bitcast[DType.int16, 2 * simd_width](
+                var pdot_lo = bitcast[.int16, 2 * simd_width](
                     pmaddubs(a_zp, b_lo)
                 )
-                var pdot_hi = bitcast[DType.int16, 2 * simd_width](
+                var pdot_hi = bitcast[.int16, 2 * simd_width](
                     pmaddubs(a_zp, b_hi)
                 )
-                var b_column_sum_i16 = bitcast[DType.int16, 2 * simd_width](
+                var b_column_sum_i16 = bitcast[.int16, 2 * simd_width](
                     b_column_sums[col]
                 )
                 # Add the low and high 16-bit partial dot products.
                 b_column_sum_i16 -= pdot_lo + pdot_hi
 
-                b_column_sums[col] = bitcast[DType.int32, simd_width](
+                b_column_sums[col] = bitcast[.int32, simd_width](
                     b_column_sum_i16
                 )
 
-                var si16_lo = bitcast[DType.int16, 2 * simd_width](
+                var si16_lo = bitcast[.int16, 2 * simd_width](
                     pmaddubs(a_lo, b_lo)
                 )
-                var si16_hi = bitcast[DType.int16, 2 * simd_width](
+                var si16_hi = bitcast[.int16, 2 * simd_width](
                     pmaddubs(a_hi, b_hi)
                 )
-                var ci16 = bitcast[DType.int16, 2 * simd_width](c_int32[0, col])
+                var ci16 = bitcast[.int16, 2 * simd_width](c_int32[0, col])
                 ci16 += si16_lo + si16_hi
-                c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
+                c_int32[0, col] = bitcast[.int32, simd_width](ci16)
 
         comptime for col in range(tile_n):
-            var b_column_sum_i16 = bitcast[DType.int16, 2 * simd_width](
+            var b_column_sum_i16 = bitcast[.int16, 2 * simd_width](
                 b_column_sums[col]
             )
-            var ci16 = bitcast[DType.int16, 2 * simd_width](c_int32[0, col])
+            var ci16 = bitcast[.int16, 2 * simd_width](c_int32[0, col])
             ci16 += b_column_sum_i16
-            c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
+            c_int32[0, col] = bitcast[.int32, simd_width](ci16)
 
         var b_scale_ptr = b_ptr.unsafe_bitcast[Float16]()
 
@@ -727,9 +719,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         b_ptr: ImmPointer[Int8, _],
         b_scale_ptr: ImmPointer[Float32, _],
         b_correction_ptr: ImmPointer[Int32, _],
-        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         # Initialize the integer accumulators with the zero point corrections.
         comptime for col in range(tile_n):
@@ -744,25 +736,25 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
 
         comptime for k in range(0, group_size, 4):
             comptime for col in range(tile_n):
-                var b_val = bitcast[DType.int32, simd_width](
+                var b_val = bitcast[.int32, simd_width](
                     b_ptr.unsafe_load[width=simd_width * 4](b_offset)
                 )
                 b_offset += simd_width * 4
 
                 comptime for row in range(tile_m):
                     var a_val = SIMD[.int32, simd_width](
-                        bitcast[DType.int32, 1](
+                        bitcast[.int32, 1](
                             a_ptr.unsafe_load[width=4](row * group_size + k)
                         )
                     )
-                    var si16 = bitcast[DType.int16, 2 * simd_width](
+                    var si16 = bitcast[.int16, 2 * simd_width](
                         pmaddubs(a_val, b_val)
                     )
-                    var ci16 = bitcast[DType.int16, 2 * simd_width](
+                    var ci16 = bitcast[.int16, 2 * simd_width](
                         c_int32[row, col]
                     )
                     ci16 += si16
-                    c_int32[row, col] = bitcast[DType.int32, simd_width](ci16)
+                    c_int32[row, col] = bitcast[.int32, simd_width](ci16)
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -803,9 +795,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         a_ptr: ImmPointer[Int8, _],
         a_scale_ptr: ImmPointer[Float32, _],
         b_ptr: ImmPointer[Int8, _],
-        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, 1, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, 1, tile_n, simd_width]()
 
         c_int32.init()
 
@@ -819,7 +811,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
                 comptime for col in range(tile_n):
                     var b_data_packed = b_ptr.unsafe_load[
                         width=SIMDLength(simd_width) * 4
-                    ](b_offset).cast[DType.uint8]()
+                    ](b_offset).cast[.uint8]()
                     b_offset += simd_width * 4
 
                     var b_data_i4_lo = (b_data_packed & 15).cast[
@@ -852,9 +844,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         b_ptr: ImmPointer[Int8, _],
         b_scale_ptr: ImmPointer[Float32, _],
         b_correction_ptr: ImmPointer[Int32, _],
-        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     ):
-        var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         c_int32.init()
 
@@ -921,7 +913,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         a_ptr: ImmPointer[Int8, _],
         a_scale_ptr: ImmPointer[Float32, _],
         b_ptr: ImmPointer[Int8, _],
-        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, 1, tile_n, simd_width],
     ):
         # The data layout for quantized A data is identical for the NEON dot
         # product kernel when M=1, so delegate to that implementation.
@@ -939,7 +931,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         b_ptr: ImmPointer[Int8, _],
         b_scale_ptr: ImmPointer[Float32, _],
         b_correction_ptr: ImmPointer[Int32, _],
-        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     ):
         comptime block_m = max(tile_m // 2, 1)
         var c_int32_block = _Accumulator[
@@ -980,7 +972,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
                         c_int32_block[row, col], a_tile[row], b_val
                     )
 
-        var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+        var c_int32 = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         # Swizzle 2x2 blocks to 1x4 vectors:
         # [a0 a1 b0 b1] [a2 a3 b2 b3] -> [a0 a1 a2 a3] [b0 b1 b2 b3]
@@ -1058,7 +1050,7 @@ def _matmul_qint4_m_1[
         def process_cols[tile_n: Int](n_idx: Int) {imm}:
             var n = task_n_start + n_idx * simd_width
 
-            var c_float = _Accumulator[DType.float32, 1, tile_n, simd_width]()
+            var c_float = _Accumulator[.float32, 1, tile_n, simd_width]()
 
             c_float.init()
 
@@ -1086,7 +1078,7 @@ def _matmul_qint4_m_1[
 
                 comptime for nn in range(tile_n):
                     var val = c_float[0, nn]
-                    func[DType.float32, simd_width](
+                    func[.float32, simd_width](
                         Index(0, n + nn * simd_width), val
                     )
 
@@ -1187,7 +1179,7 @@ def _matmul_qint4_m_any[
                     tile_n,
                     simd_width,
                     needs_correction=needs_correction,
-                    is_i8mm=kernel.aq_tuple_type() == DType.int64,
+                    is_i8mm=kernel.aq_tuple_type() == .int64,
                 ](
                     b_s8_buf,
                     b_ptr.unsafe_offset(
@@ -1254,7 +1246,7 @@ def _matmul_qint4_m_any[
                             comptime for mm in range(tile_m):
                                 comptime for nn in range(tile_n):
                                     var val = c_float[mm, nn]
-                                    func[DType.float32, simd_width](
+                                    func[.float32, simd_width](
                                         Index(
                                             m + mm,
                                             n + nn * simd_width,
@@ -1314,7 +1306,7 @@ def _matmul_qint4[
     var a_scale_ptr: MutPointer[
         Float32, origin_of(a_scale_base._alloc)
     ] = a_scale_base.unsafe_ptr()
-    var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var a_scale = LayoutTensor[.float32, Layout.row_major[2]()](
         a_scale_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )

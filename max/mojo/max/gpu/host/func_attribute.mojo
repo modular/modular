@@ -256,7 +256,7 @@ struct FuncAttribute(Equatable, TrivialRegisterPassable):
             A `FuncAttribute` instance with `MAX_DYNAMIC_SHARED_SIZE_BYTES` attribute type.
         """
         return FuncAttribute(
-            Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES, val.cast[DType.int32]()
+            Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES, val.cast[.int32]()
         )
 
     @always_inline

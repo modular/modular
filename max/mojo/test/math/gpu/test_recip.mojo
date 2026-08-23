@@ -41,10 +41,10 @@ def run_func[
 
 def test_recip() raises:
     with DeviceContext() as ctx:
-        run_func[DType.float64](8, 0.125, ctx)
-        run_func[DType.float32](5, 0.2, ctx)
-        run_func[DType.float16](-4, -0.25, ctx)
-        run_func[DType.bfloat16](2, 0.5, ctx)
+        run_func[.float64](8, 0.125, ctx)
+        run_func[.float32](5, 0.2, ctx)
+        run_func[.float16](-4, -0.25, ctx)
+        run_func[.bfloat16](2, 0.5, ctx)
 
 
 def main() raises:

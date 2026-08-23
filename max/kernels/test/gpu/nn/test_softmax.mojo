@@ -172,7 +172,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     for i in range(length):
         # TODO use randn when GCC Float64 -> Float16 truncation is fixed #33932
         in_host_test_ptr[i] = (
-            random_float64(1, 10).cast[DType.float32]().cast[test_type]()
+            random_float64(1, 10).cast[.float32]().cast[test_type]()
         )
         in_host_ref_ptr[i] = in_host_test_ptr[i].cast[ref_type]()
 
@@ -400,7 +400,7 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     var in_host_test = in_test.tensor[update=False]()
     var in_host_ref = in_ref.tensor[update=False]()
     for i in range(length):
-        var v = random_float64(-3, 3).cast[DType.float32]().cast[test_type]()
+        var v = random_float64(-3, 3).cast[.float32]().cast[test_type]()
         in_host_test.ptr[i] = v
         in_host_ref.ptr[i] = v.cast[ref_type]()
 
@@ -882,20 +882,16 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         test_gpu_softmax(ctx)
-        test_gpu_softmax_half[DType.bfloat16](ctx)
-        test_gpu_softmax_half[DType.float16](ctx)
-        test_gpu_softmax_warp_short_axis[DType.bfloat16, IndexList[2](12, 5)](
-            ctx
-        )
-        test_gpu_softmax_warp_short_axis[DType.float16, IndexList[2](12, 5)](
-            ctx
-        )
-        test_gpu_softmax_verify_shapes[DType.bfloat16](ctx)
-        test_gpu_softmax_verify_shapes[DType.float32](ctx)
-        test_gpu_softmax_large_vocab[DType.bfloat16](ctx)
-        test_gpu_softmax_large_vocab[DType.float32](ctx)
-        test_gpu_softmax_masked_split[DType.float32](ctx)
-        test_gpu_softmax_masked_split[DType.bfloat16](ctx)
+        test_gpu_softmax_half[.bfloat16](ctx)
+        test_gpu_softmax_half[.float16](ctx)
+        test_gpu_softmax_warp_short_axis[.bfloat16, IndexList[2](12, 5)](ctx)
+        test_gpu_softmax_warp_short_axis[.float16, IndexList[2](12, 5)](ctx)
+        test_gpu_softmax_verify_shapes[.bfloat16](ctx)
+        test_gpu_softmax_verify_shapes[.float32](ctx)
+        test_gpu_softmax_large_vocab[.bfloat16](ctx)
+        test_gpu_softmax_large_vocab[.float32](ctx)
+        test_gpu_softmax_masked_split[.float32](ctx)
+        test_gpu_softmax_masked_split[.bfloat16](ctx)
         test_gpu_logsoftmax(ctx)
         test_gpu_softmax_temperature[per_row=False](ctx)
         test_gpu_softmax_temperature[per_row=True](ctx)

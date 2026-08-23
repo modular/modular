@@ -175,8 +175,8 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](m)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](m)
+    var a_device = ctx.enqueue_create_buffer[.float32](m)
+    var b_device = ctx.enqueue_create_buffer[.float32](m)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

@@ -26,7 +26,7 @@ trait BaseT(TrivialRegisterPassable):
 @fieldwise_init
 struct ImplT(BaseT):
     @__allow_legacy_any_origin_fields
-    var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
+    var values: LayoutTensor[.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
         out self,
@@ -51,7 +51,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
 
 def trait_repro(ctx: DeviceContext) raises:
     comptime size = 5
-    var managed_buf = ManagedLayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
+    var managed_buf = ManagedLayoutTensor[.float32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
         ctx,
     )

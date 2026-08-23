@@ -40,27 +40,27 @@ comptime _PY_WRITEABLE = "WRITEABLE"
 
 def _numpy_dtype_name[dtype: DType]() -> Optional[StaticString]:
     """Returns the NumPy dtype string for `dtype`, or `None` if unsupported."""
-    if dtype == DType.int8:
+    if dtype == .int8:
         return StaticString("int8")
-    elif dtype == DType.int16:
+    elif dtype == .int16:
         return StaticString("int16")
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return StaticString("int32")
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return StaticString("int64")
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return StaticString("uint8")
-    elif dtype == DType.uint16:
+    elif dtype == .uint16:
         return StaticString("uint16")
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return StaticString("uint32")
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return StaticString("uint64")
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return StaticString("float16")
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return StaticString("float32")
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return StaticString("float64")
     else:
         return None
@@ -260,7 +260,7 @@ struct NumPyView[
     var data: Span[Scalar[Self.dtype], Self.origin]
     """The array's elements, in C order."""
 
-    var shape: DynamicCoord[DType.int, Self.rank]
+    var shape: DynamicCoord[.int, Self.rank]
     """The extent of each axis. Subscript it with a compile-time index."""
 
     def __getitem__[
@@ -355,7 +355,7 @@ def from_numpy_array[
 
     var np = Python.import_module("numpy")
     var array = np.arange(8, dtype="float64")
-    var span = from_numpy_array[DType.float64](array)
+    var span = from_numpy_array[.float64](array)
     var total = Float64(0)
     for value in span:
         total += value
@@ -431,7 +431,7 @@ def from_numpy_tensor[
 
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var view = from_numpy_tensor[DType.float64, 2](array)
+    var view = from_numpy_tensor[.float64, 2](array)
     var value = view[1, 2]          # array[1, 2]
     var flat = view.data            # the buffer as a `Span`, in C order
     ```
@@ -477,7 +477,7 @@ def from_numpy_tensor[
 
     _check_borrowable[dtype, mut](array, "from_numpy_tensor")
     var np_shape = array.shape
-    var shape = DynamicCoord[DType.int, rank]()
+    var shape = DynamicCoord[.int, rank]()
 
     comptime for i in range(rank):
         shape[i] = rebind[type_of(shape[i])](Int(py=np_shape[i]))

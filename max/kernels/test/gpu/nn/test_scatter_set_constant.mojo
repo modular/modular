@@ -20,7 +20,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     # TODO not sure why this doesn't work with Array?
     var data_stack = Array[Float32, 9](uninitialized=True)
     var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
-    var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
+    var data_ptr_gpu = ctx.enqueue_create_buffer[.float32](3 * 3)
     ctx.enqueue_copy(data_ptr_gpu, Span(data_stack))
 
     var data_gpu = TileTensor(data_ptr_gpu, row_major[3, 3]())
@@ -37,7 +37,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
     indices[3, 0] = 2
     indices[3, 1] = 0
 
-    var indices_ptr_gpu = ctx.enqueue_create_buffer[DType.int32](4 * 2)
+    var indices_ptr_gpu = ctx.enqueue_create_buffer[.int32](4 * 2)
     ctx.enqueue_copy(indices_ptr_gpu, indices._storage)
     var indices_gpu = TileTensor(indices_ptr_gpu, row_major[4, 2]())
 

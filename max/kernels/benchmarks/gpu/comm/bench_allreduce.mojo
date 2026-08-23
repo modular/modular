@@ -95,7 +95,7 @@ def bench_reduce[
     comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -148,7 +148,7 @@ def bench_reduce[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )

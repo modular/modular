@@ -23,7 +23,7 @@ def test_compile_llvm() raises:
     ](x: SIMD[dtype, size], y: SIMD[dtype, size]) -> SIMD[dtype, size]:
         return x + y
 
-    comptime func = my_add_function[DType.float32, 4]
+    comptime func = my_add_function[.float32, 4]
     assert_true("fadd" in compile_info[func, emission_kind="llvm"]())
 
 

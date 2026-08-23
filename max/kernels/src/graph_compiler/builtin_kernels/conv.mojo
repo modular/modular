@@ -72,13 +72,13 @@ struct ConvertE4M3FNToE4M3FNUZ:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float8_e4m3fnuz, rank=2, ...],
-        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        output: OutputTensor[dtype=.float8_e4m3fnuz, rank=2, ...],
+        input: InputTensor[dtype=.float8_e4m3fn, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         convert_e4m3fn_to_e4m3fnuz(
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -90,7 +90,7 @@ def convert_e4m3fn_to_e4m3fnuz_shape(
     """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
     comptime assert (
-        type_of(input).dtype == DType.float8_e4m3fn
+        type_of(input).dtype == .float8_e4m3fn
     ), "input dtype must be float8_e4m3fn"
     comptime assert type_of(input).rank == 2, "input must be rank 2"
     return rebind[IndexList[type_of(input).rank]](
@@ -118,12 +118,12 @@ struct AvgPool:
         ctx: DeviceContext,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             False,
             ctx,
         )
@@ -184,12 +184,12 @@ struct AvgPoolCeilModeTrue:
         ctx: DeviceContext,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             True,
             ctx,
         )
@@ -248,8 +248,8 @@ struct PadConstant:
 
         comptime if is_cpu[target]():
             pad_constant(
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
                 paddings_ptr,
                 constant,
             )
@@ -306,8 +306,8 @@ struct PadRepeat:
     ):
         var paddings_ptr = padding._ptr
         pad_repeat(
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
             paddings_ptr,
         )
 
@@ -341,8 +341,8 @@ struct PadReflect:
     ):
         var paddings_ptr = padding._ptr
         pad_reflect(
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
             paddings_ptr,
         )
 
@@ -451,9 +451,9 @@ struct Conv:
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         comptime filter_is_fcrs = filter_layout == "FCRS"
 
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var filter_tt = filter.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var filter_tt = filter.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
 
         comptime if is_cpu[target]():
             comptime assert (
@@ -596,9 +596,9 @@ struct Conv2dResidualAdd:
             target
         ](), "conv2d_residual_add is only supported on GPU"
 
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var filter_tt = filter.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var filter_tt = filter.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
@@ -691,10 +691,10 @@ struct ConvTranspose:
             )
 
         var stride_tuple = IndexList[
-            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+            type_of(input.to_tile_tensor[.int64]()).rank - 2
         ](0)
         var dilation_tuple = IndexList[
-            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+            type_of(input.to_tile_tensor[.int64]()).rank - 2
         ](0)
 
         comptime for i in range(input.rank - 2):
@@ -735,9 +735,9 @@ struct ConvTranspose:
                 has_epilogue_fusion,
                 output_fn,
             ](
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                filter.to_tile_tensor[.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
@@ -754,7 +754,7 @@ struct ConvTranspose:
             ), "only unpacked filter is supported on cuda gpu"
 
             var pad_tuple = IndexList[
-                type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+                type_of(input.to_tile_tensor[.int64]()).rank - 2
             ](0)
 
             comptime if input.rank == 4:
@@ -771,9 +771,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](),
             ](
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                filter.to_tile_tensor[.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,

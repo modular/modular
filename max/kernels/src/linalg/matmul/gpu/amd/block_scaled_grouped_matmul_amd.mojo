@@ -206,10 +206,10 @@ struct PreShuffledBGroupedGEMM[
         waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-        a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
-        b_pre_tensor: TileTensor[DType.uint8, LayoutBPre, ImmutAnyOrigin],
-        sfa_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-        sfb_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
+        b_pre_tensor: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
+        sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+        sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
         a_offsets: TileTensor[
             mut=False, DType.uint32, AOffsetsLayout, ImmutAnyOrigin
         ],
@@ -419,10 +419,10 @@ struct PreShuffledBGroupedGEMM[
         waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-        a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
-        b_pre_tensor: TileTensor[DType.uint8, LayoutBPre, ImmutAnyOrigin],
-        sfa_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-        sfb_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
+        b_pre_tensor: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
+        sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+        sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
         a_offsets: TileTensor[
             mut=False, DType.uint32, AOffsetsLayout, ImmutAnyOrigin
         ],
@@ -531,10 +531,10 @@ struct PreShuffledBGroupedGEMM[
         static_grid_z: Bool = False,
     ](
         c: TileTensor[mut=True, ...],
-        a: TileTensor[DType.uint8, ...],
-        b_pre: TileTensor[DType.uint8, ...],
-        a_scales: TileTensor[DType.float8_e8m0fnu, ...],
-        b_scales: TileTensor[DType.float8_e8m0fnu, ...],
+        a: TileTensor[.uint8, ...],
+        b_pre: TileTensor[.uint8, ...],
+        a_scales: TileTensor[.float8_e8m0fnu, ...],
+        b_scales: TileTensor[.float8_e8m0fnu, ...],
         a_offsets: TileTensor[
             mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
         ],
@@ -725,10 +725,10 @@ def block_scaled_grouped_matmul_amd_kernel[
     ExpertIdsLayout: TensorLayout,
 ](
     c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
-    b_tensor: TileTensor[DType.uint8, LayoutB, ImmutAnyOrigin],
-    sfa_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
+    b_tensor: TileTensor[.uint8, LayoutB, ImmutAnyOrigin],
+    sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+    sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
     a_offsets: TileTensor[
         mut=False, DType.uint32, AOffsetsLayout, ImmutAnyOrigin
     ],
@@ -842,10 +842,10 @@ def block_scaled_grouped_matmul_amd[
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[DType.uint8, ...],
-    b: TileTensor[DType.uint8, ...],
-    a_scales: TileTensor[DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    a: TileTensor[.uint8, ...],
+    b: TileTensor[.uint8, ...],
+    a_scales: TileTensor[.float8_e8m0fnu, ...],
+    b_scales: TileTensor[.float8_e8m0fnu, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -945,10 +945,10 @@ def _launch_block_scaled_grouped[
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[DType.uint8, ...],
-    b: TileTensor[DType.uint8, ...],
-    a_scales: TileTensor[DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    a: TileTensor[.uint8, ...],
+    b: TileTensor[.uint8, ...],
+    a_scales: TileTensor[.float8_e8m0fnu, ...],
+    b_scales: TileTensor[.float8_e8m0fnu, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1044,10 +1044,10 @@ def block_scaled_grouped_matmul_amd_preb[
     lane_bytes: Int = 0, fp6_format: Int = 0
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[DType.uint8, ...],
-    b_pre: TileTensor[DType.uint8, ...],
-    a_scales: TileTensor[DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    a: TileTensor[.uint8, ...],
+    b_pre: TileTensor[.uint8, ...],
+    a_scales: TileTensor[.float8_e8m0fnu, ...],
+    b_scales: TileTensor[.float8_e8m0fnu, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

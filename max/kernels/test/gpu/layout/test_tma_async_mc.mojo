@@ -101,7 +101,7 @@ def test_tma_mcast_load_kernel[
                     block_idx.x * tileN,
                     block_idx.y * tileM,
                 ),
-                multicast_mask.cast[DType.uint16](),
+                multicast_mask.cast[.uint16](),
             )
 
     barrier()
@@ -130,8 +130,8 @@ def test_tma_multicast_load_row_major[
     comptime dst_M = dst_layout.shape[0].value()
     comptime dst_N = dst_layout.shape[1].value()
 
-    var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
 
     arange(src.tensor(), 1)
     arange(dst.tensor(), 100001)
@@ -165,8 +165,8 @@ def test_tma_multicast_load_row_major[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                dst_host[m, n].cast[DType.float32](),
-                src_host[m, n % src_N].cast[DType.float32](),
+                dst_host[m, n].cast[.float32](),
+                src_host[m, n % src_N].cast[.float32](),
             )
 
     ctx.synchronize()
@@ -246,7 +246,7 @@ def test_tma_sliced_multicast_load_kernel[
             ),
             mbar[0],
             (0, slice_cord),
-            multicast_mask.cast[DType.uint16](),
+            multicast_mask.cast[.uint16](),
         )
 
     barrier()
@@ -275,8 +275,8 @@ def test_tma_sliced_multicast_load_row_major[
     comptime dst_M = dst_layout.shape[0].value()
     comptime dst_N = dst_layout.shape[1].value()
 
-    var src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+    var src = ManagedLayoutTensor[.float32, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.float32, dst_layout](ctx)
 
     arange(src.tensor(), 1)
     arange(dst.tensor(), 100001)
@@ -310,8 +310,8 @@ def test_tma_sliced_multicast_load_row_major[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                dst_host[m, n].cast[DType.float32](),
-                src_host[m, n % src_N].cast[DType.float32](),
+                dst_host[m, n].cast[.float32](),
+                src_host[m, n % src_N].cast[.float32](),
             )
 
     ctx.synchronize()

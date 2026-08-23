@@ -51,8 +51,8 @@ def slice_dim_as_view[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=DynamicCoord[DType.int64, tensor.rank].element_types,
-        stride_types=DynamicCoord[DType.int64, tensor.rank].element_types,
+        shape_types=DynamicCoord[.int64, tensor.rank].element_types,
+        stride_types=DynamicCoord[.int64, tensor.rank].element_types,
     ],
     tensor.origin,
     address_space=tensor.address_space,
@@ -122,8 +122,8 @@ def slice_as_view[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=DynamicCoord[DType.int64, tensor.rank].element_types,
-        stride_types=DynamicCoord[DType.int64, tensor.rank].element_types,
+        shape_types=DynamicCoord[.int64, tensor.rank].element_types,
+        stride_types=DynamicCoord[.int64, tensor.rank].element_types,
     ],
     tensor.origin,
     address_space=tensor.address_space,

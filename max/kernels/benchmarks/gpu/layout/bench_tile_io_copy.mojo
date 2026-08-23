@@ -363,8 +363,8 @@ def _assert_buffers_equal[
         var actual = actual_ptr.load[width=simd_size, alignment=1](i)
         var expected = expected_ptr.load[width=simd_size, alignment=1](i)
         comptime if dtype.is_float8():
-            var actual_bits = bitcast[DType.uint8, simd_size](actual)
-            var expected_bits = bitcast[DType.uint8, simd_size](expected)
+            var actual_bits = bitcast[.uint8, simd_size](actual)
+            var expected_bits = bitcast[.uint8, simd_size](expected)
             if actual_bits != expected_bits:
                 for lane in range(simd_size):
                     assert_equal(
@@ -385,8 +385,8 @@ def _assert_buffers_equal[
     while i < num_elements:
         comptime if dtype.is_float8():
             assert_equal(
-                bitcast[DType.uint8](actual_ptr[i]),
-                bitcast[DType.uint8](expected_ptr[i]),
+                bitcast[.uint8](actual_ptr[i]),
+                bitcast[.uint8](expected_ptr[i]),
                 String(label, " mismatch at element ", i),
             )
         else:

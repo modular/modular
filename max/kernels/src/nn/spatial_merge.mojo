@@ -212,7 +212,7 @@ def spatial_merge[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    grid_thw: TileTensor[DType.int64, address_space=AddressSpace.GENERIC, ...],
+    grid_thw: TileTensor[.int64, address_space=AddressSpace.GENERIC, ...],
     hidden_size: Int,
     merge_size: Int,
     ctx: DeviceContext,

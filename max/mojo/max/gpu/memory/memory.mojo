@@ -592,13 +592,13 @@ def async_copy[
         @always_inline
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:
-                return bitcast[DType.int32, 1](
+                return bitcast[.int32, 1](
                     SIMD[dtype, 4](fill, fill, fill, fill)
                 )
             elif size_of[dtype]() == 2:
-                return bitcast[DType.int32, 1](SIMD[dtype, 2](fill, fill))
+                return bitcast[.int32, 1](SIMD[dtype, 2](fill, fill))
             elif size_of[dtype]() == 4:
-                return bitcast[DType.int32](fill)
+                return bitcast[.int32](fill)
 
             return 0
 
@@ -2974,7 +2974,7 @@ def _get_multimem_ld_reduce_asm[
         128,
     ), "total bit width must be 32, 64, or 128 bits"
     comptime assert (
-        dtype != DType.float64 or count == 1
+        dtype != .float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime ss = ".global"
@@ -3041,7 +3041,7 @@ def multimem_ld_reduce[
         128,
     ), "total bit width must be 32, 64, or 128 bits"
     comptime assert (
-        dtype != DType.float64 or count == 1
+        dtype != .float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime asm = _get_multimem_ld_reduce_asm[
@@ -3168,7 +3168,7 @@ def multimem_ld_reduce[
         128,
     ), "total bit width must be 32, 64, or 128 bits"
     comptime assert (
-        dtype != DType.float64 or count == 1
+        dtype != .float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     var results = multimem_ld_reduce[
@@ -3217,7 +3217,7 @@ def _get_multimem_st_asm[
         128,
     ), "total bit width must be 32, 64, or 128 bits"
     comptime assert (
-        dtype != DType.float64 or count == 1
+        dtype != .float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime ss = ".global"
@@ -3282,12 +3282,12 @@ def multimem_st[
     %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 
     # Store 2 float32 values to multimem address.
-    multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
+    multimem_st[.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
         addr, StaticTuple[Float32, 2](val1, val2)
     )
 
     # Vector store of 4 float16x2 values.
-    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE](
+    multimem_st[.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE](
         addr.unsafe_bitcast[Float16](), StaticTuple[Float16, 4](vec1, vec2, vec3, vec4)
     )
     ```
@@ -3302,7 +3302,7 @@ def multimem_st[
         128,
     ), "total bit width must be 32, 64, or 128 bits"
     comptime assert (
-        dtype != DType.float64 or count == 1
+        dtype != .float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
     comptime asm = _get_multimem_st_asm[
@@ -3444,17 +3444,17 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if dtype == DType.float32:
+    if dtype == .float32:
         return "f32"
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return "f16"
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return "bf16"
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return "f64"
-    elif dtype == DType.float8_e4m3fn:
+    elif dtype == .float8_e4m3fn:
         return "e4m3"
-    elif dtype == DType.float8_e5m2:
+    elif dtype == .float8_e5m2:
         return "e5m2"
 
     return "unknown dtype mnemonic"

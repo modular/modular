@@ -413,7 +413,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     valid_length: TileTensor[
         DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
-    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
     output: TileTensor[
         DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
     ],
@@ -752,7 +752,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             if key < num_keys:
                 return ks_operand.block_paged_ptr[1](
                     UInt32(b), UInt32(key), UInt32(0), UInt32(0)
-                )[0].cast[DType.float32]()
+                )[0].cast[.float32]()
             return 0.0
 
         # Rotate that gather a whole key tile ahead. It is a two-hop dependent load
@@ -1172,7 +1172,7 @@ def fp8_index_score_sm100_prefill[
         mut=False, DType.uint32, ..., Storage=VLStorageType
     ],
     q_s: TileTensor[mut=False, DType.float32, ..., Storage=QSStorageType],
-    output: TileTensor[DType.float32, ..., Storage=OutStorageType],
+    output: TileTensor[.float32, ..., Storage=OutStorageType],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,

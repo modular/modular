@@ -259,7 +259,7 @@ def kernel_fp8_32x32x64_col(
 
     var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     var n_val = Float32(_fp8_b_n_for(lid)) / 32.0
-    var n_fp8 = n_val.cast[DType.float8_e4m3fn]()
+    var n_fp8 = n_val.cast[.float8_e4m3fn]()
     for elt in range(FP8_FRAG):
         b_frag[elt] = n_fp8
 
@@ -282,7 +282,7 @@ def kernel_fp8_32x32x64_row(
 
     var a_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     var m_val = Float32(_fp8_a_m_for(lid)) / 32.0
-    var m_fp8 = m_val.cast[DType.float8_e4m3fn]()
+    var m_fp8 = m_val.cast[.float8_e4m3fn]()
     for elt in range(FP8_FRAG):
         a_frag[elt] = m_fp8
 
@@ -360,7 +360,7 @@ def kernel_fp8_32x32x64(
     for elt in range(FP8_FRAG):
         var k = _fp8_b_k_for(lid, elt)
         var val = Float32((k % 8) + 1) * 0.125
-        b_frag[elt] = val.cast[DType.float8_e4m3fn]()
+        b_frag[elt] = val.cast[.float8_e4m3fn]()
 
     var c_frag = SIMD[.float32, C_FRAG](0.0)
 
@@ -385,7 +385,7 @@ def kernel_fp8_32x32x64_swap(
     for elt in range(FP8_FRAG):
         var k = _fp8_a_k_for(lid, elt)
         var val = Float32((k % 8) + 1) * 0.125
-        a_frag[elt] = val.cast[DType.float8_e4m3fn]()
+        a_frag[elt] = val.cast[.float8_e4m3fn]()
     var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](1.0)
 
     var c_frag = SIMD[.float32, C_FRAG](0.0)
@@ -406,8 +406,8 @@ def kernel_fp8_32x32x64_swap(
 def test_bf16_32x32x16(ctx: DeviceContext) raises:
     print("--- BF16 32x32x16 (gpu_mma direct) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     # Zero-init dev buffer so unwritten dump entries don't carry old state.
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
@@ -465,8 +465,8 @@ def test_bf16_32x32x16_col(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment col mapping for BF16 32x32x16."""
     print("--- BF16 32x32x16 col-pattern (validates fragment col mapping) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -520,8 +520,8 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment row mapping for BF16 32x32x16."""
     print("--- BF16 32x32x16 row-pattern (validates fragment row mapping) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -578,15 +578,15 @@ def _fp8_quantize(x: Float32) -> Float32:
     Used by the FP8 col/row validators to compute expected values that
     match what the MFMA actually sees (FP8-quantized inputs).
     """
-    return Float32(x.cast[DType.float8_e4m3fn]())
+    return Float32(x.cast[.float8_e4m3fn]())
 
 
 def test_fp8_32x32x64_col(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment col mapping for FP8 32x32x64."""
     print("--- FP8 32x32x64 col-pattern (KEY DATAPOINT for fragment col) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -644,8 +644,8 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment row mapping for FP8 32x32x64."""
     print("--- FP8 32x32x64 row-pattern (KEY DATAPOINT for fragment row) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -700,8 +700,8 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
 def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
     print("--- BF16 32x32x16 swap_a_b ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -753,8 +753,8 @@ def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
 def test_fp8_32x32x64(ctx: DeviceContext) raises:
     print("--- FP8 32x32x64 (gpu_mma direct) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -811,8 +811,8 @@ def test_fp8_32x32x64(ctx: DeviceContext) raises:
 def test_fp8_32x32x64_swap(ctx: DeviceContext) raises:
     print("--- FP8 32x32x64 swap_a_b ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)

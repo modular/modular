@@ -645,7 +645,7 @@ def twophase_reduce_kernel[
         ](accum, init_cast)
 
         # Thread 0 writes partial result for this block and signals completion.
-        var is_last_block: Scalar[DType.bool] = False
+        var is_last_block: Scalar[.bool] = False
         if thread_idx.x == 0:
             var base = block_idx.x * num_reductions
             comptime for i in range(num_reductions):
@@ -925,7 +925,7 @@ def reduce_launch[
         var partials_buf = ctx.enqueue_create_buffer[_accum_type](
             total_blocks * num_reductions
         )
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](num_rows)
+        var counter_buf = ctx.enqueue_create_buffer[.int32](num_rows)
         ctx.enqueue_memset(counter_buf, Int32(0))
 
         comptime kernel = twophase_reduce_kernel[

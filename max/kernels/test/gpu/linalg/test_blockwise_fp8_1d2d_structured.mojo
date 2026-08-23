@@ -170,19 +170,19 @@ def test_blockwise_fp8_1d2d_structured[
     var b_device_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_device_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
-    var a_scales_device_buffer = ctx.enqueue_create_buffer[DType.float32](
+    var a_scales_device_buffer = ctx.enqueue_create_buffer[.float32](
         a_scales_size
     )
-    var b_scales_device_buffer = ctx.enqueue_create_buffer[DType.float32](
+    var b_scales_device_buffer = ctx.enqueue_create_buffer[.float32](
         b_scales_size
     )
-    var expert_scales_device_buffer = ctx.enqueue_create_buffer[DType.float32](
+    var expert_scales_device_buffer = ctx.enqueue_create_buffer[.float32](
         num_experts
     )
 

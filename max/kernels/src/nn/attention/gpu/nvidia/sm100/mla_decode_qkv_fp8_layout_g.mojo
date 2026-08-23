@@ -658,10 +658,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # 4 warps acquire/commit every slot to keep the 128-thread
         # producer barrier balanced; only the owning warp writes data.
         comptime assert (
-            Self.AccumType == DType.float32
+            Self.AccumType == .float32
         ), "accumulator type should be float32"
         comptime assert (
-            Self.output_type == DType.bfloat16
+            Self.output_type == .bfloat16
         ), "output type should be bfloat16"
 
         comptime DecodeOutProducerType_LG = DecodeOutProducer[

@@ -595,9 +595,7 @@ struct TMemAccumulator[
                     n_mma=n_mma,
                 )
                 var tmem = self.tmem_addr + UInt32(tmem_offset)
-                var frag = bitcast[DType.uint32, frag_size_b32](
-                    frags[mma_id, 0]
-                )
+                var frag = bitcast[.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                 var frag_st = Array[UInt32, frag_size_b32](uninitialized=True)
 
@@ -812,7 +810,7 @@ struct TMemOperand[
 
         comptime for m_mma in range(Self.num_m_mmas):
             var tmem = self.offset[m_mma, 0]()
-            var frag = bitcast[DType.uint32, frag_size_b32](
+            var frag = bitcast[.uint32, frag_size_b32](
                 frags[m_mma].cast[Self.dtype]()
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
@@ -885,7 +883,7 @@ struct TMemOperand[
                             received_b = rb
 
                     comptime which_half = Int(m_local_src)
-                    var ab_halves = bitcast[DType.uint16, 4](
+                    var ab_halves = bitcast[.uint16, 4](
                         SIMD[.uint32, 2](received_a, received_b)
                     )
                     # ab_halves = [a_lo, a_hi, b_lo, b_hi]
@@ -893,7 +891,7 @@ struct TMemOperand[
                         ab_halves[which_half],
                         ab_halves[which_half + 2],
                     )
-                    frag_st2[s_dst] = bitcast[DType.uint32, 1](packed)
+                    frag_st2[s_dst] = bitcast[.uint32, 1](packed)
             else:
                 comptime for _i in range(frag_size_b32):
                     frag_st2[_i] = frag[_i]
@@ -1552,11 +1550,11 @@ def mha_sm100_dispatch[
     v: KVType,
     num_rows_q: Int,
     mask: MaskType,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
@@ -1808,15 +1806,15 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    valid_length: DeviceBuffer[.uint32],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
     ctx: DeviceContext,
 ) raises:
-    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[.uint32]
+    comptime KVRowOffsetsNull = NullPointer[.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -1932,7 +1930,7 @@ def _mha_sm100_valid_length_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -1940,7 +1938,7 @@ def _mha_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,
@@ -1975,7 +1973,7 @@ def _mha_sm100_valid_length_dispatch[
             ctx,
         )
     else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,

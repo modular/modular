@@ -269,7 +269,7 @@ struct And(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.and"
+        comptime assert dtype == .bool, "expected bool operands for mo.and"
         return lhs & rhs
 
 
@@ -282,7 +282,7 @@ struct Or(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
+        comptime assert dtype == .bool, "expected bool operands for mo.oor"
         return lhs | rhs
 
 
@@ -295,7 +295,7 @@ struct Xor(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
+        comptime assert dtype == .bool, "expected bool operands for mo.xor"
         return lhs ^ rhs
 
 
@@ -684,7 +684,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
-            out_dtype == DType.bool
+            out_dtype == .bool
         ), "expected bool output type for mo.is_nan"
         return rebind[SIMD[out_dtype, width]](isnan(x))
 
@@ -700,7 +700,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
-            out_dtype == DType.bool
+            out_dtype == .bool
         ), "expected bool output type for mo.is_inf"
         return rebind[SIMD[out_dtype, width]](isinf(x))
 
@@ -714,7 +714,7 @@ struct Not(ElementwiseUnaryOp):
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.not"
+        comptime assert dtype == .bool, "expected bool operands for mo.not"
         return ~x
 
 

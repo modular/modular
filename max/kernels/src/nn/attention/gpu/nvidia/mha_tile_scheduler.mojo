@@ -820,7 +820,7 @@ struct TileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)
@@ -988,7 +988,7 @@ struct QueuedTileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)

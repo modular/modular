@@ -228,29 +228,29 @@ def _dtype_to_rocshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == DType.float16:
+    comptime if dtype == .float16:
         return get_static_string[prefix, "half", suffix]()
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return get_static_string[prefix, "float", suffix]()
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return get_static_string[prefix, "double", suffix]()
-    elif dtype == DType.int8:
+    elif dtype == .int8:
         return get_static_string[prefix, "schar", suffix]()
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return get_static_string[prefix, "char", suffix]()
-    elif dtype == DType.int16:
+    elif dtype == .int16:
         return get_static_string[prefix, "short", suffix]()
-    elif dtype == DType.uint16:
+    elif dtype == .uint16:
         return get_static_string[prefix, "ushort", suffix]()
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return get_static_string[prefix, "int", suffix]()
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return get_static_string[prefix, "uint", suffix]()
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return get_static_string[prefix, "long", suffix]()
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return get_static_string[prefix, "ulong", suffix]()
-    elif dtype == DType.int:
+    elif dtype == .int:
         return get_static_string[prefix, "longlong", suffix]()
     else:
         CompilationTarget.unsupported_target_error[

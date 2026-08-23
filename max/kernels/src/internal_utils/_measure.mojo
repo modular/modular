@@ -76,7 +76,7 @@ def kl_div[
 
 
 def kl_div[
-    dtype: DType, //, out_type: DType = DType.float64
+    dtype: DType, //, out_type: DType = .float64
 ](
     x: UnsafePointer[mut=False, Scalar[dtype], _],
     y: UnsafePointer[mut=False, Scalar[dtype], _],
@@ -270,12 +270,12 @@ def relative_difference[
     var size = len
 
     for idx in range(len):
-        var ui = output[idx].cast[DType.float64]()
-        var vi = ref_out[idx].cast[DType.float64]()
+        var ui = output[idx].cast[.float64]()
+        var vi = ref_out[idx].cast[.float64]()
 
-        sum_abs_diff += abs(ui - vi).cast[DType.float64]()
+        sum_abs_diff += abs(ui - vi).cast[.float64]()
 
-        sum_abs_ref += abs(vi).cast[DType.float64]()
+        sum_abs_ref += abs(vi).cast[.float64]()
 
     var mean_abs_diff = sum_abs_diff / Float64(size)
     var mean_abs_ref = sum_abs_ref / Float64(size)

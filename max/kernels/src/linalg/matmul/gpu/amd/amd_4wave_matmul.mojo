@@ -1924,10 +1924,8 @@ struct AMD4WaveMatmul[
                         comptime if has_residual:
                             var skip = prefetched[
                                 m_mma * num_n_mmas + n_mma
-                            ].cast[DType.float32]()
-                            var fused_f32 = (
-                                v.cast[DType.float32]() + beta * skip
-                            )
+                            ].cast[.float32]()
+                            var fused_f32 = v.cast[.float32]() + beta * skip
                             v = fused_f32.cast[Self.c_type]()
                         c_writer.store(v, m=m_dram, n=n_global)
 
@@ -2020,9 +2018,7 @@ def structured_4wave_matmul[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type.is_float8()
-        or a_type == DType.bfloat16
-        or a_type == DType.float16
+        a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
     ), "4-wave supports float8_e4m3fn, bfloat16, or float16"
 
     # MMA K-dim selection: FP8 uses MFMA 16x16x128; bf16/fp16 use MFMA

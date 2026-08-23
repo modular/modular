@@ -226,7 +226,7 @@ def test[
 def main() raises:
     comptime dtype = DType.float32
 
-    test[DType.float32, False](  # dtype, filter_packed
+    test[.float32, False](  # dtype, filter_packed
         1,  # N: batch size
         IndexList[3](4, 4, 4),  # DHW: depth, height, width
         2,  # C: channels

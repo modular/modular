@@ -946,6 +946,6 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
 
 
 def main() raises:
-    test_flash_attention[DType.float32]()
-    test_flash_attention_split_kv[DType.float32]()
-    test_flash_attention_with_sinks[DType.float32]()
+    test_flash_attention[.float32]()
+    test_flash_attention_split_kv[.float32]()
+    test_flash_attention_with_sinks[.float32]()

@@ -338,13 +338,13 @@ struct BlockScaledMmaOp[
         comptime assert (
             Self.num_n_mmas <= 4
         ), "num_n_mmas must be <= 4 for packed scales"
-        self._a_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[.float32, AddressSpace.LOCAL](
             Self._c_reg_layout
         )
         _ = self._c_reg.fill(Float32(0))
@@ -686,9 +686,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            a_packed = a_packed | bitcast[DType.int32](
-                byte_val << UInt32(m_mma * 8)
-            )
+            a_packed = a_packed | bitcast[.int32](byte_val << UInt32(m_mma * 8))
         self._a_scale_packed.raw_store(k_tile_idx, a_packed)
 
         var b_packed = Int32(0)
@@ -706,9 +704,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            b_packed = b_packed | bitcast[DType.int32](
-                byte_val << UInt32(n_mma * 8)
-            )
+            b_packed = b_packed | bitcast[.int32](byte_val << UInt32(n_mma * 8))
         self._b_scale_packed.raw_store(k_tile_idx, b_packed)
 
     @always_inline
@@ -867,10 +863,10 @@ struct BlockScaledMatmulAMD[
         num_splits: Int = 1,
     ](
         c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
-        b: TileTensor[DType.uint8, b_layout, ImmutAnyOrigin],
-        sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
+        b: TileTensor[.uint8, b_layout, ImmutAnyOrigin],
+        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
+        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
     ):
         """MXFP4 block-scaled GEMM kernel with SMEM pipeline.
 
@@ -967,18 +963,18 @@ struct BlockScaledMatmulAMD[
 
         # === SMEM tiles (row-major allocation; access is conditionally
         # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
-        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.BM, A_BK_BYTES]()
         )
-        var b_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var b_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.BN, B_BK_BYTES]()
         )
 
         comptime scales_per_mma = Self.scales_per_mma
-        var sfa_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var sfa_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.BM, scales_per_mma * num_k_tiles]()
         )
-        var sfb_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var sfb_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.BN, scales_per_mma * num_k_tiles]()
         )
 
@@ -1015,21 +1011,21 @@ struct BlockScaledMatmulAMD[
 
         # Register buffers for DRAM loads (one per matrix). Sized per
         # matrix so BM != BN works.
-        var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             row_major[1, a_reg_elems]()
         )
-        var b_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var b_load_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             row_major[1, b_reg_elems]()
         )
 
         # RegTileLoader wraps each block-row in an AMD buffer resource
         # descriptor. `bounds_from=a_gmem` clamps OOB buffer_load_dwordx4
         # reads to zero at the hardware level (no fault, no garbage).
-        var a_loader = RegTileLoader[DType.uint8, load_layout](
+        var a_loader = RegTileLoader[.uint8, load_layout](
             a_blockrow,
             bounds_from=a_gmem,
         )
-        var b_loader = RegTileLoader[DType.uint8, b_load_layout](
+        var b_loader = RegTileLoader[.uint8, b_load_layout](
             b_blockrow,
             bounds_from=b_gmem,
         )

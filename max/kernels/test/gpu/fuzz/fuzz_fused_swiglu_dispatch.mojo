@@ -144,14 +144,10 @@ def run_one_case(
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
 
     # Offsets sized at the comptime num_experts upper bound; tail padded.
-    var a_off_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_experts + 1
-    )
-    var a_sc_off_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_experts
-    )
-    var eids_host = ctx.enqueue_create_host_buffer[DType.int32](num_experts)
-    var escale_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
+    var a_off_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var a_sc_off_host = ctx.enqueue_create_host_buffer[.uint32](num_experts)
+    var eids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var escale_host = ctx.enqueue_create_host_buffer[.float32](num_experts)
     for i in range(num_experts):
         escale_host[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -232,10 +228,10 @@ def run_one_case(
     var b_dev = ctx.enqueue_create_buffer[a_type](num_experts * N * K)
     var a_scales_dev = ctx.enqueue_create_buffer[scales_dtype](a_scales_total)
     var b_scales_dev = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
-    var a_off_dev = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var a_sc_off_dev = ctx.enqueue_create_buffer[DType.uint32](num_experts)
-    var eids_dev = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var escale_dev = ctx.enqueue_create_buffer[DType.float32](num_experts)
+    var a_off_dev = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var a_sc_off_dev = ctx.enqueue_create_buffer[.uint32](num_experts)
+    var eids_dev = ctx.enqueue_create_buffer[.int32](num_experts)
+    var escale_dev = ctx.enqueue_create_buffer[.float32](num_experts)
     var c_ref_dev = ctx.enqueue_create_buffer[c_type](M * N)
     var o_ref_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
     var o_test_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
@@ -385,18 +381,14 @@ def run_one_case(
 
         var o_mismatch = 0
         for i in range(M * H):
-            var rb = bitcast[DType.uint8, 1](SIMD[fp8_dtype, 1](o_ref_h[i]))[0]
-            var tb = bitcast[DType.uint8, 1](SIMD[fp8_dtype, 1](o_test_h[i]))[0]
+            var rb = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](o_ref_h[i]))[0]
+            var tb = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](o_test_h[i]))[0]
             if rb != tb:
                 o_mismatch += 1
         var s_mismatch = 0
         for i in range(s_size):
-            var rb = bitcast[DType.uint8, 1](SIMD[scales_dtype, 1](s_ref_h[i]))[
-                0
-            ]
-            var tb = bitcast[DType.uint8, 1](
-                SIMD[scales_dtype, 1](s_test_h[i])
-            )[0]
+            var rb = bitcast[.uint8, 1](SIMD[scales_dtype, 1](s_ref_h[i]))[0]
+            var tb = bitcast[.uint8, 1](SIMD[scales_dtype, 1](s_test_h[i]))[0]
             if rb != tb:
                 s_mismatch += 1
         if o_mismatch != 0 or s_mismatch != 0:

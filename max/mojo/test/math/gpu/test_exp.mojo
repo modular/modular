@@ -63,7 +63,7 @@ def run_elementwise[
                 in_host[i],
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_almost_equal(
                     out_host[i],
                     exp(in_host[i]),
@@ -83,9 +83,9 @@ def run_elementwise[
 
 def test_exp() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float16](ctx)
-        run_elementwise[DType.bfloat16](ctx)
-        run_elementwise[DType.float32](ctx)
+        run_elementwise[.float16](ctx)
+        run_elementwise[.bfloat16](ctx)
+        run_elementwise[.float32](ctx)
 
 
 def main() raises:

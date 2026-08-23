@@ -51,7 +51,7 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ) raises:
     # TODO(KERN-2666): float32 + depth=256 exceeds shared memory on H100/B200.
-    comptime if dtype == DType.float32 and kv_params.head_size == 256:
+    comptime if dtype == .float32 and kv_params.head_size == 256:
         return
 
     comptime page_size = get_defined_int["page_size", 256]()
@@ -197,11 +197,11 @@ def execute_ragged_flash_attention[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_runtime_layout, ctx
     )
-    var lookup_table = ManagedLayoutTensor[DType.uint32, lookup_table_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, lookup_table_layout](
         lookup_table_runtime_layout,
         ctx,
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_runtime_layout,
         ctx,
     )

@@ -377,8 +377,8 @@ struct Shuffler[E: Int]:
         RawLayout: TensorLayout,
         DstLayout: TensorLayout,
     ](
-        raw: TileTensor[DType.uint8, RawLayout, ImmutAnyOrigin],
-        dst: TileTensor[DType.uint8, DstLayout, MutAnyOrigin],
+        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin],
+        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin],
     ):
         """LDS-staged per-tile B 5D preshuffle on AMD GPU.
 
@@ -431,7 +431,7 @@ struct Shuffler[E: Int]:
         ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
 
         # LDS staging: 16 NLane × 4 KLane atoms in their literal slot.
-        var smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.MFMA_MN_LANES, Self.MFMA_K_BYTES]()
         )
         var smem_atoms = smem.vectorize[1, Self.MFMA_LANE_BYTES]()
@@ -629,8 +629,8 @@ struct Shuffler[E: Int]:
         K_SCALES: Int,
         SrcLayout: TensorLayout,
     ](
-        src: TileTensor[DType.uint8, SrcLayout, MutAnyOrigin],
-        mut dst: HostBuffer[DType.uint8],
+        src: TileTensor[.uint8, SrcLayout, MutAnyOrigin],
+        mut dst: HostBuffer[.uint8],
     ):
         # shuffles the scale layout on CPU, and pads the layout
         # to align the scales with the atom
@@ -683,9 +683,9 @@ struct Shuffler[E: Int]:
         DstLayout: TensorLayout,
         AOffsetsLayout: TensorLayout,
     ](
-        sfa_raw: TileTensor[DType.uint8, SrcLayout, ImmutAnyOrigin],
+        sfa_raw: TileTensor[.uint8, SrcLayout, ImmutAnyOrigin],
         sfa_pre: TileTensor[mut=True, DType.uint8, DstLayout, MutAnyOrigin],
-        a_offsets: TileTensor[DType.uint32, AOffsetsLayout, ImmutAnyOrigin],
+        a_offsets: TileTensor[.uint32, AOffsetsLayout, ImmutAnyOrigin],
         num_active_experts: Int32,
         max_padded_M: Int32,
         total_wg: Int32,
@@ -778,7 +778,7 @@ struct Shuffler[E: Int]:
                     K_SCALES=K_SCALES, packed_mode=True
                 ](expert_slot, cell_mn_base, cell_k_base, _max_padded_M)
                 var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[Int32]()
-                dst_ptr[0] = bitcast[DType.int32, 1](cell_bytes)[0]
+                dst_ptr[0] = bitcast[.int32, 1](cell_bytes)[0]
 
                 target_tile += _total_wg
 

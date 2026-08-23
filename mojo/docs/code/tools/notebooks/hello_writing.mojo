@@ -18,14 +18,14 @@ comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
 
-def kernel(value: Pointer[Scalar[DType.int32], MutAnyOrigin]):
+def kernel(value: Pointer[Scalar[.int32], MutAnyOrigin]):
     value[unsafe_offset=0] = `✅`
 
 
 def main() raises:
     with DeviceContext() as ctx:
         # Build it
-        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        var out = ctx.enqueue_create_buffer[.int32](1)
         out.enqueue_fill(`❌`)
 
         # Run it

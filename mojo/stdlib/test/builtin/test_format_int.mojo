@@ -16,14 +16,14 @@ from std.testing import assert_equal, TestSuite
 
 
 def test_format_int() raises:
-    assert_equal(_format_int[DType.int](123), "123")
-    assert_equal(_format_int[DType.int, radix=2](4), "100")
-    assert_equal(_format_int[DType.int, radix=2](255), "11111111")
-    assert_equal(_format_int[DType.int, radix=2](254), "11111110")
-    assert_equal(_format_int[DType.int, radix=36](255), "73")
+    assert_equal(_format_int[.int](123), "123")
+    assert_equal(_format_int[.int, radix=2](4), "100")
+    assert_equal(_format_int[.int, radix=2](255), "11111111")
+    assert_equal(_format_int[.int, radix=2](254), "11111110")
+    assert_equal(_format_int[.int, radix=36](255), "73")
 
-    assert_equal(_format_int[DType.int, radix=10](-123), "-123")
-    assert_equal(_format_int[DType.int, radix=10](-999_999_999), "-999999999")
+    assert_equal(_format_int[.int, radix=10](-123), "-123")
+    assert_equal(_format_int[.int, radix=10](-999_999_999), "-999999999")
 
     # i64
     assert_equal(_format_int[radix=10](Int64.MAX_FINITE), "9223372036854775807")
@@ -87,7 +87,7 @@ def test_hex() raises:
     assert_equal(hex(Int32(45)), "0x2d")
     assert_equal(hex(Int8(2)), "0x2")
     assert_equal(hex(Int8(-2)), "-0x2")
-    assert_equal(hex(Scalar[DType.bool](True)), "0x1")
+    assert_equal(hex(Scalar[.bool](True)), "0x1")
     assert_equal(hex(False), "0x0")
 
 
@@ -101,8 +101,8 @@ def test_bin_scalar() raises:
     assert_equal(bin(Int8(2)), "0b10")
     assert_equal(bin(Int32(123)), "0b1111011")
     assert_equal(bin(Int32(-123)), "-0b1111011")
-    assert_equal(bin(Scalar[DType.bool](True)), "0b1")
-    assert_equal(bin(Scalar[DType.bool](False)), "0b0")
+    assert_equal(bin(Scalar[.bool](True)), "0b1")
+    assert_equal(bin(Scalar[.bool](False)), "0b0")
 
 
 def test_bin_int() raises:
@@ -124,8 +124,8 @@ def test_oct_scalar() raises:
     assert_equal(oct(Int32(234)), "0o352")
     assert_equal(oct(Int32(-23)), "-0o27")
     assert_equal(oct(Int32(0)), "0o0")
-    assert_equal(oct(Scalar[DType.bool](True)), "0o1")
-    assert_equal(oct(Scalar[DType.bool](False)), "0o0")
+    assert_equal(oct(Scalar[.bool](True)), "0o1")
+    assert_equal(oct(Scalar[.bool](False)), "0o0")
 
 
 def test_oct_int() raises:
@@ -161,9 +161,9 @@ def test_different_prefix() raises:
     assert_equal(hex(Ind(), prefix="I'mAnIndexer!"), "I'mAnIndexer!1")
     assert_equal(oct(Ind(), prefix="I'mAnIndexer!"), "I'mAnIndexer!1")
 
-    assert_equal(bin(Scalar[DType.bool](True), prefix="test"), "test1")
-    assert_equal(hex(Scalar[DType.bool](True), prefix="test"), "test1")
-    assert_equal(oct(Scalar[DType.bool](True), prefix="test"), "test1")
+    assert_equal(bin(Scalar[.bool](True), prefix="test"), "test1")
+    assert_equal(hex(Scalar[.bool](True), prefix="test"), "test1")
+    assert_equal(oct(Scalar[.bool](True), prefix="test"), "test1")
 
 
 def main() raises:

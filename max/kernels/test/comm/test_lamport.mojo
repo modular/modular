@@ -180,14 +180,14 @@ def run_all_for[dtype: DType, width: Int]() raises:
 
 def main() raises:
     # 16-bit dtypes: 128-bit pack == 8 lanes; also exercise width 4.
-    run_all_for[DType.bfloat16, 4]()
-    run_all_for[DType.bfloat16, 8]()
-    run_all_for[DType.float16, 4]()
-    run_all_for[DType.float16, 8]()
+    run_all_for[.bfloat16, 4]()
+    run_all_for[.bfloat16, 8]()
+    run_all_for[.float16, 4]()
+    run_all_for[.float16, 8]()
 
     # 32-bit dtype: 128-bit pack == 4 lanes; also exercise width 8.
-    run_all_for[DType.float32, 4]()
-    run_all_for[DType.float32, 8]()
+    run_all_for[.float32, 4]()
+    run_all_for[.float32, 8]()
 
     test_lamport_generation()
 

@@ -232,7 +232,7 @@ def dispatch_im2col_matmul_conv2d[
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
 
     if num_groups != 1:
@@ -480,7 +480,7 @@ def dispatch_fused_im2col_conv2d_apple[
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
 
     if num_groups != 1:

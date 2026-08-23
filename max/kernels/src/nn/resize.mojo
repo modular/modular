@@ -89,7 +89,7 @@ def coord_transform[
         # note: resized image will have same corners as original image
         return (
             out_coord_f32
-            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[DType.float32]()
+            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[.float32]()
         )
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale

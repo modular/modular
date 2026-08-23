@@ -27,10 +27,10 @@ def mma_sync_16x8x32_E4M3():
 
     _printf["thread %d : %g %g %g %g\n"](
         thread_idx.x,
-        d[0].cast[DType.float64](),
-        d[1].cast[DType.float64](),
-        d[2].cast[DType.float64](),
-        d[3].cast[DType.float64](),
+        d[0].cast[.float64](),
+        d[1].cast[.float64](),
+        d[2].cast[.float64](),
+        d[3].cast[.float64](),
     )
 
 
@@ -53,10 +53,10 @@ def mma_sync_16x8x32_E4M2():
 
     _printf["thread %d : %g %g %g %g\n"](
         thread_idx.x,
-        d[0].cast[DType.float64](),
-        d[1].cast[DType.float64](),
-        d[2].cast[DType.float64](),
-        d[3].cast[DType.float64](),
+        d[0].cast[.float64](),
+        d[1].cast[.float64](),
+        d[2].cast[.float64](),
+        d[3].cast[.float64](),
     )
 
 

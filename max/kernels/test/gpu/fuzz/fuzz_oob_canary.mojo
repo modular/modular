@@ -74,7 +74,7 @@ def gen_specs(n: Int) -> List[CanarySpec]:
 
 def run_one_case(ctx: DeviceContext, spec: CanarySpec) raises:
     var n = spec.num_elems
-    var dst = ctx.enqueue_create_buffer[DType.float32](n)
+    var dst = ctx.enqueue_create_buffer[.float32](n)
     ctx.enqueue_function[canary_kernel](
         dst,
         Int32(n),

@@ -550,7 +550,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         if warp_idx < 4:
             warpgroup_reg_alloc[num_reg_softmax]()
 
-            var attn_sink_log2 = Float32(min_or_neg_inf[DType.float32]())
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F

@@ -347,7 +347,7 @@ def mla_combine_kernel[
     # and track whether any split is empty (LSE=-inf) for the fast-path
     # check.
     var local_lse = Array[Float32, num_lse_per_thread](
-        fill=min_or_neg_inf[DType.float32]()
+        fill=min_or_neg_inf[.float32]()
     )
 
     comptime for k in range(num_lse_per_thread):
@@ -368,7 +368,7 @@ def mla_combine_kernel[
     var max_lse = warp.max(thread_max)
 
     # set max_lse to 0 if all LSEs are -inf
-    if max_lse == min_or_neg_inf[DType.float32]():
+    if max_lse == min_or_neg_inf[.float32]():
         max_lse = 0.0
 
     # Compute sum of exp2(lse - max_lse) with thread-local accumulation
@@ -406,7 +406,7 @@ def mla_combine_kernel[
             # No tokens attended (all splits empty): output depends on
             # attn_sink alone. If attn_sink is -inf, output is zero
             # (global_lse = +inf makes all scales 0).
-            if attn_sink_val == min_or_neg_inf[DType.float32]():
+            if attn_sink_val == min_or_neg_inf[.float32]():
                 global_lse = Float32.MAX  # +inf => output = 0
             else:
                 global_lse = attn_sink_log2_val
@@ -433,7 +433,7 @@ def mla_combine_kernel[
         var is_valid = SIMD[.bool, vec_size](fill=lse_scale != Float32(0))
 
         comptime for i in range(elems_per_thread):
-            var data_f32 = datas[i].cast[DType.float32]()
+            var data_f32 = datas[i].cast[.float32]()
             var clean_data = is_valid.select(
                 data_f32,
                 SIMD[.float32, vec_size](0),
@@ -670,7 +670,7 @@ def mla_combine_kernel_split_parallel[
     wait_on_dependent_grids()
 
     comptime NUM_WARPS = 8
-    comptime NEG_INF = min_or_neg_inf[DType.float32]()
+    comptime NEG_INF = min_or_neg_inf[.float32]()
 
     # Each warp covers the full head_dim.
     # 32 lanes * vec_size * elems_per_thread = head_dim

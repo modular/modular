@@ -163,7 +163,7 @@ def main() raises:
         var ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
+        var host_buffer = ctx.enqueue_create_host_buffer[.float32](
             num_elements
         )
 
@@ -175,7 +175,7 @@ def main() raises:
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        var device_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var device_buffer = ctx.enqueue_create_buffer[.float32](
             num_elements
         )
 
@@ -504,7 +504,7 @@ that conform to the `DevicePassable` trait.
 :::note Int and UInt are not device passable
 
 `Int` and `UInt` are the one exception to the `SIMD` row above. They're aliases
-for `Scalar[DType.int]` and `Scalar[DType.uint]`, but their width depends on the
+for `Scalar[.int]` and `Scalar[.uint]`, but their width depends on the
 target device, so passing either one to a kernel function is a compile-time
 error. Use a fixed-width type such as `Int32` or `Int64` instead:
 
@@ -554,7 +554,7 @@ size of the buffer as a run-time argument. So to create a buffer for 1,024
 would execute:
 
 ```mojo
-var device_buffer = ctx.enqueue_create_buffer[DType.float32](1024)
+var device_buffer = ctx.enqueue_create_buffer[.float32](1024)
 ```
 
 As the method name implies, this method is asynchronous and enqueues the
@@ -582,7 +582,7 @@ method to ensure that the operation has completed before you write to or read
 from the `HostBuffer` object.
 
 ```mojo
-var device_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+var device_buffer = ctx.enqueue_create_host_buffer[.float32](1024)
 
 # Synchronize to wait until buffer is created before attempting to write to it
 ctx.synchronize()
@@ -646,7 +646,7 @@ For example:
 var ctx = DeviceContext()
 var length = 1024
 
-var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+var input_device = ctx.enqueue_create_buffer[.float32](length)
 
 # Initialize the input
 
@@ -662,8 +662,8 @@ bidirectional copies and synchronization. The example above is equivalent to:
 var ctx = DeviceContext()
 var length = 1024
 
-var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+var input_device = ctx.enqueue_create_buffer[.float32](length)
+var input_host = ctx.enqueue_create_host_buffer[.float32](length)
 
 input_device.enqueue_copy_to(input_host)
 ctx.synchronize()

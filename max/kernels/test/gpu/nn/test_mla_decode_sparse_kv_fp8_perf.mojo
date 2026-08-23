@@ -101,7 +101,7 @@ def bench_sparse_kv_fp8[
     # (one identity-ordered topk list shared by every q position).
     shared_index: Bool = False,
     # Output dtype defaults to BF16; pass q_type explicitly for non-FP8 callers.
-    output_type: DType = DType.bfloat16,
+    output_type: DType = .bfloat16,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -148,9 +148,7 @@ def bench_sparse_kv_fp8[
 
     # Identity page table: gather scatter comes from token indices already.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         for p in range(max_pages_per_batch):
@@ -158,17 +156,13 @@ def bench_sparse_kv_fp8[
                 page_offset + p
             )
         page_offset += max_pages_per_batch
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     # Q: zeros (timing-independent).
@@ -182,7 +176,7 @@ def bench_sparse_kv_fp8[
     # Per-query-token topk indices: deterministic permutation, in
     # physical form block_id * PAGE_SIZE + tok_in_page (identity LUT).
     var total_indices = total_q_tokens * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     var mult = _coprime_multiplier(num_keys)
     for bi in range(batch_size):
         for s in range(q_max_seq_len):
@@ -203,7 +197,7 @@ def bench_sparse_kv_fp8[
                 h_indices[g * topk + i] = Int32(
                     block_id * PAGE_SIZE + tok_in_page
                 )
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
     ctx.synchronize()
 
@@ -215,12 +209,12 @@ def bench_sparse_kv_fp8[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -266,14 +260,12 @@ def bench_sparse_kv_fp8[
         row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
     var row_offsets_tt = TileTensor(

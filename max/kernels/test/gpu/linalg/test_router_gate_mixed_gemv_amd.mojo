@@ -67,20 +67,20 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var rows = m if m > 0 else 1
     var c_elems = rows * static_N + GUARD_ELEMS
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](rows * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float32](static_N * K)
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](c_elems)
-    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](c_elems)
+    var a_host = ctx.enqueue_create_host_buffer[.bfloat16](rows * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](static_N * K)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
+    var c_expected = ctx.enqueue_create_host_buffer[.float32](c_elems)
 
     for i in range(rows * K):
-        a_host[i] = random_float64(min=-1.0, max=1.0).cast[DType.bfloat16]()
+        a_host[i] = random_float64(min=-1.0, max=1.0).cast[.bfloat16]()
     randn(b_host.unsafe_ptr(), static_N * K)
     for i in range(c_elems):
         c_host[i] = SENTINEL
 
-    var a_dev = ctx.enqueue_create_buffer[DType.bfloat16](rows * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.float32](static_N * K)
-    var c_dev = ctx.enqueue_create_buffer[DType.float32](c_elems)
+    var a_dev = ctx.enqueue_create_buffer[.bfloat16](rows * K)
+    var b_dev = ctx.enqueue_create_buffer[.float32](static_N * K)
+    var c_dev = ctx.enqueue_create_buffer[.float32](c_elems)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(c_dev, c_host)
@@ -113,8 +113,7 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
             var acc = Float32(0)
             for kk in range(K):
                 acc += (
-                    a_host[row * K + kk].cast[DType.float32]()
-                    * b_host[col * K + kk]
+                    a_host[row * K + kk].cast[.float32]() * b_host[col * K + kk]
                 )
             c_expected[row * static_N + col] = acc
 

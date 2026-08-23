@@ -54,13 +54,13 @@ def _cast_f32_to_fp8_raw[
     P→PV cast where softmax output is in (0, 1].
     """
     comptime assert (
-        src_dtype == DType.float32
+        src_dtype == .float32
     ), "_cast_f32_to_fp8_raw source dtype must be float32."
     comptime assert (
         size % 4 == 0
     ), "_cast_f32_to_fp8_raw requires size divisible by 4."
     comptime assert (
-        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+        dtype == .float8_e4m3fn or dtype == .float8_e5m2
     ), "_cast_f32_to_fp8_raw requires E4M3FN or E5M2 destination dtype."
 
     var f32_src = rebind[SIMD[.float32, size]](src)

@@ -49,7 +49,7 @@ def test_block_scaled_nvfp4_cublaslt[
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled NVFP4 matmul"
 
-    comptime assert in_dtype == DType.float4_e2m1fn and out_dtype in (
+    comptime assert in_dtype == .float4_e2m1fn and out_dtype in (
         DType.float32,
         DType.bfloat16,
     ), (

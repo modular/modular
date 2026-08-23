@@ -69,7 +69,7 @@ struct PreshuffledBLoader[
     @always_inline
     def __init__(
         out self,
-        b_gmem_tile: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        b_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
     ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
@@ -112,9 +112,7 @@ struct PreshuffledBLoader[
                 ](0, n, k_byte)
             )
             frag = frag.insert[offset=p * 16](
-                self.bc.load[DType.uint8, pb, cache_policy=Self.cache_policy](
-                    off
-                )
+                self.bc.load[.uint8, pb, cache_policy=Self.cache_policy](off)
             )
         return frag
 
@@ -138,7 +136,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     @always_inline
     def __init__(
         out self,
-        scale_gmem_tile: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        scale_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
     ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 
@@ -171,5 +169,5 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
                 K_SCALES=Self.K_SCALES, packed_mode=True
             ](mn, k_scale)
         )
-        var v = self.bc.load[DType.uint8, 4](byte_off)
-        return bitcast[DType.int32, 1](v)[0]
+        var v = self.bc.load[.uint8, 4](byte_off)
+        return bitcast[.int32, 1](v)[0]

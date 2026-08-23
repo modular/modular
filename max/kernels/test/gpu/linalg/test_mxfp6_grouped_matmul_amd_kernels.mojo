@@ -78,23 +78,23 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 # ===----------------------------------------------------------------------=== #
 
 
-def _fill_random_bytes(buf: HostBuffer[DType.uint8], n: Int):
+def _fill_random_bytes(buf: HostBuffer[.uint8], n: Int):
     """Every 6-bit code is a finite number in both FP6 encodings, so random
     bytes need no NaN/Inf filtering."""
     for i in range(n):
         buf[i] = UInt8(random_ui64(0, 255))
 
 
-def _fill_random_e8m0(buf: HostBuffer[DType.float8_e8m0fnu], n: Int):
+def _fill_random_e8m0(buf: HostBuffer[.float8_e8m0fnu], n: Int):
     """Scales clamped to E8M0 byte range [125..129] = magnitudes [0.25..4],
     keeping f32 accumulators in range while still exercising scale-dequant."""
     for i in range(n):
-        buf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
+        buf[i] = bitcast[.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
 ):
@@ -191,14 +191,14 @@ def _per_expert_reference[
 ](
     ctx: DeviceContext,
     num_active: Int,
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
-    a_dev: DeviceBuffer[DType.uint8],
-    b_dev: DeviceBuffer[DType.uint8],
-    a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    mut c_ref_dev: DeviceBuffer[DType.float32],
-    mut mag_dev: DeviceBuffer[DType.float32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
+    a_dev: DeviceBuffer[.uint8],
+    b_dev: DeviceBuffer[.uint8],
+    a_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    b_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    mut c_ref_dev: DeviceBuffer[.float32],
+    mut mag_dev: DeviceBuffer[.float32],
 ) raises:
     comptime K_BYTES = (K * 6) // 8
     comptime scale_K = K // MXFP6_SF_VECTOR_SIZE
@@ -301,20 +301,16 @@ def _run_preb[
     )
 
     # Host buffers + random init.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * K_BYTES
-    )
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * K_BYTES
-    )
-    var a_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * K_BYTES)
+    var a_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var eid_h = ctx.enqueue_create_host_buffer[DType.int32](num_active)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var eid_h = ctx.enqueue_create_host_buffer[.int32](num_active)
     ctx.synchronize()
 
     _fill_random_bytes(a_h, total_tokens * K_BYTES)
@@ -330,28 +326,26 @@ def _run_preb[
     var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * K_BYTES)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * K_BYTES
-    )
-    var a_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_d = ctx.enqueue_create_buffer[.uint8](total_tokens * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var a_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var a_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * max_padded_M * scale_K
     )
-    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var b_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * N * scale_K
     )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var eid_d = ctx.enqueue_create_buffer[DType.int32](num_active)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var mag_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var eid_d = ctx.enqueue_create_buffer[.int32](num_active)
+    var c_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var mag_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
 
     # Inactive slots (M=0 or expert_id=-1) leave their output range unwritten
     # by both the kernel and the reference, so both sides need a known value.
@@ -413,7 +407,7 @@ def _run_preb[
 
     # CPU preshuffle of B-scales — static weights, done once at session.load in
     # production; the existing helper takes comptime MN, which for B is N.
-    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * scale_K
     )
     ctx.synchronize()
@@ -512,11 +506,9 @@ def _run_preb[
         )
     ctx.synchronize()
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
-    var mag_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
+    var c_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var mag_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.enqueue_copy(mag_h, mag_d)

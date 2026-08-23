@@ -132,54 +132,54 @@ def run_group_norm_cpu[
 
 def main() raises:
     # Basic shapes, rank 3 and 4.
-    run_group_norm_cpu[DType.float32](Index(2, 8, 2, 2), num_groups=4)
-    run_group_norm_cpu[DType.float32](Index(2, 8, 4), num_groups=4)
-    run_group_norm_cpu[DType.float32](Index(2, 32, 2, 2), num_groups=8)
-    run_group_norm_cpu[DType.float32](Index(2, 32, 4), num_groups=8)
+    run_group_norm_cpu[.float32](Index(2, 8, 2, 2), num_groups=4)
+    run_group_norm_cpu[.float32](Index(2, 8, 4), num_groups=4)
+    run_group_norm_cpu[.float32](Index(2, 32, 2, 2), num_groups=8)
+    run_group_norm_cpu[.float32](Index(2, 32, 4), num_groups=8)
 
     # Group boundary not aligned with spatial-simd boundaries (only matters
     # for the GPU kernel's SIMD path; exercised here for CPU coverage too).
-    run_group_norm_cpu[DType.float32](Index(2, 32, 1, 10), num_groups=8)
+    run_group_norm_cpu[.float32](Index(2, 32, 1, 10), num_groups=8)
 
     # Larger column counts.
-    run_group_norm_cpu[DType.float32](Index(1, 128, 1, 64), num_groups=8)
-    run_group_norm_cpu[DType.float32](Index(1, 128, 64), num_groups=8)
-    run_group_norm_cpu[DType.float32](Index(1, 64, 1, 64), num_groups=8)
-    run_group_norm_cpu[DType.float32](Index(1, 64, 64), num_groups=8)
+    run_group_norm_cpu[.float32](Index(1, 128, 1, 64), num_groups=8)
+    run_group_norm_cpu[.float32](Index(1, 128, 64), num_groups=8)
+    run_group_norm_cpu[.float32](Index(1, 64, 1, 64), num_groups=8)
+    run_group_norm_cpu[.float32](Index(1, 64, 64), num_groups=8)
 
     # Trivial spatial=1 (all channels collapsed to one dimension).
-    run_group_norm_cpu[DType.float32](Index(2, 128, 1, 1), num_groups=1)
-    run_group_norm_cpu[DType.float32](Index(2, 128, 1), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 128, 1, 1), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 128, 1), num_groups=1)
 
     # Odd column counts (no SIMD-alignment requirement on CPU).
-    run_group_norm_cpu[DType.float32](Index(2, 33, 1, 1), num_groups=1)
-    run_group_norm_cpu[DType.float32](Index(2, 33, 1), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 33, 1, 1), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 33, 1), num_groups=1)
 
     # One-channel, one-group (channels_per_group=1).
-    run_group_norm_cpu[DType.float32](Index(2, 1, 4, 8), num_groups=1)
-    run_group_norm_cpu[DType.float32](Index(2, 1, 32), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 1, 4, 8), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 1, 32), num_groups=1)
 
     # Edge case from group norm layer tests.
-    run_group_norm_cpu[DType.float32](Index(2, 2, 4, 4), num_groups=1)
-    run_group_norm_cpu[DType.float32](Index(2, 2, 16), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 2, 4, 4), num_groups=1)
+    run_group_norm_cpu[.float32](Index(2, 2, 16), num_groups=1)
 
     # Zero-spatial input: the FLUX.2 VAE encoder is invoked unconditionally
     # on a ``(0, 0, 3)`` placeholder image for text-to-image, and every
     # ``GroupNorm`` inside the encoder sees a ``(B, C, 0, 0)`` tensor. The
     # kernel must early-return rather than dividing by a zero group size.
-    run_group_norm_cpu[DType.float32](Index(1, 128, 0, 0), num_groups=32)
-    run_group_norm_cpu[DType.bfloat16](Index(1, 128, 0, 0), num_groups=32)
+    run_group_norm_cpu[.float32](Index(1, 128, 0, 0), num_groups=32)
+    run_group_norm_cpu[.bfloat16](Index(1, 128, 0, 0), num_groups=32)
 
     # bfloat16 coverage, larger group sizes. Tolerances are relaxed because
     # the test reference uses a two-pass variance formula (E[X^2]-E[X]^2)
     # while the kernel uses Welford, which diverge more at bfloat16
     # precision (mirrors the GPU test's multi-block tolerance choice).
-    run_group_norm_cpu[DType.bfloat16](
+    run_group_norm_cpu[.bfloat16](
         Index(1, 128, 8, 8), num_groups=32, rtol=1e-2, atol=1e-2
     )
-    run_group_norm_cpu[DType.bfloat16](
+    run_group_norm_cpu[.bfloat16](
         Index(2, 256, 4, 4), num_groups=32, rtol=1e-2, atol=1e-2
     )
-    run_group_norm_cpu[DType.bfloat16](
+    run_group_norm_cpu[.bfloat16](
         Index(1, 128, 64), num_groups=32, rtol=1e-2, atol=1e-2
     )

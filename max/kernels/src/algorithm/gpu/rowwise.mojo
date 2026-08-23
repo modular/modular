@@ -1073,13 +1073,13 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
     """Block-per-row kernel: one block per row, grid-strided over rows."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         # `body` borrowed + copied (not consumed) so the launch's dispatch
         # closures can construct the kernel without moving out of a
@@ -1111,13 +1111,13 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     grid-strided over row groups."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         self.body = body
         self.shape = shape
@@ -1154,13 +1154,13 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
     Grid-strided over output tiles."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         self.body = body
         self.shape = shape
@@ -1211,7 +1211,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     without seeing the split-K plumbing."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var counters: UnsafePointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
@@ -1220,7 +1220,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         counters: UnsafePointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
@@ -1272,7 +1272,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
@@ -1281,7 +1281,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         num_splits: Int32,
         phase: Int32,
@@ -1566,7 +1566,7 @@ def launch[
             # write phase needs no slot of its own). No memset — slot
             # [row, reduce, split] is written in its reduce's partial phase
             # before any combine reads it.
-            var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
+            var partials_buf = ctx.enqueue_create_buffer[.uint8](
                 num_rows * (num_phases - 1) * num_splits * _SPLITK_STATE_BYTES
             )
             var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[
@@ -1716,10 +1716,10 @@ def launch[
                 )
             var total_blocks = num_rows * blocks_per_row
 
-            var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
+            var partials_buf = ctx.enqueue_create_buffer[.uint8](
                 total_blocks * _SPLITK_STATE_BYTES
             )
-            var counters_buf = ctx.enqueue_create_buffer[DType.int32](num_rows)
+            var counters_buf = ctx.enqueue_create_buffer[.int32](num_rows)
             ctx.enqueue_memset(counters_buf, Int32(0))
 
             var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[

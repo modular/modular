@@ -108,7 +108,7 @@ struct MyIntMemory(Movable):
 @extensibility.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
-    def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
+    def execute(x: InputTensor[dtype=.int32, rank=1, ...]) -> MyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
@@ -120,7 +120,7 @@ struct MyIntReg(TrivialRegisterPassable):
 @extensibility.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
-    def execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
+    def execute(x: InputTensor[dtype=.int32, rank=1, ...]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 

@@ -699,9 +699,9 @@ def warp_specialized_matmul[
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](
-    a_tt: TileTensor[DType.bfloat16, ...],
-    b_tt: TileTensor[DType.bfloat16, ...],
-    c_tt: TileTensor[DType.float32, ...],
+    a_tt: TileTensor[.bfloat16, ...],
+    b_tt: TileTensor[.bfloat16, ...],
+    c_tt: TileTensor[.float32, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueues the warp-specialized matrix multiplication kernel onto the device.

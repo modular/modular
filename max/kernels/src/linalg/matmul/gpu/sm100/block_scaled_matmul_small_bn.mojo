@@ -1396,7 +1396,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var _sfb_n_stride = Int(sfb_n_stride)
     var _sfb_k_tiles = Int(sfb_k_tiles)
     var _sfb_n_total = Int(sfb_n_total)
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4

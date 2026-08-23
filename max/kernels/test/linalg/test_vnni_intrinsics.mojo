@@ -195,8 +195,8 @@ def test_i16_to_i32() raises:
             c_golden[i] = c_start[i]
 
             comptime for j in range(2):
-                var a_val = a[i * 2 + j].cast[DType.int32]()
-                var b_val = b[i * 2 + j].cast[DType.int32]()
+                var a_val = a[i * 2 + j].cast[.int32]()
+                var b_val = b[i * 2 + j].cast[.int32]()
                 c_golden[i] += a_val * b_val
 
         var c_avx2 = dot_i16_to_i32_AVX2(c_start, a, b)

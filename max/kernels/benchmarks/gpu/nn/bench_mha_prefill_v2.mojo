@@ -98,7 +98,7 @@ def run_mha_prefill_v2[
         v_size, simd_size, ctx, cache_busting
     )
     # Output is FP32 per MhaPrefillV2.attend_ker signature.
-    var cb_o = CacheBustingBuffer[DType.float32](
+    var cb_o = CacheBustingBuffer[.float32](
         o_size, simd_size, ctx, cache_busting
     )
 
@@ -114,7 +114,7 @@ def run_mha_prefill_v2[
     cb_k.init_on_device(random_distribution, ctx)
     cb_v.init_on_device(random_distribution, ctx)
 
-    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
+    comptime assert qkv_type == .bfloat16, "MhaPrefillV2 is BF16-only"
 
     comptime _config = MhaConfigV2(
         q_block_size=_Q_BLOCK_SIZE,

@@ -79,11 +79,11 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Device allocation
-    var d_rowIdx_buf = ctx.enqueue_create_buffer[DType.uint32](numNonzeros)
-    var d_colIdx_buf = ctx.enqueue_create_buffer[DType.uint32](numNonzeros)
-    var d_value_buf = ctx.enqueue_create_buffer[DType.float32](numNonzeros)
-    var d_x_buf = ctx.enqueue_create_buffer[DType.float32](cols)
-    var d_y_buf = ctx.enqueue_create_buffer[DType.float32](rows)
+    var d_rowIdx_buf = ctx.enqueue_create_buffer[.uint32](numNonzeros)
+    var d_colIdx_buf = ctx.enqueue_create_buffer[.uint32](numNonzeros)
+    var d_value_buf = ctx.enqueue_create_buffer[.float32](numNonzeros)
+    var d_x_buf = ctx.enqueue_create_buffer[.float32](cols)
+    var d_y_buf = ctx.enqueue_create_buffer[.float32](rows)
 
     # Copy to device
     ctx.enqueue_copy(d_rowIdx_buf, h_rowIdx_ptr)

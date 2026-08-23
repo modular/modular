@@ -173,7 +173,7 @@ def bench_shape[
     iro_host[batch_size] = UInt32(total_seq)
     var max_ctx = max_seq
 
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
@@ -185,7 +185,7 @@ def bench_shape[
     )
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
@@ -204,7 +204,7 @@ def bench_shape[
         for p in range(pages):
             lut_host[b * lut_cols + p] = UInt32(block_counter)
             block_counter += 1
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size * lut_cols)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
     var lut_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout.row_major[2]()
@@ -226,12 +226,10 @@ def bench_shape[
     # E8M0 has no zero encoding, so a `CacheBustingBuffer` of it trips an
     # APFloat assertion in the compiler; hold the scale bytes as uint8 and
     # reinterpret them at the tensor seam instead.
-    var cb_asf = CacheBustingBuffer[DType.uint8](
+    var cb_asf = CacheBustingBuffer[.uint8](
         total_seq * k_scales, simd_size, ctx
     )
-    var cb_bsf = CacheBustingBuffer[DType.uint8](
-        n_total * k_scales, simd_size, ctx
-    )
+    var cb_bsf = CacheBustingBuffer[.uint8](n_total * k_scales, simd_size, ctx)
     cb_hs.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_w.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_asf.init_on_device(InitializationType.uniform_distribution, ctx)
@@ -446,7 +444,7 @@ def bench_shape[
                 IndexList[2](total_seq, k_scales)
             ),
         )
-        var hs_tt = lt_to_tt(hs).bitcast[DType.uint8]()
+        var hs_tt = lt_to_tt(hs).bitcast[.uint8]()
         var asf_tt = lt_to_tt(asf)
 
         # Q band: the only wide one (N=2048); the rest are N=128.
@@ -486,7 +484,7 @@ def bench_shape[
             block_scaled_matmul_amd[lane_bytes=32](
                 lt_to_tt(c),
                 hs_tt,
-                lt_to_tt(w).bitcast[DType.uint8](),
+                lt_to_tt(w).bitcast[.uint8](),
                 asf_tt,
                 lt_to_tt(bsf),
                 ctx,

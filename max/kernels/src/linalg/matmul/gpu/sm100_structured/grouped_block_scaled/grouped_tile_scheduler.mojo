@@ -621,7 +621,7 @@ struct GroupedCLCWorkIterator[
         """
         var response_ptr = self.clc_response + self.consumer_state.index()
         # Read the 128-bit response and extract linear_idx (first 32 bits)
-        var response = response_ptr[].cast[DType.uint32]()
+        var response = response_ptr[].cast[.uint32]()
         return response
         # Note: The working kernel uses inline assembly here, but for simplicity
         # we just cast the UInt128 to UInt32 to get the first component

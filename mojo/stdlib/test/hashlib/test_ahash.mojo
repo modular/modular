@@ -215,7 +215,7 @@ def test_hash_simd_values() raises:
     assert_equal(hash(Float32(1)), 7268380206556411294)
     assert_equal(hash(Float64(1)), 1824371972732385641)
 
-    assert_equal(hash(Scalar[DType.bool](True)), 7121024052126637824)
+    assert_equal(hash(Scalar[.bool](True)), 7121024052126637824)
     assert_equal(hash(Int8(1)), 7121024052126637824)
     assert_equal(hash(Int16(1)), 7121024052126637824)
     assert_equal(hash(Int32(1)), 7121024052126637824)

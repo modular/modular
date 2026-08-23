@@ -76,12 +76,12 @@ struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
 struct DevicePointerAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
     DevicePassable, ImplicitlyCopyable
 ):
-    var dp: DevicePointer[DType.float32, Self.origin]
+    var dp: DevicePointer[.float32, Self.origin]
     var sentinel: Int32
 
     def __init__(
         out self,
-        var dp: DevicePointer[DType.float32, Self.origin],
+        var dp: DevicePointer[.float32, Self.origin],
         sentinel: Int32,
     ):
         self.dp = dp
@@ -144,7 +144,7 @@ def test_kernel_receives_encoded_pointer_and_sibling() raises:
     var ctx = create_test_device_context()
     comptime expected: Int32 = 0x1234
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](1)
+    var buf = ctx.enqueue_create_buffer[.float32](1)
     buf.enqueue_fill(Float32(-1))
 
     var arg = DevicePointerAndSentinel(buf.device_ptr(), expected)
@@ -161,7 +161,7 @@ def test_kernel_reinterpret_first_bytes_as_unsafe_pointer() raises:
     var ctx = create_test_device_context()
     comptime expected: Int32 = 0xC0DE
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](1)
+    var buf = ctx.enqueue_create_buffer[.float32](1)
     buf.enqueue_fill(Float32(-1))
 
     var arg = DevicePointerAndSentinel(buf.device_ptr(), expected)

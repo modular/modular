@@ -426,7 +426,7 @@ struct MLAPrefillSparseQKVFP8[
                     nums[g * 16 + sub * 4 + 2],
                     nums[g * 16 + sub * 4 + 3],
                 )
-                packed[sub] = bitcast[DType.uint32, 1](f4.cast[FP8_TYPE]())
+                packed[sub] = bitcast[.uint32, 1](f4.cast[FP8_TYPE]())
             st_shared_v4_b32(p_half_smem, phys, packed)
 
     # ------------------------------------------------------------------
@@ -731,8 +731,8 @@ struct MLAPrefillSparseQKVFP8[
         o_tma_op: TMATensorTile[
             Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
+        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -1268,7 +1268,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime MAX_INIT_VAL = Float32(-1e30)
         var mi: Float32 = MAX_INIT_VAL
         var li: Float32 = 0.0
-        var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+        var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
         var scale_log2e = scale * Float32(log2e)
         comptime P_PER_THREAD = Self.B_TOPK // 2
@@ -1318,10 +1318,10 @@ struct MLAPrefillSparseQKVFP8[
                 comptime bit_idx = i % 8
                 var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                 if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                    p[i] = Float32(min_or_neg_inf[DType.float32]())
+                    p[i] = Float32(min_or_neg_inf[.float32]())
             _ = k_valid_free_ptr[cur_buf].arrive()
 
-            var cur_pi_max: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
             comptime for i in range(P_PER_THREAD):
                 cur_pi_max = max(cur_pi_max, p[i])
             cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -1334,7 +1334,7 @@ struct MLAPrefillSparseQKVFP8[
             )
             real_mi = max(real_mi, cur_pi_max)
 
-            var should_scale_o = warp.vote[DType.uint32](
+            var should_scale_o = warp.vote[.uint32](
                 cur_pi_max - mi > Float32(-Self.RESCALE_THRESHOLD)
             ) != UInt32(0)
 
@@ -1438,9 +1438,9 @@ struct MLAPrefillSparseQKVFP8[
             else:
                 _ = so_ready_ptr[cur_buf].arrive()
 
-        if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+        if real_mi == Float32(min_or_neg_inf[.float32]()):
             li = 0.0
-            mi = Float32(min_or_neg_inf[DType.float32]())
+            mi = Float32(min_or_neg_inf[.float32]())
 
         rowwise_sum_ptr[idx_in_wg] = li
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -1472,7 +1472,7 @@ struct MLAPrefillSparseQKVFP8[
         else:
             output_scale = 1.0 / li
 
-        var have_valid_indices = warp.vote[DType.uint32](
+        var have_valid_indices = warp.vote[.uint32](
             li != Float32(0.0)
         ) != UInt32(0)
         if not have_valid_indices:
@@ -1563,7 +1563,7 @@ def mla_prefill_sparse_qkv_fp8[
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

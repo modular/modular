@@ -93,7 +93,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
     comptime assert (
         a_scales_type == b_scales_type

@@ -287,7 +287,7 @@ def TopKMaskLogitsKernel[
                                 Idx[0],
                                 i * block_size * vec_size + tx * vec_size,
                             ),
-                        ).cast[DType.float32]()
+                        ).cast[.float32]()
 
                     var probs_gt_pivot_0_count = SIMD[.int32, vec_size]()
                     var probs_gt_pivot_1_count = SIMD[.int32, vec_size]()
@@ -353,7 +353,7 @@ def TopKMaskLogitsKernel[
                         Idx[0],
                         i * block_size * vec_size + tx * vec_size,
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
             logits_vec = (logits_vec.gt(pivot)).select(logits_vec, Float32.MIN)
 
@@ -973,7 +973,7 @@ def TopKSamplingFromProbKernel[
                     if (i * block_size + tx) * vec_size < _d:
                         probs_vec = probs_row.load[width=vec_size](
                             (Idx[0], ((i * block_size + tx) * vec_size))
-                        ).cast[DType.float32]()
+                        ).cast[.float32]()
 
                     var result = device_sampling_from_prob[
                         vec_size, block_size, dtype, deterministic
@@ -1023,15 +1023,15 @@ def TopKSamplingFromProbKernel[
                 var pivot_1 = (pivot_0 + high) / 2.0
 
                 # Accumulate thread-local value counts across all chunks.
-                var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-                var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+                var thread_vc_0_total = ValueCount[.float32](0.0, 0)
+                var thread_vc_1_total = ValueCount[.float32](0.0, 0)
 
                 for i in range(ceildiv(_d, block_size * vec_size)):
                     probs_vec = 0
                     if (i * block_size + tx) * vec_size < _d:
                         probs_vec = probs_row.load[width=vec_size](
                             (Idx[0], ((i * block_size + tx) * vec_size))
-                        ).cast[DType.float32]()
+                        ).cast[.float32]()
 
                     var probs_gt_pivot_0_values = SIMD[
                         DType.float32, vec_size
@@ -1065,11 +1065,11 @@ def TopKSamplingFromProbKernel[
                         ) else Int32(0)
 
                     # Accumulate thread-local (no block reduction per chunk).
-                    thread_vc_0_total += ValueCount[DType.float32](
+                    thread_vc_0_total += ValueCount[.float32](
                         probs_gt_pivot_0_values.reduce_add(),
                         probs_gt_pivot_0_counts.reduce_add(),
                     )
-                    thread_vc_1_total += ValueCount[DType.float32](
+                    thread_vc_1_total += ValueCount[.float32](
                         probs_gt_pivot_1_values.reduce_add(),
                         probs_gt_pivot_1_counts.reduce_add(),
                     )
@@ -1488,7 +1488,7 @@ def TopKTopPSamplingFromProbKernel[
     deterministic: Bool,
     from_logits: Bool = False,
     emit_dist: Bool = False,
-    dist_dtype: DType = DType.float32,
+    dist_dtype: DType = .float32,
     ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
     OutputStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -1648,7 +1648,7 @@ def TopKTopPSamplingFromProbKernel[
             for i in range(tx, _d // vec_size, block_size):
                 var v = probs_row.load[width=vec_size](
                     (Idx[0], i * vec_size)
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 thread_max = max(thread_max, v.reduce_max())
             row_max = block.max[block_size=block_size, broadcast=True](
                 thread_max
@@ -1662,7 +1662,7 @@ def TopKTopPSamplingFromProbKernel[
             for i in range(tx, _d // vec_size, block_size):
                 var v = probs_row.load[width=vec_size](
                     (Idx[0], i * vec_size)
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 var e = exp((v - row_max) * inv_temp)
                 thread_sum += e.reduce_add()
                 comptime if emit_dist:
@@ -1882,8 +1882,8 @@ def TopKTopPSamplingFromProbKernel[
                 var pivot_1 = (pivot_0 + high) / 2.0
 
                 # Accumulate thread-local value counts across all chunks.
-                var thread_vc_0_total = ValueCount[DType.float32](0.0, 0)
-                var thread_vc_1_total = ValueCount[DType.float32](0.0, 0)
+                var thread_vc_0_total = ValueCount[.float32](0.0, 0)
+                var thread_vc_1_total = ValueCount[.float32](0.0, 0)
 
                 for i in range(ceildiv(_d, block_size * vec_size)):
                     probs_vec = 0
@@ -1921,11 +1921,11 @@ def TopKTopPSamplingFromProbKernel[
                         ) else Int32(0)
 
                     # Accumulate thread-local (no block reduction per chunk).
-                    thread_vc_0_total += ValueCount[DType.float32](
+                    thread_vc_0_total += ValueCount[.float32](
                         probs_gt_pivot_0_values.reduce_add(),
                         probs_gt_pivot_0_counts.reduce_add(),
                     )
-                    thread_vc_1_total += ValueCount[DType.float32](
+                    thread_vc_1_total += ValueCount[.float32](
                         probs_gt_pivot_1_values.reduce_add(),
                         probs_gt_pivot_1_counts.reduce_add(),
                     )
@@ -2019,7 +2019,7 @@ def topk_topp_sampling_from_prob[
     block_size: Int = 1024,
     from_logits: Bool = False,
     emit_dist: Bool = False,
-    dist_dtype: DType = DType.float32,
+    dist_dtype: DType = .float32,
     DistLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64, Int64].element_types,
         stride_types=Coord[Int64, ComptimeInt[1]].element_types,
@@ -2417,7 +2417,7 @@ def topk_softmax_sample_kernel[
                                 Idx[0],
                                 i * block_size * vec_size + tx * vec_size,
                             )
-                        ).cast[DType.float32]()
+                        ).cast[.float32]()
 
                     var probs_gt_pivot_0_count = SIMD[.int32, vec_size]()
                     var probs_gt_pivot_1_count = SIMD[.int32, vec_size]()
@@ -2563,10 +2563,10 @@ def topk_softmax_sample[
         TileTensor[out_idx_type, TopKArrLayoutType, MutUntrackedOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, MutUntrackedOrigin]
+        TileTensor[.float32, TemperatureLayoutType, MutUntrackedOrigin]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, MutUntrackedOrigin]
+        TileTensor[.uint64, SeedLayoutType, MutUntrackedOrigin]
     ] = None,
 ) raises:
     """Samples token indices from top-K logits using softmax probabilities.
@@ -2792,8 +2792,8 @@ def TopKTopPMaskedProbsKernel[
         comptime for j in range(vec_size):
             if e[j] > 0:
                 thread_pos += 1
-    var total = _block_reduce_value_count[DType.float32, broadcast=True](
-        ValueCount[DType.float32](thread_sum, thread_pos)
+    var total = _block_reduce_value_count[.float32, broadcast=True](
+        ValueCount[.float32](thread_sum, thread_pos)
     )
     var z = total.value
     var p_eff = p * z
@@ -2836,17 +2836,17 @@ def topk_topp_masked_probs[
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[DType.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
-        TileTensor[DType.int64, TopKArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.int64, TopKArrLayoutType, ImmutAnyOrigin]
     ] = None,
     top_p_arr: Optional[
-        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TopPArrLayoutType, ImmutAnyOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Computes per-row top-k/top-p masked softmax, one block per row.

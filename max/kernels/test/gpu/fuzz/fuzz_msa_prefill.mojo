@@ -347,30 +347,24 @@ def run_one_case(
     var v_op = LayoutTensorMHAOperand(v_tt.as_immut().as_unsafe_any_origin())
 
     # --- q2k + cu_seqlens to device (the run is pure-device) ------------------
-    var q2k_h = ctx.enqueue_create_host_buffer[DType.int32](
-        head_kv * total_q * topk
-    )
-    var cuq_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
-    var cuk_h = ctx.enqueue_create_host_buffer[DType.int32](batch + 1)
+    var q2k_h = ctx.enqueue_create_host_buffer[.int32](head_kv * total_q * topk)
+    var cuq_h = ctx.enqueue_create_host_buffer[.int32](batch + 1)
+    var cuk_h = ctx.enqueue_create_host_buffer[.int32](batch + 1)
     ctx.synchronize()
     for i in range(head_kv * total_q * topk):
         q2k_h[i] = q2k[i]
     for i in range(batch + 1):
         cuq_h[i] = cu_q[i]
         cuk_h[i] = cu_k[i]
-    var q2k_dev = ctx.enqueue_create_buffer[DType.int32](
-        head_kv * total_q * topk
-    )
-    var cuq_dev = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-    var cuk_dev = ctx.enqueue_create_buffer[DType.int32](batch + 1)
+    var q2k_dev = ctx.enqueue_create_buffer[.int32](head_kv * total_q * topk)
+    var cuq_dev = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var cuk_dev = ctx.enqueue_create_buffer[.int32](batch + 1)
     ctx.enqueue_copy(q2k_dev, q2k_h)
     ctx.enqueue_copy(cuq_dev, cuq_h)
     ctx.enqueue_copy(cuk_dev, cuk_h)
 
     var o_dev = ctx.enqueue_create_buffer[out_dtype](q_size)
-    var lse_dev = ctx.enqueue_create_buffer[DType.float32](
-        total_q * num_q_heads
-    )
+    var lse_dev = ctx.enqueue_create_buffer[.float32](total_q * num_q_heads)
 
     # === Kernel under test: plan (host, once) + pure-device run ===============
     comptime config = MHAConfig[dtype](num_q_heads, head_dim)
@@ -422,7 +416,7 @@ def run_one_case(
 
         # NaN/Inf guard (a degenerate softmax should never go non-finite here).
         for i in range(q_size):
-            var x = o_host[i].cast[DType.float32]()
+            var x = o_host[i].cast[.float32]()
             if isnan(x) or isinf(x):
                 print("FUZZ_NUMERIC_FAIL kind=naninf idx=", i, "val=", x)
                 raise Error("MSA prefill output NaN/Inf")
@@ -434,14 +428,14 @@ def run_one_case(
         var v_f64 = List[Float64](length=kv_size, fill=Float64(0))
         var max_abs_v = Float64(0)  # feeds the derived fp8 atol below
         for i in range(q_size):
-            q_f64[i] = q_host[i].cast[DType.float64]()
+            q_f64[i] = q_host[i].cast[.float64]()
         for tok in range(total_k):
             for kh in range(head_kv):
                 for d in range(head_dim):
                     var src = (tok * head_kv + kh) * head_dim + d
                     var dst = (kh * total_k + tok) * head_dim + d
-                    k_f64[dst] = k_host[src].cast[DType.float64]()
-                    v_f64[dst] = v_host[src].cast[DType.float64]()
+                    k_f64[dst] = k_host[src].cast[.float64]()
+                    v_f64[dst] = v_host[src].cast[.float64]()
                     max_abs_v = max(max_abs_v, abs(v_f64[dst]))
 
         var o_ref = _blocksparse_oracle(
@@ -473,7 +467,7 @@ def run_one_case(
         var sq_ref = Float64(0)
         var n_bad = 0
         for i in range(q_size):
-            var got = o_host[i].cast[DType.float64]()
+            var got = o_host[i].cast[.float64]()
             var oref = o_ref[i]
             var ad = abs(got - oref)
             max_abs = max(max_abs, ad)

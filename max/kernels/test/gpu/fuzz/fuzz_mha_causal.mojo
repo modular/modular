@@ -191,11 +191,9 @@ def run_one_case(
 
     # `valid_lengths` is a 1-element [num_seqs=1] uint32 tensor, kept alive on
     # `vl_dev` across the launches (so a finding is the real OOB, not a UAF).
-    var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
+    var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(spec.valid_length))
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
-        vl_dev.unsafe_ptr()
-    )
+    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx)
@@ -285,11 +283,9 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         o_dev, row_major((batch_size, seq_len, Idx[num_heads], Idx[depth]))
     )
 
-    var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
+    var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
-        vl_dev.unsafe_ptr()
-    )
+    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
     var mask = CausalPaddingMask(vl)
     var np = Optional[Int](2)  # force split-K
 
@@ -366,11 +362,9 @@ def run_determinism_case(
         v_dev, row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth]))
     )
 
-    var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
+    var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
-        vl_dev.unsafe_ptr()
-    )
+    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
     var mask = CausalPaddingMask(vl)
 
     # Distinct output buffers so reruns do not serialize on one buffer (WAW)
@@ -486,7 +480,7 @@ def _run_mha_composition(
 
     # valid_lengths: the probe attends to all keys (full); fillers get varied
     # lengths (they exercise different masking but are not compared).
-    var vl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch_size)
+    var vl_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     vl_host[0] = UInt32(num_keys)
     if batch_size > 1:
         seed(filler_seed ^ 0x5A5A5A5A)
@@ -497,7 +491,7 @@ def _run_mha_composition(
     var k_dev = ctx.enqueue_create_buffer[qkv_type](kv_size)
     var v_dev = ctx.enqueue_create_buffer[qkv_type](kv_size)
     var o_dev = ctx.enqueue_create_buffer[qkv_type](q_size)
-    var vl_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var vl_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(q_dev, q_host)
     ctx.enqueue_copy(k_dev, k_host)
     ctx.enqueue_copy(v_dev, v_host)
@@ -517,7 +511,7 @@ def _run_mha_composition(
     )
     # Runtime-sized [batch_size] valid_lengths (mask indexes valid_lengths[b]).
     comptime vl_layout = Layout(UNKNOWN_VALUE)
-    var vl = LayoutTensor[DType.uint32, vl_layout](
+    var vl = LayoutTensor[.uint32, vl_layout](
         vl_dev.unsafe_ptr(),
         RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)),
     )

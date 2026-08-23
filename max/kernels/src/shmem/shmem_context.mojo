@@ -71,7 +71,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
 
     ```mojo
     def simple_shift(ctx: SHMEMContext) raises:
-        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+        var destination = ctx.enqueue_create_buffer[.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
             destination, grid_dim=1, block_dim=1

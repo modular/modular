@@ -29,7 +29,7 @@ comptime logger = Logger()
 struct UseSplitkReductionScheme:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         comptime split_k_reduction_scheme = get_defined_int[
             "SPLITK_REDUCTION_SCHEME", 2
@@ -41,7 +41,7 @@ struct UseSplitkReductionScheme:
 struct UseLogger:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         logger.error("I'm a custom Mojo function!")
         output[0] = Int32(logger.level._value)

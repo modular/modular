@@ -383,7 +383,7 @@ def init_vector_gpu[
             values = SIMD[dtype, 4](rng.step_uniform())
 
         elif dtype.is_unsigned():
-            values = (rng.step() & Scalar[dtype].MAX.cast[DType.uint32]()).cast[
+            values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
                 dtype
             ]()
         else:
@@ -450,9 +450,9 @@ def _init_block_scaled_scales_gpu[
     # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
     var rng = Random(offset=UInt64(tid))
 
-    comptime if dtype == DType.float8_e8m0fnu:
+    comptime if dtype == .float8_e8m0fnu:
         var rand_floats = rng.step_uniform() * 4
-        var rand_u8 = rand_floats.cast[DType.uint8]() & 3
+        var rand_u8 = rand_floats.cast[.uint8]() & 3
         var values = bitcast[dtype, 4](rand_u8 + 127)
         apply(values)
     else:

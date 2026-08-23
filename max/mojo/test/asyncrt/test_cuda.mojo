@@ -168,11 +168,11 @@ $L__BB0_2:
     comptime LEN = 1024
     comptime BLOCK_DIM = 32
 
-    var lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var lhs = ctx.enqueue_create_buffer[.float32](LEN)
     lhs.enqueue_fill(2.0)
-    var rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var rhs = ctx.enqueue_create_buffer[.float32](LEN)
     rhs.enqueue_fill(1.0)
-    var out = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out = ctx.enqueue_create_buffer[.float32](LEN)
 
     var func = ctx.load_function[vec_add_sig](
         function_name="_Z9vectorAddPKfS0_Pfi",
@@ -292,8 +292,8 @@ $L__BB1_2:
         function_name="kernel_b", asm=ptx
     )
 
-    var out_a = ctx.enqueue_create_buffer[DType.float32](LEN)
-    var out_b = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out_a = ctx.enqueue_create_buffer[.float32](LEN)
+    var out_b = ctx.enqueue_create_buffer[.float32](LEN)
 
     ctx.enqueue_function(
         func_a,

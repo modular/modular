@@ -65,7 +65,7 @@ def _argmaxmin_vec_update[
     the lowest index wins a tie. NaN never compares greater and is therefore
     ignored, matching `TopK_2.insert`.
     """
-    comptime lane_offsets = iota[DType.int32, simd_width]()
+    comptime lane_offsets = iota[.int32, simd_width]()
     var better: SIMD[.bool, simd_width]
     comptime if largest:
         better = vals.gt(best_vals)
@@ -395,9 +395,7 @@ def argmaxmin_gpu[
             combine_block_size = WARP_SIZE
 
         var part_vals = ctx.enqueue_create_buffer[dtype](num_rows * num_splits)
-        var part_idxs = ctx.enqueue_create_buffer[DType.int32](
-            num_rows * num_splits
-        )
+        var part_idxs = ctx.enqueue_create_buffer[.int32](num_rows * num_splits)
 
         comptime scan_kernel = _argmaxmin_scan_kernel[
             dtype,

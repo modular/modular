@@ -171,7 +171,7 @@ def fill_large[dtype: DType](span: Span[mut=True, Scalar[dtype], _]):
 
     Provokes overflow / saturation in reductions and accumulators.
     """
-    var mx = max_finite[dtype]().cast[DType.float64]()
+    var mx = max_finite[dtype]().cast[.float64]()
     for i in range(len(span)):
         var v = random_float64(0.5, 1.0) * mx
         if random_ui64(0, 1) == 1:
@@ -273,8 +273,8 @@ def numeric_check[
     var n_bad = 0
     var worst = -1
     for i in range(n):
-        var a = actual[i].cast[DType.float64]()
-        var e = expected[i].cast[DType.float64]()
+        var a = actual[i].cast[.float64]()
+        var e = expected[i].cast[.float64]()
         # Finite contract: finite reference must yield a finite output.
         if isfinite(e) and not isfinite(a):
             n_bad += 1

@@ -93,8 +93,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < Int(length):
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -133,11 +133,11 @@ def _check_verification_result[
     """Run the GPU verification kernel and raise if tolerances are exceeded."""
     var rtol64: Float64
     var atol64: Float64
-    rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+    rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
     var rtol = Float32(rtol64)
     var atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -452,8 +452,8 @@ def bench_matmul_tma_epilogue[
 
             for i in range(c_size):
                 c_ref_host[i] = (
-                    c_ref_host[i].cast[DType.float32]()
-                    + epilogue_host[i].cast[DType.float32]()
+                    c_ref_host[i].cast[.float32]()
+                    + epilogue_host[i].cast[.float32]()
                 ).cast[dtype]()
 
             ctx.enqueue_copy(c_ref_dev, c_ref_host)

@@ -66,7 +66,7 @@ def test_scheduler_kernel[
     visited_changed: LayoutTensor[
         DType.int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
     ],
-    tile_count: LayoutTensor[DType.int32, Layout.row_major(1, 1), MutAnyOrigin],
+    tile_count: LayoutTensor[.int32, Layout.row_major(1, 1), MutAnyOrigin],
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
     # Convert LayoutTensor to TileTensor for the scheduler
@@ -139,9 +139,7 @@ def test_single_group(ctx: DeviceContext) raises:
     var visited_changed = ManagedLayoutTensor[
         DType.int32, Layout.row_major(max_tiles, 1)
     ](ctx)
-    var tile_count = ManagedLayoutTensor[DType.int32, Layout.row_major(1, 1)](
-        ctx
-    )
+    var tile_count = ManagedLayoutTensor[.int32, Layout.row_major(1, 1)](ctx)
 
     ctx.synchronize()
 
@@ -249,9 +247,7 @@ def test_two_groups(ctx: DeviceContext) raises:
     var visited_changed = ManagedLayoutTensor[
         DType.int32, Layout.row_major(max_tiles, 1)
     ](ctx)
-    var tile_count = ManagedLayoutTensor[DType.int32, Layout.row_major(1, 1)](
-        ctx
-    )
+    var tile_count = ManagedLayoutTensor[.int32, Layout.row_major(1, 1)](ctx)
 
     ctx.synchronize()
 

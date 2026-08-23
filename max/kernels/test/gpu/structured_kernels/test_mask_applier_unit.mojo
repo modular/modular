@@ -146,7 +146,7 @@ def kernel_mask_unit(
 
     # --- Case 0: NullMask, tile_idx=0, j=0 (no-op) --- #
     # apply_mask_to_att_block with NO_MASK should return without writing.
-    var att0 = reg_alloc[DType.float32](att_layout)
+    var att0 = reg_alloc[.float32](att_layout)
     var v0 = att0.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -161,7 +161,7 @@ def kernel_mask_unit(
     # --- Case 1: CausalMask, q_tile_idx=0, k_tile_idx=0 --- #
     # Diagonal q_pos >= k_pos. With q_tile=0 (q in [0..32)) and k_tile=0
     # (k in [0..64)), positions with k > q are masked.
-    var att1 = reg_alloc[DType.float32](att_layout)
+    var att1 = reg_alloc[.float32](att_layout)
     var v1 = att1.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -176,7 +176,7 @@ def kernel_mask_unit(
     # --- Case 2: CausalMask, q_tile_idx=0, k_tile_idx=2 (partial) --- #
     # k in [128..192). q in [0..32). All k > q, so fully masked.
     # (Use q_tile_idx=2 instead to actually hit "partial".)
-    var att2 = reg_alloc[DType.float32](att_layout)
+    var att2 = reg_alloc[.float32](att_layout)
     var v2 = att2.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -190,7 +190,7 @@ def kernel_mask_unit(
 
     # --- Case 3: CausalMask, q_tile_idx=0, k_tile_idx=8 (fully masked) --- #
     # k in [512..576), q in [0..32). All k > q, fully masked.
-    var att3 = reg_alloc[DType.float32](att_layout)
+    var att3 = reg_alloc[.float32](att_layout)
     var v3 = att3.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -206,7 +206,7 @@ def kernel_mask_unit(
     # ChunkedMask groups (q, k) into chunks of CHUNK_SIZE=32. q in [0..32)
     # is chunk 0. k in [128..192) spans chunks [4, 6), entirely mismatch.
     # Expect FULL_MASK from status() -> _fill_dst_neg_inf.
-    var att4 = reg_alloc[DType.float32](att_layout)
+    var att4 = reg_alloc[.float32](att_layout)
     var v4 = att4.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -222,7 +222,7 @@ def kernel_mask_unit(
     # --- Case 5: SlidingWindowCausalMask, q_tile_idx=0, k_tile_idx=2 --- #
     # window_size=32. q in [0..32), k in [128..192). k > q + window
     # everywhere -> fully masked tile (status FULL_MASK).
-    var att5 = reg_alloc[DType.float32](att_layout)
+    var att5 = reg_alloc[.float32](att_layout)
     var v5 = att5.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -237,7 +237,7 @@ def kernel_mask_unit(
 
     # --- Case 6: _fill_dst_neg_inf direct (sanity check) --- #
     # Confirms the FULL_MASK filler writes -3.4028235e38.
-    var att6 = reg_alloc[DType.float32](att_layout)
+    var att6 = reg_alloc[.float32](att_layout)
     var v6 = att6.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -252,7 +252,7 @@ def kernel_mask_unit(
     # kernel: subtract the per-row max (here: 1.0), then `exp2`.
     # This is the load-bearing answer for BUG#1 — what does the GPU
     # `exp2` intrinsic produce for the kernel-written filler value?
-    var att7 = reg_alloc[DType.float32](att_layout)
+    var att7 = reg_alloc[.float32](att_layout)
     var v7 = att7.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -300,7 +300,7 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
-        var dev_out = ctx.enqueue_create_buffer[DType.float32](TOTAL_FP32)
+        var dev_out = ctx.enqueue_create_buffer[.float32](TOTAL_FP32)
 
         # Initialize to a sentinel so we can see if any case left entries
         # untouched.

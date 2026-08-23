@@ -547,10 +547,10 @@ struct MLAPrefillSparseFP8[
                     Int(row_1) * scales_per_token + Int(block_idx)
                 ]
                 var s0_bits = UInt32(
-                    bitcast[DType.uint16, 1](s0_fp32.cast[bf16_type]())
+                    bitcast[.uint16, 1](s0_fp32.cast[bf16_type]())
                 )
                 var s1_bits = UInt32(
-                    bitcast[DType.uint16, 1](s1_fp32.cast[bf16_type]())
+                    bitcast[.uint16, 1](s1_fp32.cast[bf16_type]())
                 )
                 var s0_u32 = s0_bits | (s0_bits << 16)
                 var s1_u32 = s1_bits | (s1_bits << 16)
@@ -871,7 +871,7 @@ struct MLAPrefillSparseFP8[
                             Int(abs_row) * scales_per_token + Int(block_idx)
                         ]
                         var s_bits = UInt32(
-                            bitcast[DType.uint16, 1](s_fp32.cast[bf16_type]())
+                            bitcast[.uint16, 1](s_fp32.cast[bf16_type]())
                         )
                         var s_u32 = s_bits | (s_bits << 16)
                         pa = hmul2_bf16x8_by_scalar[bf16_type](pa, s_u32)
@@ -960,8 +960,8 @@ struct MLAPrefillSparseFP8[
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
+        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -1175,7 +1175,7 @@ struct MLAPrefillSparseFP8[
             comptime MAX_INIT_VAL = Float32(-1e30)
             var mi: Float32 = MAX_INIT_VAL
             var li: Float32 = 0.0
-            var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
             var scale_log2e = scale * Float32(log2e)
             comptime P_PER_THREAD = Self.config.B_TOPK // 2  # 64
@@ -1242,12 +1242,10 @@ struct MLAPrefillSparseFP8[
                     comptime bit_idx = i % 8
                     var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                     if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                        p[i] = Float32(min_or_neg_inf[DType.float32]())
+                        p[i] = Float32(min_or_neg_inf[.float32]())
                 _ = k_valid_free_ptr[cur_buf].arrive()
 
-                var cur_pi_max: Float32 = Float32(
-                    min_or_neg_inf[DType.float32]()
-                )
+                var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
                 comptime for i in range(P_PER_THREAD):
                     cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -1261,7 +1259,7 @@ struct MLAPrefillSparseFP8[
                 )
                 real_mi = max(real_mi, cur_pi_max)
 
-                var should_scale_o = warp.vote[DType.uint32](
+                var should_scale_o = warp.vote[.uint32](
                     cur_pi_max - mi > Float32(6.0)
                 ) != UInt32(0)
 
@@ -1325,7 +1323,7 @@ struct MLAPrefillSparseFP8[
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
                         scores_ptr,
                         s_smem_bf16_elem_base + i * 512,
-                        bitcast[DType.uint32, 4](s_vec),
+                        bitcast[.uint32, 4](s_vec),
                     )
 
                 # Rescale O (in TMEM) if mi changed materially; chunk 0
@@ -1386,9 +1384,9 @@ struct MLAPrefillSparseFP8[
                 else:
                     _ = so_ready_ptr[cur_buf].arrive()
 
-            if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+            if real_mi == Float32(min_or_neg_inf[.float32]()):
                 li = 0.0
-                mi = Float32(min_or_neg_inf[DType.float32]())
+                mi = Float32(min_or_neg_inf[.float32]())
 
             rowwise_sum_ptr[idx_in_wg] = li
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -1420,7 +1418,7 @@ struct MLAPrefillSparseFP8[
             else:
                 output_scale = 1.0 / li
 
-            var have_valid_indices = warp.vote[DType.uint32](
+            var have_valid_indices = warp.vote[.uint32](
                 li != Float32(0.0)
             ) != UInt32(0)
             if not have_valid_indices:
@@ -1766,7 +1764,7 @@ def mla_prefill_sparse_fp8[
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

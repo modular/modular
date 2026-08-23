@@ -32,7 +32,7 @@ comptime PAD_SLOT_ID: Int32 = -1
 @always_inline
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
-    var x_f32 = x.cast[DType.float32]()
+    var x_f32 = x.cast[.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
     var one = Float32(1.0)
@@ -101,9 +101,7 @@ def run_varlen_causal_conv1d_fwd[
         cache_indices_tt.raw_store(i, Int32(i))
 
     # has_initial_state: (batch,) - all False
-    var has_initial_state_heap = List(
-        length=batch, fill=Scalar[DType.bool](False)
-    )
+    var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
     var has_initial_state_tt = TileTensor(
         has_initial_state_heap,
         row_major(
@@ -661,9 +659,7 @@ def run_conv_state_writeback[
     for i in range(batch):
         cache_indices_tt.raw_store(i, Int32(i))
 
-    var has_initial_state_heap = List(
-        length=batch, fill=Scalar[DType.bool](True)
-    )
+    var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_tt = TileTensor(
         has_initial_state_heap, row_major(batch)
     )
@@ -761,14 +757,14 @@ def run_conv_state_writeback[
 
 def test_varlen_causal_conv1d_fwd_equal_lengths() raises:
     """Test varlen causal conv1d forward with equal-length sequences."""
-    run_varlen_causal_conv1d_fwd[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
 
 
 def test_varlen_causal_conv1d_fwd_variable_lengths() raises:
     """Test varlen causal conv1d forward with variable-length sequences."""
-    run_varlen_causal_conv1d_fwd[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd[.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3
     )
 
@@ -779,30 +775,30 @@ def test_conv_state_writeback_chunk_shorter_than_width() raises:
     `seqlen=1` is the decode step, and `seqlen=2` with width 4 is the partial
     case between it and a chunk that supplies the whole new state.
     """
-    run_conv_state_writeback[DType.float32](batch=2, dim=4, width=4, seqlen=1)
-    run_conv_state_writeback[DType.float32](batch=2, dim=4, width=4, seqlen=2)
-    run_conv_state_writeback[DType.float32](batch=3, dim=8, width=3, seqlen=1)
+    run_conv_state_writeback[.float32](batch=2, dim=4, width=4, seqlen=1)
+    run_conv_state_writeback[.float32](batch=2, dim=4, width=4, seqlen=2)
+    run_conv_state_writeback[.float32](batch=3, dim=8, width=3, seqlen=1)
 
 
 def test_conv_state_writeback_chunk_at_least_width() raises:
     """The same contract where the chunk does supply the whole state."""
-    run_conv_state_writeback[DType.float32](batch=2, dim=4, width=4, seqlen=3)
-    run_conv_state_writeback[DType.float32](batch=2, dim=4, width=4, seqlen=9)
+    run_conv_state_writeback[.float32](batch=2, dim=4, width=4, seqlen=3)
+    run_conv_state_writeback[.float32](batch=2, dim=4, width=4, seqlen=9)
 
 
 def test_varlen_causal_conv1d_fwd_with_silu() raises:
     """Test varlen causal conv1d forward with SiLU activation."""
-    run_varlen_causal_conv1d_fwd[DType.float32, "silu"](
+    run_varlen_causal_conv1d_fwd[.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
 
 
 def test_varlen_causal_conv1d_fwd_various_widths() raises:
     """Test varlen causal conv1d forward with various kernel widths."""
-    run_varlen_causal_conv1d_fwd[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2
     )
-    run_varlen_causal_conv1d_fwd[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4
     )
 
@@ -814,21 +810,21 @@ def test_varlen_causal_conv1d_fwd_various_widths() raises:
 
 def test_varlen_causal_conv1d_update_basic() raises:
     """Test basic varlen causal conv1d update."""
-    run_varlen_causal_conv1d_update[DType.float32, "none"](
+    run_varlen_causal_conv1d_update[.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
 
 
 def test_varlen_causal_conv1d_update_with_silu() raises:
     """Test varlen causal conv1d update with SiLU activation."""
-    run_varlen_causal_conv1d_update[DType.float32, "silu"](
+    run_varlen_causal_conv1d_update[.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
 
 
 def test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
     """Test varlen causal conv1d update with seqlen > 1."""
-    run_varlen_causal_conv1d_update[DType.float32, "none"](
+    run_varlen_causal_conv1d_update[.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4
     )
 
@@ -840,14 +836,14 @@ def test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
 
 def test_varlen_causal_conv1d_states_basic() raises:
     """Test basic varlen causal conv1d states extraction."""
-    run_varlen_causal_conv1d_states[DType.float32](
+    run_varlen_causal_conv1d_states[.float32](
         batch=2, dim=4, seq_lengths=Index(8, 8), state_len=3
     )
 
 
 def test_varlen_causal_conv1d_states_variable_lengths() raises:
     """Test varlen causal conv1d states with variable-length sequences."""
-    run_varlen_causal_conv1d_states[DType.float32](
+    run_varlen_causal_conv1d_states[.float32](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), state_len=3
     )
 

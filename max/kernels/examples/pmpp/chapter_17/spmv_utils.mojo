@@ -206,7 +206,7 @@ def generate_sparse_matrix(
             if random_float64() > Float64(sparsity):
                 row_idx.append(UInt32(r))
                 col_idx.append(UInt32(c))
-                values.append(random_float64().cast[DType.float32]())
+                values.append(random_float64().cast[.float32]())
 
 
 def verify(

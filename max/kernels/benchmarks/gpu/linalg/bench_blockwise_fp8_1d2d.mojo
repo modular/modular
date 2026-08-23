@@ -133,21 +133,15 @@ def bench_blockwise_fp8_1d2d[
     var a_dev_buf = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buf = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buf = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_dev_buf = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buf = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buf = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buf = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
-    var a_scales_dev_buf = ctx.enqueue_create_buffer[DType.float32](
-        a_scales_size
-    )
-    var b_scales_dev_buf = ctx.enqueue_create_buffer[DType.float32](
-        b_scales_size
-    )
-    var expert_scales_dev_buf = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var a_scales_dev_buf = ctx.enqueue_create_buffer[.float32](a_scales_size)
+    var b_scales_dev_buf = ctx.enqueue_create_buffer[.float32](b_scales_size)
+    var expert_scales_dev_buf = ctx.enqueue_create_buffer[.float32](num_experts)
 
     # Copy offsets and ids to device
     ctx.enqueue_copy(a_offsets_dev_buf, a_offsets_host_ptr)
@@ -176,11 +170,11 @@ def bench_blockwise_fp8_1d2d[
         c_dev_buf.unsafe_ptr().bitcast[Scalar[c_type]](),
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
     )
-    var a_scales_struct = LayoutTensor[DType.float32, a_scales_layout](
+    var a_scales_struct = LayoutTensor[.float32, a_scales_layout](
         a_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
         RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
     )
-    var b_scales_struct = LayoutTensor[DType.float32, b_scales_layout](
+    var b_scales_struct = LayoutTensor[.float32, b_scales_layout](
         b_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
         RuntimeLayout[b_scales_layout].row_major(
             IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
@@ -236,14 +230,14 @@ def bench_blockwise_fp8_1d2d[
         b_scales_dev_buf,
         new_row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
-    var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
+    var a_offsets_tt = TileTensor[.uint32, GMEMLayout1D, MutAnyOrigin](
         a_offsets_dev_buf,
         GMEMLayout1D(
             Coord(Int64(num_active_experts + 1)),
             Coord(Idx[1]),
         ),
     )
-    var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
+    var expert_ids_tt = TileTensor[.int32, GMEMLayout1D, MutAnyOrigin](
         expert_ids_dev_buf,
         GMEMLayout1D(
             Coord(Int64(num_active_experts)),

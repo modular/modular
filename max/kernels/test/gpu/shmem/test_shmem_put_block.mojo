@@ -66,8 +66,8 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
 
-    var send_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
-    var recv_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
+    var send_data = ctx.enqueue_create_buffer[.float32](num_elems)
+    var recv_data = ctx.enqueue_create_buffer[.float32](num_elems)
 
     ctx.barrier_all()
 

@@ -345,7 +345,7 @@ def stsm_helper[
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
             v[2 * k + 1] = casted[1]
-        st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
+        st_matrix[simd_width=4](dst.ptr + offset, bitcast[.float32, 4](v))
 
 
 @always_inline
@@ -1262,7 +1262,7 @@ def test_blackwell_kernel_8[
             tflops_rounded,
         )
     else:
-        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != .float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )

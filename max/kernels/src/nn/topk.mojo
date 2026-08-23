@@ -174,7 +174,7 @@ def top_k[
 
     Parameters:
         dtype: Data type of the input buffer.
-        out_idx_type: The data dtype of the output indices (default == DType.int64).
+        out_idx_type: The data dtype of the output indices (default == .int64).
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
         target: The target to run on.
 
@@ -224,7 +224,7 @@ def top_k[
 
         comptime if is_cpu[target]():
             comptime assert (
-                out_idx_type == DType.int64
+                out_idx_type == .int64
             ), "out_idx_type must be int64 for cpu"
 
             comptime grain_size = 1000
@@ -271,7 +271,7 @@ def _top_k_cpu[
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
     ctx: Optional[DeviceContext] = None,
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[TileTensor[.int64, KLayoutType, ImmutAnyOrigin]] = None,
 ):
     comptime assert (
         input.rank == out_vals.rank
@@ -393,16 +393,14 @@ def fused_token_sampling_cpu[
     max_k: Int,
     input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[TileTensor[.int64, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin]
     ] = None,
-    seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
-    ] = None,
+    seed: Optional[TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin]] = None,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -429,7 +427,7 @@ def fused_token_sampling_cpu[
     comptime assert (
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
-    comptime assert out_idx_type == DType.int64, "out_idx_type must be int64"
+    comptime assert out_idx_type == .int64, "out_idx_type must be int64"
 
     var input_shape = rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
@@ -470,7 +468,7 @@ def fused_token_sampling_cpu[
             bound_max_k,
             input,
             out_vals,
-            out_idxs.bitcast[DType.int64](),
+            out_idxs.bitcast[.int64](),
             k,
             temperature,
             top_p,
@@ -491,16 +489,14 @@ def _top_k_sampling[
     input: TileTensor[mut=False, dtype, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, DType.int64, ...],
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[TileTensor[.int64, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin]
     ] = None,
-    seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
-    ] = None,
+    seed: Optional[TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin]] = None,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -518,7 +514,7 @@ def _top_k_sampling[
         max_k: Largest number of top elements.
         input: TileTensor[dtype] (Any shape)- The input tensor.
         out_vals: TileTensor[dtype] (shape of [input[:-1]] + [k]) - The output values.
-        out_idxs: TileTensor[DType.int64] (shape of [input[:-1]] + [1]) - The output indices.
+        out_idxs: TileTensor[.int64] (shape of [input[:-1]] + [1]) - The output indices.
         k: Optional buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -1434,7 +1430,7 @@ def _topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default == DType.int).
+        out_idx_type: DType - The data dtype of the output indices (default == .int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         KLayoutType: Layout type of the k buffer.
@@ -1457,13 +1453,13 @@ def _topk_gpu[
             Input tensor as a device TileTensor.
         device_local_topk_vals: TileTensor[dtype, [batch_size, num_blocks_per_input * max(K)]]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: TileTensor[DType.int, [batch_size, num_blocks_per_input * max(K)]]
+        device_local_topk_idxs: TileTensor[.int, [batch_size, num_blocks_per_input * max(K)]]
             Temporary buffer for locally reduced top-K indices from stage 1.
         out_vals: TileTensor[dtype, [batch_size, max(K)]]
             Output buffer on device for the K largest values.
-        out_idxs: TileTensor[DType.int, [batch_size, 1 if sampling else max(K)]]
+        out_idxs: TileTensor[.int, [batch_size, 1 if sampling else max(K)]]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
-        k: Optional TileTensor[DType.int64]
+        k: Optional TileTensor[.int64]
             Device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling for each batch element.
         block_size: Int
@@ -1694,7 +1690,7 @@ def topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default == DType.int).
+        out_idx_type: DType - The data dtype of the output indices (default == .int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         KLayoutType: Layout type of the k buffer.
@@ -1717,7 +1713,7 @@ def topk_gpu[
             Input tensor as a device TileTensor.
         out_vals: TileTensor[dtype]
             Output buffer on device for the K largest values.
-        out_idxs: TileTensor[DType.int]
+        out_idxs: TileTensor[.int]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
             Last dimension is 1 if sampling is True, otherwise K.
         block_size: Int
@@ -1726,7 +1722,7 @@ def topk_gpu[
             Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
-        k: Optional TileTensor[DType.int64]
+        k: Optional TileTensor[.int64]
             Device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -1787,8 +1783,8 @@ def topk_gpu[
         var internal_input: TileTensor[
             dtype,
             Layout[
-                shape_types=DynamicCoord[DType.int64, 2].element_types,
-                stride_types=DynamicCoord[DType.int64, 2].element_types,
+                shape_types=DynamicCoord[.int64, 2].element_types,
+                stride_types=DynamicCoord[.int64, 2].element_types,
             ],
             input.origin,
             address_space=input.address_space,
@@ -1797,8 +1793,8 @@ def topk_gpu[
         var internal_out_idxs: TileTensor[
             out_idx_type,
             Layout[
-                shape_types=DynamicCoord[DType.int64, 2].element_types,
-                stride_types=DynamicCoord[DType.int64, 2].element_types,
+                shape_types=DynamicCoord[.int64, 2].element_types,
+                stride_types=DynamicCoord[.int64, 2].element_types,
             ],
             out_idxs.origin,
             address_space=out_idxs.address_space,
@@ -1807,8 +1803,8 @@ def topk_gpu[
         var internal_out_vals: TileTensor[
             dtype,
             Layout[
-                shape_types=DynamicCoord[DType.int64, 2].element_types,
-                stride_types=DynamicCoord[DType.int64, 2].element_types,
+                shape_types=DynamicCoord[.int64, 2].element_types,
+                stride_types=DynamicCoord[.int64, 2].element_types,
             ],
             out_vals.origin,
             address_space=out_vals.address_space,
@@ -1835,13 +1831,13 @@ def topk_gpu[
             # Input is already 2D, no reshaping needed
             internal_bs = orig_in_shape[0]
             internal_input = rebind[type_of(internal_input)](
-                input.make_dynamic[DType.int64]()
+                input.make_dynamic[.int64]()
             )
             internal_out_idxs = rebind[type_of(internal_out_idxs)](
-                out_idxs.make_dynamic[DType.int64]()
+                out_idxs.make_dynamic[.int64]()
             )
             internal_out_vals = rebind[type_of(internal_out_vals)](
-                out_vals.make_dynamic[DType.int64]()
+                out_vals.make_dynamic[.int64]()
             )
         else:  # rank > 2
             # Handle higher dimensional inputs by flattening all but the last dimension
@@ -2178,10 +2174,10 @@ def fused_token_sampling_gpu[
         )
 
         var batch_size = input_shape[0]
-        var valid_buf = Optional[DeviceBuffer[DType.int8]](None)
+        var valid_buf = Optional[DeviceBuffer[.int8]](None)
         var valid = Optional[UnsafePointer[Int8, MutAnyOrigin]](None)
         comptime if ASSERT_MODE == "all":
-            valid_buf = ctx.enqueue_create_buffer[DType.int8](batch_size)
+            valid_buf = ctx.enqueue_create_buffer[.int8](batch_size)
             ctx.enqueue_memset(valid_buf.value(), 1)
             valid = valid_buf.value().unsafe_ptr().as_unsafe_any_origin()
 
@@ -2202,9 +2198,7 @@ def fused_token_sampling_gpu[
         )
 
         comptime if ASSERT_MODE == "all":
-            var valid_host = ctx.enqueue_create_host_buffer[DType.int8](
-                batch_size
-            )
+            var valid_host = ctx.enqueue_create_host_buffer[.int8](batch_size)
             ctx.enqueue_copy(valid_host, valid_buf.value())
             ctx.synchronize()
 
@@ -2300,7 +2294,7 @@ def apply_gumbel_noise_kernel[
                     )
                 else:
                     input_val = ld_ptr.load[width=simd_width](i * simd_width)
-                var noised_logits = input_val.cast[DType.float32]() / temp_val
+                var noised_logits = input_val.cast[.float32]() / temp_val
 
                 comptime for loop_i in range(simd_width // 4):
                     var rnd_val = rng_state.step_uniform()
@@ -2329,7 +2323,7 @@ def apply_gumbel_noise_kernel[
                 if tid_in_group < N_res:
                     var input_val = ld_ptr.load(
                         (N - N_res) + tid_in_group
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var noised_logit = input_val / temp_val
                     var rnd_val = rng_state.step_uniform()[0]
                     rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
@@ -2472,9 +2466,9 @@ def _gumbel_argmax_fused_kernel[
                 input_val = ld_ptr.load[width=simd_width](i * simd_width)
             var noised_logits: SIMD[.float32, simd_width]
             comptime if from_probs:
-                noised_logits = LOG2 * log2(input_val.cast[DType.float32]())
+                noised_logits = LOG2 * log2(input_val.cast[.float32]())
             else:
-                noised_logits = input_val.cast[DType.float32]() / temp_val
+                noised_logits = input_val.cast[.float32]() / temp_val
 
             comptime for loop_i in range(simd_width // 4):
                 var rnd_val = rng_state.step_uniform()

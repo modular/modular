@@ -231,7 +231,7 @@ def _fp8_index_body[
     valid_length: TileTensor[
         DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
-    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
     output: TileTensor[
         DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
     ],
@@ -408,7 +408,7 @@ def _fp8_index_body[
             var ks_ptr = ks_operand.block_paged_ptr[1](
                 UInt32(b), UInt32(key_local), UInt32(0), UInt32(0)
             )
-            ks_smem[tid] = ks_ptr[0].cast[DType.float32]()
+            ks_smem[tid] = ks_ptr[0].cast[.float32]()
         else:
             ks_smem[tid] = 0.0
 
@@ -625,7 +625,7 @@ def _fp8_index_score_kernel_sm100[
     valid_length: TileTensor[
         DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
-    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
     output: TileTensor[
         DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
     ],
@@ -720,7 +720,7 @@ def _fp8_index_score_kernel_sm100_split[
     valid_length: TileTensor[
         DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
-    q_s: TileTensor[DType.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
     output: TileTensor[
         DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
     ],
@@ -801,7 +801,7 @@ def fp8_index_score_sm100[
     _is_cache_length_accurate: Bool,
     N_TOKENS_ALT: Int = 0,
 ](
-    output: TileTensor[DType.float32, ...],
+    output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[mut=False, DType.float32, ...],
     k_operand: KOperand,

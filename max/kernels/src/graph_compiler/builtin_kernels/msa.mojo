@@ -134,7 +134,7 @@ comptime MAX_SPEC_DRAFT = 8
 def _require_score_scratch[
     num_index_heads: Int
 ](
-    score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
+    score_scratch: MutableInputTensor[dtype=.float32, rank=3, ...],
     rows: Int,
     max_num_blocks: Int,
 ) raises:
@@ -199,18 +199,18 @@ struct Struct_msa_indexer_ragged_paged:
         init_blocks: Int,
         local_blocks: Int,
     ](
-        out_idxs: OutputTensor[dtype=DType.int32, rank=3, ...],
-        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        prefix_lens: InputTensor[dtype=DType.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
-        k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        k_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        k_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        out_idxs: OutputTensor[dtype=.int32, rank=3, ...],
+        q: InputTensor[dtype=.bfloat16, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        prefix_lens: InputTensor[dtype=.uint32, rank=1, ...],
+        k_blocks: MutableInputTensor[dtype=.bfloat16, rank=6, ...],
+        k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        msa_scalar_args: InputTensor[dtype=.int64, rank=1, ...],
         layer_idx: UInt32,
-        score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
+        score_scratch: MutableInputTensor[dtype=.float32, rank=3, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -337,7 +337,7 @@ struct Struct_msa_indexer_ragged_paged:
             _require_score_scratch[num_index_heads](
                 score_scratch, batch, max_num_blocks
             )
-            var score = score_scratch.to_tile_tensor[DType.int64]()
+            var score = score_scratch.to_tile_tensor[.int64]()
 
             # `prefix_lens` is the index-K `cache_lengths` BEFORE this step's
             # IndexK was scattered (MAX `_is_cache_length_accurate=False`
@@ -353,12 +353,12 @@ struct Struct_msa_indexer_ragged_paged:
                 idx_head_dim,
                 block_size,
             ](
-                q.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[.int64](),
                 k_operand,
-                prefix_lens.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
+                prefix_lens.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
                 score,
-                out_idxs.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[.int64](),
                 batch,
                 max_num_blocks,
                 topk,
@@ -402,7 +402,7 @@ struct Struct_msa_indexer_ragged_paged:
             # where the geometry cannot support it.
             comptime if MTP_DECODE_OK:
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
-                var score = score_scratch.to_tile_tensor[DType.int64]()
+                var score = score_scratch.to_tile_tensor[.int64]()
                 sparse_indexer_decode[
                     DType.bfloat16,
                     type_of(k_operand),
@@ -411,12 +411,12 @@ struct Struct_msa_indexer_ragged_paged:
                     block_size,
                     PER_TOKEN=True,
                 ](
-                    q.to_tile_tensor[DType.int64](),
+                    q.to_tile_tensor[.int64](),
                     k_operand,
-                    prefix_lens.to_tile_tensor[DType.int64](),
-                    input_row_offsets.to_tile_tensor[DType.int64](),
+                    prefix_lens.to_tile_tensor[.int64](),
+                    input_row_offsets.to_tile_tensor[.int64](),
                     score,
-                    out_idxs.to_tile_tensor[DType.int64](),
+                    out_idxs.to_tile_tensor[.int64](),
                     batch,
                     max_num_blocks,
                     topk,
@@ -441,7 +441,7 @@ struct Struct_msa_indexer_ragged_paged:
                 and num_index_heads == 1
                 and idx_head_dim == 128
                 and block_size == 128
-                and type_of(k_operand).dtype == DType.bfloat16
+                and type_of(k_operand).dtype == .bfloat16
                 and type_of(k_operand).page_size % block_size == 0
             )
             comptime if USE_AMD_MTP_SCORER:
@@ -462,7 +462,7 @@ struct Struct_msa_indexer_ragged_paged:
                     and Int(score_scratch.dim_size[1]()) >= total_q
                     and Int(score_scratch.dim_size[2]()) >= max_num_blocks
                 ):
-                    var mtp_score = score_scratch.to_tile_tensor[DType.int64]()
+                    var mtp_score = score_scratch.to_tile_tensor[.int64]()
 
                     comptime for query_width in range(2, MAX_SPEC_DRAFT + 1):
                         if max_q_len == query_width:
@@ -474,10 +474,10 @@ struct Struct_msa_indexer_ragged_paged:
                                 idx_head_dim,
                                 block_size,
                             ](
-                                q.to_tile_tensor[DType.int64](),
+                                q.to_tile_tensor[.int64](),
                                 k_operand,
-                                prefix_lens.to_tile_tensor[DType.int64](),
-                                input_row_offsets.to_tile_tensor[DType.int64](),
+                                prefix_lens.to_tile_tensor[.int64](),
+                                input_row_offsets.to_tile_tensor[.int64](),
                                 mtp_score,
                                 batch,
                                 total_q,
@@ -490,10 +490,10 @@ struct Struct_msa_indexer_ragged_paged:
                             sparse_indexer_decode_topk_mtp[
                                 query_width, num_index_heads, block_size
                             ](
-                                prefix_lens.to_tile_tensor[DType.int64](),
-                                input_row_offsets.to_tile_tensor[DType.int64](),
+                                prefix_lens.to_tile_tensor[.int64](),
+                                input_row_offsets.to_tile_tensor[.int64](),
                                 mtp_score,
-                                out_idxs.to_tile_tensor[DType.int64](),
+                                out_idxs.to_tile_tensor[.int64](),
                                 batch,
                                 total_q,
                                 max_num_blocks,
@@ -513,7 +513,7 @@ struct Struct_msa_indexer_ragged_paged:
             # past that bound -- the top-k kernels recompute each row's block
             # count and clamp to it.
             var score_size = num_index_heads * total_q * max_num_blocks
-            var score_buf = ctx.enqueue_create_buffer[DType.float32](score_size)
+            var score_buf = ctx.enqueue_create_buffer[.float32](score_size)
             var score = TileTensor(
                 score_buf,
                 tt_row_major(num_index_heads, total_q, max_num_blocks),
@@ -526,12 +526,12 @@ struct Struct_msa_indexer_ragged_paged:
                 idx_head_dim,
                 block_size,
             ](
-                q.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[.int64](),
                 k_operand,
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                prefix_lens.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                prefix_lens.to_tile_tensor[.int64](),
                 score,
-                out_idxs.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[.int64](),
                 batch,
                 total_q,
                 Int(k_cache.max_prompt_length()),  # max_seqlen_q
@@ -563,19 +563,19 @@ struct Struct_msa_attention_ragged_paged:
         group: Int,
         topk: Int,
     ](
-        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
         q: InputTensor[dtype=kv_type, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        cache_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        total_context_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        total_context_length: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        msa_scalar_args: InputTensor[dtype=.int64, rank=1, ...],
         layer_idx: UInt32,
-        d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
+        d_indices: InputTensor[dtype=.int32, rank=3, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -670,7 +670,7 @@ struct Struct_msa_attention_ragged_paged:
         # Non-owning DeviceBuffer views over the graph tensors.
         var out_lt = output.to_layout_tensor()
         var q_lt = q.to_layout_tensor()
-        var output_buf = DeviceBuffer[DType.bfloat16](
+        var output_buf = DeviceBuffer[.bfloat16](
             ctx, out_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
         var q_buf = DeviceBuffer[kv_type](
@@ -686,7 +686,7 @@ struct Struct_msa_attention_ragged_paged:
             var topk_tokens = topk * page_size
 
             var iro_lt = input_row_offsets.to_layout_tensor()
-            var valid_length = DeviceBuffer[DType.uint32](
+            var valid_length = DeviceBuffer[.uint32](
                 ctx,
                 iro_lt.ptr,
                 Int(input_row_offsets.dim_size[0]()),
@@ -779,7 +779,7 @@ struct Struct_msa_attention_ragged_paged:
             # decode partition heuristic and key partials on the packed query
             # row, so the shared combine writes ragged output directly.
             var iro_lt = input_row_offsets.to_layout_tensor()
-            var valid_length = DeviceBuffer[DType.uint32](
+            var valid_length = DeviceBuffer[.uint32](
                 ctx,
                 iro_lt.ptr,
                 Int(input_row_offsets.dim_size[0]()),
@@ -862,12 +862,12 @@ struct Struct_msa_attention_ragged_paged:
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
-            var lse_buf = ctx.enqueue_create_buffer[DType.float32](
+            var lse_buf = ctx.enqueue_create_buffer[.float32](
                 num_rows * num_heads
             )
 
             var d_lt = d_indices.to_layout_tensor()
-            var d_indices_buf = DeviceBuffer[DType.int32](
+            var d_indices_buf = DeviceBuffer[.int32](
                 ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
             )
 
@@ -887,13 +887,13 @@ struct Struct_msa_attention_ragged_paged:
 
             # bitcast input_row_offsets and cache_row_offsets to int32, then
             # wrap then in DeviceBuffer.
-            var cuq_d = DeviceBuffer[DType.int32](
+            var cuq_d = DeviceBuffer[.int32](
                 ctx,
                 input_row_offsets._ptr.bitcast[Int32](),
                 batch + 1,
                 owning=False,
             )
-            var cuk_d = DeviceBuffer[DType.int32](
+            var cuk_d = DeviceBuffer[.int32](
                 ctx,
                 cache_row_offsets._ptr.bitcast[Int32](),
                 batch + 1,
@@ -960,20 +960,20 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
         group: Int,
         topk: Int,
     ](
-        output: OutputTensor[dtype=DType.float8_e4m3fn, rank=3, ...],
-        output_scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        output: OutputTensor[dtype=.float8_e4m3fn, rank=3, ...],
+        output_scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
         q: InputTensor[dtype=kv_type, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        cache_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        total_context_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        total_context_length: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        msa_scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        msa_scalar_args: InputTensor[dtype=.int64, rank=1, ...],
         layer_idx: UInt32,
-        d_indices: InputTensor[dtype=DType.int32, rank=3, ...],
+        d_indices: InputTensor[dtype=.int32, rank=3, ...],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -1061,10 +1061,10 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
             var out_lt = output.to_layout_tensor()
             var scales_lt = output_scales.to_layout_tensor()
             var q_lt = q.to_layout_tensor()
-            var mx_output_buf = DeviceBuffer[DType.float8_e4m3fn](
+            var mx_output_buf = DeviceBuffer[.float8_e4m3fn](
                 ctx, out_lt.ptr, num_rows * row_width, owning=False
             )
-            var mx_scales_buf = DeviceBuffer[DType.float8_e8m0fnu](
+            var mx_scales_buf = DeviceBuffer[.float8_e8m0fnu](
                 ctx, scales_lt.ptr, num_rows * scale_cols, owning=False
             )
             var q_buf = DeviceBuffer[kv_type](
@@ -1076,7 +1076,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
             if max_q_len == 1:
                 var topk_tokens = topk * page_size
                 var iro_lt = input_row_offsets.to_layout_tensor()
-                var valid_length = DeviceBuffer[DType.uint32](
+                var valid_length = DeviceBuffer[.uint32](
                     ctx,
                     iro_lt.ptr,
                     Int(input_row_offsets.dim_size[0]()),
@@ -1100,7 +1100,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                     # its own inside the dispatch. Spelled with the element
                     # type because it is what infers the dispatch's
                     # `output_type`.
-                    Optional[DeviceBuffer[DType.bfloat16]](),
+                    Optional[DeviceBuffer[.bfloat16]](),
                     q_buf,
                     k_op,
                     v_op,
@@ -1120,7 +1120,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                 )
             elif 1 < max_q_len <= MAX_SPEC_DRAFT:
                 var iro_lt = input_row_offsets.to_layout_tensor()
-                var valid_length = DeviceBuffer[DType.uint32](
+                var valid_length = DeviceBuffer[.uint32](
                     ctx,
                     iro_lt.ptr,
                     Int(input_row_offsets.dim_size[0]()),
@@ -1144,7 +1144,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                             spec_max_seq_len=n,
                             quantize_mx=True,
                         ](
-                            Optional[DeviceBuffer[DType.bfloat16]](),
+                            Optional[DeviceBuffer[.bfloat16]](),
                             q_buf,
                             k_op,
                             v_op,
@@ -1166,18 +1166,18 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
             else:
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
-                var lse_buf = ctx.enqueue_create_buffer[DType.float32](
+                var lse_buf = ctx.enqueue_create_buffer[.float32](
                     num_rows * num_heads
                 )
 
                 var d_lt = d_indices.to_layout_tensor()
-                var d_indices_buf = DeviceBuffer[DType.int32](
+                var d_indices_buf = DeviceBuffer[.int32](
                     ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
                 )
 
                 # Prefill reduces into BF16 first; only this route pays for
                 # the landing buffer.
-                var bf16_scratch = ctx.enqueue_create_buffer[DType.bfloat16](
+                var bf16_scratch = ctx.enqueue_create_buffer[.bfloat16](
                     num_rows * row_width
                 )
 
@@ -1195,13 +1195,13 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                     ctx,
                 )
 
-                var cuq_d = DeviceBuffer[DType.int32](
+                var cuq_d = DeviceBuffer[.int32](
                     ctx,
                     input_row_offsets._ptr.bitcast[Int32](),
                     batch + 1,
                     owning=False,
                 )
-                var cuk_d = DeviceBuffer[DType.int32](
+                var cuk_d = DeviceBuffer[.int32](
                     ctx,
                     cache_row_offsets._ptr.bitcast[Int32](),
                     batch + 1,

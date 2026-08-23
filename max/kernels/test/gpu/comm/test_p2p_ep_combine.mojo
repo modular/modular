@@ -106,27 +106,27 @@ def test_combine[
 
     # fmt: off
     # Buffers for dispatch phase
-    var dispatch_send_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var dispatch_recv_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var dispatch_recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
+    var dispatch_send_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var dispatch_recv_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var dispatch_recv_count_bufs_list = List[DeviceBuffer[.uint64]](capacity=n_ranks)
 
     # Buffers for combine phase
-    var combine_send_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var combine_recv_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var combine_recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
+    var combine_send_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var combine_recv_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var combine_recv_count_bufs_list = List[DeviceBuffer[.uint64]](capacity=n_ranks)
 
     # Shared atomic counter buffer for dispatch and combine
-    var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var atomic_counters_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
     var host_topk_ids_list = Array[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
     var host_input_tokens_list = Array[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](uninitialized=True)
 
-    var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var device_topk_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
     var device_output_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
-    var device_row_offsets_bufs_list = List[DeviceBuffer[DType.uint32]](capacity=n_ranks)
-    var device_expert_ids_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
-    var device_src_token_info_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var device_row_offsets_bufs_list = List[DeviceBuffer[.uint32]](capacity=n_ranks)
+    var device_expert_ids_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
+    var device_src_token_info_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
     # Output buffer for combine_wait
     var device_output_2_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -134,19 +134,19 @@ def test_combine[
     for i in range(n_ranks):
         var ctx = list_of_ctx[i]
         # Dispatch buffers
-        dispatch_send_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * n_tokens_per_rank * msg_bytes))
-        dispatch_recv_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * max_recv_num_tokens * msg_bytes))
-        dispatch_recv_count_bufs_list.append(ctx.enqueue_create_buffer[DType.uint64](n_slots * n_experts))
+        dispatch_send_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * n_tokens_per_rank * msg_bytes))
+        dispatch_recv_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * max_recv_num_tokens * msg_bytes))
+        dispatch_recv_count_bufs_list.append(ctx.enqueue_create_buffer[.uint64](n_slots * n_experts))
         ctx.enqueue_memset(dispatch_recv_count_bufs_list[i], UInt64.MAX_FINITE)
 
         # Combine buffers
-        combine_send_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * max_recv_num_tokens * combine_msg_bytes))
-        combine_recv_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * n_tokens_per_rank * top_k * combine_msg_bytes))
-        combine_recv_count_bufs_list.append(ctx.enqueue_create_buffer[DType.uint64](n_slots * n_experts))
+        combine_send_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * max_recv_num_tokens * combine_msg_bytes))
+        combine_recv_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * n_tokens_per_rank * top_k * combine_msg_bytes))
+        combine_recv_count_bufs_list.append(ctx.enqueue_create_buffer[.uint64](n_slots * n_experts))
         ctx.enqueue_memset(combine_recv_count_bufs_list[i], UInt64.MAX_FINITE)
 
         # Shared atomic counter
-        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](
+        atomic_counters_list.append(ctx.enqueue_create_buffer[.int32](
             n_slots * EPLocalSyncCounters[n_experts].total_size()
         ))
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
@@ -154,12 +154,12 @@ def test_combine[
         host_topk_ids_list[i] = alloc[Int32](n_slots * n_tokens_per_rank * top_k).as_unsafe_any_origin()
         host_input_tokens_list[i] = alloc[Scalar[input_type]](n_slots * n_tokens_per_rank * hidden_size).as_unsafe_any_origin()
 
-        device_topk_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * n_tokens_per_rank * top_k))
+        device_topk_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_tokens_per_rank * top_k))
         device_input_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * hidden_size))
         device_output_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * max_recv_num_tokens * hidden_size))
-        device_row_offsets_bufs_list.append(ctx.enqueue_create_buffer[DType.uint32](n_slots * (n_local_experts + 1)))
-        device_expert_ids_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * n_local_experts))
-        device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * max_recv_num_tokens * 2))
+        device_row_offsets_bufs_list.append(ctx.enqueue_create_buffer[.uint32](n_slots * (n_local_experts + 1)))
+        device_expert_ids_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_local_experts))
+        device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * max_recv_num_tokens * 2))
 
         device_output_2_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * top_k * hidden_size))
     # fmt: on
@@ -253,7 +253,7 @@ def test_combine[
 
     @always_inline
     @__parameter
-    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
+    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(),
             layout=topk_ids_layout
@@ -277,7 +277,7 @@ def test_combine[
 
     @always_inline
     @__parameter
-    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
+    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(),
             layout=row_offsets_layout
@@ -285,7 +285,7 @@ def test_combine[
 
     @always_inline
     @__parameter
-    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
+    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(),
             layout=expert_ids_layout
@@ -293,7 +293,7 @@ def test_combine[
 
     @always_inline
     @__parameter
-    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
+    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(),
             layout=src_token_info_layout

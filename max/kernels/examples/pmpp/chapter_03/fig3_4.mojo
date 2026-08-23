@@ -51,9 +51,9 @@ def color_to_grayscale_kernel(
         # One can think of the RGB image having CHANNELS
         # times more columns than the gray scale image
         var rgb_offset = gray_offset * CHANNELS
-        var r = p_in[rgb_offset].cast[DType.float32]()  # Red value
-        var g = p_in[rgb_offset + 1].cast[DType.float32]()  # Green value
-        var b = p_in[rgb_offset + 2].cast[DType.float32]()  # Blue value
+        var r = p_in[rgb_offset].cast[.float32]()  # Red value
+        var g = p_in[rgb_offset + 1].cast[.float32]()  # Green value
+        var b = p_in[rgb_offset + 2].cast[.float32]()  # Blue value
         # Perform the rescaling and store it
         # We multiply by floating point constants
         p_out[gray_offset] = UInt8(0.21 * r + 0.71 * g + 0.07 * b)
@@ -133,9 +133,9 @@ def color_to_grayscale_cpu(
     for row, col in product(range(height), range(width)):
         var gray_offset = row * width + col
         var rgb_offset = gray_offset * CHANNELS
-        var r = input[rgb_offset].cast[DType.float32]()
-        var g = input[rgb_offset + 1].cast[DType.float32]()
-        var b = input[rgb_offset + 2].cast[DType.float32]()
+        var r = input[rgb_offset].cast[.float32]()
+        var g = input[rgb_offset + 1].cast[.float32]()
+        var b = input[rgb_offset + 2].cast[.float32]()
         output[gray_offset] = UInt8(0.21 * r + 0.71 * g + 0.07 * b)
 
 

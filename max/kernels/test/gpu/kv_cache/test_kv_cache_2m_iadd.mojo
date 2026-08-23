@@ -269,8 +269,8 @@ def test_kv_cache_2m_iadd_gpu[
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
-    var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
+    var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[.int64](1)
+    var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[.int64](1)
     ctx.synchronize()
     var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Int(1)))
     lora_end_idx_host[0] = Int64(total_slice_length)
@@ -300,7 +300,7 @@ def test_kv_cache_2m_iadd_gpu[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, Layout.row_major[2]()](
+    var paged_lut = ManagedLayoutTensor[.uint32, Layout.row_major[2]()](
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape), ctx
     )
     var paged_lut_host = TileTensor(
@@ -328,7 +328,7 @@ def test_kv_cache_2m_iadd_gpu[
         page_size,
     ](
         kv_block_paged.device_tensor(),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
             cache_lengths.device_tensor().ptr,
             cache_lengths.device_tensor().runtime_layout,
         ),
@@ -357,7 +357,7 @@ def test_kv_cache_2m_iadd_gpu[
     kv_cache_2m_iadd_dispatch[target="gpu"](
         a.device_tensor(),
         kv_collection_device,
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
             input_row_offsets_slice.device_tensor().ptr,
             input_row_offsets_slice.device_tensor().runtime_layout,
         ),
@@ -610,25 +610,25 @@ def test_kv_cache_2m_iadd_cpu[
 def main() raises:
     # CPU tests
     with DeviceContext(api="cpu") as cpu_ctx:
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 1](
             IndexList[1](10),
             IndexList[1](40),
             1,
@@ -637,25 +637,25 @@ def main() raises:
 
     # GPU tests
     with DeviceContext() as ctx:
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 1](
             IndexList[1](10),
             IndexList[1](40),
             1,

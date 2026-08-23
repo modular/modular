@@ -104,7 +104,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     comptime static_K = a.static_shape[1]
 
     comptime assert (
-        a_type == b_type == DType.bfloat16
+        a_type == b_type == .bfloat16
     ), "a_type and b_type must be bfloat16 and must be the same"
     comptime assert c_type in (DType.bfloat16,), "c_type must be bfloat16"
 

@@ -24,7 +24,7 @@ def emitLoad(x: Int):
 
     @no_inline
     def foo[width: Int](idx: Int) {mut count, read ptr} -> Int:
-        var vec = ptr.load[width=width](idx).cast[DType.int]()
+        var vec = ptr.load[width=width](idx).cast[.int]()
         count = count + rebind[type_of(count)](vec)
         return count
 

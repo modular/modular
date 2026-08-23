@@ -75,12 +75,12 @@ def block_scaled_matmul_fp8_ref(
 
     var accum = Float32(0)
     for ko in range(k_groups):
-        var a_scale = am_scales[ko].cast[DType.float32]()
-        var b_scale = bn_scales[ko].cast[DType.float32]()
+        var a_scale = am_scales[ko].cast[.float32]()
+        var b_scale = bn_scales[ko].cast[.float32]()
         # E8M0 scales are exact powers of two, so hoisting them is bit-exact.
         var part = Float32(0)
         for ki in range(MXFP8_SF_VECTOR_SIZE):
-            part += am[ki].cast[DType.float32]() * bn[ki].cast[DType.float32]()
+            part += am[ki].cast[.float32]() * bn[ki].cast[.float32]()
         accum += part * a_scale * b_scale
         am += MXFP8_SF_VECTOR_SIZE
         bn += MXFP8_SF_VECTOR_SIZE
@@ -90,9 +90,7 @@ def block_scaled_matmul_fp8_ref(
 
 def _e4m3_byte(f: Float32) -> UInt8:
     """Byte encoding of `f` as E4M3."""
-    return bitcast[DType.uint8, 1](
-        Float8_e4m3fn(f.cast[DType.float8_e4m3fn]())
-    )[0]
+    return bitcast[.uint8, 1](Float8_e4m3fn(f.cast[.float8_e4m3fn]()))[0]
 
 
 def _rand_e4m3_byte() -> UInt8:
@@ -125,10 +123,10 @@ def _test_case[
 
     print("  ", name, " ", M_static, "x", N_static, "x", K_static)
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     var one = _e4m3_byte(Float32(1.0))
@@ -143,12 +141,12 @@ def _test_case[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -206,10 +204,8 @@ def _test_case[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -268,10 +264,10 @@ def test_mxfp8_matmul_split_k[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -283,12 +279,12 @@ def test_mxfp8_matmul_split_k[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -330,10 +326,8 @@ def test_mxfp8_matmul_split_k[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -367,10 +361,10 @@ def _test_dispatch[
 
     print("  ", name, " ", M_static, "x", N_static, "x", K_static)
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -382,12 +376,12 @@ def _test_dispatch[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -423,10 +417,8 @@ def _test_dispatch[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()

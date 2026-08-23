@@ -117,8 +117,8 @@ def check_ldmatrix_fp8[
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -203,5 +203,5 @@ def check_ldmatrix_fp8[
 
 def main() raises:
     with DeviceContext() as ctx:
-        check_ldmatrix_fp8[DType.float8_e4m3fn](ctx)
-        check_ldmatrix_fp8[DType.float8_e5m2](ctx)
+        check_ldmatrix_fp8[.float8_e4m3fn](ctx)
+        check_ldmatrix_fp8[.float8_e5m2](ctx)

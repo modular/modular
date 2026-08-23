@@ -82,22 +82,22 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 def test_elementwise_float32() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.float32](ctx)
+    run_elementwise[.float32](ctx)
 
 
 def test_elementwise_bfloat16() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.bfloat16](ctx)
+    run_elementwise[.bfloat16](ctx)
 
 
 def test_elementwise_float16() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.float16](ctx)
+    run_elementwise[.float16](ctx)
 
 
 def test_elementwise_int8() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.int8](ctx)
+    run_elementwise[.int8](ctx)
 
 
 def main() raises:

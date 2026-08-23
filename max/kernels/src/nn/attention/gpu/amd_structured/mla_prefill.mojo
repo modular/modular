@@ -72,7 +72,7 @@ __extension Attention:
         )
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
         # K buffer (nope): depth=128, double-buffered gfx950 style.

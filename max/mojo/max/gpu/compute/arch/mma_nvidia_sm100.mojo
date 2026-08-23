@@ -501,12 +501,12 @@ def _mxf8f6f4_operand_format[dtype: DType]() -> UInt32:
     (`PACKED_FP4_ALIGN16B`), not from the densely packed layout the FP4-only
     kinds read.
     """
-    comptime if dtype == DType.float8_e4m3fn:
+    comptime if dtype == .float8_e4m3fn:
         return 0
-    elif dtype == DType.float8_e5m2:
+    elif dtype == .float8_e5m2:
         return 1
     else:
-        comptime assert dtype == DType.uint8, String(
+        comptime assert dtype == .uint8, String(
             "Unsupported operand type for kind::mxf8f6f4: ", dtype
         )
         return 5
@@ -606,9 +606,7 @@ struct UMMAInsDescriptor[
         """
 
         comptime assert (
-            d_type == DType.float32
-            and a_type == DType.float32
-            and b_type == DType.float32
+            d_type == .float32 and a_type == .float32 and b_type == .float32
         ), String(
             "Invalid operand data type for UMMA instruction: ",
             d_type,
@@ -659,13 +657,13 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
+            0x0, UInt32(1) if d_type == .float32 else UInt32(0)
         )
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, UInt32(1) if a_type == DType.bfloat16 else UInt32(0)
+            d_type_bit, UInt32(1) if a_type == .bfloat16 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, UInt32(1) if b_type == DType.bfloat16 else UInt32(0)
+            a_type_bit, UInt32(1) if b_type == .bfloat16 else UInt32(0)
         )
 
         return desc
@@ -706,14 +704,14 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
+            0x0, UInt32(1) if d_type == .float32 else UInt32(0)
         )
 
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
+            d_type_bit, UInt32(1) if a_type == .float8_e5m2 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
+            a_type_bit, UInt32(1) if b_type == .float8_e5m2 else UInt32(0)
         )
 
         return desc
@@ -805,7 +803,7 @@ struct UMMAInsDescriptor[
 
         comptime desc = Self._insert_bit[23](
             b_type_bit,
-            UInt32(0) if scale_type == DType.float8_e4m3fn else UInt32(1),
+            UInt32(0) if scale_type == .float8_e4m3fn else UInt32(1),
         )
 
         return desc

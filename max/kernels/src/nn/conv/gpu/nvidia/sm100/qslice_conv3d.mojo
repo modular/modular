@@ -106,7 +106,7 @@ def _accum_bf16_to_fp32_kernel[
         return
     var src_val = src_bf16_ptr.load[
         width=output_simd_width, alignment=bf16_alignment
-    ](accum_idx).cast[DType.float32]()
+    ](accum_idx).cast[.float32]()
     var accum_val = accum_fp32_ptr.load[
         width=output_simd_width, alignment=fp32_alignment
     ](accum_idx)
@@ -244,9 +244,9 @@ def dispatch_qslice_conv3d_sm100[
     comptime if not filter.shape_known:
         return False
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
-    comptime if output_type != DType.bfloat16:
+    comptime if output_type != .bfloat16:
         return False
 
     # FCQRS slab extraction would need a dedicated kernel (a fixed-q
@@ -318,7 +318,7 @@ def dispatch_qslice_conv3d_sm100[
     var output_elems = batch * per_batch_elems
 
     # --- 1. Allocate fp32 accumulator (zeroed) + reusable bf16 temp. ---
-    var accum_fp32_buf = ctx.enqueue_create_buffer[DType.float32](output_elems)
+    var accum_fp32_buf = ctx.enqueue_create_buffer[.float32](output_elems)
     accum_fp32_buf.enqueue_fill(Float32(0.0))
     var accum_fp32_ptr = accum_fp32_buf.unsafe_ptr()
 

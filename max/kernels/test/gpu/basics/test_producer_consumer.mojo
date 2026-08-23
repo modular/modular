@@ -236,19 +236,19 @@ def test_cpasync_producer_consumer_pipeline[
     comptime shape1d = IndexList[1](size)
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var src_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
-    var src_device = LayoutTensor[DType.float32, layout_1d](
+    var src_device_buffer = ctx.enqueue_create_buffer[.float32](size)
+    var src_device = LayoutTensor[.float32, layout_1d](
         src_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
     )
     with src_device_buffer.map_to_host() as src_host_buffer:
         random(
-            LayoutTensor[DType.float32, layout_1d](
+            LayoutTensor[.float32, layout_1d](
                 src_host_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
             )
         )
 
-    var dst_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
-    var dst_device = LayoutTensor[DType.float32, layout_1d](
+    var dst_device_buffer = ctx.enqueue_create_buffer[.float32](size)
+    var dst_device = LayoutTensor[.float32, layout_1d](
         dst_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
     )
 

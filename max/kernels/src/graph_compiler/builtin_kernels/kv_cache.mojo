@@ -89,11 +89,11 @@ struct Struct_kv_cache_store_paged:
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) capturing raises:
@@ -150,16 +150,16 @@ struct Struct_kv_cache_store_k_scales_paged:
     ](
         input_k_scales: FusedInputTensor[dtype=scale_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
         # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
-        k_scales_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) capturing raises:
@@ -182,26 +182,26 @@ struct Struct_kv_cache_store_k_scales_paged:
                     kv_blocks.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
                 cache_lengths.to_layout_tensor().ptr,
                 RuntimeLayout[Layout(UNKNOWN_VALUE)](
                     cache_lengths.to_layout_tensor().runtime_layout.shape.value,
                     cache_lengths.to_layout_tensor().runtime_layout.stride.value,
                 ),
             ),
-            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
                 kv_lookup_table.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[2]()].row_major(
                     kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.uint32, Layout.row_major[1](), ImmutAnyOrigin](
+            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
                 max_prompt_length.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[1]()].row_major(
                     max_prompt_length.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.uint32, Layout.row_major[1](), ImmutAnyOrigin](
+            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
                 max_cache_length.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[1]()].row_major(
                     max_cache_length.to_layout_tensor().runtime_layout.shape.value
@@ -213,7 +213,7 @@ struct Struct_kv_cache_store_k_scales_paged:
                     k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
                 k_scales_lookup_table.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[2]()].row_major(
                     k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
@@ -287,11 +287,11 @@ struct Struct_kv_cache_store_padded:
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) capturing raises:
@@ -345,15 +345,15 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         target: StaticString,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
@@ -370,12 +370,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            gamma.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[.int64](),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            input_row_offsets.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
             context,
         )
 
@@ -396,12 +396,12 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
     ](
         q_output: OutputTensor[dtype=dtype, rank=3, ...],
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         q_gamma: InputTensor[dtype=dtype, rank=1, ...],
         k_gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
@@ -420,15 +420,15 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
-            q_proj.to_tile_tensor[DType.int64](),
+            q_proj.to_tile_tensor[.int64](),
             kv_collection,
-            q_gamma.to_tile_tensor[DType.int64](),
-            k_gamma.to_tile_tensor[DType.int64](),
+            q_gamma.to_tile_tensor[.int64](),
+            k_gamma.to_tile_tensor[.int64](),
             epsilon,
             weight_offset,
             layer_idx,
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            q_output.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            q_output.to_tile_tensor[.int64](),
             context,
         )
 
@@ -455,12 +455,12 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
     ](
         q_output: OutputTensor[dtype=q_out_dtype, rank=3, ...],
         q_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         q_gamma: InputTensor[dtype=dtype, rank=1, ...],
         k_gamma: InputTensor[dtype=dtype, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
@@ -499,14 +499,14 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             q_input_fn=q_input_fn,
         ](
             kv_collection,
-            q_gamma.to_tile_tensor[DType.int64](),
-            k_gamma.to_tile_tensor[DType.int64](),
-            freqs_cis.to_tile_tensor[DType.int64](),
+            q_gamma.to_tile_tensor[.int64](),
+            k_gamma.to_tile_tensor[.int64](),
+            freqs_cis.to_tile_tensor[.int64](),
             epsilon,
             weight_offset,
             layer_idx,
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            q_output.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            q_output.to_tile_tensor[.int64](),
             context,
         )
 
@@ -545,19 +545,19 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
         q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         main_kv_blocks: MutableInputTensor[dtype=main_cache_dtype, rank=6, ...],
-        main_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        main_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        main_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        main_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        main_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        main_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         index_kv_blocks: MutableInputTensor[
             dtype=index_cache_dtype, rank=6, ...
         ],
-        index_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        index_kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        index_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        index_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
         k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
         q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
@@ -614,18 +614,18 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         ](
             main_kv_collection,
             index_kv_collection,
-            q_main_gamma.to_tile_tensor[DType.int64](),
-            k_main_gamma.to_tile_tensor[DType.int64](),
-            q_index_gamma.to_tile_tensor[DType.int64](),
-            k_index_gamma.to_tile_tensor[DType.int64](),
-            freqs_cis.to_tile_tensor[DType.int64](),
+            q_main_gamma.to_tile_tensor[.int64](),
+            k_main_gamma.to_tile_tensor[.int64](),
+            q_index_gamma.to_tile_tensor[.int64](),
+            k_index_gamma.to_tile_tensor[.int64](),
+            freqs_cis.to_tile_tensor[.int64](),
             main_epsilon,
             index_epsilon,
             weight_offset,
             layer_idx,
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            q_main_output.to_tile_tensor[DType.int64](),
-            q_index_output.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            q_main_output.to_tile_tensor[.int64](),
+            q_index_output.to_tile_tensor[.int64](),
             context,
         )
 
@@ -646,15 +646,15 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         target: StaticString,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight_offset: Scalar[dtype=dtype],
         context: DeviceContext,
     ) raises:
@@ -671,12 +671,12 @@ struct Struct_rms_norm_value_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            gamma.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[.int64](),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            input_row_offsets.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
             context,
         )
 
@@ -693,14 +693,14 @@ struct Struct_print_kv_cache_paged:
         //,
         target: StaticString,
     ](
-        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
-        is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
+        is_print_compact: InputTensor[dtype=.bool, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -732,13 +732,13 @@ struct Struct_kv_matmul_ragged_paged:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -772,13 +772,13 @@ struct Struct_k_matmul_ragged_paged:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -817,15 +817,15 @@ struct Struct_k_matmul_ragged_paged_scale:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         input_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_cache_t, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -863,15 +863,15 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
     def execute[
         target: StaticString,
     ](
-        cache_row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_row_offsets: OutputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         kv_cache_row_offsets_ragged_paged[target=target](
-            cache_row_offsets.to_tile_tensor[DType.int64](),
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            cache_lengths.to_tile_tensor[DType.int64](),
+            cache_row_offsets.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.int64](),
             context,
         )
 
@@ -890,11 +890,11 @@ struct Struct_kv_cache_ragged_paged_radd:
     ](
         a: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         batch_offset: UInt32,
         layer_idx: UInt32,
         context: DeviceContext,
@@ -931,13 +931,13 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
     ](
         kv: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        lora_end_idx: InputTensor[dtype=DType.int64, rank=1, ...],
-        batch_seq_len: InputTensor[dtype=DType.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        lora_end_idx: InputTensor[dtype=.int64, rank=1, ...],
+        batch_seq_len: InputTensor[dtype=.int64, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
@@ -978,8 +978,8 @@ struct KVCacheCopyPagesD2H:
     ](
         device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
         host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        src_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
-        dst_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
+        src_page_ids: InputTensor[dtype=.int64, rank=1, ...],
+        dst_page_ids: InputTensor[dtype=.int64, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -998,13 +998,13 @@ struct KVCacheCopyPagesD2H:
                     host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
                 src_page_ids.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[1]()].row_major(
                     src_page_ids.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
-            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
                 dst_page_ids.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[1]()].row_major(
                     dst_page_ids.to_layout_tensor().runtime_layout.shape.value

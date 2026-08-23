@@ -181,7 +181,7 @@ def _gemm_smallm_streaming_kernel[
     bank-padded 4-float slot per (lane, tile).
     """
     comptime assert (
-        a_type == DType.bfloat16 and b_type == DType.bfloat16
+        a_type == .bfloat16 and b_type == .bfloat16
     ), "the mfma 16x16x32 path is bf16-only"
     comptime k_per_warp = k_static // warps_per_block
     comptime assert (

@@ -36,7 +36,7 @@ def simple_shift_kernel(destination: Pointer[Int32, _]):
 
 def main() raises:
     with SHMEMContext() as ctx:
-        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+        var destination = ctx.enqueue_create_buffer[.int32](1)
         ctx.enqueue_function[simple_shift_kernel](
             destination, grid_dim=1, block_dim=1
         )

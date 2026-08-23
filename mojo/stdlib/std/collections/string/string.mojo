@@ -2428,7 +2428,7 @@ def _repr_ascii(c: UInt8) -> String:
     elif c == ord_carriage_return:
         return r"\r"
     else:
-        var uc = c.cast[DType.uint8]()
+        var uc = c.cast[.uint8]()
         if uc < 16:
             return hex(uc, prefix=r"\x0")
         else:
@@ -2851,11 +2851,7 @@ def _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
-            return (
-                sign
-                + _calc_initial_buffer_size_int64(n.cast[DType.uint64]())
-                + 1
-            )
+            return sign + _calc_initial_buffer_size_int64(n.cast[.uint64]()) + 1
 
     return 128 + 1  # Add 1 for the terminator
 

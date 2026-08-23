@@ -62,7 +62,7 @@ comptime BATCH = 1
 
 def test_v2_main_loop[
     depth: Int,
-    output_dtype: DType = DType.float32,
+    output_dtype: DType = .float32,
 ](ctx: DeviceContext) raises:
     comptime SIZE_Q = BM * depth
     comptime SIZE_KV = NUM_TILES * KV_BLOCK * depth
@@ -92,9 +92,9 @@ def test_v2_main_loop[
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
     var dev_out = ctx.enqueue_create_buffer[output_dtype](SIZE_OUT)
 
     var total_k = NUM_TILES * KV_BLOCK
@@ -180,7 +180,7 @@ def test_v2_main_loop[
     # output adds a per-element round-off at store time (~1 ULP in
     # BF16, which at value ~0.5 is ~2e-3). Use a slightly looser
     # tolerance for BF16 to absorb the cast.
-    comptime tol: Float32 = 0.05 if output_dtype == DType.float32 else 0.01
+    comptime tol: Float32 = 0.05 if output_dtype == .float32 else 0.01
     var mismatches = 0
     var max_diff: Float32 = 0
     with dev_out.map_to_host() as host_out:

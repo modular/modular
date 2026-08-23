@@ -60,7 +60,7 @@ def filter_kernel(
         passes = cond(val)
 
     # Get active threads mask (only threads passing the filter vote True)
-    var active_threads = vote[DType.uint32](passes)
+    var active_threads = vote[.uint32](passes)
 
     if passes:
         var j: UInt32 = 0

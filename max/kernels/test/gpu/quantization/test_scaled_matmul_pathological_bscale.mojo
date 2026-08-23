@@ -153,7 +153,7 @@ def run_pathological_bscale[
     var inf_outside_large_col = 0
     for i in range(M):
         for j in range(N):
-            var val = c_host[i, j].cast[DType.float32]()
+            var val = c_host[i, j].cast[.float32]()
             if isnan(val):
                 num_nan += 1
             elif isinf(val):

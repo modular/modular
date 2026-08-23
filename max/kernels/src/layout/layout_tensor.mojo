@@ -300,7 +300,7 @@ struct LayoutTensor[
 
     # Create tensor on CPU using Array to allocate storage space.
     var storage = Array[Float32, 5 * 4](uninitialized=True)
-    var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
+    var tensor_5x4 = LayoutTensor[.float32, Layout.row_major(5, 4)](storage)
     ```
     """
 
@@ -7018,7 +7018,7 @@ def copy_sram_to_dram[
         dst_fragments.copy_from(src_fragments)
     else:
         comptime assert src.dtype == dst.dtype or (
-            src.dtype == DType.float32 and dst.dtype.is_half_float()
+            src.dtype == .float32 and dst.dtype.is_half_float()
         ), "Only support FP32 -> half precision downcast during copy."
 
         comptime simd_size = simd_width_of[dst.dtype]()
@@ -7859,7 +7859,7 @@ def copy_local_to_shared[
             return
 
     comptime assert src.dtype == dst.dtype or (
-        src.dtype == DType.float32
+        src.dtype == .float32
         and (dst.dtype.is_half_float() or dst.dtype.is_float8())
     ), "Only support FP32 -> half-precision or FP8 downcast during copy."
     comptime assert (
@@ -7955,13 +7955,13 @@ def copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
 
     def kernel():
         ...
-        var src_reg = LayoutTensor[DType.float32,
+        var src_reg = LayoutTensor[.float32,
             Layout.row_major(16, 8),
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation().fill(1)
 
-        var dst_reg = LayoutTensor[DType.bfloat16,
+        var dst_reg = LayoutTensor[.bfloat16,
             Layout.row_major(16, 8),
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
@@ -8003,7 +8003,7 @@ def copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     ), "src address space must be LOCAL."
 
     comptime assert (
-        dst.dtype.is_half_float() and src.dtype == DType.float32
+        dst.dtype.is_half_float() and src.dtype == .float32
     ), "Only support copy float32 to bfloat16 for now"
 
     comptime assert (

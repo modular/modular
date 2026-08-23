@@ -70,11 +70,11 @@ def run_one_case(
     ctx: DeviceContext, spec: CaseSpec, check: Bool = False
 ) raises:
     var n = spec.n
-    var in_host = ctx.enqueue_create_host_buffer[DType.float32](n)
+    var in_host = ctx.enqueue_create_host_buffer[.float32](n)
     rand(in_host.as_span())
 
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](n)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](n)
+    var in_dev = ctx.enqueue_create_buffer[.float32](n)
+    var out_dev = ctx.enqueue_create_buffer[.float32](n)
     ctx.enqueue_copy(in_dev, in_host)
 
     ctx.enqueue_function[numeric_canary_kernel](
@@ -87,8 +87,8 @@ def run_one_case(
     ctx.synchronize()
 
     if check:
-        var out_h = ctx.enqueue_create_host_buffer[DType.float32](n)
-        var ref_h = ctx.enqueue_create_host_buffer[DType.float32](n)
+        var out_h = ctx.enqueue_create_host_buffer[.float32](n)
+        var ref_h = ctx.enqueue_create_host_buffer[.float32](n)
         ctx.enqueue_copy(out_h, out_dev)
         ctx.synchronize()
         var src = in_host.as_span()

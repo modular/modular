@@ -146,8 +146,8 @@ def test_tile_and_distribute():
     var dynamic_layout = RuntimeLayout[
         layout, element_type=DType.int64, linear_idx_type=DType.int64
     ](
-        RuntimeTuple[layout.shape](8, 8).cast[DType.int64](),
-        RuntimeTuple[layout.stride](8, 1).cast[DType.int64](),
+        RuntimeTuple[layout.shape](8, 8).cast[.int64](),
+        RuntimeTuple[layout.stride](8, 1).cast[.int64](),
     )
 
     var storage = List(length=dynamic_layout.size(), fill=Float32(0))
@@ -804,7 +804,7 @@ def test_split():
     print(tensor_Ux8_split2)
 
     comptime layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
-    var tensor_8x2 = LayoutTensor[DType.float32, layout_8x2](ptr)
+    var tensor_8x2 = LayoutTensor[.float32, layout_8x2](ptr)
     var tensor_8x2_split1 = tensor_8x2.split[0, split_alignment=3](3, 1)
     var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)
 

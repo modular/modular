@@ -173,7 +173,7 @@ def dispatch_sm100_conv2d[
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
-    comptime if input_type == DType.bfloat16:
+    comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 

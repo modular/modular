@@ -230,7 +230,7 @@ def warpgroup_fence[
 
     """
     comptime assert (
-        accum_type == DType.float32
+        accum_type == .float32
     ), "Only float32 is supported for warpgroup fence"
 
     @always_inline

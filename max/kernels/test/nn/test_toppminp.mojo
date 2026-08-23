@@ -284,7 +284,7 @@ def test_all_types[
     FillFn: ImplicitlyCopyable & FillFnType,
 ](fill_fn: FillFn) raises:
     print("\n=== Testing Float32 ===")
-    test_all_out_idx_types[DType.float32](fill_fn)
+    test_all_out_idx_types[.float32](fill_fn)
 
 
 def main() raises:

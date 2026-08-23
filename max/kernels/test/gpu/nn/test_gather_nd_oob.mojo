@@ -118,9 +118,7 @@ def test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime indices_rank = 2
     var indices_shape = IndexList[indices_rank](2, 2)
     var indices_size = 4
-    var indices_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
-        indices_size
-    )
+    var indices_host_ptr = ctx.enqueue_create_host_buffer[.int64](indices_size)
     var indices_tensor = TileTensor(
         indices_host_ptr, row_major(Coord(indices_shape))
     )

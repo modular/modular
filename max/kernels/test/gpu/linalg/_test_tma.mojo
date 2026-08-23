@@ -450,7 +450,7 @@ def main() raises:
 
         test_tma_load[
             IntTuple(8, 512),
-            TMALoad[DType.bfloat16, desc_shape].get_2D_smem_layout[2, 4](),
+            TMALoad[.bfloat16, desc_shape].get_2D_smem_layout[2, 4](),
             desc_shape,
             DType.bfloat16,
         ](ctx)

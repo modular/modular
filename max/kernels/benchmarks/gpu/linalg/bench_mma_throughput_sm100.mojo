@@ -365,8 +365,7 @@ def mma_throughput_kernel[
     var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
     comptime mma_kind = (
-        UMMAKind.KIND_F8F6F4 if a_type
-        == DType.float8_e4m3fn else UMMAKind.KIND_F16
+        UMMAKind.KIND_F8F6F4 if a_type == .float8_e4m3fn else UMMAKind.KIND_F16
     )
     var idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
@@ -503,7 +502,7 @@ def main() raises:
     comptime N_LOGICAL = get_defined_int["N_LOGICAL", 256]()
     comptime K_LOGICAL = get_defined_int["K_LOGICAL", 131072]()
 
-    comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 if dtype == .float8_e4m3fn else 16
     comptime BK_DESC = MMA_K
     comptime accum_type = get_accum_type[dtype]()
     comptime num_threads = 128

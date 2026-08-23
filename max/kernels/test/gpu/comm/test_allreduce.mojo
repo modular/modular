@@ -83,7 +83,7 @@ def allreduce_test[
     )
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -108,7 +108,7 @@ def allreduce_test[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
@@ -312,15 +312,15 @@ def allreduce_naive_test() raises -> None:
         ctxs.append(DeviceContext(device_id=i))
 
     # Allocate input/output buffers and initialize inputs
-    var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
+    var in_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
     var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     for i in range(ngpus):
-        in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
+        in_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
+        out_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
         for j in range(length):

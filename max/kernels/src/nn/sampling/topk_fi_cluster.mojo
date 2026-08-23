@@ -218,11 +218,11 @@ def _cluster_cutoff_search[
         # range cross an exponent per step where thirds of the value range
         # walk `high` down one exponent at a time. `high > low` here, so the
         # span cannot underflow.
-        var lo_bits = max(low, Float32(0)).to_bits[DType.uint32]()
-        var hi_bits = max(high, Float32(0)).to_bits[DType.uint32]()
+        var lo_bits = max(low, Float32(0)).to_bits[.uint32]()
+        var hi_bits = max(high, Float32(0)).to_bits[.uint32]()
         var span = hi_bits - lo_bits
-        var pivot_0 = bitcast[DType.float32](lo_bits + span // 3)
-        var pivot_1 = bitcast[DType.float32](lo_bits + 2 * (span // 3))
+        var pivot_0 = bitcast[.float32](lo_bits + span // 3)
+        var pivot_1 = bitcast[.float32](lo_bits + 2 * (span // 3))
 
         # Accumulate thread-local counts/masses across the slice. The
         # accumulators stay scalar on purpose: at block_size 1024 only 64
@@ -439,8 +439,8 @@ def TopKTopPMaskedProbsClusterKernel[
         comptime for j in range(vec_size):
             if e[j] > 0:
                 thread_pos += 1
-    var block_total = _block_reduce_value_count[DType.float32, broadcast=False](
-        ValueCount[DType.float32](thread_sum, thread_pos)
+    var block_total = _block_reduce_value_count[.float32, broadcast=False](
+        ValueCount[.float32](thread_sum, thread_pos)
     )
 
     var totals = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
@@ -510,17 +510,17 @@ def topk_topp_masked_probs_cluster[
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[DType.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
-        TileTensor[DType.int64, TopKArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.int64, TopKArrLayoutType, ImmutAnyOrigin]
     ] = None,
     top_p_arr: Optional[
-        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TopPArrLayoutType, ImmutAnyOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Computes per-row top-k/top-p masked softmax on a cluster device.
@@ -957,7 +957,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     out_idx_type: DType,
     deterministic: Bool,
     cluster_size: Int,
-    dist_dtype: DType = DType.float32,
+    dist_dtype: DType = .float32,
     ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
     OutputStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -1234,7 +1234,7 @@ def topk_topp_sampling_from_prob_cluster[
     block_size: Int = 1024,
     from_logits: Bool = False,
     emit_dist: Bool = False,
-    dist_dtype: DType = DType.float32,
+    dist_dtype: DType = .float32,
     DistLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64, Int64].element_types,
         stride_types=Coord[Int64, ComptimeInt[1]].element_types,

@@ -398,7 +398,7 @@ def flare_mla_decoding[
     # Q and output may differ for native FP8 path: Q is float8_e4m3fn,
     # output is bfloat16. Both half-float Q (bfloat16) and FP8 Q are valid.
     comptime assert q.dtype == output.dtype or (
-        q.dtype == DType.float8_e4m3fn and output.dtype == DType.bfloat16
+        q.dtype == .float8_e4m3fn and output.dtype == .bfloat16
     ), (
         "Q and output must have same type, or Q=float8_e4m3fn with"
         " output=bfloat16."
@@ -785,7 +785,7 @@ def flare_mla_decoding_dispatch[
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
     comptime assert (
-        q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
+        q.dtype.is_half_float() or q.dtype == .float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
 
     # AMD MLA decode folds H*S query rows into the QK^T MMA M dimension up to
@@ -896,7 +896,7 @@ def flare_mla_decoding_dispatch[
                 return
 
             comptime num_heads_val = type_of(q).static_shape[q.rank - 2]
-            comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+            comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
             var local_args = MLADispatchScalarArgs[
                 num_heads=num_heads_val,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1443,7 +1443,7 @@ def mla_splitk_reduce[
     # input_row_offsets `[batch_size + 1]`. Read only on the `ragged and
     # q_seq_len > 1` path (remap the final store, skip short-sequence pad rows);
     # a zero-length placeholder otherwise.
-    valid_length_tt: TileTensor[DType.uint32, ValidLT, ImmutAnyOrigin],
+    valid_length_tt: TileTensor[.uint32, ValidLT, ImmutAnyOrigin],
 ):
     var _batch_size = Int(batch_size)
     var _num_partitions = Int(num_partitions)
@@ -2596,7 +2596,7 @@ def _ragged_kv_view(
 
 @always_inline
 def _ragged_offsets_view(
-    src: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
 ) -> TileTensor[
     DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
 ]:
@@ -2721,19 +2721,19 @@ def flare_mla_prefill[
     """
     comptime assert rank == 3, "only support ragged inputs"
 
-    comptime if q.dtype == DType.bfloat16 and cache_t.dtype == DType.bfloat16:
+    comptime if q.dtype == .bfloat16 and cache_t.dtype == .bfloat16:
         comptime assert (
             q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
         ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == DType.bfloat16 and cache_t.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .bfloat16 and cache_t.dtype == .float8_e4m3fn:
         comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
             "Q, K, V, output should have same type if q.dtype is bfloat16 and"
             " k_rope.dtype is float8_e4m3fn"
         )
-    elif q.dtype == DType.float8_e4m3fn and cache_t.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .float8_e4m3fn and cache_t.dtype == .float8_e4m3fn:
         comptime assert (
             q.dtype == k.dtype == v.dtype == cache_t.dtype
-            and output.dtype == DType.bfloat16
+            and output.dtype == .bfloat16
         ), (
             "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
             " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
@@ -2861,19 +2861,19 @@ def flare_mla_prefill[
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
 
-    comptime if q.dtype == DType.bfloat16 and k_rope.dtype == DType.bfloat16:
+    comptime if q.dtype == .bfloat16 and k_rope.dtype == .bfloat16:
         comptime assert (
             q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
         ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == DType.bfloat16 and k_rope.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .bfloat16 and k_rope.dtype == .float8_e4m3fn:
         comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
             "Q, K, V, output should have same type if q.dtype is bfloat16 and"
             " k_rope.dtype is float8_e4m3fn"
         )
-    elif q.dtype == DType.float8_e4m3fn and k_rope.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .float8_e4m3fn and k_rope.dtype == .float8_e4m3fn:
         comptime assert (
             q.dtype == k.dtype == v.dtype == k_rope.dtype
-            and output.dtype == DType.bfloat16
+            and output.dtype == .bfloat16
         ), (
             "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
             " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
@@ -2991,14 +2991,14 @@ def flare_mla_prefill[
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ) if k_rope.dtype == DType.bfloat16 else (
+    ) if k_rope.dtype == .bfloat16 else (
         q.dtype == k.dtype == v.dtype == output.dtype
     ), (
         "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
         " otherwise only Q, K, V should have same type."
     )
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
+        q.dtype == .float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     @always_inline
@@ -3491,8 +3491,7 @@ def flare_mla_prefill_dispatch[
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16
-            or k_rope_t.dtype == DType.float8_e4m3fn
+            k_rope_t.dtype == .bfloat16 or k_rope_t.dtype == .float8_e4m3fn
         ), "Only support bfloat16 or float8_e4m3fn for SM100"
 
         mla_sm100_prefill[
@@ -3518,7 +3517,7 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16 or has_amd_gpu_accelerator()
+            k_rope_t.dtype == .bfloat16 or has_amd_gpu_accelerator()
         ), (
             "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
             " bfloat16 and float8_e4m3fn"
@@ -4817,7 +4816,7 @@ def _k_cache_to_buffer[
     buffer_row_offsets: TileTensor[
         DType.uint32, BufferRowOffsetsLayoutType, ...
     ],
-    cache_offsets: TileTensor[DType.uint32, CacheOffsetsLayoutType, ...],
+    cache_offsets: TileTensor[.uint32, CacheOffsetsLayoutType, ...],
     k_cache: cache_t,
     length: Int32,
     buffer: TileTensor[mut=True, dtype=dtype, ...],

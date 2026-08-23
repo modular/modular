@@ -51,7 +51,7 @@ trait DevicePassable:
     def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
-        For example, Int would return "Int", DeviceBuffer[DType.float32] would
+        For example, Int would return "Int", DeviceBuffer[.float32] would
         return "DeviceBuffer[DType.float32]". This is used for error messages
         when passing types to the device.
         TODO: This method will be retired soon when better kernel call error

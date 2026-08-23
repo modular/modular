@@ -167,7 +167,7 @@ def _softmax_seed_sink(
 def _softmax_row_max[
     num_n_mmas: Int
 ](
-    scores: MmaOpApple[DType.float32, DType.float32, 1, num_n_mmas].AccumType,
+    scores: MmaOpApple[.float32, DType.float32, 1, num_n_mmas].AccumType,
 ) -> Array[Float32, _SOFTMAX_FRAG_ROWS]:
     """Full-row max over the single score row-block (across all `ni` cols).
 
@@ -537,7 +537,7 @@ def fa_prefill_apple_core[
         b_type=k_t.dtype,
         transpose_b=True,
     ]
-    comptime OutMma = MmaOpApple[DType.float32, q_type, 1, DEPTH_MMAS]
+    comptime OutMma = MmaOpApple[.float32, q_type, 1, DEPTH_MMAS]
 
     # QK MMA op (lane-offset setup is loop-invariant).
     var score_mma = ScoreMma()
@@ -554,9 +554,7 @@ def fa_prefill_apple_core[
         # (`* log2e`) to match the log2e-folded scores. The deref is comptime-gated
         # on `sink`, so None is never reached.
         var sw = rebind[Scalar[q_type]](sink_weights.value()[head_id])
-        _softmax_seed_sink(
-            sm_m, sm_l, sw.cast[DType.float32]() * Float32(log2e)
-        )
+        _softmax_seed_sink(sm_m, sm_l, sw.cast[.float32]() * Float32(log2e))
 
     # Fold log2e into the scale so per-element scaling lands scores directly in
     # the units `exp2` consumes. Exact here: the supported masks only pass-through

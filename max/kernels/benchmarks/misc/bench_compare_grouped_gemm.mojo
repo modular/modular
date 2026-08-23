@@ -79,7 +79,7 @@ def bench_cublas_per_group[
 
     comptime SF_VECTOR_SIZE = sf_vector_size
     comptime transpose_b = True
-    comptime is_fp4 = (a_type == DType.uint8)
+    comptime is_fp4 = (a_type == .uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
     var k_array_val = Int(k.value()) // k_pack
@@ -226,7 +226,7 @@ def bench_structured_kernel[
     comptime transpose_b = True
     comptime mma_shape = Index(mma_m, mma_n, 32)
     comptime cluster_shape = Index(1, 1, 1)
-    comptime is_fp4 = (a_type == DType.uint8)
+    comptime is_fp4 = (a_type == .uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
     var k_array_val = Int(k.value()) // k_pack
@@ -338,11 +338,11 @@ def bench_structured_kernel[
         length=max_groups, fill=UInt64(Int(sfb_device.unsafe_ptr()))
     )
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)

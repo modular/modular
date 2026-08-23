@@ -86,8 +86,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             )
 
         return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.length]](
-            bitcast[DType.int32, 8](a),
-            bitcast[DType.int32, 8](b),
+            bitcast[.int32, 8](a),
+            bitcast[.int32, 8](b),
             c,
             _matrix_format[a.dtype](),
             _matrix_format[b.dtype](),
@@ -161,8 +161,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.length]
             ](
-                bitcast[DType.int16, 4](a),
-                bitcast[DType.int16, 4](b),
+                bitcast[.int16, 4](a),
+                bitcast[.int16, 4](b),
                 c,
                 zero,
                 zero,
@@ -172,8 +172,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
             ](
-                bitcast[DType.int16, 4](a),
-                bitcast[DType.int16, 4](b),
+                bitcast[.int16, 4](a),
+                bitcast[.int16, 4](b),
                 c,
                 zero,
                 zero,
@@ -187,8 +187,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[d.dtype, d.length]
         ](
-            bitcast[DType.int16, 4](a),
-            bitcast[DType.int16, 4](b),
+            bitcast[.int16, 4](a),
+            bitcast[.int16, 4](b),
             c,
             zero,
             zero,
@@ -232,8 +232,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x32.fp8.fp8", SIMD[d.dtype, d.length]
         ](
-            bitcast[DType.int64, 1](a),
-            bitcast[DType.int64, 1](b),
+            bitcast[.int64, 1](a),
+            bitcast[.int64, 1](b),
             c,
             zero,
             zero,
@@ -257,8 +257,8 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x32.bf8.bf8", SIMD[d.dtype, d.length]
         ](
-            bitcast[DType.int64, 1](a),
-            bitcast[DType.int64, 1](b),
+            bitcast[.int64, 1](a),
+            bitcast[.int64, 1](b),
             c,
             zero,
             zero,

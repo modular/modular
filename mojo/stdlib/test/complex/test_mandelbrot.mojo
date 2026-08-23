@@ -55,7 +55,7 @@ def test_mandelbrot_iter() raises:
     assert_equal(mandelbrot_iter(50, 50), 2)
     assert_equal(mandelbrot_iter(100, 100), 3)
 
-    var z = ComplexScalar[DType.int32](re=Int32(3), im=Int32(4))
+    var z = ComplexScalar[.int32](re=Int32(3), im=Int32(4))
     assert_equal(z.squared_norm(), 25)
 
 

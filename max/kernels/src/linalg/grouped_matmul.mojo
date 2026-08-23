@@ -1015,7 +1015,7 @@ def grouped_matmul[
     # un-quantized float32 model running LoRA, where the LoRA grouped matmul
     # inherits the float32 activation dtype) must fall through to the naive
     # path, which accumulates in float32 and supports a float32 store + epilogue.
-    comptime c_is_fp32 = c_type == DType.float32
+    comptime c_is_fp32 = c_type == .float32
     # The activation plane select (per-output-column-region) is implemented in
     # the SM100 persistent load stage and the naive kernel only. When it is set
     # (`a_plane_splits[0] > 0`), disable the SM90 and AMD paths so dispatch falls
@@ -1057,8 +1057,8 @@ def grouped_matmul[
     # builds compile this branch out (`has_apple_gpu_accelerator()` is comptime).
     comptime is_apple_fp8_moe_applicable = (
         has_apple_gpu_accelerator()
-        and a_type == DType.bfloat16
-        and b_type == DType.float8_e4m3fn
+        and a_type == .bfloat16
+        and b_type == .float8_e4m3fn
         and is_expert_shape_static
         and not elementwise_lambda_fn
     )
@@ -1095,8 +1095,8 @@ def grouped_matmul[
         def resolve_usage_stats() raises -> Tuple[Int, Int]:
             if host_stats:
                 return host_stats.value()
-            var host_buf = ctx.enqueue_create_host_buffer[DType.uint32](2)
-            var dev_buf = DeviceBuffer[DType.uint32](
+            var host_buf = ctx.enqueue_create_host_buffer[.uint32](2)
+            var dev_buf = DeviceBuffer[.uint32](
                 ctx,
                 expert_usage_stats.ptr.as_unsafe_any_origin(),
                 2,
@@ -1298,7 +1298,7 @@ def grouped_matmul[
     round-trip. The staged buffer is consumed only on SM100; this overload is
     off the MoE decode path, so its small staging cost does not matter.
     """
-    var usage_stats_buf = ctx.enqueue_create_buffer[DType.uint32](2)
+    var usage_stats_buf = ctx.enqueue_create_buffer[.uint32](2)
     with usage_stats_buf.map_to_host() as host:
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
@@ -1475,7 +1475,7 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     """
     comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
     comptime assert (
-        accum_type == DType.float32
+        accum_type == .float32
     ), "Only float32 accumulation is supported."
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -1653,16 +1653,16 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
 
     comptime assert transpose_b, "Only support transpose_b = True."
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
     comptime assert (
-        a_scales_type == DType.float32 and b_scales_type == DType.float32
+        a_scales_type == .float32 and b_scales_type == .float32
     ), "A and B scales must be float32 for rowwise/per-token granularity"
-    comptime assert a_offsets_type == DType.uint32, (
+    comptime assert a_offsets_type == .uint32, (
         "Only uint32 is supported for a_offsets in grouped rowwise scaled fp8"
         " matmul"
     )
-    comptime assert expert_ids_type == DType.int32, (
+    comptime assert expert_ids_type == .int32, (
         "Only int32 is supported for expert_ids in grouped rowwise scaled fp8"
         " matmul"
     )

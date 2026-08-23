@@ -200,7 +200,7 @@ def pipeline_test_kernel[
 def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
-    var data = ctx.enqueue_create_buffer[DType.float32](n)
+    var data = ctx.enqueue_create_buffer[.float32](n)
 
     comptime kernel = cluster_launch_control
     ctx.enqueue_function[kernel](

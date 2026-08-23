@@ -63,7 +63,7 @@ def filter_kernel(
         passes = cond(val)
 
     # Create coalesced group (threads that passed the condition)
-    var active_threads_mask = vote[DType.uint32](passes)
+    var active_threads_mask = vote[.uint32](passes)
 
     if passes:
         # Get group properties

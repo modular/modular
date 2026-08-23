@@ -309,7 +309,7 @@ def test_conv_miopen[
         if diff > max_diff:
             max_diff = diff
     # Use absolute tolerance appropriate for reduced precision types
-    comptime if input_type == DType.float32:
+    comptime if input_type == .float32:
         if max_diff > 1e-3:
             print("  FAIL: max_diff=", max_diff)
             raise Error("MIOpen output does not match CPU reference")

@@ -228,7 +228,7 @@ struct SM100MHADepth512[
             Self.MaskType,
             Self.SchedulerType,
             Self.ValidLengthType,
-            NullPointer[DType.float32],  # SinkType (unused for depth512)
+            NullPointer[.float32],  # SinkType (unused for depth512)
             Self.KVRowOffsetsType,
             Self.MaxSeqLenType,
             Self.PartitionType,

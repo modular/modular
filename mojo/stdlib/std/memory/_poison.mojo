@@ -53,10 +53,10 @@ comptime _UNINIT_CHECK_ENABLED = (
 @always_inline
 def _is_poison_checked_dtype[dtype: DType]() -> Bool:
     return (
-        dtype == DType.float16
-        or dtype == DType.bfloat16
-        or dtype == DType.float32
-        or dtype == DType.float64
+        dtype == .float16
+        or dtype == .bfloat16
+        or dtype == .float32
+        or dtype == .float64
     )
 
 

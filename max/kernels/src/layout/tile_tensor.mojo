@@ -158,7 +158,7 @@ struct TileTensor[
     comptime TileResultType[
         tile_shape_types: TypeList[Trait=CoordLike, ...],
         *,
-        linear_idx_type: DType = DType.int,
+        linear_idx_type: DType = .int,
     ] = TileTensor[
         Self.dtype,
         Layout[
@@ -2505,7 +2505,7 @@ struct TileTensor[
             from layout.tile_layout import row_major
             var storage = Array[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
-            var dynamic = tensor.make_dynamic[DType.int64]()
+            var dynamic = tensor.make_dynamic[.int64]()
             # dynamic has Int64 for all shape/stride dimensions
             ```
         """
@@ -4284,7 +4284,7 @@ def lt_to_tt_idx[
     lt_layout: _LegacyLayout,
     //,
     ResultLayout: TensorLayout = LTToTTLayout[lt_layout],
-    linear_idx_type: DType = DType.int64,
+    linear_idx_type: DType = .int64,
 ](lt: _LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
     dtype,
     Layout[

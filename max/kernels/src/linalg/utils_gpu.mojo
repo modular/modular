@@ -571,7 +571,7 @@ def _apple_m5_allow_lossy_f32_matmul() -> Bool:
 
 def create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
-) raises -> DeviceBuffer[DType.uint32]:
+) raises -> DeviceBuffer[.uint32]:
     """Precompute Hilbert-curve block swizzle lookup-table for a rectangular grid.
 
     The returned device pointer refers to a 1-D UInt32 array of length
@@ -623,7 +623,7 @@ def create_hilbert_lut(
         d += 1
 
     # Allocate device buffer and copy.
-    var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+    var device_buf = ctx.enqueue_create_buffer[.uint32](num_blocks)
     ctx.enqueue_copy(device_buf, host.unsafe_span())
     dealloc(host^)
     return device_buf
@@ -631,7 +631,7 @@ def create_hilbert_lut(
 
 def get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
-) raises -> DeviceBuffer[DType.uint32]:
+) raises -> DeviceBuffer[.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed).
 
     Args:
@@ -649,9 +649,7 @@ def get_hilbert_lut_with_cache(
         var device_ptr = cached_ptr.unsafe_value().unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
-        return DeviceBuffer[DType.uint32](
-            ctx, device_ptr, num_blocks, owning=False
-        )
+        return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)
 
     # not in cache :(
     var buf = create_hilbert_lut(ctx, grid_x, grid_y)
@@ -667,4 +665,4 @@ def get_hilbert_lut_with_cache(
     # the buffer will live for the duration of the program
     _ = buf.take_ptr()
 
-    return DeviceBuffer[DType.uint32](ctx, device_ptr, num_blocks, owning=False)
+    return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)

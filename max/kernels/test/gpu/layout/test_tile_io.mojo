@@ -405,19 +405,19 @@ def _run_roundtrip[
 ](name: String, ctx: DeviceContext) raises:
     print("==", name)
 
-    var src_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var src_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     for i in range(_NUM_ELEMENTS):
         src_host[i] = Float32(i + 1)
 
-    var src_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
-    var dst_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var src_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
+    var dst_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
     ctx.enqueue_function[kernel_fn](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BLOCK_DIM)
     )
 
-    var dst_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var dst_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(dst_host, dst_dev)
     ctx.synchronize()
 
@@ -473,23 +473,19 @@ def test_async_generic_to_shared_to_generic_16b_bf16(
     var name = "test_async_generic_to_shared_to_generic_16b_bf16"
     print("==", name)
 
-    var src_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        _BF16_NUM_ELEMENTS
-    )
+    var src_host = ctx.enqueue_create_host_buffer[.bfloat16](_BF16_NUM_ELEMENTS)
     for i in range(_BF16_NUM_ELEMENTS):
         src_host[i] = BFloat16(i + 1)
 
-    var src_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
-    var dst_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
+    var src_dev = ctx.enqueue_create_buffer[.bfloat16](_BF16_NUM_ELEMENTS)
+    var dst_dev = ctx.enqueue_create_buffer[.bfloat16](_BF16_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
     ctx.enqueue_function[async_generic_to_shared_to_generic_16b_bf16_kernel](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS)
     )
 
-    var dst_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        _BF16_NUM_ELEMENTS
-    )
+    var dst_host = ctx.enqueue_create_host_buffer[.bfloat16](_BF16_NUM_ELEMENTS)
     ctx.enqueue_copy(dst_host, dst_dev)
     ctx.synchronize()
 

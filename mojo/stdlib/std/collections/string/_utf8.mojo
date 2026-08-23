@@ -110,7 +110,7 @@ def _utf8_char_width(b: Byte) -> Int:
 @always_inline
 def _extract_vector[
     width: SIMDLength, //, offset: Int
-](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[DType.uint8, width]:
+](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
     # generates a single `vpalignr` on x86 with AVX
     return a.join(b).slice[width, offset=offset]()
 
@@ -271,7 +271,7 @@ def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
 def _is_utf8_continuation_byte[
     w: SIMDLength
 ](vec: SIMD[.uint8, w]) -> SIMD[.bool, w]:
-    return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
+    return vec.cast[.int8]().lt(-(0b1000_0000 >> 1))
 
 
 @always_inline
@@ -298,7 +298,7 @@ def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     assert not _is_utf8_continuation_byte(
         b
     ), "Function does not work correctly if given a continuation byte."
-    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[.uint8]())
 
 
 def _utf8_byte_type(b: SIMD[.uint8, _], /) -> type_of(b):

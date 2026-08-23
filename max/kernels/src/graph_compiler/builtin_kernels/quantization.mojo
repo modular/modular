@@ -136,14 +136,14 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        var out_t = output.to_tile_tensor[DType.int64]()
+        var out_t = output.to_tile_tensor[.int64]()
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
         var in_shape = input.shape()
         var rows = in_shape.flattened_length() // in_shape[rank - 1]
         var scale_t = TileTensor(
-            scales.to_tile_tensor[DType.int64]()._storage,
+            scales.to_tile_tensor[.int64]()._storage,
             row_major(Coord(rows)),
         )
 
@@ -188,7 +188,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 scale_fn,
                 input.shape_coord(),
                 ComptimeInt[cols](),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset,
                 scale_ub,
@@ -203,7 +203,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 scale_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset,
                 scale_ub,
@@ -257,8 +257,8 @@ struct ResizeNearest:
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
         ](
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -295,8 +295,8 @@ struct ResizeLinear:
         resize_linear[
             CoordinateTransformationMode(coordinate_transform_mode), antialias
         ](
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
         )
 
 
@@ -331,8 +331,8 @@ struct ResizeBicubic:
         ctx: DeviceContext,
     ) raises:
         resize_bicubic[dtype=dtype, target=target](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -360,11 +360,11 @@ struct GGMLQ40Dequantize:
     def execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        input: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
             input_tt,
             output_tt,
@@ -375,7 +375,7 @@ struct GGMLQ40Dequantize:
 @extensibility.register_shape_function("ggml_q4_0_dequantize")
 def ggml_q4_0_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q4_0_dequantize` graph op."""
-    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).dtype == .uint8, "input must be uint8"
     comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[Q4sym[group_size=32]]()
     comptime quants_per_block = 32
@@ -395,16 +395,16 @@ struct VroomQ40Matmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=.float32, rank=2, ...],
+        a: InputTensor[dtype=.float32, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_qint4[32](
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
-            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.int64](),
             Optional[DeviceContext](ctx),
         )
 
@@ -412,9 +412,9 @@ struct VroomQ40Matmul:
 @extensibility.register_shape_function("vroom_q4_0_matmul")
 def vroom_q4_0_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q4_0_matmul` graph op."""
-    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).dtype == .float32, "a must be float32"
     comptime assert type_of(a).rank == 2, "a must be rank 2"
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
         Int(coord_to_index_list(a.shape().tuple())[0]),
@@ -432,12 +432,12 @@ struct VroomQ40RepackWeights:
     def execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
         matmul_qint4_pack_b[32](
-            b.to_tile_tensor[DType.int64](),
-            b_packed.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[.int64](),
+            b_packed.to_tile_tensor[.int64](),
         )
 
 
@@ -447,7 +447,7 @@ def vroom_q4_0_repack_weights_shape(
 ) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q4_0_repack_weights` graph op.
     """
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return rebind[IndexList[type_of(b).rank]](
         coord_to_index_list(b.shape().tuple())
@@ -463,19 +463,19 @@ struct GGMLQ4KDequantize:
     def execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        input: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
         q4_k_dequantize_impl(
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
         )
 
 
 @extensibility.register_shape_function("ggml_q4_k_dequantize")
 def ggml_q4_k_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q4_k_dequantize` graph op."""
-    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).dtype == .uint8, "input must be uint8"
     comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[block_Q4_K]()
     comptime elements_per_block = block_QK_K.quantized_k
@@ -500,16 +500,16 @@ struct VroomQ4KMatmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=.float32, rank=2, ...],
+        a: InputTensor[dtype=.float32, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q4_K(
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
-            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.int64](),
             Optional[DeviceContext](ctx),
         )
 
@@ -517,9 +517,9 @@ struct VroomQ4KMatmul:
 @extensibility.register_shape_function("vroom_q4_k_matmul")
 def vroom_q4_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q4_k_matmul` graph op."""
-    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).dtype == .float32, "a must be float32"
     comptime assert type_of(a).rank == 2, "a must be rank 2"
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
         Int(coord_to_index_list(a.shape().tuple())[0]),
@@ -537,12 +537,12 @@ struct VroomQ4KRepackWeights:
     def execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
         matmul_Q4_K_pack_b(
-            b.to_tile_tensor[DType.int64](),
-            b_packed.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[.int64](),
+            b_packed.to_tile_tensor[.int64](),
         )
 
 
@@ -552,7 +552,7 @@ def vroom_q4_k_repack_weights_shape(
 ) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q4_k_repack_weights` graph op.
     """
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return rebind[IndexList[type_of(b).rank]](
         coord_to_index_list(b.shape().tuple())
@@ -568,11 +568,11 @@ struct GGMLQ6KDequantize:
     def execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        input: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
         q6_k_dequantize_impl(
             input_tt,
             output_tt,
@@ -583,7 +583,7 @@ struct GGMLQ6KDequantize:
 @extensibility.register_shape_function("ggml_q6_k_dequantize")
 def ggml_q6_k_dequantize_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `ggml_q6_k_dequantize` graph op."""
-    comptime assert type_of(input).dtype == DType.uint8, "input must be uint8"
+    comptime assert type_of(input).dtype == .uint8, "input must be uint8"
     comptime assert type_of(input).rank == 2, "input must be rank 2"
     comptime block_nbytes = size_of[block_Q6_K]()
     comptime elements_per_block = block_QK_K.quantized_k
@@ -608,16 +608,16 @@ struct VroomQ6KMatmul:
         _trace_name: StaticString,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a: InputTensor[dtype=DType.float32, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=.float32, rank=2, ...],
+        a: InputTensor[dtype=.float32, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q6_K(
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
-            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.int64](),
             Optional[DeviceContext](ctx),
         )
 
@@ -625,9 +625,9 @@ struct VroomQ6KMatmul:
 @extensibility.register_shape_function("vroom_q6_k_matmul")
 def vroom_q6_k_matmul_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `vroom_q6_k_matmul` graph op."""
-    comptime assert type_of(a).dtype == DType.float32, "a must be float32"
+    comptime assert type_of(a).dtype == .float32, "a must be float32"
     comptime assert type_of(a).rank == 2, "a must be rank 2"
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return IndexList[2](
         Int(coord_to_index_list(a.shape().tuple())[0]),
@@ -645,12 +645,12 @@ struct VroomQ6KRepackWeights:
     def execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
     ) raises:
         matmul_Q6_K_pack_b(
-            b.to_tile_tensor[DType.int64](),
-            b_packed.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[.int64](),
+            b_packed.to_tile_tensor[.int64](),
         )
 
 
@@ -660,7 +660,7 @@ def vroom_q6_k_repack_weights_shape(
 ) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `vroom_q6_k_repack_weights` graph op.
     """
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return rebind[IndexList[type_of(b).rank]](
         coord_to_index_list(b.shape().tuple())
@@ -677,17 +677,17 @@ struct QMatmulGPU_b4_g32:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         matmul_gpu_qint4[32, target](
-            c.to_tile_tensor[DType.int64](),
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -713,17 +713,17 @@ struct QMatmulGPU_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         matmul_gpu_qint4[128, target](
-            c.to_tile_tensor[DType.int64](),
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.int64](),
+            b.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -749,8 +749,8 @@ struct QMatmulGPURepackGGUF:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -765,7 +765,7 @@ def GGUF_gpu_repack_q4_0_shape(
     b: Some[Tensor],
 ) -> IndexList[type_of(b).rank]:
     """Computes the output shape for the `GGUF_gpu_repack_q4_0` graph op."""
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     return rebind[IndexList[type_of(b).rank]](
         coord_to_index_list(b.shape().tuple())
@@ -783,8 +783,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -797,7 +797,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 @extensibility.register_shape_function("GPTQ_gpu_repack_b4_g128")
 def GPTQ_gpu_repack_b4_g128_shape(b: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `GPTQ_gpu_repack_b4_g128` graph op."""
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
     var shape = b.shape()
     var shape_list = coord_to_index_list(shape.tuple())
@@ -815,9 +815,9 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        b: InputTensor[dtype=DType.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
+        b: InputTensor[dtype=.uint8, rank=2, ...],
+        perm_idx: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -826,7 +826,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor(),
             b_packed.to_tile_tensor(),
-            LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+            LayoutTensor[.int32, Layout.row_major(UNKNOWN_VALUE)](
                 perm_idx_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     perm_idx_lt.runtime_layout.shape.value.canonicalize()
@@ -842,11 +842,9 @@ def GPTQ_gpu_repack_b4_g128_desc_act_shape(
 ) -> IndexList[2]:
     """Computes the output shape for the `GPTQ_gpu_repack_b4_g128_desc_act` graph op.
     """
-    comptime assert type_of(b).dtype == DType.uint8, "b must be uint8"
+    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    comptime assert (
-        type_of(perm_idx).dtype == DType.int32
-    ), "perm_idx must be int32"
+    comptime assert type_of(perm_idx).dtype == .int32, "perm_idx must be int32"
     comptime assert type_of(perm_idx).rank == 1, "perm_idx must be rank 1"
     var shape = b.shape()
     var shape_list = coord_to_index_list(shape.tuple())
@@ -884,9 +882,9 @@ struct Struct_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
             tensor_sf,
             context,
         )
@@ -910,10 +908,10 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
-        sf_tensor: InputTensor[dtype=DType.float32, rank=1, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
+        sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[
@@ -921,13 +919,13 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
         grouped_quantize_dynamic_scaled_fp4_async(
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            row_offsets.to_tile_tensor[DType.int64](),
-            scales_offsets.to_tile_tensor[DType.int64](),
-            expert_ids.to_tile_tensor[DType.int64](),
-            sf_tensor.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            row_offsets.to_tile_tensor[.int64](),
+            scales_offsets.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            sf_tensor.to_tile_tensor[.int64](),
             context,
         )
 
@@ -944,8 +942,8 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
         //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        output: OutputTensor[dtype=.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
         context: DeviceContext,
     ) raises:
@@ -955,9 +953,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
         )
 
         quantize_dynamic_block_scaled_mxfp4(
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
             context,
         )
 
@@ -986,15 +984,15 @@ struct Struct_dequant_mxfp4:
             DType.float8_e4m3fn,
         ), "MXFP4 dequant output must be bfloat16 or float8_e4m3fn"
         comptime assert (
-            in_type == DType.uint8
+            in_type == .uint8
         ), "MXFP4 dequant input must be uint8 (packed FP4)"
         comptime assert (
-            scales_type == DType.float8_e8m0fnu
+            scales_type == .float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
 
-        var in_tt = input.to_tile_tensor[DType.int64]()
-        var scales_tt = scales.to_tile_tensor[DType.int64]()
-        var out_tt = output.to_tile_tensor[DType.int64]()
+        var in_tt = input.to_tile_tensor[.int64]()
+        var scales_tt = scales.to_tile_tensor[.int64]()
+        var out_tt = output.to_tile_tensor[.int64]()
 
         var num_rows = Int(in_tt.dim[0]())
         # num_cols is the unpacked column count (2x packed)
@@ -1022,8 +1020,8 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        output: OutputTensor[dtype=.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
         context: DeviceContext,
     ) raises:
@@ -1039,9 +1037,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
 
         quantize_mxfp6_amd[FP6Format(FP6_FORMAT)](
             context,
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
         )
 
 
@@ -1070,19 +1068,19 @@ struct Struct_dequant_mxfp6:
             DType.float8_e4m3fn,
         ), "MXFP6 dequant output must be bfloat16 or float8_e4m3fn"
         comptime assert (
-            in_type == DType.uint8
+            in_type == .uint8
         ), "MXFP6 dequant input must be uint8 (packed FP6)"
         comptime assert (
-            scales_type == DType.float8_e8m0fnu
+            scales_type == .float8_e8m0fnu
         ), "MXFP6 dequant scales must be float8_e8m0fnu"
         comptime assert FP6_FORMAT in (
             0,
             1,
         ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
 
-        var in_tt = input.to_tile_tensor[DType.int64]()
-        var scales_tt = scales.to_tile_tensor[DType.int64]()
-        var out_tt = output.to_tile_tensor[DType.int64]()
+        var in_tt = input.to_tile_tensor[.int64]()
+        var scales_tt = scales.to_tile_tensor[.int64]()
+        var out_tt = output.to_tile_tensor[.int64]()
 
         var num_rows = Int(in_tt.dim[0]())
         var num_cols = (Int(in_tt.dim[1]()) * 8) // 6
@@ -1120,8 +1118,8 @@ struct Struct_interleave_block_scales:
         )
 
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-            output_scales.to_tile_tensor[DType.int64](),
-            input_scales.to_tile_tensor[DType.int64](),
+            output_scales.to_tile_tensor[.int64](),
+            input_scales.to_tile_tensor[.int64](),
             context,
         )
 
@@ -1140,16 +1138,16 @@ struct Struct_block_scaled_preshuffle_b_5d:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.uint8, rank=3, ...],
-        input: InputTensor[dtype=DType.uint8, rank=3, ...],
+        output: OutputTensor[dtype=.uint8, rank=3, ...],
+        input: InputTensor[dtype=.uint8, rank=3, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[
             target
         ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
 
-        var raw_tt = input.to_tile_tensor[DType.int64]()
-        var dst_tt = output.to_tile_tensor[DType.int64]()
+        var raw_tt = input.to_tile_tensor[.int64]()
+        var dst_tt = output.to_tile_tensor[.int64]()
         comptime E = type_of(raw_tt).static_shape[0]
         comptime N = type_of(raw_tt).static_shape[1]
         comptime K_BYTES = type_of(raw_tt).static_shape[2]
@@ -1176,9 +1174,9 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
-        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
@@ -1190,15 +1188,15 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
         # byte-level). Bitcast the input/output tile pointers so dtype
         # metadata matches the launcher's `DType.uint8` TileTensor sig.
-        var raw_e8 = input.to_tile_tensor[DType.int64]()
-        var dst_e8 = output.to_tile_tensor[DType.int64]()
+        var raw_e8 = input.to_tile_tensor[.int64]()
+        var dst_e8 = output.to_tile_tensor[.int64]()
         var raw_tt = TileTensor[mut=False](
             raw_e8._storage.bitcast[UInt8](), raw_e8.layout
         )
         var dst_tt = TileTensor[mut=True](
             dst_e8._storage.bitcast[UInt8](), dst_e8.layout
         )
-        var a_off_tt = expert_start_indices.to_tile_tensor[DType.int64]()
+        var a_off_tt = expert_start_indices.to_tile_tensor[.int64]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
         # Persistent grid: one CTA per WG slot, grid-strides real tiles.
         # `cu_count * 2` matches the matmul's persistent dispatch (see
@@ -1227,17 +1225,17 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        hidden_state: InputTensor[dtype=DType.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        q_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
-        k_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
-        v_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        hidden_state: InputTensor[dtype=.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        q_weight: InputTensor[dtype=.uint8, rank=2, ...],
+        k_weight: InputTensor[dtype=.uint8, rank=2, ...],
+        v_weight: InputTensor[dtype=.uint8, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -1296,7 +1294,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         # the standalone `quantize_static_scaled_fp8` path: cast to f32, then
         # `fp8_quantize(v, 1.0/scale)`. The original kernel ignored the
         # `scale_is_inverted` param and always used `1.0/scale`; preserved here.
-        var inversed_scale = 1.0 / scale.cast[DType.float32]()
+        var inversed_scale = 1.0 / scale.cast[.float32]()
 
         @always_inline
         def quant_fn[
@@ -1306,7 +1304,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         ]:
             var v = input._fused_load[
                 width, element_alignment=element_alignment
-            ](idx).cast[DType.float32]()
+            ](idx).cast[.float32]()
             return fp8_quantize[output_type, use_clamp=True](v, inversed_scale)
 
         foreach[
@@ -1352,8 +1350,8 @@ struct QuantizeTensorDynamicScaledFloat8:
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             input_fn,
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
             scale_ub,
             ctx,
             num_rows=input.dim_size(0),
@@ -1398,8 +1396,8 @@ struct QuantizeDynamicScaledFloat8:
             num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             input_fn,
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
             scale_ub,
             ctx,
             num_rows=input.dim_size(0),

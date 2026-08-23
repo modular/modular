@@ -66,7 +66,7 @@ def scaled_compute_fn[
 ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
     # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate in
     # fp32, apply the scalar scale, cast back to output dtype (bf16).
-    var scaled = val.cast[DType.float32]() * Float32(STATIC_SCALE)
+    var scaled = val.cast[.float32]() * Float32(STATIC_SCALE)
     return scaled.cast[dtype]()
 
 

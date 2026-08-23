@@ -452,9 +452,9 @@ def _dot_accum[
     comptime if (
         is_amd_gpu()
         and not _is_amd_mi250x()
-        and a_type == DType.bfloat16
-        and b_type == DType.bfloat16
-        and accum_type == DType.float32
+        and a_type == .bfloat16
+        and b_type == .bfloat16
+        and accum_type == .float32
     ):
         # v_dot2_f32_bf16: D.f32 = S0.bf16[0]*S1.bf16[0] + S0.bf16[1]*S1.bf16[1] + S2.f32
         comptime for p in range(width // 2):
@@ -761,9 +761,9 @@ def router_gate_mixed_gemv[
     a_storage: TensorStorage,
     b_storage: TensorStorage,
 ](
-    c: TileTensor[DType.float32, c_layout, MutAnyOrigin, Storage=c_storage],
-    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin, Storage=a_storage],
-    b: TileTensor[DType.float32, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    c: TileTensor[.float32, c_layout, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[.float32, b_layout, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -1018,7 +1018,7 @@ def _nvidia_gemv_config[
     # weight, so tile_n=1 maximizes the launched CTA count (one output column
     # per block); 256 threads/block and unroll=2 are the swept winner, while
     # tile_n>=2 and 128T regress. (KERN-3076.)
-    comptime if a_type == DType.float32:
+    comptime if a_type == .float32:
         return IndexList[3](256, 1, 2)
 
     var num_threads: Int
@@ -1111,9 +1111,9 @@ def is_minimax_router_gemm[
 ]() -> Bool:
     """Returns whether a GEMM has the MiniMax-M3 fp32 router signature."""
     return (
-        a_type == DType.float32
-        and b_type == DType.float32
-        and c_type == DType.float32
+        a_type == .float32
+        and b_type == .float32
+        and c_type == .float32
         and static_N == 128
         and static_K == 6144
     )
@@ -1607,7 +1607,7 @@ def gemv_gpu[
     var kernel_func: GEMVAlgorithm
 
     if n == 1:
-        comptime if a_type == DType.bfloat16:
+        comptime if a_type == .bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -2269,7 +2269,7 @@ def gemm_mma_cpasync_kernel[
     tile_n: Int = 8,
     tile_k: Int = 128,
     stage_cnt: Int = 2,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     swapAB: Bool = False,
@@ -2472,7 +2472,7 @@ def gemm_mma_cpasync[
     comptime b_type = weight.dtype
 
     comptime assert a_type == b_type, "a_type and b_type must be the same"
-    comptime assert a_type == DType.bfloat16, "a_type/b_type must be bfloat16"
+    comptime assert a_type == .bfloat16, "a_type/b_type must be bfloat16"
     # Output may be bfloat16 (production) or float32 (accuracy verification): the
     # kernel always accumulates in f32 and only casts to c_type on store, so an
     # f32 output simply skips the final bf16 rounding.

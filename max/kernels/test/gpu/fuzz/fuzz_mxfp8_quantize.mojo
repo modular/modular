@@ -127,7 +127,7 @@ def _check_contract(
             var c0 = b * SF_VECTOR_SIZE
             var finite_block = True
             for c in range(c0, c0 + SF_VECTOR_SIZE):
-                if not isfinite(inp[r * N + c].cast[DType.float32]()):
+                if not isfinite(inp[r * N + c].cast[.float32]()):
                     finite_block = False
                     break
             if not finite_block:
@@ -136,16 +136,16 @@ def _check_contract(
             comptime if scales.rank == 5:
                 sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales, r, c0
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
                     scales[Coord(r, c0 // SF_VECTOR_SIZE)]
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             if not isfinite(sf):
                 print("FUZZ_CONTRACT_FAIL kind=scale row=", r, "block=", b)
                 return False
             for c in range(c0, c0 + SF_VECTOR_SIZE):
-                var o = outp[r * N + c].cast[DType.float32]()
+                var o = outp[r * N + c].cast[.float32]()
                 if not isfinite(o):
                     print(
                         "FUZZ_CONTRACT_FAIL kind=output row=",
@@ -170,19 +170,19 @@ def _check_roundtrip(
     var total = 0
     for r in range(m):
         for c in range(N):
-            var x = inp[r * N + c].cast[DType.float32]()
+            var x = inp[r * N + c].cast[.float32]()
             if not isfinite(x):
                 continue
             var sf: Float32
             comptime if scales.rank == 5:
                 sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales, r, c
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
                     scales[Coord(r, c // SF_VECTOR_SIZE)]
-                ).cast[DType.float32]()
-            var deq = outp[r * N + c].cast[DType.float32]() * sf
+                ).cast[.float32]()
+            var deq = outp[r * N + c].cast[.float32]() * sf
             total += 1
             if abs(deq - x) > 1.0 + 0.15 * abs(x):
                 mismatch += 1

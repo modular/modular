@@ -133,7 +133,7 @@ directly to an `Int`.
 
 ```mojo
 def takes_scalar_tensor(
-    tensor: TileTensor[DType.int32, Storage=PointerStorage[element_width=1], ...]
+    tensor: TileTensor[.int32, Storage=PointerStorage[element_width=1], ...]
 ) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])

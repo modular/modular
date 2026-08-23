@@ -110,12 +110,12 @@ def _test_pull[
         output_devbufs.append(out_buf)
 
     # Signal buffers.
-    var signal_bufs = List[DeviceBuffer[DType.uint8]]()
+    var signal_bufs = List[DeviceBuffer[.uint8]]()
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
-        var sig_buf = ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+        var sig_buf = ctxs[i].create_buffer_sync[.uint8](size_of[Signal]())
         init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
         rank_sigs[i] = (

@@ -32,5 +32,5 @@ def main() raises:
         _ = copy_to_numpy_array(nums)
     elif get_defined_int["test"]() == 2:
         # CHECK_BOOL: unsupported dtype 'bool'
-        var flags = [Scalar[DType.bool](True), Scalar[DType.bool](False)]
+        var flags = [Scalar[.bool](True), Scalar[.bool](False)]
         _ = copy_to_numpy_array(flags)

@@ -262,7 +262,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # selected at runtime via `num_partitions > 1`.
         var _indices_stride = Int(indices_stride)
         var _extra_indices_stride = Int(extra_indices_stride)
-        comptime assert Self.KVLUTType.dtype == DType.bfloat16
+        comptime assert Self.KVLUTType.dtype == .bfloat16
         comptime assert size_of[Self.KVLUTType.dtype]() == 2
         comptime assert Self.config.supported()
         comptime assert Self.config.scale_block_size == 0
@@ -502,7 +502,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             # Per-head attn_sink_log2 (one head per thread in the warpgroup).
             # When attn_sink_ptr is null, attn_sink_log2 stays at -inf and
             # exp2(-inf - mi) = 0, leaving the denominator unchanged.
-            var attn_sink_log2 = Float32(min_or_neg_inf[DType.float32]())
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F

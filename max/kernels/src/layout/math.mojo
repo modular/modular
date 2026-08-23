@@ -166,7 +166,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout.math import sum
 
     data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
-    tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
+    tensor = LayoutTensor[.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")
     print(sum[0](tensor))

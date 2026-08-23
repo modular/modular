@@ -20,10 +20,10 @@ def _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var in_dev = ctx.enqueue_create_buffer[.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[.float32](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -58,12 +58,12 @@ def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
 
     var half_length = length // 2
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
-    var first_out_dev = out_dev.create_sub_buffer[DType.int64](0, half_length)
-    var second_out_dev = out_dev.create_sub_buffer[DType.int64](
+    var in_host = ctx.enqueue_create_host_buffer[.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[.int64](length)
+    var in_dev = ctx.enqueue_create_buffer[.int64](length)
+    var out_dev = ctx.enqueue_create_buffer[.int64](length)
+    var first_out_dev = out_dev.create_sub_buffer[.int64](0, half_length)
+    var second_out_dev = out_dev.create_sub_buffer[.int64](
         half_length, half_length
     )
 
@@ -79,7 +79,7 @@ def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
     # Swap halves on copy back.
     # Using sub buffer
     second_out_dev.enqueue_copy_to(
-        out_host.create_sub_buffer[DType.int64](0, half_length)
+        out_host.create_sub_buffer[.int64](0, half_length)
     )
     # Using host pointer math
     first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
@@ -110,10 +110,10 @@ def _run_fake_memcpy(
 
     var half_length = length // 2
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var out_host = ctx.enqueue_create_host_buffer[DType.int64](length)
-    var in_dev = ctx.enqueue_create_buffer[DType.int64](length)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](length)
+    var in_host = ctx.enqueue_create_host_buffer[.int64](length)
+    var out_host = ctx.enqueue_create_host_buffer[.int64](length)
+    var in_dev = ctx.enqueue_create_buffer[.int64](length)
+    var out_dev = ctx.enqueue_create_buffer[.int64](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -130,18 +130,18 @@ def _run_fake_memcpy(
     else:
         out_ptr = out_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
 
-    var first_out_dev = DeviceBuffer[DType.int64](
+    var first_out_dev = DeviceBuffer[.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
     var interior_out_ptr = out_ptr.unsafe_offset(half_length)
-    var second_out_dev = DeviceBuffer[DType.int64](
+    var second_out_dev = DeviceBuffer[.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )
 
     # Swap halves on copy back.
     # Using sub buffer
     second_out_dev.enqueue_copy_to(
-        out_host.create_sub_buffer[DType.int64](0, half_length)
+        out_host.create_sub_buffer[.int64](0, half_length)
     )
     # Using host pointer math
     first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
@@ -170,8 +170,8 @@ def _run_cpu_ctx_memcpy_async(
     print("-")
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
-    var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length)
+    var host_buf = cpu_ctx.enqueue_create_host_buffer[.int64](length)
+    var dev_buf = ctx.enqueue_create_buffer[.int64](length)
     dev_buf.enqueue_fill(13)
 
     for i in range(length):

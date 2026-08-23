@@ -517,7 +517,7 @@ def fill_random_fp8[
     values, scale them down to fit FP8's e4m3 range, and cast.
     """
     var f32_buf = alloc[Float32](n)
-    randn[DType.float32](f32_buf, n)
+    randn[.float32](f32_buf, n)
     for i in range(n):
         # Scale to ~[-2, 2] to keep values well inside FP8 e4m3 range
         # (max representable ~448, but we want non-saturated values).

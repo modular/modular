@@ -188,9 +188,7 @@ def scatter_nd[
 
     # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = ctx.enqueue_create_host_buffer[DType.int64](
-        last_shape_of_indices * 2
-    )
+    var ptr = ctx.enqueue_create_host_buffer[.int64](last_shape_of_indices * 2)
     ctx.synchronize()
 
     # input_strides

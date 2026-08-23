@@ -109,7 +109,7 @@ def _bench_prefill[
     var v_op = LayoutTensorMHAOperand(v_t)
 
     # Dummy valid_length (dense path doesn't read it).
-    var vl_d = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
+    var vl_d = ctx.enqueue_create_buffer[.uint32](batch + 1)
     var vl_t = TileTensor(vl_d, row_major(batch + 1))
 
     comptime SinkOpt = OptionalReg[

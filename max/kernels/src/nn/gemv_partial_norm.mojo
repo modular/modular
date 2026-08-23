@@ -544,7 +544,7 @@ def _gemv_partial_norm_fused[
         gamma,
         finish_counter,
         trace_buf,
-        eps.cast[DType.float32](),
+        eps.cast[.float32](),
         Int32(n),
         Int32(k),
         Int32(n_normed),
@@ -699,7 +699,7 @@ def gemv_and_partial_norm[
     var n = n_normed + n_unnormed
 
     comptime if fused:
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
         ctx.enqueue_memset(counter_buf, Int32(0))
         _gemv_partial_norm_fused[
             transpose_b=transpose_b,

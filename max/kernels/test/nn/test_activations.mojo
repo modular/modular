@@ -31,7 +31,7 @@ from test_utils import libm_call
 def test_elu():
     print("== test_elu")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(elu(simd_val))
@@ -47,7 +47,7 @@ def test_elu():
 def test_relu():
     print("== test_relu")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(relu(simd_val))
@@ -63,7 +63,7 @@ def test_relu():
 def test_relu_n1():
     print("== test_relu_n1")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # CHECK: [0.0, 1.0, 1.0, 1.0]
     print(relu_n1(simd_val))
@@ -79,7 +79,7 @@ def test_relu_n1():
 def test_leaky_relu():
     print("== test_leaky_relu")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # Test with negative slope of 0.01
     var slope_001 = Float32(0.01)
@@ -105,7 +105,7 @@ def test_leaky_relu():
 def test_sigmoid():
     print("== test_sigmoid")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # sigmoid([0, 1, 2, 3])
     # CHECK: [0.5, 0.73105{{[0-9]+}}, 0.88079{{[0-9]+}}, 0.95257{{[0-9]+}}]
@@ -116,7 +116,7 @@ def test_sigmoid():
 def test_silu():
     print("== test_silu")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # silu([0, 1, 2, 3]) = x * sigmoid(x)
     # CHECK: [0.0, 0.73105{{[0-9]+}}, 1.76159{{[0-9]+}}, 2.85772{{[0-9]+}}]
@@ -127,7 +127,7 @@ def test_silu():
 def test_gelu():
     print("== test_gelu")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # gelu([0, 1, 2, 3]) = 0.5 * x * (1 + erf(x / sqrt(2)))
     # CHECK: [0.0, 0.84134{{[0-9]+}}, 1.95449{{[0-9]+}}, 2.99595{{[0-9]+}}]
@@ -138,7 +138,7 @@ def test_gelu():
 def test_gelu_tanh():
     print("== test_gelu_tanh")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # gelu_tanh([0, 1, 2, 3])
     # CHECK: [0.0, 0.84119{{[0-9]+}}, 1.95459{{[0-9]+}}, 2.99636{{[0-9]+}}]
@@ -149,7 +149,7 @@ def test_gelu_tanh():
 def test_gelu_quick():
     print("== test_gelu_quick")
 
-    var simd_val = iota[DType.float32, 4]()
+    var simd_val = iota[.float32, 4]()
 
     # gelu_quick([0, 1, 2, 3]) = x * sigmoid(1.702 * x)
     # CHECK: [0.0, 0.84579{{[0-9]+}}, 1.93565{{[0-9]+}}, 2.98192{{[0-9]+}}]

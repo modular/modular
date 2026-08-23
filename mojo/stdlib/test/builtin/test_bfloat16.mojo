@@ -25,28 +25,28 @@ def test_methods() raises:
     assert_equal(Int(BFloat16(3.0)), 3)
     assert_equal(Int(BFloat16(3.5)), 3)
 
-    assert_almost_equal(BFloat16(4.4).cast[DType.float32](), 4.40625)
-    assert_equal(BFloat16(3.0).cast[DType.float32](), 3)
-    assert_equal(BFloat16(-3.0).cast[DType.float32](), -3)
+    assert_almost_equal(BFloat16(4.4).cast[.float32](), 4.40625)
+    assert_equal(BFloat16(3.0).cast[.float32](), 3)
+    assert_equal(BFloat16(-3.0).cast[.float32](), -3)
 
-    assert_almost_equal(Float32(4.4).cast[DType.bfloat16](), 4.4)
+    assert_almost_equal(Float32(4.4).cast[.bfloat16](), 4.4)
 
     assert_almost_equal(BFloat16(2.0), 2.0)
 
 
 def test_bf_primitives() raises:
     # we have to use dynamic values, otherwise these get evaled at compile time.
-    var a = randn_float64().cast[DType.bfloat16]()
-    var b = randn_float64().cast[DType.bfloat16]()
+    var a = randn_float64().cast[.bfloat16]()
+    var b = randn_float64().cast[.bfloat16]()
 
     # higher precision
-    var a_hp = a.cast[DType.float64]()
-    var b_hp = b.cast[DType.float64]()
+    var a_hp = a.cast[.float64]()
+    var b_hp = b.cast[.float64]()
 
-    assert_almost_equal(a + b, (a_hp + b_hp).cast[DType.bfloat16]())
-    assert_almost_equal(a - b, (a_hp - b_hp).cast[DType.bfloat16]())
-    assert_almost_equal(a / b, (a_hp / b_hp).cast[DType.bfloat16]())
-    assert_almost_equal(a * b, (a_hp * b_hp).cast[DType.bfloat16]())
+    assert_almost_equal(a + b, (a_hp + b_hp).cast[.bfloat16]())
+    assert_almost_equal(a - b, (a_hp - b_hp).cast[.bfloat16]())
+    assert_almost_equal(a / b, (a_hp / b_hp).cast[.bfloat16]())
+    assert_almost_equal(a * b, (a_hp * b_hp).cast[.bfloat16]())
     assert_equal(a == b, a_hp == b_hp)
     assert_equal(a != b, a_hp != b_hp)
     assert_equal(a <= b, a_hp <= b_hp)

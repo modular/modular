@@ -77,7 +77,7 @@ def mha_sm100_depth512_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
@@ -273,7 +273,7 @@ def mha_sm100_depth512_dispatch[
                 MaskType,
                 SchedulerType,
                 ValidLengthType,
-                NullPointer[DType.float32],  # no sink
+                NullPointer[.float32],  # no sink
                 KVRowOffsetsType,
                 MaxPromptLenType,
                 PartitionType,
@@ -282,7 +282,7 @@ def mha_sm100_depth512_dispatch[
                 mask,
                 scheduler,
                 valid_len,
-                NullPointer[DType.float32](),
+                NullPointer[.float32](),
                 kv_row_offsets,
                 max_prompt_len_arg,
                 partition,
@@ -346,16 +346,16 @@ def mha_sm100_depth512_dispatch[
 
         # --- ragged dispatch ---
         comptime if ragged:
-            with_valid_length[NonNullPointer[DType.uint32]](
+            with_valid_length[NonNullPointer[.uint32]](
                 {valid_length.as_imm().as_unsafe_any_origin()}
             )
         else:
-            with_valid_length[NullPointer[DType.uint32]]({})
+            with_valid_length[NullPointer[.uint32]]({})
 
     # --- kv_input_row_offsets dispatch ---
     if kv_input_row_offsets:
-        with_kv_offsets[NonNullPointer[DType.uint32]](
+        with_kv_offsets[NonNullPointer[.uint32]](
             {kv_input_row_offsets.value().ptr}
         )
     else:
-        with_kv_offsets[NullPointer[DType.uint32]]({})
+        with_kv_offsets[NullPointer[.uint32]]({})

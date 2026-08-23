@@ -42,7 +42,7 @@ def wgmma_f16_kernel[
 ](
     operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
     operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
-    result_c: LayoutTensor[DType.float16, Layout.row_major(M, N), MutAnyOrigin],
+    result_c: LayoutTensor[.float16, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var smem_operand_a = LayoutTensor[
         a_type,
@@ -95,7 +95,7 @@ def wgmma_f16_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var c0 = bitcast[DType.float16, 4](c_reg)
+    var c0 = bitcast[.float16, 4](c_reg)
     var th_local_res = (
         result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()

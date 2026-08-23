@@ -58,7 +58,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
         comptime val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[16]
@@ -93,7 +93,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
         comptime val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[_fill_impl[20]]
@@ -136,7 +136,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
         15,
     ]
 
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
     var constant_memory_ptr: UnsafePointer[

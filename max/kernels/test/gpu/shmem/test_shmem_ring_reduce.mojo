@@ -132,10 +132,10 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
     # Allocate buffers
     var max_ints = max_size // size_of[DType.int32]()
 
-    var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
-    var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
+    var dst = ctx.enqueue_create_buffer[.int32](max_ints)
+    var src = ctx.enqueue_create_buffer[.int32](max_ints)
     var data_h = alloc[Int32](max_ints)
-    var signal = shmem_calloc[DType.uint64](num_blocks)
+    var signal = shmem_calloc[.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index
     iota(data_h, max_ints)
@@ -157,7 +157,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
                 dst,
                 src,
                 Int32(num_ints),
-                DeviceBuffer[DType.uint64](
+                DeviceBuffer[.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
                 Int32(chunk_size),
@@ -172,7 +172,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
                 dst,
                 src,
                 Int32(num_ints),
-                DeviceBuffer[DType.uint64](
+                DeviceBuffer[.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
                 Int32(chunk_size),

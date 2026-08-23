@@ -878,11 +878,11 @@ def bench_b2b[
     var Ctile = alloc_tensor[elt, layout_C]()
     var ABtile = alloc_tensor[elt, layout_AB]()
 
-    var Drm64 = alloc_tensor[DType.float64, Layout.row_major(M, N)]()
-    var Arm64 = alloc_tensor[DType.float64, Layout.row_major(M, K)]()
-    var Brm64 = alloc_tensor[DType.float64, Layout.row_major(K, L)]()
-    var Crm64 = alloc_tensor[DType.float64, Layout.row_major(L, N)]()
-    var ABrm64 = alloc_tensor[DType.float64, Layout.row_major(M, L)]()
+    var Drm64 = alloc_tensor[.float64, Layout.row_major(M, N)]()
+    var Arm64 = alloc_tensor[.float64, Layout.row_major(M, K)]()
+    var Brm64 = alloc_tensor[.float64, Layout.row_major(K, L)]()
+    var Crm64 = alloc_tensor[.float64, Layout.row_major(L, N)]()
+    var ABrm64 = alloc_tensor[.float64, Layout.row_major(M, L)]()
     comptime layout_A_size: Int = layout_A.size()
     comptime layout_B_size: Int = layout_B.size()
     comptime layout_C_size: Int = layout_C.size()
@@ -910,7 +910,7 @@ def bench_b2b[
     else:
         test_tile_fn()
 
-    check_approx_equal[DType.float32](Dtile, Drm64)
+    check_approx_equal[.float32](Dtile, Drm64)
 
     @always_inline
     def test_tile_b2b_fn() {var}:
@@ -926,7 +926,7 @@ def bench_b2b[
     else:
         test_tile_b2b_fn()
 
-    check_approx_equal[DType.float32](Dtile, Drm64)
+    check_approx_equal[.float32](Dtile, Drm64)
 
     Atile.ptr.free()
     Btile.ptr.free()
@@ -966,7 +966,7 @@ def main() raises -> None:
     comptime Mc = 50 * Mr
 
     comptime Nc = 20 * Nr * W
-    comptime Stride = stride[DType.float32](W * Nr)
+    comptime Stride = stride[.float32](W * Nr)
     comptime Kc = Nc
     comptime assert Kc % Stride == 0
     comptime M = 4 * Mc

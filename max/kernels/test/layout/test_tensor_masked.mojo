@@ -21,7 +21,7 @@ def test_tile_masked():
     print("== test_tile_masked")
     comptime layout = Layout.row_major(11, 7)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_11x7 = LayoutTensor[DType.float32, layout](stack)
+    var tensor_11x7 = LayoutTensor[.float32, layout](stack)
     arange(tensor_11x7)
     for tile_i in range(3):
         for tile_j in range(2):
@@ -39,7 +39,7 @@ def test_subtile_masked():
     print("== test_subtile_masked")
     comptime layout = Layout.row_major(15, 9)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_15x9 = LayoutTensor[DType.float32, layout](stack)
+    var tensor_15x9 = LayoutTensor[.float32, layout](stack)
     arange(tensor_15x9)
     for tile_i in range(2):
         for tile_j in range(2):
@@ -68,7 +68,7 @@ def test_tile_dynamic_no_bounds():
     print("== test_tile_dynamic_no_bounds")
     comptime layout = Layout.row_major(4, 4)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var tensor_UxU = LayoutTensor[.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(4, 4))
     )
     arange(tensor_UxU)
@@ -88,7 +88,7 @@ def test_tile_dynamic_with_bounds():
     print("== test_tile_dynamic_with_bounds")
     comptime layout = Layout.row_major(5, 3)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var tensor_UxU = LayoutTensor[.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
@@ -108,7 +108,7 @@ def test_tile_and_distribute():
     print("== test_tile_and_distribute")
     comptime layout = Layout.row_major(5, 3)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var tensor_UxU = LayoutTensor[.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
@@ -134,7 +134,7 @@ def test_tile_iterator_masked():
     print("== test_tile_iterator_masked")
     comptime layout = Layout.row_major(5, 3)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var tensor_UxU = LayoutTensor[.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
@@ -152,7 +152,7 @@ def test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
     comptime layout = Layout.row_major(3, 4)
     var stack = Array[Float32, layout.size()](uninitialized=True)
-    var tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+    var tensor_UxU = LayoutTensor[.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(3, 4))
     )
     arange(tensor_UxU)

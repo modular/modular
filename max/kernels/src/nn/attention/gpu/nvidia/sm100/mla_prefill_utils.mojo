@@ -712,7 +712,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     """TileTensor overload — standalone implementation using `.ptr` and
     comptime `static_shape`/`static_stride` directly."""
     comptime assert (
-        input_type == DType.float8_e4m3fn and output_dtype == DType.bfloat16
+        input_type == .float8_e4m3fn and output_dtype == .bfloat16
     ), "Only support float8_e4m3fn to bfloat16 conversion"
 
     comptime num_regs = (

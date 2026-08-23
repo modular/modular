@@ -28,10 +28,10 @@ struct DummyHasher(Hasher):
 
     def _update_with_bytes(mut self, data: Span[Byte, _]):
         for i in range(len(data)):
-            self._dummy_value += data[i].cast[DType.uint64]()
+            self._dummy_value += data[i].cast[.uint64]()
 
     def _update_with_simd(mut self, value: SIMD[_, _]):
-        self._dummy_value += value.cast[DType.uint64]().reduce_add()
+        self._dummy_value += value.cast[.uint64]().reduce_add()
 
     def update(mut self, value: Some[Hashable]):
         value.__hash__(self)

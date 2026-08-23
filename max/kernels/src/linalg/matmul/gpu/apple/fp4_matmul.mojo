@@ -76,7 +76,7 @@ from linalg.utils import elementwise_epilogue_type
 
 
 struct AppleM5Fp4MatMul[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     BM: Int = 128,
@@ -177,8 +177,8 @@ struct AppleM5Fp4MatMul[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
     ):
@@ -395,7 +395,7 @@ struct AppleM5Fp4MatMul[
 
                 var k_abs0 = Int(k0) + col0
                 var scale_abs = abs(
-                    scales[n_abs, k_abs0 // SF][0].cast[DType.float32]()
+                    scales[n_abs, k_abs0 // SF][0].cast[.float32]()
                 )
                 if col0 + COLS_PER_THREAD <= kv:
                     # Whole run in-bounds: the interior fast path (below).
@@ -421,9 +421,9 @@ struct AppleM5Fp4MatMul[
                             )
                             var nibble = UInt16((byte >> shift) & UInt8(0xF))
                             var dec = decode_e2m1_to_bf16(UInt16(nibble))
-                            vals[i] = (
-                                dec.cast[DType.float32]() * scale_abs
-                            ).cast[Self.in_type]()
+                            vals[i] = (dec.cast[.float32]() * scale_abs).cast[
+                                Self.in_type
+                            ]()
                     b_smem_view.store[width=COLS_PER_THREAD](
                         Coord(buf, nrow, col0), vals
                     )
@@ -472,7 +472,7 @@ struct AppleM5Fp4MatMul[
                         abs(
                             scales[Int(tg_col) + srow, Int(k0) // SF + sblk][
                                 0
-                            ].cast[DType.float32]()
+                            ].cast[.float32]()
                         )
                     ),
                 )
@@ -560,7 +560,7 @@ struct AppleM5Fp4MatMul[
         # ---- Epilogue (mirrors `AppleM5MatMul._run_gemm_body`): bounded store
         # for fp32 fast path; cast/lambda path for non-fp32 out or fused lambda.
         comptime use_epilogue_path = (
-            Self.c_type != DType.float32 or Self.elementwise_lambda_fn
+            Self.c_type != .float32 or Self.elementwise_lambda_fn
         )
         var valid_cols = max(Int32(0), min(SG_N_i32, n_i32 - col_base))
 
@@ -743,9 +743,9 @@ def _enqueue_apple_fp4_materialize_dense[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     m: Int,
     n: Int,
     k: Int,
@@ -776,10 +776,10 @@ def _enqueue_apple_fp4_materialize_dense[
     custom-op launcher), which allocates its FP8 scratch the same way and ends
     with `_ = b_fp8_buf^`.
     """
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](n * k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
 
-    enqueue_fp4_materialize[DType.bfloat16](wdense_tt, packed, scales, ctx)
+    enqueue_fp4_materialize[.bfloat16](wdense_tt, packed, scales, ctx)
 
     if ctx.compute_capability() == 5:
         enqueue_apple_matmul[
@@ -832,9 +832,9 @@ def _launch_apple_fp4_matmul[
     coalesce_scales: Bool,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     m: Int,
     n: Int,
     ctx: DeviceContext,
@@ -891,15 +891,15 @@ def _launch_apple_fp4_matmul[
 
 @always_inline
 def enqueue_apple_fp4_matmul[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     *,
     use_matmul2d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the W4A16 matmul: `out = a @ dequant(packed, scales)^T`.
@@ -975,9 +975,7 @@ def enqueue_apple_fp4_matmul[
     var cc = ctx.compute_capability()
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_apple_fp4_matmul: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())

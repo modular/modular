@@ -262,7 +262,7 @@ struct Pointer[
       to `dealloc()`.
     - For simple read/write access, use `ptr.unsafe_offset(i)[]` or
       `ptr[unsafe_offset=i]` where `i` is the offset size.
-    - For SIMD operations on numeric data, use `Pointer[Scalar[DType.xxx]]`
+    - For SIMD operations on numeric data, use `Pointer[Scalar[.xxx]]`
       with `unsafe_load[dtype=DType.xxx]()` and
       `unsafe_store[dtype=DType.xxx]()`.
 
@@ -1431,7 +1431,7 @@ struct Pointer[
             comptime if dtype.is_floating_point():
                 _check_not_poison[dtype, width](v)
             return v
-        elif dtype == DType.bool and width > 1:
+        elif dtype == .bool and width > 1:
             # Bool (i1) is sub-byte, so a vector load of SIMD[bool, N]
             # packs bits. Load as uint8 and convert to bool so each
             # element occupies its own byte boundary.
@@ -1444,7 +1444,7 @@ struct Pointer[
                     invariant=invariant,
                     non_temporal=non_temporal,
                 ]()
-                .cast[DType.bool]()
+                .cast[.bool]()
             )
 
         var address = self.unsafe_bitcast[SIMD[dtype, width]]()._mlir_value
@@ -1857,7 +1857,7 @@ struct Pointer[
             alignment > 0
         ), "alignment must be a positive integer value"
 
-        comptime if dtype == DType.bool and width > 1:
+        comptime if dtype == .bool and width > 1:
             # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.
@@ -1865,7 +1865,7 @@ struct Pointer[
                 alignment=alignment,
                 volatile=volatile,
                 non_temporal=non_temporal,
-            ](val.cast[DType.uint8]())
+            ](val.cast[.uint8]())
         else:
             __mlir_op.`pop.store`[
                 alignment=alignment.__mlir_index__(),
@@ -2031,7 +2031,7 @@ struct Pointer[
                     )
             return result
 
-        var base = offset.cast[DType.int]().fma(
+        var base = offset.cast[.int]().fma(
             SIMD[.int, width](size_of[dtype]()),
             SIMD[.int, width](Int(self)),
         )
@@ -2126,7 +2126,7 @@ struct Pointer[
                     )
             return
 
-        var base = offset.cast[DType.int]().fma(
+        var base = offset.cast[.int]().fma(
             SIMD[.int, width](size_of[dtype]()),
             SIMD[.int, width](Int(self)),
         )

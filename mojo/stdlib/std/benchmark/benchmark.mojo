@@ -354,7 +354,7 @@ struct Report(Copyable, Defaultable):
         """
         if len(self.runs) == 0:
             return 0
-        var min = max_finite[DType.float64]()
+        var min = max_finite[.float64]()
         for run in self.runs:
             if run._is_significant and run.mean(unit) < min:
                 min = run.mean(unit)
@@ -372,7 +372,7 @@ struct Report(Copyable, Defaultable):
         """
         if len(self.runs) == 0:
             return 0
-        var result = min_finite[DType.float64]()
+        var result = min_finite[.float64]()
         for run in self.runs:
             if run._is_significant and run.mean(unit) > result:
                 result = run.mean(unit)

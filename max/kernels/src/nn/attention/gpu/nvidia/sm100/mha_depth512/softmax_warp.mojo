@@ -700,7 +700,7 @@ def depth512_softmax[
                 var p_inner = Int(m_row) * p_sw_K + r
                 (p_smem + p_k_block * BM * p_sw_K + p_swizzle(p_inner)).bitcast[
                     UInt32
-                ]().store(bitcast[DType.uint32, 4](vals))
+                ]().store(bitcast[.uint32, 4](vals))
 
         # Batch 0: compute exp.
         comptime for idx in range(p_batch):

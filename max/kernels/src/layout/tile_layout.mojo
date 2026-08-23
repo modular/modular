@@ -180,7 +180,7 @@ trait TensorLayout(TrivialRegisterPassable):
     def __call__[
         index_type: CoordLike,
         *,
-        linear_idx_type: DType = DType.int64,
+        linear_idx_type: DType = .int64,
     ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
@@ -198,7 +198,7 @@ trait TensorLayout(TrivialRegisterPassable):
 
     def idx2crd[
         *,
-        out_dtype: DType = DType.int64,
+        out_dtype: DType = .int64,
     ](self, idx: Int) -> Coord[
         *_NestedDynamicCoord[out_dtype, *Self._shape_types]
     ]:
@@ -400,7 +400,7 @@ struct Layout[
     def __call__[
         index_type: CoordLike,
         *,
-        linear_idx_type: DType = DType.int64,
+        linear_idx_type: DType = .int64,
     ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
@@ -455,7 +455,7 @@ struct Layout[
     @always_inline("nodebug")
     def idx2crd[
         *,
-        out_dtype: DType = DType.int64,
+        out_dtype: DType = .int64,
     ](self, idx: Int) -> Coord[
         *_NestedDynamicCoord[out_dtype, *Self.shape_types]
     ]:
@@ -553,7 +553,7 @@ struct Layout[
 
     @always_inline("nodebug")
     def cosize[
-        linear_idx_type: DType = DType.int64
+        linear_idx_type: DType = .int64
     ](self) -> Scalar[linear_idx_type]:
         """Returns the size of the memory region spanned by the layout.
 
@@ -656,7 +656,7 @@ struct Layout[
             ```mojo
             from layout.tile_layout import row_major
             var layout = row_major[3, 4]()  # All compile-time
-            var dynamic = layout.make_dynamic[DType.int64]()
+            var dynamic = layout.make_dynamic[.int64]()
             # dynamic has Int64 for all dimensions
             ```
         """

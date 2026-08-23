@@ -932,7 +932,7 @@ def test_linear_idx_type_small_static_layout() raises:
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
     ]
-    comptime assert TensorType.linear_idx_type == DType.int32
+    comptime assert TensorType.linear_idx_type == .int32
 
 
 def test_linear_idx_type_dynamic_layout_generic() raises:
@@ -943,7 +943,7 @@ def test_linear_idx_type_dynamic_layout_generic() raises:
         MutAnyOrigin,
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64
-    comptime assert TensorType.linear_idx_type == DType.int64
+    comptime assert TensorType.linear_idx_type == .int64
 
 
 def test_linear_idx_type_shared_address_space() raises:
@@ -954,7 +954,7 @@ def test_linear_idx_type_shared_address_space() raises:
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
-    comptime assert TensorType.linear_idx_type == DType.int32
+    comptime assert TensorType.linear_idx_type == .int32
 
 
 def test_linear_idx_type_recomputed_after_tile() raises:

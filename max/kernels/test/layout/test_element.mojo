@@ -211,7 +211,7 @@ def test_element_dynamic_layout() raises:
     print(tensor_8x8)
 
     comptime layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
-    comptime tensor_Ux8_type = ManagedLayoutTensor[DType.float32, layoutUx8]
+    comptime tensor_Ux8_type = ManagedLayoutTensor[.float32, layoutUx8]
     var runtime_layoutUx8 = RuntimeLayout[
         layoutUx8,
         element_type=tensor_Ux8_type.element_type,
@@ -245,7 +245,7 @@ def test_element_dynamic_layout() raises:
     print(tensor_Ux8_vec4_d1)
 
     comptime layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
-    comptime tensor_8xU_type = ManagedLayoutTensor[DType.float32, layout8xU]
+    comptime tensor_8xU_type = ManagedLayoutTensor[.float32, layout8xU]
     var runtime_layout8xU = RuntimeLayout[
         layout8xU,
         element_type=tensor_8xU_type.element_type,
@@ -279,11 +279,11 @@ def test_element_dynamic_layout() raises:
 def test_element_masked_load():
     print("== test_element_masked_load")
     var tensor_4x4_stack = Array[Float32, 4 * 4](uninitialized=True)
-    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
         tensor_4x4_stack
     )
     arange(tensor_4x4)
-    var tensor_1x3 = LayoutTensor[DType.float32, Layout.row_major(1, 3)](
+    var tensor_1x3 = LayoutTensor[.float32, Layout.row_major(1, 3)](
         tensor_4x4.ptr
     )
 
@@ -303,7 +303,7 @@ def test_element_masked_load():
     )
 
     # CHECK: [0.0, 4.0, 8.0, 0.0]
-    var tensor_3x4 = LayoutTensor[DType.float32, Layout.row_major(3, 4)](
+    var tensor_3x4 = LayoutTensor[.float32, Layout.row_major(3, 4)](
         tensor_4x4.ptr
     )
 
@@ -335,7 +335,7 @@ def test_element_masked_load():
 def test_element_masked_store():
     print("== test_element_masked_store")
     var tensor_4x4_stack = Array[Float32, 4 * 4](uninitialized=True)
-    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
         tensor_4x4_stack
     ).fill(-1)
 

@@ -39,9 +39,9 @@ def kernel_1[
     transpose_b: Bool = True,
     BLOCKSIZE: Int = 32,
 ](
-    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
-    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
-    b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
+    c: LayoutTensor[.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
+    a: LayoutTensor[.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b: LayoutTensor[.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
     var row = block_dim.y * block_idx.y + thread_idx.y
     var col = block_dim.x * block_idx.x + thread_idx.x
@@ -51,11 +51,11 @@ def kernel_1[
         var acc: Float32 = 0
 
         for k in range(K):
-            var a_val = rebind[Float32](a[row, k].cast[DType.float32]())
-            var b_val = rebind[Float32](b[k, col].cast[DType.float32]())
+            var a_val = rebind[Float32](a[row, k].cast[.float32]())
+            var b_val = rebind[Float32](b[k, col].cast[.float32]())
             acc += a_val * b_val
 
-        c[row, col] = acc.cast[DType.bfloat16]()
+        c[row, col] = acc.cast[.bfloat16]()
 
 
 def test_kernel_1[

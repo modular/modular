@@ -137,13 +137,13 @@ def rope_ragged[
     ],
 ](
     x: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    start_pos: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
+    start_pos: TileTensor[.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
     context: DeviceContext,
     output_fn: OutputFn,
     position_ids: OptionalReg[
-        TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
 ) raises where (
     input_row_offsets.flat_rank == 1

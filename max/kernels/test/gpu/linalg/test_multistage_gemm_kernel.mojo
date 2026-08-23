@@ -38,9 +38,9 @@ def multistage_gemm_simple[
     M: Int,
     N: Int,
     K: Int,
-    a_type: DType = DType.bfloat16,
-    b_type: DType = DType.bfloat16,
-    c_type: DType = DType.bfloat16,
+    a_type: DType = .bfloat16,
+    b_type: DType = .bfloat16,
+    c_type: DType = .bfloat16,
     transpose_b: Bool = False,
 ](ctx: DeviceContext,) raises:
     comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()

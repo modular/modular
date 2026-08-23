@@ -30,8 +30,8 @@ struct Grayscale:
     def execute[
         target: StaticString,  # "cpu" or "gpu"
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
         """Execute grayscale conversion on the input image tensor.
@@ -60,7 +60,7 @@ struct Grayscale:
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[.float32, simd_width]:
-                return img_in.load[simd_width](idx).cast[DType.float32]()
+                return img_in.load[simd_width](idx).cast[.float32]()
 
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
@@ -76,7 +76,7 @@ struct Grayscale:
             var gray = 0.21 * r + 0.71 * g + 0.07 * b
 
             # Clamp to valid uint8 range and convert back
-            return min(gray, 255).cast[DType.uint8]()
+            return min(gray, 255).cast[.uint8]()
 
         # Execute the conversion using parallel foreach
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)

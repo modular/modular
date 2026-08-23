@@ -116,7 +116,7 @@ def test_min_max() raises:
 
 
 def test_scalar_aliases() raises:
-    var a: Scalar[DType.float32] = 3.14
+    var a: Scalar[.float32] = 3.14
     var b: Float32 = 3.14
     var c: SIMD[.float32, 1] = 3.14
     assert_equal(a, b)
@@ -131,8 +131,8 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 
 
 def test_dtype_parameterized() raises:
-    assert_equal(double[DType.float32](3.5), 7.0)
-    assert_equal(double[DType.int16](21), 42)
+    assert_equal(double[.float32](3.5), 7.0)
+    assert_equal(double[.int16](21), 42)
 
 
 # --- Int constants ---

@@ -30,7 +30,7 @@ def test_cast() raises:
         "(1,)",
     )
     assert_equal(
-        String(IndexList[2](1, 2).cast[DType.int32]()),
+        String(IndexList[2](1, 2).cast[.int32]()),
         "(1, 2)",
     )
     assert_equal(
@@ -42,9 +42,7 @@ def test_cast() raises:
         "(1, 2)",
     )
     assert_equal(
-        String(
-            IndexList[2, element_type=DType.int32](1, -2).cast[DType.int64]()
-        ),
+        String(IndexList[2, element_type=DType.int32](1, -2).cast[.int64]()),
         "(1, -2)",
     )
     assert_equal(
@@ -52,7 +50,7 @@ def test_cast() raises:
         "(1, 2)",
     )
     comptime s = String(
-        IndexList[2, element_type=DType.int32](1, 2).cast[DType.int64]()
+        IndexList[2, element_type=DType.int32](1, 2).cast[.int64]()
     )
     assert_equal(s, "(1, 2)")
 

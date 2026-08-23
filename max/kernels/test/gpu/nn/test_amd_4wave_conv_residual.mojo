@@ -400,7 +400,7 @@ def test_conv_residual[
     # rounding error through the accumulator; treat as FP8 tolerance.
     comptime _ref_dtype = in_dtype
     comptime rel_tol = Float32(0.05) if _ref_dtype.is_float8() else (
-        Float32(1.6e-2) if _ref_dtype == DType.bfloat16 else Float32(1e-3)
+        Float32(1.6e-2) if _ref_dtype == .bfloat16 else Float32(1e-3)
     )
     comptime abs_tol = Float32(0.01) if _ref_dtype.is_float8() else Float32(
         1e-5
@@ -653,11 +653,11 @@ def run_dtype_sweep[
 def main() raises:
     with DeviceContext() as ctx:
         # In-main dtype iteration (HK MHA pattern).
-        run_dtype_sweep[DType.bfloat16](ctx)
+        run_dtype_sweep[.bfloat16](ctx)
         # FP8 input → BF16 output (the 4-wave kernel doesn't support
         # FP8 output today, accumulation/store goes through BF16).
         # The residual is BF16; residual FMA happens in F32 — identical
         # to the BF16-in path numerically once the FP8 quant noise is
         # accounted for via the wider FP8 tolerance.
-        run_dtype_sweep[DType.float8_e4m3fn, out_dtype=DType.bfloat16](ctx)
+        run_dtype_sweep[.float8_e4m3fn, out_dtype=DType.bfloat16](ctx)
     print("==== amd_4wave_conv_fprop_with_residual tests PASSED ====")

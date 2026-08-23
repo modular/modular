@@ -188,8 +188,8 @@ struct _NaiveRMSNormTileAdapter[
         var x_val = self.input.load[width=1](Coord(row, col)).cast[
             DType.float32
         ]()
-        var g_val = self.gamma.load[width=1](Coord(col)).cast[DType.float32]()
-        var w_off = self.weight_offset.cast[DType.float32]()
+        var g_val = self.gamma.load[width=1](Coord(col)).cast[.float32]()
+        var w_off = self.weight_offset.cast[.float32]()
         var y = (x_val * inv_rms) * (g_val + w_off)
 
         # Driver-owned per-thread output fragment; see `_NaiveMatmulTileAdapter`
@@ -267,7 +267,7 @@ struct RMSNormTileSM100:
             rank == 2
         ), "tile-codegen rms_norm only supports rank-2 tensors"
         comptime assert (
-            dtype == DType.float32
+            dtype == .float32
         ), "tile-codegen rms_norm is correctness-only and f32-only"
 
         # TODO(GEX-3905): a real rms_norm must own its own tile shape rather

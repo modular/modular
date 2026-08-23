@@ -82,8 +82,8 @@ def cpu_matmul_naive[
                 else:
                     b_idx = k * N + n
                 acc += (
-                    A.ptr.load(a_idx).cast[DType.float32]()
-                    * B.ptr.load(b_idx).cast[DType.float32]()
+                    A.ptr.load(a_idx).cast[.float32]()
+                    * B.ptr.load(b_idx).cast[.float32]()
                 )
             var c_idx = m * N + n
             C.ptr.store(c_idx, acc.cast[C.dtype]())
@@ -120,7 +120,7 @@ def tma_umma_kernel_ss[
     var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
-        a_type == b_type and a_type == DType.bfloat16
+        a_type == b_type and a_type == .bfloat16
     ), "a_type and b_type must be the same and bfloat16 type"
 
     comptime BM = block_tile_shape[0]
@@ -402,7 +402,7 @@ def tma_umma_kernel_ts[
         num_m_mmas == 1 and num_n_mmas == 1
     ), "num_m_mmas and num_n_mmas must be 1"
     comptime assert (
-        a_type == b_type and a_type == DType.bfloat16
+        a_type == b_type and a_type == .bfloat16
     ), "a_type and b_type must be the same and bfloat16 type"
     comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
@@ -527,8 +527,8 @@ def tma_umma_kernel_ts[
             comptime for j in range(num_vecs_m):
                 var vec = a_gmem_frag[j, k]
                 comptime idx = k * num_vecs_m + j
-                a_frag[2 * idx] = bitcast[DType.uint32, 1](vec.split()[0])
-                a_frag[2 * idx + 1] = bitcast[DType.uint32, 1](vec.split()[1])
+                a_frag[2 * idx] = bitcast[.uint32, 1](vec.split()[0])
+                a_frag[2 * idx + 1] = bitcast[.uint32, 1](vec.split()[1])
 
         tcgen05_st[
             datapaths=16,
@@ -693,9 +693,7 @@ def test_tma_umma[
         Layout.row_major(K, M) if transpose_a else Layout.row_major(M, K),
     ](ctx)
 
-    var a_extreme: Float32 = sqrt(
-        sqrt(max_finite[a_type]().cast[DType.float32]())
-    )
+    var a_extreme: Float32 = sqrt(sqrt(max_finite[a_type]().cast[.float32]()))
     random(
         a.tensor[update=False](),
         min=(-a_extreme).cast[a_type](),
@@ -707,9 +705,7 @@ def test_tma_umma[
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
 
-    var b_extreme: Float32 = sqrt(
-        sqrt(max_finite[b_type]().cast[DType.float32]())
-    )
+    var b_extreme: Float32 = sqrt(sqrt(max_finite[b_type]().cast[.float32]()))
     random(
         b.tensor[update=False](),
         min=(-b_extreme).cast[b_type](),

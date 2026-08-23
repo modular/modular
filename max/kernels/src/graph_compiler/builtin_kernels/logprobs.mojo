@@ -141,7 +141,7 @@ def compute_log_probabilities_1tok[
     """
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
-        lp_output_offsets.to_tile_tensor[DType.int64](), output_token_index
+        lp_output_offsets.to_tile_tensor[.int64](), output_token_index
     )
     var reverse_index_in_seq = (
         lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1

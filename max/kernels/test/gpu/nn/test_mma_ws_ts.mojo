@@ -775,7 +775,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     # Compute reference on GPU using the naive matmul kernel:
     #   P_ref[64,64] = Q[64,512] x K[64,512]^T (transpose_b=True).
     # Then compare against P[:, 0:64] + P[:, 64:128].
-    var p_ref_device = ctx.enqueue_create_buffer[DType.float32](
+    var p_ref_device = ctx.enqueue_create_buffer[.float32](
         P_REF_ROWS * P_REF_COLS
     )
 
@@ -828,7 +828,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
 
-    var p_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var p_ref_host = ctx.enqueue_create_host_buffer[.float32](
         P_REF_ROWS * P_REF_COLS
     )
     ctx.enqueue_copy(p_ref_host, p_ref_device)
@@ -947,11 +947,11 @@ def test_sparse_mma_ws_ts[
     randn[op_type](k_full_host.ptr, total_tokens * cols)
 
     # ---- Build non-contiguous indices into the full K buffer ----
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](rows)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](rows)
     for i in range(rows):
         h_indices[i] = Int32((i * 37 + 13) % total_tokens)
 
-    var d_indices = ctx.enqueue_create_buffer[DType.int32](rows)
+    var d_indices = ctx.enqueue_create_buffer[.int32](rows)
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K [rows, cols] from selected rows ----
@@ -1024,7 +1024,7 @@ def test_sparse_mma_ws_ts[
     )
 
     # Compute reference: P_ref = Q x K_gathered^T.
-    var p_ref_device = ctx.enqueue_create_buffer[DType.float32](
+    var p_ref_device = ctx.enqueue_create_buffer[.float32](
         p_ref_rows * p_ref_cols
     )
 
@@ -1073,7 +1073,7 @@ def test_sparse_mma_ws_ts[
         block_dim=(naive_block_dim, naive_block_dim, 1),
     )
 
-    var p_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var p_ref_host = ctx.enqueue_create_host_buffer[.float32](
         p_ref_rows * p_ref_cols
     )
     ctx.enqueue_copy(p_ref_host, p_ref_device)
@@ -1229,7 +1229,7 @@ def test_sparse_paged_mma_ws_ts[
     # ---- Build lookup_table with shuffled page assignments ----
     comptime lut_layout = Layout.row_major[2]()
     var max_pages_per_seq = (total_tokens + page_size - 1) // page_size
-    var lut_managed = ManagedLayoutTensor[DType.uint32, lut_layout](
+    var lut_managed = ManagedLayoutTensor[.uint32, lut_layout](
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, num_blocks)
         ),
@@ -1263,7 +1263,7 @@ def test_sparse_paged_mma_ws_ts[
     randn[op_type](q_inp_host.ptr, rows * cols)
 
     # ---- Build gather indices from the paged cache ----
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](topk)
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % total_tokens
         var page_within_seq = tok_idx // page_size
@@ -1272,7 +1272,7 @@ def test_sparse_paged_mma_ws_ts[
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)
 
-    var d_indices = ctx.enqueue_create_buffer[DType.int32](topk)
+    var d_indices = ctx.enqueue_create_buffer[.int32](topk)
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K_gathered on host ----
@@ -1346,7 +1346,7 @@ def test_sparse_paged_mma_ws_ts[
     )
 
     # Compute reference: P_ref = Q x K_gathered^T.
-    var p_ref_device = ctx.enqueue_create_buffer[DType.float32](
+    var p_ref_device = ctx.enqueue_create_buffer[.float32](
         p_ref_rows * p_ref_cols
     )
 
@@ -1395,7 +1395,7 @@ def test_sparse_paged_mma_ws_ts[
         block_dim=(naive_block_dim, naive_block_dim, 1),
     )
 
-    var p_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var p_ref_host = ctx.enqueue_create_host_buffer[.float32](
         p_ref_rows * p_ref_cols
     )
     ctx.enqueue_copy(p_ref_host, p_ref_device)

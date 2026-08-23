@@ -60,7 +60,7 @@ def test_time() raises:
     assert_true(t1 > 1 * ns_per_sec)
     assert_true(t1 < 10 * ns_per_sec)
 
-    var t2 = time_templated_function[DType.float32]()
+    var t2 = time_templated_function[.float32]()
     assert_true(t2 > 1 * ns_per_sec)
     assert_true(t2 < 10 * ns_per_sec)
 

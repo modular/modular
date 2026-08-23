@@ -258,7 +258,7 @@ def test_attention[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)

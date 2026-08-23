@@ -258,20 +258,20 @@ def check_ldmatrix(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -367,4 +367,4 @@ def check_ldmatrix(
 def main() raises:
     with DeviceContext() as ctx:
         check_ldmatrix(16, 8, 8, -100, 100, ctx)
-        check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16](ctx)
+        check_ldmatrix_transposed_bf16[.bfloat16, DType.bfloat16](ctx)

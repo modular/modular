@@ -85,7 +85,7 @@ def dispatch_1x1x1_matmul_conv3d[
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
     comptime assert output.flat_rank == 5, "output must be rank 5 (NDHWC)"
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
 
     if num_groups != 1:

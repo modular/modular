@@ -1274,11 +1274,11 @@ def bmm_sm100_blockwise_scaled_fp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
-        b_scales_type == a_scales_type == DType.float32
+        b_scales_type == a_scales_type == .float32
     ), "Only support float32 for a_scales and b_scales"
 
     comptime assert c.rank == 3, "Only support rank 3 tensors"
@@ -1622,10 +1622,10 @@ def batched_matmul_dynamic_scaled_fp8[
         " in (64, 128)."
     )
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
     comptime assert (
-        a_scales_type == b_scales_type == DType.float32
+        a_scales_type == b_scales_type == .float32
     ), "input A and B scales dtype should be float32"
 
     comptime assert (

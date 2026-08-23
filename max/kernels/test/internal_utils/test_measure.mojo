@@ -43,8 +43,8 @@ def test_correlation(ctx: DeviceContext) raises:
     var v = List(length=len, fill=Float32(0))
     var x = List(length=len, fill=Float32(0))
     for i in range(len):
-        u[i] = (0.01 * Float64(i)).cast[DType.float32]()
-        v[i] = (-0.01 * Float64(i)).cast[DType.float32]()
+        u[i] = (0.01 * Float64(i)).cast[.float32]()
+        v[i] = (-0.01 * Float64(i)).cast[.float32]()
     for i, j in product(range(a), range(b)):
         x[b * i + j] = (0.1 * Float64(i) + 0.1 * Float64(j)).cast[
             DType.float32

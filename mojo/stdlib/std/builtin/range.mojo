@@ -34,7 +34,7 @@ from std.utils._select import _select_register_value as select
 # ===----------------------------------------------------------------------=== #
 
 
-struct _ZeroStartingRange[dtype: DType = DType.int](
+struct _ZeroStartingRange[dtype: DType = .int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -100,7 +100,7 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
         return _scalar_range_bounds(self.end - self.curr)
 
 
-struct _SequentialRange[dtype: DType = DType.int](
+struct _SequentialRange[dtype: DType = .int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -189,7 +189,7 @@ def _fp_range_count[
 # drift, with `idx` as the element cursor. Reverse iteration mirrors forward
 # bit for bit, counting `idx` down from -1 (which `__next__` maps to
 # `count - 1`).
-struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
+struct _StridedRange[dtype: DType = .int, forward: Bool = True](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -446,7 +446,7 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
 
 
 @always_inline
-def range[T: Indexer, //](end: T) -> _ZeroStartingRange[DType.int]:
+def range[T: Indexer, //](end: T) -> _ZeroStartingRange[.int]:
     """Returns the integer sequence `[0, end)`.
 
     Integer ranges are values. They support `len()`, O(1) indexing, and
@@ -483,7 +483,7 @@ def range[T: Indexer, //](end: T) -> _ZeroStartingRange[DType.int]:
 
 
 @always_inline
-def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[DType.int]:
+def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[.int]:
     """Returns the integer sequence `[start, end)`.
 
     **The two-argument form never counts down.** `range(7, 3)` is empty,
@@ -520,9 +520,7 @@ def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[DType.int]:
 
 
 @always_inline
-def range[
-    T: Indexer, //
-](start: T, end: T, step: T) -> _StridedRange[DType.int]:
+def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange[.int]:
     """Returns the integer sequence `[start, end)` with a given step.
 
     When you don't know which bound is larger, choose the direction with an

@@ -67,7 +67,7 @@ struct TopK:
         target: StaticString,
     ](
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:

@@ -1137,15 +1137,15 @@ def pack_Q_tile(input: SIMD[.uint8, 16]) -> SIMD[.uint32, 4]:
     var res: SIMD[.uint32, 4] = 0
 
     comptime for i in range(4):
-        res[i] |= input[i * 4 + 0].cast[DType.uint32]() & 0x0F
-        res[i] |= (input[i * 4 + 0].cast[DType.uint32]() & 0xF0) << 12
-        res[i] |= (input[i * 4 + 1].cast[DType.uint32]() & 0x0F) << 4
-        res[i] |= (input[i * 4 + 1].cast[DType.uint32]() & 0xF0) << 16
+        res[i] |= input[i * 4 + 0].cast[.uint32]() & 0x0F
+        res[i] |= (input[i * 4 + 0].cast[.uint32]() & 0xF0) << 12
+        res[i] |= (input[i * 4 + 1].cast[.uint32]() & 0x0F) << 4
+        res[i] |= (input[i * 4 + 1].cast[.uint32]() & 0xF0) << 16
 
-        res[i] |= (input[i * 4 + 2].cast[DType.uint32]() & 0x0F) << 8
-        res[i] |= (input[i * 4 + 2].cast[DType.uint32]() & 0xF0) << 20
-        res[i] |= (input[i * 4 + 3].cast[DType.uint32]() & 0x0F) << 12
-        res[i] |= (input[i * 4 + 3].cast[DType.uint32]() & 0xF0) << 24
+        res[i] |= (input[i * 4 + 2].cast[.uint32]() & 0x0F) << 8
+        res[i] |= (input[i * 4 + 2].cast[.uint32]() & 0xF0) << 20
+        res[i] |= (input[i * 4 + 3].cast[.uint32]() & 0x0F) << 12
+        res[i] |= (input[i * 4 + 3].cast[.uint32]() & 0xF0) << 24
 
     return res
 
@@ -1163,7 +1163,7 @@ def unpack_4bit_int(val: SIMD[.uint32, _], idx: Int) -> UInt8:
         The extracted 4-bit value as a `UInt8`.
     """
     var u32_val = rebind[UInt32](val)
-    return (u32_val >> UInt32(idx * 4)).cast[DType.uint8]() & 0x0F
+    return (u32_val >> UInt32(idx * 4)).cast[.uint8]() & 0x0F
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
@@ -1220,9 +1220,7 @@ def repack_Q4_0_for_sm8x[
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
-            DType.float32
-        ]()
+        var f32_values = bitcast[.float16, 1](input_bytes).cast[DType.float32]()
         return bitcast[scales_type, 2](f32_values)[1]
 
     comptime repacked_b_layout = Layout(
@@ -1235,7 +1233,7 @@ def repack_Q4_0_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
+    var repack_weights = LayoutTensor[.uint32, repacked_b_layout](
         q_packed_weight.ptr.bitcast[UInt32](),
     )
 
@@ -1288,7 +1286,7 @@ def repack_Q4_0_for_sm8x[
         copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
-            .bitcast[DType.uint8, target_address_space=AddressSpace.GENERIC]()
+            .bitcast[.uint8, target_address_space=AddressSpace.GENERIC]()
             .vectorize[1, 4](),
         )
         q_gmem_iter._incr()
@@ -1429,14 +1427,12 @@ def repack_GPTQ_for_sm8x[
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
-            DType.float32
-        ]()
+        var f32_values = bitcast[.float16, 1](input_bytes).cast[DType.float32]()
         return bitcast[scales_type, 2](f32_values)[1]
 
     # Define 4-bit weights and scales for the raw input
     comptime raw_weights_layout = Layout.row_major(uint_K, N)
-    var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
+    var raw_weights = LayoutTensor[.uint32, raw_weights_layout](
         in_tensor.ptr.bitcast[UInt32](),
     ).transpose()
     comptime raw_scales_layout = Layout.row_major(K_groups, N)
@@ -1456,7 +1452,7 @@ def repack_GPTQ_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
+    var repack_weights = LayoutTensor[.uint32, repacked_weights_layout](
         out_tensor.ptr.bitcast[UInt32](),
     )
     comptime repacked_scales_layout = Layout.row_major(K_groups, N)

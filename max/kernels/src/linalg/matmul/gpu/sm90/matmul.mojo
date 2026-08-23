@@ -249,12 +249,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
     comptime k_group_size = config.k_group_size
 
-    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == .float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
     comptime assert (
-        a_type != DType.float8_e4m3fn or BK == 128
+        a_type != .float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
     comptime assert (
@@ -366,7 +366,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
             __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
         ](ctx, c_device)
 
-    var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
+    var lut_ptr = ctx.enqueue_create_buffer[.uint32](0)
 
     comptime if hilbert_swizzle:
         var grid_x = ceildiv(N, BN)
@@ -632,7 +632,7 @@ def _get_c_smem_layout[
     comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
     comptime assert not swapAB or (
-        a_type == b_type == c_type == DType.bfloat16
+        a_type == b_type == c_type == .bfloat16
     ), "swapAB is only supported for bfloat16 dtypes"
 
     comptime groups = num_pipeline_stages // k_group_size
@@ -756,12 +756,12 @@ def warp_specialize_gemm_with_multicasting_splitk[
 
     comptime assert k_group_size == 1, "Only support k_group_size == 1 for now"
 
-    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == .float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
     comptime assert (
-        a_type != DType.float8_e4m3fn or BK == 128
+        a_type != .float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
     comptime assert (
@@ -864,9 +864,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         )
     )
 
-    var locks_ptr = ctx.enqueue_create_buffer[DType.uint8](
-        locks_buffer_size_bytes
-    )
+    var locks_ptr = ctx.enqueue_create_buffer[.uint8](locks_buffer_size_bytes)
 
     ctx.enqueue_memset(locks_ptr, 0)
 

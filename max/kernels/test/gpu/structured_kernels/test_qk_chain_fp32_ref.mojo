@@ -189,7 +189,7 @@ def kernel_qk_chain[
             q_v[m, kk, 0] = rebind[q_v.ElementType](frag)
 
     # ---- Accumulator + mma_QK ---------------------------------------------
-    var att_reg = tt_stack_allocation[DType.float32, AddressSpace.LOCAL](
+    var att_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](
         _Op.ATT_LAYOUT
     )
     comptime _AH = _Op.ATT_LAYOUT.static_shape[0]
@@ -221,7 +221,7 @@ def kernel_qk_chain[
 
 @always_inline
 def _quantize_to_K[T: DType](v: Float32) -> Scalar[T]:
-    comptime if T == DType.bfloat16:
+    comptime if T == .bfloat16:
         return rebind[Scalar[T]](BFloat16(v))
     else:
         return rebind[Scalar[T]](Float8_e4m3fn(v))
@@ -229,7 +229,7 @@ def _quantize_to_K[T: DType](v: Float32) -> Scalar[T]:
 
 @always_inline
 def _dequantize_to_f32[T: DType](v: Scalar[T]) -> Float32:
-    return v.cast[DType.float32]()
+    return v.cast[.float32]()
 
 
 # --------------------------------------------------------------------------- #
@@ -238,7 +238,7 @@ def _dequantize_to_f32[T: DType](v: Scalar[T]) -> Float32:
 
 
 def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
     print("--- test_qk_chain[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -262,11 +262,11 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
     comptime _AW = _Op.ATT_LAYOUT.static_shape[1]
     comptime _per_lane = _AH * _AW * 16
     comptime _DUMP_SIZE = 64 * _per_lane
-    comptime _tol: Float32 = 5e-2 if T == DType.float8_e4m3fn else 1e-2
+    comptime _tol: Float32 = 5e-2 if T == .float8_e4m3fn else 1e-2
 
     var dev_k_swz = ctx.enqueue_create_buffer[T](_SMEM_SIZE)
     var dev_q = ctx.enqueue_create_buffer[T](_Q_SIZE)
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
     # ---- Build the pre-swizzled K SMEM image on host ----------------------
     # For each logical (m_kv, d), quantize K_fp32 to T, then write it into
@@ -275,7 +275,7 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         for i in range(_SMEM_SIZE):
             host_k[i] = _quantize_to_K[T](Float32(0.0))
 
-        comptime _T_size = 1 if T == DType.float8_e4m3fn else 2  # bytes/elt
+        comptime _T_size = 1 if T == .float8_e4m3fn else 2  # bytes/elt
         var sub_elts = _K_SUB_ROWS * _K_SUB_COLS  # elements per sub-block
         for m_kv in range(KV_BLOCK):
             for d in range(DEPTH):
@@ -313,11 +313,9 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
     # back the host arrays with DeviceContext buffers so we don't need
     # manual `UnsafePointer.alloc` plumbing (the test never launches a
     # kernel against these buffers).
-    var dev_k_quant = ctx.enqueue_create_buffer[DType.float32](KV_BLOCK * DEPTH)
-    var dev_q_quant = ctx.enqueue_create_buffer[DType.float32](
-        Q_BLOCK_SIZE * DEPTH
-    )
-    var dev_att_ref = ctx.enqueue_create_buffer[DType.float32](
+    var dev_k_quant = ctx.enqueue_create_buffer[.float32](KV_BLOCK * DEPTH)
+    var dev_q_quant = ctx.enqueue_create_buffer[.float32](Q_BLOCK_SIZE * DEPTH)
+    var dev_att_ref = ctx.enqueue_create_buffer[.float32](
         KV_BLOCK * Q_BLOCK_SIZE
     )
 
@@ -460,8 +458,8 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
-        var ok_bf16 = test_qk_chain[DType.bfloat16](ctx)
-        var ok_fp8 = test_qk_chain[DType.float8_e4m3fn](ctx)
+        var ok_bf16 = test_qk_chain[.bfloat16](ctx)
+        var ok_fp8 = test_qk_chain[.float8_e4m3fn](ctx)
 
         print("=" * 60)
         print("Summary:")

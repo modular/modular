@@ -205,7 +205,7 @@ def test_dynamic_mxfp8_quant[
                         ](scales_tensor_host.as_unsafe_any_origin(), idx0, idx1)
 
                         var output_dequantized = (
-                            output * fp8_sf.cast[DType.float32]()
+                            output * fp8_sf.cast[.float32]()
                         )
 
                         var left = abs(output_dequantized - ref_output)

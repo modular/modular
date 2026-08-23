@@ -1068,7 +1068,7 @@ struct MLAPrefillSparseCommon[
             # realistic deployment.
             var idx_v8 = indices.load[width=INDICES_PER_LANE](
                 Coord(gidx_offset)
-            ).cast[DType.int32]()
+            ).cast[.int32]()
 
             var abs_pos_base = Int32(k_block) * Int32(
                 Self.config.B_TOPK

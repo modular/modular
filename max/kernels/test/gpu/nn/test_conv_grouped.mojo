@@ -141,8 +141,8 @@ def test_grouped_conv2d[
     var max_diff: Float32 = 0.0
     var errors = 0
     for i in range(out_size):
-        var gpu_val = out_gpu_host[i].cast[DType.float32]()
-        var ref_val = out_ref_host[i].cast[DType.float32]()
+        var gpu_val = out_gpu_host[i].cast[.float32]()
+        var ref_val = out_ref_host[i].cast[.float32]()
         var diff = abs(gpu_val - ref_val)
         if diff > max_diff:
             max_diff = diff

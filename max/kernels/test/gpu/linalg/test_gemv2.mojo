@@ -178,7 +178,7 @@ def test_gemv_split_k[in_type: DType](ctx: DeviceContext) raises:
     """Test GEMV_SPLIT_K path: M=1, transpose_b=True, K % simd_width == 0."""
     print("=== Testing GEMV_SPLIT_K with", in_type, "===")
 
-    comptime out_type = DType.float32 if in_type == DType.bfloat16 else DType.bfloat16
+    comptime out_type = DType.float32 if in_type == .bfloat16 else DType.bfloat16
 
     # Basic GEMV_SPLIT_K
     test[
@@ -234,8 +234,8 @@ def test_gemv_split_k[in_type: DType](ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         # GEMV_SPLIT_K tests for bf16 and fp8
-        test_gemv_split_k[DType.bfloat16](ctx)
-        test_gemv_split_k[DType.float8_e4m3fn](ctx)
+        test_gemv_split_k[.bfloat16](ctx)
+        test_gemv_split_k[.float8_e4m3fn](ctx)
 
         # BF16-only tests for other GEMV paths (FP8 not supported here)
 

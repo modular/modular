@@ -53,24 +53,24 @@ def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[.bfloat16, 8]:
         else:
             t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
 
-        v[i] = bitcast[DType.int32, 1](
-            bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS)
+        v[i] = bitcast[.int32, 1](
+            bitcast[.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS)
         )
         i4s >>= 4
-    return bitcast[DType.bfloat16, 8](v)
+    return bitcast[.bfloat16, 8](v)
 
 
 def call_int4tobf16[
     no_lop: Bool
 ](i4: Int32, out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],):
     var v = int4tobf16[no_lop](i4)
-    out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
+    out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[.int32, 4](v))
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
     var stack = Array[BFloat16, 8](uninitialized=True)
     var out_host = TileTensor(stack, row_major[8]())
-    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](8)
 
     comptime kernel = call_int4tobf16[no_lop]
     ctx.enqueue_function[kernel](

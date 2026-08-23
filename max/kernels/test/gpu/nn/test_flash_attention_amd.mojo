@@ -530,7 +530,7 @@ def test_decoding[
     batch_size: Int,
     depth: Int,
     num_partitions: Optional[Int] = None,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     # BF16 token gen

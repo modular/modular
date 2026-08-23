@@ -32,11 +32,11 @@ def kernel(
 def test_grid_dim(ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](buffer_size)
     for i in range(buffer_size):
         output_host[i] = -1.0
 
-    var output_buffer = ctx.enqueue_create_buffer[DType.float32](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[.float32](buffer_size)
 
     ctx.enqueue_copy(output_buffer, output_host)
 

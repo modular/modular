@@ -988,5 +988,5 @@ def output_reg_to_smem_st_matrix[
             var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
-            var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)
+            var output_frag_f32_packed = bitcast[.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)

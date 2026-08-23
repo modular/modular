@@ -175,7 +175,7 @@ def kernel_mma_QK[
     # Q register tile: shape (Q_BLOCK_SIZE / MMA_M, DEPTH / MMA_K, FRAG_ELTS).
     var q_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.Q_LAYOUT)
     # att register tile: shape (KV_BLOCK / MMA_M, Q_BLOCK_SIZE / MMA_N, 16).
-    var att_reg = tt_stack_allocation[DType.float32, AddressSpace.LOCAL](
+    var att_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](
         _Op.ATT_LAYOUT
     )
 
@@ -192,7 +192,7 @@ def kernel_mma_QK[
             comptime for f in range(_FRAG_ELTS):
                 var gr = n * _MMA_M + row_offset
                 var gc = kk * _MMA_K + col_offset + f
-                comptime if T == DType.bfloat16:
+                comptime if T == .bfloat16:
                     frag[f] = rebind[Scalar[T]](_pattern_K_bf16(gr, gc))
                 else:
                     frag[f] = rebind[Scalar[T]](_pattern_K_fp8(gr, gc))
@@ -207,7 +207,7 @@ def kernel_mma_QK[
             comptime for f in range(_FRAG_ELTS):
                 var gr = m * _MMA_N + row_offset
                 var gc = kk * _MMA_K + col_offset + f
-                comptime if T == DType.bfloat16:
+                comptime if T == .bfloat16:
                     frag[f] = rebind[Scalar[T]](_pattern_Q_bf16(gr, gc))
                 else:
                     frag[f] = rebind[Scalar[T]](_pattern_Q_fp8(gr, gc))
@@ -235,7 +235,7 @@ def kernel_mma_QK[
 
 
 def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
     print("--- test_mma_QK[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -261,7 +261,7 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
     comptime _per_lane = _AH * _AW * 16
     comptime _DUMP_SIZE = 64 * _per_lane
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
     ctx.enqueue_function[kernel_mma_QK[CFG, T]](
         dev_dump.unsafe_ptr(),
@@ -282,7 +282,7 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
     var max_diff: Float32 = 0.0
     var pos_count: Int = 0
     var neg_count: Int = 0
-    comptime _tol: Float32 = 5e-2 if T == DType.float8_e4m3fn else 1e-2
+    comptime _tol: Float32 = 5e-2 if T == .float8_e4m3fn else 1e-2
 
     with dev_dump.map_to_host() as host_dump:
         for lid in range(64):
@@ -299,7 +299,7 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
                         for gc in range(DEPTH):
                             var k_val: Float32
                             var q_val: Float32
-                            comptime if T == DType.bfloat16:
+                            comptime if T == .bfloat16:
                                 k_val = Float32(_pattern_K_bf16(gr_K, gc))
                                 q_val = Float32(_pattern_Q_bf16(gr_Q, gc))
                             else:
@@ -412,9 +412,7 @@ def kernel_mma_PV[
     var p_reg = tt_stack_allocation[T, AddressSpace.LOCAL](
         _Op.ATT_BF16_FULL_LAYOUT
     )
-    var o_reg = tt_stack_allocation[DType.float32, AddressSpace.LOCAL](
-        _Op.O_LAYOUT
-    )
+    var o_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](_Op.O_LAYOUT)
 
     var lid = Int(lane_id())
     var row_offset = lid % 32
@@ -430,7 +428,7 @@ def kernel_mma_PV[
             comptime for f in range(_FRAG_ELTS):
                 var depth_idx = n_depth * _MMA_M + row_offset
                 var key_idx = kk * _MMA_K + col_offset + f
-                comptime if T == DType.bfloat16:
+                comptime if T == .bfloat16:
                     frag[f] = rebind[Scalar[T]](
                         _pattern_V_bf16(key_idx, depth_idx)
                     )
@@ -450,7 +448,7 @@ def kernel_mma_PV[
             comptime for f in range(_FRAG_ELTS):
                 var key_idx = kk * _MMA_K + col_offset + f
                 var q_idx = m_q * _MMA_N + row_offset
-                comptime if T == DType.bfloat16:
+                comptime if T == .bfloat16:
                     frag[f] = rebind[Scalar[T]](_pattern_P_bf16(key_idx, q_idx))
                 else:
                     frag[f] = rebind[Scalar[T]](_pattern_P_fp8(key_idx, q_idx))
@@ -478,7 +476,7 @@ def kernel_mma_PV[
 
 
 def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
     print("--- test_mma_PV[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -498,7 +496,7 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
     comptime _per_lane = _OH * _OW * 16
     comptime _DUMP_SIZE = 64 * _per_lane
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
     ctx.enqueue_function[kernel_mma_PV[CFG, T]](
         dev_dump.unsafe_ptr(),
@@ -512,7 +510,7 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
     var max_diff: Float32 = 0.0
     var pos_count: Int = 0
     var neg_count: Int = 0
-    comptime _tol: Float32 = 5e-2 if T == DType.float8_e4m3fn else 1e-2
+    comptime _tol: Float32 = 5e-2 if T == .float8_e4m3fn else 1e-2
 
     with dev_dump.map_to_host() as host_dump:
         for lid in range(64):
@@ -529,7 +527,7 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
                         for key in range(KV_BLOCK):
                             var v_val: Float32
                             var p_val: Float32
-                            comptime if T == DType.bfloat16:
+                            comptime if T == .bfloat16:
                                 v_val = Float32(_pattern_V_bf16(key, depth_idx))
                                 p_val = Float32(_pattern_P_bf16(key, q_idx))
                             else:
@@ -602,10 +600,10 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
-        var ok_qk_bf16 = test_mma_QK[DType.bfloat16](ctx)
-        var ok_qk_fp8 = test_mma_QK[DType.float8_e4m3fn](ctx)
-        var ok_pv_bf16 = test_mma_PV[DType.bfloat16](ctx)
-        var ok_pv_fp8 = test_mma_PV[DType.float8_e4m3fn](ctx)
+        var ok_qk_bf16 = test_mma_QK[.bfloat16](ctx)
+        var ok_qk_fp8 = test_mma_QK[.float8_e4m3fn](ctx)
+        var ok_pv_bf16 = test_mma_PV[.bfloat16](ctx)
+        var ok_pv_fp8 = test_mma_PV[.float8_e4m3fn](ctx)
 
         print("=" * 60)
         print("Summary:")

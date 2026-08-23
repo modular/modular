@@ -89,17 +89,13 @@ def main() raises:
     var start_vertex = 0
     h_level[start_vertex] = 0
 
-    var d_src_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_dst = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
+    var d_src_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_dst = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
     # Allocate larger frontier buffers to handle potential duplicates
-    var d_prev_frontier = ctx.enqueue_create_buffer[DType.uint32](
-        NUM_VERTICES * 2
-    )
-    var d_curr_frontier = ctx.enqueue_create_buffer[DType.uint32](
-        NUM_VERTICES * 2
-    )
-    var d_num_curr_frontier = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_prev_frontier = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES * 2)
+    var d_curr_frontier = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES * 2)
+    var d_num_curr_frontier = ctx.enqueue_create_buffer[.uint32](1)
 
     var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
     var h_dst = alloc[UInt32](num_edges)

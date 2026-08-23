@@ -49,7 +49,7 @@ from linalg.arch.amd.block_scaled_mma import (
 @always_inline
 def _broadcast_scale_word(value: Float32) -> Int32:
     """Pack one E8M0 scale across all 4 bytes of an Int32."""
-    var scale_byte = bitcast[DType.uint8](
+    var scale_byte = bitcast[.uint8](
         _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](value)
     )
     return Int32(
@@ -65,16 +65,16 @@ def _packed_scale_word(
     b0: Float32, b1: Float32, b2: Float32, b3: Float32
 ) -> Int32:
     """Pack 4 distinct E8M0 scales into bytes 0..3 of an Int32."""
-    var s0 = bitcast[DType.uint8](
+    var s0 = bitcast[.uint8](
         _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b0)
     )
-    var s1 = bitcast[DType.uint8](
+    var s1 = bitcast[.uint8](
         _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b1)
     )
-    var s2 = bitcast[DType.uint8](
+    var s2 = bitcast[.uint8](
         _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b2)
     )
-    var s3 = bitcast[DType.uint8](
+    var s3 = bitcast[.uint8](
         _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b3)
     )
     return Int32(
@@ -89,8 +89,8 @@ def _pack_k_kernel[
     PackedLayout: TensorLayout,
     BroadcastLayout: TensorLayout,
 ](
-    packed_out: TileTensor[DType.float32, PackedLayout, MutAnyOrigin],
-    broadcast_out: TileTensor[DType.float32, BroadcastLayout, MutAnyOrigin],
+    packed_out: TileTensor[.float32, PackedLayout, MutAnyOrigin],
+    broadcast_out: TileTensor[.float32, BroadcastLayout, MutAnyOrigin],
 ):
     var lane = lane_id()
     var a_frag = SIMD[.uint8, 16](UInt8(0x21))
@@ -184,8 +184,8 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
     comptime num_dispatches = 4
     comptime num_values = WARP_SIZE * num_acc_per_dispatch * num_dispatches
 
-    var packed_dev = ctx.enqueue_create_buffer[DType.float32](num_values)
-    var bcast_dev = ctx.enqueue_create_buffer[DType.float32](num_values)
+    var packed_dev = ctx.enqueue_create_buffer[.float32](num_values)
+    var bcast_dev = ctx.enqueue_create_buffer[.float32](num_values)
 
     var packed_tt = TileTensor(
         packed_dev,
@@ -208,8 +208,8 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    var packed_host = ctx.enqueue_create_host_buffer[DType.float32](num_values)
-    var bcast_host = ctx.enqueue_create_host_buffer[DType.float32](num_values)
+    var packed_host = ctx.enqueue_create_host_buffer[.float32](num_values)
+    var bcast_host = ctx.enqueue_create_host_buffer[.float32](num_values)
     ctx.enqueue_copy(packed_host, packed_dev)
     ctx.enqueue_copy(bcast_host, bcast_dev)
     ctx.synchronize()

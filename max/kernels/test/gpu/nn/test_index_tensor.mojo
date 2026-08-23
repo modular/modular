@@ -293,7 +293,7 @@ def test_advanced_indexing_setitem_inplace_gpu(ctx: DeviceContext) raises:
     ]()
     var updates_dyn = TileTensor(
         updates_dev, updates_static_layout
-    ).make_dynamic[DType.int64]()
+    ).make_dynamic[.int64]()
 
     @always_inline
     def updates_tensor_fn[

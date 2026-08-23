@@ -340,7 +340,7 @@ def stsm_helper[
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
             v[2 * k + 1] = casted[1]
-        st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
+        st_matrix[simd_width=4](dst.ptr + offset, bitcast[.float32, 4](v))
 
 
 @always_inline

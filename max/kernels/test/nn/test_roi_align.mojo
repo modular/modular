@@ -41,7 +41,7 @@ def test_roi_align_avg[scale_type: DType]() raises:
     rois[0, 4] = 4
 
     roi_align_nhwc[aligned=False](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         input,
         rois,
         Int(out_layout.shape[1]().value()),
@@ -106,7 +106,7 @@ def test_roi_align_max() raises:
     rois[0, 4] = 4
 
     roi_align_nhwc[aligned=False, mode="MAX"](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         input,
         rois,
         Int(out_layout.shape[1]().value()),
@@ -171,7 +171,7 @@ def test_roi_align_KERN_692() raises:
     rois[0, 4] = 22
 
     roi_align_nhwc[aligned=False](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         input,
         rois,
         Int(out_layout.shape[1]().value()),
@@ -194,7 +194,7 @@ def test_roi_align_KERN_692() raises:
 
 
 def main() raises:
-    test_roi_align_avg[DType.float32]()
-    test_roi_align_avg[DType.float64]()
+    test_roi_align_avg[.float32]()
+    test_roi_align_avg[.float64]()
     test_roi_align_max()
     test_roi_align_KERN_692()

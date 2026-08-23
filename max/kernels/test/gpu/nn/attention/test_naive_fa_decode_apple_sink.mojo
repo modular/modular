@@ -58,7 +58,7 @@ from std.utils import Index, IndexList
 def _run_sink_closed_form[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
-    dtype: DType = DType.bfloat16,
+    dtype: DType = .bfloat16,
 ](num_keys: Int, sink_weights: List[Float32], ctx: DeviceContext,) raises:
     """Decode one token with `scale=0`, `V=1`, NullMask, and per-head sink
     weights; assert each head's output equals `num_keys/(num_keys+exp(sink))`.
@@ -107,7 +107,7 @@ def _run_sink_closed_form[
 
     # ---- valid_length (per-sequence query length = 1) -------------------- #
     comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
-    var valid_lengths = ManagedLayoutTensor[DType.uint32, vl_layout](
+    var valid_lengths = ManagedLayoutTensor[.uint32, vl_layout](
         RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)), ctx
     )
     var vl_host = valid_lengths.tensor[update=False]()
@@ -123,7 +123,7 @@ def _run_sink_closed_form[
 
     # ---- per-sequence cache lengths -------------------------------------- #
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cl_layout](
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)), ctx
     )
     var cl_host = cache_lengths_managed.tensor[update=False]()
@@ -153,7 +153,7 @@ def _run_sink_closed_form[
                     kv_host[blk, 1, layer_idx, tok, kvh, d] = Scalar[dtype](1.0)
 
     # ---- lookup table: sequence 0 uses block 0 --------------------------- #
-    var lookup_table = ManagedLayoutTensor[DType.uint32, cl_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, cl_layout](
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)), ctx
     )
     var lut_host = lookup_table.tensor[update=False]()
@@ -214,7 +214,7 @@ def _run_sink_closed_form[
             Float32(num_keys) + exp(sink_weights[h])
         )
         for d in range(depth):
-            var got = out[0, 0, h, d].cast[DType.float32]()[0]
+            var got = out[0, 0, h, d].cast[.float32]()[0]
             assert_almost_equal(got, want, atol=2e-2, rtol=2e-2)
     _ = q^
     _ = test_output^
