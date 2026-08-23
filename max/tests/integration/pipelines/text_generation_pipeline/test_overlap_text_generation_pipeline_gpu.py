@@ -290,7 +290,10 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         self.device = Accelerator()
         self.kv_cache_config = MagicMock()
-        self.max_seq_len = 9999
+        # max_seq_len is a read-only view of the plan on the base class.
+        self.memory_plan = MemoryPlan(
+            max_batch_size=1, footprint=0, max_length=9999
+        )
         print(f"Building graph for device {self.device}")
         t0 = time.time()
         self.model = build_graph(device_ref=DeviceRef.from_device(self.device))

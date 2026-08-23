@@ -148,10 +148,11 @@ class Gemma3_MultiModalModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -160,8 +161,8 @@ class Gemma3_MultiModalModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             memory_plan=memory_plan,
         )
 

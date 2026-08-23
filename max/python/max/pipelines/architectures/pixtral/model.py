@@ -38,9 +38,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
-from max.pipelines.lib.utils import (
-    parse_state_dict_from_weights,
-)
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 
 from .batch_processor import PixtralBatchProcessor
@@ -87,10 +85,11 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._max_batch_size = max_batch_size
         super().__init__(
@@ -99,8 +98,8 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             memory_plan=memory_plan,
         )
 

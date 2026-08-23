@@ -92,10 +92,11 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -103,8 +104,8 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             memory_plan=memory_plan,
         )
         self.model = self.load_model()

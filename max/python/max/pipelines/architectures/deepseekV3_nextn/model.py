@@ -71,13 +71,14 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         shared_weights: dict[str, DLPackArray] | None = None,
         shared_ep_comm_initializer: EPCommInitializer | None = None,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self._shared_weights = shared_weights
         self._shared_ep_comm_initializer = shared_ep_comm_initializer
@@ -87,9 +88,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )

@@ -100,11 +100,12 @@ class UnifiedEagleLlama3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -112,7 +113,7 @@ class UnifiedEagleLlama3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
             max_batch_size=max_batch_size,

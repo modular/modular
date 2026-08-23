@@ -98,11 +98,12 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -110,9 +111,9 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )

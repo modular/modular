@@ -40,6 +40,10 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
 
+# The mock model's sequence-length clamp; plan builders use it to populate
+# mock plans the way the estimator would.
+MOCK_MODEL_MAX_SEQ_LEN = 1200
+
 
 class MockModelInputs(ModelInputs):
     def __init__(
@@ -86,12 +90,13 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         session: InferenceSession,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         devices: list[Device] = [],  # noqa: B006
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
-        memory_plan: MemoryPlan | None = None,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.memory_plan = memory_plan
@@ -116,18 +121,6 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
-        planned_max_length = (
-            memory_plan.max_length if memory_plan is not None else None
-        )
-        if planned_max_length is not None:
-            self.max_seq_len = planned_max_length
-        else:
-            # The mock's fixed 1200 clamp, applied to the config's resolved
-            # max_length when one is set.
-            config_max_length = pipeline_config.model.max_length
-            self.max_seq_len = (
-                min(1200, config_max_length) if config_max_length else 1200
-            )
         self._lora_manager = (
             LoRAManagerV3(
                 config=self.pipeline_config.lora,

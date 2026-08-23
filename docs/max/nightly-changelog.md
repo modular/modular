@@ -226,6 +226,10 @@ This version is still a work in progress.
   and `PipelineConfig.runtime.max_batch_total_tokens` keeps the
   user-provided value (`None` when unset); the VRAM-clamped effective
   values live on `MemoryPlan`.
+- `PipelineModel` now requires the `memory_plan` constructor argument
+  (keyword-only; constructing a pipeline model without a plan raises a
+  `TypeError`), and `PipelineModel.max_seq_len` is a read-only view of the
+  plan's `max_length` rather than a stored copy with a config fallback.
 - Made `MemoryEstimator.free_memory`, `static_memory_size`,
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and
