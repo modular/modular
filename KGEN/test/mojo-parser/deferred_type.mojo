@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.fn @"get_llvm_array[::SIMD[::DType(int), ::SIMDLength(1)]]()"
+# CHECK-LABEL: lit.fn @"get_llvm_array[::SIMD[DType.int, 1]]()"
 # CHECK-SAME: -> !kgen.deferred_type
 @always_inline
 def get_llvm_array[n: Int]() -> __mlir_deferred_type[

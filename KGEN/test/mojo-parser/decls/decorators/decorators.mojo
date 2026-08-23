@@ -189,7 +189,7 @@ def register_internal(x: StaticString):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder1">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"(%a: !alias_Int1) -> !DecoratorOrder1
+# CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder1
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
@@ -201,7 +201,7 @@ struct DecoratorOrder1(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"(%a: !alias_Int1) -> !DecoratorOrder2
+# CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder2
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
 @fieldwise_init
@@ -213,7 +213,7 @@ struct DecoratorOrder2(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"(%a: !alias_Int1) -> !DecoratorOrder3
+# CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder3
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
@@ -225,7 +225,7 @@ struct DecoratorOrder3(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder4">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"(%a: !alias_Int1) -> !DecoratorOrder4
+# CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder4
 @fieldwise_init
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
@@ -416,7 +416,7 @@ struct VarArgInit(TrivialRegisterPassable):
     def __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDLength(1)])"(%a: !alias_Int1) -> !VarArgInit
+    # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !VarArgInit
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the

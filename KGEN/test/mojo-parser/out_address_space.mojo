@@ -25,14 +25,14 @@ struct MemType(Movable):
         self.value = 0
 
     # This has a parametric origin like 'ref', but not a parametric addr space.
-    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[::DType(int), ::SIMDLength(1)])
+    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[DType.int, 1])
     # CHECK-SAME: <?, *"self_is_origin`2x": origin<true>
     # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x"> byref_result
     def __init__(a: Int, out[_] self):
         self.value = 0
 
     # This has a fixed address space, parametric origin.
-    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])
+    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[DType.int, 1],::SIMD[DType.int, 1])
     # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x1", sugar_preserved({{.*}}, 1)> byref_result)
     def __init__(a: Int, b: Int, out[AddressSpace.GLOBAL] self):
         self.value = 0

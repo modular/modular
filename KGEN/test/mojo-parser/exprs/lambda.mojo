@@ -25,11 +25,11 @@
 # The var holds the promoted function's value, not a closure instance (the
 # NOT precedes the matches: storage structs print before the enclosing fn).
 # CHECK-NOT: @"{{.*}}`lambda_0::__storage"
-# CHECK: kgen.create_closure[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
+# CHECK: kgen.create_closure[{{.*}}("x": !Int) -> !{{.*}}Int{{[0-9]*}}>: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
 
 # The synthetic def is named `lambda_<n> and promoted to module scope; its body
 # (x + 1) is a plain thin function's -- no capture machinery.
-# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int) -> !{{.*}}Int{{[0-9]*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int) -> !{{.*}}Int{{[0-9]*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK: kgen.param.constant{{.*}}<{{{.*}}1}>
 # CHECK: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 # CHECK: lit.return
@@ -47,7 +47,7 @@ def withNoCapture():
 # init call), so body checks are CHECK-DAG.
 # CHECK-DAG: lit.struct.decl @"withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK-DAG: lit.ref.struct.ger %{{.*}}[z]
 # CHECK-DAG: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 # CHECK: lit.call @{{.*}}::@"withCapturingMut()::`lambda_0::__storage"::@"__init__
@@ -119,10 +119,10 @@ def withCapturingOverride():
 # // -----
 
 # COM: Parameter list: `[N: Int]` becomes a closure parameter (mangled into the symbol
-# COM: as `[::SIMD[::DType(int), ::SIMDLength(1)]]` and declared as `<N: ...>`).
+# COM: as `[::SIMD[DType.int, 1]]` and declared as `<N: ...>`).
 
 # CHECK: lit.struct.decl @"withParameter()::`lambda_0::__storage"
-# CHECK: lit.fn @"`lambda_0[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]){{.*}}"<N: !Int{{[0-9]*}}>{{.*}} capturing -> {{.*}}
 
 
 def withParameter():
@@ -134,7 +134,7 @@ def withParameter():
 # COM: Effects: `raises` (after the argument list, before the capture list) makes the
 # COM: promoted function throwing, with the throws ABI (byref error + bool return).
 
-# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}byref_error{{.*}} throws -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}}byref_error{{.*}} throws -> {{.*}}
 
 
 def withEffect():
@@ -143,7 +143,7 @@ def withEffect():
 
 # // -----
 
-# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}(%x: !Int{{[0-9]*}}) -> {{.*}}
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}}(%x: !Int{{[0-9]*}}) -> {{.*}}
 
 
 def withReadArg():
@@ -192,9 +192,9 @@ def withRefArg():
 # CHECK-NOT: @"withVariadics()::`lambda_0::__storage"
 # CHECK-NOT: @"withVariadics()::`lambda_1::__storage"
 # CHECK-NOT: @"withVariadics()::`lambda_2::__storage"
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_0[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_2[{{.*}}](::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0[{{.*}}](::SIMD[DType.int, 1]*){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(kwargs:::SIMD[DType.int, 1]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_2[{{.*}}](::SIMD[DType.int, 1]*,kwargs:::SIMD[DType.int, 1]**){{.*}}"{{.*}}vararg) -> !{{.*}}Int{{[0-9]*}}
 
 
 def withVariadics():
@@ -206,12 +206,12 @@ def withVariadics():
 # // -----
 
 # COM: Everything at once: parameter + argument convention (`var`) + effects + capture +
-# COM: return type. The symbol mangles the parameter (`[::SIMD[::DType(int), ::SIMDLength(1)]]`) and owned arg (`::Int$`),
+# COM: return type. The symbol mangles the parameter (`[::SIMD[DType.int, 1]]`) and owned arg (`::Int$`),
 # COM: declares the parameter `<N: ...>`, captures `z`, and is throwing.
 
 # CHECK: lit.struct.decl @"withEverything()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}} throws|capturing -> {{.*}}
 
 
 def withEverything():
@@ -226,8 +226,8 @@ def withEverything():
 # COM: `comptime f = some_def` does. Check the promoted fn's definition and the
 # COM: alias's reference to it (`{{.*}}` absorbs the promotion mangling suffix).
 
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
-# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}>
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}>
 
 
 comptime inc = lambda (x: Int) {} -> Int: x + 1
@@ -248,7 +248,7 @@ def withComptimeBound() -> Int:
 # CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
 # CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
 # CHECK-DAG: lit.call @{{.*}}List{{.*}}append
-# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int) -> !kgen.none
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int) -> !kgen.none
 
 
 def withElidedReturn():
@@ -270,7 +270,7 @@ def withElidedReturn():
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK: lit.call @{{.*}}::@"withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |
-# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int)
+# CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"(%x: !Int)
 
 
 def withOmittedCaptures():
@@ -289,7 +289,7 @@ def withOmittedCaptures():
 
 # CHECK: lit.struct.decl @"withEverythingAndWithElision()::`lambda_0::__storage"
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
-# CHECK: lit.fn @"`lambda_0[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws|capturing -> {{.*}}
+# CHECK: lit.fn @"`lambda_0[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]${{.*}}"<{{.*}}N: !Int{{[0-9]*}}>{{.*}}!lit.ref<none, {{.*}}> byref_result{{.*}} throws|capturing -> {{.*}}
 
 
 def noop(v: Int):
@@ -308,8 +308,8 @@ def withEverythingAndWithElision():
 # COM: the promoted function's literal -- exactly like the explicit-`{}` fold
 # COM: (cf. withComptimeBound). No `__storage` struct exists for it.
 
-# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
-# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}>
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"{{.*}}-> !{{.*}}Int{{[0-9]*}}
+# CHECK-DAG: lit.alias.decl {{.*}}func.literal{{.*}}func.symbol<@{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}>
 # CHECK-NOT: __storage
 
 
@@ -326,8 +326,8 @@ def withComptimeBoundElided() -> Int:
 # COM: the call through the var is indirect.
 
 # CHECK: lit.var.decl "f" var : !lit.ref<!lit.generator<("x": !Int) -> !{{.*}}Int{{[0-9]*}}>
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
-# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"]()
+# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"]()
+# CHECK: kgen.create_closure[{{.*}}: @{{.*}}::@"{{.*}}`lambda_1(::SIMD[DType.int, 1]){{.*}}"]()
 # CHECK: lit.call_indirect
 
 
@@ -344,7 +344,7 @@ def typedDecay() -> Int:
 # COM: use site binds it, exactly as a stateless nested `def` using `N` does.
 # COM: (Only a lambda's OWN unbound parameters keep the closure-instance form.)
 
-# CHECK: kgen.create_closure[{{.*}}@"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"<:!Int N>]()
+# CHECK: kgen.create_closure[{{.*}}@"{{.*}}`lambda_0(::SIMD[DType.int, 1]){{.*}}"<:!Int N>]()
 # CHECK: lit.call_indirect
 
 

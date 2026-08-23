@@ -33,6 +33,17 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Given a parameter value of MLIR wrapper type like Bool or Int or DType,
+/// dig out the single element of the struct with the specified type.
+template <typename T>
+static T getSingleElementStructAttr(TypedAttr param) {
+  if (auto strParam = sugarDynCast<LITStructAttr>(param)) {
+    if (strParam.getValues().size() == 1)
+      return sugarDynCast<T>(std::get<1>(strParam.getValues()[0]));
+  }
+  return {};
+}
+
 /// Given a SymbolRefAttr, return the underlying symbol name.
 static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
   StringAttr leaf;
@@ -356,8 +367,9 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
 
           TypedAttr value = std::get<1>(param);
           if (typesImplied && diagShared)
-            removeImplicitCtorCall(value, diagShared);
-          ASTType::printParam(os, value, ctx);
+            ASTType::printParamAfterType(os, value, ctx);
+          else
+            ASTType::printParam(os, value, ctx);
         });
     os << ']';
   }
@@ -1216,25 +1228,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
-    // If the specified value is a struct with a single element, return the
-    // element.
-    auto getSingleEltStructAttr = [&](TypedAttr value) -> TypedAttr {
-      auto structAttr = dyn_cast<LITStructAttr>(value);
-      if (!structAttr)
-        return {};
-      // If the struct has a single element, elide the braces.
-      if (diagShared && structAttr.getValues().size() == 1)
-        return std::get<1>(structAttr.getValues().front());
-      return {};
-    };
-
-    if (auto elt = getSingleEltStructAttr(structAttr)) {
+    if (auto elt = getSingleElementStructAttr<TypedAttr>(structAttr)) {
       StringRef typeName;
       if (auto structType = sugarDynCast<StructType>(structAttr.getType()))
         typeName = structType.getSymbol().getLeafReference().strref();
 
-      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
-          typeName == "SIMDLength") {
+      if (typeName == "Bool" || typeName == "SIMDLength") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
         printParam(os, elt, ctx);
@@ -1248,8 +1247,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         }
       }
       if (typeName == "AddressSpace") {
-        if (auto intAttr = sugarDynCastIfPresent<IntegerAttr>(
-                getSingleEltStructAttr(elt))) {
+        if (auto intAttr = getSingleElementStructAttr<IntegerAttr>(elt)) {
           if (intAttr.getValue().isZero()) {
             os << "AddressSpace.GENERIC";
             return;
@@ -1502,17 +1500,6 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   };
 
   ASTOriginPrinter(diagShared).print(os, param, elideOriginOf);
-}
-
-/// Given a parameter value of MLIR wrapper type like Bool or Int or DType,
-/// dig out the single element of the struct with the specified type.
-template <typename T>
-static T getSingleElementStructAttr(TypedAttr param) {
-  if (auto strParam = sugarDynCast<LITStructAttr>(param)) {
-    if (strParam.getValues().size() == 1)
-      return sugarDynCast<T>(std::get<1>(strParam.getValues()[0]));
-  }
-  return {};
 }
 
 static void printRef(RefType refType, raw_ostream &os,
@@ -1923,9 +1910,7 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
 /// circumstances (not mangling) after emitting a type annotation.  This
 /// avoids printing obvious implicit conversion calls.
 void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
-                                  SharedState &shared) {
-  removeImplicitCtorCall(value, &shared);
-
+                                  ASTTypePrinterContext ctx) {
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an
   // always_inline("builtin") constructor, e.g.:
@@ -1935,7 +1920,8 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
   // Which is literally what is happening, but not very pretty.  To clean this
   // up, check to see if call is to an implicit constructor, and if so, elide
   // the call.
-  printParam(os, value, /*ctx=*/{&shared});
+  removeImplicitCtorCall(value, ctx.shared);
+  printParam(os, value, ctx);
 }
 
 /// Convert this type to a human readable string representation so it can be

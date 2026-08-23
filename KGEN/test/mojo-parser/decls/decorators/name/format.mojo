@@ -17,7 +17,7 @@
 # parametric linkage name expression.
 
 
-# CHECK: lit.fn @"parametric_tstring[::SIMD[::DType(int), ::SIMDLength(1)],::String]()"
+# CHECK: lit.fn @"parametric_tstring[::SIMD[DType.int, 1],::String]()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<#kgen.param.expr<data_to_str
 # CHECK-SAME: __make_tstring{{.*}}:string "my_name_{}_{}"
 @__name(t"my_name_{A}_{B}")

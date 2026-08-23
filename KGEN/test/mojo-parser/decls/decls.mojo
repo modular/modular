@@ -21,12 +21,12 @@ from std.builtin.stubs import _get_kgen_string
 
 
 # Method overloading.
-# CHECK-LABEL: lit.fn @"testThing(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-LABEL: lit.fn @"testThing(::SIMD[DType.int, 1])"
 def testThing(a: Int) -> FloatDyn:
     return 1.0
 
 
-# CHECK-LABEL: lit.fn @"testThing(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-LABEL: lit.fn @"testThing(::SIMD[DType.int, 1],::SIMD[DType.int, 1])"
 def testThing(a: Int, b: Int) -> Int:
     return 1
 
@@ -84,28 +84,28 @@ def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: 
 
 # CHECK-LABEL: lit.fn @"callOverload
 def callOverload(a: Int):
-    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"(%a)
+    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[DType.int, 1])"(%a)
     _ = testThing(a)
-    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[::DType(int), ::SIMDLength(1)],{{.*}}SIMD[::DType(int), ::SIMDLength(1)])"(%a, %a)
+    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[DType.int, 1],{{.*}}SIMD[DType.int, 1])"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDLength(1)])")>
+    # CHECK: = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[DType.int, 1])")>
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: %3 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDLength(1)])")>
+    # CHECK: %3 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[DType.int, 1])")>
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDLength(1)])")>
+    # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[DType.int, 1])")>
     var float2: IntToFloat32Type = testThing
 
-    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}SIMD[::DType(int), ::SIMDLength(1)]) thin -> {{.*}}FloatDyn]()"<:
-    # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDLength(1)])")>()
+    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}SIMD[DType.int, 1]) thin -> {{.*}}FloatDyn]()"<:
+    # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[DType.int, 1])")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
     # less specific.
-    # CHECK: lit.call {{.*}}@"varargOverload({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"(%{{.*}})
+    # CHECK: lit.call {{.*}}@"varargOverload({{.*}}SIMD[DType.int, 1])"(%{{.*}})
     varargOverload(2)
 
     # CHECK:  lit.call {{.*}}@"varargOverload()"()
@@ -113,7 +113,7 @@ def callOverload(a: Int):
 
     # Expect packs to behave similarly to varargs.
     # CHECK: %[[IDX3:.*]] = {{.*}}constant{{.*}}3
-    # CHECK: lit.call {{.*}}@"packOverload({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"(%[[IDX3]])
+    # CHECK: lit.call {{.*}}@"packOverload({{.*}}SIMD[DType.int, 1])"(%[[IDX3]])
     packOverload(3)
     # CHECK:  lit.call {{.*}}@"packOverload()"()
     packOverload()
@@ -150,13 +150,13 @@ def paramOverload[*x: Int](y: Int):
 
 # CHECK-LABEL: lit.fn @"callParametricOverload
 def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}SIMD[::DType(int), ::SIMDLength(1)]]()"
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}SIMD[DType.int, 1]]()"
     paramOverload[a]()
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b, c]
     paramOverload[a, b, c]()
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}SIMD[DType.int, 1])"
     paramOverload(x)
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b], {{.*}}>(%x)
@@ -177,7 +177,7 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}SIMD[::DType(int), ::SIMDLength(1)]]()"<:param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {:scalar<index> 4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}SIMD[DType.int, 1]]()"<:param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {:scalar<index> 4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
     # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn],
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
@@ -431,7 +431,7 @@ struct Outer[X: Int](Movable where False):
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
+# CHECK-LABEL: lit.fn @"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
 def variadics(*a: Int):
     # CHECK-NEXT: %none = kgen.param.constant
     pass
@@ -459,7 +459,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}([[T2]])
     variadics()
     # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}7
     # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}11
@@ -469,7 +469,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}([[T2]])
     variadics(7, 11)
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create [%{{.*}}]
@@ -477,7 +477,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}([[T2]])
     variadics(x)
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
@@ -485,14 +485,14 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK-NEXT: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}([[T2]])
+    # CHECK-NEXT: lit.call {{.*}}@"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}([[T2]])
     variadics(x, 1)
 
     # CHECK: lit.alias.decl *"EmptyVariadic
     # CHECK-SAME: "a": !lit.ref<!lit.struct<#VariadicList{{.*}}, #interp.pointer<0>)))
     comptime EmptyVariadic = variadics()
     # CHECK: lit.alias.decl *"NonEmptyVariadic
-    # CHECK-SAME: @"variadics{{.*}}SIMD[::DType(int), ::SIMDLength(1)]*)"{{.*}}[store_to_mem(p), store_to_mem({:scalar<index> 1})]
+    # CHECK-SAME: @"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}[store_to_mem(p), store_to_mem({:scalar<index> 1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int
@@ -786,7 +786,7 @@ struct StructWithInit(Movable where False):
     var x: Int
     var y: Int
 
-    # CHECK: lit.fn @"__init__({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"
+    # CHECK: lit.fn @"__init__({{.*}}SIMD[DType.int, 1])"
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     @implicit
     def __init__(out self, a: Int):
@@ -833,7 +833,7 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self):
         pass
 
-    # CHECK: lit.fn @"maybe_static({{.*}}SIMD[::DType(int), ::SIMDLength(1)])"(%x: !Int) {{.*}}isStatic
+    # CHECK: lit.fn @"maybe_static({{.*}}SIMD[DType.int, 1])"(%x: !Int) {{.*}}isStatic
     @staticmethod
     def maybe_static(x: Int):
         # CHECK: %0 = {{.*}}{:scalar<index> 4}
@@ -883,7 +883,7 @@ def callMaybeStatic(a: Int, b: EmptyStruct):
 def initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[DType.int, 1])")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
     var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
@@ -903,7 +903,7 @@ def initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[DType.int, 1])")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
     var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 
@@ -1281,7 +1281,7 @@ struct SomeParamStruct[c_param: Int](Movable where False):
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>
         comptime reff = nestedFunction
-        # CHECK: lit.call tail @decls::@"nestedFunction[::SIMD[::DType(int), ::SIMDLength(1)]](){{.*}}"<{{.*}}2{{.*}}>()
+        # CHECK: lit.call tail @decls::@"nestedFunction[::SIMD[DType.int, 1]](){{.*}}"<{{.*}}2{{.*}}>()
         nestedFunction[2]()
 
 

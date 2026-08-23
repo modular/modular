@@ -260,7 +260,7 @@ __extension Spaceship(Flying):
 
 
 # CHECK: kgen.conformance @struct_extensions::@Flying {
-# CHECK-NEXT: kgen.witness "fly_to($0,::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-NEXT: kgen.witness "fly_to($0,::SIMD[DType.int, 1])"
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>}

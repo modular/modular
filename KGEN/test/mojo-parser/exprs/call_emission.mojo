@@ -637,7 +637,7 @@ def nonmat_callee[T: AnyType](x: T): pass
 # CHECK-LABEL: lit.fn @"test_nonmat_callee
 def test_nonmat_callee():
     # This should call the concrete nonmat_callee, not the generic one.
-    # CHECK: lit.call {{.*}}@"nonmat_callee(::SIMD[::DType(int), ::SIMDLength(1)])"
+    # CHECK: lit.call {{.*}}@"nonmat_callee(::SIMD[DType.int, 1])"
     nonmat_callee(1)
 
 # CHECK-LABEL: lit.fn @"test_singleton_fnptr_params

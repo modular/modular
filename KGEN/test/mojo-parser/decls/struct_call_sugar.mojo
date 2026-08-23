@@ -25,5 +25,5 @@ struct PCall(Movable where False):
 # CHECK: lit.fn @"main()"
 def main():
     var pc = PCall()
-    # CHECK: lit.call {{.*}}::@PCall::@"__call__[::SIMD[::DType(int), ::SIMDLength(1)],{{.*}}]({{.*}}::PCall%,::SIMD[::DType(int), ::SIMDLength(1)])"
+    # CHECK: lit.call {{.*}}::@PCall::@"__call__[::SIMD[DType.int, 1],{{.*}}]({{.*}}::PCall%,::SIMD[DType.int, 1])"
     _ = pc[1](2)

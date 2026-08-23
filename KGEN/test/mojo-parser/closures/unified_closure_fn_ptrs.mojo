@@ -24,7 +24,7 @@
 # CHECK: lit.end_fn
 
 # CHECK: kgen.conformance @"def(x: Int) -> Int"
-# CHECK: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK: kgen.witness "__call__($0,::SIMD[DType.int, 1])"
 
 # CHECK: kgen.conformance @{{.*}}::@AnyType {
 # CHECK-NEXT: }

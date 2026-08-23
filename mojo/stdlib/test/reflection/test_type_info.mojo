@@ -43,8 +43,8 @@ def test_get_linkage_name_nested() raises:
     assert_equal(
         name,
         (
-            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[::DType(int),"
-            " ::SIMDLength(1)])`"
+            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
+            " 1])`"
         ),
     )
 
@@ -57,10 +57,7 @@ def test_get_linkage_name_parameterized() raises:
     var name = get_linkage_name[your_func[7]]()
     assert_equal(
         name,
-        (
-            "test_type_info::your_func[::SIMD[::DType(int),"
-            " ::SIMDLength(1)]](),x=7"
-        ),
+        "test_type_info::your_func[::SIMD[DType.int, 1]](),x=7",
     )
 
 

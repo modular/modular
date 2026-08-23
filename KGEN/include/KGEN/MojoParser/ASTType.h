@@ -327,7 +327,7 @@ public:
   /// circumstances (not mangling) after emitting a type annotation.  This
   /// avoids printing obvious implicit conversion calls.
   static void printParamAfterType(raw_ostream &os, TypedAttr param,
-                                  SharedState &shared);
+                                  ASTTypePrinterContext ctx);
 
   /// Get the specified parameter as a string.
   static std::string getParamAsString(TypedAttr param, SharedState *diagShared);

@@ -38,7 +38,7 @@ def need_scalar_bool_pred[x: Int]() where scalar_bool_pred(x):
 # We should see an 'and' operator, instead of 'cond'.
 # CHECK-LABEL: lit.fn @"test_and_bool[
 # CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool
-# CHECK-SAME: and(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-SAME: and(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::SIMD[DType.int, 1])"
 def test_and_bool[
     x: Int, y: Int, z: Int
 ]() where bool_pred(x) and bool_pred(y) and bool_pred(z):
@@ -65,16 +65,16 @@ def call_test_and_bool_nested():
 
 
 # CHECK-LABEL: lit.fn @"test_and_scalar_bool[
-# CHECK-SAME: {<sugar_preserved(cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
-# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-SAME: {<sugar_preserved(cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[DType.int, 1])"
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[DType.int, 1])"
 def test_and_scalar_bool[x: Int, y: Int]() where scalar_bool_pred(x) and scalar_bool_pred(y):
     need_scalar_bool_pred[x]()
     need_scalar_bool_pred[y]()
 
 
 # CHECK-LABEL: lit.fn @"test_and_scalar_bool_bool[
-# CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
-# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[DType.int, 1])"
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[DType.int, 1])"
 def test_and_scalar_bool_bool[x: Int, y: Int]() where scalar_bool_pred(x) and bool_pred(y):
     need_scalar_bool_pred[x]()
     need_bool_pred[y]()
@@ -82,7 +82,7 @@ def test_and_scalar_bool_bool[x: Int, y: Int]() where scalar_bool_pred(x) and bo
 
 # CHECK-LABEL: lit.fn @"test_and_bool_scalar_bool[
 # CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool
-# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::SIMD[DType.int, 1])"
 def test_and_bool_scalar_bool[x: Int, y: Int]() where bool_pred(x) and scalar_bool_pred(y):
     need_bool_pred[x]()
     need_scalar_bool_pred[y]()
@@ -91,7 +91,7 @@ def test_and_bool_scalar_bool[x: Int, y: Int]() where bool_pred(x) and scalar_bo
 # Test with `or` operator as well.
 # CHECK-LABEL: lit.fn @"test_or_bool[
 # CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool
-# CHECK-SAME: or(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-SAME: or(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::SIMD[DType.int, 1])"
 def test_or_bool[x: Int, y: Int]() where bool_pred(x) or bool_pred(y):
     # With `or`, we can't unconditionally call need_one or need_two
     # but we can call them under appropriate parametric conditions

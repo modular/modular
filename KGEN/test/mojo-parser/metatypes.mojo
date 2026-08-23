@@ -109,7 +109,7 @@ def access_param_from_metatype():
     # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {:scalar<index> 0}>
     # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {:scalar<index> 1}>
     # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
-    # CHECK-NEXT: lit.call tail {{.*}}@"use_int(::SIMD[::DType(int), ::SIMDLength(1)])"([[TMP1]])
+    # CHECK-NEXT: lit.call tail {{.*}}@"use_int(::SIMD[DType.int, 1])"([[TMP1]])
     use_int((StefStressTest[0].increment().increment()).x)
 
 

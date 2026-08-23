@@ -31,15 +31,12 @@ comptime funcs = __functions_in_module()
 def main() raises:
     var expected_names = [
         "test_functions_in_module::foo()",
-        "test_functions_in_module::bar(::SIMD[::DType(int), ::SIMDLength(1)])",
+        "test_functions_in_module::bar(::SIMD[DType.int, 1])",
         (
-            "test_functions_in_module::bar(::SIMD[::DType(int),"
-            " ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"
+            "test_functions_in_module::bar(::SIMD[DType.int,"
+            " 1],::SIMD[DType.int, 1])"
         ),
-        (
-            "test_functions_in_module::foobar(z:::SIMD[::DType(float64),"
-            " ::SIMDLength(1)])"
-        ),
+        "test_functions_in_module::foobar(z:::SIMD[DType.float64, 1])",
     ]
 
     comptime for i in range(len(funcs)):
