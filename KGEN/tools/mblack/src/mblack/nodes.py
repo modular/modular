@@ -488,6 +488,10 @@ def whitespace(
             # dots, but not the first one.
             return NO
 
+        if prev and prev.type == token.DOT and t == token.NAME:
+            # Inferred member reference: `.member` (no space after the dot).
+            return NO
+
     elif p.type == syms.dictsetmaker:
         # dict unpacking
         if prev and prev.type == token.DOUBLESTAR:
