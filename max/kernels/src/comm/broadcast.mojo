@@ -104,9 +104,7 @@ def broadcast_multimem_kernel[
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output._storage.address_space_cast[
-                AddressSpace.GLOBAL
-            ]()
+            var out_ptr = output._storage.address_space_cast[.GLOBAL]()
             var in_ptr = input._storage.address_space_cast[
                 _target_address_space
             ]()
@@ -311,9 +309,9 @@ def broadcast_pull_2stage_kernel[
     )
 
     comptime for i in range(ngpus):
-        payloads[i] = (
-            rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
-        ).bitcast[Scalar[dtype]]()
+        payloads[i] = (rank_sigs[i].address_space_cast[.GENERIC]() + 1).bitcast[
+            Scalar[dtype]
+        ]()
 
     with PDL():
         # === Stage 1: Scatter from root ===

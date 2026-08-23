@@ -479,7 +479,7 @@ struct BlockwiseFP8TileWriter[
             Self.c_type,
             c_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         c_tensor: TileTensor[
             mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...

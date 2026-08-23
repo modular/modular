@@ -566,7 +566,7 @@ def fma[
 
 @always_inline
 def dot_at_b(
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: type_of(c),
     b: type_of(c),
 ):

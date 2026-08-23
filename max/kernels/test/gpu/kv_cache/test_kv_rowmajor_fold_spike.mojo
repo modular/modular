@@ -182,7 +182,7 @@ def _rowmajor_fold_spike_kernel[
     # (matching the per-atom swizzle tile). The tiny barrier stays static.
     var smem_base = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=1024,
         name="rowmajor_fold_spike_smem",
     ]()
@@ -193,7 +193,7 @@ def _rowmajor_fold_spike_kernel[
         1,
         SharedMemBarrier,
         alignment=8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # All lanes compute the elect predicate; `tma_copy_k` (issue-site path)
@@ -382,9 +382,7 @@ def run_spike[
     var ref_desc = create_tma_descriptor[dtype, 2, swizzle](
         DeviceBuffer(
             ctx,
-            head_base.unsafe_mut_cast[True]().address_space_cast[
-                AddressSpace.GENERIC
-            ](),
+            head_base.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
             1,
             owning=False,
         ),
@@ -426,7 +424,7 @@ def run_spike[
             DeviceBuffer(
                 ctx,
                 gmem_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
+                    .GENERIC
                 ](),
                 1,
                 owning=False,

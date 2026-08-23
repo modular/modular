@@ -168,7 +168,7 @@ def combine_kernel[
     # ---- Dynamic SMEM carve ----
     # [stage0 | stage1 | maxsum0 | maxsum1 | l2_stage | l2_maxsum | o_smem | meta]
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var f32_base = smem_base.bitcast[Scalar[ACC_TYPE]]()
     var stage0 = f32_base

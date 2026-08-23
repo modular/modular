@@ -60,11 +60,7 @@ def _verify_xyz[dim: StaticString]():
 def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        Pointer[
-            Scalar[dtype],
-            MutUntrackedOrigin,
-            address_space=AddressSpace.CONSTANT,
-        ],
+        Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=.CONSTANT],
         has_side_effect=False,
     ]()
     return Int(ptr.unsafe_load[alignment=4](offset))

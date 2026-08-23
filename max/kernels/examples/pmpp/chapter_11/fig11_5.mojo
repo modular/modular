@@ -39,12 +39,12 @@ def scan_kernel(
     var bufferA = unsafe_stack_allocation[
         SEG_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var bufferB = unsafe_stack_allocation[
         SEG_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x

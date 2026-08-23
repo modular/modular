@@ -272,12 +272,12 @@ def gated_delta_recurrence_fwd_gpu[
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────

@@ -220,7 +220,7 @@ def cluster_sync_release():
 
 @always_inline("nodebug")
 def clusterlaunchcontrol_query_cancel_is_canceled(
-    result: Pointer[mut=True, UInt128, _, address_space=AddressSpace.SHARED]
+    result: Pointer[mut=True, UInt128, _, address_space=.SHARED]
 ) -> UInt32:
     """Decodes the cancellation request.
 
@@ -256,9 +256,7 @@ def clusterlaunchcontrol_query_cancel_is_canceled(
 @always_inline("nodebug")
 def clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
-](
-    result: Pointer[mut=True, UInt128, _, address_space=AddressSpace.SHARED]
-) -> UInt32:
+](result: Pointer[mut=True, UInt128, _, address_space=.SHARED]) -> UInt32:
     """Decodes the cancellation request.
 
     Parameters:
@@ -302,7 +300,7 @@ def clusterlaunchcontrol_query_cancel_get_first_ctaid[
 
 @always_inline("nodebug")
 def clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
-    result: Pointer[mut=True, UInt128, _, address_space=AddressSpace.SHARED],
+    result: Pointer[mut=True, UInt128, _, address_space=.SHARED],
 ) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
 
@@ -342,8 +340,8 @@ def clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
 def clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
-    result: Pointer[mut=True, UInt128, _, address_space=AddressSpace.SHARED],
-    mbar: Pointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
+    result: Pointer[mut=True, UInt128, _, address_space=.SHARED],
+    mbar: Pointer[mut=True, Int64, _, address_space=.SHARED],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
 
@@ -463,9 +461,7 @@ def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
 def load_cluster_smem[
     dtype: DType, width: Int
 ](
-    local_ptr: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    local_ptr: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     peer_rank: UInt32,
 ) -> SIMD[dtype, width]:
     """Load `width` elements from peer `peer_rank`'s shared memory at `local_ptr`.
@@ -562,9 +558,7 @@ def load_cluster_smem[
 def store_cluster_smem[
     dtype: DType, width: Int
 ](
-    local_ptr: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    local_ptr: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     peer_rank: UInt32,
     val: SIMD[dtype, width],
 ):
@@ -654,9 +648,7 @@ def cluster_allreduce[
     cluster_size: Int,
     need_tail_sync: Bool = True,
 ](
-    slot: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    slot: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     vals: SIMD[dtype, width],
 ) -> SIMD[dtype, width]:
     """Combines one block-reduced vector across every CTA of a cluster.
@@ -744,9 +736,7 @@ def cluster_allgather[
     cluster_size: Int,
     need_tail_sync: Bool = True,
 ](
-    slot: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    slot: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     vals: SIMD[dtype, width],
 ) -> SIMD[dtype, width * next_power_of_two(cluster_size)]:
     """Gathers one block-reduced vector from every CTA of a cluster.

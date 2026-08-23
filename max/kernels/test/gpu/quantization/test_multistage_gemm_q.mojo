@@ -131,14 +131,14 @@ def repack_Q4_0_for_sm8x[
     # We keep 128x2 Q4_0 GGUF blocks in smem
     var smem = external_memory[
         UInt8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](smem.bitcast[UInt8]())
 
     var q_gmem_tile = q_weight.tile[BN, BK_groups * group_bytes](
@@ -172,7 +172,7 @@ def repack_Q4_0_for_sm8x[
         copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
-            .bitcast[.uint8, target_address_space=AddressSpace.GENERIC]()
+            .bitcast[.uint8, target_address_space=.GENERIC]()
             .vectorize[1, 4](),
         )
         q_gmem_iter._incr()
@@ -310,7 +310,7 @@ def create_ref_b[
             scales_type,
             Layout.row_major(repack_tile[0] // 8, 1),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, 1]()

@@ -249,14 +249,12 @@ def update_frequency_data[
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
+        mut=True, DType.int32, address_space=.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
-    new_tokens: TileTensor[
-        mut=False, token_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    new_tokens: TileTensor[mut=False, token_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """

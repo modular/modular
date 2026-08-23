@@ -618,9 +618,7 @@ struct MemoryElement[
     ]
 
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        Self.origin,
-        address_space=Self.address_space,
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -644,9 +642,7 @@ struct MemoryElement[
     def __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            Self.origin,
-            address_space=Self.address_space,
+            Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
         runtime_layout: RuntimeLayout[
             Self.layout,

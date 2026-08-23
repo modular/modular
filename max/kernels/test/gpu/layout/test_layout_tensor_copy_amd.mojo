@@ -36,7 +36,7 @@ def copy_dram_to_sram_buffer_load_kernel[
     var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
@@ -46,12 +46,12 @@ def copy_dram_to_sram_buffer_load_kernel[
     ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
+        input_ptr.address_space_cast[.GLOBAL](),
         runtime_layout,
     )
     comptime layout_bmn = Layout.row_major(BM, BN)
     var smem = LayoutTensor[
-        dtype, layout_bmn, MutAnyOrigin, address_space=AddressSpace.SHARED
+        dtype, layout_bmn, MutAnyOrigin, address_space=.SHARED
     ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
@@ -110,7 +110,7 @@ def copy_dram_to_local_buffer_load_kernel[
     var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
@@ -120,7 +120,7 @@ def copy_dram_to_local_buffer_load_kernel[
     ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
+        input_ptr.address_space_cast[.GLOBAL](),
         runtime_layout,
     )
 
@@ -135,7 +135,7 @@ def copy_dram_to_local_buffer_load_kernel[
         dtype,
         a_reg_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     comptime for i in range(BN // BK):
@@ -202,7 +202,7 @@ def test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
             DType.bfloat16,
             Layout.row_major(16, 8),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
 
         comptime thread_layout = Layout.row_major(16, 16)

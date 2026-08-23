@@ -31,7 +31,7 @@ def unsafe_stack_allocation[
     dtype: DType,
     /,
     alignment: Int = align_of[dtype](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ]() -> Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -68,7 +68,7 @@ def unsafe_stack_allocation[
     /,
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ]() -> Pointer[type, MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -89,7 +89,7 @@ def unsafe_stack_allocation[
 
         comptime global_name = name.value() if name else "_global_alloc"
 
-        comptime if address_space == AddressSpace.SHARED:
+        comptime if address_space == .SHARED:
             return {
                 _mlir_value = __mlir_op.`pop.global_alloc`[
                     name=_get_kgen_string[global_name](),
@@ -101,7 +101,7 @@ def unsafe_stack_allocation[
                     alignment=alignment.__mlir_index__(),
                 ]()
             }
-        elif address_space == AddressSpace.CONSTANT:
+        elif address_space == .CONSTANT:
             # No need to annotation this global_alloc because constants in
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
@@ -119,7 +119,7 @@ def unsafe_stack_allocation[
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
         # only have generic address spaces. When allocating LOCAL memory,
         # addrspacecast the resulting pointer.
-        elif address_space == AddressSpace.LOCAL:
+        elif address_space == .LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count=count.__mlir_index__(),
                 _type=Pointer[type, MutUntrackedOrigin]._mlir_type,
@@ -156,8 +156,8 @@ def stack_allocation[
     dtype: DType,
     /,
     alignment: Int = align_of[dtype](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=address_space,]:
+    address_space: AddressSpace = .GENERIC,
+]() -> Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -186,7 +186,7 @@ def stack_allocation[
     /,
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ]() -> Pointer[type, MutUntrackedOrigin, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.

@@ -331,14 +331,14 @@ def multi_stage_reg_epilogue[
         mut=True,
         dtype=accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
         dtype=accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_tiles: SMemTileArray2DRowMajor[c_type, ...],
@@ -540,14 +540,14 @@ def promote_accumulators[
         mut=True,
         dtype=accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
         dtype=accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
@@ -1043,7 +1043,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]()
 
@@ -1423,11 +1423,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             )
             # final results accumulator regs for C
             var c_upper_main_tile = stack_allocation[
-                dtype=accum_type, address_space=AddressSpace.LOCAL
+                dtype=accum_type, address_space=.LOCAL
             ](row_major[reg_info[0], reg_info[1]]())
 
             var c_lower_main_tile = stack_allocation[
-                dtype=accum_type, address_space=AddressSpace.LOCAL
+                dtype=accum_type, address_space=.LOCAL
             ](row_major[reg_info[0], reg_info[1]]())
 
             _ = c_upper_main_tile.fill(0.0)

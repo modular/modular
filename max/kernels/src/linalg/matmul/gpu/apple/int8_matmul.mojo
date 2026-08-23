@@ -1016,9 +1016,7 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     broadcasts the max back through SMEM. `nthreads` is small (64) so the linear
     reduction is cheap and needs no tree.
     """
-    var s = unsafe_stack_allocation[
-        nthreads, Float32, address_space=AddressSpace.SHARED
-    ]()
+    var s = unsafe_stack_allocation[nthreads, Float32, address_space=.SHARED]()
     var tid = Int(thread_idx.x)
     s[tid] = val
     barrier()

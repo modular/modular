@@ -726,7 +726,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
             q_tma_op
@@ -844,7 +844,7 @@ __extension SM100MLA:
             KRopeType.dtype,
             type_of(tt_row_major[k_rope_sub_elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         # Full-tile byte counts (no partial bound applies).
         comptime k_nope_full_bytes = (
@@ -2576,15 +2576,13 @@ def mla_sm100_prefill_generic[
     _ndbuffer_mha_operand: Bool,
     v_depth: Int = -1,
 ](
-    output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: KVType,
     v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,
@@ -2761,9 +2759,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,

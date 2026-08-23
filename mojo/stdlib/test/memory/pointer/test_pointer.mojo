@@ -301,7 +301,7 @@ def test_unsafepointer_address_space() raises:
     var p2 = (
         alloc[Int]({count = 1})
         .unsafe_leak()
-        .unsafe_address_space_cast[AddressSpace.GENERIC]()
+        .unsafe_address_space_cast[.GENERIC]()
     )
     dealloc(Allocation(unsafe_owned_ptr=p2, layout={count = 1}))
 
@@ -543,9 +543,7 @@ def test_unsafe_methods_on_safe_pointer() raises:
     ptr.unsafe_store(4, SIMD[.int32, 4](10, 11, 12, 13))
     assert_equal(ptr.unsafe_load[width=4](4), SIMD[.int32, 4](10, 11, 12, 13))
 
-    assert_equal(
-        Int(ptr.unsafe_address_space_cast[AddressSpace.GENERIC]()), Int(ptr)
-    )
+    assert_equal(Int(ptr.unsafe_address_space_cast[.GENERIC]()), Int(ptr))
     assert_equal(Int(ptr.unsafe_as_noalias()), Int(ptr))
 
 
@@ -711,9 +709,7 @@ def test_unsafe_from_address_pointer_width() raises:
     comptime AMD_TARGET = get_gpu_target["mi355x"]()
 
     comptime GenericPtr = Pointer[Int, MutUntrackedOrigin]
-    comptime SharedPtr = Pointer[
-        Int, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-    ]
+    comptime SharedPtr = Pointer[Int, MutUntrackedOrigin, address_space=.SHARED]
 
     assert_equal(
         bit_width_of[GenericPtr, target=AMD_TARGET](),
@@ -749,7 +745,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        Pointer(to=x).unsafe_address_space_cast[AddressSpace.SHARED](),
+        Pointer(to=x).unsafe_address_space_cast[.SHARED](),
         contains=(
             "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.SHARED](0x"

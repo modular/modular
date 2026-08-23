@@ -936,9 +936,7 @@ struct RowCache[
                 Int(warp_id()) * Self.cols
             ) if Self.params._tier == ReduceTier.Warp else 0
             var sh = UnsafePointer[
-                Scalar[Self.T],
-                MutUntrackedOrigin,
-                address_space=AddressSpace.SHARED,
+                Scalar[Self.T], MutUntrackedOrigin, address_space=.SHARED
             ](unsafe_from_address=self._shmem_addr)
             return sh.load[width=w, alignment=al](warp_off + coord[Self.axis])
         else:
@@ -1501,7 +1499,7 @@ struct Row[
                     Scalar[T],
                     name=_STAGED_SHMEM_NAME,
                     alignment=align_of[SIMD[T, Self._W]](),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ]()
                 var warp_off = (
                     Int(warp_id()) * Self._cols

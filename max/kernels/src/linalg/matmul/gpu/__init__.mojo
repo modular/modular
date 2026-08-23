@@ -165,12 +165,12 @@ def matmul_kernel[
     var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.

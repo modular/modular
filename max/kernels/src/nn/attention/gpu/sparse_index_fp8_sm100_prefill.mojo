@@ -605,7 +605,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime q_elems = MMA_N * depth
     var smem = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="fp8_index_sm100_prefill_smem",
     ]()
@@ -1056,7 +1056,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                 var k_dst = TileTensor[
                     dtype,
                     type_of(k_flat_layout),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](k_smem + s * UInt32(k_elems), k_flat_layout)
                 expect_bytes_pred(
                     k_full + s,
@@ -1068,7 +1068,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                     var q_dst = TileTensor[
                         dtype,
                         type_of(q_flat_layout),
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ](q_smem, q_flat_layout)
                     q_tma.async_copy_3d_elect(
                         q_dst,

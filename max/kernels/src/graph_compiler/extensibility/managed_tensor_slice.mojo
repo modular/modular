@@ -252,7 +252,7 @@ def get_row_major_tensor_spec_static[
         rank: The tensor rank (must match `len(shape_dims)`).
         shape_dims: Compile-time integer dimensions of the tensor shape.
     """
-    return {align_of[dtype](), AddressSpace.GENERIC}
+    return {align_of[dtype](), .GENERIC}
 
 
 def _get_unknown_tensor_spec[
@@ -262,7 +262,7 @@ def _get_unknown_tensor_spec[
     Returns a StaticTensorSpec with the specified type and rank with all
     fields dynamic or defaulted.
     """
-    return {1, AddressSpace.GENERIC}
+    return {1, .GENERIC}
 
 
 # ===----------------------------------------------------------------------=== #

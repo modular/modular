@@ -57,12 +57,12 @@ def matmul_sram(
     var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.

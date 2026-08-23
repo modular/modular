@@ -28,7 +28,7 @@ def test_pad_constant_gpu[
     input_shape: IndexList[rank],
     paddings: TileTensor[
         DType.int,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],

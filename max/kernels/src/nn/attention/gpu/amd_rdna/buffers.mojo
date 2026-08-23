@@ -103,7 +103,7 @@ struct KBufferRDNA[
         Self.cache_dtype,
         type_of(Self.load_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -114,7 +114,7 @@ struct KBufferRDNA[
         Self.cache_dtype,
         type_of(Self.mma_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -127,7 +127,7 @@ struct KBufferRDNA[
         Self.cache_dtype,
         type_of(Self.smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -148,16 +148,14 @@ struct KBufferRDNA[
             Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
         ],
         shared_ptr: UnsafePointer[
-            Scalar[Self.cache_dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):
         self.load_tile = tt_stack_allocation[
-            Self.cache_dtype, AddressSpace.LOCAL
+            Self.cache_dtype, address_space=.LOCAL
         ](Self.load_layout)
         self.mma_tile = tt_stack_allocation[
-            Self.cache_dtype, AddressSpace.LOCAL
+            Self.cache_dtype, address_space=.LOCAL
         ](Self.mma_tile_layout)
         self.smem_tile = Self.SmemTileType(shared_ptr, Self.smem_layout)
         self.gmem_tile = gmem_tile
@@ -315,7 +313,7 @@ struct VBufferRDNA[
         Self.cache_dtype,
         type_of(Self.load_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -328,7 +326,7 @@ struct VBufferRDNA[
         Self.cache_dtype,
         type_of(Self.mma_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -347,7 +345,7 @@ struct VBufferRDNA[
         Self.cache_dtype,
         type_of(Self.smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -370,9 +368,7 @@ struct VBufferRDNA[
             Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
         ],
         shared_ptr: UnsafePointer[
-            Scalar[Self.cache_dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
         total_rows: OptionalReg[Int] = None,
     ):
@@ -384,10 +380,10 @@ struct VBufferRDNA[
         ), "depth must be 64, 128, 256, or 512"
 
         self.load_tile = tt_stack_allocation[
-            Self.cache_dtype, AddressSpace.LOCAL
+            Self.cache_dtype, address_space=.LOCAL
         ](Self.load_layout)
         self.mma_tile = tt_stack_allocation[
-            Self.cache_dtype, AddressSpace.LOCAL
+            Self.cache_dtype, address_space=.LOCAL
         ](Self.mma_tile_layout)
         self.smem_tile = Self.SmemTileType(shared_ptr, Self.smem_layout)
         self.gmem_tile = gmem_tile
@@ -607,7 +603,7 @@ struct QRegisterBufferRDNA[
         Self.dtype,
         type_of(Self.reg_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime mma_tile_layout = row_major[Self.num_mmas, Self.rdna_frag_size]()
@@ -615,7 +611,7 @@ struct QRegisterBufferRDNA[
         Self.dtype,
         type_of(Self.mma_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -646,7 +642,7 @@ struct QRegisterBufferRDNA[
                 size for decode or the clamped sequence tile size for
                 prefill.
         """
-        self.reg_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.reg_tile = tt_stack_allocation[Self.dtype, address_space=.LOCAL](
             Self.reg_tile_layout
         )
 
@@ -750,7 +746,7 @@ struct OutputRegisterBufferRDNA[
         Self.dtype,
         type_of(Self.reg_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -758,7 +754,7 @@ struct OutputRegisterBufferRDNA[
 
     @always_inline
     def __init__(out self):
-        self.reg_tile = tt_stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.reg_tile = tt_stack_allocation[Self.dtype, address_space=.LOCAL](
             Self.reg_tile_layout
         )
 
@@ -828,14 +824,14 @@ struct PRegisterBufferRDNA[
         Self.accum_type_,
         type_of(Self.reg_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime MMATileType = TileTensor[
         Self.mma_dtype,
         type_of(Self.mma_tile_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -843,20 +839,18 @@ struct PRegisterBufferRDNA[
 
     @__allow_legacy_any_origin_fields
     var shared_memory_ptr: UnsafePointer[
-        Scalar[Self.dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
     ]
 
     @always_inline
     def __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):
         self.reg_tile = tt_stack_allocation[
-            Self.accum_type_, AddressSpace.LOCAL
+            Self.accum_type_, address_space=.LOCAL
         ](Self.reg_tile_layout)
         self.shared_memory_ptr = shared_ptr
 
@@ -872,7 +866,7 @@ struct PRegisterBufferRDNA[
                 BK chunk.
         """
         var mma_reg_tile = tt_stack_allocation[
-            Self.mma_dtype, AddressSpace.LOCAL
+            Self.mma_dtype, address_space=.LOCAL
         ](Self.mma_tile_layout)
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var warp_base_seq = warp_row * Self.WM

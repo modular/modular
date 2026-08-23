@@ -47,13 +47,13 @@ def _tile_sum(tile: Span[Float32, _, address_space=_]) -> Float32:
 
 def _kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
     var smem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=AddressSpace.SHARED
+        TILE_SIZE, Float32, address_space=.SHARED
     ]()
     var tile = Span[
         mut=True,
         Float32,
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](unsafe_ptr=smem, length=TILE_SIZE)
 
     # Write into shared memory through `Span` indexing.
@@ -70,30 +70,30 @@ def _kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
 
 def _fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
     var f_smem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=AddressSpace.SHARED
+        TILE_SIZE, Float32, address_space=.SHARED
     ]()
     var f_tile = Span[
         mut=True,
         Float32,
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](unsafe_ptr=f_smem, length=TILE_SIZE)
 
     # Guards multi-instantiation: three element types force three copies of the
     # address-space-generic `fill` into one module, the shape a kernel with
     # mixed-dtype tiles produces.
     var b_smem = unsafe_stack_allocation[
-        TILE_SIZE, UInt8, address_space=AddressSpace.SHARED
+        TILE_SIZE, UInt8, address_space=.SHARED
     ]()
     var b_tile = Span[
-        mut=True, UInt8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+        mut=True, UInt8, MutUntrackedOrigin, address_space=.SHARED
     ](unsafe_ptr=b_smem, length=TILE_SIZE)
 
     var v_smem = unsafe_stack_allocation[
-        TILE_SIZE, Vec2, address_space=AddressSpace.SHARED
+        TILE_SIZE, Vec2, address_space=.SHARED
     ]()
     var v_tile = Span[
-        mut=True, Vec2, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+        mut=True, Vec2, MutUntrackedOrigin, address_space=.SHARED
     ](unsafe_ptr=v_smem, length=TILE_SIZE)
 
     if thread_idx.x == 0:
@@ -114,13 +114,13 @@ def _local_fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
     # Local memory is thread-private, so every thread fills its own tile with a
     # distinct value and two of them are read back.
     var l_mem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=AddressSpace.LOCAL
+        TILE_SIZE, Float32, address_space=.LOCAL
     ]()
     var l_tile = Span[
         mut=True,
         Float32,
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ](unsafe_ptr=l_mem, length=TILE_SIZE)
     l_tile.fill(Float32(thread_idx.x) + 0.5)
 

@@ -63,7 +63,7 @@ def tma_store_uint32_kernel[
         DType.uint32,
         smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 

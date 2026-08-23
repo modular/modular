@@ -67,7 +67,7 @@ def block_scan(val: Float32) -> Float32:
     var warp_sums_s = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Step 2: Collect warp sums
@@ -115,7 +115,7 @@ def inter_block_scan(
     var prev_block_partial_sum_s = unsafe_stack_allocation[
         1,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == BLOCK_DIM - 1:
@@ -162,7 +162,7 @@ def scan_kernel(
     var bid_s = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == 0:
@@ -176,7 +176,7 @@ def scan_kernel(
     var buffer_s = unsafe_stack_allocation[
         COARSE_FACTOR * BLOCK_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Load data to shared memory
@@ -203,7 +203,7 @@ def scan_kernel(
     var thread_sums = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     thread_sums[thread_idx.x] = thread_sum
 

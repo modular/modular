@@ -730,7 +730,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

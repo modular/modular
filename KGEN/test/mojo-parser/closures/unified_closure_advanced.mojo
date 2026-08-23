@@ -155,7 +155,7 @@ def can_mutate[FuncType: def() -> None](impl: FuncType):
 
 def s4_demo[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
     def write() {read ptr}:
         ptr.store(0, 3)
 
@@ -171,14 +171,14 @@ def must_be_read_only[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
 ](
     impl: FuncType,
-    ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC],
+    ptr: UnsafePointer[Int, o, address_space=.GENERIC],
 ):
     impl()
 
 
 def s5_demo[
     o: Origin[mut=True]
-](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
     var immut_ptr = ptr.as_imm()
 
 

@@ -216,9 +216,7 @@ def f32_frag_to_smem[
     DstLayout: TensorLayout,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: TileTensor[
-        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    dst: TileTensor[_, DstLayout, MutAnyOrigin, address_space=.SHARED],
 ):
     """Writes an FP32 TCGEN05 accumulator fragment to a swizzled shared-memory tile.
 
@@ -275,9 +273,7 @@ def stsm_helper[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: TileTensor[
-        _, DstLayout, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    dst: TileTensor[_, DstLayout, MutAnyOrigin, address_space=.SHARED],
     warp_offset: UInt32 = 0,
 ):
     """Stores a TCGEN05 accumulator fragment to shared memory using st.matrix or scalar stores.

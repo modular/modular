@@ -601,15 +601,13 @@ def naive_fa_decode_apple[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    output: LayoutTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,

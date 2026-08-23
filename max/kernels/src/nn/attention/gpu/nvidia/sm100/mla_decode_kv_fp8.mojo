@@ -343,7 +343,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -393,7 +393,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 return  # This query position doesn't exist for this batch
         var q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -949,16 +949,16 @@ struct MLA_SM100_Decode_KV_FP8[
             # then stores ALL blocks. This will significantly reduce the number of barriers.
             # and improve the performance (18 barriers vs 1 barrier here).
             var p0a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, NumBlocks]())
             var p0b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, NumBlocks]())
             var p1a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, NumBlocks]())
             var p1b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, NumBlocks]())
 
             comptime for b in range(NumBlocks):

@@ -86,9 +86,7 @@ def block_select_topk[
 
     # 1-element shared scratch to broadcast the winner index so every thread
     # reaches the same control-flow decision (and thus the same barriers).
-    var winner_sram = unsafe_stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
+    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
     var n_written = k_batch
     for kk in range(k_batch):

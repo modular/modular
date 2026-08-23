@@ -150,7 +150,7 @@ def copy_accum_to_gmem[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -324,7 +324,7 @@ def copy_accum_to_gmem[
             c_type,
             c_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_base + (stage % 2) * c_smem_tile_size)
 
@@ -669,7 +669,7 @@ def multi_stage_store_C[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -932,16 +932,16 @@ def load_AB[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
     a_smem_base: UnsafePointer[
-        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=.SHARED
     ],
     b_smem_base: UnsafePointer[
-        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1072,25 +1072,25 @@ def load_AB[
             var a_smem_tile = LayoutTensor[
                 a_type,
                 a_smem_layout,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=128,
             ](a_smem_base + offset * a_smem_tile_size)
             var b_smem_tile = LayoutTensor[
                 b_type,
                 b_smem_layout,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=128,
             ](b_smem_base + offset * b_smem_tile_size)
             var sfa_smem_tile = LayoutTensor[
                 sfa_dtype,
                 sfa_smem_layout,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=128,
             ](sfa_smem_base + offset * sfa_smem_tile_size)
             var sfb_smem_tile = LayoutTensor[
                 sfb_dtype,
                 sfb_smem_layout,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=128,
             ](sfb_smem_base + offset * sfb_smem_tile_size)
 
@@ -1194,16 +1194,16 @@ def consumer_main_loop[
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
     a_smem_base: UnsafePointer[
-        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=.SHARED
     ],
     b_smem_base: UnsafePointer[
-        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        mut=True, Scalar[sfa_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfa_dtype], _, address_space=.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
@@ -1359,32 +1359,24 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_device: TileTensor[
-        mut=True, config.c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_device: TileTensor[
-        mut=False, config.a_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_device: TileTensor[mut=True, config.c_type, address_space=.GENERIC, ...],
+    a_device: TileTensor[mut=False, config.a_type, address_space=.GENERIC, ...],
     group_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
     group_scale_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
-    b_device: TileTensor[
-        mut=False, config.b_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    b_device: TileTensor[mut=False, config.b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     a_scales: TileTensor[
-        mut=False, config.sfa_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, config.sfa_dtype, address_space=.GENERIC, ...
     ],
     b_scales: TileTensor[
-        mut=False, config.sfb_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, config.sfb_dtype, address_space=.GENERIC, ...
     ],
     expert_scales: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.float32, address_space=.GENERIC, ...
     ],
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1499,7 +1491,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var flat_b_device = LayoutTensor[
         b_type,
         flat_b_layout,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ](b_device.ptr.as_unsafe_any_origin())
 
     comptime assert (
@@ -2092,7 +2084,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     ref smem_storage = external_memory[
         UInt8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
 
@@ -2107,33 +2099,23 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
     var a_smem_ptr: UnsafePointer[
-        Scalar[a_type],
-        origin_of(a_smem_storage),
-        address_space=AddressSpace.SHARED,
+        Scalar[a_type], origin_of(a_smem_storage), address_space=.SHARED
     ] = a_smem_storage.unsafe_ptr()
     var a_smem_base = a_smem_ptr.bitcast[Scalar[a_type]]()
     var b_smem_ptr: UnsafePointer[
-        Scalar[b_type],
-        origin_of(b_smem_storage),
-        address_space=AddressSpace.SHARED,
+        Scalar[b_type], origin_of(b_smem_storage), address_space=.SHARED
     ] = b_smem_storage.unsafe_ptr()
     var b_smem_base = b_smem_ptr.bitcast[Scalar[b_type]]()
     var c_smem_ptr: UnsafePointer[
-        Scalar[c_type],
-        origin_of(c_smem_storage),
-        address_space=AddressSpace.SHARED,
+        Scalar[c_type], origin_of(c_smem_storage), address_space=.SHARED
     ] = c_smem_storage.unsafe_ptr()
     var c_smem_base = c_smem_ptr.bitcast[Scalar[c_type]]()
     var sfa_smem_ptr: UnsafePointer[
-        Scalar[sfa_dtype],
-        origin_of(sfa_smem_storage),
-        address_space=AddressSpace.SHARED,
+        Scalar[sfa_dtype], origin_of(sfa_smem_storage), address_space=.SHARED
     ] = sfa_smem_storage.unsafe_ptr()
     var sfa_smem_base = sfa_smem_ptr.bitcast[Scalar[sfa_dtype]]()
     var sfb_smem_ptr: UnsafePointer[
-        Scalar[sfb_dtype],
-        origin_of(sfb_smem_storage),
-        address_space=AddressSpace.SHARED,
+        Scalar[sfb_dtype], origin_of(sfb_smem_storage), address_space=.SHARED
     ] = sfb_smem_storage.unsafe_ptr()
     var sfb_smem_base = sfb_smem_ptr.bitcast[Scalar[sfb_dtype]]()
 
@@ -2160,9 +2142,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     )
 
     var ptr_tmem_addr: UnsafePointer[
-        UInt32,
-        origin_of(tmem_addr_storage),
-        address_space=AddressSpace.SHARED,
+        UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
@@ -2519,26 +2499,20 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        mut=False, scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[mut=False, scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[mut=False, scales_type, address_space=.GENERIC, ...],
     group_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
     group_scale_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     expert_scales: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.float32, address_space=.GENERIC, ...
     ],
     num_active_experts: Int,
     ctx: DeviceContext,

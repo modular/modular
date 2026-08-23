@@ -444,10 +444,10 @@ of the input tensors.
 
 ```mojo
 var a_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BM, BK]())
 var b_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BK, BN]())
 
 var dst_reg: c.ElementType = 0
@@ -547,14 +547,14 @@ var row, col = udivmod(thread_idx.x, BN)
 var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](row, col)
 
 var a_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BM, BK]())
 var b_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BK, BN]())
 
 var dst_reg = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.LOCAL
+    dtype=dtype, address_space=.LOCAL
 ](row_major[TM]())
 dst_reg.copy_from(dst)
 
@@ -608,21 +608,21 @@ var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
 )
 
 var a_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BM, BK]())
 var b_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BK, BN]())
 
 var dst_reg = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.LOCAL
+    dtype=dtype, address_space=.LOCAL
 ](row_major[TM, TN]())
 dst_reg.copy_from(dst)
 
-var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+var a_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
     row_major[TM]()
 )
-var b_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+var b_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
     row_major[TN]()
 )
 
@@ -679,21 +679,21 @@ var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
 )
 
 var a_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](col_major[BM, BK]())
 var b_smem = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.SHARED
+    dtype=dtype, address_space=.SHARED
 ](row_major[BK, BN]())
 
 var dst_reg = stack_allocation[
-    dtype=dtype, address_space=AddressSpace.LOCAL
+    dtype=dtype, address_space=.LOCAL
 ](row_major[TM, TN]())
 dst_reg.copy_from(dst)
 
-var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+var a_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
     row_major[TM]()
 )
-var b_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+var b_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
     row_major[TN]()
 )
 
@@ -791,13 +791,13 @@ def tensor_core_matrix_multiplication[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = (
@@ -805,7 +805,7 @@ def tensor_core_matrix_multiplication[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)

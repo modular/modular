@@ -64,7 +64,7 @@ def block_scan(val: Float32) -> Float32:
     var warp_sums_s = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Step 2: Collect warp sums

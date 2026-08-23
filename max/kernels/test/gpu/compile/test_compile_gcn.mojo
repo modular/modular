@@ -349,7 +349,7 @@ def test_ds_read_tr16_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
@@ -391,7 +391,7 @@ def test_ds_read_tr8_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr8_b64(x)
         y[0] = y[0] + 1

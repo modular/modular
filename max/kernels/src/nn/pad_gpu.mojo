@@ -153,12 +153,8 @@ def _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tensor: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tensor: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    output_tensor: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     # Zero-element input (e.g. a ``(B, C, 0, 0)`` tensor padded out to

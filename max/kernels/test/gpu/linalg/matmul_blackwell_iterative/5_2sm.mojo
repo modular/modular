@@ -144,27 +144,25 @@ def kernel_5[
         a_type,
         sub_a_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -453,7 +451,7 @@ def kernel_5[
         var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_offset)
 

@@ -50,9 +50,9 @@ def shared_memory_alloc_example() raises:
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
         # end-shared-memory-alloc-example
 
         # Copy one element from the global tile to the shared tile.
@@ -167,9 +167,9 @@ def simple_copy_example():
             Int(block_idx.y), Int(block_idx.x)
         )
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
 
         if global_idx.y < rows and global_idx.x < cols:
             shared_tile[thread_idx.y, thread_idx.x] = global_tile[

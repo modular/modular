@@ -1032,7 +1032,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: Pointer[_, _, address_space=AddressSpace.SHARED]) -> Self:
+    ](smem_ptr: Pointer[_, _, address_space=.SHARED]) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1192,7 +1192,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: Pointer[_, _, address_space=AddressSpace.SHARED],) -> Self:
+    ](smem_ptr: Pointer[_, _, address_space=.SHARED],) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1749,7 +1749,7 @@ def mma[
 @always_inline
 def mma_arrive[
     cta_group: Int = 1,
-](mbar_ptr: Pointer[_, _, address_space=AddressSpace.SHARED]):
+](mbar_ptr: Pointer[_, _, address_space=.SHARED]):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -1778,10 +1778,7 @@ def mma_arrive[
 @always_inline
 def mma_arrive_multicast[
     cta_group: Int = 1,
-](
-    mbar_ptr: Pointer[_, _, address_space=AddressSpace.SHARED],
-    cta_mask: UInt16,
-):
+](mbar_ptr: Pointer[_, _, address_space=.SHARED], cta_mask: UInt16,):
     """Arrive at the mbar pointer for the MMA instruction for multiple ctas.
 
     Parameters:

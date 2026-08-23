@@ -264,7 +264,7 @@ struct _NaiveMatmulTileAdapter[
         # an `inout` `dst` so the passed-in tile is the output buffer instead of
         # a layout carrier) would remove this dance entirely.
         var dst_local = stack_allocation[
-            dtype=Self.c_dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.c_dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         # TODO(jtodd): comptime assert/where the epilogue address space
         var dst = TileTensor(
@@ -290,7 +290,7 @@ struct _NaiveMatmulTileAdapter[
         # kernel store path); otherwise the adapter stores the fragment itself.
         # The `address_space_cast` back to LOCAL is the store-side half of the
         # staging dance noted above (see TODO(GEX-3912)).
-        var res_local = res.address_space_cast[AddressSpace.LOCAL]()
+        var res_local = res.address_space_cast[.LOCAL]()
         comptime if is_valid_epilogue[Self.TileConsumerType]():
             var consumer = self.tile_consumer.value()
             consumer(

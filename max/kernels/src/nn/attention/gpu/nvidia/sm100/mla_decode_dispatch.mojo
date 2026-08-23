@@ -905,19 +905,13 @@ def mla_decode_sm100_dispatch[
     # kernel's fold + the split-K floor relax. False -> unchanged baseline.
     fold_shared_index: Bool = False,
 ](
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: k_t,
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     scale: Float32,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     mask: mask_t,
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     batch_size: Int,
     q_max_seq_len: Int,
     max_cache_valid_length: Int,
@@ -1151,20 +1145,14 @@ def _mla_decode_sm100_dispatch_impl[
     # Read-once shared-index fold (KERN-3141); see mla_decode_sm100_dispatch.
     fold_shared_index: Bool = False,
 ](
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: k_t,
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     scale: Float32,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     mask: mask_t,
     scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     batch_size: Int,
     q_max_seq_len: Int,
     num_partitions: Int,
@@ -1600,23 +1588,19 @@ def mla_decode_sm100_sink_split_k[
     # Read-once shared-index MTP fold (KERN-3141); see mla_decode_sm100_dispatch.
     fold_shared_index: Bool = False,
 ](
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: k_t,
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
     lse_accum_split_ptr: SplitAccumType,
     scale: Float32,
     batch_size: Int,
     block_z: Int,
     num_partitions: Int,
     q_max_seq_len: Int,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     mask: mask_t,
     scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
@@ -2824,9 +2808,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     var mla_decode_pack = MLA_Decode_Pack[
@@ -2998,9 +2980,7 @@ def launch_mla_sm100_decode_native_fp8[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch the native FP8 MLA decode kernel with FP8 Q TMA.
@@ -3106,9 +3086,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch the Layout G native FP8 MLA decode kernel (BM=32, 5-stage)."""
@@ -3229,9 +3207,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     valid_len: ValidLengthType,
     mask: MaskType,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch the FP8 per-token-scale rope-aware MLA decode kernel with split content/rope TMAs.
@@ -3419,9 +3395,7 @@ def launch_mla_sm100_decode_sparse[
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch the sparse MLA decode kernel with gather4 TMA descriptors.
@@ -3596,9 +3570,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launches the all-FP8 sparse MLA decode kernel.
@@ -3769,9 +3741,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launches the all-BF16 sparse MLA decode kernel.
@@ -3937,9 +3907,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
-    scalar_args_buf: TileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.

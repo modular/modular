@@ -159,46 +159,46 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
 
     @__allow_legacy_any_origin_fields
     var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @staticmethod
     @always_inline
     def from_smem(
         ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
@@ -1450,7 +1450,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -2057,7 +2057,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

@@ -238,7 +238,7 @@ def pv_ts_batched_kernel[
 
     # ---- Dynamic SMEM: `num_d_tiles` mn-major V regions + metadata ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var v_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
 
@@ -286,7 +286,7 @@ def pv_ts_batched_kernel[
                 var chunk_tile = LayoutTensor[
                     OP_TYPE,
                     nat_chunk_layout,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=128,
                 ](v_smem_ptr + t * V_REGION_ELEMS)
                 v_tma_op.async_copy(
@@ -299,7 +299,7 @@ def pv_ts_batched_kernel[
                     var band_tile = LayoutTensor[
                         OP_TYPE,
                         v_band_layout,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                         alignment=128,
                     ](v_smem_ptr + t * V_REGION_ELEMS + gq * BAND_ELEMS)
                     v_tma_op.async_copy(

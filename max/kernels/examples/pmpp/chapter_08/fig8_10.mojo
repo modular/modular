@@ -51,17 +51,17 @@ def stencil_kernel(
     var prev_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var curr_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var next_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Get thread and block indices (only x and y, no z)

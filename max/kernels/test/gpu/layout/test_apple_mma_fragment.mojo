@@ -525,10 +525,10 @@ def mma_shared_kernel(
     from an `AddressSpace.SHARED` TileTensor.
     """
     var a_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
+        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
     ]()
     var b_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
+        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
     ]()
 
     # 32 threads cooperatively copy 256 elements (8 per lane, strided).

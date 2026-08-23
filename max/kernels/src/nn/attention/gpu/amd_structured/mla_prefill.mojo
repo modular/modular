@@ -143,7 +143,7 @@ __extension Attention:
         var k_rope_smem_ptr = unsafe_stack_allocation[
             k_rope_smem_elems,
             k_rope_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=alignment,
         ]()
         comptime KRopeBufT = KVBuffer[

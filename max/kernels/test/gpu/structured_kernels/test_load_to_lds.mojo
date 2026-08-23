@@ -35,7 +35,7 @@ def _copy_through_lds[
         WARP_SIZE * width,
         Scalar[dtype],
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var lane = Int(lane_id())
     var offset = lane * width

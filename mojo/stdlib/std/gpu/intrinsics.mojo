@@ -191,7 +191,7 @@ def ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: Pointer[Scalar[dtype], address_space=AddressSpace.GENERIC, ...]) -> SIMD[
+](x: Pointer[Scalar[dtype], address_space=.GENERIC, ...]) -> SIMD[
     dtype, width
 ] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
@@ -958,9 +958,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     ](
         self,
         vector_offset: Int32,
-        shared_ptr: Pointer[
-            Scalar[dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...],
         *,
         scalar_offset: Int32 = 0,
     ):
@@ -1017,18 +1015,12 @@ struct AMDBufferResource(TrivialRegisterPassable):
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
         var desc_ptr = Pointer[
-            BFloat16,
-            MutAnyOrigin,
-            address_space=AddressSpace.BUFFER_RESOURCE,
+            BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
         ].unsafe_dangling()
         var ptr_to_ptr = Pointer(to=desc_ptr)
         var ptr_to_simd = Pointer(to=self.desc)
         ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
-            Pointer[
-                BFloat16,
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
-            ]
+            Pointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
         ]()[]
 
         comptime if not async_copies:
@@ -1218,9 +1210,9 @@ def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 def ds_read_tr16_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
-) -> SIMD[dtype, 4]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 4
+]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
     Parameters:
@@ -1259,9 +1251,9 @@ def ds_read_tr16_b64[
 def ds_read_tr8_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
-) -> SIMD[dtype, 8]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 8
+]:
     """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
 
     Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved

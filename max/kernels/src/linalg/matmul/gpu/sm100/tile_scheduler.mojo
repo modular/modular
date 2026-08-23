@@ -106,23 +106,17 @@ struct TileScheduler[
 
     @__allow_legacy_any_origin_fields
     var clc_response: UnsafePointer[
-        UInt128,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        UInt128, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var full_mbar: UnsafePointer[
-        SharedMemBarrier,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var empty_mbar: UnsafePointer[
-        SharedMemBarrier,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @always_inline
@@ -130,13 +124,13 @@ struct TileScheduler[
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         clc_response_ptr: UnsafePointer[
-            mut=True, UInt128, _, address_space=AddressSpace.SHARED
+            mut=True, UInt128, _, address_space=.SHARED
         ],
         full_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=.SHARED
         ],
         empty_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=.SHARED
         ],
     ):
         comptime assert Self.block_swizzle_size in [
@@ -158,9 +152,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     def work_info_from_clc_response(
-        result: UnsafePointer[
-            mut=True, UInt128, _, address_space=AddressSpace.SHARED
-        ],
+        result: UnsafePointer[mut=True, UInt128, _, address_space=.SHARED],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;

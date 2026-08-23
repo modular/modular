@@ -477,7 +477,7 @@ struct MLA_SM100_Decode_Sparse[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -563,7 +563,7 @@ struct MLA_SM100_Decode_Sparse[
                 return  # This query position doesn't exist for this batch
         var q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -1690,16 +1690,16 @@ struct MLA_SM100_Decode_Sparse[
             # Each thread: 2 rows x 8 column iterations x 2 chunks
             # = 32 converted values of 4 uint32 each = 128 uint32.
             var p0a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p0b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p1a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p1b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
 
             comptime for c in range(COLS_PER_GROUP):

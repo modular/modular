@@ -237,12 +237,12 @@ def gemv_partial_norm_kernel[
 
     var tile_w = tt_stack_allocation[
         dtype=b_type,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
-    var acc = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, tile_n]()).fill(0)
+    var acc = tt_stack_allocation[dtype=accum_type, address_space=.LOCAL](
+        row_major[1, tile_n]()
+    ).fill(0)
 
     comptime WeightVecType = SIMD[b_type, simd_width]
     comptime NativeVecType = SIMD[a_type, simd_width]
@@ -287,9 +287,9 @@ def gemv_partial_norm_kernel[
     comptime k_warp_num = num_threads // WARP_SIZE
     var wid = warp_id()
     var lid = lane_id()
-    var shmem = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1, tile_n * k_warp_num]())
+    var shmem = tt_stack_allocation[dtype=accum_type, address_space=.SHARED](
+        row_major[1, tile_n * k_warp_num]()
+    )
 
     comptime for ni in range(tile_n):
         var val = warp.sum(acc[0, ni])

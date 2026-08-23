@@ -296,7 +296,7 @@ def _allgather_tma_kernel[
     var my_sig = rank_sigs[_my_rank]
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var mbar_base = (smem_base + NUM_WARPS * BYTES_PER_COPY).bitcast[
         SharedMemBarrier
@@ -314,14 +314,10 @@ def _allgather_tma_kernel[
     var my_src_idx = warp % ngpus
 
     var src_g = (
-        src_ptrs[my_src_idx]
-        .bitcast[UInt8]()
-        .address_space_cast[AddressSpace.GLOBAL]()
+        src_ptrs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
     )
     var dst_g = (
-        outputs[my_src_idx]
-        .bitcast[UInt8]()
-        .address_space_cast[AddressSpace.GLOBAL]()
+        outputs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
     )
     var nbytes = Int(lengths[my_src_idx]) * size_of[dtype]()
     var smem = smem_base + warp * BYTES_PER_COPY

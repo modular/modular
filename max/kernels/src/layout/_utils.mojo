@@ -32,12 +32,8 @@ struct ManagedLayoutTensor[
     layout: Layout,
     *,
 ]:
-    comptime index_type: DType = _get_index_type(
-        Self.layout, AddressSpace.GENERIC
-    )
-    comptime element_type: DType = _get_layout_type(
-        Self.layout, AddressSpace.GENERIC
-    )
+    comptime index_type: DType = _get_index_type(Self.layout, .GENERIC)
+    comptime element_type: DType = _get_layout_type(Self.layout, .GENERIC)
     comptime layout_tensor_type = LayoutTensor[
         Self.dtype,
         Self.layout,

@@ -272,7 +272,7 @@ struct AppleM5Fp4MatMul[
         var b_smem = unsafe_stack_allocation[
             2 * BN * BK,
             Scalar[Self.in_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var b_smem_view = TileTensor(
             b_smem,
@@ -291,7 +291,7 @@ struct AppleM5Fp4MatMul[
         var s_smem = unsafe_stack_allocation[
             SCALE_SMEM,
             Float32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var s_smem_view = TileTensor(
             s_smem,

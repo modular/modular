@@ -201,13 +201,13 @@ def closureFromCapturedInt[a: Int, b: Int, c: Int](x: Int):
 
 def must_be_read_only_with_origin[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
-](impl: FuncType, ptr: Pointer[Int, o, address_space=AddressSpace.GENERIC]):
+](impl: FuncType, ptr: Pointer[Int, o, address_space=.GENERIC]):
     impl()
 
 
 def demo_origin_closure[
     o: Origin[mut=True]
-](ptr: Pointer[Int, o, address_space=AddressSpace.GENERIC]):
+](ptr: Pointer[Int, o, address_space=.GENERIC]):
     var immut_ptr = ptr.as_imm()
 
     def read() {imm immut_ptr}:

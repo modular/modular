@@ -59,9 +59,7 @@ def _make_view[
     linear_idx_type=DType.int64,
 ]:
     var immut_ptr = (
-        ptr.address_space_cast[AddressSpace.GENERIC]()
-        .as_imm()
-        .as_unsafe_any_origin()
+        ptr.address_space_cast[.GENERIC]().as_imm().as_unsafe_any_origin()
     )
     comptime ConcLayout = InternalLayout[
         shape_types=ResultLayout._shape_types,
@@ -120,7 +118,7 @@ def scout_bounded(
     var valid_rows = Int(valid_rows_dev)
     # SMEM dst: [BM, depth] row-major.
     var smem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=16
+        Scalar[dtype], address_space=.SHARED, alignment=16
     ]()
     var q_smem = TileTensor(smem, tt_row_major[BM, depth]())
 

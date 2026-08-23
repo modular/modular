@@ -34,9 +34,7 @@ from std.sys._assembly import inlined_assembly
 
 @always_inline
 def wait_for_counter(
-    counter: UnsafePointer[
-        mut=True, Int32, _, address_space=AddressSpace.SHARED
-    ],
+    counter: UnsafePointer[mut=True, Int32, _, address_space=.SHARED],
     threshold: Int32,
 ):
     """Spin-wait until counter reaches threshold.
@@ -53,9 +51,7 @@ def wait_for_counter(
 
 @always_inline
 def increment_counter_if_first_thread(
-    counter: UnsafePointer[
-        mut=True, Int32, _, address_space=AddressSpace.SHARED
-    ],
+    counter: UnsafePointer[mut=True, Int32, _, address_space=.SHARED],
     increment: Int32,
 ):
     """Atomically increment counter, but only from the first thread in warp.

@@ -599,7 +599,7 @@ struct TileWriter[
             Self.c_type,
             c_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_id: UInt32,
         lane: UInt32,
@@ -654,7 +654,7 @@ struct TileWriter[
             Self.c_type,
             c_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         c_coord: Tuple[UInt32, UInt32],
         batch_idx: UInt32,
@@ -1174,7 +1174,7 @@ struct TileWriter[
             Self.c_type,
             c_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         c_tensor: TileTensor[
             mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
@@ -1300,7 +1300,7 @@ struct TileWriter[
         c_tensor_layout: TensorLayout,
     ](
         c_smem_ptr: UnsafePointer[
-            Scalar[Self.c_type], _, address_space=AddressSpace.SHARED
+            Scalar[Self.c_type], _, address_space=.SHARED
         ],
         c_tensor: TileTensor[
             mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
@@ -1718,7 +1718,7 @@ struct TileWriter[
             Self.c_type,
             epilogue_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         c_shape: Tuple[UInt32, UInt32],
@@ -1995,7 +1995,7 @@ struct TileWriter[
             Self.c_type,
             epilogue_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         c_shape: Tuple[UInt32, UInt32],
@@ -2201,7 +2201,7 @@ struct TileWriter[
         output_stage: Self.Stage,
         mut epilogue_pipeline: ProducerConsumerPipeline[num_epi_stages],
         epilogue_tiles_base: UnsafePointer[
-            Scalar[Self.c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[Self.c_type], MutAnyOrigin, address_space=.SHARED
         ],
         epilogue_tile_elems: Int,
         tile_coord: Tuple[UInt32, UInt32, UInt32],

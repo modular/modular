@@ -303,7 +303,7 @@ struct SM100AttentionSMem[
         comptime assert Self.rope_dtype_ or Self.rope_depth == 0
         self.base = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]().as_unsafe_any_origin()

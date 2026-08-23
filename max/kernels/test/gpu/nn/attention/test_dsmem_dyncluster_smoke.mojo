@@ -68,7 +68,7 @@ def dyn_dsmem_kernel(
     p_count: UInt32,
 ):
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
 
     var me = block_rank_in_cluster()

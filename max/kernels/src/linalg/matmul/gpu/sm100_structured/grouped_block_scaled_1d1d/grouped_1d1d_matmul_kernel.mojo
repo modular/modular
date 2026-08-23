@@ -1564,7 +1564,7 @@ struct Grouped1D1DMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -2321,15 +2321,11 @@ struct Grouped1D1DMatmulKernel[
                                         ](
                                             (
                                                 sfb_global_ptr + global_offset
-                                            ).address_space_cast[
-                                                AddressSpace.GLOBAL
-                                            ](),
+                                            ).address_space_cast[.GLOBAL](),
                                             (
                                                 sfb_smem_tile._storage
                                                 + smem_offset
-                                            ).address_space_cast[
-                                                AddressSpace.SHARED
-                                            ](),
+                                            ).address_space_cast[.SHARED](),
                                             src_size=Int32(
                                                 copy_size
                                             ) if is_valid else Int32(0),
@@ -2393,13 +2389,13 @@ struct Grouped1D1DMatmulKernel[
                                             Self.sf_tma_dtype,
                                             type_of(atom_dst).LayoutType,
                                             MutAnyOrigin,
-                                            address_space=AddressSpace.SHARED,
+                                            address_space=.SHARED,
                                         ](
                                             rebind[
                                                 UnsafePointer[
                                                     Scalar[Self.sf_tma_dtype],
                                                     MutAnyOrigin,
-                                                    address_space=AddressSpace.SHARED,
+                                                    address_space=.SHARED,
                                                 ]
                                             ](atom_dst._storage),
                                             atom_dst.layout,
@@ -2927,13 +2923,13 @@ struct Grouped1D1DMatmulKernel[
                         Self.sf_tma_dtype,
                         type_of(sfa_tt).LayoutType,
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ](
                         rebind[
                             UnsafePointer[
                                 Scalar[Self.sf_tma_dtype],
                                 MutAnyOrigin,
-                                address_space=AddressSpace.SHARED,
+                                address_space=.SHARED,
                             ]
                         ](sfa_tt._storage),
                         sfa_tt.layout,
@@ -2959,13 +2955,13 @@ struct Grouped1D1DMatmulKernel[
                             Self.sf_tma_dtype,
                             type_of(sfb_tt).LayoutType,
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ](
                             rebind[
                                 UnsafePointer[
                                     Scalar[Self.sf_tma_dtype],
                                     MutAnyOrigin,
-                                    address_space=AddressSpace.SHARED,
+                                    address_space=.SHARED,
                                 ]
                             ](sfb_tt._storage),
                             sfb_tt.layout,

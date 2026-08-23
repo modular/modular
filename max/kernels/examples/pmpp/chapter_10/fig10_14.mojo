@@ -60,7 +60,7 @@ def warp_level_sum_reduction_kernel(
     var input_s = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var t = UInt32(thread_idx.x)

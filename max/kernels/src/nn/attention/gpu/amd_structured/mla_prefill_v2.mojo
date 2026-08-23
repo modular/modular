@@ -501,7 +501,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     UnsafePointer[
                         Scalar[Self.config.dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](q_slot.tile[1, Self.D_QK](r, 0).ptr)
             )
@@ -1684,7 +1684,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             DType.float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)
         # int32 clamp: `seq_len`/`block_tile_idx`/`w_id` originate as Int32

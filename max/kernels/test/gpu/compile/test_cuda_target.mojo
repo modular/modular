@@ -195,11 +195,9 @@ def test_erf_kernel_sm90() raises:
 
 
 def test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
+    UnsafePointer[Int8, MutUntrackedOrigin, address_space=.SHARED]
 ):
-    return unsafe_stack_allocation[
-        999, DType.int8, 8, address_space=AddressSpace.SHARED
-    ]()
+    return unsafe_stack_allocation[999, DType.int8, 8, address_space=.SHARED]()
 
 
 @always_inline
@@ -297,7 +295,7 @@ def gemm(
     var b_shared = unsafe_stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -465,7 +463,7 @@ def test_warp_sum_reduce_sm90() raises:
 
 def block_reduce(val: Float32) -> Float32:
     var shared = unsafe_stack_allocation[
-        WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
+        WARP_SIZE, DType.float32, address_space=.SHARED
     ]()
 
     comptime warp_shift = log2_floor(WARP_SIZE)

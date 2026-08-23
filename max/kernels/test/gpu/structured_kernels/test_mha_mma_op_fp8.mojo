@@ -303,7 +303,7 @@ def kernel_load_K_fp8[
     comptime _K_SLOT_ROWS = _KV_BLOCK * _NUM_BLOCK_COLS_K
     comptime smem_layout_k = row_major[_K_SLOT_ROWS, _K_SUB_COLS]()
 
-    var k_smem = tt_stack_allocation[.float8_e4m3fn, AddressSpace.SHARED](
+    var k_smem = tt_stack_allocation[.float8_e4m3fn, address_space=.SHARED](
         smem_layout_k
     )
 
@@ -319,7 +319,7 @@ def kernel_load_K_fp8[
     barrier()
 
     # Allocate register tile and call load_K.
-    var k_reg = tt_stack_allocation[.float8_e4m3fn, AddressSpace.LOCAL](
+    var k_reg = tt_stack_allocation[.float8_e4m3fn, address_space=.LOCAL](
         _Op.K_LAYOUT
     )
     _Op.load_K(k_reg, k_smem)
@@ -530,7 +530,7 @@ def kernel_load_V_fp8[
     comptime _V_SLOT_ROWS = _KV_BLOCK * _NUM_BLOCK_COLS_V
     comptime smem_layout_v = row_major[_V_SLOT_ROWS, _V_SUB_COLS]()
 
-    var v_smem = tt_stack_allocation[.float8_e4m3fn, AddressSpace.SHARED](
+    var v_smem = tt_stack_allocation[.float8_e4m3fn, address_space=.SHARED](
         smem_layout_v
     )
 
@@ -544,7 +544,7 @@ def kernel_load_V_fp8[
     barrier()
 
     # Allocate register tile and call load_V.
-    var v_reg = tt_stack_allocation[.float8_e4m3fn, AddressSpace.LOCAL](
+    var v_reg = tt_stack_allocation[.float8_e4m3fn, address_space=.LOCAL](
         _Op.V_LAYOUT
     )
     _Op.load_V(v_reg, v_smem)

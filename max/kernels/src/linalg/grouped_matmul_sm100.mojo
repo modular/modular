@@ -169,10 +169,10 @@ def load_AB[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -365,10 +365,10 @@ def load_AB_cuda_core[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -586,10 +586,10 @@ def consumer_main_loop[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -695,7 +695,7 @@ def stsm_helper[
     transpose_c: Bool = False,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
+    dst: LayoutTensor[_, _, address_space=.SHARED, ...],
 ):
     """Stores a register fragment to shared memory using the stmatrix instruction.
 
@@ -791,16 +791,16 @@ def multi_stage_store_C[
     transpose_c: Bool = False,
 ](
     c_smem_base: UnsafePointer[
-        mut=True, Scalar[c_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[c_type], _, address_space=.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c_ptr: UnsafePointer[mut=True, Scalar[c_type], _],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
@@ -958,7 +958,7 @@ def multi_stage_store_C[
         var c_smem_tile = LayoutTensor[
             c_type,
             c_smem_layout,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_base + (stage % 2) * c_smem_tile_size)
 
@@ -1475,7 +1475,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]()
 
@@ -1891,17 +1891,13 @@ def grouped_matmul_sm100_persistent[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     expert_usage_stats: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

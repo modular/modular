@@ -68,7 +68,7 @@ def mm_tiled_kernel_double_buffer(
         dtype,
         Layout.row_major(tM, tN),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     # Initialize to zero
@@ -81,26 +81,26 @@ def mm_tiled_kernel_double_buffer(
         dtype,
         Layout.row_major(bM, bK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var a_smem_1 = LayoutTensor[
         dtype,
         Layout.row_major(bM, bK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_0 = LayoutTensor[
         dtype,
         Layout.row_major(bK, bN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var b_smem_1 = LayoutTensor[
         dtype,
         Layout.row_major(bK, bN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var numTiles = ceildiv(Int(K), bK)

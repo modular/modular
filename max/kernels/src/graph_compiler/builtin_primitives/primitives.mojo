@@ -1736,7 +1736,7 @@ def mogg_tensor_init[
         dtype,
         rank,
         static_layout=LayoutType,
-    ](alignment, AddressSpace.GENERIC),
+    ](alignment, .GENERIC),
 ]:
     """
     Helper for constructing a ManagedTensorSlice from a layout.
@@ -1850,7 +1850,7 @@ def reshape_contiguous_buffer[
         buffer.dtype,
         new_rank,
         static_layout=static_layout,
-    ](1, AddressSpace.GENERIC),
+    ](1, .GENERIC),
 ]:
     """
     Constructs a new ManagedTensorSlice with a new shape and static spec.
@@ -2345,11 +2345,11 @@ struct _ElementwiseFusionTileAdapter[
         # TODO(GEX-3912): generalizes the trait's tile address space and makes
         # `dst` an inout to remove this.
         var dst_local = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
             dst_local._storage.unsafe_address_space_cast[
-                AddressSpace.GENERIC
+                .GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
         )
@@ -2367,7 +2367,7 @@ struct _ElementwiseFusionTileAdapter[
         var out_tile = self.tensor.to_tile_tensor().tile[
             Self.tile_shape[0], Self.tile_shape[1]
         ](tc)
-        var res_local = res.address_space_cast[AddressSpace.LOCAL]()
+        var res_local = res.address_space_cast[.LOCAL]()
         LocalToGenericTileCopier[Self.thread_layout]().copy(out_tile, res_local)
 
 

@@ -195,11 +195,11 @@ struct _NaiveRMSNormTileAdapter[
         # Driver-owned per-thread output fragment; see `_NaiveMatmulTileAdapter`
         # for the LOCAL->GENERIC staging dance (TODO(GEX-3912)).
         var dst_local = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
             dst_local._storage.address_space_cast[
-                AddressSpace.GENERIC
+                .GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
         )
@@ -208,7 +208,7 @@ struct _NaiveRMSNormTileAdapter[
         # Terminal store. A bound `TileConsumer` OWNS the store (the fusion's
         # `store` performs the final `LocalToGenericTileCopier` copy itself);
         # otherwise the adapter stores the fragment directly.
-        var dst_local_view = dst.address_space_cast[AddressSpace.LOCAL]()
+        var dst_local_view = dst.address_space_cast[.LOCAL]()
         comptime if is_valid_epilogue[Self.TileConsumerType]():
             var consumer = self.tile_consumer.value()
             consumer(

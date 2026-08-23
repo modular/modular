@@ -117,16 +117,10 @@ def _halfclean4[
     cv_origin: MutOrigin,
     sv_origin: MutOrigin,
 ](
-    champ_v: UnsafePointer[
-        Float32, cv_origin, address_space=AddressSpace.SHARED
-    ],
-    champ_i: UnsafePointer[Int32, cv_origin, address_space=AddressSpace.SHARED],
-    scratch_v: UnsafePointer[
-        Float32, sv_origin, address_space=AddressSpace.SHARED
-    ],
-    scratch_i: UnsafePointer[
-        Int32, sv_origin, address_space=AddressSpace.SHARED
-    ],
+    champ_v: UnsafePointer[Float32, cv_origin, address_space=.SHARED],
+    champ_i: UnsafePointer[Int32, cv_origin, address_space=.SHARED],
+    scratch_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    scratch_i: UnsafePointer[Int32, sv_origin, address_space=.SHARED],
     tid: Int,
 ) -> Tuple[SIMD[.float32, _PTOPK_ITEMS], SIMD[.int32, _PTOPK_ITEMS]]:
     """Batcher half-cleaner: element-wise max of the champion and reversed tile.
@@ -229,10 +223,8 @@ def _bitonic_sort_desc[
     mut i1: Int32,
     mut i2: Int32,
     mut i3: Int32,
-    smem_v: UnsafePointer[
-        Float32, sv_origin, address_space=AddressSpace.SHARED
-    ],
-    smem_i: UnsafePointer[Int32, si_origin, address_space=AddressSpace.SHARED],
+    smem_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    smem_i: UnsafePointer[Int32, si_origin, address_space=.SHARED],
     tid: Int,
 ):
     """Full descending bitonic sort of `_PTOPK_TOTAL` elements in place.
@@ -414,10 +406,8 @@ def _bitonic_merge_desc[
     mut i1: Int32,
     mut i2: Int32,
     mut i3: Int32,
-    smem_v: UnsafePointer[
-        Float32, sv_origin, address_space=AddressSpace.SHARED
-    ],
-    smem_i: UnsafePointer[Int32, si_origin, address_space=AddressSpace.SHARED],
+    smem_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    smem_i: UnsafePointer[Int32, si_origin, address_space=.SHARED],
     tid: Int,
 ):
     """Descending bitonic *merge* of a `_PTOPK_TOTAL`-element bitonic sequence.
@@ -562,10 +552,10 @@ def _persistent_topk_2048_impl(
     var smem_v = unsafe_stack_allocation[
         _PTOPK_TOTAL,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var smem_i = unsafe_stack_allocation[
-        _PTOPK_TOTAL, Int32, address_space=AddressSpace.SHARED
+        _PTOPK_TOTAL, Int32, address_space=.SHARED
     ]()
 
     var _N = Int(N)
@@ -630,25 +620,25 @@ def _streaming_topk_kernel(
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var _N = Int(N)
@@ -969,7 +959,7 @@ def _hsel_block_scan[
     block_size: Int, mut_origin: MutOrigin
 ](
     val: UInt32,
-    wsum: UnsafePointer[UInt32, mut_origin, address_space=AddressSpace.SHARED],
+    wsum: UnsafePointer[UInt32, mut_origin, address_space=.SHARED],
 ) -> UInt32:
     """Block-wide inclusive prefix sum across `block_size` threads, one barrier.
 
@@ -1002,7 +992,7 @@ def _hsel_split_scan[
     block_size: Int, one_barrier: Bool, mut_origin: MutOrigin
 ](
     val: UInt32,
-    wsum: UnsafePointer[UInt32, mut_origin, address_space=AddressSpace.SHARED],
+    wsum: UnsafePointer[UInt32, mut_origin, address_space=.SHARED],
 ) -> UInt32:
     """The round split's block-wide inclusive prefix sum, whichever is faster here.
 
@@ -1186,30 +1176,28 @@ def _histsel_topk_impl[
     var token = Int(block_idx.x)
 
     var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, UInt32, address_space=AddressSpace.SHARED
+        _HSEL_BINS + 1, UInt32, address_space=.SHARED
     ]()
     var sel_k = unsafe_stack_allocation[
         sel_cap,
         UInt64,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # [0] split bin, [1] keys strictly above it, [2] keys at or above it,
     # [3] append cursor into `sel`, [4] collect cursor into `cand`.
-    var ctl = unsafe_stack_allocation[
-        8, UInt32, address_space=AddressSpace.SHARED
-    ]()
+    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
     var wcur = unsafe_stack_allocation[
-        _HSEL_WARPS, UInt32, address_space=AddressSpace.SHARED
+        _HSEL_WARPS, UInt32, address_space=.SHARED
     ]()
     var wor = unsafe_stack_allocation[
         2 * _HSEL_WARPS + 2,
         UInt64,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var cand = external_memory[
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Int32](),
     ]()
 
@@ -1730,7 +1718,7 @@ def _hsel_digit_of[
 ](
     key: UInt64,
     packed: SIMD[.uint64, 2],
-    dmap: UnsafePointer[UInt32, d_origin, address_space=AddressSpace.SHARED],
+    dmap: UnsafePointer[UInt32, d_origin, address_space=.SHARED],
     left: Int,
     right: Int,
     use_bin: Bool,
@@ -1768,12 +1756,12 @@ def _hsel_rank_write[
     c_origin: MutOrigin,
     d_origin: MutOrigin,
 ](
-    sel_k: UnsafePointer[UInt64, sk_origin, address_space=AddressSpace.SHARED],
-    hist: UnsafePointer[UInt32, h_origin, address_space=AddressSpace.SHARED],
-    cur: UnsafePointer[UInt32, c_origin, address_space=AddressSpace.SHARED],
-    wor: UnsafePointer[UInt64, sk_origin, address_space=AddressSpace.SHARED],
-    dmap: UnsafePointer[UInt32, d_origin, address_space=AddressSpace.SHARED],
-    banchor: UnsafePointer[UInt64, d_origin, address_space=AddressSpace.SHARED],
+    sel_k: UnsafePointer[UInt64, sk_origin, address_space=.SHARED],
+    hist: UnsafePointer[UInt32, h_origin, address_space=.SHARED],
+    cur: UnsafePointer[UInt32, c_origin, address_space=.SHARED],
+    wor: UnsafePointer[UInt64, sk_origin, address_space=.SHARED],
+    dmap: UnsafePointer[UInt32, d_origin, address_space=.SHARED],
+    banchor: UnsafePointer[UInt64, d_origin, address_space=.SHARED],
     out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     out_base: Int,
     M: Int,
@@ -2200,7 +2188,7 @@ def _histsel_resident_impl[
     var token = Int(block_idx.x)
 
     var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, UInt32, address_space=AddressSpace.SHARED
+        _HSEL_BINS + 1, UInt32, address_space=.SHARED
     ]()
     # Everything the rank needs is dead weight under the cheap contract, which
     # compacts straight from registers to the output and never packs a key.
@@ -2211,7 +2199,7 @@ def _histsel_resident_impl[
         selk_n,
         UInt64,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # The leading slots are `_histsel_topk_kernel`'s: [0] split bin, [1] keys
     # strictly above it, [2] keys at or above it, [3] append cursor. Past those
@@ -2224,7 +2212,7 @@ def _histsel_resident_impl[
     var ctl = unsafe_stack_allocation[
         ctl_tail + res_vecs,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # The rank's per-bin cursor and its staged output. The streaming path folds
     # these into its dead candidate list; with no candidate list there is nothing
@@ -2232,12 +2220,12 @@ def _histsel_resident_impl[
     var cur = unsafe_stack_allocation[
         cur_n,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var wor = unsafe_stack_allocation[
         wor_n,
         UInt64,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # The one-barrier block scan is taken wherever it measured faster, which is
     # every instantiation except the ordered per-bin digit -- there it loses to the
@@ -2254,16 +2242,16 @@ def _histsel_resident_impl[
     var wscan = unsafe_stack_allocation[
         wscan_n,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # Round 0's occupied bins, numbered densely, and one representative key per
     # bin -- both only for the instantiation whose digit uses them.
     comptime nbin_aux = _HSEL_BINS if (bin_digit and ordered) else 1
     var dmap = unsafe_stack_allocation[
-        nbin_aux, UInt32, address_space=AddressSpace.SHARED
+        nbin_aux, UInt32, address_space=.SHARED
     ]()
     var banchor = unsafe_stack_allocation[
-        nbin_aux, UInt64, address_space=AddressSpace.SHARED
+        nbin_aux, UInt64, address_space=.SHARED
     ]()
 
     var _N = Int(N)
@@ -2848,25 +2836,25 @@ def _split_partial_kernel(
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4
@@ -2998,25 +2986,25 @@ def _reduce_partials_kernel(
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4
@@ -3123,25 +3111,25 @@ def _merge_partials_kernel(
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
         Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
         Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4

@@ -159,10 +159,10 @@ def kernel_v227_round_trip(
 
     # Two LDS slots: v227 (padded) + reference (contiguous).
     var v_smem_v227 = tt_stack_allocation[
-        DType.float8_e4m3fn, AddressSpace.SHARED
+        DType.float8_e4m3fn, address_space=.SHARED
     ](row_major[_V_SLOT_ROWS_V227, _V_SUB_COLS]())
     var v_smem_ref = tt_stack_allocation[
-        DType.float8_e4m3fn, AddressSpace.SHARED
+        DType.float8_e4m3fn, address_space=.SHARED
     ](row_major[_V_SLOT_ROWS, _V_SUB_COLS]())
 
     var w_id = Int(readfirstlane(warp_id()))

@@ -69,7 +69,7 @@ def _block_reduce_with_padding[
     comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
     var shared_mem = unsafe_stack_allocation[
-        num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
+        num_reductions * smem_stride, dtype, address_space=.SHARED
     ]()
 
     var lid = lane_id()
@@ -604,7 +604,7 @@ def broadcast[
 
     # Multi-warp block - use shared memory
     var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=AddressSpace.SHARED
+        width, dtype, address_space=.SHARED
     ]()
 
     # Source thread writes its value to shared memory
@@ -660,7 +660,7 @@ def broadcast[
         return warp.broadcast(val)
 
     var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=AddressSpace.SHARED
+        width, dtype, address_space=.SHARED
     ]()
 
     var linear_tid = (
@@ -698,7 +698,7 @@ def _prefix_sum[
     # We need one slot per warp to store warp-level scan results
     comptime n_warps = block_size // WARP_SIZE
     var warp_mem = unsafe_stack_allocation[
-        align_up(n_warps, WARP_SIZE), dtype, address_space=AddressSpace.SHARED
+        align_up(n_warps, WARP_SIZE), dtype, address_space=.SHARED
     ]()
 
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)

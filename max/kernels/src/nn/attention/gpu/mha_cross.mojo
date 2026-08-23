@@ -247,8 +247,8 @@ def mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     q_input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,

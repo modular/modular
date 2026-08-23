@@ -27,12 +27,10 @@ def _shared_tile() -> (
         mut=True,
         Float32,
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 ):
-    var smem = unsafe_stack_allocation[
-        4, Float32, address_space=AddressSpace.SHARED
-    ]()
+    var smem = unsafe_stack_allocation[4, Float32, address_space=.SHARED]()
     return {unsafe_ptr = smem, length = 4}
 
 
@@ -43,11 +41,11 @@ def _shared_aggregate_tile() -> (
         mut=True,
         Array[Int, 4],
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 ):
     var smem = unsafe_stack_allocation[
-        4, Array[Int, 4], address_space=AddressSpace.SHARED
+        4, Array[Int, 4], address_space=.SHARED
     ]()
     return {unsafe_ptr = smem, length = 4}
 

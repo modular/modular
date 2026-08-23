@@ -33,7 +33,7 @@ def producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -73,13 +73,13 @@ def producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -159,7 +159,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize smem buffer
@@ -175,13 +175,13 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -198,9 +198,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             var offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
-                (src.unsafe_ptr() + offset).address_space_cast[
-                    AddressSpace.GLOBAL
-                ](),
+                (src.unsafe_ptr() + offset).address_space_cast[.GLOBAL](),
                 smem + offset,
             )
             async_copy_arrive(produced_mbar[i].unsafe_ptr())

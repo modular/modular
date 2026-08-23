@@ -26,7 +26,7 @@ from std.utils.index import IndexList
 def test_transpose_4x4_tiletensor():
     print("== test_transpose_4x4_tiletensor")
 
-    var matrix = stack_allocation[dtype=DType.int](row_major[4, 4]())
+    var matrix = stack_allocation[dtype=.int](row_major[4, 4]())
 
     matrix[0, 0] = 0
     matrix[0, 1] = 1
@@ -103,9 +103,7 @@ def test_transpose_8x8_tiletensor():
     comptime num_rows: Int = 8
     comptime num_cols: Int = 8
 
-    var matrix = stack_allocation[dtype=DType.int](
-        row_major[num_rows, num_cols]()
-    )
+    var matrix = stack_allocation[dtype=.int](row_major[num_rows, num_cols]())
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -130,9 +128,7 @@ def test_transpose_16x16_tiletensor():
     comptime num_rows: Int = 16
     comptime num_cols: Int = 16
 
-    var matrix = stack_allocation[dtype=DType.int](
-        row_major[num_rows, num_cols]()
-    )
+    var matrix = stack_allocation[dtype=.int](row_major[num_rows, num_cols]())
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -154,7 +150,7 @@ def test_transpose_16x16_tiletensor():
 def test_transpose_2d_identity_tiletensor() raises:
     print("== test_transpose_2d_identity_tiletensor")
 
-    var input = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    var input = stack_allocation[dtype=.int](row_major[3, 3]())
     input[0, 0] = 1
     input[0, 1] = 2
     input[0, 2] = 3
@@ -167,7 +163,7 @@ def test_transpose_2d_identity_tiletensor() raises:
 
     var perm: Array[Int, 2] = [0, 1]
 
-    var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    var output = stack_allocation[dtype=.int](row_major[3, 3]())
     _ = output.fill(0)
 
     transpose(output, input, perm.unsafe_ptr())
@@ -196,7 +192,7 @@ def test_transpose_2d_identity_tiletensor() raises:
 def test_transpose_2d_tiletensor() raises:
     print("== test_transpose_2d_tiletensor")
 
-    var input = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    var input = stack_allocation[dtype=.int](row_major[3, 3]())
     input[0, 0] = 1
     input[0, 1] = 2
     input[0, 2] = 3
@@ -209,7 +205,7 @@ def test_transpose_2d_tiletensor() raises:
 
     var perm: Array[Int, 2] = [1, 0]
 
-    var output = stack_allocation[dtype=DType.int](row_major[3, 3]())
+    var output = stack_allocation[dtype=.int](row_major[3, 3]())
     _ = output.fill(0)
 
     transpose(output, input, perm.unsafe_ptr())
@@ -238,7 +234,7 @@ def test_transpose_2d_tiletensor() raises:
 def test_transpose_3d_identity_tiletensor() raises:
     print("== test_transpose_3d_identity_tiletensor")
 
-    var input = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    var input = stack_allocation[dtype=.int](row_major[2, 2, 3]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 0, 2] = 3
@@ -254,7 +250,7 @@ def test_transpose_3d_identity_tiletensor() raises:
 
     var perm: Array[Int, 3] = [0, 1, 2]
 
-    var output = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    var output = stack_allocation[dtype=.int](row_major[2, 2, 3]())
     _ = output.fill(0)
 
     transpose(output, input, perm.unsafe_ptr())
@@ -289,7 +285,7 @@ def test_transpose_3d_identity_tiletensor() raises:
 def test_transpose_3d_tiletensor() raises:
     print("== test_transpose_3d_tiletensor")
 
-    var input = stack_allocation[dtype=DType.int](row_major[2, 2, 3]())
+    var input = stack_allocation[dtype=.int](row_major[2, 2, 3]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 0, 2] = 3
@@ -305,7 +301,7 @@ def test_transpose_3d_tiletensor() raises:
 
     var perm: Array[Int, 3] = [2, 0, 1]
 
-    var output = stack_allocation[dtype=DType.int](row_major[3, 2, 2]())
+    var output = stack_allocation[dtype=.int](row_major[3, 2, 2]())
     _ = output.fill(0)
 
     transpose(output, input, perm.unsafe_ptr())
@@ -340,7 +336,7 @@ def test_transpose_3d_tiletensor() raises:
 def test_transpose_si64_tiletensor() raises:
     print("== test_transpose_si64_tiletensor")
 
-    var input = stack_allocation[dtype=DType.int64](row_major[2, 2, 3]())
+    var input = stack_allocation[dtype=.int64](row_major[2, 2, 3]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 0, 2] = 3
@@ -356,7 +352,7 @@ def test_transpose_si64_tiletensor() raises:
 
     var perm: Array[Int, 3] = [2, 1, 0]
 
-    var output = stack_allocation[dtype=DType.int64](row_major[3, 2, 2]())
+    var output = stack_allocation[dtype=.int64](row_major[3, 2, 2]())
     _ = output.fill(0)
 
     transpose(output, input, perm.unsafe_ptr())
@@ -516,7 +512,7 @@ def test_simplify_perm():
 def test_transpose_4x4():
     print("== test_transpose_4x4")
 
-    var matrix = stack_allocation[dtype=DType.int](row_major[4, 4]())
+    var matrix = stack_allocation[dtype=.int](row_major[4, 4]())
 
     matrix[0, 0] = 0
     matrix[0, 1] = 1
@@ -593,9 +589,7 @@ def test_transpose_8x8():
     comptime num_rows: Int = 8
     comptime num_cols: Int = 8
 
-    var matrix = stack_allocation[dtype=DType.int](
-        row_major[num_rows, num_cols]()
-    )
+    var matrix = stack_allocation[dtype=.int](row_major[num_rows, num_cols]())
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -620,9 +614,7 @@ def test_transpose_16x16():
     comptime num_rows: Int = 16
     comptime num_cols: Int = 16
 
-    var matrix = stack_allocation[dtype=DType.int](
-        row_major[num_rows, num_cols]()
-    )
+    var matrix = stack_allocation[dtype=.int](row_major[num_rows, num_cols]())
 
     for i in range(num_rows):
         for j in range(num_cols):

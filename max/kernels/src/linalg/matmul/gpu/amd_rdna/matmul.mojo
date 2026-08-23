@@ -255,9 +255,7 @@ def _load_tile_to_smem[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
     block_row_offset: Int,
     k_offset: Int,
@@ -381,9 +379,7 @@ def _store_tile_regs[
     VECS_PER_THREAD: Int,
     VECTOR_WIDTH: Int,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     regs: Array[SIMD[dtype, VECTOR_WIDTH], VECS_PER_THREAD],
     tid: Int,
 ):
@@ -407,12 +403,8 @@ def _compute_ktile[
     WARP_TILE_M: Int,
     WARP_TILE_N: Int,
 ](
-    a_smem: UnsafePointer[
-        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
-    ],
-    b_smem: UnsafePointer[
-        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
-    ],
+    a_smem: UnsafePointer[mut=True, Scalar[a_type], _, address_space=.SHARED],
+    b_smem: UnsafePointer[mut=True, Scalar[b_type], _, address_space=.SHARED],
     mut c_accum: Array[SIMD[s_type, CD_FRAG_SIZE], WARP_TILE_M * WARP_TILE_N],
     warp_m: Int,
     warp_n: Int,
@@ -554,10 +546,10 @@ def _wmma_matmul_kernel[
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
         var a_smem = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
         ]()
         var b_smem = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
         ]()
 
         # Per-thread 128-bit vector counts for the register-staged loads.
@@ -630,16 +622,16 @@ def _wmma_matmul_kernel[
             " to use the register-staged pipeline"
         )
         var a_smem_0 = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
         ]()
         var a_smem_1 = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
+            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
         ]()
         var b_smem_0 = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
         ]()
         var b_smem_1 = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
+            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
         ]()
 
         # Load first K-tile into buffer 0.

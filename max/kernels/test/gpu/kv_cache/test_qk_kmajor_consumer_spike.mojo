@@ -143,14 +143,12 @@ def qk_consumer_kernel[
 
     var q_smem = rebind[
         UnsafePointer[
-            Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="qk_consumer_dynamic_smem",
         ]()
@@ -159,14 +157,14 @@ def qk_consumer_kernel[
         ab_type,
         q_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime k_smem_tile_t = LayoutTensor[
         ab_type,
         k_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -333,7 +331,7 @@ def run_qk_consumer[
             DeviceBuffer(
                 ctx,
                 k_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
+                    .GENERIC
                 ](),
                 1,
                 owning=False,

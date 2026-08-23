@@ -493,8 +493,8 @@ def async_copy[
     l2_prefetch: Optional[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: Pointer[Scalar[dtype], _, address_space=AddressSpace.GLOBAL],
-    dst: Pointer[mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    src: Pointer[Scalar[dtype], _, address_space=.GLOBAL],
+    dst: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     src_size: Int32 = Int32(size),
     predicate: Bool = False,
 ):
@@ -793,10 +793,7 @@ def external_memory[
 @always_inline
 def fence_proxy_tensormap_generic_sys_acquire[
     dtype: AnyType,
-](
-    ptr: Pointer[mut=True, dtype, _, address_space=AddressSpace.GENERIC],
-    size: Int32,
-):
+](ptr: Pointer[mut=True, dtype, _, address_space=.GENERIC], size: Int32,):
     """Acquires a system-wide memory fence for tensor map operations.
 
     This function establishes a memory fence that ensures proper synchronization
@@ -887,10 +884,10 @@ def cp_async_bulk_shared_cluster_global[
     *,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     src_mem: Pointer[src_type, ...],
     size: Int32,
-    mem_bar: Pointer[mut=True, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=True, mbr_type, _, address_space=.SHARED],
 ):
     """Initiates an asynchronous bulk copy from global memory to shared CTA
     memory.
@@ -924,7 +921,7 @@ def cp_async_bulk_shared_cluster_global[
         AddressSpace.GENERIC,
     ), "src_mem must be in GLOBAL or GENERIC address space"
 
-    var src_global = src_mem.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var src_global = src_mem.unsafe_address_space_cast[.GLOBAL]()
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     comptime if cache_hint:
@@ -957,7 +954,7 @@ def cp_async_bulk_global_shared_cta[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst_mem: Pointer[mut=True, dst_type, ...],
-    src_mem: Pointer[src_type, _, address_space=AddressSpace.SHARED],
+    src_mem: Pointer[src_type, _, address_space=.SHARED],
     size: Int32,
 ):
     """Initiates an asynchronous bulk copy from shared CTA memory to global
@@ -991,7 +988,7 @@ def cp_async_bulk_global_shared_cta[
         AddressSpace.GENERIC,
     ), "dst_mem must be in GLOBAL or GENERIC address space"
 
-    var dst_global = dst_mem.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var dst_global = dst_mem.unsafe_address_space_cast[.GLOBAL]()
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     comptime if cache_hint:
@@ -1046,7 +1043,7 @@ def cp_async_bulk_prefetch[
         AddressSpace.GENERIC,
     ), "src_mem must be in GLOBAL or GENERIC address space"
 
-    var src_global = src_mem.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var src_global = src_mem.unsafe_address_space_cast[.GLOBAL]()
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     comptime if cache_hint:
@@ -1071,7 +1068,7 @@ def cp_async_bulk_reduce_global_shared_cta[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst_mem: Pointer[mut=True, Scalar[dtype], ...],
-    src_mem: Pointer[Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    src_mem: Pointer[Scalar[dtype], _, address_space=.SHARED],
     size: Int32,
 ):
     """Initiates an asynchronous bulk reduction from shared CTA memory into
@@ -1119,7 +1116,7 @@ def cp_async_bulk_reduce_global_shared_cta[
         reduction_kind == ReduceOp.ADD
     ), "cp_async_bulk_reduce_global_shared_cta currently supports ADD only"
 
-    var dst_global = dst_mem.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var dst_global = dst_mem.unsafe_address_space_cast[.GLOBAL]()
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     comptime cache_hint_mnemonic = ".L2::cache_hint" if cache_hint else ""
@@ -1162,9 +1159,9 @@ def cp_async_bulk_tensor_shared_cluster_global[
     cta_group: Int = 1,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
@@ -1365,9 +1362,9 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     cta_group: Int = 1,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     coords: IndexList[rank],
     elect: Int32,
 ):
@@ -1591,9 +1588,9 @@ def cp_async_bulk_tensor_2d_gather4[
     cta_group: Int = 1,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     col_idx: Int32,
     row0: Int32,
     row1: Int32,
@@ -1685,9 +1682,9 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     coords: IndexList[tensor_rank],
     filter_offsets: IndexList[tensor_rank - 2],
 ):
@@ -1865,9 +1862,9 @@ def cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     coords: IndexList[tensor_rank],
     filter_offsets: IndexList[tensor_rank - 2],
     multicast_mask: UInt16,
@@ -2054,9 +2051,9 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: Pointer[mut=True, dst_type, _, address_space=AddressSpace.SHARED],
+    dst_mem: Pointer[mut=True, dst_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
-    mem_bar: Pointer[mut=False, mbr_type, _, address_space=AddressSpace.SHARED],
+    mem_bar: Pointer[mut=False, mbr_type, _, address_space=.SHARED],
     coords: IndexList[rank],
     multicast_mask: UInt16,
 ):
@@ -2115,7 +2112,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     comptime if rank == 4:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.unsafe_address_space_cast[
-                AddressSpace.SHARED_CLUSTER
+                .SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,4,1,0,1,0,0>}`
@@ -2148,7 +2145,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     elif rank == 3:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.unsafe_address_space_cast[
-                AddressSpace.SHARED_CLUSTER
+                .SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,1,0,0>}`
@@ -2179,7 +2176,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     elif rank == 2:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.unsafe_address_space_cast[
-                AddressSpace.SHARED_CLUSTER
+                .SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
@@ -2207,7 +2204,7 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
     else:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.unsafe_address_space_cast[
-                AddressSpace.SHARED_CLUSTER
+                .SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
@@ -2239,7 +2236,7 @@ def cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: Pointer[src_type, _, address_space=AddressSpace.SHARED],
+    src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     coords: IndexList[rank],
 ):
@@ -2343,7 +2340,7 @@ def cp_async_bulk_tensor_global_shared_cta_elect[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: Pointer[src_type, _, address_space=AddressSpace.SHARED],
+    src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     coords: IndexList[rank],
     elect: Int32,
@@ -2550,7 +2547,7 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: Pointer[src_type, _, address_space=AddressSpace.SHARED],
+    src_mem: Pointer[src_type, _, address_space=.SHARED],
     tma_descriptor: OpaquePointer[mut=False, _],
     coords: IndexList[rank],
 ):
@@ -2652,9 +2649,7 @@ def _load_impl[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: Pointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC]) -> SIMD[
-    dtype, width
-]:
+](ptr: Pointer[Scalar[dtype], _, address_space=.GENERIC]) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
     This function provides low-level control over cache behavior and memory access patterns
@@ -2836,9 +2831,7 @@ def load[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
-](ptr: Pointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC]) -> SIMD[
-    dtype, width
-]:
+](ptr: Pointer[Scalar[dtype], _, address_space=.GENERIC]) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -2882,7 +2875,7 @@ def load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: Pointer[Scalar[dtype], _, address_space=AddressSpace.GENERIC],
+    ptr: Pointer[Scalar[dtype], _, address_space=.GENERIC],
     offset: OffsetType,
 ) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
@@ -3001,9 +2994,7 @@ def multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
     output_width: Int = 1,
 ](
-    addr: Pointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
-    ],
+    addr: Pointer[mut=False, Scalar[dtype], _, address_space=.GLOBAL],
 ) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
@@ -3122,10 +3113,10 @@ def multimem_ld_reduce[
     consistency: Consistency,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    addr: Pointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
-    ],
-) -> SIMD[dtype, simd_width]:
+    addr: Pointer[mut=False, Scalar[dtype], _, address_space=.GLOBAL],
+) -> SIMD[
+    dtype, simd_width
+]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
 
     This wrapper automatically determines the optimal output_width and count
@@ -3238,9 +3229,7 @@ def multimem_st[
     consistency: Consistency,
     width: Int = 1,
 ](
-    addr: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
-    ],
+    addr: Pointer[mut=True, Scalar[dtype], _, address_space=.GLOBAL],
     values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
     """Stages an inline multimem.st instruction.
@@ -3277,7 +3266,7 @@ def multimem_st[
     from max.gpu.memory.memory import multimem_st, Consistency
     from std.gpu.intrinsics import Scope
     from std.utils import StaticTuple
-    var addr = Pointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL].unsafe_dangling()
+    var addr = Pointer[Float32, MutAnyOrigin, address_space=.GLOBAL].unsafe_dangling()
     %# val1, val2 = Float32(0), Float32(0)
     %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 
@@ -3366,9 +3355,7 @@ def multimem_st[
     scope: Scope,
     consistency: Consistency,
 ](
-    addr: Pointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.GLOBAL
-    ],
+    addr: Pointer[mut=True, Scalar[dtype], _, address_space=.GLOBAL],
     value: SIMD[dtype, simd_width],
 ):
     """Simplified multimem_st that automatically calculates optimal packing.

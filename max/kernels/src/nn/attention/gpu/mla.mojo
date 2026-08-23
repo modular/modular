@@ -237,17 +237,15 @@ def flare_mla_decoding[
     # (default) -> unchanged per-position behavior.
     fold_shared_index: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
@@ -536,14 +534,14 @@ def flare_mla_decoding[
     config: MHAConfig[dtype],
     decoding_warp_split_k: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
@@ -616,19 +614,17 @@ def flare_mla_decoding_dispatch[
     # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
     fold_shared_index: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -1509,10 +1505,10 @@ def mla_splitk_reduce[
     )
 
     var scales_tt = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
+        dtype=accum_type, address_space=.SHARED
     ](row_major[MAX_PARTITIONS]())
     var warp_partial_tt = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
+        dtype=accum_type, address_space=.SHARED
     ](row_major[W_PARTS, depth_per_cta]())
 
     var d_tile_idx = block_idx.x
@@ -2040,14 +2036,14 @@ def mla_decoding_single_batch[
     comptime q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -2057,7 +2053,7 @@ def mla_decoding_single_batch[
                     q_type,
                     Layout.row_major(BM, BK),
                     q_smem.origin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -2079,7 +2075,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout(IntTuple(BN, BK), IntTuple(nope_dim, 1)),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var kv_nope_smem_iter = IteratorTypeKV(
@@ -2093,7 +2089,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BK, nope_dim),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -2106,7 +2102,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BN, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var k_rope_smem_iter = IteratorTypeK(
@@ -2129,7 +2125,7 @@ def mla_decoding_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     comptime num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
@@ -2139,7 +2135,7 @@ def mla_decoding_single_batch[
             accum_type,
             Layout.row_major(num_output_rows_full, p_frag_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0.0)
@@ -2167,7 +2163,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
@@ -2177,7 +2173,7 @@ def mla_decoding_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * num_warps_n, BM),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     comptime kv_num_heads = 1
@@ -2527,7 +2523,7 @@ def mla_decoding_single_batch[
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, nope_dim),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
@@ -2571,7 +2567,7 @@ def mla_decoding_single_batch[
 
 @always_inline
 def _ragged_kv_view(
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
     src.dtype,
     RowMajorLayout[*Coord[Int, Int, Int].element_types],
@@ -2596,7 +2592,7 @@ def _ragged_kv_view(
 
 @always_inline
 def _ragged_offsets_view(
-    src: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[.uint32, address_space=.GENERIC, ...],
 ) -> TileTensor[
     DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
 ]:
@@ -2612,7 +2608,7 @@ def _ragged_offsets_view(
 
 @always_inline
 def _ragged_scales_view(
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
     src.dtype, RowMajorLayout[*Coord[Int, Int].element_types], ImmutAnyOrigin
 ]:
@@ -2637,20 +2633,14 @@ def flare_mla_prefill[
     output_type: DType,
     //,
 ](
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    cache_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
@@ -2838,17 +2828,15 @@ def flare_mla_prefill[
     dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -2966,18 +2954,16 @@ def flare_mla_prefill[
     dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope_scales: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
+    k_rope_scales: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3090,20 +3076,18 @@ def flare_mla_prefill[
     scale_dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=.GENERIC, ...],
+    q_rope: TileTensor[address_space=.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3235,20 +3219,18 @@ def flare_mla_prefill[
     scale_dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=.GENERIC, ...],
+    q_rope: TileTensor[address_space=.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3381,17 +3363,13 @@ def flare_mla_prefill_dispatch[
     cache_depth: Int = 576,
     _ndbuffer_mha_operand: Bool = False,
 ](
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
@@ -3822,14 +3800,14 @@ def mla_prefill_single_batch[
     comptime q_smem_size = BM * q_depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -3839,7 +3817,7 @@ def mla_prefill_single_batch[
                     q_type,
                     Layout.row_major(BM, BK),
                     q_smem.origin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -3854,7 +3832,7 @@ def mla_prefill_single_batch[
         k_type,
         Layout.row_major(BN, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -3867,7 +3845,7 @@ def mla_prefill_single_batch[
         v_type,
         Layout.row_major(BK, depth),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -3930,7 +3908,7 @@ def mla_prefill_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = (
@@ -3938,7 +3916,7 @@ def mla_prefill_single_batch[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -3966,7 +3944,7 @@ def mla_prefill_single_batch[
         v_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -3977,7 +3955,7 @@ def mla_prefill_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * num_warps_n, BM),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
@@ -4497,7 +4475,7 @@ def mla_prefill_single_batch[
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, depth),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](

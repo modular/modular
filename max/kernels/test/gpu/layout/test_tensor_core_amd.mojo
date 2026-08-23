@@ -2083,7 +2083,7 @@ def test_load_b_tr(ctx: DeviceContext) raises:
             DType.bfloat16,
             Layout.row_major(mma_shape[2], mma_shape[1]),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         if lane_id() == 0:

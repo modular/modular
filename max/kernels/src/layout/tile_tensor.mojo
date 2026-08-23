@@ -79,7 +79,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     Storage: TensorStorage = PointerStorage[element_width=1],
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -283,7 +283,7 @@ struct TileTensor[
         Self.LayoutType,
         Self.origin,
         Storage=PointerStorage[element_width=1],
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor with GENERIC address space.
@@ -297,7 +297,7 @@ struct TileTensor[
         Self.LayoutType,
         origin,
         Storage=DevicePointerStorage[element_width=1],
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor backed by `DevicePointerStorage`.
@@ -2915,7 +2915,7 @@ struct NullableTileTensor[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
     element_size: Int = 1,
 ](ImplicitlyCopyable, RegisterPassable):
@@ -3010,7 +3010,7 @@ struct NullableTileTensor[
         Self.dtype,
         Self.LayoutType,
         Self.origin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor with GENERIC address space.
@@ -3229,7 +3229,7 @@ comptime _ComptimeConditionalTileTensor[
     origin: Origin[mut=mut],
     *,
     engaged: Bool = False,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
 ] = _ComptimeConditional[
     TileTensor[
@@ -3248,7 +3248,7 @@ def stack_allocation[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> TileTensor[
     dtype,

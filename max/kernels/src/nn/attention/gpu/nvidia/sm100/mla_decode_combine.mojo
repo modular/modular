@@ -706,17 +706,17 @@ def mla_combine_kernel_split_parallel[
     var smem_result = unsafe_stack_allocation[
         NUM_WARPS * head_dim,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var smem_m = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var smem_l = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # =========================================================================
@@ -941,13 +941,9 @@ def launch_mla_combine_kernel_split_parallel[
     ragged: Bool = False,
     has_attn_sink: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
     attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
@@ -1062,13 +1058,9 @@ def launch_mla_combine_kernel[
     warps_per_head: Int = 2,
     has_attn_sink: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
     attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
@@ -1189,13 +1181,9 @@ def mla_decode_combine_partial_outputs[
     has_attn_sink: Bool = False,
     split_parallel: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
     attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,

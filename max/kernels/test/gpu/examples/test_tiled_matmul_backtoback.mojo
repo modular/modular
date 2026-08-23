@@ -230,7 +230,7 @@ def b2b_gemm[
     # memory and reuse it on each iteration.
     var a_smem = external_memory[
         Scalar[in_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[SIMD[in_type, simd_size]](),
     ]()
     comptime a_smem_size = BM * K  # single block
@@ -253,7 +253,7 @@ def b2b_gemm[
     var b_smem_iter = LayoutTensorIter[
         in_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ](b_smem, b_smem_size)
     # C may not have the same layout
@@ -293,7 +293,7 @@ def b2b_gemm[
             accum_type,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -303,7 +303,7 @@ def b2b_gemm[
         accum_type,
         layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
@@ -447,7 +447,7 @@ def b2b_gemm[
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[

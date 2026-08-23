@@ -843,7 +843,7 @@ struct Conv2dFpropKernel[
         # Access shared memory
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

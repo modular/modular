@@ -144,7 +144,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="tmem_test_dynamic_shared_memory",
     ]().as_unsafe_any_origin()

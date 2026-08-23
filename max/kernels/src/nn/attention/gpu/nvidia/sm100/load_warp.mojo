@@ -245,7 +245,7 @@ def fa4_load[
         KVLUTType.dtype,
         type_of(tt_row_major[q_elements]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     var kv_head_idx: UInt32

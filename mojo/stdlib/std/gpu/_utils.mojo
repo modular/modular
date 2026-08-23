@@ -28,7 +28,7 @@ from std.utils import StaticTuple
 def to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: Pointer[type, address_space=AddressSpace.SHARED_CLUSTER, ...]
+    ptr: Pointer[type, address_space=.SHARED_CLUSTER, ...]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -43,9 +43,7 @@ def to_llvm_shared_cluster_mem_ptr[
 @always_inline
 def to_llvm_global_mem_ptr[
     type: AnyType
-](
-    ptr: Pointer[type, address_space=AddressSpace.GLOBAL, ...]
-) -> __mlir_type.`!llvm.ptr<1>`:
+](ptr: Pointer[type, address_space=.GLOBAL, ...]) -> __mlir_type.`!llvm.ptr<1>`:
     """Cast global memory pointer to LLVMPointer Type.
 
     Args:
@@ -62,9 +60,7 @@ def to_llvm_global_mem_ptr[
 @always_inline
 def to_llvm_shared_mem_ptr[
     type: AnyType
-](
-    ptr: Pointer[type, address_space=AddressSpace.SHARED, ...]
-) -> __mlir_type.`!llvm.ptr<3>`:
+](ptr: Pointer[type, address_space=.SHARED, ...]) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 
     Args:

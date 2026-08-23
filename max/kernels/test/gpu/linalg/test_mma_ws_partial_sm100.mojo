@@ -254,7 +254,7 @@ def ss_qk_partial_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -262,13 +262,13 @@ def ss_qk_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -470,7 +470,7 @@ def ss_qk_multistage_kernel[
     with k_start>0.
     """
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -478,13 +478,13 @@ def ss_qk_multistage_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -1319,7 +1319,7 @@ def ss_nonws_partial_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + NW_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + NW_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -1327,13 +1327,13 @@ def ss_nonws_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(NW_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -1924,14 +1924,14 @@ def ts_partial_kernel[
     `dense_mma_ws_ts_kernel`; only the MMA call differs.
     """
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
 
     var q_smem_ptr = smem_base.bitcast[Scalar[TS_OP_TYPE]]()
     var q_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_Q_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](q_smem_ptr.as_unsafe_any_origin())
 
@@ -1941,7 +1941,7 @@ def ts_partial_kernel[
     var k_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_K_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](k_smem_ptr.as_unsafe_any_origin())
 

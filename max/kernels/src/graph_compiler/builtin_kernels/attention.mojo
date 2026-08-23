@@ -1100,7 +1100,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
                     output_type,
                     Layout.row_major(UNKNOWN_VALUE),
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](),
         )
@@ -1577,7 +1577,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
             output_type,
             Layout.row_major(UNKNOWN_VALUE),
             ImmutAnyOrigin,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
         ]
         var bias_tensor = bias.to_layout_tensor()
         var rebound_bias = rebind[ExpectedBiasType](bias_tensor)

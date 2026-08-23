@@ -95,7 +95,7 @@ def sgemm_double_buffer[
             a_type,
             Layout.row_major(2 * BK, BM_padded),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .slice[:, :BM]()
@@ -109,7 +109,7 @@ def sgemm_double_buffer[
             b_type,
             Layout.row_major(2 * BK, BN),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .split[2]()
@@ -155,7 +155,7 @@ def sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
         2,
     ] = [
@@ -163,13 +163,13 @@ def sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
@@ -178,7 +178,7 @@ def sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
         2,
     ] = [
@@ -186,13 +186,13 @@ def sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_c = Layout.row_major(TM, TN)
@@ -201,7 +201,7 @@ def sgemm_double_buffer[
             c_type,
             layout_c,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)

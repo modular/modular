@@ -194,14 +194,12 @@ def pv_mma_kernel[
 
     var p_smem = rebind[
         UnsafePointer[
-            Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="pv_spike_dynamic_smem",
         ]()
@@ -210,14 +208,14 @@ def pv_mma_kernel[
         ab_type,
         p_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime v_smem_tile_t = LayoutTensor[
         ab_type,
         v_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -447,7 +445,7 @@ def run_pv_spike[
             DeviceBuffer(
                 ctx,
                 v_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
+                    .GENERIC
                 ](),
                 1,
                 owning=False,

@@ -39,7 +39,7 @@ def shared_memory_kernel(
     # Get a pointer to shared memory for the indices and values
     var shared_data = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Float32](),
     ]()
 

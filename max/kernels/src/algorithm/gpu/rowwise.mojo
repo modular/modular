@@ -380,9 +380,7 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
             _warp_shuffle_combine(state)
 
             comptime n_warps = Self.BLOCK_SIZE // WARP_SIZE
-            var shmem = stack_allocation[
-                n_warps, S, address_space=AddressSpace.SHARED
-            ]()
+            var shmem = stack_allocation[n_warps, S, address_space=.SHARED]()
             var w_idx = Int(warp_id())
             var l_idx = Int(lane_id())
 
@@ -418,7 +416,7 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
         else:
             # Block-wide shmem tree: log2(BLOCK_SIZE) halving steps.
             var shmem = stack_allocation[
-                Self.BLOCK_SIZE, S, address_space=AddressSpace.SHARED
+                Self.BLOCK_SIZE, S, address_space=.SHARED
             ]()
             var tid = Int(thread_idx.x)
             shmem[tid] = state
@@ -539,7 +537,7 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
             var shmem = stack_allocation[
                 Self.WARPS_PER_BLOCK * WARP_SIZE,
                 S,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             var warp_base = Int(warp_id()) * WARP_SIZE
             var lid = Int(lane_id())
@@ -862,9 +860,7 @@ def pjoin[
             + row_idx_ * blocks_per_row_ * _SPLITK_STATE_BYTES
         )
         var counter_ptr = ctx._counters_base + row_idx_
-        var last_shmem = stack_allocation[
-            1, Bool, address_space=AddressSpace.SHARED
-        ]()
+        var last_shmem = stack_allocation[1, Bool, address_space=.SHARED]()
         var tid_ = thread_idx.x
         if tid_ == 0:
             var slot_ptr = (

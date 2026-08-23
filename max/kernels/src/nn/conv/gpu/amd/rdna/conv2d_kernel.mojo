@@ -64,9 +64,7 @@ def _load_im2col_a_tile[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     block_m_offset: Int,
     k_offset: Int,
@@ -148,9 +146,7 @@ def _load_b_tile_to_smem[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     tile: TileTensor[mut=True, dtype, tile_layout, _],
     block_n_offset: Int,
     k_offset: Int,
@@ -329,22 +325,22 @@ def conv2d_kernel_rdna[
     var a_smem_0 = unsafe_stack_allocation[
         BLOCK_M * SMEM_STRIDE,
         in_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var a_smem_1 = unsafe_stack_allocation[
         BLOCK_M * SMEM_STRIDE,
         in_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_smem_0 = unsafe_stack_allocation[
         BLOCK_N * SMEM_STRIDE,
         filter_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_smem_1 = unsafe_stack_allocation[
         BLOCK_N * SMEM_STRIDE,
         filter_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize C accumulators

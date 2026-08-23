@@ -63,14 +63,14 @@ def wgmma_tf32_tf32_f32_kernel[
         DType.float32,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float32,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[.float32, 4](0)
@@ -362,14 +362,14 @@ def wgmma_bf16_bf16_f32_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[.float32, 4](0)
@@ -654,14 +654,14 @@ def wgmma_f16_f16_f32_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[.float32, 4](0)
@@ -946,14 +946,14 @@ def wgmma_f16_f16_f16_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[.uint32, 2](0)
@@ -1246,14 +1246,14 @@ def wgmma_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[.float32, 4](0)

@@ -226,15 +226,9 @@ def _batched_matmul_cpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_tile: TileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_tile: TileTensor[
-        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tile: TileTensor[
-        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_tile: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a_tile: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b_tile: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -929,9 +923,9 @@ def batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -1483,11 +1477,11 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     var b_scales_lt = b_scales_.to_layout_tensor()
 
     # naive implementation requires all tensor have AddressSpace.GENERIC
-    var c = c_lt.address_space_cast[AddressSpace.GENERIC]()
-    var a = a_lt.address_space_cast[AddressSpace.GENERIC]()
-    var b = b_lt.address_space_cast[AddressSpace.GENERIC]()
-    var a_scales = a_scales_lt.address_space_cast[AddressSpace.GENERIC]()
-    var b_scales = b_scales_lt.address_space_cast[AddressSpace.GENERIC]()
+    var c = c_lt.address_space_cast[.GENERIC]()
+    var a = a_lt.address_space_cast[.GENERIC]()
+    var b = b_lt.address_space_cast[.GENERIC]()
+    var a_scales = a_scales_lt.address_space_cast[.GENERIC]()
+    var b_scales = b_scales_lt.address_space_cast[.GENERIC]()
 
     var B = c.dim(0)
     var M = c.dim(1)

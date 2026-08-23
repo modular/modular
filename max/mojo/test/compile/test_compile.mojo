@@ -74,9 +74,7 @@ def test_data_layout_llvm() raises:
 def test_data_layout_asm() raises:
     @__parameter
     def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
-        var a = unsafe_stack_allocation[
-            20, Int32, address_space=AddressSpace.SHARED
-        ]()
+        var a = unsafe_stack_allocation[20, Int32, address_space=.SHARED]()
         a[unsafe_offset=thread_idx.x] = src[unsafe_offset=0]
         barrier()
 

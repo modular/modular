@@ -433,7 +433,7 @@ def _malloc[
     out result: OptionalPointer[
         type,
         MutUntrackedOrigin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ],
 ):
     comptime MlirPointerType = type_of(result).T._mlir_type

@@ -290,8 +290,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
 
     def get_element[index: Int](self) -> Pointer[
         Self.element_types[index],
-        origin_of(self),
-    ]:
+        origin_of(self)]:
        while True: pass
 
 # Test that you can implicitly convert an "any" mutable reference (as is returned

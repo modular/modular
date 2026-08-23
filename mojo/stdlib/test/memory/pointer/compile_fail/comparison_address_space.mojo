@@ -19,7 +19,7 @@
 def main():
     var x = 42
     var p_generic = Pointer(to=x)
-    var p_global = p_generic.unsafe_address_space_cast[AddressSpace.GLOBAL]()
+    var p_global = p_generic.unsafe_address_space_cast[.GLOBAL]()
 
     # CHECK: no matching method in call to '__eq__'
     _ = p_generic == p_global

@@ -65,9 +65,7 @@ def warp_scan(val: UInt32) -> UInt32:
 
 def block_scan(
     val: UInt32,
-    warp_sums: UnsafePointer[
-        mut=True, UInt32, _, address_space=AddressSpace.SHARED
-    ],
+    warp_sums: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
 ) -> UInt32:
     """Block-level inclusive scan.
 
@@ -106,10 +104,8 @@ def block_scan(
 
 def block_exclusive_scan(
     val: UInt32,
-    warp_sums: UnsafePointer[
-        mut=True, UInt32, _, address_space=AddressSpace.SHARED
-    ],
-    temp: UnsafePointer[mut=True, UInt32, _, address_space=AddressSpace.SHARED],
+    warp_sums: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
+    temp: UnsafePointer[mut=True, UInt32, _, address_space=.SHARED],
 ) -> UInt32:
     """Convert inclusive scan to exclusive scan.
 
@@ -151,12 +147,12 @@ def filter_kernel(
     var warp_sums = unsafe_stack_allocation[
         NUM_WARPS,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var temp = unsafe_stack_allocation[
         BLOCK_DIM,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var i = block_idx.x * BLOCK_DIM + thread_idx.x

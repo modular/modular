@@ -857,9 +857,7 @@ def assume(val: Bool):
 
 @always_inline
 def implicitarg_ptr(
-    out result: Pointer[
-        UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
-    ]
+    out result: Pointer[UInt8, MutUntrackedOrigin, address_space=.CONSTANT]
 ):
     """
     Get a pointer to AMD's implicit arguments table.

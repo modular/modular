@@ -184,7 +184,7 @@ def kernel_pv_chain[
     comptime smem_layout_v = row_major[_V_SLOT_ROWS, _V_SUB_COLS]()
 
     # ---- V SMEM allocation + cooperative fill from gmem image -------------
-    var v_smem = tt_stack_allocation[T, AddressSpace.SHARED](smem_layout_v)
+    var v_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_v)
     var tid = Int(thread_idx.x)
     comptime _smem_total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
@@ -194,7 +194,7 @@ def kernel_pv_chain[
     barrier()
 
     # ---- V register tile + load_V (the unit under test) -------------------
-    var v_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.V_LAYOUT)
+    var v_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.V_LAYOUT)
     _Op.load_V(v_reg, v_smem)
 
     # ---- P register tile + per-lane fill from gmem ------------------------
@@ -206,7 +206,7 @@ def kernel_pv_chain[
     #     ]
     # where MMA_K // 2 == FRAG_ELTS (FP8: 32, BF16: 8 — the half-warp
     # stride). Validated by `test_mfma_fragment_lane_mapping`.
-    var p_reg = tt_stack_allocation[T, AddressSpace.LOCAL](
+    var p_reg = tt_stack_allocation[T, address_space=.LOCAL](
         _Op.ATT_BF16_FULL_LAYOUT
     )
     var lid = Int(lane_id())
@@ -227,7 +227,9 @@ def kernel_pv_chain[
             p_v[i_k, j_n, 0] = rebind[p_v.ElementType](frag)
 
     # ---- Accumulator + mma_PV ---------------------------------------------
-    var o_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](_Op.O_LAYOUT)
+    var o_reg = tt_stack_allocation[.float32, address_space=.LOCAL](
+        _Op.O_LAYOUT
+    )
     comptime _OH = _Op.O_LAYOUT.static_shape[0]
     comptime _OW = _Op.O_LAYOUT.static_shape[1]
     var o_v = o_reg.vectorize[1, 1, 16]()

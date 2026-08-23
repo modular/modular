@@ -67,9 +67,9 @@ def co_rank(
 
 def co_rank_shared(
     k: Int,
-    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
 ) -> Int:
     """Find the co-rank for shared memory arrays.
@@ -147,9 +147,9 @@ def merge_sequential(
 
 
 def merge_sequential_shared(
-    A: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Int32, _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
 ):
@@ -213,12 +213,12 @@ def merge_tiled_kernel(
     var A_S = unsafe_stack_allocation[
         1024,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var B_S = unsafe_stack_allocation[
         1024,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Figure 13.11: Part 1 - Block-level co-rank

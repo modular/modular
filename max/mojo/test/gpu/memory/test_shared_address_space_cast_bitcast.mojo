@@ -29,7 +29,7 @@ def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
     var smem = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == 0:
@@ -37,7 +37,7 @@ def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
     barrier()
 
     # Erase-then-reinterpret is what triggers the crash.
-    var generic = smem.unsafe_address_space_cast[AddressSpace.GENERIC]()
+    var generic = smem.unsafe_address_space_cast[.GENERIC]()
     var halves = generic.unsafe_bitcast[UInt16]()
 
     if thread_idx.x == 0:

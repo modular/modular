@@ -429,13 +429,13 @@ def load_AB_SFA_SFB[
                 sfa_tma_dtype,
                 sfa_smem_tile.LayoutType,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](
                 rebind[
                     UnsafePointer[
                         Scalar[sfa_tma_dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](sfa_smem_tile.ptr),
                 sfa_smem_tile.layout,
@@ -455,13 +455,13 @@ def load_AB_SFA_SFB[
                 sfb_tma_dtype,
                 sfb_smem_tile.LayoutType,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](
                 rebind[
                     UnsafePointer[
                         Scalar[sfb_tma_dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](sfb_smem_tile.ptr),
                 sfb_smem_tile.layout,
@@ -616,13 +616,13 @@ def _prefetch_weight_tiles[
                     sfb_tma_dtype,
                     sfb_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfb_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfb_smem_tile.ptr),
                     sfb_smem_tile.layout,
@@ -658,13 +658,13 @@ def _prefetch_weight_tiles[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -793,13 +793,13 @@ def _complete_activation_tiles[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -835,13 +835,13 @@ def _complete_activation_tiles[
                     sfb_tma_dtype,
                     sfb_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfb_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfb_smem_tile.ptr),
                     sfb_smem_tile.layout,
@@ -1119,7 +1119,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     ref smem_storage = external_memory[
         UInt8,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
 
@@ -1235,21 +1235,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     )
 
     var ptr_tmem_addr: UnsafePointer[
-        UInt32,
-        origin_of(tmem_addr_storage),
-        address_space=AddressSpace.SHARED,
+        UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
     var clc_full_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
     var clc_empty_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()

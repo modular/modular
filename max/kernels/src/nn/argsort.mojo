@@ -40,7 +40,7 @@ def _argsort_cpu[
     *,
     ascending: Bool = True,
 ](
-    indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[mut=True, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, ...],
 ) raises:
     """
@@ -137,12 +137,12 @@ def _bitonic_local_sort_kernel[
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var shared_idxs = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if gid < _n_arg:
@@ -220,12 +220,12 @@ def _bitonic_merge_local_kernel[
     var shared_vals = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[input_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var shared_idxs = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[indices_dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     shared_vals.unsafe_store(tid, vals.unsafe_load(gid))
@@ -532,7 +532,7 @@ def argsort[
     ascending: Bool = True,
     target: StaticString = "cpu",
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
@@ -565,7 +565,7 @@ def argsort[
 def argsort[
     ascending: Bool = True
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, ...],
 ) raises:
     """

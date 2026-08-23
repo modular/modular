@@ -431,7 +431,7 @@ struct Shuffler[E: Int]:
         ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
 
         # LDS staging: 16 NLane × 4 KLane atoms in their literal slot.
-        var smem = stack_allocation[.uint8, AddressSpace.SHARED](
+        var smem = stack_allocation[.uint8, address_space=.SHARED](
             row_major[Self.MFMA_MN_LANES, Self.MFMA_K_BYTES]()
         )
         var smem_atoms = smem.vectorize[1, Self.MFMA_LANE_BYTES]()
@@ -520,12 +520,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
-        dst: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        raw: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launches the plane-split B preshuffle.
@@ -569,12 +565,8 @@ struct Shuffler[E: Int]:
         N: Int,
         K_BYTES: Int,
     ](
-        raw: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
-        dst: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        raw: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launch the GPU MXFP4 B 5D preshuffle.
@@ -795,21 +787,21 @@ struct Shuffler[E: Int]:
             mut=False,
             DType.uint8,
             SfaRawLayout,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         sfa_pre: TileTensor[
             mut=True,
             DType.uint8,
             SfaPreLayout,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         a_offsets: TileTensor[
             mut=False,
             DType.uint32,
             AOffsetsLayout,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         num_active_experts: Int,

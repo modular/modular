@@ -54,20 +54,20 @@ def test_stmatrix(
         mma_m * mma_k,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         mma_n * mma_k,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var c_shared = unsafe_stack_allocation[
         mma_m * mma_n,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
@@ -120,17 +120,17 @@ def test_stmatrix_gen[
     var d_reg = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = unsafe_stack_allocation[
-        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=.SHARED
     ]()
     var b_shared = unsafe_stack_allocation[
-        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=.SHARED
     ]()
 
     var c_shared = unsafe_stack_allocation[
         M * N,
         accum_type,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     for i in range(lane, M * K, WARP_SIZE):

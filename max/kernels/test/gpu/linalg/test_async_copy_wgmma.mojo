@@ -69,7 +69,7 @@ def cpasync_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -80,7 +80,7 @@ def cpasync_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -113,7 +113,7 @@ def cpasync_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)

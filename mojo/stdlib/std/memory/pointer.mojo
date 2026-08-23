@@ -70,9 +70,9 @@ def _default_invariant[mut: Bool]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _Null[
-    type: AnyType = NoneType, address_space: AddressSpace = AddressSpace.GENERIC
-](Defaultable, Intable, TrivialRegisterPassable):
+struct _Null[type: AnyType = NoneType, address_space: AddressSpace = .GENERIC](
+    Defaultable, Intable, TrivialRegisterPassable
+):
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
@@ -134,7 +134,7 @@ comptime MutPointer[
     T: AnyType,
     origin: MutOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[T, origin, address_space=address_space]
 """A mutable pointer.
 
@@ -150,7 +150,7 @@ comptime ImmPointer[
     T: AnyType,
     origin: ImmOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[T, origin, address_space=address_space]
 """An immutable pointer.
 
@@ -166,7 +166,7 @@ comptime OptionalPointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Optional[Pointer[T, origin, address_space=address_space]]
 """An optional (nullable) `Pointer`.
 
@@ -182,7 +182,7 @@ comptime OpaquePointer[
     //,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[NoneType, origin, address_space=address_space]
 """An opaque pointer, equivalent to the C `(const) void*` type.
 
@@ -195,7 +195,7 @@ Parameters:
 comptime MutOpaquePointer[
     origin: MutOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
 """A mutable opaque pointer, equivalent to the C `void*` type.
 
@@ -207,7 +207,7 @@ Parameters:
 comptime ImmOpaquePointer[
     origin: ImmOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
 """An immutable opaque pointer, equivalent to the C `const void*` type.
 
@@ -229,7 +229,7 @@ struct Pointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](
     Comparable,
     DevicePassable,
@@ -419,10 +419,7 @@ struct Pointer[
     comptime _with_origin[
         with_mut: Bool, //, with_origin: Origin[mut=with_mut]
     ] = Pointer[
-        mut=with_mut,
-        Self.T,
-        with_origin,
-        address_space=Self.address_space,
+        mut=with_mut, Self.T, with_origin, address_space=Self.address_space
     ]
 
     # ===-------------------------------------------------------------------===#
@@ -522,9 +519,7 @@ struct Pointer[
     def __init__(
         other: Pointer,
         out self: Pointer[
-            other.T,
-            ImmOrigin(other.origin),
-            address_space=other.address_space,
+            other.T, ImmOrigin(other.origin), address_space=other.address_space
         ],
     ):
         """Implicitly casts a mutable pointer to immutable.
@@ -1014,11 +1009,7 @@ struct Pointer[
     @always_inline("builtin")
     def __merge_with__[
         other_type: type_of(
-            Pointer[
-                Self.T,
-                origin=_,
-                address_space=Self.address_space,
-            ]
+            Pointer[Self.T, origin=_, address_space=Self.address_space]
         ),
     ](self) -> Pointer[
         T=Self.T,
@@ -2187,9 +2178,7 @@ struct Pointer[
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
                 _type=Pointer[
-                    U,
-                    Self.origin,
-                    address_space=Self.address_space,
+                    U, Self.origin, address_space=Self.address_space
                 ]._mlir_type,
             ](self._mlir_value)
         }
@@ -2204,11 +2193,7 @@ struct Pointer[
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = Pointer[
-        Self.T,
-        target_origin,
-        address_space=Self.address_space,
-    ]
+    ] = Pointer[Self.T, target_origin, address_space=Self.address_space]
 
     @always_inline("nodebug")
     @deprecated(
@@ -2340,11 +2325,7 @@ struct Pointer[
     @always_inline("builtin")
     def unsafe_address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
-    ](self) -> Pointer[
-        Self.T,
-        Self.origin,
-        address_space=target_address_space,
-    ]:
+    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
         """Casts an Pointer to a different address space.
 
         Parameters:
@@ -2366,9 +2347,7 @@ struct Pointer[
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
                 _type=Pointer[
-                    Self.T,
-                    Self.origin,
-                    address_space=target_address_space,
+                    Self.T, Self.origin, address_space=target_address_space
                 ]._mlir_type,
             ](self._mlir_value)
         }
@@ -2378,11 +2357,7 @@ struct Pointer[
     @deprecated(use=unsafe_address_space_cast)
     def address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
-    ](self) -> Pointer[
-        Self.T,
-        Self.origin,
-        address_space=target_address_space,
-    ]:
+    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
         return self.unsafe_address_space_cast[target_address_space]()
 
     @always_inline
@@ -2390,7 +2365,7 @@ struct Pointer[
         self,
     ) where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and conforms_to(Self.T, Deinitable)
     ):
         """Destroys the pointed-to value.
@@ -2409,13 +2384,13 @@ struct Pointer[
           Calling this on a pointer to uninitialized memory is undefined
           behavior.
         """
-        var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
+        var this = self.unsafe_address_space_cast[.GENERIC]()
         _ = __get_address_as_owned_value(this._mlir_value)
 
     @always_inline
     def unsafe_deinit_pointee_with(
         self, deinit_func: Some[def(var Self.T)], /
-    ) where Self.mut and Self.address_space == AddressSpace.GENERIC:
+    ) where Self.mut and Self.address_space == .GENERIC:
         """Destroys the pointed-to value using a user-provided deinitializer
         function.
 
@@ -2436,7 +2411,7 @@ struct Pointer[
           `Self.T`. Calling this on a pointer to uninitialized memory
           is undefined behavior.
         """
-        var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
+        var this = self.unsafe_address_space_cast[.GENERIC]()
         deinit_func(__get_address_as_owned_value(this._mlir_value))
 
     @always_inline
@@ -2444,7 +2419,7 @@ struct Pointer[
         self,
     ) -> Self.T where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and conforms_to(Self.T, Movable)
     ):
         """Move the value at the pointer out, leaving it uninitialized.
@@ -2468,7 +2443,7 @@ struct Pointer[
           `unsafe_write()` method.
         """
         return __get_address_as_owned_value(
-            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         )
 
     @doc_hidden
@@ -2478,7 +2453,7 @@ struct Pointer[
         self,
     ) -> Self.T where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and conforms_to(Self.T, Movable)
     ):
         return self.unsafe_take_pointee()
@@ -2488,7 +2463,7 @@ struct Pointer[
         self,
         *,
         init_with: Some[def() -> Self.T],
-    ) where Self.mut and Self.address_space == AddressSpace.GENERIC:
+    ) where Self.mut and Self.address_space == .GENERIC:
         """Initializes the pointee in place using the value returned by `f`.
 
         The value returned by `init_with` is constructed directly into the pointer's
@@ -2523,7 +2498,7 @@ struct Pointer[
           leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(
-            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         ) = init_with()
 
     @__allow_legacy_custom_self_type
@@ -2567,7 +2542,7 @@ struct Pointer[
         self, var value: Self.T, /
     ) where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and conforms_to(Self.T, Movable)
     ):
         """Write `value` into the pointer location, moving from `value`.
@@ -2604,7 +2579,7 @@ struct Pointer[
           leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(
-            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         ) = (value^)
 
     @always_inline
@@ -2612,7 +2587,7 @@ struct Pointer[
         self, *, copy: Self.T
     ) where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and conforms_to(Self.T, Copyable)
     ):
         """Write a copy of `copy` into the pointer location.
@@ -2636,7 +2611,7 @@ struct Pointer[
           leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(
-            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         ) = copy.copy()
 
     @always_inline
@@ -2644,7 +2619,7 @@ struct Pointer[
         self, src: Pointer[Self.T, _]
     ) where (
         Self.mut
-        and Self.address_space == AddressSpace.GENERIC
+        and Self.address_space == .GENERIC
         and type_of(src).mut
         and conforms_to(Self.T, Movable)
     ):
@@ -2702,7 +2677,7 @@ struct Pointer[
             src: Source pointer that the value will be moved from.
         """
         __get_address_as_uninit_lvalue(
-            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         ) = __get_address_as_owned_value(
-            src.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+            src.unsafe_address_space_cast[.GENERIC]()._mlir_value
         )

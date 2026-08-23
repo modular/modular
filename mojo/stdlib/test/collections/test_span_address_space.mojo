@@ -23,7 +23,7 @@ covered by the GPU launch test in `max/mojo/test/gpu/collections/`.
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 comptime SharedTile = Span[
-    mut=True, Float32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    mut=True, Float32, MutUntrackedOrigin, address_space=.SHARED
 ]
 
 
@@ -38,9 +38,7 @@ struct Vec2(ImplicitlyCopyable, TrivialRegisterPassable):
 # A kernel-style helper restricted to shared-memory tiles.
 def _tile_sum[
     dtype: DType, //
-](tile: Span[Scalar[dtype], _, address_space=AddressSpace.SHARED]) -> Scalar[
-    dtype
-]:
+](tile: Span[Scalar[dtype], _, address_space=.SHARED]) -> Scalar[dtype]:
     var acc = Scalar[dtype](0)
     for i in range(len(tile)):
         acc += tile[i]
@@ -116,7 +114,7 @@ def test_fill_accepts_non_generic_address_space() raises:
     assert_equal(type_of(tile).address_space, AddressSpace.SHARED)
 
     comptime LocalTile = Span[
-        mut=True, UInt8, MutUntrackedOrigin, address_space=AddressSpace.LOCAL
+        mut=True, UInt8, MutUntrackedOrigin, address_space=.LOCAL
     ]
     var local = LocalTile()
     local.fill(0)
@@ -130,7 +128,7 @@ def test_fill_accepts_non_generic_address_space() raises:
 
 def test_fill_accepts_register_passable_structs() raises:
     comptime SharedVecs = Span[
-        mut=True, Vec2, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+        mut=True, Vec2, MutUntrackedOrigin, address_space=.SHARED
     ]
     var vecs = SharedVecs()
     vecs.fill(Vec2(1.0, 2.0))

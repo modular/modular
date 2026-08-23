@@ -301,8 +301,7 @@ struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
             _type=UnsafePointer[
-                Self.element_types[idx], origin_of(self)
-            ]._mlir_type,
+                Self.element_types[idx], origin_of(self)]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 

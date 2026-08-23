@@ -58,9 +58,9 @@ def matmul[
     # op) are unaffected; set it by keyword.
     use_tf32: Bool = True,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates

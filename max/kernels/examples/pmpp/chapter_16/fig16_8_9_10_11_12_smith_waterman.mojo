@@ -83,7 +83,7 @@ def sw_kernel_square(
     var swTile = unsafe_stack_allocation[
         MAX_TILE_WIDTH * MAX_TILE_WIDTH,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var numTiles_x = ceildiv(L - 1, tile_width)

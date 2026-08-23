@@ -516,7 +516,7 @@ def moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[.uint32, address_space=AddressSpace.SHARED](
+    var smem = tensor_alloc[.uint32, address_space=.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -906,10 +906,10 @@ def group_limited_router_kernel[
     var shared_mem = unsafe_stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var selected_group = unsafe_stack_allocation[
-        topk_group, DType.int32, address_space=AddressSpace.SHARED
+        topk_group, DType.int32, address_space=.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
@@ -1214,7 +1214,7 @@ def single_group_router_kernel[
     var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var shared_mem_phase1 = shared_mem
@@ -1431,7 +1431,7 @@ def single_group_router_eplb_kernel[
     var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var shared_mem_phase1 = shared_mem
     var shared_mem_phase2 = shared_mem + phase1_candidates
@@ -1883,13 +1883,13 @@ def eplb_remap_kernel[
     var smem_cnt = unsafe_stack_allocation[
         num_log,
         DType.int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var smem_phy = unsafe_stack_allocation[
         num_log * max_replicas,
         DType.int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     with PDL():

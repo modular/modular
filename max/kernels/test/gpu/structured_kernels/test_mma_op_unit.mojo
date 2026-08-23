@@ -171,11 +171,11 @@ def kernel_mma_QK[
     comptime _FRAG_ELTS = _Op.FRAG_ELTS
 
     # K register tile: shape (KV_BLOCK / MMA_M, DEPTH / MMA_K, FRAG_ELTS).
-    var k_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.K_LAYOUT)
+    var k_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.K_LAYOUT)
     # Q register tile: shape (Q_BLOCK_SIZE / MMA_M, DEPTH / MMA_K, FRAG_ELTS).
-    var q_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.Q_LAYOUT)
+    var q_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.Q_LAYOUT)
     # att register tile: shape (KV_BLOCK / MMA_M, Q_BLOCK_SIZE / MMA_N, 16).
-    var att_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](
+    var att_reg = tt_stack_allocation[.float32, address_space=.LOCAL](
         _Op.ATT_LAYOUT
     )
 
@@ -408,11 +408,13 @@ def kernel_mma_PV[
     # The mma_PV signature lets P be any RegTile[T, layout_p] with
     # matching shapes; we use ATT_BF16_FULL_LAYOUT shape so the layout
     # exactly matches what the production kernel builds.
-    var v_reg = tt_stack_allocation[T, AddressSpace.LOCAL](_Op.V_LAYOUT)
-    var p_reg = tt_stack_allocation[T, AddressSpace.LOCAL](
+    var v_reg = tt_stack_allocation[T, address_space=.LOCAL](_Op.V_LAYOUT)
+    var p_reg = tt_stack_allocation[T, address_space=.LOCAL](
         _Op.ATT_BF16_FULL_LAYOUT
     )
-    var o_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](_Op.O_LAYOUT)
+    var o_reg = tt_stack_allocation[.float32, address_space=.LOCAL](
+        _Op.O_LAYOUT
+    )
 
     var lid = Int(lane_id())
     var row_offset = lid % 32

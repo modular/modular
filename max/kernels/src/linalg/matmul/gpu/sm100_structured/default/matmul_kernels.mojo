@@ -1587,7 +1587,7 @@ struct BlackwellMatmulSM100Kernel[
                     )
                     var src_ptr = (
                         bias_1d_tile._storage + gmem_offset + lane_start
-                    ).address_space_cast[AddressSpace.GLOBAL]()
+                    ).address_space_cast[.GLOBAL]()
                     var dst_ptr = smem_tile._storage + lane_start
                     comptime for chunk in range(num_copies):
                         async_copy[
@@ -1729,7 +1729,7 @@ struct BlackwellMatmulSM100Kernel[
         # Access shared memory via bitcast
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -2260,7 +2260,7 @@ struct BlackwellMatmulSM100Kernel[
         # Access shared memory via bitcast
         ref smem = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -2646,7 +2646,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         var a_smem = rebind[SMemPtr[Scalar[Self.a_type]]](
             external_memory[
                 Scalar[Self.a_type],
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=128,
                 name="tmem_test_dynamic_shared_memory",
             ]()

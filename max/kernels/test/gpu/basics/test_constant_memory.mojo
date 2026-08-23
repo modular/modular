@@ -22,12 +22,8 @@ from std.testing import assert_equal, assert_true
 def test_constant_memory_compile(ctx: DeviceContext) raises:
     def _alloc[
         n: Int
-    ]() -> UnsafePointer[
-        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
-    ]:
-        return unsafe_stack_allocation[
-            n, Float32, address_space=AddressSpace.CONSTANT
-        ]()
+    ]() -> UnsafePointer[Float32, MutUntrackedOrigin, address_space=.CONSTANT]:
+        return unsafe_stack_allocation[n, Float32, address_space=.CONSTANT]()
 
     assert_true(".const .align 4 .b8 " in _compile_code[_alloc[20]]())
     assert_true(
@@ -41,12 +37,8 @@ def test_constant_mem(ctx: DeviceContext) raises:
 
     def _fill_impl[
         n: Int
-    ]() -> UnsafePointer[
-        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
-    ]:
-        var ptr = unsafe_stack_allocation[
-            n, Float32, address_space=AddressSpace.CONSTANT
-        ]()
+    ]() -> UnsafePointer[Float32, MutUntrackedOrigin, address_space=.CONSTANT]:
+        var ptr = unsafe_stack_allocation[n, Float32, address_space=.CONSTANT]()
 
         comptime for i in range(n):
             ptr[i] = Float32(i)
@@ -74,12 +66,8 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     def _fill_impl[
         n: Int
-    ]() -> UnsafePointer[
-        Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
-    ]:
-        var ptr = unsafe_stack_allocation[
-            n, Float32, address_space=AddressSpace.CONSTANT
-        ]()
+    ]() -> UnsafePointer[Float32, MutUntrackedOrigin, address_space=.CONSTANT]:
+        var ptr = unsafe_stack_allocation[n, Float32, address_space=.CONSTANT]()
 
         comptime for i in range(n):
             ptr[i] = Float32(i)
@@ -87,7 +75,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     def static_constant_kernel[
         get_constant_memory: def() thin -> UnsafePointer[
-            Float32, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
+            Float32, MutUntrackedOrigin, address_space=.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = get_constant_memory()
@@ -112,7 +100,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
             16,
             Float32,
             name=StaticString("static_constant"),
-            address_space=AddressSpace.CONSTANT,
+            address_space=.CONSTANT,
             alignment=8,
         ]()
         data[thread_idx.x] = static_constant[thread_idx.x]

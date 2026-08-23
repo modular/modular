@@ -40,11 +40,7 @@ def block_reduce[
     op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: UnsafePointer[
-        Float32,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    shared_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -80,12 +76,12 @@ def softmax_kernel(
     var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var broadcast_slot = unsafe_stack_allocation[
         1,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var row = block_idx.x

@@ -268,12 +268,10 @@ def interpolate_point_1d[
         mut=False,
         dtype,
         InputLayoutType,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Computes one-dimensional interpolation for a single output point along a given dimension.
 
@@ -327,10 +325,8 @@ def resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Resizes input to output shape using linear interpolation.
 
@@ -357,10 +353,8 @@ def _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     comptime assert (
         input.rank == output.rank

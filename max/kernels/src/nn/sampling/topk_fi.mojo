@@ -490,9 +490,7 @@ def device_sampling_from_prob[
     u: Float32,
     prob_vec: SIMD[.float32, vec_size],
     aggregate: Float32,
-    sampled_id_sram: UnsafePointer[
-        mut=True, Int, _, address_space=AddressSpace.SHARED
-    ],
+    sampled_id_sram: UnsafePointer[mut=True, Int, _, address_space=.SHARED],
 ) -> Tuple[Float32, Int]:
     """Device-level sampling from probability distribution with atomic operations.
 
@@ -682,12 +680,12 @@ def _block_reduce_value_count[
     var value_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
         Scalar[T],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var count_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * count_width,
         Int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var warp = warp_id()
@@ -852,10 +850,10 @@ def TopKSamplingFromProbKernel[
             comptime MAX_ITERS = 64
 
             var done_sram = unsafe_stack_allocation[
-                1, Int32, address_space=AddressSpace.SHARED
+                1, Int32, address_space=.SHARED
             ]()
             var out_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
 
             # Initialize control once, uniformly.
@@ -938,10 +936,10 @@ def TopKSamplingFromProbKernel[
             sampled_id = out_id_sram[0]
         else:
             var sampled_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
             var last_valid_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
 
             var probs_vec: SIMD[.float32, vec_size]
@@ -1722,10 +1720,10 @@ def TopKTopPSamplingFromProbKernel[
             comptime MAX_ITERS = 64
 
             var done_sram = unsafe_stack_allocation[
-                1, Int32, address_space=AddressSpace.SHARED
+                1, Int32, address_space=.SHARED
             ]()
             var out_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
 
             # Initialize control once, uniformly.
@@ -1802,10 +1800,10 @@ def TopKTopPSamplingFromProbKernel[
             sampled_id = out_id_sram[0]
         else:
             var sampled_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
             var last_valid_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=AddressSpace.SHARED
+                1, Int, address_space=.SHARED
             ]()
 
             var probs_vec: SIMD[.float32, vec_size]
@@ -2365,17 +2363,15 @@ def topk_softmax_sample_kernel[
     var s_vals = unsafe_stack_allocation[
         _APPLE_STATIC_SHMEM_CACHE_COUNT,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]() if comptime (is_apple_gpu()) else external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Float32](),
     ]()
 
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
-    var s_count = unsafe_stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
+    var s_count = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
     with PDL():
         if tx == 0:
@@ -2481,7 +2477,7 @@ def topk_softmax_sample_kernel[
 
         # Use atomic counter in shared memory for write position.
         var s_write_idx = unsafe_stack_allocation[
-            1, Int32, address_space=AddressSpace.SHARED
+            1, Int32, address_space=.SHARED
         ]()
         if tx == 0:
             s_write_idx[0] = Int32(0)
@@ -2550,11 +2546,9 @@ def topk_softmax_sample[
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    logits: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     sampled_indices: TileTensor[
-        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=.GENERIC, ...
     ],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,

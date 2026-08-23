@@ -758,7 +758,7 @@ def _allreduce_2stage_kernel[
             var target = circular_add[ngpus](_my_rank, i)
             # Skip Signal header.
             tmps[i] = (
-                rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
+                rank_sigs[target].address_space_cast[.GENERIC]() + 1
             ).bitcast[Scalar[dtype]]()
 
         # Current rank's output buffer.

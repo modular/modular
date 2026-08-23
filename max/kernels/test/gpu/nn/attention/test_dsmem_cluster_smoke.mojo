@@ -65,7 +65,7 @@ def dsmem_smoke_kernel[
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
 
     var me = block_rank_in_cluster()

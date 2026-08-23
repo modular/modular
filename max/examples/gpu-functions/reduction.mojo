@@ -51,7 +51,7 @@ def sum_kernel[
     var sums = unsafe_stack_allocation[
         KERNEL_TPB,
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var global_tid = block_idx.x * block_dim.x + thread_idx.x

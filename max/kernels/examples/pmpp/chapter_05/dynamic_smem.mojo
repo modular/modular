@@ -46,15 +46,11 @@ def matrixMulKernel(
     # Allocate shared memory using external_memory (following working pattern)
     # Use max tile size of 32x32 for allocation
     var Mds = rebind[
-        UnsafePointer[
-            Float32,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
+        UnsafePointer[Float32, MutUntrackedOrigin, address_space=.SHARED]
     ](
         external_memory[
             Float32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=16,
             name="shared_dynamic_memory",
         ]()

@@ -861,18 +861,10 @@ def scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[
-        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    indices: TileTensor[
-        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[
-        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    data: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
+    indices: TileTensor[mut=False, indices_type, address_space=.GENERIC, ...],
+    updates: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     context: DeviceContext,
 ) raises:
     """
@@ -1236,18 +1228,10 @@ def scatter_nd[
     //,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[
-        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    indices: TileTensor[
-        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[
-        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    data: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
+    indices: TileTensor[mut=False, indices_type, address_space=.GENERIC, ...],
+    updates: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     context: DeviceContext,
 ) raises:
     """Scatter_nd operation without any reduction.

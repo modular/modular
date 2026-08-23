@@ -783,7 +783,7 @@ struct Matmul2dFp4[
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
         var b_sm = unsafe_stack_allocation[
-            BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
+            BN * BK, Scalar[Self.in_type], address_space=.SHARED
         ]()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 

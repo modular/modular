@@ -73,12 +73,12 @@ def test_interblock_scan(
     var warp_sums = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var prev_block_sum_ptr = unsafe_stack_allocation[
         1,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Block-level scan using warp primitives

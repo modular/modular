@@ -307,11 +307,11 @@ def tiled_matmul_kernel(
 
     # Allocate shared memory tiles for fast on-chip access
     var tile_a_shared = stack_allocation[
-        float_dtype, address_space=AddressSpace.SHARED
+        float_dtype, address_space=.SHARED
     ](tile_a_layout)
 
     var tile_b_shared = stack_allocation[
-        float_dtype, address_space=AddressSpace.SHARED
+        float_dtype, address_space=.SHARED
     ](tile_b_layout)
 
     # Initialize accumulator and start tiling loop

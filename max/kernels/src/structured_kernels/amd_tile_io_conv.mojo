@@ -856,9 +856,7 @@ struct TileLoaderLDSIm2col[
                 multiple of `tile_cols`.
         """
         comptime SmemPtr = Pointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ]
 
         # Absolute GEMM coords for this call. Anchors default to 0, so

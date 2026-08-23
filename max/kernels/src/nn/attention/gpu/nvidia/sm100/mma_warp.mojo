@@ -289,7 +289,7 @@ def fa4_mma[
     @__parameter
     @always_inline
     def _commit(
-        mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+        mbar: UnsafePointer[address_space=.SHARED, ...],
     ):
         """Arrive at mbar: multicast for pair-CTA, local elect for single."""
         comptime if config.pair_cta:

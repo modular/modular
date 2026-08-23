@@ -160,7 +160,7 @@ def block_reduce[
     var shared = unsafe_stack_allocation[
         (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
         dtype,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var warp = warp_id()

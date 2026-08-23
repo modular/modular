@@ -146,7 +146,7 @@ struct Depth512AttentionSMem[
 
         self.base = external_memory[
             UInt8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]().as_unsafe_any_origin()

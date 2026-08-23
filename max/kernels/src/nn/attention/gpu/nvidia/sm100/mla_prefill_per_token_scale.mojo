@@ -589,7 +589,7 @@ __extension SM100MLA:
                         UnsafePointer[
                             Scalar[config.scale_dtype],
                             ImmutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](q_scale_smem)
                 ),
@@ -598,7 +598,7 @@ __extension SM100MLA:
                         UnsafePointer[
                             Scalar[config.scale_dtype],
                             ImmutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](k_scale_smem)
                 ),
@@ -776,13 +776,13 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime RopeMemTensorLT[elems: Int] = TileTensor[
             config.rope_gmem_dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_nope_elems = type_of(q_nope_tma_op).tile_shape[0] * type_of(
             q_nope_tma_op
@@ -796,7 +796,7 @@ __extension SM100MLA:
             config.scale_dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_scale_elems_tma = type_of(q_scale_tma_op).tile_shape[
             0
@@ -950,7 +950,7 @@ __extension SM100MLA:
             Self.KRopeType.dtype,
             type_of(tt_row_major[k_rope_sub_elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
 
         # K_rope shared closure. Bytes are accounted by the caller on
@@ -2005,23 +2005,15 @@ def mla_sm100_prefill_per_token_scale[
     _ndbuffer_mha_operand: Bool,
     v_depth: Int = -1,
 ](
-    output: TileTensor[
-        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    q_nope: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: LayoutTensor[
-        rope_dtype, _, address_space=AddressSpace.GENERIC, ...
-    ],
-    q_scale: LayoutTensor[
-        scale_dtype, _, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q_nope: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    q_rope: LayoutTensor[rope_dtype, _, address_space=.GENERIC, ...],
+    q_scale: LayoutTensor[scale_dtype, _, address_space=.GENERIC, ...],
     k_nope: KType,
     k_rope: KRopeType,
     v: VType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,

@@ -290,10 +290,8 @@ def resize_bicubic[
     //,
     target: StaticString,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.

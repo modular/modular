@@ -54,12 +54,8 @@ def _get_rightmost_broadcast_axis[
 def broadcast[
     dtype: DType,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -109,12 +105,8 @@ def broadcast_impl[
     dtype: DType,
 ](
     axis: Int,
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `comptime assert` to keep in bound
     input_prev_axis_stride: Int,
@@ -195,12 +187,12 @@ def _tile_1d[
     init_dst_ptr: MutPointer[
         Scalar[dtype],
         _,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ],
     src_ptr: ImmPointer[
         Scalar[dtype],
         _,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
     tile_num_elems: Int,

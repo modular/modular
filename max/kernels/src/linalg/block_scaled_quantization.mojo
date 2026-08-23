@@ -121,15 +121,11 @@ def quantize_dynamic_scaled_fp4fp8[
     num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
-    output_tile: TileTensor[
-        mut=True, out_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output_tile: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     scales_tile: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
-    input_tile: TileTensor[
-        mut=False, in_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tile: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
@@ -424,10 +420,10 @@ def block_scales_interleave_fp4[
 ](
     ctx: DeviceContext,
     input_scales_tile: TileTensor[
-        mut=False, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, scales_dtype, address_space=.GENERIC, ...
     ],
     output_scales_tile: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
 ) raises:
     """Launches the SM100 kernel that reinterleaves rank-2 scale factors into the 5D TCGEN layout.
@@ -566,15 +562,11 @@ def naive_block_scaled_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
-    c: LayoutTensor[c_type, address_space=AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: LayoutTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: LayoutTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[c_type, address_space=.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space=.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space=.GENERIC, ...],
+    a_scales: LayoutTensor[a_scales_type, address_space=.GENERIC, ...],
+    b_scales: LayoutTensor[b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -756,15 +748,11 @@ def naive_block_scaled_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-    a_scales: TileTensor[
-        a_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        b_scales_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[a_type, address_space=.GENERIC, ...],
+    b: TileTensor[b_type, address_space=.GENERIC, ...],
+    a_scales: TileTensor[a_scales_type, address_space=.GENERIC, ...],
+    b_scales: TileTensor[b_scales_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -1010,15 +998,11 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         tensor_sf: Tensor-wise scale factor applied to the quantization.
     """
     var smem_storage = rebind[
-        UnsafePointer[
-            Scalar[input_dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
+        UnsafePointer[Scalar[input_dtype], MutAnyOrigin, address_space=.SHARED]
     ](
         external_memory[
             Scalar[input_dtype],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]()
     )
@@ -1061,7 +1045,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         input_dtype,
         Layout.row_major(input_tile_shape),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](
         input_smem_ptr,
@@ -1072,7 +1056,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         output_dtype,
         Layout.row_major(output_tile_shape),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](
         output_smem_ptr,
@@ -1082,7 +1066,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         scales_dtype,
         Layout.row_major(scales_tile_shape),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](
         scales_smem_ptr,
@@ -1249,13 +1233,13 @@ def quantize_dynamic_scaled_fp4_async[
 ](
     ctx: DeviceContext,
     output_tensor_tile: TileTensor[
-        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=.GENERIC, ...
     ],
     scales_tensor_tile: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
     input_tensor_tile: TileTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, input_dtype, address_space=.GENERIC, ...
     ],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
@@ -1570,7 +1554,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         scales_smem_tile_size,
         Scalar[scales_dtype],
         alignment=128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var scales_smem = TileTensor(
@@ -1686,25 +1670,23 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     //,
 ](
     output_tensor: TileTensor[
-        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=.GENERIC, ...
     ],
     scales_tensor: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
     input_tensor: TileTensor[
-        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, input_dtype, address_space=.GENERIC, ...
     ],
     row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
     scales_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=.GENERIC, ...
     ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
     sf_tensor: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.float32, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -2008,20 +1990,14 @@ def block_scaled_matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c_device: TileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_device: TileTensor[
-        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_device: TileTensor[
-        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_device: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a_device: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b_device: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
     a_scales_device: TileTensor[
-        mut=False, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, scales_dtype, address_space=.GENERIC, ...
     ],
     b_scales_device: TileTensor[
-        mut=False, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, scales_dtype, address_space=.GENERIC, ...
     ],
     tensor_sf: Float32,
     ctx: DeviceContext,
@@ -2334,15 +2310,11 @@ def quantize_dynamic_block_scaled[
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
 ](
-    output_device: TileTensor[
-        mut=True, out_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     scales_device: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
-    input_device: TileTensor[
-        mut=False, in_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_device: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
@@ -2502,10 +2474,10 @@ def block_scales_interleave[
     target: StaticString = "cpu",
 ](
     output_scales_device: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
     input_scales_device: TileTensor[
-        mut=False, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=False, scales_dtype, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -2714,15 +2686,11 @@ def quantize_mx_amd[
     num_max_threads: Int = 512,
 ](
     ctx: DeviceContext,
-    output_tile: TileTensor[
-        mut=True, out_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output_tile: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
     scales_tile: TileTensor[
-        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, scales_dtype, address_space=.GENERIC, ...
     ],
-    input_tile: TileTensor[
-        mut=False, in_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tile: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
 ) raises:
     """Quantize BF16 activations to MXFP4 or MXFP8 on AMD CDNA4 (MI355X).
 

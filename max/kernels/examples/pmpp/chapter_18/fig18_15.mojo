@@ -51,12 +51,12 @@ def bfs_kernel(
     var curr_frontier_s = unsafe_stack_allocation[
         PRIVATE_FRONTIER_CAPACITY,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var num_curr_frontier_s = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == 0:
@@ -100,7 +100,7 @@ def bfs_kernel(
     var start_idx_ptr = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     if thread_idx.x == 0:
         var local_count = Int(num_curr_frontier_s[0])

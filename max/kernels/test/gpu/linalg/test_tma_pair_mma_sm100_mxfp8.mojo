@@ -170,9 +170,7 @@ def blockscaled_pair_cta_mxfp8[
         MMA_N, BK, MXFP8_SF_VECTOR_SIZE
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -200,7 +198,7 @@ def blockscaled_pair_cta_mxfp8[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
@@ -208,7 +206,7 @@ def blockscaled_pair_cta_mxfp8[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -216,7 +214,7 @@ def blockscaled_pair_cta_mxfp8[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_scales_smem.as_unsafe_any_origin())
 
@@ -224,7 +222,7 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_scales_smem.as_unsafe_any_origin())
 

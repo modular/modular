@@ -79,10 +79,7 @@ def _manual_copy[
     dram_src_ptr: UnsafePointer[Scalar[dtype], ...],
     dram_dst_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     smem_ptr: UnsafePointer[
-        mut=True,
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        ...,
+        mut=True, Scalar[dtype], address_space=.SHARED, ...
     ],
 ):
     """Copies one leg manually using the benchmark's per-thread layout."""
@@ -121,7 +118,7 @@ def _tile_io_copy[
 ):
     comptime thread_layout = row_major(Idx[thread_rows], Idx[thread_cols])
 
-    var smem = stack_allocation[dtype=dtype, address_space=AddressSpace.SHARED](
+    var smem = stack_allocation[dtype=dtype, address_space=.SHARED](
         row_major[M, N]()
     ).vectorize[1, simd_size]()
 
@@ -181,7 +178,7 @@ def _layout_tensor_copy[
         dtype,
         tensor_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     comptime if layout_tensor_dram_to_sram:

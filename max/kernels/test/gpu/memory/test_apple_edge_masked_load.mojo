@@ -50,7 +50,7 @@ def _general_kernel(
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var src = (in_ptr + base).address_space_cast[AddressSpace.GLOBAL]()
+    var src = (in_ptr + base).address_space_cast[.GLOBAL]()
     var v = edge_masked_load[4](src, mask)
     (out_ptr + lane * OUT_COLS).store(v)
 

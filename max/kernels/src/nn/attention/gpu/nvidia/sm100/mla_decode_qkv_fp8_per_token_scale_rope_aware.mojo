@@ -407,7 +407,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -452,7 +452,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Q_nope FP8: 64 × 512 × 1 = 32768 bytes (SWIZZLE_64B)
         var q_nope_smem = external_memory[
             Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -796,7 +796,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_nope_elems = type_of(q_nope_tma).tile_shape[0] * type_of(
             q_nope_tma

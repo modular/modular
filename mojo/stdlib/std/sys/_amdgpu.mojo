@@ -58,9 +58,9 @@ struct amd_signal_t(Copyable):
 @always_inline
 def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
     var mb = sig[].event_mailbox_ptr
-    if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
+    if Int(mb) != Int(_Null[address_space=.GLOBAL]()):
         var mb_ptr = Pointer[
-            UInt64, UntrackedOrigin[mut=True], address_space=AddressSpace.GLOBAL
+            UInt64, UntrackedOrigin[mut=True], address_space=.GLOBAL
         ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[.uint64]()
         Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
@@ -70,11 +70,7 @@ def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
 @always_inline
 def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = Pointer(to=sig).unsafe_bitcast[
-        Pointer[
-            amd_signal_t,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.GLOBAL,
-        ]
+        Pointer[amd_signal_t, MutUntrackedOrigin, address_space=.GLOBAL]
     ]()[]
     _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
         Pointer(to=s[].value), value
@@ -521,9 +517,7 @@ def printf_append_string_n(
 
 @fieldwise_init
 struct Header(TrivialRegisterPassable):
-    var _handle: Pointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     def fill_packet(
         mut self,
@@ -636,9 +630,7 @@ struct payload_t(Copyable):
 
 @fieldwise_init
 struct Buffer(TrivialRegisterPassable):
-    var _handle: Pointer[
-        buffer_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     @always_inline
     def get_header(self, ptr: UInt64) -> Header:
@@ -728,9 +720,7 @@ struct Buffer(TrivialRegisterPassable):
 # this code tries to access.
 @fieldwise_init
 struct buffer_t(Copyable, TrivialRegisterPassable):
-    var headers: Pointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var headers: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
     var payloads: Pointer[payload_t, MutUntrackedOrigin]
     var doorbell: UInt64
     var free_stack: UInt64
@@ -868,11 +858,7 @@ def hostcall(
     """
     var buffer = Buffer(
         implicitarg_ptr().unsafe_bitcast[
-            Pointer[
-                buffer_t,
-                MutUntrackedOrigin,
-                address_space=AddressSpace.GLOBAL,
-            ]
+            Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
         ]()[unsafe_offset=10]
     )
 
