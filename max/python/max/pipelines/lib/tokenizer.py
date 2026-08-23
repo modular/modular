@@ -593,9 +593,10 @@ class TextTokenizer(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Sometimes, encoded comes in as an int so, make it np array
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Callers pass plain ints (log-probability responses) and token lists
+        # (CLI streaming) as well as arrays; normalize them all.
+        if not isinstance(encoded, np.ndarray):
+            encoded = np.asarray(encoded)
 
         # There is an issue where Llama tokenizer strips leading spaces
         # if a single token is decoded at a time. This is a temporary

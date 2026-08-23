@@ -486,7 +486,20 @@ class ArchLookup:
             return
         for module, symbol, package in entries:
             imported = importlib.import_module(module, package)
-            self.register(getattr(imported, symbol))
+            architecture = getattr(imported, symbol)
+            existing = self.architectures.get(architecture.name)
+            if existing is not None and existing.task == architecture.task:
+                # An architecture registered eagerly under this name (e.g. via
+                # --custom-architectures) takes precedence over the deferred
+                # built-in.
+                logger.debug(
+                    "Skipping lazy registration of built-in architecture "
+                    "'%s': an architecture with that name is already "
+                    "registered.",
+                    architecture.name,
+                )
+                continue
+            self.register(architecture)
 
     def import_custom_architectures(
         self, custom_architectures: list[str]

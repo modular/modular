@@ -54,6 +54,7 @@ modular_py_test(
         requirement("pydantic"),
         requirement("pytest-mock"),
         requirement("pyyaml"),
+        requirement("transformers"),
     ],
 )
 
