@@ -482,6 +482,27 @@ def once[
         emit()
 
 
+@always_inline
+def _num_outputs_excluding_axis[axis: Int](shape: IndexList) -> Int:
+    """Product of `shape`'s dims other than `axis`.
+
+    `total_size // axis_size` cannot supply that count when the reduce
+    axis is empty (`axis_size == 0`). Not because it faults: Mojo's `//`
+    inserts a zero-guard, so `0 // 0` yields `0` — indistinguishable from
+    the `0` a shape with no rows at all produces, which is exactly why an
+    empty axis used to read as "nothing to do". A reduce-shaped body still
+    owns one output per row when the axis is empty (the monoid identity,
+    from an axis walk of zero elements), so `launch` counts outputs
+    without dividing by the (possibly empty) axis. Mirrors
+    `gpu.rowwise._num_rows_excluding_axis`.
+    """
+    var num_outputs = 1
+    comptime for i in range(shape.size):
+        if i != axis:
+            num_outputs *= shape[i]
+    return num_outputs
+
+
 # ===-----------------------------------------------------------------------===#
 # `launch` — top-level CPU scaffolder.
 # ===-----------------------------------------------------------------------===#
@@ -540,9 +561,16 @@ def launch[
     var shape_il = coord_to_index_list(shape)
     var axis_size = shape_il[axis]
     var total_size = shape_il.flattened_length()
-    if total_size == 0 or axis_size == 0:
+    # `num_outputs` is the product of every dim other than `axis`, so it
+    # stays well-defined when the reduce axis itself is empty
+    # (`axis_size == 0`) — unlike `total_size // axis_size`, which is a
+    # `0 // 0` form in that case. A reduce-shaped body still owns one
+    # output per row when the axis is empty (the monoid identity), so
+    # only `num_outputs == 0` (no rows at all) means there is truly
+    # nothing to run.
+    var num_outputs = _num_outputs_excluding_axis[axis](shape_il)
+    if num_outputs == 0:
         return
-    var num_outputs = total_size // axis_size
 
     var num_workers = _get_num_workers(total_size)
 
@@ -671,7 +699,12 @@ def launch[
     else:
         comptime inner_axis = rank - 1
         var inner_dim = shape_il[inner_axis]
-        var slice_size = total_size // (axis_size * inner_dim)
+        # `num_outputs // inner_dim` rather than `total_size // (axis_size *
+        # inner_dim)`: the latter is `0 // 0` when `axis_size == 0`.
+        # `inner_dim` is one of the dims `num_outputs` multiplies over (it
+        # isn't `axis` in this non-inner-axis branch), so `num_outputs > 0`
+        # (checked above) guarantees `inner_dim > 0` here.
+        var slice_size = num_outputs // inner_dim
         var chunk = ceildiv(slice_size, num_workers)
 
         # NON-inner axis. Two sub-tiers, mirroring the GPU non-inner split:

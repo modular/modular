@@ -847,6 +847,15 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`
+  where that axis has length `0` — leaving their output unwritten, along with
+  anything fused into the reduction's epilogue. Each now writes its identity:
+  `0` for `sum`, `1` for `prod`, the dtype's minimum for `max` and its maximum
+  for `min`, index `0` for `argmax` and `argmin`, and NaN for floating-point
+  `mean` (as `numpy.mean` reports). Integer `mean` returns `0`. Note that
+  `max`, `min`, `argmax`, and `argmin` return an identity here rather than
+  raising the way numpy does.
+
 - Fixed run-to-run nondeterminism of `layer_norm`, `rms_norm`, and other
   Row-API rowwise reductions on Apple Silicon GPUs: a block that reduced
   several rows re-used its shared-memory strip across row iterations
