@@ -93,8 +93,8 @@ def _pack_k_kernel[
     broadcast_out: TileTensor[DType.float32, BroadcastLayout, MutAnyOrigin],
 ):
     var lane = lane_id()
-    var a_frag = SIMD[DType.uint8, 16](UInt8(0x21))
-    var b_frag = SIMD[DType.uint8, 16](UInt8(0x12))
+    var a_frag = SIMD[.uint8, 16](UInt8(0x21))
+    var b_frag = SIMD[.uint8, 16](UInt8(0x12))
 
     var packed_a = _packed_scale_word(1.0, 2.0, 4.0, 8.0)
     var packed_b = _broadcast_scale_word(1.0)
@@ -105,10 +105,10 @@ def _pack_k_kernel[
     var bcast_a3 = _broadcast_scale_word(8.0)
 
     # 4 MFMAs against the packed word with byte indices 0..3 on the A side.
-    var packed_acc0 = SIMD[DType.float32, 4](0.0)
-    var packed_acc1 = SIMD[DType.float32, 4](0.0)
-    var packed_acc2 = SIMD[DType.float32, 4](0.0)
-    var packed_acc3 = SIMD[DType.float32, 4](0.0)
+    var packed_acc0 = SIMD[.float32, 4](0.0)
+    var packed_acc1 = SIMD[.float32, 4](0.0)
+    var packed_acc2 = SIMD[.float32, 4](0.0)
+    var packed_acc3 = SIMD[.float32, 4](0.0)
 
     cdna4_block_scaled_mfma[
         0,
@@ -137,10 +137,10 @@ def _pack_k_kernel[
 
     # Reference: same 4 MFMAs but each with a broadcast scale word
     # whose byte 0 holds the corresponding scale value.
-    var bcast_acc0 = SIMD[DType.float32, 4](0.0)
-    var bcast_acc1 = SIMD[DType.float32, 4](0.0)
-    var bcast_acc2 = SIMD[DType.float32, 4](0.0)
-    var bcast_acc3 = SIMD[DType.float32, 4](0.0)
+    var bcast_acc0 = SIMD[.float32, 4](0.0)
+    var bcast_acc1 = SIMD[.float32, 4](0.0)
+    var bcast_acc2 = SIMD[.float32, 4](0.0)
+    var bcast_acc3 = SIMD[.float32, 4](0.0)
 
     cdna4_block_scaled_mfma[
         0,

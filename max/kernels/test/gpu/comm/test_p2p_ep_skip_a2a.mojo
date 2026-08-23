@@ -203,9 +203,9 @@ def test_skip_a2a[
     @__copy_capture(router_weights_tt)
     def router_weights_fn[
         width: Int
-    ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
         var w = router_weights_tt.load[width=1]((token_idx, topk_id))
-        return SIMD[DType.float32, width](w)
+        return SIMD[.float32, width](w)
 
     # --- Run fused dispatch ---
     ep_fused_dispatch_kernel_api[

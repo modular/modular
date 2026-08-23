@@ -96,7 +96,7 @@ def _mojo_block_hasher[
         var token_hash = hash[default_comp_time_hasher](
             hash_ptr_bytes, num_bytes
         )
-        var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
+        var pair_to_hash = SIMD[.uint64, 2](prev_hash, token_hash)
         var curr_hash = hash[default_comp_time_hasher](pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.

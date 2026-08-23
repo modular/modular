@@ -42,7 +42,7 @@ def test_simd_f32_to_ue8m0():
 
     comptime M = 32
 
-    var f32_simd = SIMD[DType.float32, M](0.0)
+    var f32_simd = SIMD[.float32, M](0.0)
 
     var i = 0
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x3FFFFF))
@@ -97,7 +97,7 @@ def test_simd_f32_to_ue8m0():
 def test_simd_ue8m0_to_f32():
     print("== test_simd_ue8m0_to_f32")
 
-    var f32_simd = SIMD[DType.float32, 8](
+    var f32_simd = SIMD[.float32, 8](
         1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
     )
 
@@ -111,7 +111,7 @@ def test_simd_f32_to_ue8m0_ptx_kernel[
     size: Int,
     target: DType,
     idx: Int,
-](x: SIMD[DType.float32, size]):
+](x: SIMD[.float32, size]):
     var x_casted = _convert_f32_to_float8_ue8m0[target](x)
 
     for i in range(idx):
@@ -144,7 +144,7 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
 
     comptime M = 32
 
-    var f32_simd = SIMD[DType.float32, M](0.0)
+    var f32_simd = SIMD[.float32, M](0.0)
 
     var i = 0
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x3FFFFF))
@@ -194,7 +194,7 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
 def test_simd_ue8m0_to_f32_ptx_kernel[
     size: Int,
     target: DType,
-](x: SIMD[DType.float8_e8m0fnu, size]):
+](x: SIMD[.float8_e8m0fnu, size]):
     var x_casted_to_fp32 = x.cast[target]()
     print(x_casted_to_fp32)
 
@@ -204,7 +204,7 @@ def test_simd_ue8m0_to_f32_ptx_kernel[
 def test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_ue8m0_to_f32_ptx_path")
 
-    var f32_simd = SIMD[DType.float32, 8](
+    var f32_simd = SIMD[.float32, 8](
         1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
     )
 

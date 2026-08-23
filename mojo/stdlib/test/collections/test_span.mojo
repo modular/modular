@@ -351,7 +351,7 @@ def test_apply() raises:
         def _twice[w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:
             return x * 2
 
-        def _where[w: SIMDLength](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+        def _where[w: SIMDLength](x: SIMD[D, w]) -> SIMD[.bool, w]:
             return (x % 2).eq(0)
 
         var items: List[Scalar[D]] = [
@@ -405,7 +405,7 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[w: SIMDLength](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDLength](v: SIMD[.uint8, w]) -> SIMD[.bool, w]:
         return v.eq(2)
 
     var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])

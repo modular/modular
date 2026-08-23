@@ -78,7 +78,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
     _ = self.y+arg.x
 
 def inferred_function_with_memory_result[
-  width: SIMDLength](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
+  width: SIMDLength](x: SIMD[.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.fn @"memoryOnlyOps
 def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -138,7 +138,7 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
-  _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
+  _ = inferred_function_with_memory_result(SIMD[.float32, 4]())
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
@@ -710,7 +710,7 @@ def patterns():
   # CHECK: %someSIMD = lit.var.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
   # CHECK: {{%.*}} = lit.call {{.*}}@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
-  var someSIMD : SIMD[DType.float64, 4]
+  var someSIMD : SIMD[.float64, 4]
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none

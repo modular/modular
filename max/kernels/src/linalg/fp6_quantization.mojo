@@ -103,7 +103,7 @@ def _quantize_mxfp6_amd_kernel[
 
             var codes = encode_f32_to_fp6[fmt](data * out_scale)
 
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             comptime for g in range(ELEMENTS_PER_THREAD // 4):
                 var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
                 comptime for b in range(3):

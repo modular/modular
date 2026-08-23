@@ -90,7 +90,7 @@ from std.utils.static_tuple import StaticTuple
 from .smem import SM100AttentionSMem
 
 
-comptime f32x2 = SIMD[DType.float32, 2]
+comptime f32x2 = SIMD[.float32, 2]
 
 
 @always_inline
@@ -651,7 +651,7 @@ def fa4_ws_intracta_combine[
     var col0 = g * own_cols
     comptime for ob in range(own_oblocks):
         var oblk = (col0 // o_sw_K) + ob  # global output-block index
-        var packed = SIMD[DType.uint32, 4]()
+        var packed = SIMD[.uint32, 4]()
         comptime for sb in range(sub):
             var sblk = oblk * sub + sb  # global stage-block index
             comptime for hc in range(2):  # two f32x2 halves per stage-block
@@ -995,7 +995,7 @@ def fa4_ws_level2_reduce_scatter_write[
         var col0 = g * own_cols
         comptime for ob in range(own_oblocks):
             var oblk = (col0 // o_sw_K) + ob  # global output-block index
-            var packed = SIMD[DType.uint32, 4]()
+            var packed = SIMD[.uint32, 4]()
             comptime for sb in range(sub):
                 comptime lsblk = ob * sub + sb  # local stage-block within band
                 var sblk = g * own_sblocks + lsblk  # global stage-block
@@ -1388,7 +1388,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         comptime col0 = gg * own_cols
                         comptime for ob in range(own_oblocks):
                             comptime oblk = (col0 // o_sw_K) + ob
-                            var packed = SIMD[DType.uint32, 4]()
+                            var packed = SIMD[.uint32, 4]()
                             comptime for sb in range(sub):
                                 comptime lsblk = ob * sub + sb
                                 comptime for hc in range(2):
@@ -1824,7 +1824,7 @@ def fa4_splitk_combine_write[
         gsum = gsum + w[p]
     var inv_gsum = recip(gsum)
     comptime for p in range(0, P, 2):
-        var wp = SIMD[DType.float32, 2](w[p], w[p + 1]) * inv_gsum
+        var wp = SIMD[.float32, 2](w[p], w[p + 1]) * inv_gsum
         w[p] = wp[0]
         w[p + 1] = wp[1]
 

@@ -235,7 +235,7 @@ def kernel_pv_chain[
     var o_v = o_reg.vectorize[1, 1, 16]()
     comptime for n in range(_OH):
         comptime for m in range(_OW):
-            o_v[n, m, 0] = SIMD[DType.float32, 16](0.0)
+            o_v[n, m, 0] = SIMD[.float32, 16](0.0)
 
     _Op.mma_PV(o_reg, v_reg, p_reg)
 

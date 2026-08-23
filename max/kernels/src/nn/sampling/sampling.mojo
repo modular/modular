@@ -206,7 +206,7 @@ def update_frequency_data_kernel[
     for scan_idx in range(num_scans):
         var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
 
-        var val = SIMD[DType.int32, simd_width](0)
+        var val = SIMD[.int32, simd_width](0)
 
         comptime for i in range(simd_width):
             if tok_idx + i < tok_end:
@@ -216,11 +216,11 @@ def update_frequency_data_kernel[
 
         var if_found = val.eq(new_token).select(
             iota[DType.int32, simd_width](Int32(tok_idx)),
-            SIMD[DType.int32, simd_width](Int32.MIN_FINITE),
+            SIMD[.int32, simd_width](Int32.MIN_FINITE),
         )
         var first_padding_idx = val.eq(PADDING_TOKEN).select(
             iota[DType.int32, simd_width](Int32(tok_idx)),
-            SIMD[DType.int32, simd_width](Int32.MAX_FINITE),
+            SIMD[.int32, simd_width](Int32.MAX_FINITE),
         )
 
         var target_token_idx = block.max[block_size=block_size, broadcast=True](

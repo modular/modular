@@ -646,10 +646,10 @@ struct MLAPrefillSparse[
                 var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
-                var vscale = SIMD[DType.float32, 2](scale_log2e)
-                var vneg_max = SIMD[DType.float32, 2](-new_max)
+                var vscale = SIMD[.float32, 2](scale_log2e)
+                var vneg_max = SIMD[.float32, 2](-new_max)
                 comptime for j in range(P_PER_THREAD // 2):
-                    var pj = SIMD[DType.float32, 2](
+                    var pj = SIMD[.float32, 2](
                         p[2 * j],
                         p[2 * j + 1],
                     )
@@ -1073,7 +1073,7 @@ struct MLAPrefillSparse[
             address_space=AddressSpace.SHARED,
             ...,
         ],
-        local_indices: Array[SIMD[DType.int32, 4], num_rows],
+        local_indices: Array[SIMD[.int32, 4], num_rows],
         warp_idx: UInt32,
     ):
         # layout for complying to 128B swizzle atom
@@ -1246,7 +1246,7 @@ struct MLAPrefillSparse[
             Self.config.B_TOPK // Self.config.cta_group
         ) // 4 // num_warps
 
-        var local_indices = Array[SIMD[DType.int32, 4], num_rows_per_warp](
+        var local_indices = Array[SIMD[.int32, 4], num_rows_per_warp](
             uninitialized=True
         )
         var max_idx: Int32 = -1

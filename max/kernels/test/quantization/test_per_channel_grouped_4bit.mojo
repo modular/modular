@@ -22,7 +22,7 @@ from std.utils import IndexList
 
 
 def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
-    var uniform = SIMD[DType.float32, group_size]()
+    var uniform = SIMD[.float32, group_size]()
     for i in range(group_size):
         uniform[i] = Float32(i)
     uniform -= Float32(group_size // 2)
@@ -32,9 +32,9 @@ def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var skew_slightly_pos = uniform + 1.842
     var skew_slightly_neg = uniform - 1.842
     var big_range = uniform * 1000
-    var unitary = SIMD[DType.float32, group_size](1.0)
+    var unitary = SIMD[.float32, group_size](1.0)
 
-    def run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
+    def run_fake_quant(input_vec: SIMD[.float32, group_size]) -> Bool:
         var packed_result = Q4sym[group_size, DType.float32](input_vec)
         var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)

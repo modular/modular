@@ -315,7 +315,7 @@ struct Pointer[
 
     var allocation = alloc(Layout[Int32](count=8))
     var ptr = allocation.unsafe_ptr()
-    var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
+    var vec = SIMD[.int32, 4](1, 2, 3, 4)
     ptr.unsafe_store(0, vec)
     var out = ptr.unsafe_load[width=4](0)
     print(out)  # => [1, 2, 3, 4]
@@ -1373,7 +1373,7 @@ struct Pointer[
 
         var allocation = alloc(Layout[Int32](count=8))
         var p = allocation.unsafe_ptr()
-        p.unsafe_store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
+        p.unsafe_store(0, SIMD[.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
         print(v)  # => [1, 2, 3, 4]
         dealloc(allocation^)
@@ -1740,7 +1740,7 @@ struct Pointer[
 
         var allocation = alloc(Layout[Float32](count=4))
         var p = allocation.unsafe_ptr()
-        var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+        var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.unsafe_store(vec)
         var out = p.unsafe_load[width=4]()
         print(out)  # => [1.0, 2.0, 3.0, 4.0]
@@ -1898,9 +1898,7 @@ struct Pointer[
           This is not checked, so an out-of-bounds `stride` or `width` is
           undefined behavior.
         """
-        return strided_load(
-            self, Int(stride), SIMD[DType.bool, width](fill=True)
-        )
+        return strided_load(self, Int(stride), SIMD[.bool, width](fill=True))
 
     @__allow_legacy_custom_self_type
     @doc_hidden
@@ -1941,9 +1939,7 @@ struct Pointer[
           for `dtype`. This is not checked, so an out-of-bounds `stride` or
           `width` is undefined behavior.
         """
-        strided_store(
-            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
-        )
+        strided_store(val, self, Int(stride), SIMD[.bool, width](fill=True))
 
     @__allow_legacy_custom_self_type
     @doc_hidden
@@ -1972,7 +1968,7 @@ struct Pointer[
     ](
         self: Pointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
     ) -> SIMD[dtype, width]:
         """Gathers a SIMD vector from offsets of the current pointer.
@@ -2036,8 +2032,8 @@ struct Pointer[
             return result
 
         var base = offset.cast[DType.int]().fma(
-            SIMD[DType.int, width](size_of[dtype]()),
-            SIMD[DType.int, width](Int(self)),
+            SIMD[.int, width](size_of[dtype]()),
+            SIMD[.int, width](Int(self)),
         )
         return gather[alignment=alignment](base, mask, default)
 
@@ -2054,7 +2050,7 @@ struct Pointer[
     ](
         self: Pointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
     ) -> SIMD[dtype, width]:
         return self.unsafe_gather[alignment=alignment](offset, mask, default)
@@ -2071,7 +2067,7 @@ struct Pointer[
         self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
     ):
         """Scatters a SIMD vector into offsets of the current pointer.
 
@@ -2131,8 +2127,8 @@ struct Pointer[
             return
 
         var base = offset.cast[DType.int]().fma(
-            SIMD[DType.int, width](size_of[dtype]()),
-            SIMD[DType.int, width](Int(self)),
+            SIMD[.int, width](size_of[dtype]()),
+            SIMD[.int, width](Int(self)),
         )
         scatter[alignment=alignment](val, base, mask)
 
@@ -2150,7 +2146,7 @@ struct Pointer[
         self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
     ):
         self.unsafe_scatter[alignment=alignment](offset, val, mask)
 

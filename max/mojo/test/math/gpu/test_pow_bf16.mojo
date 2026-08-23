@@ -53,10 +53,10 @@ def run_elementwise[
             .unsafe_load[width=simd_width](idx)
             .cast[DType.bfloat16]()
         )
-        var result: SIMD[DType.bfloat16, simd_width]
+        var result: SIMD[.bfloat16, simd_width]
 
         comptime if do_bfloat_exp:
-            result = val ** SIMD[DType.bfloat16, simd_width](exponent)
+            result = val ** SIMD[.bfloat16, simd_width](exponent)
         else:
             result = val**exponent
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](

@@ -53,7 +53,7 @@ from std.memory import bitcast
 def test_e4m3fnuz_initialization():
     print("== test_e4m3fnuz_initialization")
 
-    var simd_e4m3fnuz = SIMD[DType.float8_e4m3fnuz, 256](
+    var simd_e4m3fnuz = SIMD[.float8_e4m3fnuz, 256](
         0.0,
         0.0009765625,
         0.001953125,
@@ -319,7 +319,7 @@ def test_e4m3fnuz_initialization():
 
 
 def test_simd_e4m3fnuz_to_float[target: DType]():
-    var float8_simd = SIMD[DType.float8_e4m3fnuz, 256](0.0)
+    var float8_simd = SIMD[.float8_e4m3fnuz, 256](0.0)
     for i in range(256):
         float8_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
 
@@ -516,7 +516,7 @@ def test_simd_f32_to_e4m3fnuz():
     print("== test_simd_f32_to_e4m3fnuz")
 
     comptime M = 512
-    var f32_simd = SIMD[DType.float32, M](0.0)
+    var f32_simd = SIMD[.float32, M](0.0)
 
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
@@ -566,7 +566,7 @@ def test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3fnuz_to_f32_ptx_path")
 
     comptime M = 256
-    var e4m3_simd = SIMD[DType.float8_e4m3fnuz, M](0.0)
+    var e4m3_simd = SIMD[.float8_e4m3fnuz, M](0.0)
     for i in range(M):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
 
@@ -578,7 +578,7 @@ def test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
 def test_simd_float32[
     size: Int,
     target: DType,
-](x: SIMD[DType.float32, size]):
+](x: SIMD[.float32, size]):
     var x_casted = x.cast[target]()
 
     comptime M = 64
@@ -658,7 +658,7 @@ def test_simd_f32_to_e4m3fnuz_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e4m3fnuz_ptx_path")
 
     comptime M = 512
-    var f32_simd = SIMD[DType.float32, M](0.0)
+    var f32_simd = SIMD[.float32, M](0.0)
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 

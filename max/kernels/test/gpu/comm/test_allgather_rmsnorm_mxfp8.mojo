@@ -310,12 +310,10 @@ def _run_case[
                 if col < num_cols:
                     quant_view.store[width=width](
                         Coord(row, col),
-                        bitcast[DType.float8_e4m3fn](
-                            SIMD[DType.uint8, width](0x7F)
-                        ),
+                        bitcast[DType.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
-                var quantized: SIMD[DType.float8_e4m3fn, width]
+                var quantized: SIMD[.float8_e4m3fn, width]
                 var e8m0: Float8_e8m0fnu
                 # The block max is a cross-lane reduction: lanes past
                 # `num_cols` must participate (carrying 0) but must not store.

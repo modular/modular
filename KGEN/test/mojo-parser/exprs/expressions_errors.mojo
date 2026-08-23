@@ -1208,7 +1208,7 @@ def test_origin_of_deprecated[T: AnyType](a: T):
 
 def some_complex_calculation() -> Int: return 4
 comptime ideal_width = some_complex_calculation()*4
-comptime IdealSIMD = SIMD[DType.int32, ideal_width]
+comptime IdealSIMD = SIMD[.int32, ideal_width]
 
 def get_data() -> IdealSIMD: return IdealSIMD()
 
@@ -1223,7 +1223,7 @@ def sugar_test():
     sugar_test1(HasIntParam[int_fn(0)])
 
     var a = get_data()  # Ok
-    var b : SIMD[DType.int32, 4]
+    var b : SIMD[.int32, 4]
 
     # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
     # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}

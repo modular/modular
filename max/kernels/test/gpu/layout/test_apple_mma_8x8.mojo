@@ -53,8 +53,8 @@ def mma_kernel[
 ):
     var a_frag = apple_mma_load_8x8[a_dtype](a_ptr, _N)
     var b_frag = apple_mma_load_8x8[b_dtype](b_ptr, _N)
-    var c_frag = SIMD[DType.float32, 2](0)
-    var d_frag = SIMD[DType.float32, 2](0)
+    var c_frag = SIMD[.float32, 2](0)
+    var d_frag = SIMD[.float32, 2](0)
     _mma_apple_8x8(d_frag, a_frag, b_frag, c_frag)
     apple_mma_store_8x8[DType.float32](d_ptr, _N, d_frag)
 
@@ -109,8 +109,8 @@ def mma_strided_kernel(
 ):
     var a_frag = apple_mma_load_8x8[DType.float32](a_ptr, _N * 2, col_stride=2)
     var b_frag = apple_mma_load_8x8[DType.float32](b_ptr, _N * 2, col_stride=2)
-    var c_frag = SIMD[DType.float32, 2](0)
-    var d_frag = SIMD[DType.float32, 2](0)
+    var c_frag = SIMD[.float32, 2](0)
+    var d_frag = SIMD[.float32, 2](0)
     _mma_apple_8x8(d_frag, a_frag, b_frag, c_frag)
     apple_mma_store_8x8[DType.float32](d_ptr, _N, d_frag)
 

@@ -83,7 +83,7 @@ struct PreshuffledBLoader[
     @always_inline
     def load_fragment(
         self, n: Int, k_byte: Int
-    ) -> SIMD[DType.uint8, Self.reg_bytes]:
+    ) -> SIMD[.uint8, Self.reg_bytes]:
         """Loads one lane's B fragment at logical `(n, k_byte)`.
 
         For one MFMA dispatch a lane calls this with
@@ -99,7 +99,7 @@ struct PreshuffledBLoader[
             n: Logical N row index into the `[N, K_BYTES]` tile.
             k_byte: Logical K byte index into the `[N, K_BYTES]` tile.
         """
-        var frag = SIMD[DType.uint8, Self.reg_bytes](0)
+        var frag = SIMD[.uint8, Self.reg_bytes](0)
 
         comptime for p in range(Self.num_planes):
             comptime pb = Shuffler[1].plane_bytes[Self.lane_bytes, p]()

@@ -609,7 +609,7 @@ def bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function(
-        bench_small_keys[words_ar, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_ar, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_ar"),
     )
     m.bench_function(
@@ -618,7 +618,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_ar, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_ar, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_ar"),
     )
     m.bench_function(
@@ -626,7 +626,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_el, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_el, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_el"),
     )
     m.bench_function(
@@ -634,7 +634,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_el, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_el, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_el"),
     )
     m.bench_function(
@@ -642,7 +642,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_en, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_en, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_en"),
     )
     m.bench_function(
@@ -650,7 +650,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_en, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_en, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_en"),
     )
     m.bench_function(
@@ -658,7 +658,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_he, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_he, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_he"),
     )
     m.bench_function(
@@ -666,7 +666,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_he, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_he, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_he"),
     )
     m.bench_function(
@@ -674,7 +674,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_lv, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_lv, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_lv"),
     )
     m.bench_function(
@@ -682,7 +682,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_lv, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_lv, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_lv"),
     )
     m.bench_function(
@@ -690,7 +690,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_pl, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_pl, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_pl"),
     )
     m.bench_function(
@@ -698,7 +698,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_pl, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_pl, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_pl"),
     )
     m.bench_function(
@@ -706,7 +706,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_small_keys[words_ru, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_small_keys[words_ru, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_small_keys_ru"),
     )
     m.bench_function(
@@ -714,7 +714,7 @@ def main() raises:
     )
 
     m.bench_function(
-        bench_long_key[words_ru, AHasher[SIMD[DType.uint64, 4](0)]],
+        bench_long_key[words_ru, AHasher[SIMD[.uint64, 4](0)]],
         BenchId("bench_ahash_long_keys_ru"),
     )
     m.bench_function(

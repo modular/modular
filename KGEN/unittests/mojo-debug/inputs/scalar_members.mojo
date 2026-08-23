@@ -19,12 +19,12 @@
 @fieldwise_init
 struct ScalarMembers(TrivialRegisterPassable):
     var int_scalar: Int
-    var bool_scalar: SIMD[DType.bool, 1]
+    var bool_scalar: SIMD[.bool, 1]
     var uint8_scalar: UInt8
 
     def __init__(out self):
         self.int_scalar = Int(42)
-        self.bool_scalar = SIMD[DType.bool, 1](True)
+        self.bool_scalar = SIMD[.bool, 1](True)
         self.uint8_scalar = UInt8(255)
 
 

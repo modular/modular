@@ -111,7 +111,7 @@ comptime elementwise_epilogue_type = def[
 
 comptime router_weights_wrapper_type = def[width: Int](
     token_idx: Int, topk_id: Int
-) capturing -> SIMD[DType.float32, width]
+) capturing -> SIMD[.float32, width]
 
 
 comptime input_scales_wrapper_type = def[dtype: DType](
@@ -320,7 +320,7 @@ def ep_signal_completion[
 def get_device_alignment() -> Int:
     """Returns the natural SIMD alignment in bytes for the current GPU target.
 
-    Computes the alignment of a full `SIMD[DType.uint8, gpu_simd_width]` vector,
+    Computes the alignment of a full `SIMD[.uint8, gpu_simd_width]` vector,
     which is the minimum alignment that avoids split transactions on the target
     device. Token format structs use this as the default `alignment` when the
     caller does not supply an explicit value.
@@ -331,7 +331,7 @@ def get_device_alignment() -> Int:
     comptime gpu_target = get_gpu_target()
     comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
     comptime gpu_alignment = align_of[
-        SIMD[DType.uint8, gpu_simd_width], target=gpu_target
+        SIMD[.uint8, gpu_simd_width], target=gpu_target
     ]()
 
     return gpu_alignment
@@ -1630,7 +1630,7 @@ struct MXTokenFormat[
 
             var codes = encode_f32_to_fp6[Self.fp6_fmt](data * out_scale)
 
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             comptime for g in range(blk // 4):
                 var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
                 comptime for i in range(3):
@@ -3380,7 +3380,7 @@ struct EPCombineKernel[
             comptime DATA_READY_FLAG = 1024
             var token_end_count = atomic_counter.load[
                 width=2,
-                alignment=align_of[SIMD[DType.int32, 2]](),
+                alignment=align_of[SIMD[.int32, 2]](),
                 invariant=True,
             ](2 * expert_rank_offset)
             var token_end = token_end_count[0] - DATA_READY_FLAG
@@ -3520,7 +3520,7 @@ struct EPCombineKernel[
                     )
 
                     atomic_counter.store[
-                        width=2, alignment=align_of[SIMD[DType.int32, 2]]()
+                        width=2, alignment=align_of[SIMD[.int32, 2]]()
                     ](expert_rank_offset * 2, 0)
 
     # ===-------------------------------------------------------------------===#
@@ -3603,7 +3603,7 @@ struct EPCombineKernel[
 
         comptime last_dim = 1 if router_weights_wrapper else 2
         comptime hid_dim = output_tokens.static_shape[last_dim]
-        comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
+        comptime _align = align_of[SIMD[.uint8, byte_simd_width]]()
 
         comptime assert (
             Self.msg_bytes == hid_dim * size_of[Scalar[output_type]]()
@@ -3665,7 +3665,7 @@ struct EPCombineKernel[
                 chunk_idx, n_chunks_per_tok
             )
 
-            var accum = SIMD[DType.float32, dst_simd_width](0)
+            var accum = SIMD[.float32, dst_simd_width](0)
 
             comptime for topk_idx in range(Self.top_k):
                 comptime if Self.skip_a2a:
@@ -5565,7 +5565,7 @@ def fused_silu_mxfp6_kernel[
 
             var codes = encode_f32_to_fp6[fp6_format](output_val * out_scale)
 
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             comptime for g in range(blk // 4):
                 var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
                 comptime for b in range(3):

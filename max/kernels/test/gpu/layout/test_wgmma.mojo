@@ -67,7 +67,7 @@ def wgmma_kernel_rs[
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
-    var c_reg = SIMD[DType.float32, num_output_regs](0)
+    var c_reg = SIMD[.float32, num_output_regs](0)
 
     comptime M = a_layout.shape[0].value()
     comptime K = a_layout.shape[1].value()
@@ -93,7 +93,7 @@ def wgmma_kernel_rs[
 
         var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
-        var a_reg = SIMD[DType.bfloat16, 8](0)
+        var a_reg = SIMD[.bfloat16, 8](0)
         var lane_q, lane_r = udivmod(lane_id(), 4)
         var row = warp_id() * 16 + lane_q
         var col = lane_r * 2
@@ -170,7 +170,7 @@ def wgmma_kernel_ss[
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
-    var c_reg = SIMD[DType.float32, num_output_regs](0)
+    var c_reg = SIMD[.float32, num_output_regs](0)
 
     comptime M = a_layout.shape[0].value()
     comptime K = a_layout.shape[1].value()

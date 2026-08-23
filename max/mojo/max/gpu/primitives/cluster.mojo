@@ -496,7 +496,7 @@ def load_cluster_smem[
         size_of[dtype]() == 4
     ), "load_cluster_smem supports only 32-bit element dtypes"
     var base: UInt32 = UInt32(Int(local_ptr))
-    var words: SIMD[DType.uint32, width] = {}
+    var words: SIMD[.uint32, width] = {}
     # Fuse `mapa` + `ld.shared::cluster.{v4,v2,b32}` into ONE asm block per group
     # so the rebased `.shared::cluster` address stays in a `.reg` local and never
     # round-trips through a Mojo SSA general register. The split form (a `mapa`

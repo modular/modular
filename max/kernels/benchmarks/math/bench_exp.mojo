@@ -113,7 +113,7 @@ def bench_unary[
 
 def ldexp2kf_opt[
     dtype: DType, simd_width: SIMDLength
-](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
+](x_in: SIMD[dtype, simd_width], q_in: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     var m = q_in >> 31
@@ -132,24 +132,20 @@ def ldexp2kf_opt[
     var u = bitcast[dtype, simd_width](m << 23)
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
-    var xu = (
-        (q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()
-    ) << 23
+    var xu = ((q + SIMD[.int32, simd_width](0x7F)).cast[DType.int32]()) << 23
     return x * xu.cast[dtype]()
 
 
 def pow2if[
     simd_width: SIMDLength
-](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
-    var x = (
-        ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]())
-    ) << 23
+](q: SIMD[.int32, simd_width]) -> SIMD[.float32, simd_width]:
+    var x = (((q + SIMD[.int32, simd_width](0x7F)).cast[DType.int32]())) << 23
     return bitcast[DType.float32, simd_width](x)
 
 
 def ldexp2kf[
     dtype: DType, simd_width: SIMDLength
-](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+](d: SIMD[dtype, simd_width], e: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     # return d * (pow2if[simd_width](e >> 1) * pow2if[simd_width](e - (e >> 1))).cast[dtype]();
@@ -194,7 +190,7 @@ def exp_libm[
 @always_inline
 def ldexp_libm[
     dtype: DType, simd_width: SIMDLength
-](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+](arg: SIMD[dtype, simd_width], e: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     var res = SIMD[dtype, simd_width]()
@@ -380,7 +376,7 @@ def exp_mlas[
 @always_inline
 def llvm_ldexp[
     dtype: DType, simd_width: SIMDLength
-](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
+](x: SIMD[dtype, simd_width], exp: SIMD[.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     return llvm_intrinsic["llvm.ldexp", type_of(x)](x, exp)

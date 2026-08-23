@@ -661,7 +661,7 @@ struct TMemAccumulator[
                         pack=False,
                         width=half_frag,
                     ](tmem + UInt32(half_col_offset))
-                    var _ld_simd = SIMD[DType.uint32, frag_size_b32]()
+                    var _ld_simd = SIMD[.uint32, frag_size_b32]()
 
                     comptime for _i in range(half_frag):
                         _ld_simd[_i] = _ld_lo[_i]
@@ -678,7 +678,7 @@ struct TMemAccumulator[
                         pack=False,
                         width=frag_size_b32,
                     ](tmem)
-                    var _ld_simd = SIMD[DType.uint32, frag_size_b32]()
+                    var _ld_simd = SIMD[.uint32, frag_size_b32]()
 
                     comptime for _i in range(frag_size_b32):
                         _ld_simd[_i] = _ld_result[_i]
@@ -886,10 +886,10 @@ struct TMemOperand[
 
                     comptime which_half = Int(m_local_src)
                     var ab_halves = bitcast[DType.uint16, 4](
-                        SIMD[DType.uint32, 2](received_a, received_b)
+                        SIMD[.uint32, 2](received_a, received_b)
                     )
                     # ab_halves = [a_lo, a_hi, b_lo, b_hi]
-                    var packed = SIMD[DType.uint16, 2](
+                    var packed = SIMD[.uint16, 2](
                         ab_halves[which_half],
                         ab_halves[which_half + 2],
                     )
@@ -962,7 +962,7 @@ struct TMemOperand[
                 pack=False,
                 width=frag_size_b32,
             ](tmem)
-            var _ld_simd2 = SIMD[DType.uint32, frag_size_b32]()
+            var _ld_simd2 = SIMD[.uint32, frag_size_b32]()
 
             comptime for _i in range(frag_size_b32):
                 _ld_simd2[_i] = _ld_result2[_i]

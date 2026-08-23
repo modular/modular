@@ -349,7 +349,7 @@ def varlen_selective_scan_fwd_gpu[
         ).cast[DType.float32]()
 
     # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
@@ -363,7 +363,7 @@ def varlen_selective_scan_fwd_gpu[
     var group_id = d // group_size
 
     # Initialize state - either from cache or zeros
-    var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_DSTATE](0.0)
 
     # Load initial state if requested
     var use_initial_state = False
@@ -411,8 +411,8 @@ def varlen_selective_scan_fwd_gpu[
         var delta_u = delta_val * u_val
 
         # Load B and C values for this timestep
-        var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
         comptime for n in range(DSTATE):
             var B_offset = UInt32(
@@ -715,7 +715,7 @@ def varlen_selective_scan_fwd_cpu[
             ).cast[DType.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
-        var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
@@ -742,7 +742,7 @@ def varlen_selective_scan_fwd_cpu[
                     continue
 
             # Initialize state
-            var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state = SIMD[.float32, MAX_DSTATE](0.0)
 
             var use_initial_state = False
             if has_initial_state_tensor:
@@ -789,8 +789,8 @@ def varlen_selective_scan_fwd_cpu[
 
                 var delta_u = delta_val * u_val
 
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
                 comptime for n in range(DSTATE):
                     var B_offset = UInt32(

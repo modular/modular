@@ -57,7 +57,7 @@ def mma_kernel_fp32_fp32(
     comptime mma_n = 16
     comptime mma_k = 4
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // (4 * mma_k)
 
     for l in range(tile_loops):
@@ -98,7 +98,7 @@ def mma_kernel_fp32_fp16[
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):
@@ -139,7 +139,7 @@ def mma_kernel_fp32_bf16[
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):

@@ -136,7 +136,7 @@ def fp4_gemv_kernel[
         var bytes = packed.load[width=BYTES, alignment=1](Coord(n_idx, byte0))
         # Expand 8 bytes -> 16 E2M1 nibbles: element 2*j = lo nibble (even K),
         # 2*j+1 = hi nibble (odd K). Width-16 uint16 arithmetic: M5-safe.
-        var nib = SIMD[DType.uint16, SF](0)
+        var nib = SIMD[.uint16, SF](0)
 
         comptime for j in range(BYTES):
             var bj = UInt16(bytes[j])

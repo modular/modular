@@ -1159,7 +1159,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0], idx[0])
                 ).cast[DType.float32]()
-                var b_scale: SIMD[DType.float32, width]
+                var b_scale: SIMD[.float32, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](

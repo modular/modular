@@ -111,7 +111,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         for _m in range(0, Self.block_m, 2 * Self._tuple_width):
             comptime for col in range(Self._tile_n):
-                var packed_bits = SIMD[DType.uint8, Self._simd_width](0)
+                var packed_bits = SIMD[.uint8, Self._simd_width](0)
 
                 comptime for i in range(2):
                     var bytes = (src_ptr + i * Self._packed_stride).load[
@@ -201,7 +201,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             var dst_col_ptr = dst_ptr
 
             comptime for col in range(Self._tile_n):
-                var hi_bytes = SIMD[DType.uint8, length=Self._simd_width](0)
+                var hi_bytes = SIMD[.uint8, length=Self._simd_width](0)
 
                 comptime for i in range(3):
                     var packed_bits = bits_ptr.load[width=Self._simd_width]()
@@ -662,7 +662,7 @@ def _matmul_group_stream_x86[
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     stream_b_vals_fn: Some[
-        def(mut b_vals: Array[SIMD[DType.uint8, b_width], b_count]) -> None
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
     ],
 ):
     # The array type is spelled with free `b_width`/`b_count` parameters
@@ -671,7 +671,7 @@ def _matmul_group_stream_x86[
     comptime assert b_width == SIMDLength(simd_width) * 4
     comptime assert b_count == tile_n * tile_k
 
-    var b_vals = Array[SIMD[DType.uint8, b_width], b_count](fill=0)
+    var b_vals = Array[SIMD[.uint8, b_width], b_count](fill=0)
 
     comptime for k in range(0, group_size, tile_k * 4):
         stream_b_vals_fn(b_vals)
@@ -679,7 +679,7 @@ def _matmul_group_stream_x86[
         comptime for tk in range(tile_k):
             comptime for col in range(tile_n):
                 comptime for row in range(tile_m):
-                    var a_val = SIMD[DType.int32, simd_width](
+                    var a_val = SIMD[.int32, simd_width](
                         bitcast[DType.int32, 1](
                             (a_q_bits_ptr + row * group_size + k + tk * 4).load[
                                 width=4
@@ -709,16 +709,16 @@ def _matmul_group_stream_neon_dotprod[
     a_q_bits_ptr: UnsafePointer[Int8, ...],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     stream_b_vals_fn: Some[
-        def(mut b_vals: Array[SIMD[DType.uint8, b_width], b_count]) -> None
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
     ],
 ):
     comptime assert b_width == SIMDLength(simd_width) * 4
     comptime assert b_count == tile_n * tile_k
 
-    var b_vals = Array[SIMD[DType.uint8, b_width], b_count](fill=0)
+    var b_vals = Array[SIMD[.uint8, b_width], b_count](fill=0)
 
     comptime for k in range(0, group_size, 16):
-        var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
+        var a_tile = Array[SIMD[.int8, 16], tile_m](uninitialized=True)
 
         comptime for row in range(tile_m):
             a_tile[row] = (a_q_bits_ptr + row * group_size + k).load[width=16]()
@@ -731,9 +731,9 @@ def _matmul_group_stream_neon_dotprod[
                     comptime for row in range(tile_m):
                         c_int32_group[row, col] = _neon_dotprod_lane[lane + tk](
                             c_int32_group[row, col],
-                            rebind[
-                                SIMD[DType.int8, SIMDLength(simd_width) * 4]
-                            ](b_vals[col * tile_k + tk].cast[DType.int8]()),
+                            rebind[SIMD[.int8, SIMDLength(simd_width) * 4]](
+                                b_vals[col * tile_k + tk].cast[DType.int8]()
+                            ),
                             a_tile[row],
                         )
 
@@ -752,7 +752,7 @@ def _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     stream_b_vals_fn: Some[
-        def(mut b_vals: Array[SIMD[DType.uint8, b_width], b_count]) -> None
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
     ],
 ):
     comptime assert Bool(tile_k.is_power_of_two()) and tile_k <= 4
@@ -788,9 +788,7 @@ def _matmul_group_unpacked[
     """
 
     def stream_b_vals(
-        mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * 1
-        ]
+        mut b_vals: Array[SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * 1]
     ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
             b_vals[col] = b_q_bits_ptr.load[width=SIMDLength(simd_width) * 4]()
@@ -859,7 +857,7 @@ def _apply_zero_point_correction[
                         corrections[row, col],
                         q_mins,
                         bitcast[DType.int16, SIMDLength(simd_width) * 2](
-                            SIMD[DType.int32, simd_width](
+                            SIMD[.int32, simd_width](
                                 bitcast[DType.int32, 1](a_group_sums)
                             )
                         ),
@@ -892,14 +890,14 @@ def _apply_zero_point_correction[
                     # the same IR pattern to emit this instruction.
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
-                        SIMD[DType.int32, simd_width],
+                        SIMD[.int32, simd_width],
                     ](
                         q_mins_lo_hi[0],
                         SIMD[length=simd_width](group_sums[row * 2 + 0]),
                     )
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
-                        SIMD[DType.int32, simd_width],
+                        SIMD[.int32, simd_width],
                     ](
                         q_mins_lo_hi[1],
                         SIMD[length=simd_width](group_sums[row * 2 + 1]),
@@ -1008,7 +1006,7 @@ def _matmul_group_packed_Q4_K[
 
     def stream_b_vals(
         mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
+            SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
@@ -1136,7 +1134,7 @@ def _matmul_Q4_K_columns[
     comptime group_size = _block_Q4_K.group_size
     comptime group_count = _block_Q4_K.group_count
 
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
     comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
@@ -1247,13 +1245,11 @@ def _matmul_group_packed_Q6_K[
 
     def stream_b_vals(
         mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
+            SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
     ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
-            var hi_bytes = SIMD[DType.uint8, length=SIMDLength(simd_width) * 4](
-                0
-            )
+            var hi_bytes = SIMD[.uint8, length=SIMDLength(simd_width) * 4](0)
 
             comptime for i in range(3):
                 var packed_bits = b_q_bits_ptr.load[
@@ -1334,9 +1330,7 @@ def _matmul_Q6_K_tile[
                     .group_sums[g * tile_m + row]
                     .cast[DType.int32]()
                 )
-                var correction_val = SIMD[DType.int32, simd_width](
-                    -32 * group_sum
-                )
+                var correction_val = SIMD[.int32, simd_width](-32 * group_sum)
 
                 comptime for col in range(tile_n):
                     c_int32_group[row, col] = correction_val
@@ -1396,7 +1390,7 @@ def _matmul_Q6_K_columns[
     comptime group_size = _block_Q6_K.group_size
     comptime group_count = _block_Q6_K.group_count
 
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
     comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()

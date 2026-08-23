@@ -37,7 +37,7 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
@@ -72,7 +72,7 @@ struct Brightness:
         @always_inline  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
 
             var brightened_f32 = pixels_f32 * brightness
@@ -97,7 +97,7 @@ struct Blur:
         @always_inline
         def blur_kernel[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             """
             Computes the blurred value for a SIMD vector of pixels.
             """

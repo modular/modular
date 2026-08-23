@@ -281,7 +281,7 @@ def run_mamba_split_conv1d_scan_combined[
 
             # Pre-load A value (same for all DSTATE entries within a head)
             var A_val_raw = Float32(A_h._storage[h])
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = A_val_raw * LOG2E
 
@@ -299,7 +299,7 @@ def run_mamba_split_conv1d_scan_combined[
                 rmsnorm_w = Float32(rmsnorm_weight_h._storage[d_idx])
 
             # Initialize state for selective scan
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 # --- Step 1: Load z from zxbcdt ---
@@ -339,8 +339,8 @@ def run_mamba_split_conv1d_scan_combined[
                 var x_val = silu_ref(conv_sum_x)
 
                 # --- Step 4: Causal conv1d for B and C channels ---
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     # B channel: dim + group_id * dstate + n (in xBC space)
                     var B_ch = dim + group_id * dstate + n

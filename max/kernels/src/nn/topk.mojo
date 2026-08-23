@@ -2470,7 +2470,7 @@ def _gumbel_argmax_fused_kernel[
                 )
             else:
                 input_val = ld_ptr.load[width=simd_width](i * simd_width)
-            var noised_logits: SIMD[DType.float32, simd_width]
+            var noised_logits: SIMD[.float32, simd_width]
             comptime if from_probs:
                 noised_logits = LOG2 * log2(input_val.cast[DType.float32]())
             else:

@@ -99,7 +99,7 @@ def _accum_bf16_to_fp32_kernel[
     """
     var _per_batch_elems = Int(per_batch_elems)
     comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
-    comptime fp32_alignment = align_of[SIMD[DType.float32, output_simd_width]]()
+    comptime fp32_alignment = align_of[SIMD[.float32, output_simd_width]]()
 
     var accum_idx = global_idx.x * output_simd_width
     if accum_idx >= _per_batch_elems:
@@ -133,7 +133,7 @@ def _fp32_to_dtype_plain_kernel[
         output_idx,
         src_fp32_ptr.load[
             width=output_simd_width,
-            alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+            alignment=align_of[SIMD[.float32, output_simd_width]](),
         ](output_idx).cast[dtype](),
     )
 
@@ -176,7 +176,7 @@ def _fp32_to_dtype_epilogue_kernel[
     w, c = udivmod(rem, C_out)
     var val = src_fp32_ptr.load[
         width=output_simd_width,
-        alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+        alignment=align_of[SIMD[.float32, output_simd_width]](),
     ](output_idx).cast[dtype]()
     epilogue[alignment=output_simd_width](IndexList[5](b, d, h, w, c), val)
 

@@ -67,14 +67,14 @@ def _block_scaled_mma_smoke_kernel[
         " accumulators"
     )
     var lane = lane_id()
-    var a_frag = SIMD[DType.uint8, matrix_format.simd_width()](UInt8(0x21))
-    var b_frag = SIMD[DType.uint8, matrix_format.simd_width()](UInt8(0x12))
+    var a_frag = SIMD[.uint8, matrix_format.simd_width()](UInt8(0x21))
+    var b_frag = SIMD[.uint8, matrix_format.simd_width()](UInt8(0x12))
 
     var one = _pack_e8m0_scale_word(1.0)
     var two = _pack_e8m0_scale_word(2.0)
 
-    var baseline_acc = SIMD[DType.float32, accum_width](0.0)
-    var scaled_acc = SIMD[DType.float32, accum_width](0.0)
+    var baseline_acc = SIMD[.float32, accum_width](0.0)
+    var scaled_acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         baseline_acc,
@@ -114,8 +114,8 @@ def _fp6_padding_kernel[
     comptime payload_bytes = 24
 
     var lane = lane_id()
-    var zero_pad_a = SIMD[DType.uint8, 32](UInt8(0x21))
-    var zero_pad_b = SIMD[DType.uint8, 32](UInt8(0x12))
+    var zero_pad_a = SIMD[.uint8, 32](UInt8(0x21))
+    var zero_pad_b = SIMD[.uint8, 32](UInt8(0x12))
     var one_pad_a = zero_pad_a
     var one_pad_b = zero_pad_b
 
@@ -126,8 +126,8 @@ def _fp6_padding_kernel[
         one_pad_b[i] = UInt8(0xFF)
 
     var one = _pack_e8m0_scale_word(1.0)
-    var zero_pad_acc = SIMD[DType.float32, accum_width](0.0)
-    var one_pad_acc = SIMD[DType.float32, accum_width](0.0)
+    var zero_pad_acc = SIMD[.float32, accum_width](0.0)
+    var one_pad_acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         zero_pad_acc,

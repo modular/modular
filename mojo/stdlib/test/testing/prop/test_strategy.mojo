@@ -55,7 +55,7 @@ def test_strategy_returns_correct_value() raises:
 def test_simd_strategy() raises:
     var min = Int64(-10)
     var max = Int64(30)
-    var strat = SIMD[DType.int64, 8].strategy(min=min, max=max)
+    var strat = SIMD[.int64, 8].strategy(min=min, max=max)
     var rng = Rng(seed=1234)
     for _ in range(10):
         var v = strat.value(rng)

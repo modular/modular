@@ -116,18 +116,18 @@ def test_simd_load_store() raises:
     ](storage.unsafe_ptr(), IndexList[1](8))
 
     # Store a SIMD vector
-    var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     tensor.store(IndexList[1](0), vec)
 
-    var vec2 = SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0)
+    var vec2 = SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0)
     tensor.store(IndexList[1](4), vec2)
 
     # Load and verify
     var loaded = tensor.load[4](IndexList[1](0))
-    assert_equal(loaded, SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0))
+    assert_equal(loaded, SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0))
 
     var loaded2 = tensor.load[4](IndexList[1](4))
-    assert_equal(loaded2, SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0))
+    assert_equal(loaded2, SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
 def test_to_layout_tensor() raises:
@@ -183,7 +183,7 @@ def test_simd_load_store_2d() raises:
 
     # Store vectors in each row
     for i in range(4):
-        var vec = SIMD[DType.float32, 4](
+        var vec = SIMD[.float32, 4](
             Float32(i * 10),
             Float32(i * 10 + 1),
             Float32(i * 10 + 2),
@@ -191,7 +191,7 @@ def test_simd_load_store_2d() raises:
         )
         tensor.store(IndexList[2](i, 0), vec)
 
-        var vec2 = SIMD[DType.float32, 4](
+        var vec2 = SIMD[.float32, 4](
             Float32(i * 10 + 4),
             Float32(i * 10 + 5),
             Float32(i * 10 + 6),
@@ -201,13 +201,13 @@ def test_simd_load_store_2d() raises:
 
     # Load and verify
     var loaded_row0 = tensor.load[4](IndexList[2](0, 0))
-    assert_equal(loaded_row0, SIMD[DType.float32, 4](0.0, 1.0, 2.0, 3.0))
+    assert_equal(loaded_row0, SIMD[.float32, 4](0.0, 1.0, 2.0, 3.0))
 
     var loaded_row2 = tensor.load[4](IndexList[2](2, 4))
-    assert_equal(loaded_row2, SIMD[DType.float32, 4](24.0, 25.0, 26.0, 27.0))
+    assert_equal(loaded_row2, SIMD[.float32, 4](24.0, 25.0, 26.0, 27.0))
 
     var loaded_row3 = tensor.load[4](IndexList[2](3, 0))
-    assert_equal(loaded_row3, SIMD[DType.float32, 4](30.0, 31.0, 32.0, 33.0))
+    assert_equal(loaded_row3, SIMD[.float32, 4](30.0, 31.0, 32.0, 33.0))
 
 
 def test_to_tile_tensor() raises:

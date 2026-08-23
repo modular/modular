@@ -146,7 +146,7 @@ def test_get_type_name_simd() raises:
     var name = reflect[Float32].name()
     assert_equal(name, "SIMD[DType.float32, 1]")
 
-    name = reflect[SIMD[DType.uint16, 4]].name[qualified_builtins=True]()
+    name = reflect[SIMD[.uint16, 4]].name[qualified_builtins=True]()
     assert_equal(
         name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
     )
@@ -169,9 +169,7 @@ struct Foo[
 
 
 def test_get_type_name_non_scalar_simd_value() raises:
-    var name = reflect[
-        Foo[SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0), True]
-    ].name()
+    var name = reflect[Foo[SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0), True]].name()
     assert_equal(
         name,
         (
@@ -181,9 +179,7 @@ def test_get_type_name_non_scalar_simd_value() raises:
         ),
     )
 
-    name = reflect[
-        Foo[SIMD[DType.bool, 4](True, False, True, False), True]
-    ].name()
+    name = reflect[Foo[SIMD[.bool, 4](True, False, True, False), True]].name()
     assert_equal(
         name,
         (

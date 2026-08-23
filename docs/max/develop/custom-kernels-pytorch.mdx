@@ -127,20 +127,20 @@ struct Grayscale:
     def execute[
         target: StaticString,  # "cpu" or "gpu"
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
         @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             @__parameter
             def load(
                 idx: IndexList[img_in.rank],
-            ) -> SIMD[DType.float32, simd_width]:
-                return img_in.load[simd_width](idx).cast[DType.float32]()
+            ) -> SIMD[.float32, simd_width]:
+                return img_in.load[simd_width](idx).cast[.float32]()
 
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
@@ -153,7 +153,7 @@ struct Grayscale:
 
             # Apply standard grayscale conversion formula
             var gray = 0.21 * r + 0.71 * g + 0.07 * b
-            return min(gray, 255).cast[DType.uint8]()
+            return min(gray, 255).cast[.uint8]()
 
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 ```

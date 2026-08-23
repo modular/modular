@@ -219,7 +219,7 @@ def kernel_mma_QK[
     var att_v = att_reg.vectorize[1, 1, 16]()
     comptime for n in range(_AH):
         comptime for m in range(_AW):
-            att_v[n, m, 0] = SIMD[DType.float32, 16](0.0)
+            att_v[n, m, 0] = SIMD[.float32, 16](0.0)
 
     # The bulk of the test: call mma_QK.
     _Op.mma_QK(att_reg, k_reg, q_reg)
@@ -462,7 +462,7 @@ def kernel_mma_PV[
     var o_v = o_reg.vectorize[1, 1, 16]()
     comptime for n in range(_OH):
         comptime for m in range(_OW):
-            o_v[n, m, 0] = SIMD[DType.float32, 16](0.0)
+            o_v[n, m, 0] = SIMD[.float32, 16](0.0)
 
     # The bulk of the test: call mma_PV.
     _Op.mma_PV(o_reg, v_reg, p_reg)

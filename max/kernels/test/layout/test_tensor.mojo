@@ -603,18 +603,10 @@ def test_vectorize_writes():
     )
 
     var tensor_2x2 = tensor.vectorize[2, 2]()
-    tensor_2x2[0, 0] = rebind[tensor_2x2.element_type](
-        SIMD[DType.float32, 4](1)
-    )
-    tensor_2x2[0, 1] = rebind[tensor_2x2.element_type](
-        SIMD[DType.float32, 4](2)
-    )
-    tensor_2x2[1, 0] = rebind[tensor_2x2.element_type](
-        SIMD[DType.float32, 4](3)
-    )
-    tensor_2x2[1, 1] = rebind[tensor_2x2.element_type](
-        SIMD[DType.float32, 4](4)
-    )
+    tensor_2x2[0, 0] = rebind[tensor_2x2.element_type](SIMD[.float32, 4](1))
+    tensor_2x2[0, 1] = rebind[tensor_2x2.element_type](SIMD[.float32, 4](2))
+    tensor_2x2[1, 0] = rebind[tensor_2x2.element_type](SIMD[.float32, 4](3))
+    tensor_2x2[1, 1] = rebind[tensor_2x2.element_type](SIMD[.float32, 4](4))
     # CHECK: 1.0 1.0 2.0 2.0
     # CHECK: 1.0 1.0 2.0 2.0
     # CHECK: 3.0 3.0 4.0 4.0
@@ -688,7 +680,7 @@ def test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -734,7 +726,7 @@ def test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
         .vectorize[4, 4]()
         .fill(0)
     )

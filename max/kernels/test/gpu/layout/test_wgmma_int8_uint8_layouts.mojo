@@ -59,7 +59,7 @@ def wgmma_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.uint32, 4](0)
+    var c_reg = SIMD[.uint32, 4](0)
 
     for k_i in range(K // WMMA_K):
         var operand_a_tile = operand_a.tile[M, WMMA_K](0, k_i)

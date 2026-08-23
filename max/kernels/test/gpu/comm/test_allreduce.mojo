@@ -366,7 +366,7 @@ def allreduce_naive_test() raises -> None:
             width=_width, alignment=_alignment
         ](
             rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[DType.float32, _width]](val),
+            rebind[SIMD[.float32, _width]](val),
         )
 
     # Launch naive allreduce per device

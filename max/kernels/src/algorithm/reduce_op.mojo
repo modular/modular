@@ -166,7 +166,7 @@ trait ReduceOp(TrivialRegisterPassable):
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into `self` **elementwise** — lane `j`
         folds `(val[j], idx[j])` — casting to the accumulator dtype
@@ -357,7 +357,7 @@ struct OnlineLogSumExp[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile via lane-wise flash update. `val` is
         padded to width `Self.W` via `Self.pad` with `-inf` tail lanes;
@@ -580,7 +580,7 @@ struct Welford[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Elementwise Welford fold: each lane folds one new sample
         into its running state (Chan with `nb = 1`).
@@ -732,7 +732,7 @@ struct ReduceSum[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into `acc` lane-wise. Single expression;
         `Self.pad` lifts partial tiles to width `Self.W` with `0` tail
@@ -863,7 +863,7 @@ struct ReduceMax[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into `acc` lane-wise. Partial tiles get
         identity-padded (`min_finite`) via `Self.pad`.
@@ -991,7 +991,7 @@ struct ReduceMin[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into `acc` lane-wise. Partial tiles get
         identity-padded (`max_finite`) via `Self.pad`.
@@ -1120,7 +1120,7 @@ struct ReduceProduct[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into `acc` lane-wise. Partial tiles get
         identity-padded (`1`) via `Self.pad`.
@@ -1245,7 +1245,7 @@ struct MinMax[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile into both accumulators. Each field uses
         its own identity padding via `Self.pad`: `+inf`/MAX for the
@@ -1414,7 +1414,7 @@ struct ArgMax[
     var acc_values: SIMD[Self.dtype, Self.W]
     """Per-lane running max during SIMD-wide tile accumulation."""
 
-    var acc_indices: SIMD[DType.int64, Self.W]
+    var acc_indices: SIMD[.int64, Self.W]
     """Per-lane axis indices corresponding to `acc_values`."""
 
     @always_inline
@@ -1430,7 +1430,7 @@ struct ArgMax[
         self.acc_values = SIMD[Self.dtype, Self.W](
             _argmax_identity[Self.dtype]()
         )
-        self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
+        self.acc_indices = SIMD[.int64, Self.W](Int64.MAX)
 
     @always_inline
     def accumulate[
@@ -1438,7 +1438,7 @@ struct ArgMax[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile via lane-wise compare-and-select. `val` and
         `idx` are padded to width `Self.W` via `Self.pad` — padded value
@@ -1526,7 +1526,7 @@ struct ArgMax[
         var acc_max = self.acc_values.reduce_max()
         var max_mask = self.acc_values.eq(SIMD[Self.dtype, Self.W](acc_max))
         var masked_idx = max_mask.select(
-            self.acc_indices, SIMD[DType.int64, Self.W](Int64.MAX)
+            self.acc_indices, SIMD[.int64, Self.W](Int64.MAX)
         )
         var r = Self.Single()
         r.best = self.best
@@ -1564,7 +1564,7 @@ struct ArgMax[
         self.acc_values = SIMD[Self.dtype, Self.W](
             _argmax_identity[Self.dtype]()
         )
-        self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
+        self.acc_indices = SIMD[.int64, Self.W](Int64.MAX)
         reducer.generic(self)
         self.acc_indices[0] = _in_range_index(Int64(self.best_idx))
 
@@ -1599,7 +1599,7 @@ struct ArgMin[
     var acc_values: SIMD[Self.dtype, Self.W]
     """Per-lane running min during SIMD-wide tile accumulation."""
 
-    var acc_indices: SIMD[DType.int64, Self.W]
+    var acc_indices: SIMD[.int64, Self.W]
     """Per-lane axis indices corresponding to `acc_values`."""
 
     @always_inline
@@ -1614,7 +1614,7 @@ struct ArgMin[
         self.acc_values = SIMD[Self.dtype, Self.W](
             _argmin_identity[Self.dtype]()
         )
-        self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
+        self.acc_indices = SIMD[.int64, Self.W](Int64.MAX)
 
     @always_inline
     def accumulate[
@@ -1622,7 +1622,7 @@ struct ArgMin[
     ](
         mut self,
         val: SIMD[val_dtype, w],
-        idx: SIMD[DType.int64, w] = SIMD[DType.int64, w](0),
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
     ):
         """Folds a SIMD tile via lane-wise compare-and-select. Mirrors
         `ArgMax.accumulate` with the `>=` rule: padded value lanes
@@ -1701,7 +1701,7 @@ struct ArgMin[
         var acc_min = self.acc_values.reduce_min()
         var min_mask = self.acc_values.eq(SIMD[Self.dtype, Self.W](acc_min))
         var masked_idx = min_mask.select(
-            self.acc_indices, SIMD[DType.int64, Self.W](Int64.MAX)
+            self.acc_indices, SIMD[.int64, Self.W](Int64.MAX)
         )
         var r = Self.Single()
         r.best = self.best
@@ -1735,6 +1735,6 @@ struct ArgMin[
         self.acc_values = SIMD[Self.dtype, Self.W](
             _argmin_identity[Self.dtype]()
         )
-        self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
+        self.acc_indices = SIMD[.int64, Self.W](Int64.MAX)
         reducer.generic(self)
         self.acc_indices[0] = _in_range_index(Int64(self.best_idx))

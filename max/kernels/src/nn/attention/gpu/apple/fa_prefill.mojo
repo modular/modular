@@ -235,12 +235,8 @@ def _softmax_update[
     var l_acc = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
     comptime for ni in range(num_n_mmas):
         var p = scores[ni]
-        var p_lo = exp2(
-            p.slice[4, offset=0]() - SIMD[DType.float32, 4](m_new[0])
-        )
-        var p_hi = exp2(
-            p.slice[4, offset=4]() - SIMD[DType.float32, 4](m_new[1])
-        )
+        var p_lo = exp2(p.slice[4, offset=0]() - SIMD[.float32, 4](m_new[0]))
+        var p_hi = exp2(p.slice[4, offset=4]() - SIMD[.float32, 4](m_new[1]))
         scores[ni] = p_lo.join(p_hi)
         l_acc[0] = l_acc[0] + (p_lo[0] + p_lo[1] + p_lo[2] + p_lo[3])
         l_acc[1] = l_acc[1] + (p_hi[0] + p_hi[1] + p_hi[2] + p_hi[3])
@@ -255,8 +251,8 @@ def _softmax_update[
 
     comptime for ni in range(out_num_n_mmas):
         var o = output[ni]
-        var o_lo = o.slice[4, offset=0]() * SIMD[DType.float32, 4](alpha[0])
-        var o_hi = o.slice[4, offset=4]() * SIMD[DType.float32, 4](alpha[1])
+        var o_lo = o.slice[4, offset=0]() * SIMD[.float32, 4](alpha[0])
+        var o_hi = o.slice[4, offset=4]() * SIMD[.float32, 4](alpha[1])
         output[ni] = o_lo.join(o_hi)
 
 
@@ -284,8 +280,8 @@ def _softmax_normalize[
     inv[1] = Float32(1) / sm_l[1] if sm_l[1] > Float32(0) else Float32(0)
     comptime for ni in range(out_num_n_mmas):
         var o = output[ni]
-        var o_lo = o.slice[4, offset=0]() * SIMD[DType.float32, 4](inv[0])
-        var o_hi = o.slice[4, offset=4]() * SIMD[DType.float32, 4](inv[1])
+        var o_lo = o.slice[4, offset=0]() * SIMD[.float32, 4](inv[0])
+        var o_hi = o.slice[4, offset=4]() * SIMD[.float32, 4](inv[1])
         output[ni] = o_lo.join(o_hi)
 
 
@@ -708,11 +704,11 @@ def fa_prefill_apple_core[
                 comptime for ni in range(NumNMmas):
                     var kbase = kv0 + ni * 16 + cb
                     # Per-key in-bounds mask for the 4 consecutive keys.
-                    var keys = SIMD[DType.int32, 4](Int32(kbase)) + SIMD[
+                    var keys = SIMD[.int32, 4](Int32(kbase)) + SIMD[
                         DType.int32, 4
                     ](0, 1, 2, 3)
                     var k_ok = keys.lt(Int32(cur_cache_len))
-                    var neg = SIMD[DType.float32, 4](NEG_INF)
+                    var neg = SIMD[.float32, 4](NEG_INF)
                     var lrow_lo = rb
                     var lrow_hi = lrow_lo + 8
                     var s_lo = scores[ni].slice[4, offset=0]()
@@ -730,15 +726,11 @@ def fa_prefill_apple_core[
                         s_hi,
                     )
                     var ib_lo = (
-                        SIMD[DType.bool, 4](
-                            fill=q_row0 + lrow_lo < cur_query_len
-                        )
+                        SIMD[.bool, 4](fill=q_row0 + lrow_lo < cur_query_len)
                         & k_ok
                     )
                     var ib_hi = (
-                        SIMD[DType.bool, 4](
-                            fill=q_row0 + lrow_hi < cur_query_len
-                        )
+                        SIMD[.bool, 4](fill=q_row0 + lrow_hi < cur_query_len)
                         & k_ok
                     )
                     scores[ni] = ib_lo.select(m_lo, neg).join(

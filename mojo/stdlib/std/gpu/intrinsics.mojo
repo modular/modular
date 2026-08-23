@@ -831,7 +831,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     Used for buffer_load/buffer_store instructions.
     """
 
-    var desc: SIMD[DType.uint32, 4]
+    var desc: SIMD[.uint32, 4]
     """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
@@ -857,7 +857,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
             is_amd_gpu()
         ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
-        self.desc = SIMD[DType.uint32, 4](0)
+        self.desc = SIMD[.uint32, 4](0)
         var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
         self.desc[0] = address[0]
         # assuming 0 stride currently
@@ -897,7 +897,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         """
         return Int(
             bitcast[DType.int64, 1](
-                SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
+                SIMD[.uint32, 2](self.desc[0], self.desc[1])
             )
         )
 
@@ -1299,7 +1299,7 @@ def ds_read_tr8_b64[
     # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
     var raw = llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr8.b64",
-        SIMD[DType.uint32, 2],
+        SIMD[.uint32, 2],
         has_side_effect=True,
     ](shared_ptr)
     return bitcast[dtype, 8](raw)
@@ -1313,7 +1313,7 @@ def ds_read_tr8_b64[
 @always_inline
 def cvt_pk_fp8_f32_raw[
     dtype: DType,
-](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+](src: SIMD[.float32, 4]) -> SIMD[dtype, 4]:
     """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
 
     Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN

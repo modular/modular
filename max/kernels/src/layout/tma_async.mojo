@@ -3698,8 +3698,8 @@ struct TMATensorTile[
         ]()
 
         comptime simd_width = simd_width_of[DType.uint8]()
-        comptime src_align = align_of[SIMD[DType.uint8, simd_width]]()
-        comptime dst_align = align_of[SIMD[DType.uint8, simd_width]]()
+        comptime src_align = align_of[SIMD[.uint8, simd_width]]()
+        comptime dst_align = align_of[SIMD[.uint8, simd_width]]()
 
         comptime descriptor_bytes = 128
 

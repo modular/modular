@@ -529,7 +529,7 @@ def nan[dtype: DType]() -> Scalar[dtype]:
 @always_inline("nodebug")
 def isnan[
     dtype: DType, width: SIMDLength, //
-](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
+](val: SIMD[dtype, width]) -> SIMD[.bool, width]:
     """Checks if the value is Not a Number (NaN).
 
     Parameters:
@@ -550,7 +550,7 @@ def isnan[
         # is a finite value.
         DType.float4_e2m1fn,
     ):
-        return SIMD[DType.bool, width](fill=False)
+        return SIMD[.bool, width](fill=False)
     elif dtype == DType.float8_e4m3fn:
         return (val.to_bits() & 0x7F).eq(0x7F)
     elif dtype == DType.float8_e8m0fnu:
@@ -572,7 +572,7 @@ def isnan[
     comptime signaling_nan_test: UInt32 = 0x0001
     comptime quiet_nan_test: UInt32 = 0x0002
     return llvm_intrinsic[
-        "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
+        "llvm.is.fpclass", SIMD[.bool, width], has_side_effect=False
     ](val._mlir_value, signaling_nan_test | quiet_nan_test)
 
 
@@ -818,7 +818,7 @@ def min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 @always_inline("nodebug")
 def isinf[
     dtype: DType, width: SIMDLength, //
-](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
+](val: SIMD[dtype, width]) -> SIMD[.bool, width]:
     """Checks if the value is infinite.
 
     This is always False for non-FP data types.
@@ -841,7 +841,7 @@ def isinf[
         DType.float8_e8m0fnu,
         DType.float4_e2m1fn,
     ):
-        return SIMD[DType.bool, width](fill=False)
+        return SIMD[.bool, width](fill=False)
 
     elif dtype == DType.float8_e5m2:
         # For the float8_e5m2 both 7C and FC are infinity.
@@ -854,7 +854,7 @@ def isinf[
     comptime negative_infinity_test: UInt32 = 0x0004
     comptime positive_infinity_test: UInt32 = 0x0200
     return llvm_intrinsic[
-        "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
+        "llvm.is.fpclass", SIMD[.bool, width], has_side_effect=False
     ](val._mlir_value, negative_infinity_test | positive_infinity_test)
 
 
@@ -866,7 +866,7 @@ def isinf[
 @always_inline("nodebug")
 def isfinite[
     dtype: DType, width: SIMDLength, //
-](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
+](val: SIMD[dtype, width]) -> SIMD[.bool, width]:
     """Checks if the value is not infinite.
 
     This is always True for non-FP data types.
@@ -885,14 +885,14 @@ def isfinite[
     comptime if (not dtype.is_floating_point() or dtype == DType.float4_e2m1fn):
         # The OCP MX FP4 (E2M1) format has no NaN or Inf encodings; every
         # bit pattern is finite.
-        return SIMD[DType.bool, width](fill=True)
+        return SIMD[.bool, width](fill=True)
     elif dtype == DType.float8_e3m4:
         # `llvm.is.fpclass` has no overload for f8e3m4, so cast up to bf16
         # (which preserves IEEE-style NaN/Inf) and dispatch there.
         return isfinite(val.cast[DType.bfloat16]())
 
     return llvm_intrinsic[
-        "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
+        "llvm.is.fpclass", SIMD[.bool, width], has_side_effect=False
     ](val._mlir_value, UInt32(0x1F8))
 
 

@@ -47,7 +47,7 @@ def _load_matrix_a_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
-    var a = SIMD[DType.float16, 16]()
+    var a = SIMD[.float16, 16]()
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
@@ -71,7 +71,7 @@ def _load_matrix_a_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
-    var a = SIMD[DType.bfloat16, 16]()
+    var a = SIMD[.bfloat16, 16]()
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
@@ -95,7 +95,7 @@ def _load_matrix_b_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
-    var b = SIMD[DType.float16, 16]()
+    var b = SIMD[.float16, 16]()
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
@@ -119,7 +119,7 @@ def _load_matrix_b_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
-    var b = SIMD[DType.bfloat16, 16]()
+    var b = SIMD[.bfloat16, 16]()
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
@@ -134,7 +134,7 @@ def load_matrix_a_amd_rdna16x16x16(
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[.float16, 16]:
     """Loads 16×16×16 matrix A tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -164,7 +164,7 @@ def load_matrix_a_amd_rdna16x16x16(
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[.bfloat16, 16]:
     """Loads 16×16×16 matrix A tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -194,7 +194,7 @@ def load_matrix_b_amd_rdna16x16x16(
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[.float16, 16]:
     """Loads 16×16×16 matrix B tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -224,7 +224,7 @@ def load_matrix_b_amd_rdna16x16x16(
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[.bfloat16, 16]:
     """Loads 16×16×16 matrix B tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -505,9 +505,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 var c_chunk = result.slice[4, offset=offset]()
                 var a_converted = a_chunk.cast[target_dtype]()
                 var b_converted = b_chunk.cast[target_dtype]()
-                var r_chunk = llvm_intrinsic[
-                    intrinsic_name, SIMD[DType.float32, 4]
-                ](a_converted, b_converted, c_chunk)
+                var r_chunk = llvm_intrinsic[intrinsic_name, SIMD[.float32, 4]](
+                    a_converted, b_converted, c_chunk
+                )
                 result = result.insert[offset=offset](r_chunk)
 
             d = rebind[type_of(d)](result)

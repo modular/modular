@@ -530,7 +530,7 @@ def reduce_argmin[
     & (
         def[
             width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+        ](IndexList[rank], SIMD[.int64, width]) -> None
     ),
     /,
     target: StaticString,
@@ -618,7 +618,7 @@ def reduce_argmax[
     & (
         def[
             width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+        ](IndexList[rank], SIMD[.int64, width]) -> None
     ),
     /,
     target: StaticString,

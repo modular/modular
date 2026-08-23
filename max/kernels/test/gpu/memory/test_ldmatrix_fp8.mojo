@@ -79,7 +79,7 @@ def test_ldmatrix_fp8[
     store_matrix_d[M, N, K](
         c_ptr,
         # Store matrix is hardcoded to store 4 elements.
-        rebind[SIMD[DType.float32, 4]](d),
+        rebind[SIMD[.float32, 4]](d),
         0,
         0,
         mma_shape[1],

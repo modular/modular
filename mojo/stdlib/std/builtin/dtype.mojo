@@ -64,7 +64,7 @@ struct DType(
     Example:
 
     ```mojo
-    var data = SIMD[DType.float16, 4](1.5, 2.5, 3.5, 4.5)
+    var data = SIMD[.float16, 4](1.5, 2.5, 3.5, 4.5)
     var dtype = data.dtype
 
     print("Is float:", dtype.is_floating_point())  # True

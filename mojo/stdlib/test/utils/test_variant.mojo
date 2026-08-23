@@ -197,10 +197,10 @@ def test_is_type_supported() raises:
     assert_equal(_x.is_type_supported[Int32](), True)
     assert_equal(_x.is_type_supported[Float32](), False)
     assert_equal(_x.is_type_supported[UInt32](), False)
-    var _y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
-    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 2]](), True)
-    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 4]](), True)
-    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
+    var _y: Variant[SIMD[.uint8, 2], SIMD[.uint8, 4]]
+    assert_equal(_y.is_type_supported[SIMD[.uint8, 2]](), True)
+    assert_equal(_y.is_type_supported[SIMD[.uint8, 4]](), True)
+    assert_equal(_y.is_type_supported[SIMD[.uint8, 8]](), False)
 
 
 def test_variant_works_with_move_only_types() raises:

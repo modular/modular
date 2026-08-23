@@ -45,7 +45,7 @@ comptime MMA_DIM = 16  # one 16x16 score sub-tile
 
 
 @always_inline
-def _frag_row_max(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
+def _frag_row_max(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row max over a 16x16 score fragment, for the lane's two rows.
 
     Returns `(max over row_lo, max over row_lo+8)`; after the butterfly every
@@ -58,11 +58,11 @@ def _frag_row_max(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
     r0 = max(r0, shuffle_xor(r0, UInt32(8)))
     r1 = max(r1, shuffle_xor(r1, UInt32(1)))
     r1 = max(r1, shuffle_xor(r1, UInt32(8)))
-    return SIMD[DType.float32, 2](r0, r1)
+    return SIMD[.float32, 2](r0, r1)
 
 
 @always_inline
-def _frag_row_sum(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
+def _frag_row_sum(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row sum over a 16x16 score fragment, for the lane's two rows."""
     var r0 = frag[0] + frag[1] + frag[2] + frag[3]
     var r1 = frag[4] + frag[5] + frag[6] + frag[7]
@@ -70,7 +70,7 @@ def _frag_row_sum(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
     r0 = r0 + shuffle_xor(r0, UInt32(8))
     r1 = r1 + shuffle_xor(r1, UInt32(1))
     r1 = r1 + shuffle_xor(r1, UInt32(8))
-    return SIMD[DType.float32, 2](r0, r1)
+    return SIMD[.float32, 2](r0, r1)
 
 
 def _frag_reduce_kernel(
@@ -84,7 +84,7 @@ def _frag_reduce_kernel(
     var row_lo = ((lane & 7) // 2) + ((lane & 16) >> 2)
     var col_base = ((lane & 1) << 2) + (lane & 8)
 
-    var frag = SIMD[DType.float32, 8](0)
+    var frag = SIMD[.float32, 8](0)
 
     comptime for el in range(8):
         var row = row_lo + (8 if el > 3 else 0)

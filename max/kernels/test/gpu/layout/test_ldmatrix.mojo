@@ -42,7 +42,7 @@ def test_ldmatrix_fp32(
     comptime mma_n: Int = 8
     comptime mma_k: Int = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = unsafe_stack_allocation[
         mma_m * mma_k,

@@ -84,8 +84,8 @@ def test_masked_load_poison_in_masked_off_lane() raises:
     )
 
     # mask=False for lanes 2,3 means those lanes use passthrough, not memory.
-    var mask = SIMD[DType.bool, 4](True, True, False, False)
-    var passthrough = SIMD[DType.float32, 4](0)
+    var mask = SIMD[.bool, 4](True, True, False, False)
+    var passthrough = SIMD[.float32, 4](0)
     var val = masked_load(ptr, mask, passthrough)
 
     assert_true(val[0] == 1.0)

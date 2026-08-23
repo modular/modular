@@ -418,9 +418,9 @@ struct MLAPrefillSparseQKVFP8[
                 query * UInt32(Self.PV_BK) + local_key_base + UInt32(col_offset)
             )
             var phys = P_SW(logical)
-            var packed = SIMD[DType.uint32, 4](0)
+            var packed = SIMD[.uint32, 4](0)
             comptime for sub in range(4):
-                var f4 = SIMD[DType.float32, 4](
+                var f4 = SIMD[.float32, 4](
                     nums[g * 16 + sub * 4 + 0],
                     nums[g * 16 + sub * 4 + 1],
                     nums[g * 16 + sub * 4 + 2],

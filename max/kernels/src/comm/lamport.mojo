@@ -184,9 +184,7 @@ def set_neg_zero[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         pack_bytes % 4 == 0
     ), "Lamport sentinel pack must be a multiple of 4 bytes"
     comptime n_u32 = pack_bytes // 4
-    return bitcast[dtype, width](
-        SIMD[DType.uint32, n_u32](LAMPORT_SENTINEL_U32)
-    )
+    return bitcast[dtype, width](SIMD[.uint32, n_u32](LAMPORT_SENTINEL_U32))
 
 
 struct LamportGeneration:

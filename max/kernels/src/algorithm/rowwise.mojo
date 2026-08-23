@@ -348,9 +348,7 @@ def strided_load[
     invariant: Bool = True,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
-        fill=True
-    ),
+    mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ) -> SIMD[dtype, simd_width]:
     """Loads `simd_width` values from `addr` with a compile-time `stride`.
 
@@ -1129,7 +1127,7 @@ struct Row[
 
     @staticmethod
     @always_inline
-    def _index_vector[w: Int](pos: Int) -> SIMD[DType.int64, w]:
+    def _index_vector[w: Int](pos: Int) -> SIMD[.int64, w]:
         # Per-lane axis positions for a tile starting at `pos`. Lane stride
         # is the tier discriminator (comptime): `1` when lanes are
         # consecutive axis positions (cooperative tiers), `0` when they are
@@ -1137,7 +1135,7 @@ struct Row[
         # Keeping this `iota`/splat choice (pure layout) in the scaffolder
         # leaves the monoid's `reduce` purely elementwise.
         comptime lane_stride = 0 if Self.params.emit_tile_width > 1 else 1
-        return SIMD[DType.int64, w](pos) + iota[DType.int64, w]() * Int64(
+        return SIMD[.int64, w](pos) + iota[DType.int64, w]() * Int64(
             lane_stride
         )
 

@@ -970,7 +970,7 @@ struct AppleM5MatMul[
                 lcol: Int,
                 arow: Int,
                 acol: Int,
-                v_fp32: SIMD[DType.float32, 4],
+                v_fp32: SIMD[.float32, 4],
             ):
                 # `lrow,lcol`: coords inside the simdgroup tile (C store).
                 # `arow,acol`: absolute coords (bounds + the lambda contract).

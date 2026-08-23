@@ -365,7 +365,7 @@ def st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: Pointer[mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED],
-    d: SIMD[DType.float32, simd_width],
+    d: SIMD[.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.
 
@@ -973,25 +973,25 @@ def wgmma_async[
         and accum_type == c_dtype == DType.float32
     ), "unsupported config"
     var a0 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[0]),
             rebind[BFloat16](mat_a_frag[1]),
         )
     )
     var a1 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[2]),
             rebind[BFloat16](mat_a_frag[3]),
         )
     )
     var a2 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[4]),
             rebind[BFloat16](mat_a_frag[5]),
         )
     )
     var a3 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[6]),
             rebind[BFloat16](mat_a_frag[7]),
         )
@@ -1023,7 +1023,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 4](r[0], r[1], r[2], r[3])
+            SIMD[.float32, 4](r[0], r[1], r[2], r[3])
         )
     elif n == 16:
         var r = inlined_assembly[
@@ -1048,7 +1048,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 8](
+            SIMD[.float32, 8](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
             )
         )
@@ -1078,7 +1078,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 16](
+            SIMD[.float32, 16](
                 r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                 r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
             )
@@ -1115,7 +1115,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 32](
+            SIMD[.float32, 32](
                 r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                 r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
                 r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
@@ -1165,7 +1165,7 @@ def wgmma_async[
             c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
         )
         return rebind[type_of(c)](
-            SIMD[DType.float32, 64](
+            SIMD[.float32, 64](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                 r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
                 r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25],
@@ -1244,7 +1244,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 128](
+            SIMD[.float32, 128](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                 r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17], r[18],
                 r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27],

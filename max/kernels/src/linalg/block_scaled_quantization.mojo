@@ -1096,7 +1096,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         comptime for idx in range(NUM_PIPELINES_STAGES):
             tma_mbar[idx].init()
 
-    var tma_phase = SIMD[DType.uint32, NUM_PIPELINES_STAGES](0)
+    var tma_phase = SIMD[.uint32, NUM_PIPELINES_STAGES](0)
 
     barrier()
 
@@ -1130,7 +1130,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 var smem_tile = input_smem.next(iter_idx)[]
 
                 tma_mbar[iter_idx].wait(tma_phase[iter_idx])
-                var quantized_elements = SIMD[DType.uint32, 8]()
+                var quantized_elements = SIMD[.uint32, 8]()
 
                 comptime for group_idx in range(
                     STAGE_GROUP_SIZE // SF_VECTOR_SIZE
@@ -2919,14 +2919,14 @@ def _mxfp4_dotprod[
     @always_inline
     def cast_fp2em1x2_to_bf16x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.bfloat16, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.bfloat16, 2]:
         return llvm_intrinsic[
-            "llvm.amdgcn.cvt.scalef32.pk.bf16.fp4", SIMD[DType.bfloat16, 2]
+            "llvm.amdgcn.cvt.scalef32.pk.bf16.fp4", SIMD[.bfloat16, 2]
         ](packed, scale, Int32(byte_select))
 
     @always_inline
     def dotprod_bf16x2(
-        a: SIMD[DType.bfloat16, 2], b: SIMD[DType.bfloat16, 2], c: Float32
+        a: SIMD[.bfloat16, 2], b: SIMD[.bfloat16, 2], c: Float32
     ) -> Float32:
         return llvm_intrinsic["llvm.amdgcn.fdot2.f32.bf16", Float32](
             a, b, c, False
@@ -2937,7 +2937,7 @@ def _mxfp4_dotprod[
     var a_local_ptr = a_ptr
     var b_local_ptr = b_ptr
 
-    var accum = SIMD[DType.float32, BLOCK_N](0)
+    var accum = SIMD[.float32, BLOCK_N](0)
 
     for ko in range(k_groups):
         var a_scale = a_scales_ptr[ko].cast[DType.float32]()

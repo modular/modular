@@ -46,7 +46,7 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             """Convert RGB pixel to grayscale using perceptual weighting.
 
             Args:
@@ -59,7 +59,7 @@ struct Grayscale:
             @__parameter
             def load(
                 idx: IndexList[img_in.rank],
-            ) -> SIMD[DType.float32, simd_width]:
+            ) -> SIMD[.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[DType.float32]()
 
             var idx_l = coord_to_index_list(idx)

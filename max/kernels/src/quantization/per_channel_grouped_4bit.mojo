@@ -49,7 +49,7 @@ def _to_SIMD[
 def calculate_symmetric_vector[
     input_dtype: DType, simd_width: SIMDLength, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
-    SIMD[DType.uint8, simd_width],
+    SIMD[.uint8, simd_width],
     Scalar[input_dtype],
 ]:
     """
@@ -181,20 +181,20 @@ struct Q4sym[
     @staticmethod
     @always_inline
     def _encode_bits(
-        qdata: SIMD[DType.uint8, Self.group_size]
-    ) -> SIMD[DType.uint8, SIMDLength(Self.group_size) // 2]:
+        qdata: SIMD[.uint8, Self.group_size]
+    ) -> SIMD[.uint8, SIMDLength(Self.group_size) // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def _decode_bits(mut self) -> SIMD[.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        var bits_simd = _to_SIMD[DType.uint8, SIMDLength(Self.group_size) // 2](
+        var bits_simd = _to_SIMD[.uint8, SIMDLength(Self.group_size) // 2](
             self.bits
         )
         var bits_upper = (bits_simd & 0xF0) >> 4
         var bits_lower = bits_simd & 0x0F
-        return rebind[SIMD[DType.uint8, Self.group_size]](
+        return rebind[SIMD[.uint8, Self.group_size]](
             bits_lower.join(bits_upper)
         )
 
@@ -208,21 +208,17 @@ struct Q4sym[
         """
         # We avoid bit-casting directly, as the code-generation might hit a
         # path which attempts to bitcast 2xui8 --> f16 which is not typically supported
-        var scale_bytes: SIMD[DType.uint8, 2] = _to_SIMD[DType.uint8, 2](
-            self.scale
-        )
+        var scale_bytes: SIMD[.uint8, 2] = _to_SIMD[.uint8, 2](self.scale)
 
         # NOTE: this may break on different endian systems...
-        var upcast_bytes: SIMD[DType.uint16, 2] = scale_bytes.cast[
-            DType.uint16
-        ]()
+        var upcast_bytes: SIMD[.uint16, 2] = scale_bytes.cast[DType.uint16]()
         upcast_bytes[1] = upcast_bytes[1] << 8
         var final_result: UInt16 = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
     @always_inline
-    def decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def decode_unsigned(mut self) -> SIMD[.uint8, Self.group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -234,7 +230,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    def decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
+    def decode_signed(mut self) -> SIMD[.int8, Self.group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 

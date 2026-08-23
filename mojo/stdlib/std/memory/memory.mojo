@@ -89,7 +89,7 @@ def _memcmp_opt_impl_unconstrained[
             var index = Int(
                 diff.select(
                     iota[DType.uint8, simd_width](),
-                    SIMD[DType.uint8, simd_width](255),
+                    SIMD[.uint8, simd_width](255),
                 ).reduce_min()
             )
             return -1 if s1i[index] < s2i[index] else 1
@@ -101,7 +101,7 @@ def _memcmp_opt_impl_unconstrained[
         var index = Int(
             diff.select(
                 iota[DType.uint8, simd_width](),
-                SIMD[DType.uint8, simd_width](255),
+                SIMD[.uint8, simd_width](255),
             ).reduce_min()
         )
         return -1 if s1i[index] < s2i[index] else 1
@@ -348,7 +348,7 @@ def memmove[
 @always_inline("nodebug")
 def _memset_impl(ptr: MutPointer[Byte, ...], value: Byte, count: Int):
     def fill[width: Int](offset: Int) {imm}:
-        ptr.unsafe_store(offset, SIMD[DType.uint8, width](value))
+        ptr.unsafe_store(offset, SIMD[.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
     vectorize[simd_width](count, fill)

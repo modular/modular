@@ -179,7 +179,7 @@ def vectorize[
 
         def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
-            var val = SIMD[DType.int32, width](i)
+            var val = SIMD[.int32, width](i)
 
             # Optimization: Constant propagation eliminates this check in the main loop
             if evl == width:

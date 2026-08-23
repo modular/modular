@@ -835,7 +835,7 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.bfloat16, 4]._mlir_type
+                _type=SIMD[.bfloat16, 4]._mlir_type
             ](llvm_res)
         )
     elif dtype == DType.bfloat16 and width == 8:
@@ -847,7 +847,7 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.bfloat16, 8]._mlir_type
+                _type=SIMD[.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
     elif dtype == DType.float16 and width == 4:
@@ -859,7 +859,7 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.float16, 4]._mlir_type
+                _type=SIMD[.float16, 4]._mlir_type
             ](llvm_res)
         )
     elif dtype == DType.float16 and width == 8:
@@ -871,7 +871,7 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.float16, 8]._mlir_type
+                _type=SIMD[.float16, 8]._mlir_type
             ](llvm_res)
         )
     elif dtype.is_float8() and width == 8:
@@ -882,11 +882,9 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 8]._mlir_type
+            _type=SIMD[.uint8, 8]._mlir_type
         ](llvm_res)
-        return bitcast[dtype, width](
-            rebind[SIMD[DType.uint8, width]](uint8_vec)
-        )
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 16:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<16 x i8>`,
@@ -895,11 +893,9 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res)
-        return bitcast[dtype, width](
-            rebind[SIMD[DType.uint8, width]](uint8_vec)
-        )
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 32:
         var llvm_res0 = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<16 x i8>`,
@@ -918,13 +914,13 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
         var uint8_vec0 = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res0)
         var uint8_vec1 = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res1)
-        var uint8_vec = rebind[SIMD[DType.uint8, 16]](uint8_vec0).join(
-            rebind[SIMD[DType.uint8, 16]](uint8_vec1)
+        var uint8_vec = rebind[SIMD[.uint8, 16]](uint8_vec0).join(
+            rebind[SIMD[.uint8, 16]](uint8_vec1)
         )
         return bitcast[dtype, width](uint8_vec)
     else:
@@ -953,9 +949,9 @@ def ds_read_b128_imm_u32x4[
     offset_bytes: Int,
 ](
     base_ptr: UnsafePointer[BFloat16, _, address_space=AddressSpace.SHARED],
-) -> SIMD[DType.uint32, 4]:
+) -> SIMD[.uint32, 4]:
     """Issues `ds_read_b128` with a comptime immediate offset and returns the
-    loaded 128 bits as `SIMD[DType.uint32, 4]`.
+    loaded 128 bits as `SIMD[.uint32, 4]`.
 
     Includes pre-issue `s_nop` hazard guard, pre-issue `s_waitcnt vmcnt(0)`
     (DMA completion), and POST-issue `s_waitcnt lgkmcnt(0)` (LDS read
@@ -987,7 +983,7 @@ def ds_read_b128_imm_u32x4[
     # trade-off for kernels with concurrent MFMA + LDS-read flows.
     return inlined_assembly[
         "ds_read_b128 $0, $1 offset:$2",
-        SIMD[DType.uint32, 4],
+        SIMD[.uint32, 4],
         constraints="=v,v,n",
         has_side_effect=True,
     ](addr_i32, Int32(offset_bytes))

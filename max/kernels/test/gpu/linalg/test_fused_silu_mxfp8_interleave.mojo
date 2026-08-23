@@ -186,8 +186,8 @@ def _test_silu_mxfp8[
             var m = start + tok
             for k_blk in range(H // SF_VECTOR_SIZE):
                 var k_base = k_blk * SF_VECTOR_SIZE
-                var gate_block = SIMD[DType.float32, SF_VECTOR_SIZE]()
-                var up_block = SIMD[DType.float32, SF_VECTOR_SIZE]()
+                var gate_block = SIMD[.float32, SF_VECTOR_SIZE]()
+                var up_block = SIMD[.float32, SF_VECTOR_SIZE]()
                 for j in range(SF_VECTOR_SIZE):
                     var col = k_base + j
                     var g_bf = in_host_ptr[m * two_H + 2 * col]
@@ -195,7 +195,7 @@ def _test_silu_mxfp8[
                     gate_block[j] = g_bf.cast[DType.float32]()
                     up_block[j] = u_bf.cast[DType.float32]()
 
-                var z = SIMD[DType.float32, SF_VECTOR_SIZE]()
+                var z = SIMD[.float32, SF_VECTOR_SIZE]()
                 var block_max = Float32(0.0)
                 for j in range(SF_VECTOR_SIZE):
                     var g = gate_block[j]

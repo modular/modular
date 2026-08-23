@@ -65,7 +65,7 @@ def _neon_dotprod_lane[
 
     # Helper to generate `sdot r, a, b[lane]` instruction form.
     var tuple = bitcast[DType.int32, b_width // 4](b)[lane]
-    var splat = bitcast[b_type, width * 4](SIMD[DType.int32, width](tuple))
+    var splat = bitcast[b_type, width * 4](SIMD[.int32, width](tuple))
     return _neon_dotprod(c, a, splat)
 
 

@@ -30,7 +30,7 @@ def test_numbers() raises:
     assert_equal(Int(Int32(5)), 5)
     assert_equal(Int("42"), 42)
     # Int is a SIMD scalar, so .cast works
-    assert_equal(Int(5).cast[DType.int8](), Int8(5))
+    assert_equal(Int(5).cast[.int8](), Int8(5))
     # Int <-> UInt share bits: the reinterpretation round-trips
     assert_equal(Int(UInt(Int(-1))), -1)
     # make a Float64; Float -> Int truncates toward zero
@@ -50,13 +50,13 @@ def test_numbers() raises:
 
 
 def test_simd() raises:
-    var v = SIMD[DType.int32, 4](7)  # splat one value to all lanes
+    var v = SIMD[.int32, 4](7)  # splat one value to all lanes
     assert_equal(v.reduce_add(), 28)
-    var v2 = SIMD[DType.int32, 4](1, 2, 3, 4)  # per-lane (N matches arg count)
+    var v2 = SIMD[.int32, 4](1, 2, 3, 4)  # per-lane (N matches arg count)
     assert_equal(v2[2], 3)
-    assert_equal(v2.cast[DType.float64]()[0], 1.0)  # new dtype, same lane count
+    assert_equal(v2.cast[.float64]()[0], 1.0)  # new dtype, same lane count
     var s: Int32 = 9
-    assert_equal(SIMD[DType.int32, 4](s).reduce_add(), 36)  # scalar -> splat
+    assert_equal(SIMD[.int32, 4](s).reduce_add(), 36)  # scalar -> splat
 
 
 def test_string() raises:

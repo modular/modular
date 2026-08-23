@@ -93,13 +93,13 @@ def _run_splitk_arg[is_max: Bool](mut row: List[Float32]) raises -> Int:
     @always_inline
     def input_fn[
         width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {input_ptr} -> SIMD[DType.float32, width]:
+    ](coords: IndexList[rank]) {input_ptr} -> SIMD[.float32, width]:
         return input_ptr.unsafe_load[width=width](coords[1])
 
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.int64, width]) {output_ptr}:
+    ](coords: IndexList[rank], val: SIMD[.int64, width]) {output_ptr}:
         output_ptr.unsafe_store[width=width](val)
 
     comptime if is_max:

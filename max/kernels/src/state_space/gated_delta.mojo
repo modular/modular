@@ -281,7 +281,7 @@ def gated_delta_recurrence_fwd_gpu[
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
-    var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
+    var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
     comptime for kd in range(KEY_HEAD_DIM):
         var off = (
             UInt32(slot) * recurrent_state_slot_stride

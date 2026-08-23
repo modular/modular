@@ -77,9 +77,7 @@ def _run_reduce_sum_inner(
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.float32, width]) {
-        var output_ptr
-    }:
+    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
     reduce_sum[DType.float32, target="cpu", reduce_dim=1](
@@ -111,9 +109,7 @@ def _run_reduce_max_non_inner(
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.float32, width]) {
-        var output_ptr
-    }:
+    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[1], val)
 
     reduce_max[DType.float32, target="cpu", reduce_dim=0](
@@ -144,7 +140,7 @@ def _run_reduce_argmax_inner(
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.int64, width]) {var output_ptr}:
+    ](coords: IndexList[rank], val: SIMD[.int64, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
     reduce_argmax[DType.float32, target="cpu", reduce_dim=1](
@@ -175,9 +171,7 @@ def _run_reduce_mean_inner_f32(
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.float32, width]) {
-        var output_ptr
-    }:
+    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
     reduce_mean[DType.float32, target="cpu", reduce_dim=1](
@@ -209,7 +203,7 @@ def _run_reduce_mean_inner_i32(
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.int32, width]) {var output_ptr}:
+    ](coords: IndexList[rank], val: SIMD[.int32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
     reduce_mean[DType.int32, target="cpu", reduce_dim=1](
@@ -230,15 +224,13 @@ def _run_reduce_sum_rank1(axis_size: Int) raises -> List[Float32]:
     @always_inline
     def input_fn[
         width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr} -> SIMD[DType.float32, width]:
+    ](coords: IndexList[rank]) {var input_ptr} -> SIMD[.float32, width]:
         return input_ptr.unsafe_load[width=width](coords[0])
 
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.float32, width]) {
-        var output_ptr
-    }:
+    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](0, val)
 
     reduce_sum[DType.float32, target="cpu", reduce_dim=0](

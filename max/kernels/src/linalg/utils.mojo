@@ -59,8 +59,8 @@ def partial_simd_load[
         The SIMD vector loaded and zero-filled.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
-    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var effective_lbound = SIMD[.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[.int32, width](min(width, rbound))
     var incr = iota[DType.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
@@ -98,8 +98,8 @@ def partial_simd_store[
         data: The vector value to store.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
-    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var effective_lbound = SIMD[.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[.int32, width](min(width, rbound))
     var incr = iota[DType.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 

@@ -1484,7 +1484,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         row_0: Int,
         row_1: Int,
         idx_in_group: Int,
-    ) -> StaticTuple[SIMD[DType.uint32, 4], 4]:
+    ) -> StaticTuple[SIMD[.uint32, 4], 4]:
         """Loads and converts this thread's 2x16 FP8 bytes of col-block `c`.
 
         Returns four packed-BF16 u32x4 chunks (row 0 lo/hi, row 1 lo/hi),
@@ -1527,7 +1527,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             p1[0] = hmul2_bf16x8_by_scalar[Self.q_type](p1[0], s1)
             p1[1] = hmul2_bf16x8_by_scalar[Self.q_type](p1[1], s1)
 
-        return StaticTuple[SIMD[DType.uint32, 4], 4](p0[0], p0[1], p1[0], p1[1])
+        return StaticTuple[SIMD[.uint32, 4], 4](p0[0], p0[1], p1[0], p1[1])
 
     @staticmethod
     @always_inline

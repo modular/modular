@@ -67,7 +67,7 @@ comptime _TILE: Int = _PTOPK_TOTAL
 # `_V4_ALIGN` (= 16 B) is the alignment of a width-4 f32/i32 SIMD; the `alignment`
 # argument on the width-4 loads/stores below is REQUIRED — the default (element
 # alignment) makes LLVM legalize the vector op back into 4 scalar accesses.
-comptime _V4_ALIGN: Int = align_of[SIMD[DType.float32, _PTOPK_ITEMS]]()
+comptime _V4_ALIGN: Int = align_of[SIMD[.float32, _PTOPK_ITEMS]]()
 
 
 @always_inline
@@ -77,7 +77,7 @@ def _load4_scores(
     index_base: Int,
     local0: Int,
     count: Int,
-) -> Tuple[SIMD[DType.float32, _PTOPK_ITEMS], SIMD[DType.int32, _PTOPK_ITEMS]]:
+) -> Tuple[SIMD[.float32, _PTOPK_ITEMS], SIMD[.int32, _PTOPK_ITEMS]]:
     """Load the 4 contiguous scores a thread owns, plus their column indices.
 
     Reads `in_scores[base + index_base + local0 + j]` for `j` in `0..3`, storing
@@ -98,13 +98,13 @@ def _load4_scores(
     var off = base + col0
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         var v = in_scores.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](off)
-        var idx = SIMD[DType.int32, _PTOPK_ITEMS](Int32(col0)) + SIMD[
+        var idx = SIMD[.int32, _PTOPK_ITEMS](Int32(col0)) + SIMD[
             DType.int32, _PTOPK_ITEMS
         ](0, 1, 2, 3)
         return (v, idx)
 
-    var vv = SIMD[DType.float32, _PTOPK_ITEMS](min_or_neg_inf[DType.float32]())
-    var ii = SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+    var vv = SIMD[.float32, _PTOPK_ITEMS](min_or_neg_inf[DType.float32]())
+    var ii = SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     comptime for j in range(_PTOPK_ITEMS):
         if local0 + j < count:
             vv[j] = in_scores[off + j]
@@ -128,7 +128,7 @@ def _halfclean4[
         Int32, sv_origin, address_space=AddressSpace.SHARED
     ],
     tid: Int,
-) -> Tuple[SIMD[DType.float32, _PTOPK_ITEMS], SIMD[DType.int32, _PTOPK_ITEMS]]:
+) -> Tuple[SIMD[.float32, _PTOPK_ITEMS], SIMD[.int32, _PTOPK_ITEMS]]:
     """Batcher half-cleaner: element-wise max of the champion and reversed tile.
 
     Reads the 4 canonical champion slots `champ[e0..e3]` and the mirrored
@@ -661,10 +661,10 @@ def _streaming_topk_kernel(
 
     var neg_inf = min_or_neg_inf[DType.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.float32, _PTOPK_ITEMS](neg_inf)
+        e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
     champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+        e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
 
@@ -699,10 +699,10 @@ def _streaming_topk_kernel(
         barrier()
 
         scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -729,10 +729,10 @@ def _streaming_topk_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -882,8 +882,8 @@ def _phi(v: Float32) -> UInt32:
 
 @always_inline
 def _phi_group(
-    v: SIMD[DType.float32, _HSEL_SCAN_ITEMS]
-) -> SIMD[DType.uint32, _HSEL_SCAN_ITEMS]:
+    v: SIMD[.float32, _HSEL_SCAN_ITEMS]
+) -> SIMD[.uint32, _HSEL_SCAN_ITEMS]:
     """`_phi` over a thread's whole scan group."""
     var bits = bitcast[DType.uint32, _HSEL_SCAN_ITEMS](v)
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
@@ -895,7 +895,7 @@ def _load_scan_group(
     off: Int,
     local0: Int,
     count: Int,
-) -> SIMD[DType.float32, _HSEL_SCAN_ITEMS]:
+) -> SIMD[.float32, _HSEL_SCAN_ITEMS]:
     """The contiguous scores a thread owns, as back-to-back 128-bit loads.
 
     Positions past `count` pad with the bit pattern whose `_phi` image is 0,
@@ -908,7 +908,7 @@ def _load_scan_group(
     if local0 + _HSEL_SCAN_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         return in_scores.load[width=_HSEL_SCAN_ITEMS, alignment=_V4_ALIGN](off)
 
-    var bits = SIMD[DType.uint32, _HSEL_SCAN_ITEMS](UInt32(0xFFFFFFFF))
+    var bits = SIMD[.uint32, _HSEL_SCAN_ITEMS](UInt32(0xFFFFFFFF))
     comptime for j in range(_HSEL_SCAN_ITEMS):
         if local0 + j < count:
             bits[j] = bitcast[DType.uint32, 1](in_scores[off + j])
@@ -921,7 +921,7 @@ def _phi4(
     off: Int,
     local0: Int,
     count: Int,
-) -> SIMD[DType.uint32, _PTOPK_ITEMS]:
+) -> SIMD[.uint32, _PTOPK_ITEMS]:
     """`_phi` of the four contiguous scores a resident group owns.
 
     Converting at the load is what keeps the resident payload at one register
@@ -933,7 +933,7 @@ def _phi4(
     takes the third branch and touches no memory at all, which is what makes a
     payload wider than the row cost only its registers.
     """
-    var bits = SIMD[DType.uint32, _PTOPK_ITEMS](UInt32(0xFFFFFFFF))
+    var bits = SIMD[.uint32, _PTOPK_ITEMS](UInt32(0xFFFFFFFF))
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         bits = bitcast[DType.uint32, _PTOPK_ITEMS](
             in_scores.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](off)
@@ -1315,7 +1315,7 @@ def _histsel_topk_impl[
                             i = ni
                     else:
                         var base = tid * _HSEL_SCAN_ITEMS
-                        var cur = SIMD[DType.float32, _HSEL_SCAN_ITEMS](0)
+                        var cur = SIMD[.float32, _HSEL_SCAN_ITEMS](0)
                         comptime if prefetch:
                             cur = _load_scan_group(
                                 in_scores, row + base, base, count
@@ -1654,7 +1654,7 @@ def _histsel_topk_impl[
 
 
 @always_inline
-def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[DType.uint64, 2]:
+def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[.uint64, 2]:
     """The `rank_bits` most significant set bits of `vary`, as positions.
 
     Packed six bits each so the block shares them through a shared-memory
@@ -1667,7 +1667,7 @@ def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[DType.uint64, 2]:
     Positions past the last set bit stay at 0, which adds the same constant to
     every key's digit and so cannot change the order.
     """
-    var packed = SIMD[DType.uint64, 2](0)
+    var packed = SIMD[.uint64, 2](0)
     var m = vary
     comptime for i in range(rank_bits):
         if m != 0:
@@ -1712,7 +1712,7 @@ def _hsel_bin_shifts(nocc: Int, nbins: Int, rank_bits: Int) -> Tuple[Int, Int]:
 @always_inline
 def _hsel_rank_digit[
     rank_bits: Int
-](key: UInt64, packed: SIMD[DType.uint64, 2]) -> Int:
+](key: UInt64, packed: SIMD[.uint64, 2]) -> Int:
     """Gather the key's varying bits, most significant first."""
     var d = UInt32(0)
     comptime for i in range(rank_bits):
@@ -1729,7 +1729,7 @@ def _hsel_digit_of[
     rank_bits: Int, bin_digit: Bool, d_origin: MutOrigin
 ](
     key: UInt64,
-    packed: SIMD[DType.uint64, 2],
+    packed: SIMD[.uint64, 2],
     dmap: UnsafePointer[UInt32, d_origin, address_space=AddressSpace.SHARED],
     left: Int,
     right: Int,
@@ -1812,7 +1812,7 @@ def _hsel_rank_write[
     comptime assert run * nthreads >= nbins, "every rank bin needs an owner"
 
     var p0 = tid * items
-    var mine = SIMD[DType.uint64, items](0)
+    var mine = SIMD[.uint64, items](0)
     comptime for i in range(items):
         if p0 + i < M:
             mine[i] = sel_k[p0 + i]
@@ -1891,7 +1891,7 @@ def _hsel_rank_write[
         # Turn round 0's occupancy flags into dense numbers in place.
         comptime brun = _HSEL_BINS // nthreads
         var b0 = tid * brun
-        var flag = SIMD[DType.uint32, brun](0)
+        var flag = SIMD[.uint32, brun](0)
         var nloc = UInt32(0)
         comptime for j in range(brun):
             flag[j] = dmap[b0 + j]
@@ -1912,11 +1912,11 @@ def _hsel_rank_write[
         wor[nwarps + 1] = pk[1]
     barrier()
 
-    var packed = SIMD[DType.uint64, 2](wor[nwarps], wor[nwarps + 1])
+    var packed = SIMD[.uint64, 2](wor[nwarps], wor[nwarps + 1])
     var sh = (0, 0)
     comptime if bin_digit:
         sh = _hsel_bin_shifts(nocc, nbins, rank_bits)
-    var dig = SIMD[DType.int32, items](0)
+    var dig = SIMD[.int32, items](0)
     comptime for i in range(items):
         dig[i] = Int32(
             _hsel_digit_of[rank_bits, bin_digit](
@@ -1956,7 +1956,7 @@ def _hsel_rank_write[
     # bins. Afterwards `hist[b]` counts the keys in bins at or above `b`, so bin
     # `b` owns output slots `[hist[b+1], hist[b])`.
     var top = nbins - 1 - tid * run
-    var cnt = SIMD[DType.uint32, run](0)
+    var cnt = SIMD[.uint32, run](0)
     var local = UInt32(0)
     if top >= 0:
         comptime for j in range(run):
@@ -2294,7 +2294,7 @@ def _histsel_resident_impl[
     # transaction per group -- and all `vecs` groups are in flight at once. The
     # streaming path reaches two outstanding loads per thread by carrying one
     # group ahead; here the whole row is the prefetch.
-    var ph = SIMD[DType.uint32, items](0)
+    var ph = SIMD[.uint32, items](0)
     comptime for v in range(res_vecs):
         var c0 = tid * _PTOPK_ITEMS + v * res_step
         var g = _phi4(in_scores, row + c0, c0, count)
@@ -2476,7 +2476,7 @@ def _histsel_resident_impl[
                         comptime if bin_digit and half == 0 and r == 0:
                             comptime orun = nbins // _HSEL_RES_BLOCK
                             var b0 = tid * orun
-                            var occ = SIMD[DType.uint32, orun](0)
+                            var occ = SIMD[.uint32, orun](0)
                             var nloc = UInt32(0)
                             comptime for j in range(orun):
                                 if hist[b0 + j] > 0:
@@ -2584,7 +2584,7 @@ def _histsel_resident_impl[
             # a claim at or beyond `K` is simply dropped -- exactly `K - n_above`
             # survive, which is the cut.
             var obase = token * _K
-            var emask = SIMD[DType.uint32, res_vecs](0)
+            var emask = SIMD[.uint32, res_vecs](0)
             var ec_all = UInt32(0)
             comptime for v in range(res_vecs):
                 var c0 = tid * _PTOPK_ITEMS + v * res_step
@@ -2647,9 +2647,9 @@ def _histsel_resident_impl[
                     )
             return
 
-        var gmask = SIMD[DType.uint32, res_vecs](0)
-        var emask = SIMD[DType.uint32, res_vecs](0)
-        var pref = SIMD[DType.uint32, res_vecs](0)
+        var gmask = SIMD[.uint32, res_vecs](0)
+        var emask = SIMD[.uint32, res_vecs](0)
+        var pref = SIMD[.uint32, res_vecs](0)
         comptime for v in range(res_vecs):
             var gc = UInt32(0)
             var ec = UInt32(0)
@@ -2686,8 +2686,8 @@ def _histsel_resident_impl[
         # earlier group's totals. Accumulating them is what keeps that right at any
         # payload width; getting it wrong overlays an earlier group's slots and
         # writes past the row.
-        var g_before = SIMD[DType.uint32, res_vecs](0)
-        var e_before = SIMD[DType.uint32, res_vecs](0)
+        var g_before = SIMD[.uint32, res_vecs](0)
+        var e_before = SIMD[.uint32, res_vecs](0)
         var g_acc = UInt32(0)
         var e_acc = UInt32(0)
         comptime for v in range(res_vecs):
@@ -2876,10 +2876,10 @@ def _split_partial_kernel(
 
     var neg_inf = min_or_neg_inf[DType.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.float32, _PTOPK_ITEMS](neg_inf)
+        e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
     champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+        e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
 
@@ -2922,10 +2922,10 @@ def _split_partial_kernel(
         barrier()
 
         scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -2945,10 +2945,10 @@ def _split_partial_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -3076,10 +3076,10 @@ def _reduce_partials_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -3198,10 +3198,10 @@ def _merge_partials_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 

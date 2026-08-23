@@ -260,8 +260,8 @@ def gpu_bicubic_kernel[
         var sum_weights: Float32 = 0.0
 
         # Pre-compute cubic weights for better performance
-        var weights_y = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dy)
-        var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
+        var weights_y = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dy)
+        var weights_x = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
         comptime for i, j in product(range(4), range(4)):

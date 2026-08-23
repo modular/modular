@@ -67,7 +67,7 @@ struct Mandelbrot:
 
             # Perform the Mandelbrot iteration loop calculation.
             var iters = SIMD[output.dtype, width](0)
-            var in_set_mask = SIMD[DType.bool, width](fill=True)
+            var in_set_mask = SIMD[.bool, width](fill=True)
             for _ in range(max_iterations):
                 if not any(in_set_mask):
                     break

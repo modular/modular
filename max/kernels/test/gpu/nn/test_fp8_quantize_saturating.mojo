@@ -37,7 +37,7 @@ def _check_kernel():
     comptime fp8_max = Float32(max_finite[DType.float8_e4m3fn]())
     comptime fp8_min = Float32(min_finite[DType.float8_e4m3fn]())
 
-    var big = SIMD[DType.float32, 4](1.0e4, -1.0e4, 600.0, -600.0)
+    var big = SIMD[.float32, 4](1.0e4, -1.0e4, 600.0, -600.0)
     var q = fp8_quantize[DType.float8_e4m3fn](big, Float32(1.0))
 
     comptime for i in range(4):
@@ -55,7 +55,7 @@ def _check_kernel():
                 _ = v / Float32(0.0)
 
     # +/-Inf input must also saturate (not propagate to NaN).
-    var infs = SIMD[DType.float32, 2](
+    var infs = SIMD[.float32, 2](
         Float32.MAX_FINITE * 2.0, -Float32.MAX_FINITE * 2.0
     )
     var qinf = fp8_quantize[DType.float8_e4m3fn](infs, Float32(1.0))
@@ -85,7 +85,7 @@ def _check_kernel():
             _ = Float32(2.0) / Float32(0.0)
 
     # ---- cast_saturating: direct store helper (MLA KV-write path) ----
-    var big2 = SIMD[DType.bfloat16, 4](
+    var big2 = SIMD[.bfloat16, 4](
         BFloat16(1000.0), BFloat16(-1000.0), BFloat16(500.0), BFloat16(-500.0)
     )
     var c = cast_saturating[DType.float8_e4m3fn](big2)
@@ -104,14 +104,14 @@ def _check_kernel():
     # cast_saturating to a NON-fp8 dtype is a plain cast (no clamp): a large
     # bf16 value stays large (no spurious saturation).
     var keep = cast_saturating[DType.bfloat16](
-        SIMD[DType.float32, 2](1000.0, -1000.0)
+        SIMD[.float32, 2](1000.0, -1000.0)
     )
     if keep[0].cast[DType.float32]() != Float32(1000.0):
         _ = Float32(1.0) / Float32(0.0)
 
     # cast_saturating with in_dtype == out_dtype (non-fp8): identity.
     var bf16_id = cast_saturating[DType.bfloat16](
-        SIMD[DType.bfloat16, 2](BFloat16(1000.0), BFloat16(-1000.0))
+        SIMD[.bfloat16, 2](BFloat16(1000.0), BFloat16(-1000.0))
     )
     if bf16_id[0].cast[DType.float32]() != Float32(1000.0):
         _ = Float32(1.0) / Float32(0.0)
@@ -126,7 +126,7 @@ def _check_kernel():
     # cast_saturating across fp8 types: e5m2 → e4m3fn must still clamp.
     # e5m2 max_finite exceeds e4m3fn max_finite.
     comptime e5m2_max = Float32(max_finite[DType.float8_e5m2]())
-    var e5m2_big = SIMD[DType.float8_e5m2, 2](
+    var e5m2_big = SIMD[.float8_e5m2, 2](
         Float8_e5m2(e5m2_max),
         Float8_e5m2(-e5m2_max),
     )

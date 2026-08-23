@@ -105,7 +105,7 @@ def mm_tiled_kernel_double_buffer(
     var tCol = tile_y * tN
 
     # Register accumulator
-    var Cr = SIMD[DType.float32, tM * tN](0.0)
+    var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate double-buffered shared memory (2 sets of tiles)
     var A_s = unsafe_stack_allocation[

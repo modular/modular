@@ -91,11 +91,11 @@ def _dequant_mxfp6_kernel[
                     continue
 
                 var packed_byte_col = (global_col_idx * 6) // 8
-                var fragment = SIMD[DType.uint8, 32](0)
+                var fragment = SIMD[.uint8, 32](0)
 
                 comptime for chunk in range(BYTES_PER_THREAD // 8):
                     fragment = fragment.insert[offset=chunk * 8](
-                        rebind[SIMD[DType.uint8, 8]](
+                        rebind[SIMD[.uint8, 8]](
                             input.load[8](
                                 Coord(
                                     global_row_idx, packed_byte_col + chunk * 8

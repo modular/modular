@@ -2464,7 +2464,7 @@ struct PagedKVCache[
                 var simd = lut_row_ptr.load[width=chunk, alignment=4 * chunk](
                     c * chunk
                 )
-                var rows_simd = simd * SIMD[DType.uint32, chunk](stride)
+                var rows_simd = simd * SIMD[.uint32, chunk](stride)
                 comptime for i in range(chunk):
                     result.rows[c * chunk + i] = rows_simd[i]
         return result^

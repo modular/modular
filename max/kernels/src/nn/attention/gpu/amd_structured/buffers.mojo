@@ -63,7 +63,7 @@ def _cast_f32_to_fp8_raw[
         dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
     ), "_cast_f32_to_fp8_raw requires E4M3FN or E5M2 destination dtype."
 
-    var f32_src = rebind[SIMD[DType.float32, size]](src)
+    var f32_src = rebind[SIMD[.float32, size]](src)
     var result = SIMD[dtype, size]()
     comptime for i in range(size // 4):
         var chunk = cvt_pk_fp8_f32_raw[dtype](f32_src.slice[4, offset=i * 4]())

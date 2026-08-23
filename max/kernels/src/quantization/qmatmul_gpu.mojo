@@ -1122,7 +1122,7 @@ def multistage_qgemm_kernel[
 # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
 @always_inline
 @doc_hidden
-def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
+def pack_Q_tile(input: SIMD[.uint8, 16]) -> SIMD[.uint32, 4]:
     """Packs sixteen bytes (thirty-two 4-bit weights, two per byte) into four `uint32` lanes for the repacked weight layout.
 
     Args:
@@ -1134,7 +1134,7 @@ def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
     # Q-tile is the smallest indivisible unit when performing gemm
     # operations with quantized matrices.
 
-    var res: SIMD[DType.uint32, 4] = 0
+    var res: SIMD[.uint32, 4] = 0
 
     comptime for i in range(4):
         res[i] |= input[i * 4 + 0].cast[DType.uint32]() & 0x0F
@@ -1152,7 +1152,7 @@ def pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
 
 @always_inline
 @doc_hidden
-def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
+def unpack_4bit_int(val: SIMD[.uint32, _], idx: Int) -> UInt8:
     """Extracts a single 4-bit value from the packed `uint32` lane at the given nibble index.
 
     Args:
@@ -1219,7 +1219,7 @@ def repack_Q4_0_for_sm8x[
     @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
+    ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -1298,8 +1298,8 @@ def repack_Q4_0_for_sm8x[
         )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
-            var frag_0: SIMD[DType.uint8, 16] = 0
-            var frag_1: SIMD[DType.uint8, 16] = 0
+            var frag_0: SIMD[.uint8, 16] = 0
+            var frag_1: SIMD[.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
             comptime thd_layout = Layout.row_major(8, 4)
             # The first 2 Bytes is the scale for this Q4_0 block
@@ -1533,7 +1533,7 @@ def repack_GPTQ_for_sm8x[
             ](warp_x, warp_y)
 
             comptime for i_Q_tile in range(group_size // repack_tile[1]):
-                var tmp: SIMD[DType.uint8, 16] = 0
+                var tmp: SIMD[.uint8, 16] = 0
                 comptime thd_layout = Layout.row_major(8, 4)
 
                 comptime if has_perm:

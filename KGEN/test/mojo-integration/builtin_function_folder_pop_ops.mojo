@@ -498,7 +498,7 @@ def fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
 @always_inline("builtin")
 def pop_unresolved_simd_cmp_sge[
     dt: DType, n: Int, m: Int
-](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[DType.bool, n + m]._mlir_type:
+](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[.bool, n + m]._mlir_type:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ge>`](
         x._mlir_value, y._mlir_value
     )

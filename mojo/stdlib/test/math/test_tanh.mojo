@@ -169,7 +169,7 @@ def _test_tanh_libm[N: Int = 8192]() raises:
 
 
 def test_direct() raises:
-    comptime F32x4 = SIMD[DType.float32, 4]
+    comptime F32x4 = SIMD[.float32, 4]
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f32x4), F32x4(0.0, 0.462117165, 0.761594176, 0.905148208)
@@ -178,7 +178,7 @@ def test_direct() raises:
         tanh(0.5 * f32x4), F32x4(0.0, 0.244918659, 0.462117165, 0.635149002)
     )
 
-    comptime F64x4 = SIMD[DType.float64, 4]
+    comptime F64x4 = SIMD[.float64, 4]
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f64x4), F64x4(0.0, 0.462117165, 0.761594176, 0.905148208)

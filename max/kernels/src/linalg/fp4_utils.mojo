@@ -91,7 +91,7 @@ def block_scaled_operands_compatible[a_type: DType, b_type: DType]() -> Bool:
     )
 
 
-comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
+comptime E2M1_TO_FLOAT32 = SIMD[.float32, 16](
     0.0,
     0.5,
     1.0,
@@ -114,7 +114,7 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 @always_inline
 def decode_e2m1_to_bf16[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.bfloat16, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.bfloat16, width]:
     """Decodes E2M1 nibbles to bfloat16 with branch-free bit arithmetic.
 
     Maps each 4-bit E2M1 value (`s e1 e0 m0`: bit3 sign, bits2:1 exponent,
@@ -141,7 +141,7 @@ def decode_e2m1_to_bf16[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.bfloat16, width]`, bit-identical to
+        The decoded values as `SIMD[.bfloat16, width]`, bit-identical to
         casting `E2M1_TO_FLOAT32[nibble]` to bfloat16.
     """
     var e = (nibble >> 1) & 0x3  # bits 2:1 -> exponent class
@@ -161,7 +161,7 @@ def decode_e2m1_to_bf16[
 @always_inline
 def decode_e2m1_to_f16[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float16, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float16, width]:
     """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
 
     The float16 twin of `decode_e2m1_to_f32_inject`, but -- unlike the f32/bf16
@@ -195,7 +195,7 @@ def decode_e2m1_to_f16[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float16, width]`, bit-identical to
+        The decoded values as `SIMD[.float16, width]`, bit-identical to
         casting `E2M1_TO_FLOAT32[nibble]` to float16.
     """
     # (e1 e0 m0) -> f16 bits 11:9 (exp low 2 bits + mantissa MSB); sign -> 15.
@@ -208,7 +208,7 @@ def decode_e2m1_to_f16[
 @always_inline
 def decode_e2m1_to_f32[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
     """Decodes E2M1 nibbles to float32 with branch-free bit arithmetic.
 
     The float32-native twin of `decode_e2m1_to_bf16`: it builds the float32 bit
@@ -234,7 +234,7 @@ def decode_e2m1_to_f32[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float32, width]`, bit-identical to
+        The decoded values as `SIMD[.float32, width]`, bit-identical to
         indexing `E2M1_TO_FLOAT32[nibble]`.
     """
     var n = nibble.cast[DType.uint32]()
@@ -255,7 +255,7 @@ def decode_e2m1_to_f32[
 @always_inline
 def decode_e2m1_to_f32_inject[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
     """Decodes E2M1 nibbles to float32 by exponent injection (Preston's trick).
 
     A branch-free alternative to `decode_e2m1_to_f32` with NO `select`: inject
@@ -302,7 +302,7 @@ def decode_e2m1_to_f32_inject[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float32, width]`, bit-identical to
+        The decoded values as `SIMD[.float32, width]`, bit-identical to
         `E2M1_TO_FLOAT32[nibble]`.
     """
     var n = nibble.cast[DType.uint32]()
@@ -469,7 +469,7 @@ def cast_fp_to_fp4e2m1[
 def cast_fp32_to_fp4e2m1[
     width: SIMDLength,
     //,
-](x: SIMD[DType.float32, width]) -> UInt32:
+](x: SIMD[.float32, width]) -> UInt32:
     """Converts eight float32 values to a packed FP4 E2M1 word using SM100 PTX instructions.
 
     Issues four `cvt.rn.satfinite.e2m1x2.f32` PTX instructions to convert pairs of
@@ -509,7 +509,7 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
-def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[DType.float16, 2]:
+def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[.float16, 2]:
     """Converts two FP4 E2M1 nibbles packed in one byte to two float16 values using SM100 PTX.
 
     Issues the `cvt.rn.f16x2.e2m1x2` PTX instruction to decode both nibbles in a
