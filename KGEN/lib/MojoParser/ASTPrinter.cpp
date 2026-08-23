@@ -1233,7 +1233,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto structType = sugarDynCast<StructType>(structAttr.getType()))
         typeName = structType.getSymbol().getLeafReference().strref();
 
-      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool") {
+      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
+          typeName == "SIMDLength") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
         printParam(os, elt, ctx);
