@@ -345,6 +345,31 @@ class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
     DEFAULT_ENCODING = "bfloat16"
     SUPPORTED_ENCODINGS = {"bfloat16"}
 
+    def get_kv_params(self) -> KVCacheParams:
+        # Mirror DummyLlamaPipelineModel.get_kv_params: memory estimation reads
+        # the params from this config, so an fp8 cache must carry the same
+        # quantization (scale) overhead here or the estimated budget comes up
+        # short of what allocation actually needs per page.
+        if self._kv_params is not None:
+            return self._kv_params
+        cache_dtype = self.cache_dtype or self.dtype
+        kvcache_quant_config = None
+        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32,
+                quantization_granularity=self.head_dim // 2,
+            )
+        self._kv_params = self.kv_cache.to_params(
+            dtype=cache_dtype,
+            n_kv_heads=self.num_key_value_heads,
+            head_dim=self.head_dim,
+            num_layers=self.num_layers,
+            devices=self.devices,
+            data_parallel_degree=self.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
+        )
+        return self._kv_params
+
     @property
     def num_key_value_heads(self) -> int:
         """Number of key-value heads to use for the KV cache."""
