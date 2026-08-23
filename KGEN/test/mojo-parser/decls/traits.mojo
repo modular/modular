@@ -485,7 +485,7 @@ struct RegPassableRequiredType(RequiredType, Movable where False):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
-    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::SIMD[::DType(int), ::SIMDLength(1)]) thin -> ::SIMD[::DType(int), ::SIMDLength(1)]
+    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]
 
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
