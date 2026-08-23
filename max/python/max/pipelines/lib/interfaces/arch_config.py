@@ -166,6 +166,24 @@ class ArchConfigWithVisionCache(Protocol):
         ...
 
 
+def arch_has_vision_tower(
+    arch_config_cls: type, huggingface_config: AutoConfig
+) -> bool:
+    """Whether this architecture encodes images at all.
+
+    True when the arch config publishes vision-cache facts
+    (:class:`ArchConfigWithVisionCache`) and sizes a cache entry above zero
+    for this checkpoint. Both consumers of the vision budgets -- config
+    construction and memory planning -- gate on this same signal.
+    """
+    if not issubclass(arch_config_cls, ArchConfigWithVisionCache):
+        return False
+    return (
+        arch_config_cls.estimate_vision_cache_entry_bytes(huggingface_config)
+        > 0
+    )
+
+
 class ArchConfigWithBoundedMaxSeqLen:
     """Mixin for configs that store the received ``max_seq_len``."""
 

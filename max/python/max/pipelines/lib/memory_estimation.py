@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
@@ -40,6 +39,7 @@ from .interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
     ArchConfigWithVisionCache,
+    arch_has_vision_tower,
 )
 from .vision_encoder_cache import (
     DEFAULT_VISION_CACHE_BLOCK_TOKENS,
@@ -138,89 +138,6 @@ class MemoryPlan:
             "plan built by the registry's memory-planning step"
         )
         return self.device_specs
-
-
-# The preprocessed-media caches hold host tensors in the API server process, so
-# unlike everything else this module sizes they never touch the device and are
-# invisible to the accounting above. They still have to fit somewhere: the image
-# and video budgets default to several GiB each, which is a fine ceiling on a
-# serving host and enough to OOM a small container.
-_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
-
-
-def _cgroup_memory_limit_paths() -> list[str]:
-    """Returns candidate memory-limit files for *this process's* cgroup.
-
-    In a container the cgroup mount is namespaced, so the well-known paths are
-    already this process's own. On a host they are the *root* cgroup's, which
-    says nothing about a unit-level limit -- a systemd service with
-    ``MemoryMax=`` sits several levels down. Reading only the root there would
-    report no limit and overcommit by exactly the amount the unit was capped to.
-
-    ``/proc/self/cgroup`` names this process's cgroup relative to the mount, so
-    it resolves both cases.
-    """
-    paths = [
-        "/sys/fs/cgroup/memory.max",  # cgroup v2, namespaced
-        "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1, namespaced
-    ]
-    try:
-        with open("/proc/self/cgroup") as cgroup_file:
-            entries = cgroup_file.readlines()
-    except OSError:
-        return paths
-
-    for entry in entries:
-        fields = entry.strip().split(":", 2)
-        if len(fields) != 3:
-            continue
-        hierarchy, controllers, cgroup_path = fields
-        relative = cgroup_path.lstrip("/")
-        if not relative:
-            # Already the root cgroup; the well-known paths cover it.
-            continue
-        if hierarchy == "0":  # the v2 unified hierarchy
-            paths.append(f"/sys/fs/cgroup/{relative}/memory.max")
-        elif "memory" in controllers.split(","):
-            paths.append(
-                f"/sys/fs/cgroup/memory/{relative}/memory.limit_in_bytes"
-            )
-    return paths
-
-
-def _host_memory_limit() -> int | None:
-    """Returns the host memory this process may use, or ``None`` if unknown.
-
-    Prefers a cgroup limit over physical RAM. A container is typically granted a
-    fraction of its host, and it is that grant the OOM killer enforces, so
-    sizing a host cache off ``SC_PHYS_PAGES`` alone would overcommit by exactly
-    the ratio between the two. Takes the smallest limit found, since a nested
-    cgroup is bounded by every ancestor as well as by itself.
-    """
-    limits: list[int] = []
-
-    for path in _cgroup_memory_limit_paths():
-        try:
-            with open(path) as limit_file:
-                raw = limit_file.read().strip()
-        except OSError:
-            continue
-        try:
-            limit = int(raw)
-        except ValueError:
-            # cgroup v2 writes the literal "max" when unlimited.
-            continue
-        # cgroup v1 has no such keyword and reports a near-2**63 sentinel.
-        if 0 < limit < (1 << 62):
-            limits.append(limit)
-
-    try:
-        limits.append(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
-    except (AttributeError, OSError, ValueError):
-        # Not POSIX, or the platform does not publish these names.
-        pass
-
-    return min(limits) if limits else None
 
 
 class MemoryEstimator:
@@ -607,11 +524,6 @@ class MemoryEstimator:
         )
         available_kv_cache_memory -= vision_cache_bytes
         total_size += vision_cache_bytes
-
-        # Host memory, so it neither comes out of the KV pool nor counts toward
-        # the device footprint -- but it is still worth bounding here, where the
-        # rest of the model's memory is decided.
-        cls._clamp_preprocess_cache_budgets(pipeline_config, model_config, arch)
 
         # The field is set for every config after construction, so intent
         # comes from the bit captured before it was resolved.
@@ -1141,95 +1053,6 @@ class MemoryEstimator:
                 )
 
     @classmethod
-    def _has_vision_tower(
-        cls,
-        model_config: MAXModelConfig,
-        arch: SupportedArchitecture | None,
-    ) -> bool:
-        """Whether this architecture encodes images at all.
-
-        Uses the same signal as :meth:`_reserve_vision_cache_memory`: an arch
-        config that sizes a vision cache entry above zero.
-        """
-        if arch is None or not issubclass(
-            arch.config, ArchConfigWithVisionCache
-        ):
-            return False
-        return (
-            arch.config.estimate_vision_cache_entry_bytes(
-                model_config.huggingface_config
-            )
-            > 0
-        )
-
-    @classmethod
-    def _clamp_preprocess_cache_budgets(
-        cls,
-        pipeline_config: PipelineConfig,
-        model_config: MAXModelConfig,
-        arch: SupportedArchitecture | None,
-    ) -> None:
-        """Caps the preprocessed-media cache budgets against host memory.
-
-        Reduces the image and video budgets proportionally when their sum
-        exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
-        this process may use, by scaling both by a common factor so the split
-        the caller chose survives (exactly, up to integer truncation).
-        Proportionally, rather than clamping each in turn, so that raising one
-        budget cannot silently starve the other.
-
-        Leaves the budgets alone for architectures with no vision tower, which
-        never construct the caches, and when host memory cannot be determined --
-        an unbounded guess would be worse than the configured ceiling.
-        """
-        runtime = pipeline_config.runtime
-        image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
-        video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
-        requested = image_bytes + video_bytes
-        if requested == 0:
-            return
-
-        if not cls._has_vision_tower(model_config, arch):
-            return
-
-        host_bytes = _host_memory_limit()
-        if host_bytes is None:
-            logger.debug(
-                "Could not determine host memory; leaving the preprocessed-"
-                "media cache ceiling at %s.",
-                to_human_readable_bytes(requested),
-            )
-            return
-
-        cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
-        if requested <= cap:
-            logger.info(
-                "Preprocessed-media cache: %s ceiling (%s images, %s video).",
-                to_human_readable_bytes(requested),
-                to_human_readable_bytes(image_bytes),
-                to_human_readable_bytes(video_bytes),
-            )
-            return
-
-        scale = cap / requested
-        runtime.max_vision_preprocess_cache_bytes = int(image_bytes * scale)
-        runtime.max_video_preprocess_cache_bytes = int(video_bytes * scale)
-        logger.warning(
-            "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
-            "video): the configured ceiling exceeded %.0f%% of the %s this "
-            "process may use.",
-            to_human_readable_bytes(requested),
-            to_human_readable_bytes(
-                runtime.max_vision_preprocess_cache_bytes
-                + runtime.max_video_preprocess_cache_bytes
-            ),
-            to_human_readable_bytes(runtime.max_vision_preprocess_cache_bytes),
-            to_human_readable_bytes(runtime.max_video_preprocess_cache_bytes),
-            _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
-            to_human_readable_bytes(host_bytes),
-        )
-
-    @classmethod
     def _reserve_vision_cache_memory(
         cls,
         pipeline_config: PipelineConfig,
@@ -1253,23 +1076,23 @@ class MemoryEstimator:
         if pipeline_config.runtime.vision_cache_utilization == 0:
             return 0, None
 
-        if not cls._has_vision_tower(model_config, arch):
+        hf_config = model_config.huggingface_config
+        if arch is None or not arch_has_vision_tower(arch.config, hf_config):
             return 0, None
 
-        # Guaranteed by _has_vision_tower above.
-        assert arch is not None
+        # Guaranteed by arch_has_vision_tower above.
         assert issubclass(arch.config, ArchConfigWithVisionCache)
-        hf_config = model_config.huggingface_config
         row_spec = arch.config.get_vision_cache_row_spec(hf_config)
         if row_spec is None:
+            # Unreachable for configs built through from_args, which zero
+            # vision_cache_utilization at construction when the row spec is
+            # missing; tolerated for hand-built configs.
             logger.warning(
-                "Disabling vision encoder cache: %s's arch config reports "
-                "a per-entry estimate but no row spec "
-                "(get_vision_cache_row_spec); images will be re-encoded on "
-                "every request.",
+                "%s's arch config reports a per-entry estimate but no row "
+                "spec (get_vision_cache_row_spec); no vision encoder cache "
+                "will be reserved.",
                 arch.name,
             )
-            pipeline_config.runtime.vision_cache_utilization = 0.0
             return 0, None
 
         return cls._reserve_vision_cache_blocks(

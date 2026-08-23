@@ -27,8 +27,13 @@ from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
 )
+from max.pipelines.lib.host_memory import (
+    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
+    _host_memory_limit,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
+    arch_has_vision_tower,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
@@ -43,6 +48,7 @@ from max.pipelines.sampling import (
     SamplingConfig,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -912,6 +918,95 @@ class PipelineConfig(ConfigFileModel):
                 model.kv_cache, allow_kv_head_replication=True
             )
 
+    def _resolve_preprocess_cache_budgets(self, arch: Any) -> None:
+        """Caps the preprocessed-media cache budgets against host memory.
+
+        Reduces the image and video budgets proportionally when their sum
+        exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
+        this process may use, by scaling both by a common factor so the split
+        the caller chose survives (exactly, up to integer truncation).
+        Proportionally, rather than clamping each in turn, so that raising one
+        budget cannot silently starve the other.
+
+        Leaves the budgets alone for architectures with no vision tower, which
+        never construct the caches, and when host memory cannot be determined --
+        an unbounded guess would be worse than the configured ceiling.
+
+        Runs at construction so every consumer -- including tokenizers built
+        without a memory plan -- sees the bounded values.
+        """
+        runtime = self.runtime
+        image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
+        video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
+        requested = image_bytes + video_bytes
+        if requested == 0:
+            return
+
+        if arch is None or not arch_has_vision_tower(
+            arch.config, self.model.huggingface_config
+        ):
+            return
+
+        host_bytes = _host_memory_limit()
+        if host_bytes is None:
+            logger.debug(
+                "Could not determine host memory; leaving the preprocessed-"
+                "media cache ceiling at %s.",
+                to_human_readable_bytes(requested),
+            )
+            return
+
+        cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
+        if requested <= cap:
+            logger.info(
+                "Preprocessed-media cache: %s ceiling (%s images, %s video).",
+                to_human_readable_bytes(requested),
+                to_human_readable_bytes(image_bytes),
+                to_human_readable_bytes(video_bytes),
+            )
+            return
+
+        scale = cap / requested
+        runtime.max_vision_preprocess_cache_bytes = int(image_bytes * scale)
+        runtime.max_video_preprocess_cache_bytes = int(video_bytes * scale)
+        logger.warning(
+            "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
+            "video): the configured ceiling exceeded %.0f%% of the %s this "
+            "process may use.",
+            to_human_readable_bytes(requested),
+            to_human_readable_bytes(
+                runtime.max_vision_preprocess_cache_bytes
+                + runtime.max_video_preprocess_cache_bytes
+            ),
+            to_human_readable_bytes(runtime.max_vision_preprocess_cache_bytes),
+            to_human_readable_bytes(runtime.max_video_preprocess_cache_bytes),
+            _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
+            to_human_readable_bytes(host_bytes),
+        )
+
+    def _resolve_vision_cache_utilization(self, arch: Any) -> None:
+        """Disables the vision encoder cache when the planner cannot shape it.
+
+        An arch config that reports a per-entry size but no row spec cannot back
+        the block cache. Zeroing the utilization here, at construction, lets
+        the tokenizers and memory planning agree without planning writing
+        back to the config.
+        """
+        if self.runtime.vision_cache_utilization == 0:
+            return
+        hf_config = self.model.huggingface_config
+        if arch is None or not arch_has_vision_tower(arch.config, hf_config):
+            return
+        if arch.config.get_vision_cache_row_spec(hf_config) is None:
+            logger.warning(
+                "Disabling vision encoder cache: %s's arch config reports "
+                "a per-entry estimate but no row spec "
+                "(get_vision_cache_row_spec); images will be re-encoded on "
+                "every request.",
+                arch.name,
+            )
+            self.runtime.vision_cache_utilization = 0.0
+
     def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
         if not self.runtime.force:
             if (
@@ -1176,6 +1271,8 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_structured_output_any_whitespace(arch=arch)
         self._resolve_max_length(arch=arch, draft_arch=draft_arch)
         self._apply_arch_kv_head_replication(arch=arch, draft_arch=draft_arch)
+        self._resolve_preprocess_cache_budgets(arch=arch)
+        self._resolve_vision_cache_utilization(arch=arch)
         self._validate_synthetic_acceptance_with_constrained_decoding()
 
         if (
