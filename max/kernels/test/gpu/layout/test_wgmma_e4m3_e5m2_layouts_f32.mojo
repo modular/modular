@@ -41,7 +41,7 @@ def wgmma_f32_kernel[
 ](
     operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
     operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
-    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
+    result_c: LayoutTensor[.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var smem_operand_a = LayoutTensor[
         a_type,

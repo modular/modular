@@ -48,7 +48,7 @@ def _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
+    q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
     kv_input_row_offsets: TileTensor[
         DType.uint32, KVLayoutType, ImmutAnyOrigin
     ],
@@ -165,7 +165,7 @@ def _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
+    q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
     kv_input_row_offsets: TileTensor[
         DType.uint32, KVLayoutType, ImmutAnyOrigin
     ],
@@ -312,7 +312,7 @@ def mha_cross_gpu_naive[
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
+        q.dtype == .float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](

@@ -80,7 +80,7 @@ def _run_reduce_sum_inner(
     ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
-    reduce_sum[DType.float32, target="cpu", reduce_dim=1](
+    reduce_sum[.float32, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
@@ -112,7 +112,7 @@ def _run_reduce_max_non_inner(
     ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[1], val)
 
-    reduce_max[DType.float32, target="cpu", reduce_dim=0](
+    reduce_max[.float32, target="cpu", reduce_dim=0](
         input_fn, output_fn, Coord(Index(axis_size, num_rows))
     )
     return output_buf^
@@ -143,7 +143,7 @@ def _run_reduce_argmax_inner(
     ](coords: IndexList[rank], val: SIMD[.int64, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
-    reduce_argmax[DType.float32, target="cpu", reduce_dim=1](
+    reduce_argmax[.float32, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
@@ -174,7 +174,7 @@ def _run_reduce_mean_inner_f32(
     ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
-    reduce_mean[DType.float32, target="cpu", reduce_dim=1](
+    reduce_mean[.float32, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
@@ -206,7 +206,7 @@ def _run_reduce_mean_inner_i32(
     ](coords: IndexList[rank], val: SIMD[.int32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](coords[0], val)
 
-    reduce_mean[DType.int32, target="cpu", reduce_dim=1](
+    reduce_mean[.int32, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
@@ -233,7 +233,7 @@ def _run_reduce_sum_rank1(axis_size: Int) raises -> List[Float32]:
     ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](0, val)
 
-    reduce_sum[DType.float32, target="cpu", reduce_dim=0](
+    reduce_sum[.float32, target="cpu", reduce_dim=0](
         input_fn, output_fn, Coord(Index(axis_size))
     )
     return output_buf^
@@ -266,7 +266,7 @@ def test_reduce_max_empty_axis_non_inner() raises:
     """
     var out = _run_reduce_max_non_inner(axis_size=0, num_rows=3)
     assert_equal(len(out), 3)
-    comptime identity = min_finite[DType.float32]()
+    comptime identity = min_finite[.float32]()
     for i in range(3):
         assert_equal(out[i], identity, String("row ", i))
 

@@ -127,13 +127,13 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
 
             comptime if bit_width_of[Self.dtype]() <= 32:
                 t = mulhi(
-                    self._mprime.cast[DType.uint32](),
-                    other.cast[DType.uint32](),
+                    self._mprime.cast[.uint32](),
+                    other.cast[.uint32](),
                 ).cast[Self.uint_type]()
             else:
                 t = mulhi(
-                    self._mprime.cast[DType.uint64](),
-                    other.cast[DType.uint64](),
+                    self._mprime.cast[.uint64](),
+                    other.cast[.uint64](),
                 ).cast[Self.uint_type]()
             return (
                 t + ((other - t) >> self._sh1.cast[Self.uint_type]())

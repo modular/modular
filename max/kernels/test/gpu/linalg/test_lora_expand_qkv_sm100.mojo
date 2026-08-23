@@ -97,10 +97,10 @@ def test[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var q_host_ptr = ctx.enqueue_create_host_buffer[out_q_type](q_size)
     var kv_host_ptr = ctx.enqueue_create_host_buffer[out_kv_type](kv_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -124,12 +124,10 @@ def test[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var q_dev_buffer = ctx.enqueue_create_buffer[out_q_type](q_size)
     var kv_dev_buffer = ctx.enqueue_create_buffer[out_kv_type](kv_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     # The planar P, viewed both as [3, M, R] and as three [M, R] planes for the
     # oracle (planes are contiguous so plane `t` starts at offset t*M*R).

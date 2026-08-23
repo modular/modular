@@ -448,7 +448,7 @@ def moe_create_indices_bucket_group_kernel[
     token_expert_order: TileTensor[
         mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
-    lock: TileTensor[DType.uint64, LockLayoutType, MutAnyOrigin],
+    lock: TileTensor[.uint64, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
         mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
@@ -516,7 +516,7 @@ def moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[DType.uint32, address_space=AddressSpace.SHARED](
+    var smem = tensor_alloc[.uint32, address_space=AddressSpace.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -665,7 +665,7 @@ def moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())
     ):
-        var lock_buffer = context.enqueue_create_buffer[DType.uint64](1)
+        var lock_buffer = context.enqueue_create_buffer[.uint64](1)
 
         def fill_zero_kernel(
             lock_ptr: UnsafePointer[UInt64, MutAnyOrigin],
@@ -1349,9 +1349,9 @@ def single_group_router_eplb_kernel[
         scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
     ],
     expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
-    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
-    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
-    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[.int32, LayerIdxLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
 ):
     """Single-group MoE router fused with EPLB log->phy remap.
@@ -1669,9 +1669,9 @@ def single_group_router_eplb[
     expert_weights: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[scores_type, ...],
     expert_bias: TileTensor[bias_type, ...],
-    logcnt: TileTensor[DType.int32, ...],
-    log2phy: TileTensor[DType.int32, ...],
-    layer_idx: TileTensor[DType.int32, ...],
+    logcnt: TileTensor[.int32, ...],
+    log2phy: TileTensor[.int32, ...],
+    layer_idx: TileTensor[.int32, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
 ) raises:
@@ -1803,10 +1803,10 @@ def eplb_remap_kernel[
     hash_decorrelate: Bool,
 ](
     phy_idx: TileTensor[mut=True, DType.int32, PhyIdxLayoutType, MutAnyOrigin],
-    router_idx: TileTensor[DType.int32, RouterIdxLayoutType, ImmutAnyOrigin],
-    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
-    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
-    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    router_idx: TileTensor[.int32, RouterIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[.int32, LayerIdxLayoutType, ImmutAnyOrigin],
 ):
     """Fused EPLB per tile_token rows of router idx; one thread per (n,k) element.
     Each block cooperatively caces the current layer's logcnt and log2phy slices in
@@ -1948,10 +1948,10 @@ def eplb_remap[
     target: StaticString,
 ](
     phy_idx: TileTensor[mut=True, DType.int32, ...],  # [N, K] output
-    router_idx: TileTensor[DType.int32, ...],  # [N, K] logical ids
-    logcnt: TileTensor[DType.int32, ...],  # [L, num_log]
-    log2phy: TileTensor[DType.int32, ...],  # [L, num_log, max_replicas]
-    layer_idx: TileTensor[DType.int32, ...],  # rank-1 [1] scalar
+    router_idx: TileTensor[.int32, ...],  # [N, K] logical ids
+    logcnt: TileTensor[.int32, ...],  # [L, num_log]
+    log2phy: TileTensor[.int32, ...],  # [L, num_log, max_replicas]
+    layer_idx: TileTensor[.int32, ...],  # rank-1 [1] scalar
     context: DeviceContext,
 ) raises:
     """Launch the fused EPLB log->phy remap on GPU.

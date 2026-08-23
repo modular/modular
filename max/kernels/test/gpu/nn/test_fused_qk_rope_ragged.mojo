@@ -149,16 +149,16 @@ def execute_fused_qk_rope_ragged(
     )
 
     # Create device buffers
-    var true_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var true_ce_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var mixed_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var mixed_ce_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var true_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var true_ce_cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
-    var mixed_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var mixed_ce_cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
     var true_ce_q_ragged_device = ctx.enqueue_create_buffer[dtype](
@@ -179,7 +179,7 @@ def execute_fused_qk_rope_ragged(
     var mixed_ce_kv_block_device = ctx.enqueue_create_buffer[dtype](
         kv_block_shape.flattened_length()
     )
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     var freqs_device = ctx.enqueue_create_buffer[dtype](
@@ -311,7 +311,7 @@ def execute_fused_qk_rope_ragged(
 
     # Initialize paged_lut
     with paged_lut_device.map_to_host() as paged_lut_host:
-        var paged_lut_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
+        var paged_lut_tensor = LayoutTensor[.uint32, paged_lut_layout](
             paged_lut_host, paged_lut_runtime_layout
         )
         var paged_lut_set = Set[Int]()
@@ -515,7 +515,7 @@ def execute_fused_qk_rope_ragged(
     ctx.enqueue_copy(mixed_kv_block_host_ptr, mixed_ce_kv_block_device)
 
     # Also need paged_lut on host for K cache comparison
-    var paged_lut_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var paged_lut_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     ctx.enqueue_copy(paged_lut_host_ptr, paged_lut_device)
@@ -527,7 +527,7 @@ def execute_fused_qk_rope_ragged(
     var mixed_ce_kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
         mixed_kv_block_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
-    var paged_lut_host_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut_host_tensor = LayoutTensor[.uint32, paged_lut_layout](
         paged_lut_host_ptr.unsafe_ptr(), paged_lut_runtime_layout
     )
 
@@ -738,15 +738,11 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var output_device_ref = ctx.enqueue_create_buffer[dtype](
         output_64_shape.flattened_length()
     )
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     # Define runtime layouts for q_ragged (used for random initialization)
     comptime q_ragged_layout = Layout.row_major(

@@ -25,7 +25,7 @@ from std.testing import assert_almost_equal
 
 def tcgen05_st_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
+](data: LayoutTensor[.float32, Layout.row_major(M, N), MutAnyOrigin]):
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
 
@@ -104,7 +104,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
 
 def tcgen05_cp_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
+](data: LayoutTensor[.float32, Layout.row_major(M, N), MutAnyOrigin]):
     comptime M_smem = 128
     comptime N_smem = 8
     comptime SBO = 256

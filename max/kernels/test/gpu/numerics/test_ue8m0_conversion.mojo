@@ -45,21 +45,21 @@ def test_simd_f32_to_ue8m0():
     var f32_simd = SIMD[.float32, M](0.0)
 
     var i = 0
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x3FFFFF))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x3FFFFF))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x400000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x400000))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x400001))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x400001))
     i += 1
-    f32_simd[i] = inf[DType.float32]()
+    f32_simd[i] = inf[.float32]()
     i += 1
-    f32_simd[i] = nan[DType.float32]()
+    f32_simd[i] = nan[.float32]()
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x403FFFFF))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x403FFFFF))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x40400000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x40400000))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x40400001))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x40400001))
     i += 1
     f32_simd[i] = Float32(0.0)
     i += 1
@@ -69,7 +69,7 @@ def test_simd_f32_to_ue8m0():
     i += 1
     f32_simd[i] = Float32(4096.0)
     i += 1
-    f32_simd[i] = -inf[DType.float32]()
+    f32_simd[i] = -inf[.float32]()
     i += 1
     f32_simd[i] = Float32(-0.0)
     i += 1
@@ -79,10 +79,10 @@ def test_simd_f32_to_ue8m0():
     i += 1
     f32_simd[i] = Float32(-1.0)
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x7F000000))
     i += 1
 
-    var f32_casted_ue8m0 = _convert_f32_to_float8_ue8m0[DType.float8_e8m0fnu](
+    var f32_casted_ue8m0 = _convert_f32_to_float8_ue8m0[.float8_e8m0fnu](
         f32_simd
     )
 
@@ -101,9 +101,9 @@ def test_simd_ue8m0_to_f32():
         1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
     )
 
-    var ue8m0_simd = f32_simd.cast[DType.float8_e8m0fnu]()
+    var ue8m0_simd = f32_simd.cast[.float8_e8m0fnu]()
 
-    var ue8m0_casted_f32 = ue8m0_simd.cast[DType.float32]()
+    var ue8m0_casted_f32 = ue8m0_simd.cast[.float32]()
     print(ue8m0_casted_f32)
 
 
@@ -147,21 +147,21 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     var f32_simd = SIMD[.float32, M](0.0)
 
     var i = 0
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x3FFFFF))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x3FFFFF))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x400000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x400000))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x400001))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x400001))
     i += 1
-    f32_simd[i] = inf[DType.float32]()
+    f32_simd[i] = inf[.float32]()
     i += 1
-    f32_simd[i] = nan[DType.float32]()
+    f32_simd[i] = nan[.float32]()
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x403FFFFF))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x403FFFFF))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x40400000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x40400000))
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x40400001))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x40400001))
     i += 1
     f32_simd[i] = Float32(0.0)
     i += 1
@@ -171,7 +171,7 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     i += 1
     f32_simd[i] = Float32(4096.0)
     i += 1
-    f32_simd[i] = -inf[DType.float32]()
+    f32_simd[i] = -inf[.float32]()
     i += 1
     f32_simd[i] = Float32(-0.0)
     i += 1
@@ -181,7 +181,7 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     i += 1
     f32_simd[i] = Float32(-1.0)
     i += 1
-    f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
+    f32_simd[i] = bitcast[.float32, 1](UInt32(0x7F000000))
     i += 1
 
     comptime kernel = test_simd_f32_to_ue8m0_ptx_kernel[
@@ -208,7 +208,7 @@ def test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
         1.1, 2.23, 4.34, 8.45, 16.56, 32.67, 64.78, 128.89
     )
 
-    var ue8m0_simd = f32_simd.cast[DType.float8_e8m0fnu]()
+    var ue8m0_simd = f32_simd.cast[.float8_e8m0fnu]()
 
     comptime kernel = test_simd_ue8m0_to_f32_ptx_kernel[8, DType.float32]
     ctx.enqueue_function[kernel](ue8m0_simd, grid_dim=1, block_dim=1)

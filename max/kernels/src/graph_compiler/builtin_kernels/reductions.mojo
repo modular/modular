@@ -217,8 +217,8 @@ struct ArgNonZero:
             input_buffer: Input tensor whose nonzero indices are found.
         """
         arg_nonzero.arg_nonzero(
-            input_buffer.to_tile_tensor[DType.int64](),
-            output_buffer.to_tile_tensor[DType.int64](),
+            input_buffer.to_tile_tensor[.int64](),
+            output_buffer.to_tile_tensor[.int64](),
         )
 
 
@@ -422,9 +422,9 @@ struct RowMeanOfSquaresQK:
         # `k` is bitcast to `q.dtype` to unify the single `in_dtype` kernel
         # parameter (q and k share a dtype, asserted above).
         row_mean_of_squares_qk[target=target](
-            output.to_tile_tensor[DType.int64](),
-            q.to_tile_tensor[DType.int64](),
-            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            output.to_tile_tensor[.int64](),
+            q.to_tile_tensor[.int64](),
+            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
             q.shape()[0],
             q.shape()[1],
             k.shape()[1],
@@ -483,9 +483,9 @@ struct ApplyQKRMSNorm:
         k_out: OutputTensor[rank=2, ...],
         q: InputTensor[rank=2, ...],
         k: InputTensor[rank=2, ...],
-        qk_var: InputTensor[dtype=DType.float32, rank=2, ...],
-        gamma_q: InputTensor[dtype=DType.float32, rank=1, ...],
-        gamma_k: InputTensor[dtype=DType.float32, rank=1, ...],
+        qk_var: InputTensor[dtype=.float32, rank=2, ...],
+        gamma_q: InputTensor[dtype=.float32, rank=1, ...],
+        gamma_k: InputTensor[dtype=.float32, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
@@ -532,13 +532,13 @@ struct ApplyQKRMSNorm:
         # unify the single `out_dtype` parameter. Likewise `in_dtype` is
         # inferred from `q`, so bitcast `k` to `q.dtype`.
         apply_qk_rms_norm[target=target,](
-            q_out.to_tile_tensor[DType.int64](),
-            k_out.to_tile_tensor[DType.int64]().bitcast[q_out.dtype](),
-            gamma_q.to_tile_tensor[DType.int64](),
-            gamma_k.to_tile_tensor[DType.int64](),
-            qk_var.to_tile_tensor[DType.int64](),
-            q.to_tile_tensor[DType.int64](),
-            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            q_out.to_tile_tensor[.int64](),
+            k_out.to_tile_tensor[.int64]().bitcast[q_out.dtype](),
+            gamma_q.to_tile_tensor[.int64](),
+            gamma_k.to_tile_tensor[.int64](),
+            qk_var.to_tile_tensor[.int64](),
+            q.to_tile_tensor[.int64](),
+            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
             epsilon,
             q.shape()[0],
             q.shape()[1],
@@ -909,8 +909,8 @@ struct LayerNorm:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 ctx,
             )
@@ -920,8 +920,8 @@ struct LayerNorm:
                 output_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 ctx,
             )
@@ -1035,7 +1035,7 @@ struct ReduceRMSNorm:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[rms_cols](),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1051,7 +1051,7 @@ struct ReduceRMSNorm:
                 output_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1180,7 +1180,7 @@ struct ReduceRMSNormRoPE:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[rope_cols](),
-                weight.to_tile_tensor[DType.int64](),
+                weight.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1200,7 +1200,7 @@ struct ReduceRMSNormRoPE:
                 output_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                weight.to_tile_tensor[DType.int64](),
+                weight.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1279,8 +1279,8 @@ struct LayerNormRopeRagged:
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
         beta: InputTensor[dtype=input_dtype, rank=1, ...],
         epsilon: Float32,
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1327,12 +1327,12 @@ struct LayerNormRopeRagged:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                start_pos.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                start_pos.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 ctx,
             )
         else:
@@ -1348,12 +1348,12 @@ struct LayerNormRopeRagged:
                 output_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                start_pos.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                start_pos.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 ctx,
             )
 
@@ -1394,13 +1394,13 @@ def composite_layer_norm_rope_ragged_shape(
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     comptime assert type_of(beta).rank == 1, "beta must be rank 1"
     comptime assert (
-        type_of(input_row_offsets).dtype == DType.uint32
+        type_of(input_row_offsets).dtype == .uint32
     ), "input_row_offsets must be uint32"
     comptime assert (
         type_of(input_row_offsets).rank == 1
     ), "input_row_offsets must be rank 1"
     comptime assert (
-        type_of(start_pos).dtype == DType.uint32
+        type_of(start_pos).dtype == .uint32
     ), "start_pos must be uint32"
     comptime assert type_of(start_pos).rank == 1, "start_pos must be rank 1"
     comptime assert type_of(freqs_cis).rank == 2, "freqs_cis must be rank 2"
@@ -1470,7 +1470,7 @@ struct ReduceGroupNorm:
             shape=input.shape(),
             epsilon=epsilon,
             groups=num_groups,
-            output=output.to_tile_tensor[DType.int64](),
+            output=output.to_tile_tensor[.int64](),
             ctx=ctx,
         )
 
@@ -1702,10 +1702,10 @@ struct ReduceRMSNormFusedResidualAdd:
                 residual_output_fn,
                 input.shape_coord(),
                 ComptimeInt[cols](),
-                gamma1.to_tile_tensor[DType.int64](),
+                gamma1.to_tile_tensor[.int64](),
                 epsilon1.cast[dtype](),
                 weight_offset1,
-                gamma2.to_tile_tensor[DType.int64](),
+                gamma2.to_tile_tensor[.int64](),
                 epsilon2.cast[dtype](),
                 weight_offset2,
                 ctx,
@@ -1723,10 +1723,10 @@ struct ReduceRMSNormFusedResidualAdd:
                 residual_output_fn,
                 input.shape_coord(),
                 Int(Int(input.shape()[rank - 1])),
-                gamma1.to_tile_tensor[DType.int64](),
+                gamma1.to_tile_tensor[.int64](),
                 epsilon1.cast[dtype](),
                 weight_offset1,
-                gamma2.to_tile_tensor[DType.int64](),
+                gamma2.to_tile_tensor[.int64](),
                 epsilon2.cast[dtype](),
                 weight_offset2,
                 ctx,
@@ -1879,7 +1879,7 @@ struct RMSNormResidualAdd:
                 multiply_before_cast=multiply_before_cast,
             ](
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 ctx,
@@ -1940,7 +1940,7 @@ struct RMSNormResidualAdd:
                 output_fn_cpu,
                 residual_output_fn_cpu,
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
             )
@@ -1985,11 +1985,11 @@ struct BottomK:
         target: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
-        sorted: Scalar[DType.bool],
+        sorted: Scalar[.bool],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.bottom_k` graph op.
@@ -2012,11 +2012,11 @@ struct BottomK:
             Error: If the operation parameters are invalid.
         """
         top_k[largest=False, target=target](
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),
-            values.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
+            values.to_tile_tensor[.int64](),
+            indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
         )
@@ -2027,7 +2027,7 @@ def bottom_k_shape(
     input: Some[TileTensorable],
     k: Scalar,
     axis: Scalar,
-    sorted: Scalar[DType.bool],
+    sorted: Scalar[.bool],
 ) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.bottom_k` graph op.
 
@@ -2061,11 +2061,11 @@ struct TopK:
         _trace_name: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
-        sorted: Scalar[DType.bool],
+        sorted: Scalar[.bool],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.top_k` graph op.
@@ -2089,11 +2089,11 @@ struct TopK:
             Error: If the operation parameters are invalid.
         """
         top_k[largest=True, target=target](
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),
-            values.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
+            values.to_tile_tensor[.int64](),
+            indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
         )
@@ -2104,7 +2104,7 @@ def top_k_shape(
     input: Some[TileTensorable],
     k: Scalar,
     axis: Scalar,
-    sorted: Scalar[DType.bool],
+    sorted: Scalar[.bool],
 ) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.top_k` graph op.
 
@@ -2177,7 +2177,7 @@ struct Softmax:
                 input_fn,
                 Coord(output.shape()),
                 ComptimeInt[sm_cols](),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2186,7 +2186,7 @@ struct Softmax:
                 input_fn,
                 Coord(output.shape()),
                 Int(Int(input.shape()[axis])),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2249,7 +2249,7 @@ struct LogSoftmax:
                 input_fn,
                 Coord(output.shape()),
                 ComptimeInt[lsm_cols](),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2264,7 +2264,7 @@ struct LogSoftmax:
                 input_fn,
                 Coord(output.shape()),
                 Int(Int(input.shape()[axis])),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2301,8 +2301,8 @@ struct CumSum:
             ctx: Device context used to enqueue the kernel.
         """
         cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
         )
 
 
@@ -2331,8 +2331,8 @@ struct ArgSort[*, ascending: Bool]:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        var indices_tensor = indices.to_tile_tensor[DType.int64]()
-        var input_tensor = input.to_tile_tensor[DType.int64]()
+        var indices_tensor = indices.to_tile_tensor[.int64]()
+        var input_tensor = input.to_tile_tensor[.int64]()
 
         comptime if target == "cpu":
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)

@@ -55,8 +55,8 @@ struct PtrPair[
     first_origin: Origin[mut=first_mut],
     second_origin: Origin[mut=second_mut],
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
-    var first: DevicePointer[DType.float32, Self.first_origin]
-    var second: DevicePointer[DType.float32, Self.second_origin]
+    var first: DevicePointer[.float32, Self.first_origin]
+    var second: DevicePointer[.float32, Self.second_origin]
 
     comptime device_type: AnyType = PtrPairDevice
 
@@ -72,8 +72,8 @@ struct PtrPair[
 
 def test_closure_registers_captured_buffers() raises:
     var ctx = DeviceContext()
-    var a = ctx.enqueue_create_buffer[DType.float32](16)
-    var b = ctx.enqueue_create_buffer[DType.float32](32)
+    var a = ctx.enqueue_create_buffer[.float32](16)
+    var b = ctx.enqueue_create_buffer[.float32](32)
     var pa = a.device_ptr()
     var pb = b.device_ptr()
 
@@ -109,8 +109,8 @@ def test_closure_registers_captured_buffers() raises:
 
 def test_closure_registers_buffers_via_nested_struct() raises:
     var ctx = DeviceContext()
-    var a = ctx.enqueue_create_buffer[DType.float32](16)
-    var b = ctx.enqueue_create_buffer[DType.float32](32)
+    var a = ctx.enqueue_create_buffer[.float32](16)
+    var b = ctx.enqueue_create_buffer[.float32](32)
     var pair = PtrPair(a.device_ptr(), b.device_ptr())
 
     # The closure captures a struct whose `DevicePassable` members are one

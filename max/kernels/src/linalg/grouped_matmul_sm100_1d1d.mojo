@@ -739,7 +739,7 @@ def multi_stage_store_C[
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
-    comptime epilogue_dtype = c_type if input_type == DType.bfloat16 else DType.float32
+    comptime epilogue_dtype = c_type if input_type == .bfloat16 else DType.float32
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -1620,12 +1620,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
-    group_offsets: LayoutTensor[DType.uint32, group_offsets_layout, ...],
+    group_offsets: LayoutTensor[.uint32, group_offsets_layout, ...],
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, ...
     ],
     b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     expert_scales: LayoutTensor[
@@ -1997,7 +1997,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, MutAnyOrigin
     ],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, MutAnyOrigin],
     expert_scales: LayoutTensor[
         DType.float32, expert_scales_layout, MutAnyOrigin
     ],
@@ -2007,7 +2007,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 ):
     var _num_active_experts = Int(num_active_experts)
     comptime register_based_epilogue = config.register_based_epilogue
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
@@ -2583,7 +2583,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     ), "Only support SM100 for grouped NVFP4 matmul"
     comptime assert transpose_b, "Only support transpose_b = True"
     comptime assert (
-        a_type == b_type == DType.uint8
+        a_type == b_type == .uint8
     ), "input A and B dtype should be uint8 for NVFP4"
     comptime assert (
         scales_type == NVFP4_SF_DTYPE

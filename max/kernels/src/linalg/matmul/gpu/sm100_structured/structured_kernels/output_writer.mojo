@@ -260,8 +260,8 @@ struct TileWriter[
     @always_inline
     @staticmethod
     def get_epilogue_dtype() -> DType:
-        if (Self.a_type == Self.c_type == DType.bfloat16) or (
-            Self.a_type == DType.uint8 and Self.c_type == DType.bfloat16
+        if (Self.a_type == Self.c_type == .bfloat16) or (
+            Self.a_type == .uint8 and Self.c_type == .bfloat16
         ):
             return DType.bfloat16
         else:

@@ -139,7 +139,7 @@ def test_blackwell_matmul_with_weight_prefetch[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -400,7 +400,7 @@ def test_prefetch_depth_fits_the_ring[
 
 def main() raises:
     comptime for nk in [(2624, 6144), (2048, 2048), (256, 128), (8192, 7168)]:
-        test_prefetch_depth_fits_the_ring[DType.bfloat16, DType.bfloat16](
+        test_prefetch_depth_fits_the_ring[.bfloat16, DType.bfloat16](
             nk[0], nk[1]
         )
 

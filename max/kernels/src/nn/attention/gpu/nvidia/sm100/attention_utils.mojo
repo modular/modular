@@ -404,7 +404,7 @@ def pack_row[
         var chunk = SIMD[.float32, per_u32]()
         comptime for k in range(per_u32):
             chunk[k] = o_vals[start + per_u32 * c + k]
-        packed[c] = bitcast[DType.uint32, 1](chunk.cast[output_type]())
+        packed[c] = bitcast[.uint32, 1](chunk.cast[output_type]())
     return packed
 
 
@@ -471,7 +471,7 @@ def scale_pack_o_row[
             SIMD[.float32, 2](o_vals[start + 2 * c], o_vals[start + 2 * c + 1])
             * inv_row_sum
         ).cast[output_type]()
-        packed[c] = bitcast[DType.uint32, 1](pair)
+        packed[c] = bitcast[.uint32, 1](pair)
     return packed
 
 
@@ -500,7 +500,7 @@ def combine_pack_o_row[
         var comb = peer_c.fma(
             SIMD[.float32, 2](scale_peer), own_c * scale_own
         ).cast[output_type]()
-        packed[c] = bitcast[DType.uint32, 1](comb)
+        packed[c] = bitcast[.uint32, 1](comb)
     return packed
 
 
@@ -865,7 +865,7 @@ struct TMemTile[
                             comptime for _j in range(u32_per_cast):
                                 frag[_i * u32_per_cast + _j] = packed_chunk[_j]
                     else:
-                        var packed = bitcast[DType.uint32, frag_width](
+                        var packed = bitcast[.uint32, frag_width](
                             src.raw_load[width=pow_two](offset).cast[
                                 Self.dtype
                             ]()
@@ -873,7 +873,7 @@ struct TMemTile[
                         comptime for _i in range(frag_width):
                             frag[_i] = packed[_i]
                 else:
-                    frag[0] = bitcast[DType.uint32](src[0].cast[Self.dtype]())
+                    frag[0] = bitcast[.uint32](src[0].cast[Self.dtype]())
 
                 tcgen05_st[
                     datapaths=32,  # first dimension of the shape
@@ -899,7 +899,7 @@ struct TMemTile[
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
-                        frag[_i] = bitcast[DType.uint32](
+                        frag[_i] = bitcast[.uint32](
                             src[src_offset + offset + _i]
                         )
                 else:
@@ -934,7 +934,7 @@ struct TMemTile[
                                     src_offset + offset + _i * sub_elements + _j
                                 )
                                 x[_j] = src[idx].cast[Self.dtype]()
-                        frag[_i] = bitcast[DType.uint32, 1](x)
+                        frag[_i] = bitcast[.uint32, 1](x)
                 tcgen05_st[
                     datapaths=32,
                     bits=32,
@@ -2320,7 +2320,7 @@ def intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
 @always_inline
 def intrin_ftz_x2[
     intrin: String
-](a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[DType.float32, 2]:
+](a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Wraps a flush-to-zero (FTZ) binary `f32x2` PTX intrinsic."""
     return inlined_assembly[
         String(intrin, ".ftz.f32x2 $0, $1, $2;"),
@@ -2443,7 +2443,7 @@ def _ptx_f32_literal[value: Float32]() -> String:
     Returns:
         The PTX literal, e.g. `0fC61C4000` for -10000.0.
     """
-    comptime bits = bitcast[DType.uint32](value)
+    comptime bits = bitcast[.uint32](value)
     var lit = String("0f")
 
     comptime for i in range(8):
@@ -2609,9 +2609,8 @@ def exp2_emulation[
         )
         # The integer floor of x & y are now in the last 8 bits of xy_rounded
         # We want the next 2 ops to round to nearest even. The rounding mode is important.
-        return bitcast[DType.float32](
-            bitcast[DType.int32](frac_ex2)
-            + (bitcast[DType.int32](rounded) << 23)
+        return bitcast[.float32](
+            bitcast[.int32](frac_ex2) + (bitcast[.int32](rounded) << 23)
         )
     else:
         return exp2(x)
@@ -3661,7 +3660,7 @@ def apply_oob_mask[
 
     comptime if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
         s = (
-            iota[DType.int32, 2](score_col)
+            iota[.int32, 2](score_col)
             .lt(num_keys)
             .select(s, MASK_VALUE)
             # .select(s, min_or_neg_inf[DType.float32]())

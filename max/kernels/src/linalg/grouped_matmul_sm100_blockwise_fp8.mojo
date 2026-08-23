@@ -135,8 +135,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[.uint32, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
@@ -146,7 +146,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime assert transpose_b, "Only support transposed B"
     comptime assert num_threads == 128
     comptime assert (
-        accum_type == DType.float32
+        accum_type == .float32
     ), "Only support float32 for accumulator"
 
     var expert_idx = block_idx.z
@@ -612,7 +612,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
     comptime assert config.transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn for A and B"
 
     comptime accum_type = get_accum_type[a_type]()
@@ -950,7 +950,7 @@ def load_AB[
     iter_idx: Int,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
 ):
     """Issues multicast TMA loads for A, B, and A scales into the producer stage of the load-MMA pipeline.
 
@@ -1145,7 +1145,7 @@ def load_AB_partial[
     iter_idx: Int,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     expert_end_row: Int,
     m_tile_global_start: Int,
 ):
@@ -1622,7 +1622,7 @@ def promote_accumulators[
     stage_stride_cols: Int,
     k_iter: Int,
     problem_shape: StaticTuple[Int32, 3],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     scheduler: TileScheduler,
 ):
     """Loads MMA outputs from TMEM and accumulates them into register C fragments with blockwise FP8 scaling.
@@ -1705,7 +1705,7 @@ def promote_accumulators[
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime assert (
-        a_scales_type == b_scales_type and accum_type == DType.float32
+        a_scales_type == b_scales_type and accum_type == .float32
     ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
@@ -2030,10 +2030,10 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ImmutAnyOrigin],
+    a_offsets: LayoutTensor[.uint32, a_offsets_layout, ImmutAnyOrigin],
     num_iters: Int32,
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
     a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     a_scales_gmem: LayoutTensor[
@@ -2047,7 +2047,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type and accum_type == DType.float32
+        b_scales_type == a_scales_type and accum_type == .float32
     ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     comptime assert transpose_b, "only support k-major B"
 
@@ -2682,7 +2682,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
@@ -2991,20 +2991,20 @@ def grouped_matmul_dynamic_scaled_fp8[
     ), "Only support (1,128,128) scale granularity"
     comptime assert transpose_b, "Only support transpose_b = True"
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
     comptime assert a_scales_type == b_scales_type and (
-        a_scales_type == DType.float32 or a_scales_type == DType.bfloat16
+        a_scales_type == .float32 or a_scales_type == .bfloat16
     ), "input A and B scales dtype should be float32 or bfloat16"
     comptime assert (
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"
     ), "Only support block-wise scale granularity"
-    comptime assert a_offsets_type == DType.uint32, (
+    comptime assert a_offsets_type == .uint32, (
         "Only uint32 is supported for a_offsets in grouped blockwise scaled"
         " fp8 matmul"
     )
-    comptime assert expert_ids_type == DType.int32, (
+    comptime assert expert_ids_type == .int32, (
         "Only int32 is supported for expert_ids in grouped blockwise scaled"
         " fp8 matmul"
     )

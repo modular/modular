@@ -48,9 +48,7 @@ def test_fused_qk_rope[
 ](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
     """
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -70,7 +68,7 @@ def test_fused_qk_rope[
         return max_item
 
     comptime assert max_seq_len > (
-        seq_len + Int(_max[DType.uint32, items=start_positions]())
+        seq_len + Int(_max[.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
@@ -166,7 +164,7 @@ def test_fused_qk_rope[
 
     # Create position_ids tensor for testing explicit position encoding using TileTensor.
     # The function expects TileTensor with Scalar layout and ImmutAnyOrigin.
-    var position_ids_input_buffer = position_ids_input[DType.uint32]()
+    var position_ids_input_buffer = position_ids_input[.uint32]()
     var position_ids_static = TileTensor(
         position_ids_input_buffer, position_ids_layout
     )

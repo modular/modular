@@ -245,11 +245,11 @@ def _printf[
             elif T == Int8:
                 return UInt64(rebind[Int8](value))
             elif T == Float16:
-                return bitcast[DType.uint64](Float64(rebind[Float16](value)))
+                return bitcast[.uint64](Float64(rebind[Float16](value)))
             elif T == Float32:
-                return bitcast[DType.uint64](Float64(rebind[Float32](value)))
+                return bitcast[.uint64](Float64(rebind[Float32](value)))
             elif T == Float64:
-                return bitcast[DType.uint64](rebind[Float64](value))
+                return bitcast[.uint64](rebind[Float64](value))
             elif T == Int:
                 return UInt64(rebind[Int](value))
             elif T == UInt:

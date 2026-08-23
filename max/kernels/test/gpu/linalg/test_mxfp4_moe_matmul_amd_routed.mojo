@@ -99,10 +99,10 @@ comptime _MXFP4_GROUP: Int = 32  # elements per scale group
 
 
 def cpu_routed_reference(
-    a: TileTensor[DType.uint8, ...],
-    b: TileTensor[DType.uint8, ...],
-    sfa: TileTensor[DType.uint8, ...],
-    sfb: TileTensor[DType.uint8, ...],
+    a: TileTensor[.uint8, ...],
+    b: TileTensor[.uint8, ...],
+    sfa: TileTensor[.uint8, ...],
+    sfb: TileTensor[.uint8, ...],
     pair_to_expert: List[Int],
     num_tokens: Int,
     topk: Int,
@@ -204,7 +204,7 @@ def build_routing_metadata(
     mut sti_out: HostBuffer[
         DType.uint32
     ],  # length size_expert_ids * sort_block_m
-    mut ei_out: HostBuffer[DType.int32],  # length size_expert_ids
+    mut ei_out: HostBuffer[.int32],  # length size_expert_ids
 ):
     """Builds `sorted_token_ids` and per-block `expert_ids` arrays.
 
@@ -309,16 +309,12 @@ def run_routed_test_case[
     var num_input_rows = (num_tokens * topk) if is_token_slot else num_tokens
 
     # ---- Host buffers ----
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_input_rows * k_bytes
-    )
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * k_bytes
-    )
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](num_input_rows * k_bytes)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * k_bytes)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](
         num_input_rows * k_scales
     )
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * k_scales
     )
     ctx.synchronize()
@@ -338,23 +334,23 @@ def run_routed_test_case[
     )
 
     # ---- Routing tables ----
-    var sti_h = ctx.enqueue_create_host_buffer[DType.uint32](
+    var sti_h = ctx.enqueue_create_host_buffer[.uint32](
         size_expert_ids * sort_block_m
     )
-    var ei_h = ctx.enqueue_create_host_buffer[DType.int32](size_expert_ids)
+    var ei_h = ctx.enqueue_create_host_buffer[.int32](size_expert_ids)
     ctx.synchronize()
     build_routing_metadata(
         n_e, expert_ids_input, topk, sort_block_m, sti_h, ei_h
     )
 
     # ---- Host preshuffle (SFB per expert, SFA per chunk; B is preshuffled on-GPU below) ----
-    var sfb_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
+    var sfb_pre_hb = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * sfb_per_expert_bytes
     )
-    var sfa_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
+    var sfa_pre_hb = ctx.enqueue_create_host_buffer[.uint8](
         size_expert_ids * sfa_per_block_bytes
     )
-    var sfa_scratch_hb = ctx.enqueue_create_host_buffer[DType.uint8](
+    var sfa_scratch_hb = ctx.enqueue_create_host_buffer[.uint8](
         sfa_per_block_bytes
     )
     ctx.synchronize()
@@ -372,7 +368,7 @@ def run_routed_test_case[
     # just `t`. `size_expert_ids` is runtime, so each block is preshuffled
     # individually with E=1 into a scratch HostBuffer, then copied into
     # the right offset of the main `sfa_pre_hb`.
-    var sfa_block_gathered = ctx.enqueue_create_host_buffer[DType.uint8](
+    var sfa_block_gathered = ctx.enqueue_create_host_buffer[.uint8](
         sort_block_m * k_scales
     )
     ctx.synchronize()
@@ -400,24 +396,20 @@ def run_routed_test_case[
             sfa_pre_hb[blk * sfa_per_block_bytes + i] = sfa_scratch_hb[i]
 
     # ---- Device buffers + copy ----
-    var a_dev = ctx.enqueue_create_buffer[DType.uint8](num_input_rows * k_bytes)
-    var b_raw_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * k_bytes
-    )
-    var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * k_bytes
-    )
-    var sfa_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
+    var a_dev = ctx.enqueue_create_buffer[.uint8](num_input_rows * k_bytes)
+    var b_raw_dev = ctx.enqueue_create_buffer[.uint8](num_experts * N * k_bytes)
+    var b_pre_dev = ctx.enqueue_create_buffer[.uint8](num_experts * N * k_bytes)
+    var sfa_pre_dev = ctx.enqueue_create_buffer[.uint8](
         size_expert_ids * sfa_per_block_bytes
     )
-    var sfb_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
+    var sfb_pre_dev = ctx.enqueue_create_buffer[.uint8](
         num_experts * sfb_per_expert_bytes
     )
-    var sti_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var sti_dev = ctx.enqueue_create_buffer[.uint32](
         size_expert_ids * sort_block_m
     )
-    var ei_dev = ctx.enqueue_create_buffer[DType.int32](size_expert_ids)
-    var c_dev = ctx.enqueue_create_buffer[DType.float32](num_tokens * topk * N)
+    var ei_dev = ctx.enqueue_create_buffer[.int32](size_expert_ids)
+    var c_dev = ctx.enqueue_create_buffer[.float32](num_tokens * topk * N)
 
     ctx.enqueue_copy(a_dev, a_h)
     ctx.enqueue_copy(b_raw_dev, b_h)
@@ -480,10 +472,10 @@ def run_routed_test_case[
     )
 
     # ---- Compute CPU reference + compare ----
-    var c_kernel_h = ctx.enqueue_create_host_buffer[DType.float32](
+    var c_kernel_h = ctx.enqueue_create_host_buffer[.float32](
         num_tokens * topk * N
     )
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](
         num_tokens * topk * N
     )
     ctx.enqueue_copy(c_kernel_h, c_dev)

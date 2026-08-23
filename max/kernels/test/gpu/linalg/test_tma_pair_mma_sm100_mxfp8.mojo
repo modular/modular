@@ -133,7 +133,7 @@ def blockscaled_pair_cta_mxfp8[
 ):
     var num_iters = Int(num_iters_dev)
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -588,7 +588,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)

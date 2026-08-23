@@ -237,9 +237,9 @@ def test_tiled_matmul[use_l1_cache: Bool]() raises:
     else:
         print("=== test_tiled_matmul_l2_cache")
 
-    var dst = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
-    var rhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
-    var lhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
+    var dst = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
+    var rhs = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
+    var lhs = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
 
     _ = dst.tensor().fill(0)
     arange(rhs.tensor())

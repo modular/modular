@@ -966,14 +966,14 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             not has_zp.value()
         ), "Zero point is not supported for quantization."
         comptime assert (
-            weight_dtype == DType.uint8
+            weight_dtype == .uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
         _qmatmul_common[
             group_size=group_size.value(),
             target=target,
             elementwise_lambda_fn=write_to_cache,
-        ](hidden_state, weight.bitcast[DType.uint8](), context)
+        ](hidden_state, weight.bitcast[.uint8](), context)
 
     else:
         comptime assert (
@@ -1099,14 +1099,14 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             not has_zp.value()
         ), "Zero point is not supported for quantization."
         comptime assert (
-            weight_dtype == DType.uint8
+            weight_dtype == .uint8
         ), "Expect GPTQ weights to be a 'uint8' tensor."
 
         _qmatmul_common[
             group_size=group_size.value(),
             target=target,
             elementwise_lambda_fn=write_to_cache,
-        ](hidden_state, weight.bitcast[DType.uint8](), context)
+        ](hidden_state, weight.bitcast[.uint8](), context)
 
     else:
         comptime assert (
@@ -2528,16 +2528,16 @@ def _matmul_blockwise_scaled_fp4_common[
                 " scale; MXFP8 carries all scaling in the E8M0 blocks."
             )
         comptime assert (
-            scales_dtype == DType.float8_e8m0fnu
+            scales_dtype == .float8_e8m0fnu
         ), "CDNA4 block-scaled fused QKV+index requires E8M0 scales"
         return block_scaled_matmul_amd[
             lane_bytes=32, elementwise_lambda_fn=elementwise_lambda_fn
         ](
             c_tt,
-            lt_to_tt(hidden_state).bitcast[DType.uint8](),
-            lt_to_tt(weight).bitcast[DType.uint8](),
-            a_scales_tt.bitcast[DType.float8_e8m0fnu](),
-            b_scales_tt.bitcast[DType.float8_e8m0fnu](),
+            lt_to_tt(hidden_state).bitcast[.uint8](),
+            lt_to_tt(weight).bitcast[.uint8](),
+            a_scales_tt.bitcast[.float8_e8m0fnu](),
+            b_scales_tt.bitcast[.float8_e8m0fnu](),
             context,
         )
 
@@ -4452,7 +4452,7 @@ def _flare_mla_decode_kv_cache_ragged[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     var scalar_args_buf_tt = rebind[
-        TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]
+        TileTensor[.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]
     ](scalar_args_buf)
 
     comptime _q_num_heads = type_of(q).static_shape[q.rank - 2]

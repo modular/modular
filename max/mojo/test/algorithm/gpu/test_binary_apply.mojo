@@ -41,9 +41,9 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     comptime length = 1024
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
-    var out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[.float32](length)
+    var in1 = ctx.enqueue_create_buffer[.float32](length)
+    var out = ctx.enqueue_create_buffer[.float32](length)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):

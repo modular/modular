@@ -513,7 +513,7 @@ def test_load_and_store_simd() raises:
 def test_load_and_store_simd_bool() raises:
     # Regression test: storing SIMD[DType.bool, N] with width > 1 then
     # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
-    var allocation = alloc[Scalar[DType.bool]]({count = 4}).into_managed()
+    var allocation = alloc[Scalar[.bool]]({count = 4}).into_managed()
     var p = allocation.unsafe_ptr()
     p.unsafe_store(0, SIMD[.bool, 2](True, False))
     assert_true(p[unsafe_offset=0])

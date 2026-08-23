@@ -121,7 +121,7 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
             width=simd_width
         ]()
         var as_digits = ascii_vector - SIMD[.uint8, simd_width](ord("0"))
-        var as_digits_index = as_digits.cast[DType.uint64]()
+        var as_digits_index = as_digits.cast[.uint64]()
         comptime vector_slice = vector_with_exponents.unsafe_ptr().unsafe_offset(
             i * simd_width
         ).unsafe_load[

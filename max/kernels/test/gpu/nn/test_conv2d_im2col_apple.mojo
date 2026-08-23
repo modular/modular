@@ -92,13 +92,9 @@ def test_conv2d_fused_apple_dynamic_round(
     var filter_size = R * S * C_in * C_out
     var output_size = batch * H_out * W_out * C_out
 
-    var input_host = ctx.enqueue_create_host_buffer[DType.bfloat16](input_size)
-    var filter_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        filter_size
-    )
-    var output_gpu_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        output_size
-    )
+    var input_host = ctx.enqueue_create_host_buffer[.bfloat16](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[.bfloat16](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[.bfloat16](output_size)
     ctx.synchronize()
 
     for i in range(input_size):
@@ -108,9 +104,9 @@ def test_conv2d_fused_apple_dynamic_round(
         var t = Float64(i % 13) / 13.0
         filter_host[i] = BFloat16(t * 0.5 - 0.25)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](input_size)
-    var filter_dev = ctx.enqueue_create_buffer[DType.bfloat16](filter_size)
-    var output_dev = ctx.enqueue_create_buffer[DType.bfloat16](output_size)
+    var input_dev = ctx.enqueue_create_buffer[.bfloat16](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[.bfloat16](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[.bfloat16](output_size)
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
@@ -137,7 +133,7 @@ def test_conv2d_fused_apple_dynamic_round(
         _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         # FLUX conv_out-style tail: scale, shift, clamp to [0,255], round.
-        var x = val.cast[DType.float32]()
+        var x = val.cast[.float32]()
         x = x * 8.0 + 4.0
         x = max(x, 0.0)
         x = min(x, 255.0)
@@ -278,7 +274,7 @@ def test_conv2d_im2col_direct[
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
     # CPU reference at fp32 accumulator (matches the GPU matmul), narrowed back.
-    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -330,7 +326,7 @@ def test_conv2d_im2col_direct[
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](
@@ -439,7 +435,7 @@ def test_conv2d_fused_apple[
         var t = Float64(i % 13) / 13.0
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
-    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -490,7 +486,7 @@ def test_conv2d_fused_apple[
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](
@@ -597,7 +593,7 @@ def test_conv2d_gpu_dispatch[
         var t = Float64(i % 13) / 13.0
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
-    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -645,7 +641,7 @@ def test_conv2d_gpu_dispatch[
     def scale_epilogue[
         _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+        var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
         output_lt.store[
             width=_width, store_alignment=align_of[dtype]() * _alignment
         ](

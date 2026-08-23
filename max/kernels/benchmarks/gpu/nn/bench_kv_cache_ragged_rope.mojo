@@ -87,9 +87,7 @@ def execute_kv_cache_ragged_rope[
     var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
         batch_size + 1
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
@@ -143,9 +141,7 @@ def execute_kv_cache_ragged_rope[
         kv_block_shape.flattened_length()
     )
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     # hacky way to select random blocks.
     var block_idx_set = Set[Int]()

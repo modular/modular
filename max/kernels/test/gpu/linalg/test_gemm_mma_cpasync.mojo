@@ -131,8 +131,8 @@ def run_gemm_mma_cpasync[
     var out_f32 = alloc[Float32](out_size)
     var ref_f32 = alloc[Float32](out_size)
     for i in range(out_size):
-        out_f32[i] = out_host[i].cast[DType.float32]()
-        ref_f32[i] = ref_host[i].cast[DType.float32]()
+        out_f32[i] = out_host[i].cast[.float32]()
+        ref_f32[i] = ref_host[i].cast[.float32]()
 
     assert_almost_equal(
         out_f32,
@@ -254,10 +254,9 @@ def run_gemm_mma_cpasync_residual[
     var out_f32 = alloc[Float32](out_size)
     var ref_f32 = alloc[Float32](out_size)
     for i in range(out_size):
-        out_f32[i] = out_host[i].cast[DType.float32]()
+        out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = (
-            ref_host[i].cast[DType.float32]()
-            + residual_host[i].cast[DType.float32]()
+            ref_host[i].cast[.float32]() + residual_host[i].cast[.float32]()
         )
 
     assert_almost_equal(

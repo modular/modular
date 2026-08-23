@@ -92,8 +92,8 @@ def nan_check_count[
     rank: Int,
     target: StaticString,
 ](
-    nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
-    inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+    nan_count_out: OutputTensor[dtype=.int32, rank=1, ...],
+    inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
     input: InputTensor[dtype=dtype, rank=rank, ...],
     ctx: DeviceContext,
 ) raises:
@@ -122,8 +122,8 @@ def nan_check_count[
             var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
             var val = ptr.load[width=width](flat)
-            var nans = isnan(val).cast[DType.int32]().reduce_add()
-            var infs = isinf(val).cast[DType.int32]().reduce_add()
+            var nans = isnan(val).cast[.int32]().reduce_add()
+            var infs = isinf(val).cast[.int32]().reduce_add()
             if nans > 0:
                 _ = Atomic.fetch_add(nan_acc_ptr, nans)
             if infs > 0:
@@ -178,8 +178,8 @@ def nan_check_raise[
     label: StaticString,
     type_str: StaticString,
 ](
-    nan_count: InputTensor[dtype=DType.int32, rank=1, ...],
-    inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
+    nan_count: InputTensor[dtype=.int32, rank=1, ...],
+    inf_count: InputTensor[dtype=.int32, rank=1, ...],
 ) raises:
     """Raises an error if NaN or Inf counts are non-zero.
 

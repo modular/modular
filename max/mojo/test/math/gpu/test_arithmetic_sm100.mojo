@@ -70,9 +70,9 @@ def simd_fma_kernel[
 
 
 def host_elementwise_add(
-    a: HostBuffer[DType.float32],
-    b: HostBuffer[DType.float32],
-    mut c: HostBuffer[DType.float32],
+    a: HostBuffer[.float32],
+    b: HostBuffer[.float32],
+    mut c: HostBuffer[.float32],
     size: Int,
 ):
     for i in range(size):
@@ -80,9 +80,9 @@ def host_elementwise_add(
 
 
 def host_elementwise_mult(
-    a: HostBuffer[DType.float32],
-    b: HostBuffer[DType.float32],
-    mut c: HostBuffer[DType.float32],
+    a: HostBuffer[.float32],
+    b: HostBuffer[.float32],
+    mut c: HostBuffer[.float32],
     size: Int,
 ):
     for i in range(size):
@@ -90,9 +90,9 @@ def host_elementwise_mult(
 
 
 def host_elementwise_fma(
-    a: HostBuffer[DType.float32],
-    b: HostBuffer[DType.float32],
-    mut c: HostBuffer[DType.float32],
+    a: HostBuffer[.float32],
+    b: HostBuffer[.float32],
+    mut c: HostBuffer[.float32],
     size: Int,
 ):
     for i in range(size):
@@ -105,21 +105,21 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     comptime block_count = 1
     comptime buff_size = thread_count * block_count * width
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
+    var a_host = ctx.enqueue_create_host_buffer[.float32](buff_size)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](buff_size)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](buff_size)
 
     ctx.synchronize()
 
     for i in range(buff_size):
-        a_host[i] = random_float64(-1.0, 1.0).cast[DType.float32]()
-        b_host[i] = random_float64(-1.0, 1.0).cast[DType.float32]()
+        a_host[i] = random_float64(-1.0, 1.0).cast[.float32]()
+        b_host[i] = random_float64(-1.0, 1.0).cast[.float32]()
         c_host[i] = 0.0
 
     # Create device buffers
-    var a_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
-    var b_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
-    var c_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
+    var a_device_buffer = ctx.enqueue_create_buffer[.float32](buff_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[.float32](buff_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[.float32](buff_size)
 
     # Copy data from host to device
     ctx.enqueue_copy(a_device_buffer, a_host)
@@ -127,7 +127,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     ctx.enqueue_copy(c_device_buffer, c_host)
 
     # Compute expected result on host
-    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
+    var c_expected = ctx.enqueue_create_host_buffer[.float32](buff_size)
     c_expected.enqueue_fill(0)
     ctx.synchronize()
 
@@ -169,7 +169,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
         host_elementwise_fma(a_host, b_host, c_expected, buff_size)
 
     # Copy result back from device to host
-    var c_result = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
+    var c_result = ctx.enqueue_create_host_buffer[.float32](buff_size)
     ctx.enqueue_copy(c_result, c_device_buffer)
     ctx.synchronize()
 

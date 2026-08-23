@@ -111,8 +111,8 @@ def _launch[
     deterministic: Bool = True,
 ](
     ctx: DeviceContext,
-    scores_t: TileTensor[DType.float32, ...],
-    idxs_t: TileTensor[DType.int32, ...],
+    scores_t: TileTensor[.float32, ...],
+    idxs_t: TileTensor[.int32, ...],
     trace_ptr: UnsafePointer[UInt64, MutUntrackedOrigin],
     N: Int,
     K: Int,
@@ -243,9 +243,9 @@ def main() raises:
     var deterministic = arg_parse("deterministic", True)
 
     with DeviceContext() as ctx:
-        var scores_buf = ctx.enqueue_create_buffer[DType.float32](rows * N)
-        var idxs_buf = ctx.enqueue_create_buffer[DType.int32](rows * K)
-        var trace_buf = ctx.enqueue_create_buffer[DType.uint64](
+        var scores_buf = ctx.enqueue_create_buffer[.float32](rows * N)
+        var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
+        var trace_buf = ctx.enqueue_create_buffer[.uint64](
             rows * HSEL_TRACE_EVENTS
         )
 

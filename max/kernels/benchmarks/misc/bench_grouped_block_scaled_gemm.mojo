@@ -132,7 +132,7 @@ def bench_grouped_block_scaled_gemm[
     comptime SF_VECTOR_SIZE = sf_vector_size
     comptime max_groups = num_groups
     # FP4 packs 2 values per byte, so K dimension arrays are halved
-    comptime is_fp4 = (a_type == DType.uint8)
+    comptime is_fp4 = (a_type == .uint8)
 
     # MMA shape and cluster shape
     comptime mma_shape = Index(256, 256, 32) if cta_group == 2 else Index(
@@ -259,9 +259,7 @@ def bench_grouped_block_scaled_gemm[
         problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))
         problem_sizes_host[g * 4 + 3] = 1
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     var a_ptrs_host = List(
@@ -280,11 +278,11 @@ def bench_grouped_block_scaled_gemm[
         length=max_groups, fill=UInt64(Int(sfb_device.unsafe_ptr()))
     )
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)

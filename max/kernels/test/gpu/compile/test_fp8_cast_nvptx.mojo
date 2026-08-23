@@ -20,19 +20,19 @@ from std.testing import *
 def fp8_e4m3_to_f16_2(
     a: SIMD[.float8_e4m3fn, 2],
 ) -> SIMD[.float16, 2]:
-    return a.cast[DType.float16]()
+    return a.cast[.float16]()
 
 
 def fp8_e4m3_to_f16_8(
     a: SIMD[.float8_e4m3fn, 8],
 ) -> SIMD[.float16, 8]:
-    return a.cast[DType.float16]()
+    return a.cast[.float16]()
 
 
 def fp8_e4m3_to_f32_8(
     a: SIMD[.float8_e4m3fn, 8],
 ) -> SIMD[.float32, 8]:
-    return a.cast[DType.float32]()
+    return a.cast[.float32]()
 
 
 def test_fp8_e4m3_to_f16_paired_cvt() raises:

@@ -920,7 +920,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
                     shape_types=type_of(shape).ParamListType,
@@ -931,7 +931,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
@@ -940,7 +940,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
                     shape_types=type_of(shape).ParamListType,
@@ -948,7 +948,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
@@ -960,7 +960,7 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
                 shape_types=type_of(shape).ParamListType,
@@ -971,7 +971,7 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
 
 
 @always_inline
@@ -1060,8 +1060,8 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint32](),
-            shape_1=shape_1.cast[DType.uint32](),
+            shape_0=shape_0.cast[.uint32](),
+            shape_1=shape_1.cast[.uint32](),
             ctx=ctx,
         )
     else:
@@ -1076,7 +1076,7 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint64](),
-            shape_1=shape_1.cast[DType.uint64](),
+            shape_0=shape_0.cast[.uint64](),
+            shape_1=shape_1.cast[.uint64](),
             ctx=ctx,
         )

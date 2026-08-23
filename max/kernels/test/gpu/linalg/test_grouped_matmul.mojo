@@ -91,7 +91,7 @@ def test[
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
     for i in range(num_experts + 1):
@@ -113,7 +113,7 @@ def test[
     # Create host B buffers
     var b_size = num_experts * (3 * N if qkv_perm_dim else N) * K
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
     for i in range(num_experts):
@@ -141,12 +141,10 @@ def test[
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor[a_type](
         a_dev_buffer,
@@ -164,11 +162,11 @@ def test[
         b_dev_buffer,
         row_major[num_experts, 3 * N if qkv_perm_dim else N, K](),
     )
-    var a_offsets_dev = TileTensor[DType.uint32](
+    var a_offsets_dev = TileTensor[.uint32](
         a_offsets_dev_buffer,
         row_major(Coord(num_experts + 1)),
     )
-    var expert_ids_dev = TileTensor[DType.int32](
+    var expert_ids_dev = TileTensor[.int32](
         expert_ids_dev_buffer,
         row_major(Coord(Idx[num_experts])),
     )
@@ -354,7 +352,7 @@ def test_negative_lora_id[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
 
@@ -366,7 +364,7 @@ def test_negative_lora_id[
     # Create host B buffers
     var b_size = num_experts * N * K
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
 
@@ -391,10 +389,10 @@ def test_negative_lora_id[
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
@@ -410,11 +408,11 @@ def test_negative_lora_id[
         b_dev_buffer,
         row_major[num_experts, N, K](),
     )
-    var a_offsets_dev = TileTensor[DType.uint32](
+    var a_offsets_dev = TileTensor[.uint32](
         a_offsets_dev_buffer,
         row_major(Coord(num_active_experts + 1)),
     )
-    var expert_ids_dev = TileTensor[DType.int32](
+    var expert_ids_dev = TileTensor[.int32](
         expert_ids_dev_buffer,
         row_major(Coord(num_active_experts)),
     )
@@ -562,10 +560,10 @@ def test_step3p5_moe_dims[
     )
 
     # ---- offsets & expert ids ----
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
     for i in range(num_experts + 1):
@@ -586,8 +584,8 @@ def test_step3p5_moe_dims[
     var b_dev_buf = ctx.enqueue_create_buffer[in_type](b_size)
     var c_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
     var c_ref_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
-    var off_dev_buf = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor[in_type](
         a_dev_buf, row_major(Coord(total_tokens, Idx[K]))
@@ -602,10 +600,10 @@ def test_step3p5_moe_dims[
     var c_ref_dev = TileTensor[out_type](
         c_ref_dev_buf, row_major(Coord(total_tokens, Idx[N]))
     )
-    var off_dev = TileTensor[DType.uint32](
+    var off_dev = TileTensor[.uint32](
         off_dev_buf, row_major(Coord(num_experts + 1))
     )
-    var eid_dev = TileTensor[DType.int32](
+    var eid_dev = TileTensor[.int32](
         eid_dev_buf, row_major(Coord(Idx[num_experts]))
     )
 

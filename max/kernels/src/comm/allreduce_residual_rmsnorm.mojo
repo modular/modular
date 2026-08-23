@@ -755,7 +755,7 @@ def _allreduce_rmsnorm_fp8_launch[
         src_ptrs,
         gamma,
         scale_output,
-        epsilon.cast[DType.float32](),
+        epsilon.cast[.float32](),
         weight_offset,
         Int32(rows),
         Int32(cols),
@@ -914,7 +914,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         src_ptrs,
         gamma,
         scale_output,
-        epsilon.cast[DType.float32](),
+        epsilon.cast[.float32](),
         weight_offset,
         Int32(rows),
         Int32(cols),
@@ -1016,8 +1016,8 @@ def _launch_split_allreduce_rmsnorm_fp8[
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
         var sum_f32 = (
-            val.cast[DType.float32]()
-            + rebind[SIMD[_dtype, _width]](res).cast[DType.float32]()
+            val.cast[.float32]()
+            + rebind[SIMD[_dtype, _width]](res).cast[.float32]()
         )
         residual_output.raw_store[width=_width, alignment=_alignment](
             flat_idx,

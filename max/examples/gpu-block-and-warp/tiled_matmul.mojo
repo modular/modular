@@ -302,7 +302,7 @@ def main() raises:
             var i = test_coords_i[idx]
             var j = test_coords_j[idx]
             var expected = Float32((i + 1) * MATRIX_K * (j + 1))
-            var actual = result_matrix[i, j].cast[DType.float32]()
+            var actual = result_matrix[i, j].cast[.float32]()
             var diff = abs(actual - expected)
 
             if diff > TOLERANCE:

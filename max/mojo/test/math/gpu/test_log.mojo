@@ -59,8 +59,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = log_fn(in_host[i])
 
-            comptime atol = 1e-07 if dtype == DType.float32 else 1e-4
-            comptime rtol = 2e-07 if dtype == DType.float32 else 2e-2
+            comptime atol = 1e-07 if dtype == .float32 else 1e-4
+            comptime rtol = 2e-07 if dtype == .float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -72,15 +72,15 @@ def run_elementwise[
 
 def test_log() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float32, log](ctx)
-        run_elementwise[DType.float32, log10](ctx)
-        run_elementwise[DType.float32, log2](ctx)
-        run_elementwise[DType.float16, log](ctx)
-        run_elementwise[DType.float16, log10](ctx)
-        run_elementwise[DType.float16, log2](ctx)
-        run_elementwise[DType.bfloat16, log](ctx)
-        run_elementwise[DType.bfloat16, log10](ctx)
-        run_elementwise[DType.bfloat16, log2](ctx)
+        run_elementwise[.float32, log](ctx)
+        run_elementwise[.float32, log10](ctx)
+        run_elementwise[.float32, log2](ctx)
+        run_elementwise[.float16, log](ctx)
+        run_elementwise[.float16, log10](ctx)
+        run_elementwise[.float16, log2](ctx)
+        run_elementwise[.bfloat16, log](ctx)
+        run_elementwise[.bfloat16, log10](ctx)
+        run_elementwise[.bfloat16, log2](ctx)
 
 
 def main() raises:

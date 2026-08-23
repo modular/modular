@@ -92,13 +92,9 @@ def pool[
     comptime out_size = out_layout.product()
 
     # Create host buffers
-    var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
-    var out_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
-    var ref_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
+    var in_host_buffer = ctx.enqueue_create_host_buffer[.float32](in_size)
+    var out_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
+    var ref_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
     ctx.synchronize()
 
     # Create TileTensors from host buffers
@@ -135,8 +131,8 @@ def pool[
     dilation_tensor[1] = 1
 
     # Create device buffers
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](in_size)
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
+    var d_input_buffer = ctx.enqueue_create_buffer[.float32](in_size)
+    var d_output_buffer = ctx.enqueue_create_buffer[.float32](out_size)
 
     # Create device TileTensors
     var d_input = TileTensor(d_input_buffer, in_layout)
@@ -200,13 +196,9 @@ def pool_ceil_test[
     comptime out_size = out_layout.product()
 
     # Create host buffers
-    var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
-    var out_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
-    var ref_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
+    var in_host_buffer = ctx.enqueue_create_host_buffer[.float32](in_size)
+    var out_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
+    var ref_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
     ctx.synchronize()
 
     # Create TileTensors from host buffers
@@ -243,8 +235,8 @@ def pool_ceil_test[
     dilation_tensor[1] = 1
 
     # Create device buffers
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](in_size)
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
+    var d_input_buffer = ctx.enqueue_create_buffer[.float32](in_size)
+    var d_output_buffer = ctx.enqueue_create_buffer[.float32](out_size)
 
     # Create device TileTensors
     var d_input = TileTensor(d_input_buffer, in_layout)
@@ -314,13 +306,9 @@ def test_avg_pool_2d_with_padding_gpu[
     comptime out_size = out_layout.product()
 
     # Create host buffers
-    var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
-    var out_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
-    var ref_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
+    var in_host_buffer = ctx.enqueue_create_host_buffer[.float32](in_size)
+    var out_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
+    var ref_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
     ctx.synchronize()
 
     # Create TileTensors from host buffers
@@ -357,8 +345,8 @@ def test_avg_pool_2d_with_padding_gpu[
     dilation_tensor[1] = 1
 
     # Create device buffers
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](in_size)
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
+    var d_input_buffer = ctx.enqueue_create_buffer[.float32](in_size)
+    var d_output_buffer = ctx.enqueue_create_buffer[.float32](out_size)
 
     # Create device TileTensors
     var d_input = TileTensor(d_input_buffer, in_layout)
@@ -403,13 +391,9 @@ def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     comptime out_size = out_layout.product()
 
     # Create host buffers
-    var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
-    var out_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
-    var ref_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-        out_size
-    )
+    var in_host_buffer = ctx.enqueue_create_host_buffer[.float32](in_size)
+    var out_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
+    var ref_host_buffer = ctx.enqueue_create_host_buffer[.float32](out_size)
     ctx.synchronize()
 
     # Create TileTensors from host buffers
@@ -446,8 +430,8 @@ def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     dilation_tensor[1] = 3
 
     # Create device buffers
-    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](in_size)
-    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
+    var d_input_buffer = ctx.enqueue_create_buffer[.float32](in_size)
+    var d_output_buffer = ctx.enqueue_create_buffer[.float32](out_size)
 
     # Create device TileTensors
     var d_input = TileTensor(d_input_buffer, in_layout)

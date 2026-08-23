@@ -565,17 +565,17 @@ def naive_fa_decode_apple_stitch[
 
     for split in range(active_splits):
         var ml = _ml_idx(batch_id, head_id, split, _num_heads, _num_partitions)
-        var m_s = rebind[Scalar[p_type]](m_partial[ml]).cast[DType.float32]()
+        var m_s = rebind[Scalar[p_type]](m_partial[ml]).cast[.float32]()
         var m_new = max(m, m_s)
         var corr = exp(m - m_new)
         # `p` must use the same exp base as the producer for an exact combine.
         var p = exp(m_s - m_new)
-        var l_s = rebind[Scalar[p_type]](l_partial[ml]).cast[DType.float32]()
+        var l_s = rebind[Scalar[p_type]](l_partial[ml]).cast[.float32]()
         l = l * corr + p * l_s
         var oi = _o_idx(
             batch_id, head_id, d, split, _num_heads, _depth, _num_partitions
         )
-        var o_s = rebind[Scalar[p_type]](o_partial[oi]).cast[DType.float32]()
+        var o_s = rebind[Scalar[p_type]](o_partial[oi]).cast[.float32]()
         acc = acc * corr + p * o_s
         m = m_new
 

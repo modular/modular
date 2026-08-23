@@ -210,7 +210,7 @@ def causal_conv1d_channel_first_fwd_cpu[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             output.raw_store(out_offset, out_val)
@@ -337,7 +337,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             output.raw_store(out_offset, out_val)
@@ -414,7 +414,7 @@ def causal_conv1d_channel_last_fwd_cpu[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -485,7 +485,7 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -579,7 +579,7 @@ def causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -669,7 +669,7 @@ def causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -969,9 +969,7 @@ def causal_conv1d_channel_first_fwd_gpu[
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
         out_vals[i] = out_val
 
     comptime for i in range(kNElts):
@@ -1251,7 +1249,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
             comptime if x_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[x_dtype]()
+                out_val = silu(out_val.cast[.float32]()).cast[x_dtype]()
         out_vals[i] = out_val
 
     comptime for i in range(kNElts):
@@ -1469,7 +1467,7 @@ def causal_conv1d_channel_last_fwd_gpu[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -1660,7 +1658,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2104,7 +2102,7 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2462,7 +2460,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -2847,7 +2845,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -3199,7 +3197,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
                 comptime if output_dtype.is_floating_point():
                     out_val = silu(out_val)
                 else:
-                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                    out_val = silu(out_val.cast[.float32]()).cast[
                         output_dtype
                     ]()
             out_vals_channel[i] = out_val
@@ -3359,7 +3357,7 @@ def causal_conv1d_update_cpu[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -3543,7 +3541,7 @@ def causal_conv1d_update_cpu_no_bias[
                     comptime if output_dtype.is_floating_point():
                         out_val = silu(out_val)
                     else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                        out_val = silu(out_val.cast[.float32]()).cast[
                             output_dtype
                         ]()
                 output.raw_store(out_offset, out_val)
@@ -3743,9 +3741,7 @@ def causal_conv1d_update_gpu[
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
         output.raw_store(out_offset, out_val)
 
     # Update conv_state
@@ -3936,9 +3932,7 @@ def causal_conv1d_update_gpu_no_bias[
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
         output.raw_store(out_offset, out_val)
 
     if _seqlen >= _state_len:

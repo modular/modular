@@ -97,14 +97,14 @@ def wgmma_kernel_rs[
         var lane_q, lane_r = udivmod(lane_id(), 4)
         var row = warp_id() * 16 + lane_q
         var col = lane_r * 2
-        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[DType.bfloat16]()
-        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[DType.bfloat16]()
-        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[DType.bfloat16]()
+        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[.bfloat16]()
+        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[.bfloat16]()
+        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[.bfloat16]()
         a_reg[3] = a_gmem_tile.ptr[(row + 8) * K + col + 1].cast[
             DType.bfloat16
         ]()
-        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[DType.bfloat16]()
-        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[DType.bfloat16]()
+        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[.bfloat16]()
+        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[.bfloat16]()
         a_reg[6] = a_gmem_tile.ptr[(row + 8) * K + col + 8].cast[
             DType.bfloat16
         ]()
@@ -231,18 +231,18 @@ def wgmma_bf16_bf16_f32[
         sep="",
     )
 
-    var a = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, K)](ctx)
+    var a = ManagedLayoutTensor[.bfloat16, Layout.row_major(M, K)](ctx)
     arange(a.tensor[update=False]())
 
-    var b = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(N, K)](ctx)
+    var b = ManagedLayoutTensor[.bfloat16, Layout.row_major(N, K)](ctx)
     arange(b.tensor[update=False]())
 
-    var c = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
-    var c_ref = ManagedLayoutTensor[DType.bfloat16, Layout.row_major(M, N)](ctx)
+    var c = ManagedLayoutTensor[.bfloat16, Layout.row_major(M, N)](ctx)
+    var c_ref = ManagedLayoutTensor[.bfloat16, Layout.row_major(M, N)](ctx)
 
-    comptime a_smem_layout = tile_layout_k_major[DType.bfloat16, BM=M, BK=16]()
+    comptime a_smem_layout = tile_layout_k_major[.bfloat16, BM=M, BK=16]()
 
-    comptime b_smem_layout = tile_layout_k_major[DType.bfloat16, BM=N, BK=16]()
+    comptime b_smem_layout = tile_layout_k_major[.bfloat16, BM=N, BK=16]()
 
     comptime kernel = (wgmma_kernel_rs if a_reg else wgmma_kernel_ss)[
         DType.bfloat16,

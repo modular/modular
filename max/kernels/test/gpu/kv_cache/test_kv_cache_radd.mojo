@@ -247,25 +247,25 @@ def test_kv_cache_radd[
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_kv_cache_radd[DType.float32, 8, 128, 128](
+        test_kv_cache_radd[.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128](
+        test_kv_cache_radd[.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128](
+        test_kv_cache_radd[.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128](
+        test_kv_cache_radd[.float32, 8, 128, 128](
             IndexList[1](10),
             IndexList[1](40),
             1,

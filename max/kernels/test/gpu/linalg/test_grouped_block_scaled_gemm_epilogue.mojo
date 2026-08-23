@@ -224,7 +224,7 @@ def test_grouped_gemm_epilogue[
     )
 
     # Problem sizes tensor
-    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
     problem_sizes_host[0] = Int32(Int(m.value()))  # M
@@ -232,9 +232,7 @@ def test_grouped_gemm_epilogue[
     problem_sizes_host[2] = Int32(Int(k.value()))  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     var problem_sizes_tensor = TileTensor(
@@ -242,11 +240,11 @@ def test_grouped_gemm_epilogue[
     )
 
     # Pointer arrays
-    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -254,11 +252,11 @@ def test_grouped_gemm_epilogue[
     sfa_ptrs_host[0] = UInt64(Int(sfa_device.unsafe_ptr()))
     sfb_ptrs_host[0] = UInt64(Int(sfb_device.unsafe_ptr()))
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)

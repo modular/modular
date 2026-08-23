@@ -47,7 +47,7 @@ def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 def _unsafe_normalize_neg_index[
-    dtype: DType, width: SIMDLength, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = .int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
         idx.cast[out_type]() + Scalar[out_type](dim_size),
@@ -73,7 +73,7 @@ def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 def normalize_neg_index[
-    dtype: DType, width: SIMDLength, out_type: DType = DType.int
+    dtype: DType, width: SIMDLength, out_type: DType = .int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
@@ -216,7 +216,7 @@ def gather_reduce[
     var output_bind = TileTensor(output.ptr, row_major(Coord(output_2d_dims)))
     var input_bind = TileTensor(
         input.ptr,
-        input.layout.make_dynamic[DType.int64](),
+        input.layout.make_dynamic[.int64](),
     )
 
     var gather_axis_size = Int(input.dim(gather_axis))
@@ -1440,7 +1440,7 @@ def scatter_elements[
         ctx: Device context for execution.
     """
     comptime assert (
-        indices_type == DType.int32 or indices_type == DType.int64
+        indices_type == .int32 or indices_type == .int64
     ), "indices in scatter_elements must be int32 or int64"
 
     if input.shape() != output.shape():
@@ -1580,7 +1580,7 @@ def gather_elements[
         ctx: Device context for execution.
     """
     comptime assert (
-        indices_type == DType.int32 or indices_type == DType.int64
+        indices_type == .int32 or indices_type == .int64
     ), "indices in gather_elements must be int32 or int64"
 
     if rebind[IndexList[input.rank]](
@@ -1898,7 +1898,7 @@ def apply_packed_bitmask[
 ](
     output: TileTensor[mut=True, dtype, ...],
     logits: TileTensor[dtype, ...],
-    packed: TileTensor[DType.int32, ...],
+    packed: TileTensor[.int32, ...],
     fill_value: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -1941,7 +1941,7 @@ def apply_packed_bitmask[
         ), "apply_packed_bitmask: simd_width must be <= 32"
         var b = Int(idx[0].value())
         var v = Int(idx[1].value())
-        var tok = Int32(v) + iota[DType.int32, width]()
+        var tok = Int32(v) + iota[.int32, width]()
         var base = v >> 5
         var w0 = SIMD[.int32, width](packed[b, base][0])
         # Second word only feeds the spilled lanes; clamp the index so the

@@ -1226,8 +1226,8 @@ def mla_decode_branch_fp8[
     comptime native_fp8_sparse = (
         fp8_q
         and sparse_mla
-        and dtype == DType.bfloat16
-        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and dtype == .bfloat16
+        and collection_t.CacheType.dtype == .float8_e4m3fn
         and not collection_t.CacheType.quantization_enabled
         and _is_sm10x_gpu(ctx.default_device_info)
     )
@@ -1548,15 +1548,15 @@ def mla_prefill_branch_sparse_fp8[
     # the bf16 input, so Q is converted with a saturating-cast pass (unlike
     # the bf16-weights branch, which stages FP8 directly).
     comptime native_fp8_sparse = (
-        dtype == DType.bfloat16
-        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        dtype == .bfloat16
+        and collection_t.CacheType.dtype == .float8_e4m3fn
         and not collection_t.CacheType.quantization_enabled
         and _is_sm10x_gpu(ctx.default_device_info)
         and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
     )
     comptime if collection_t.CacheType.dtype.is_float8():
         comptime if native_fp8_sparse:
-            var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            var q_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
                 seq_len * num_heads * k_cache_dim
             )
             var q_fp8 = TileTensor(
@@ -1970,7 +1970,7 @@ def convert_bf16_to_fp8_e4m3fn(
 
         output_buffer.store_linear(
             idx,
-            cast_saturating[DType.float8_e4m3fn](
+            cast_saturating[.float8_e4m3fn](
                 input_buffer.load_linear[width](idx)
             ),
         )
@@ -2026,7 +2026,7 @@ def mla_prefill_branch_bf16[
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2043,8 +2043,8 @@ def mla_prefill_branch_bf16[
         mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    w_k: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_k: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill path.
@@ -2156,7 +2156,7 @@ def mla_prefill_branch_bf16[
     )
 
     # allocate buffers for latent KV
-    var k_latent_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+    var k_latent_buf = ctx.enqueue_create_buffer[.bfloat16](
         buffer_length * kv_latent_dim
     )
     var k_latent = TileTensor(
@@ -2178,7 +2178,7 @@ def mla_prefill_branch_bf16[
 
     comptime if collection_t.CacheType.dtype.is_float8():
         # Allocate FP8 buffers for K and V
-        var k_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        var k_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
             buffer_length * num_heads * qk_nope_head_dim
         )
         var k_fp8_flat = TileTensor(
@@ -2186,7 +2186,7 @@ def mla_prefill_branch_bf16[
             row_major((buffer_length, Idx[num_heads * qk_nope_head_dim])),
         )
 
-        var v_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        var v_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
             buffer_length * num_heads * v_head_dim
         )
         var v_fp8_flat = TileTensor(
@@ -2232,7 +2232,7 @@ def mla_prefill_branch_bf16[
         )
 
         # Allocate FP8 buffer for Q and convert
-        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        var q_fp8_buf = ctx.enqueue_create_buffer[.float8_e4m3fn](
             seq_len * num_heads * q_head_dim
         )
         var q_fp8 = TileTensor(
@@ -2260,7 +2260,7 @@ def mla_prefill_branch_bf16[
         )
     else:
         # Standard BF16 path
-        var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+        var k_buf = ctx.enqueue_create_buffer[.bfloat16](
             buffer_length * num_heads * qk_nope_head_dim
         )
         var k_flat = TileTensor(
@@ -2278,7 +2278,7 @@ def mla_prefill_branch_bf16[
             w_uv.ptr,
             row_major(Idx[num_heads * v_head_dim], Idx[kv_latent_dim]),
         )
-        var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+        var v_buf = ctx.enqueue_create_buffer[.bfloat16](
             buffer_length * num_heads * v_head_dim
         )
         var v_flat = TileTensor(
@@ -2337,7 +2337,7 @@ def mla_decode_branch_bf16[
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2347,8 +2347,8 @@ def mla_decode_branch_bf16[
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2440,7 +2440,7 @@ def mla_decode_branch_bf16[
     # cache is FP8.
     comptime native_fp8_sparse = (
         sparse_mla
-        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and collection_t.CacheType.dtype == .float8_e4m3fn
         and not collection_t.CacheType.quantization_enabled
         and _is_sm10x_gpu(ctx.default_device_info)
     )
@@ -2523,7 +2523,7 @@ def mla_decode_branch_bf16[
     )
 
     # Perform MLA decode
-    var raw_output_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+    var raw_output_buf = ctx.enqueue_create_buffer[.bfloat16](
         seq_len * num_heads * kv_latent_dim
     )
     var raw_output = TileTensor(
@@ -2594,7 +2594,7 @@ def mla_prefill_branch_sparse_bf16[
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2604,8 +2604,8 @@ def mla_prefill_branch_sparse_bf16[
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
     d_indices: UnsafePointer[Int32, MutAnyOrigin],
     topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
@@ -2655,7 +2655,7 @@ def mla_prefill_branch_sparse_bf16[
     # kernel supports num_q_heads == 128 (cta_group=2) or a multiple of 8 in
     # (0, 64] (cta_group=1). Other configs keep bf16 Q.
     comptime native_fp8_sparse = (
-        collection_t.CacheType.dtype == DType.float8_e4m3fn
+        collection_t.CacheType.dtype == .float8_e4m3fn
         and not collection_t.CacheType.quantization_enabled
         and _is_sm10x_gpu(ctx.default_device_info)
         and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
@@ -2717,7 +2717,7 @@ def mla_prefill_branch_sparse_bf16[
         ctx,
     )
 
-    var raw_output_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+    var raw_output_buf = ctx.enqueue_create_buffer[.bfloat16](
         seq_len * num_heads * kv_latent_dim
     )
     var raw_output = TileTensor(
@@ -2868,7 +2868,7 @@ def mla_prefill_decode_graph_bf16[
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2886,9 +2886,9 @@ def mla_prefill_decode_graph_bf16[
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    w_k: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
-    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_k: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[.bfloat16, address_space=AddressSpace.GENERIC, ...],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],

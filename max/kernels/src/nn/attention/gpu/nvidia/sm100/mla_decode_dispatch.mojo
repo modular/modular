@@ -820,7 +820,7 @@ struct MLADispatchScalarArgs[
         DType.int64, Layout.row_major(3), MutAnyOrigin
     ]
 
-    var gpu_buf: DeviceBuffer[DType.int64]
+    var gpu_buf: DeviceBuffer[.int64]
     var batch_size: Int
     var q_max_seq_len: Int
 
@@ -831,7 +831,7 @@ struct MLADispatchScalarArgs[
         q_max_seq_len: Int,
         ctx: DeviceContext,
     ) raises:
-        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](3)
+        self.gpu_buf = ctx.enqueue_create_buffer[.int64](3)
         self.batch_size = batch_size
         self.q_max_seq_len = q_max_seq_len
 
@@ -851,7 +851,7 @@ struct MLADispatchScalarArgs[
         host_args[0] = Int64(scalars[0])
         host_args[1] = Int64(scalars[1])
         host_args[2] = Int64(scalars[2])
-        var output_buf = DeviceBuffer[DType.int64](
+        var output_buf = DeviceBuffer[.int64](
             ctx, self.gpu_buf.unsafe_ptr(), 3, owning=False
         )
         output_buf.enqueue_copy_from(
@@ -869,7 +869,7 @@ struct MLADispatchScalarArgs[
 
     def gpu_tile_tensor(
         self,
-    ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
+    ) -> TileTensor[.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
         return TileTensor(
             rebind[UnsafePointer[Int64, MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
@@ -983,7 +983,7 @@ def mla_decode_sm100_dispatch[
     var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _half_sms = sm_count // 2
-    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
 
     # q_len=1 sparse FP8 split-K tuning (KERN-3217): the single-token sparse
     # FP8 decode with no extra_kv / variable_topk / attn_sink is SM-underfilled
@@ -1189,7 +1189,7 @@ def _mla_decode_sm100_dispatch_impl[
 
     comptime AccumType = get_accum_type[output.dtype]()
     comptime v_depth = depth - 64
-    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
 
     # Ensure KV cache page_size is evenly divisible by split_page_size.
     # If the KV cache page_size shrinks in the future, splits must not
@@ -1645,9 +1645,9 @@ def mla_decode_sm100_sink_split_k[
     # 2. Q is also FP8 (q_type must match kv_type) — the pipeline provides FP8 Q
     # When Q is BF16, fall through to the old FP8 converter or BF16 path.
     comptime _native_fp8 = (
-        k_t.dtype == DType.float8_e4m3fn
+        k_t.dtype == .float8_e4m3fn
         and _scale_block_size == 0
-        and q_type == DType.float8_e4m3fn
+        and q_type == .float8_e4m3fn
     )
     # Per-tensor rope-aware: split content (FP8 tensorwise) + rope (BF16) path
     comptime _per_token_scale_rope_aware = per_token_scale_rope_aware
@@ -1726,7 +1726,7 @@ def mla_decode_sm100_sink_split_k[
             # ---------- BF16 KV sparse dispatch ----------
             # BF16 KV cache: single BF16 + SWIZZLE_128B gather4 TMA
             # descriptor covering the full 576-element row (1152 bytes).
-            comptime if k_t.dtype == DType.bfloat16:
+            comptime if k_t.dtype == .bfloat16:
                 comptime _kv_bf16_tile_width = mla_config.padded_q_depth
                 var k_gather4_tma_bf16 = k.create_gather4_tma_tile[
                     tile_width=_kv_bf16_tile_width,
@@ -1762,7 +1762,7 @@ def mla_decode_sm100_sink_split_k[
                     _has_extra_kv: Bool, _has_variable_topk: Bool
                 ]() raises:
                     if ragged:
-                        comptime ValidLengthType = NonNullPointer[DType.uint32]
+                        comptime ValidLengthType = NonNullPointer[.uint32]
                         var valid_len: ValidLengthType = {
                             valid_length.ptr.as_imm().as_unsafe_any_origin()
                         }
@@ -1805,7 +1805,7 @@ def mla_decode_sm100_sink_split_k[
                             ctx,
                         )
                     else:
-                        comptime ValidLengthType = NullPointer[DType.uint32]
+                        comptime ValidLengthType = NullPointer[.uint32]
                         var valid_len: ValidLengthType = {}
                         launch_mla_sm100_decode_sparse_kv_bf16[
                             q_type=q_type,
@@ -1899,7 +1899,7 @@ def mla_decode_sm100_sink_split_k[
                     _q_len_fold_val: Int = 1,
                 ]() raises:
                     if ragged:
-                        comptime ValidLengthType = NonNullPointer[DType.uint32]
+                        comptime ValidLengthType = NonNullPointer[.uint32]
                         var valid_len: ValidLengthType = {
                             valid_length.ptr.as_imm().as_unsafe_any_origin()
                         }
@@ -1947,7 +1947,7 @@ def mla_decode_sm100_sink_split_k[
                             logical_indices=logical_indices,
                         )
                     else:
-                        comptime ValidLengthType = NullPointer[DType.uint32]
+                        comptime ValidLengthType = NullPointer[.uint32]
                         var valid_len: ValidLengthType = {}
                         launch_mla_sm100_decode_sparse_qkv_fp8[
                             q_type=q_type,
@@ -2044,7 +2044,7 @@ def mla_decode_sm100_sink_split_k[
                     _q_len_fold: Int = 1,
                 ]() raises:
                     if ragged:
-                        comptime ValidLengthType = NonNullPointer[DType.uint32]
+                        comptime ValidLengthType = NonNullPointer[.uint32]
                         var valid_len: ValidLengthType = {
                             valid_length.ptr.as_imm().as_unsafe_any_origin()
                         }
@@ -2091,7 +2091,7 @@ def mla_decode_sm100_sink_split_k[
                             ctx,
                         )
                     else:
-                        comptime ValidLengthType = NullPointer[DType.uint32]
+                        comptime ValidLengthType = NullPointer[.uint32]
                         var valid_len: ValidLengthType = {}
                         launch_mla_sm100_decode_sparse_kv_fp8[
                             q_type=q_type,
@@ -2230,7 +2230,7 @@ def mla_decode_sm100_sink_split_k[
                 _has_extra_kv: Bool, _has_variable_topk: Bool
             ]() raises:
                 if ragged:
-                    comptime ValidLengthType = NonNullPointer[DType.uint32]
+                    comptime ValidLengthType = NonNullPointer[.uint32]
                     var valid_len: ValidLengthType = {
                         valid_length.ptr.as_imm().as_unsafe_any_origin()
                     }
@@ -2277,7 +2277,7 @@ def mla_decode_sm100_sink_split_k[
                         ctx,
                     )
                 else:
-                    comptime ValidLengthType = NullPointer[DType.uint32]
+                    comptime ValidLengthType = NullPointer[.uint32]
                     var valid_len: ValidLengthType = {}
                     launch_mla_sm100_decode_sparse[
                         q_type=q_type,
@@ -2395,7 +2395,7 @@ def mla_decode_sm100_sink_split_k[
         )
 
         if ragged:
-            comptime ValidLengthType = NonNullPointer[DType.uint32]
+            comptime ValidLengthType = NonNullPointer[.uint32]
             var valid_len: ValidLengthType = {
                 valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
@@ -2431,7 +2431,7 @@ def mla_decode_sm100_sink_split_k[
                 ctx,
             )
         else:
-            comptime ValidLengthType = NullPointer[DType.uint32]
+            comptime ValidLengthType = NullPointer[.uint32]
             var valid_len: ValidLengthType = {}
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
@@ -2511,7 +2511,7 @@ def mla_decode_sm100_sink_split_k[
         # Layout-G non-fold, else → Layout-E non-fold.
 
         if ragged:
-            comptime ValidLengthType = NonNullPointer[DType.uint32]
+            comptime ValidLengthType = NonNullPointer[.uint32]
             var valid_len: ValidLengthType = {
                 valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
@@ -2611,7 +2611,7 @@ def mla_decode_sm100_sink_split_k[
                 _launch_r[False, 1, False]()  # Layout-E non-fold
             return
         else:
-            comptime ValidLengthType = NullPointer[DType.uint32]
+            comptime ValidLengthType = NullPointer[.uint32]
             var valid_len: ValidLengthType = {}
 
             @__parameter
@@ -2721,7 +2721,7 @@ def mla_decode_sm100_sink_split_k[
         ](ctx, q_ptr, num_rows_q)
 
         if ragged:
-            comptime ValidLengthType = NonNullPointer[DType.uint32]
+            comptime ValidLengthType = NonNullPointer[.uint32]
             var valid_len: ValidLengthType = {
                 valid_length.ptr.as_imm().as_unsafe_any_origin()
             }
@@ -2753,7 +2753,7 @@ def mla_decode_sm100_sink_split_k[
                 ctx,
             )
         else:
-            comptime ValidLengthType = NullPointer[DType.uint32]
+            comptime ValidLengthType = NullPointer[.uint32]
             var valid_len: ValidLengthType = {}
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
@@ -2907,7 +2907,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     # Route ALL FP8 KV (both tensorwise and blockwise) to the FP8 converter
     # kernel. When we reach this function, native FP8 has already been ruled
     # out (Q is BF16), so the converter kernel handles FP8->BF16 conversion.
-    comptime _is_old_fp8 = KVLUTType.dtype == DType.float8_e4m3fn
+    comptime _is_old_fp8 = KVLUTType.dtype == .float8_e4m3fn
     comptime kernel = MLA_SM100_Decode_KV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,

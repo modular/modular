@@ -203,7 +203,7 @@ def tma_umma_kernel_pair_cta[
         b_smem_tile.ptr
     )
 
-    comptime mma_kind = UMMAKind.KIND_F8F6F4 if a_type == DType.float8_e4m3fn else UMMAKind.KIND_F16
+    comptime mma_kind = UMMAKind.KIND_F8F6F4 if a_type == .float8_e4m3fn else UMMAKind.KIND_F16
     comptime idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
         a_type,
@@ -399,7 +399,7 @@ def test_tma_umma_pair_cta[
 
     comptime MMA_M = 2 * BM
     comptime MMA_N = 2 * BN
-    comptime MMA_K = 32 if ab_type == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 if ab_type == .float8_e4m3fn else 16
     comptime mma_shape = Index(MMA_M, MMA_N, MMA_K)
     comptime assert (BN if MMA_M == 128 else MMA_N) <= 256, String(
         "MMA_M = ",
@@ -527,7 +527,7 @@ def test_tma_umma_pair_cta[
         ),
     )
 
-    comptime if ab_type == DType.float8_e4m3fn and (not transpose_b):
+    comptime if ab_type == .float8_e4m3fn and (not transpose_b):
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major = b_col_major.tensor()
         var b_tensor = b.tensor()

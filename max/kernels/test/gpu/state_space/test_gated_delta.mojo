@@ -104,10 +104,8 @@ def run_slot_indexed_gpu[
         beta_h.ptr.store(i, Scalar[work_dtype](v / (v + Float32(1.0))))
 
     # input_row_offsets: [batch_size + 1]
-    var offsets_heap = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
-    var offsets_h = LayoutTensor[DType.uint32, layout_1d, _](
+    var offsets_heap = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
+    var offsets_h = LayoutTensor[.uint32, layout_1d, _](
         offsets_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
     )
@@ -131,8 +129,8 @@ def run_slot_indexed_gpu[
     for i in range(pool_size):
         pool_initial_h.ptr.store(i, Scalar[state_dtype](0))
 
-    var slot_idx_heap = ctx.enqueue_create_host_buffer[DType.uint32](batch_size)
-    var slot_idx_h = LayoutTensor[DType.uint32, layout_1d, _](
+    var slot_idx_heap = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    var slot_idx_h = LayoutTensor[.uint32, layout_1d, _](
         slot_idx_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch_size)),
     )
@@ -166,9 +164,9 @@ def run_slot_indexed_gpu[
     var beta_device = ctx.enqueue_create_buffer[work_dtype](
         total_seq_len * num_value_heads
     )
-    var offsets_device = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var pool_device = ctx.enqueue_create_buffer[state_dtype](pool_size)
-    var slot_idx_device = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var slot_idx_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     var recur_out_device = ctx.enqueue_create_buffer[work_dtype](
         total_seq_len * value_dim
     )
@@ -411,7 +409,7 @@ def run_slot_indexed_gpu[
 def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
     """Single sequence, KD=VD=128: writes only to slot 1 of a 3-slot pool."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[DType.float32, DType.float32, 128, 128](
+    run_slot_indexed_gpu[.float32, DType.float32, 128, 128](
         batch_size=1,
         total_seq_len=4,
         num_value_heads=1,
@@ -426,7 +424,7 @@ def test_slot_indexed_single_sequence_targets_chosen_slot() raises:
 def test_slot_indexed_gqa_two_sequences() raises:
     """GQA (nv=2 nk=1), two sequences hitting non-adjacent slots, bf16 pool."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[DType.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
         batch_size=2,
         total_seq_len=5,
         num_value_heads=2,
@@ -443,7 +441,7 @@ def test_decode_gqa_batch() raises:
     """Decode shape (seq_len 1 per request), GQA ratio 2, multi-request batch
     hitting distinct slots — mirrors Qwen3.5 decode."""
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[DType.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
         batch_size=4,
         total_seq_len=4,
         num_value_heads=8,
@@ -460,7 +458,7 @@ def test_prefill_gqa_multi_seq() raises:
     """Prefill shape (longer seqs), GQA ratio 2, two requests in distinct slots.
     """
     var ctx = DeviceContext()
-    run_slot_indexed_gpu[DType.float32, DType.bfloat16, 128, 128](
+    run_slot_indexed_gpu[.float32, DType.bfloat16, 128, 128](
         batch_size=2,
         total_seq_len=24,
         num_value_heads=8,

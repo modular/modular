@@ -77,7 +77,7 @@ def run_bmm_and_check_result[
         Storage=PointerStorage[element_width=1],
     ],
     ctx: DeviceContext,
-    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
     comptime assert c_host.flat_rank == 3, "c_device must have rank 3"
     comptime assert c_host_ref.flat_rank == 3, "c_device_ref must have rank 3"
@@ -150,9 +150,9 @@ def run_bmm_and_check_result[
     comptime if check_against_naive_kernel:
         # erase static dimensions so that the naive kernel can be used
         _batched_matmul_gpu[transpose_b=transpose_b](
-            c_device_ref.make_dynamic[DType.int64](),
-            a_device.make_dynamic[DType.int64](),
-            b_device.make_dynamic[DType.int64](),
+            c_device_ref.make_dynamic[.int64](),
+            a_device.make_dynamic[.int64](),
+            b_device.make_dynamic[.int64](),
             ctx,
         )
     else:
@@ -229,7 +229,7 @@ def test_dynamic_shapes[
     m: Int,
     n: Int,
     k: Int,
-    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
     # fmt: off
     print(
@@ -271,7 +271,7 @@ def test_static_NK[
     ctx: DeviceContext,
     b: Int,
     m: Int,
-    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
     print(
         "test_static_NK", b, "x", m, "x", N, "x", K, "transpose_b", transpose_b
@@ -315,7 +315,7 @@ def test_non_row_major_layout[
 ](
     ctx: DeviceContext,
     m: Int,
-    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
     """
     This function tests bacthed matmul with non-row major inputs.

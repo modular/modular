@@ -322,8 +322,8 @@ struct MLAPrefillSparse[
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
+        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -511,7 +511,7 @@ struct MLAPrefillSparse[
             comptime MAX_INIT_VAL = Float32(-1e30)
             var mi: Float32 = MAX_INIT_VAL
             var li: Float32 = 0.0
-            var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
             var scale_log2e = scale * Float32(log2e)
 
@@ -601,13 +601,11 @@ struct MLAPrefillSparse[
                     comptime bit_idx = i % 8
                     var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                     if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                        p[i] = Float32(min_or_neg_inf[DType.float32]())
+                        p[i] = Float32(min_or_neg_inf[.float32]())
                 _ = k_valid_free_ptr[cur_buf].arrive()
 
                 # Per-thread row max over local P (scaled to log2 domain).
-                var cur_pi_max: Float32 = Float32(
-                    min_or_neg_inf[DType.float32]()
-                )
+                var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
                 comptime for i in range(P_PER_THREAD):
                     cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -628,7 +626,7 @@ struct MLAPrefillSparse[
                 # Warp-uniform "should we rescale O?" decision (>6 log2-units
                 # means rescaling lifts mass by < 1/64 — phase1.cuh skips
                 # the rescale below that threshold to reduce TMEM traffic).
-                var should_scale_o = warp.vote[DType.uint32](
+                var should_scale_o = warp.vote[.uint32](
                     cur_pi_max - mi > Float32(6.0)
                 ) != UInt32(0)
 
@@ -704,7 +702,7 @@ struct MLAPrefillSparse[
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
                         scores_ptr,
                         s_smem_bf16_elem_base + i * 512,
-                        bitcast[DType.uint32, 4](s_vec),
+                        bitcast[.uint32, 4](s_vec),
                     )
 
                 # Rescale O (in TMEM) if mi changed materially; chunk 0
@@ -774,9 +772,9 @@ struct MLAPrefillSparse[
             # ever contributed. Reset li/mi to match the definition that
             # output_scale = 1/(li + exp2(sink - mi)) gives 0 when output
             # is unused.
-            if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+            if real_mi == Float32(min_or_neg_inf[.float32]()):
                 li = 0.0
-                mi = Float32(min_or_neg_inf[DType.float32]())
+                mi = Float32(min_or_neg_inf[.float32]())
 
             # Cross-thread li sum (paired threads share the row).
             rowwise_sum_ptr[idx_in_wg] = li
@@ -817,7 +815,7 @@ struct MLAPrefillSparse[
             # Guard against deadlocks if some lanes' li==0 (entirely
             # invalid rows): tcgen05_ld below must run uniformly across
             # the warpgroup, so we vote and pick a uniform path.
-            var have_valid_indices = warp.vote[DType.uint32](
+            var have_valid_indices = warp.vote[.uint32](
                 li != Float32(0.0)
             ) != UInt32(0)
             if not have_valid_indices:
@@ -1164,7 +1162,7 @@ struct MLAPrefillSparse[
                         + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
                         * UInt32(4)
                     )
-                ).cast[DType.int32](),
+                ).cast[.int32](),
             )
             comptime for cg in range(num_col_groups):
                 # local_row stride within col-group: 16 rows × 64 cols
@@ -1270,7 +1268,7 @@ struct MLAPrefillSparse[
             )
             local_indices[local_row] = indices.load[width=4](
                 Coord(indices_offset)
-            ).cast[DType.int32]()
+            ).cast[.int32]()
             max_idx = max(max_idx, local_indices[local_row].reduce_max())
             min_idx = min(min_idx, local_indices[local_row].reduce_min())
 
@@ -1463,7 +1461,7 @@ def mla_prefill_sparse[
     output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

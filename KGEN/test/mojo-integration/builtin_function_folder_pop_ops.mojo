@@ -146,7 +146,7 @@ def pop_dtype_from_ui8(ui8: __mlir_type.ui8) -> DType:
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_dtype_from_ui8
-def fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
+def fold_pop_dtype_from_ui8() -> DTypeT[.int32]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} si32}>>,
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
     # CHECK: %b = lit.var.decl "b" var : {{.*}} f8e5m2}>>,
@@ -536,9 +536,9 @@ def fold_var_decls() -> (
     BuiltinSI32T[__mlir_attr.`#kgen.simd<0> : !kgen.scalar<si32>`]
 ):
     # CHECK: %a = lit.var.decl "a" var : {{.*}} 0)>>
-    var a = BuiltinSI32T[var_decls[DType.int32](42)]()
+    var a = BuiltinSI32T[var_decls[.int32](42)]()
     # CHECK: %b = lit.var.decl "b" var : {{.*}} -256)>>
-    var b = BuiltinSI32T[var_decls[DType.int32](-1)]()
+    var b = BuiltinSI32T[var_decls[.int32](-1)]()
     return a
 
 

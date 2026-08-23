@@ -78,10 +78,10 @@ struct CausalConv1D[activation: StaticString]:
         if output.shape() != input.shape():
             raise Error("Output shape must match input shape")
 
-        var X = input.to_tile_tensor[DType.int32]()
-        var W = weight.to_tile_tensor[DType.int32]()
-        var O = output.to_tile_tensor[DType.int32]()
-        var B = bias.to_tile_tensor[DType.int32]()
+        var X = input.to_tile_tensor[.int32]()
+        var W = weight.to_tile_tensor[.int32]()
+        var O = output.to_tile_tensor[.int32]()
+        var B = bias.to_tile_tensor[.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)
@@ -404,12 +404,12 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 "conv_state batch and channel dimensions must match input"
             )
 
-        var X = input.to_tile_tensor[DType.int32]()
-        var CS = conv_state.to_tile_tensor[DType.int32]()
-        var CS_IN = conv_state_in.to_tile_tensor[DType.int32]()
-        var W = weight.to_tile_tensor[DType.int32]()
-        var O = output.to_tile_tensor[DType.int32]()
-        var B = bias.to_tile_tensor[DType.int32]()
+        var X = input.to_tile_tensor[.int32]()
+        var CS = conv_state.to_tile_tensor[.int32]()
+        var CS_IN = conv_state_in.to_tile_tensor[.int32]()
+        var W = weight.to_tile_tensor[.int32]()
+        var O = output.to_tile_tensor[.int32]()
+        var B = bias.to_tile_tensor[.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)

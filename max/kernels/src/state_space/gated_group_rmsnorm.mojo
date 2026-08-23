@@ -78,7 +78,7 @@ def gated_group_rmsnorm_kernel[
     output: TileTensor[dtype, OutLayout, MutAnyOrigin],
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin],
     gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin],
-    weight: TileTensor[DType.float32, WeightLayout, ImmutAnyOrigin],
+    weight: TileTensor[.float32, WeightLayout, ImmutAnyOrigin],
     n_rows_dev: Int32,
     num_groups_dev: Int32,
     group_size_dev: Int32,
@@ -105,8 +105,8 @@ def gated_group_rmsnorm_kernel[
     var j = lane
     while j < group_size:
         var col = base + j
-        var yv = y.load[width=1](Coord(n, col)).cast[DType.float32]()
-        var gv = gate.load[width=1](Coord(n, col)).cast[DType.float32]()
+        var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+        var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
         var gated = yv * silu(gv)
         acc += gated * gated
         j += WARP_SIZE
@@ -122,12 +122,12 @@ def gated_group_rmsnorm_kernel[
     var jj = lane
     while jj < group_size:
         var col = base + jj
-        var yv = y.load[width=1](Coord(n, col)).cast[DType.float32]()
-        var gv = gate.load[width=1](Coord(n, col)).cast[DType.float32]()
+        var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+        var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
         var gated = yv * silu(gv)
         var t_in = (gated * nf).cast[dtype]()
-        var w = weight.load[width=1](Coord(col)).cast[DType.float32]()
-        var prod = w * t_in.cast[DType.float32]()
+        var w = weight.load[width=1](Coord(col)).cast[.float32]()
+        var prod = w * t_in.cast[.float32]()
         output.store(Coord(n, col), prod.cast[dtype]())
         jj += WARP_SIZE
 
@@ -140,7 +140,7 @@ def gated_group_rmsnorm_gpu[
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
     gate: TileTensor[gate_dtype, ...],
-    weight: TileTensor[DType.float32, ...],
+    weight: TileTensor[.float32, ...],
     n_rows: Int,
     num_groups: Int,
     group_size: Int,
@@ -186,7 +186,7 @@ def gated_group_rmsnorm_cpu[
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
     gate: TileTensor[gate_dtype, ...],
-    weight: TileTensor[DType.float32, ...],
+    weight: TileTensor[.float32, ...],
     n_rows: Int,
     num_groups: Int,
     group_size: Int,
@@ -201,17 +201,17 @@ def gated_group_rmsnorm_cpu[
             var m2 = Float32(0)
             for j in range(group_size):
                 var col = base + j
-                var yv = y.load[width=1](Coord(n, col)).cast[DType.float32]()
-                var gv = gate.load[width=1](Coord(n, col)).cast[DType.float32]()
+                var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+                var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
                 var gated = yv * silu(gv)
                 m2 += gated * gated
             var nf = rsqrt(m2 / Float32(group_size) + eps)
             for j in range(group_size):
                 var col = base + j
-                var yv = y.load[width=1](Coord(n, col)).cast[DType.float32]()
-                var gv = gate.load[width=1](Coord(n, col)).cast[DType.float32]()
+                var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
+                var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
                 var gated = yv * silu(gv)
                 var t_in = (gated * nf).cast[dtype]()
-                var w = weight.load[width=1](Coord(col)).cast[DType.float32]()
-                var prod = w * t_in.cast[DType.float32]()
+                var w = weight.load[width=1](Coord(col)).cast[.float32]()
+                var prod = w * t_in.cast[.float32]()
                 output.store(Coord(n, col), prod.cast[dtype]())

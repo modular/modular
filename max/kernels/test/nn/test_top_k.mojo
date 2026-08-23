@@ -50,8 +50,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     ) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
-            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            shape_types=DynamicCoord[.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[.int64, Self.rank].element_types,
         ],
         origin_of(self.storage),
     ]:
@@ -72,7 +72,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor(
                 Span[Scalar[Self.dtype]](self.storage),
                 row_major(Coord(self.shape)),
-            ).make_dynamic[DType.int64]()
+            ).make_dynamic[.int64]()
         )
 
 
@@ -125,7 +125,7 @@ def test_case_sampling[
         batch_size = input_shape[0] * input_shape[1]
     var temperature_ptr = List(length=batch_size, fill=Float32(0))
     for i in range(batch_size):
-        temperature_ptr[i] = temperature.cast[DType.float32]()
+        temperature_ptr[i] = temperature.cast[.float32]()
 
     var temperature_buf = Optional(
         TileTensor(temperature_ptr, row_major(Int64(batch_size)))

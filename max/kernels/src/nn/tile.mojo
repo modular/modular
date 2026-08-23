@@ -59,7 +59,7 @@ def tile[
     ), "Currently only inputs of up to three dimensions are supported."
 
     comptime assert (
-        repeats.flat_rank == 1 and type_repeats == DType.int64
+        repeats.flat_rank == 1 and type_repeats == .int64
     ), "Rank of repeats tensor needs to be one-dimensional and of int64 type."
 
     if input.rank != Int(repeats.dim(0)):

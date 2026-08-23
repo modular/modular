@@ -631,7 +631,7 @@ def fill_random_fp8[
     """Generates random FP8 values via float32 RNG -> cast (matches the
     model smoke test)."""
     var f32_buf = alloc[Float32](n)
-    randn[DType.float32](f32_buf, n)
+    randn[.float32](f32_buf, n)
     for i in range(n):
         var v = f32_buf[i] * 0.5
         if v > 2.0:
@@ -2226,7 +2226,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
     )
 
     # Fold-sum naive reference: P_ref[64,64] = Q x K^T (transpose_b=True).
-    var p_ref_dev = ctx.enqueue_create_buffer[DType.float32](
+    var p_ref_dev = ctx.enqueue_create_buffer[.float32](
         TS_P_REF_ROWS * TS_P_REF_COLS
     )
     var q_dev_ptr = q_inp.device_data.value().unsafe_ptr()
@@ -2270,7 +2270,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
         ),
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
-    var p_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var p_ref_host = ctx.enqueue_create_host_buffer[.float32](
         TS_P_REF_ROWS * TS_P_REF_COLS
     )
     ctx.enqueue_copy(p_ref_host, p_ref_dev)

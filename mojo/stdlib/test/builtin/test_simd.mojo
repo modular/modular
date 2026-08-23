@@ -40,68 +40,66 @@ from std.utils.numerics import isfinite, isinf, isnan, nan
 
 def test_cast() raises:
     assert_equal(
-        SIMD[.bool, 4](False, True, False, True).cast[DType.bool](),
+        SIMD[.bool, 4](False, True, False, True).cast[.bool](),
         SIMD[.bool, 4](False, True, False, True),
     )
 
     assert_equal(
-        SIMD[.bool, 4](False, True, False, True).cast[DType.int32](),
+        SIMD[.bool, 4](False, True, False, True).cast[.int32](),
         SIMD[.int32, 4](0, 1, 0, 1),
     )
 
     assert_equal(
-        SIMD[.float32, 4](0, 1, 0, -12).cast[DType.int32](),
+        SIMD[.float32, 4](0, 1, 0, -12).cast[.int32](),
         SIMD[.int32, 4](0, 1, 0, -12),
     )
 
     assert_equal(
-        SIMD[.float32, 4](0, 1, 0, -12).cast[DType.bool](),
+        SIMD[.float32, 4](0, 1, 0, -12).cast[.bool](),
         SIMD[.bool, 4](False, True, False, True),
     )
 
     var b: UInt16 = 128
-    assert_equal(Int(b.cast[DType.uint8]()), 128)
-    assert_equal(Int(b.cast[DType.uint16]()), 128)
-    assert_equal(Int(b.cast[DType.int8]()), -128)
-    assert_equal(Int(b.cast[DType.int16]()), 128)
+    assert_equal(Int(b.cast[.uint8]()), 128)
+    assert_equal(Int(b.cast[.uint16]()), 128)
+    assert_equal(Int(b.cast[.int8]()), -128)
+    assert_equal(Int(b.cast[.int16]()), 128)
 
-    assert_equal(
-        BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
-    )
-    assert_equal(Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33)
-    assert_equal(Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33)
+    assert_equal(BFloat16(33.0).cast[.float32]().cast[.bfloat16](), 33)
+    assert_equal(Float16(33.0).cast[.float32]().cast[.float16](), 33)
+    assert_equal(Float64(33.0).cast[.float32]().cast[.float16](), 33)
 
     # Test with a number right on the boundary of 32 bit and 64 bit, to make
     # sure the compiler can cast between the platform dependent types.
     comptime u1 = UInt(4294967296)
     comptime i1 = Int(4294967296)
-    comptime uc1 = i1.cast[DType.uint]()
-    comptime ic1 = u1.cast[DType.int]()
+    comptime uc1 = i1.cast[.uint]()
+    comptime ic1 = u1.cast[.int]()
     assert_equal(uc1, u1)
     assert_equal(ic1, i1)
 
     comptime if is_64bit():
         assert_equal(
-            UInt(18446744073709551615).cast[DType.int](),
+            UInt(18446744073709551615).cast[.int](),
             Int(-1),
         )
 
         comptime u2 = UInt(18446744073709551615)
         comptime i2 = Int(-1)
-        comptime uc2 = i2.cast[DType.uint]()
-        comptime ic2 = u2.cast[DType.int]()
+        comptime uc2 = i2.cast[.uint]()
+        comptime ic2 = u2.cast[.int]()
         assert_equal(uc2, u2)
         assert_equal(ic2, i2)
     else:
         assert_equal(
-            UInt(4294967295).cast[DType.int](),
+            UInt(4294967295).cast[.int](),
             Int(-1),
         )
 
         comptime u3 = UInt(4294967295)
         comptime i3 = Int(-1)
-        comptime uc3 = i3.cast[DType.uint]()
-        comptime ic3 = u3.cast[DType.int]()
+        comptime uc3 = i3.cast[.uint]()
+        comptime ic3 = u3.cast[.int]()
         assert_equal(uc3, u3)
         assert_equal(ic3, i3)
 
@@ -186,8 +184,8 @@ def test_init_from_intable() raises:
 
 
 def test_from_bits() raises:
-    assert_true(Scalar[DType.bool](from_bits=UInt8(0x01)))
-    assert_false(Scalar[DType.bool](from_bits=UInt8(0x00)))
+    assert_true(Scalar[.bool](from_bits=UInt8(0x01)))
+    assert_false(Scalar[.bool](from_bits=UInt8(0x00)))
 
     assert_equal(Int64(from_bits=UInt64(0xFFFFFFFFFFFFFFFF)), -1)
     assert_equal(UInt128(from_bits=Int128(-1)), -1)
@@ -221,14 +219,14 @@ def test_from_bits() raises:
 
 
 def test_to_bits() raises:
-    assert_equal(Scalar[DType.bool](True).to_bits(), 0x01)
-    assert_equal(Scalar[DType.bool](False).to_bits(), 0x00)
-    assert_equal(Scalar[DType.bool](True).to_bits[DType.uint8](), UInt8(0x01))
+    assert_equal(Scalar[.bool](True).to_bits(), 0x01)
+    assert_equal(Scalar[.bool](False).to_bits(), 0x00)
+    assert_equal(Scalar[.bool](True).to_bits[.uint8](), UInt8(0x01))
 
     assert_equal(Float32(1.0).to_bits(), 0x3F800000)
     assert_equal(Float32(-1.0).to_bits(), 0xBF800000)
-    assert_equal(Float32(1.0).to_bits[DType.uint32](), UInt32(0x3F800000))
-    assert_equal(Float32(1.0).to_bits[DType.uint64](), UInt64(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[.uint32](), UInt32(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[.uint64](), UInt64(0x3F800000))
 
     # Test to_bits conversion
     var float32_vals = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
@@ -240,7 +238,7 @@ def test_to_bits() raises:
 
     # Test with different target bit width
     var int16_vals = SIMD[.int16, 4](1000, -1000, 2000, -2000)
-    var uint16_bits = int16_vals.to_bits[DType.uint16]()
+    var uint16_bits = int16_vals.to_bits[.uint16]()
 
     # Should preserve bit patterns
     var reconstructed_int16 = SIMD[.int16, 4](from_bits=uint16_bits)
@@ -403,7 +401,7 @@ def test_simd_repr_and_write_repr_to() raises:
 
     # Float special values (inf, -inf, nan, -0.0)
     _test_repr(
-        SIMD[.float32, 4](Float32.MAX, Float32.MIN, -0.0, nan[DType.float32]()),
+        SIMD[.float32, 4](Float32.MAX, Float32.MIN, -0.0, nan[.float32]()),
         "SIMD[DType.float32, 4](inf, -inf, -0.0, nan)",
     )
 
@@ -496,8 +494,8 @@ def test_issue_30237() raises:
 
 
 def test_bool() raises:
-    assert_true(Scalar[DType.bool](True).__bool__())
-    assert_false(Scalar[DType.bool](False).__bool__())
+    assert_true(Scalar[.bool](True).__bool__())
+    assert_false(Scalar[.bool](False).__bool__())
     assert_true(Int32(5).__bool__())
     assert_false(Int32(0).__bool__())
     assert_true(Float32(5.0).__bool__())
@@ -531,7 +529,7 @@ def test_truthy() raises:
         comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_len() raises:
@@ -1364,16 +1362,16 @@ def test_limits() raises:
         var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
 
-    test_integral_overflow[DType.int]()
-    test_integral_overflow[DType.uint]()
-    test_integral_overflow[DType.int8]()
-    test_integral_overflow[DType.uint8]()
-    test_integral_overflow[DType.int16]()
-    test_integral_overflow[DType.uint16]()
-    test_integral_overflow[DType.int32]()
-    test_integral_overflow[DType.uint32]()
-    test_integral_overflow[DType.int64]()
-    test_integral_overflow[DType.uint64]()
+    test_integral_overflow[.int]()
+    test_integral_overflow[.uint]()
+    test_integral_overflow[.int8]()
+    test_integral_overflow[.uint8]()
+    test_integral_overflow[.int16]()
+    test_integral_overflow[.uint16]()
+    test_integral_overflow[.int32]()
+    test_integral_overflow[.uint32]()
+    test_integral_overflow[.int64]()
+    test_integral_overflow[.uint64]()
 
 
 def test_abs() raises:
@@ -1601,14 +1599,14 @@ def test_reduce() raises:
             assert_equal(x8.reduce_max[8](), x8)
             assert_equal(X2(6, -3).reduce_max(), 6)
 
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             # reduce_and
             var x8b = SIMD[.bool, 8](
                 False, False, True, True, False, True, False, True
             )
             var x4b = SIMD[.bool, 4](False, False, False, True)
             var x2b = SIMD[.bool, 2](False, False)
-            var x1b = Scalar[DType.bool](False)
+            var x1b = Scalar[.bool](False)
             assert_equal(x8b.reduce_and(), x1b)
             assert_equal(x4b.reduce_and(), x1b)
             assert_equal(x2b.reduce_and(), x1b)
@@ -1627,7 +1625,7 @@ def test_reduce() raises:
             )
             x4b = SIMD[.bool, 4](False, True, True, True)
             x2b = SIMD[.bool, 2](True, True)
-            x1b = Scalar[DType.bool](True)
+            x1b = Scalar[.bool](True)
             assert_equal(x8b.reduce_or(), x1b)
             assert_equal(x4b.reduce_or(), x1b)
             assert_equal(x2b.reduce_or(), x1b)
@@ -1675,22 +1673,22 @@ def test_reduce() raises:
             assert_equal(x8.reduce_or[8](), x8)
             assert_equal(X2(6, 3).reduce_or(), 7)
 
-    test_dtype[DType.bool]()
-    test_dtype[DType.int8]()
-    test_dtype[DType.int16]()
-    test_dtype[DType.int32]()
-    test_dtype[DType.int64]()
-    test_dtype[DType.uint8]()
-    test_dtype[DType.uint16]()
-    test_dtype[DType.uint32]()
-    test_dtype[DType.uint64]()
-    test_dtype[DType.float16]()
-    test_dtype[DType.float32]()
-    test_dtype[DType.float64]()
-    test_dtype[DType.int]()
-    test_dtype[DType.uint]()
+    test_dtype[.bool]()
+    test_dtype[.int8]()
+    test_dtype[.int16]()
+    test_dtype[.int32]()
+    test_dtype[.int64]()
+    test_dtype[.uint8]()
+    test_dtype[.uint16]()
+    test_dtype[.uint32]()
+    test_dtype[.uint64]()
+    test_dtype[.float16]()
+    test_dtype[.float32]()
+    test_dtype[.float64]()
+    test_dtype[.int]()
+    test_dtype[.uint]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_reduce_bit_count() raises:
@@ -1700,10 +1698,10 @@ def test_reduce_bit_count() raises:
     var int_iota8 = SIMD[.int32, 8](0, 1, 2, 3, 4, 5, 6, 7)
     assert_equal(int_iota8.reduce_bit_count(), 12)
 
-    var bool_true = Scalar[DType.bool](True)
+    var bool_true = Scalar[.bool](True)
     assert_equal(bool_true.reduce_bit_count(), 1)
 
-    var bool_false = Scalar[DType.bool](False)
+    var bool_false = Scalar[.bool](False)
     assert_equal(bool_false.reduce_bit_count(), 0)
 
     var bool_true16 = SIMD[.bool, 16](fill=True)
@@ -2107,7 +2105,7 @@ def test_comparison() raises:
             assert_true(mixed_ge[2])
             assert_true(mixed_ge[3])
 
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var all_true = SIMD[.bool, 4](fill=True)
             var all_false = SIMD[.bool, 4](fill=False)
             var mixed = SIMD[.bool, 4](True, True, False, False)
@@ -2177,7 +2175,7 @@ def test_comparison() raises:
         comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_float_conversion() raises:
@@ -2325,17 +2323,17 @@ def test_reversed() raises:
             SIMD[dtype, 4](1, 2, 3, 4).reversed(), SIMD[dtype, 4](4, 3, 2, 1)
         )
 
-    test[DType.uint8]()
-    test[DType.uint16]()
-    test[DType.uint32]()
-    test[DType.uint64]()
-    test[DType.int8]()
-    test[DType.int16]()
-    test[DType.int32]()
-    test[DType.int64]()
-    test[DType.float16]()
-    test[DType.float32]()
-    test[DType.float64]()
+    test[.uint8]()
+    test[.uint16]()
+    test[.uint32]()
+    test[.uint64]()
+    test[.int8]()
+    test[.int16]()
+    test[.int32]()
+    test[.int64]()
+    test[.float16]()
+    test[.float32]()
+    test[.float64]()
 
 
 def test_large_int_types() raises:
@@ -2349,24 +2347,24 @@ def test_large_int_types() raises:
     assert_equal(z, 1234567890)
     assert_equal(w, 1234567890)
 
-    assert_equal(x.cast[DType.uint128](), y)
-    assert_equal(x.cast[DType.int256](), z)
-    assert_equal(x.cast[DType.uint256](), w)
+    assert_equal(x.cast[.uint128](), y)
+    assert_equal(x.cast[.int256](), z)
+    assert_equal(x.cast[.uint256](), w)
 
-    assert_equal(y.cast[DType.int128](), x)
-    assert_equal(y.cast[DType.int256](), z)
-    assert_equal(y.cast[DType.uint256](), w)
+    assert_equal(y.cast[.int128](), x)
+    assert_equal(y.cast[.int256](), z)
+    assert_equal(y.cast[.uint256](), w)
 
-    assert_equal(z.cast[DType.int128](), x)
-    assert_equal(z.cast[DType.uint128](), y)
-    assert_equal(z.cast[DType.uint256](), w)
+    assert_equal(z.cast[.int128](), x)
+    assert_equal(z.cast[.uint128](), y)
+    assert_equal(z.cast[.uint256](), w)
 
-    assert_equal(w.cast[DType.int128](), x)
-    assert_equal(w.cast[DType.uint128](), y)
-    assert_equal(w.cast[DType.int256](), z)
+    assert_equal(w.cast[.int128](), x)
+    assert_equal(w.cast[.uint128](), y)
+    assert_equal(w.cast[.int256](), z)
 
-    assert_equal(x.cast[DType.uint128]() + y, y + y)
-    assert_equal(x.cast[DType.int256]() + z, z + z)
+    assert_equal(x.cast[.uint128]() + y, y + y)
+    assert_equal(x.cast[.int256]() + z, z + z)
 
 
 def test_is_power_of_two() raises:
@@ -2644,8 +2642,8 @@ def test_write_half_float_matches_float32() raises:
     # already widens everything but `float64` and the `float8` variants to
     # `Float32` before formatting. Pin the equivalence so a future
     # precision-aware formatter cannot silently change what `print` emits.
-    _assert_half_float_writes_like_float32[DType.float16]()
-    _assert_half_float_writes_like_float32[DType.bfloat16]()
+    _assert_half_float_writes_like_float32[.float16]()
+    _assert_half_float_writes_like_float32[.bfloat16]()
 
 
 def test_float8_e8m0fnu_type_alias() raises:
@@ -2670,8 +2668,8 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     expected_exp.append(128)  # 2^1
     expected_exp.append(126)  # 2^-1
     for i in range(len(f32_vals)):
-        var fp8_val = f32_vals[i].cast[DType.float8_e8m0fnu]()
-        assert_equal(bitcast[DType.uint8](fp8_val), expected_exp[i])
+        var fp8_val = f32_vals[i].cast[.float8_e8m0fnu]()
+        assert_equal(bitcast[.uint8](fp8_val), expected_exp[i])
 
     # Test bfloat16 -> float8_e8m0fnu
     var bf16_vals = List[BFloat16]()
@@ -2681,8 +2679,8 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     bf16_expected.append(127)
     bf16_expected.append(128)
     for i in range(len(bf16_vals)):
-        var fp8_val = bf16_vals[i].cast[DType.float8_e8m0fnu]()
-        assert_equal(bitcast[DType.uint8](fp8_val), bf16_expected[i])
+        var fp8_val = bf16_vals[i].cast[.float8_e8m0fnu]()
+        assert_equal(bitcast[.uint8](fp8_val), bf16_expected[i])
 
     # Test float8_e8m0fnu -> float32
     var exp_vals = List[UInt8]()
@@ -2700,20 +2698,20 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     expected_f32_bits.append(0x7F000000)
     expected_f32_bits.append(0)  # Placeholder for NaN value.
     for i in range(len(exp_vals)):
-        var fp8 = bitcast[DType.float8_e8m0fnu](exp_vals[i])
-        var f32_val = fp8.cast[DType.float32]()
+        var fp8 = bitcast[.float8_e8m0fnu](exp_vals[i])
+        var f32_val = fp8.cast[.float32]()
         if exp_vals[i] == 0xFF:
             assert_true(isnan(f32_val))
             assert_false(isinf(f32_val))
         else:
-            assert_equal(bitcast[DType.uint32](f32_val), expected_f32_bits[i])
+            assert_equal(bitcast[.uint32](f32_val), expected_f32_bits[i])
 
     # Also test with randn to ensure arbitrary runtime values work.
     seed(42)
     var h_A = List[Float32](unsafe_uninit_length=1)
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
-    _ = h_A[0].cast[DType.float8_e8m0fnu]()
+    _ = h_A[0].cast[.float8_e8m0fnu]()
 
 
 def main() raises:

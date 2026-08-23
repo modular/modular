@@ -186,7 +186,7 @@ def vectorize[
                 allocation.unsafe_ptr().store[width=width](i, val)
             else:
                 # Tail loop: Generate mask from EVL to prevent OOB
-                var mask = iota[DType.int32, width]().lt(Int32(evl))
+                var mask = iota[.int32, width]().lt(Int32(evl))
                 masked_store[width](val, allocation.unsafe_ptr() + i, mask)
 
         vectorize[simd_width](size, closure)

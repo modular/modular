@@ -107,7 +107,7 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
     print("== test_frag_row_reduce (16x16 score-fragment row max/sum)")
     comptime N = MMA_DIM * MMA_DIM
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](N)
     # Deterministic, non-monotonic per row (so the max is not trivially the last
     # column), values in roughly [-125, 125].
     for r in range(MMA_DIM):
@@ -115,9 +115,9 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
             var v = ((r * 131 + c * 977) % 251) - 125
             d_host[r * MMA_DIM + c] = Float32(v)
 
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](N)
-    var max_dev = ctx.enqueue_create_buffer[DType.float32](MMA_DIM)
-    var sum_dev = ctx.enqueue_create_buffer[DType.float32](MMA_DIM)
+    var d_dev = ctx.enqueue_create_buffer[.float32](N)
+    var max_dev = ctx.enqueue_create_buffer[.float32](MMA_DIM)
+    var sum_dev = ctx.enqueue_create_buffer[.float32](MMA_DIM)
     ctx.enqueue_copy(d_dev, d_host)
 
     ctx.enqueue_function[_frag_reduce_kernel](
@@ -128,8 +128,8 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
         block_dim=WARP_SIZE,
     )
 
-    var max_host = ctx.enqueue_create_host_buffer[DType.float32](MMA_DIM)
-    var sum_host = ctx.enqueue_create_host_buffer[DType.float32](MMA_DIM)
+    var max_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
+    var sum_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
     ctx.enqueue_copy(max_host, max_dev)
     ctx.enqueue_copy(sum_host, sum_dev)
     ctx.synchronize()

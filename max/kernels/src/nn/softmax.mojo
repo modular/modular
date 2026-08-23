@@ -1753,7 +1753,7 @@ def _softmax_split_combine_kernel[
 
 def softmax_with_temperature[
     dtype: DType,
-    temp_dtype: DType = DType.float32,
+    temp_dtype: DType = .float32,
     TempLayoutType: TensorLayout = RowMajorLayout[Int64],
     TempStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -1834,7 +1834,7 @@ def softmax_with_temperature[
     ctx.enqueue_function[kernel](
         IndexList[2](batch_size, d),
         output,
-        temperature.cast[DType.float32](),
+        temperature.cast[.float32](),
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
@@ -2790,7 +2790,7 @@ def _rowmax_online_softmax[
         # scale_subtract_rowmax; the score is RAW S, the rowmax is over raw S.
         comptime if fold_scale_fma:
             comptime assert (
-                dtype == DType.float32 and frag_size == 2
+                dtype == .float32 and frag_size == 2
             ), "fold_scale_fma needs the f32x2 score pair"
             var vscale = SIMD[.float32, 2](rebind[Float32](scale_log2e))
             var neg_m_scaled = SIMD[.float32, 2](
@@ -2865,7 +2865,7 @@ def _rowsum[
     # MM-Sparse ref fadd_reduce. Halves the in-fragment FADD count.
     comptime if packed_reduce:
         comptime assert (
-            dtype == DType.float32 and frag_size == 2 and frag_num_rows == 1
+            dtype == .float32 and frag_size == 2 and frag_num_rows == 1
         ), "packed_reduce needs the f32x2 score pair (one row per fragment)"
         comptime for col_tile in range(num_colwise_tiles):
             var acc = rebind[SIMD[.float32, 2]](score_reg_tile[col_tile, 0])

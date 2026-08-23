@@ -67,7 +67,7 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         a.length, b.length, c.length, d.length
     ):
         var sa = a.split()
-        var c0 = bitcast[DType.float32, 4](c)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f32.f32",
@@ -103,7 +103,7 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sa1 = sa[0].split()
         var sa2 = sa[1].split()
         var sb = b.split()
-        var c0 = bitcast[DType.float32, 4](c)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k16.row.col.f32.f32",
@@ -131,15 +131,15 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         a.length, b.length, c.length, d.length
     ):
         var sa = a.split()
-        var c0 = bitcast[DType.float32, 4](c)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.bf16",
             _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
-            bitcast[DType.int32, 1](sa[0]),
-            bitcast[DType.int32, 1](sa[1]),
-            bitcast[DType.int32, 1](b),
+            bitcast[.int32, 1](sa[0]),
+            bitcast[.int32, 1](sa[1]),
+            bitcast[.int32, 1](b),
             c0[0],
             c0[1],
             c0[2],
@@ -156,18 +156,18 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         var sa1 = sa[0].split()
         var sa2 = sa[1].split()
         var sb = b.split()
-        var c0 = bitcast[DType.float32, 4](c)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k16.row.col.bf16",
             _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
-            bitcast[DType.int32, 1](sa1[0]),
-            bitcast[DType.int32, 1](sa1[1]),
-            bitcast[DType.int32, 1](sa2[0]),
-            bitcast[DType.int32, 1](sa2[1]),
-            bitcast[DType.int32, 1](sb[0]),
-            bitcast[DType.int32, 1](sb[1]),
+            bitcast[.int32, 1](sa1[0]),
+            bitcast[.int32, 1](sa1[1]),
+            bitcast[.int32, 1](sa2[0]),
+            bitcast[.int32, 1](sa2[1]),
+            bitcast[.int32, 1](sb[0]),
+            bitcast[.int32, 1](sb[1]),
             c0[0],
             c0[1],
             c0[2],
@@ -181,9 +181,9 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif _has_type[DType.float32](
         a.dtype, b.dtype, c.dtype, d.dtype
     ) and _has_shape[(2, 1, 4, 4)](a.length, b.length, c.length, d.length):
-        var a0 = bitcast[DType.uint32, 2](a)
-        var b0 = bitcast[DType.uint32, 1](b)
-        var c0 = bitcast[DType.float32, 4](c)
+        var a0 = bitcast[.uint32, 2](a)
+        var b0 = bitcast[.uint32, 1](b)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k4.row.col.tf32",
@@ -202,9 +202,9 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif _has_type[DType.float32](
         a.dtype, b.dtype, c.dtype, d.dtype
     ) and _has_shape[(4, 2, 4, 4)](a.length, b.length, c.length, d.length):
-        var a0 = bitcast[DType.uint32, 4](a)
-        var b0 = bitcast[DType.uint32, 2](b)
-        var c0 = bitcast[DType.float32, 4](c)
+        var a0 = bitcast[.uint32, 4](a)
+        var b0 = bitcast[.uint32, 2](b)
+        var c0 = bitcast[.float32, 4](c)
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.tf32",
@@ -231,8 +231,8 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
         a.length, b.length, c.length, d.length
     ):
-        var a0 = bitcast[DType.uint32, 4](a)
-        var b0 = bitcast[DType.uint32, 2](b)
+        var a0 = bitcast[.uint32, 4](a)
+        var b0 = bitcast[.uint32, 2](b)
 
         var r = inlined_assembly[
             (
@@ -259,8 +259,8 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
         a.length, b.length, c.length, d.length
     ):
-        var a0 = bitcast[DType.uint32, 4](a)
-        var b0 = bitcast[DType.uint32, 2](b)
+        var a0 = bitcast[.uint32, 4](a)
+        var b0 = bitcast[.uint32, 2](b)
 
         var r = inlined_assembly[
             (

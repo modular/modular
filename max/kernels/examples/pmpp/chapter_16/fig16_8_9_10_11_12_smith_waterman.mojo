@@ -347,9 +347,9 @@ def main() raises:
     # GPU computation
     with DeviceContext() as ctx:
         # Allocate device memory
-        var d_rea = ctx.enqueue_create_buffer[DType.uint8](L_seq)
-        var d_ref = ctx.enqueue_create_buffer[DType.uint8](L_seq)
-        var d_sw = ctx.enqueue_create_buffer[DType.int32](L * L)
+        var d_rea = ctx.enqueue_create_buffer[.uint8](L_seq)
+        var d_ref = ctx.enqueue_create_buffer[.uint8](L_seq)
+        var d_sw = ctx.enqueue_create_buffer[.int32](L * L)
 
         # Copy sequences to device
         ctx.enqueue_copy(d_rea, h_rea)

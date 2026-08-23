@@ -158,7 +158,7 @@ def bench_grouped_matmul[
     comptime N = expert_shape[0]
     comptime K = expert_shape[1]
 
-    comptime is_fp4e2m1 = _in_type == DType.float4_e2m1fn
+    comptime is_fp4e2m1 = _in_type == .float4_e2m1fn
     comptime in_type = DType.uint8 if is_fp4e2m1 else _in_type  # TODO: (KERN-2238): Replace with float4-e2m1fn
     comptime a_type = in_type
     # W4A8 is the one pair where A and B don't share a dtype: A stays
@@ -214,8 +214,8 @@ def bench_grouped_matmul[
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension
     # is halved. W4A8 packs only B, so A and B need independent packed-K
     # extents; every other config has a_packed_K == b_packed_K.
-    comptime a_packed_K = K // 2 if a_type == DType.uint8 else K
-    comptime b_packed_K = K // 2 if b_type == DType.uint8 else K
+    comptime a_packed_K = K // 2 if a_type == .uint8 else K
+    comptime b_packed_K = K // 2 if b_type == .uint8 else K
     var a_size = total_num_tokens * a_packed_K
     var c_size = total_num_tokens * N
     var b_size = num_experts * N * b_packed_K
@@ -241,7 +241,7 @@ def bench_grouped_matmul[
         # float32 scale loads; the block-scaled (mxf8f6f4/nvfp4) path pads
         # ragged experts to SF_MN_GROUP_SIZE via `a_scale_offsets` instead
         # and has no such per-4-token constraint.
-        comptime if in_type == DType.float8_e4m3fn and scaling_kind_str == "1d2d":
+        comptime if in_type == .float8_e4m3fn and scaling_kind_str == "1d2d":
             comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
@@ -257,10 +257,10 @@ def bench_grouped_matmul[
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
@@ -391,7 +391,7 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             num_experts
         )
         var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
@@ -490,7 +490,7 @@ def bench_grouped_matmul[
         # TMA unpack costs/saves in the matmul, without also varying the
         # dispatch tactic (mma_bn/cta_group/AB_swapped) between them.
         comptime assert (
-            a_type == DType.float8_e4m3fn
+            a_type == .float8_e4m3fn
         ), "mxf8f6f4 scaling kind requires float8_e4m3fn activations"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
@@ -568,7 +568,7 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             num_experts
         )
         var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
@@ -658,7 +658,7 @@ def bench_grouped_matmul[
         _ = expert_scales_dev_buffer^
         _ = expert_scales_host_ptr^
 
-    elif in_type == DType.float8_e4m3fn:
+    elif in_type == .float8_e4m3fn:
         comptime assert (
             scaling_kind_str == "1d2d"
         ), "Only support 1d2d scaling kind for float8_e4m3fn"
@@ -669,10 +669,10 @@ def bench_grouped_matmul[
         )
 
         # Scales device allocations
-        var a_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var a_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             a_scales_size
         )
-        var b_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var b_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             b_scales_size
         )
 
@@ -691,13 +691,13 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        init_vector_launch[DType.float32](
+        init_vector_launch[.float32](
             a_scales_dev_buffer,
             a_scales_size,
             init_type,
             ctx,
         )
-        init_vector_launch[DType.float32](
+        init_vector_launch[.float32](
             b_scales_dev_buffer,
             b_scales_size,
             init_type,

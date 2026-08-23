@@ -197,9 +197,9 @@ def main() raises:
 
         cpu_softmax(h_S, h_P_ref, N)
 
-        var d_S = device.enqueue_create_buffer[DType.float32](size_S)
-        var d_D = device.enqueue_create_buffer[DType.float32](size_D)
-        var d_P = device.enqueue_create_buffer[DType.float32](size_P)
+        var d_S = device.enqueue_create_buffer[.float32](size_S)
+        var d_D = device.enqueue_create_buffer[.float32](size_D)
+        var d_P = device.enqueue_create_buffer[.float32](size_P)
 
         device.enqueue_copy(d_S, h_S)
 

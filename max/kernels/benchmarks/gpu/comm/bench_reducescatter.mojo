@@ -137,7 +137,7 @@ def bench_reducescatter_2d[
     var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -179,13 +179,9 @@ def bench_reducescatter_2d[
 
         # Create and initialize signal buffers.
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
         rank_sigs[gpu_idx] = (
             signal_buffers[gpu_idx]
             .unsafe_ptr()
@@ -380,7 +376,7 @@ def bench_reducescatter[
     var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -423,13 +419,9 @@ def bench_reducescatter[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
         rank_sigs[gpu_idx] = (
             signal_buffers[gpu_idx]
             .unsafe_ptr()

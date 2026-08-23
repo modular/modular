@@ -453,8 +453,8 @@ def run_spike[
             test_desc
         )
 
-    var mismatch_buf = ctx.enqueue_create_buffer[DType.uint32](1)
-    var first_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+    var mismatch_buf = ctx.enqueue_create_buffer[.uint32](1)
+    var first_buf = ctx.enqueue_create_buffer[.uint32](1)
 
     # Dynamic shared memory = two BN x head_size buffers (smem_ref + smem_test).
     comptime dyn_smem_bytes = 2 * BN * head_size * size_of[dtype]()
@@ -483,8 +483,8 @@ def run_spike[
         ),
     )
 
-    var mismatch_host = ctx.enqueue_create_host_buffer[DType.uint32](1)
-    var first_host = ctx.enqueue_create_host_buffer[DType.uint32](1)
+    var mismatch_host = ctx.enqueue_create_host_buffer[.uint32](1)
+    var first_host = ctx.enqueue_create_host_buffer[.uint32](1)
     ctx.enqueue_copy(mismatch_host, mismatch_buf)
     ctx.enqueue_copy(first_host, first_buf)
     ctx.synchronize()

@@ -123,14 +123,14 @@ def fused_reduce_inner_test[
     with res_device0.map_to_host() as res_host0:
         for i in range(out_shape.flattened_length()):
             assert_equal(
-                String(res_host0[i].cast[DType.float32]()),
+                String(res_host0[i].cast[.float32]()),
                 String(expected_vals0[i]),
             )
 
     with res_device1.map_to_host() as res_host1:
         for i in range(out_shape.flattened_length()):
             assert_equal(
-                String(res_host1[i].cast[DType.float32]()),
+                String(res_host1[i].cast[.float32]()),
                 String(expected_vals1[i]),
             )
 

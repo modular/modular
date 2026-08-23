@@ -23,7 +23,7 @@ Author contract — one body, two targets:
 
 ```
 def reduce_sum[...](shape, target="cpu", ctx=None) raises:
-    var axis_size = ...
+    var axis_size: DType = ...
 
     @always_inline
     def body[
@@ -1135,9 +1135,7 @@ struct Row[
         # Keeping this `iota`/splat choice (pure layout) in the scaffolder
         # leaves the monoid's `reduce` purely elementwise.
         comptime lane_stride = 0 if Self.params.emit_tile_width > 1 else 1
-        return SIMD[.int64, w](pos) + iota[DType.int64, w]() * Int64(
-            lane_stride
-        )
+        return SIMD[.int64, w](pos) + iota[.int64, w]() * Int64(lane_stride)
 
     @always_inline
     def reduce[

@@ -553,7 +553,7 @@ struct MatmulTileWriter[
         # Check if st.matrix optimization can be used
         # fmt: off
         comptime can_use_stmatrix_normal = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory
@@ -564,7 +564,7 @@ struct MatmulTileWriter[
         )
 
         comptime can_use_stmatrix_swapAB = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16             # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16             # F32→BF16
             and Self.frag_size % 4 == 0                                              # Register count (at least stmatrix x2 can be used)
             and Self.BM % Self.wgmma_shape[0] == 0                                   # each consumer should get one wgmma tile
             and Self.WG_BM % 8 == 0                                                  # Shared memory, must have at least 8 rows for swapAB

@@ -295,11 +295,11 @@ def main() raises:
         h_K[k] -= 0.5
         h_V[k] -= 0.5
 
-    var d_Q = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_K = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_V = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_O = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_D_out = device.enqueue_create_buffer[DType.float32](N)
+    var d_Q = device.enqueue_create_buffer[.float32](size_mat)
+    var d_K = device.enqueue_create_buffer[.float32](size_mat)
+    var d_V = device.enqueue_create_buffer[.float32](size_mat)
+    var d_O = device.enqueue_create_buffer[.float32](size_mat)
+    var d_D_out = device.enqueue_create_buffer[.float32](N)
 
     device.enqueue_copy(d_Q, h_Q)
     device.enqueue_copy(d_K, h_K)

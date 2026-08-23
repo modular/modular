@@ -101,7 +101,7 @@ def test_conv3d_qslice_direct[
     rand(input_host.as_span())
     rand(filter_host.as_span())
 
-    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -151,7 +151,7 @@ def test_conv3d_qslice_direct[
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](

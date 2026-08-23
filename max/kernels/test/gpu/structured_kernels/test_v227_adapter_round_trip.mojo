@@ -90,7 +90,7 @@ comptime CFG = MhaConfigV2(
     fp8_mma_k_128=False,  # 32x32x64 — the v227 path (NOT the 16x16x128 path).
 )
 
-comptime _Op = MlaMmaOp[DType.float8_e4m3fn, CFG]
+comptime _Op = MlaMmaOp[.float8_e4m3fn, CFG]
 comptime _BK = _Op.MMA_K  # 64 (FP8 32x32x64)
 comptime _V_SUB_COLS = _Op.V_SUB_COLS  # 64
 comptime _H = _Op.V_LAYOUT.static_shape[0]  # 2
@@ -227,13 +227,9 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
 
     comptime _DUMP_SIZE = 64 * _PER_LANE  # 64 lanes x 256 elts/lane.
 
-    var dev_src = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_V_TILE_ELTS)
-    var dev_dump_v227 = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        _DUMP_SIZE
-    )
-    var dev_dump_ref = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        _DUMP_SIZE
-    )
+    var dev_src = ctx.enqueue_create_buffer[.float8_e4m3fn](_V_TILE_ELTS)
+    var dev_dump_v227 = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
+    var dev_dump_ref = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
 
     # Fill the DRAM V tile with the 2D pattern, row-major V[key, depth].
     with dev_src.map_to_host() as host_src:
@@ -257,8 +253,8 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
     with dev_dump_v227.map_to_host() as host_v227:
         with dev_dump_ref.map_to_host() as host_ref:
             for idx in range(_DUMP_SIZE):
-                var v227_f32 = host_v227[idx].cast[DType.float32]()
-                var ref_f32 = host_ref[idx].cast[DType.float32]()
+                var v227_f32 = host_v227[idx].cast[.float32]()
+                var ref_f32 = host_ref[idx].cast[.float32]()
                 if ref_f32 != Float32(0.0):
                     nonzero_seen += 1
                 if v227_f32 != ref_f32:

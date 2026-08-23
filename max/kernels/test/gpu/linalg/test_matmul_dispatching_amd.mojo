@@ -106,8 +106,8 @@ def test_dispatch_dynamic_m[
     var max_rel_err = Float32(0.0)
 
     for i in range(c_size):
-        var actual = c_host_ptr[i].cast[DType.float32]()
-        var expected = c_ref_host_ptr[i].cast[DType.float32]()
+        var actual = c_host_ptr[i].cast[.float32]()
+        var expected = c_ref_host_ptr[i].cast[.float32]()
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -233,7 +233,7 @@ def test_oob_diagnostic[
     # --- Check 1: sentinel region (rows M..alloc_M) should be untouched ---
     var oob_writes = 0
     for i in range(c_valid_size, c_alloc_size):
-        var val = c_host_ptr[i].cast[DType.float32]()
+        var val = c_host_ptr[i].cast[.float32]()
         if val != sentinel:
             oob_writes += 1
             if oob_writes <= 5:
@@ -260,8 +260,8 @@ def test_oob_diagnostic[
     var max_rel_err = Float32(0.0)
 
     for i in range(c_valid_size):
-        var actual = c_host_ptr[i].cast[DType.float32]()
-        var expected = c_ref_host_ptr[i].cast[DType.float32]()
+        var actual = c_host_ptr[i].cast[.float32]()
+        var expected = c_ref_host_ptr[i].cast[.float32]()
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -451,7 +451,7 @@ def test_oob_epilogue[
         for col in range(alloc_N):
             if row < M and col < N:
                 continue
-            var val = out_host_ptr[row * alloc_N + col].cast[DType.float32]()
+            var val = out_host_ptr[row * alloc_N + col].cast[.float32]()
             if val != sentinel:
                 oob_writes += 1
                 if oob_writes <= 5:
@@ -477,8 +477,8 @@ def test_oob_epilogue[
 
     for row in range(M):
         for col in range(N):
-            var actual = out_host_ptr[row * alloc_N + col].cast[DType.float32]()
-            var expected = c_ref_host_ptr[row * N + col].cast[DType.float32]()
+            var actual = out_host_ptr[row * alloc_N + col].cast[.float32]()
+            var expected = c_ref_host_ptr[row * N + col].cast[.float32]()
             var abs_err = abs(actual - expected)
             var ref_mag = max(abs(expected), Float32(1.0))
             var rel_err = abs_err / ref_mag
@@ -644,7 +644,7 @@ def test_oob_epilogue_dynamic_m[
     # Check OOB writes
     var oob_writes = 0
     for i in range(c_size, out_alloc_size):
-        var val = out_host_ptr[i].cast[DType.float32]()
+        var val = out_host_ptr[i].cast[.float32]()
         if val != sentinel:
             oob_writes += 1
             if oob_writes <= 3:
@@ -667,8 +667,8 @@ def test_oob_epilogue_dynamic_m[
     var max_rel_err = Float32(0.0)
 
     for i in range(c_size):
-        var actual = out_host_ptr[i].cast[DType.float32]()
-        var expected = c_ref_host_ptr[i].cast[DType.float32]()
+        var actual = out_host_ptr[i].cast[.float32]()
+        var expected = c_ref_host_ptr[i].cast[.float32]()
         var abs_err = abs(actual - expected)
         var ref_mag = max(abs(expected), Float32(1.0))
         var rel_err = abs_err / ref_mag
@@ -717,7 +717,7 @@ def main() raises:
         print("\nBF16 - Various M values (N=4096, K=4096):")
         var bf16_m: List[Int] = [4096, 1000, 300, 100, 16, 128, 192]
         for i in range(len(bf16_m)):
-            test_dispatch_dynamic_m[DType.bfloat16, DType.bfloat16, 4096, 4096](
+            test_dispatch_dynamic_m[.bfloat16, DType.bfloat16, 4096, 4096](
                 ctx, bf16_m[i]
             )
 
@@ -727,27 +727,27 @@ def main() raises:
 
         print("\nFP8 M=256, N=256, Test K % BK != 0")
         print("  K = 128,", end=" ")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 128](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 256, 128](
             ctx, 256
         )
 
         print("  K = 192,", end=" ")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 192](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 256, 192](
             ctx, 256
         )
 
         print("  K = 256,", end=" ")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 256](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 256, 256](
             ctx, 256
         )
 
         print("  K = 320,", end=" ")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 320](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 256, 320](
             ctx, 256
         )
 
         print("  K = 384,", end=" ")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 384](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 256, 384](
             ctx, 256
         )
 
@@ -807,7 +807,7 @@ def main() raises:
         # FP8 N=2048 K=2048 (small square)
         # ============================================================
         print("\nFP8 - Various M values (N=2048, K=2048):")
-        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 2048, 2048](
+        test_dispatch_dynamic_m[.float8_e4m3fn, DType.float32, 2048, 2048](
             ctx, 2048
         )
 

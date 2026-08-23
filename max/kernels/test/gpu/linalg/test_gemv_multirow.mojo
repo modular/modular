@@ -258,8 +258,8 @@ def test_matches_host_reference[
         var acc = Float32(0)
         for i in range(K):
             acc += (
-                w_host[row * K + i].cast[DType.float32]()
-                * act_host[i].cast[DType.float32]()
+                w_host[row * K + i].cast[.float32]()
+                * act_host[i].cast[.float32]()
             )
         if c_host[row] != acc.cast[c_type]():
             mismatches += 1
@@ -281,7 +281,7 @@ def main() raises:
         ](ctx, 1)
 
         # f32 output, and a K deep enough to halve the row tile.
-        test_matches_one_row_kernel[DType.float32, DType.bfloat16, 262144, 512](
+        test_matches_one_row_kernel[.float32, DType.bfloat16, 262144, 512](
             ctx, 1
         )
 

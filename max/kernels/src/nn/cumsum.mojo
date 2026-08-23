@@ -46,7 +46,7 @@ def cumsum[
         input.rank == output.rank
     ), "input and output should have the same rank."
 
-    comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
+    comptime accum_type = DType.float64 if dtype == .float32 else get_accum_type[
         dtype
     ]()
     comptime assert (

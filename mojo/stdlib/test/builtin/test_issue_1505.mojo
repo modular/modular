@@ -33,7 +33,7 @@ def test_issue_1505() raises:
     # generate random data to prevent that everything gets simplified
     var data1 = SIMD[.uint8, 64]()
     for i in range(64):
-        data1[i] = random_ui64(0, 100).cast[DType.uint8]()
+        data1[i] = random_ui64(0, 100).cast[.uint8]()
 
     var data2 = data1.shuffle[
         p[0],

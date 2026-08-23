@@ -48,7 +48,7 @@ from std.gpu.intrinsics import mulwide
 
 def _mulhilow(a: UInt32, b: UInt32) -> SIMD[.uint32, 2]:
     var res = mulwide(a, b)
-    return bitcast[DType.uint32, 2](res)
+    return bitcast[.uint32, 2](res)
 
 
 struct Random[rounds: Int = 10](Copyable):
@@ -80,8 +80,8 @@ struct Random[rounds: Int = 10](Copyable):
             subsequence: Subsequence number for generating independent streams. Default is 0.
             offset: Starting offset in the sequence. Default is 0.
         """
-        self._key = bitcast[DType.uint32, 2](seed)
-        self._counter = bitcast[DType.uint32, 4](
+        self._key = bitcast[.uint32, 2](seed)
+        self._counter = bitcast[.uint32, 4](
             SIMD[.uint64, 2](offset, subsequence)
         )
 
@@ -113,7 +113,7 @@ struct Random[rounds: Int = 10](Copyable):
         """
         # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
         comptime SCALE = 4.6566127342e-10
-        return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
+        return (self.step() & 0x7FFFFFFF).cast[.float32]() * SCALE
 
     @always_inline
     def step_uniform_unbiased(mut self) -> SIMD[.float32, 4]:
@@ -132,7 +132,7 @@ struct Random[rounds: Int = 10](Copyable):
         comptime SCALE = Float32(2.3283064e-10)  # 1 / 2^32
         comptime SCALE_HALF = SCALE * Float32(0.5)
         return fma(
-            self.step().cast[DType.float32](),
+            self.step().cast[.float32](),
             SIMD[.float32, 4](SCALE),
             SIMD[.float32, 4](SCALE_HALF),
         )
@@ -144,7 +144,7 @@ struct Random[rounds: Int = 10](Copyable):
         Args:
             n: Amount to increment the counter by.
         """
-        var hilo = bitcast[DType.uint32, 2](n)
+        var hilo = bitcast[.uint32, 2](n)
         var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
             hilo[0],
             hilo[1],
@@ -280,7 +280,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         comptime SCALE_HALF = SCALE * Float32(0.5)
         comptime SCALE_2PI_HALF = SCALE_2PI * Float32(0.5)
 
-        var raw = self._rng.step().cast[DType.float32]()
+        var raw = self._rng.step().cast[.float32]()
 
         # Pair 0 → (raw[0], raw[1]); Pair 1 → (raw[2], raw[3]).
         # u from even lanes, v (angle) from odd lanes.

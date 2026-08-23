@@ -2667,9 +2667,7 @@ struct Grouped1D1DMatmulKernel[
                 # warp-collective store.
                 syncwarp()
 
-                _sfb_st_vals[sf_idx][0] = bitcast[DType.uint32, 1](sfb_scales)[
-                    0
-                ]
+                _sfb_st_vals[sf_idx][0] = bitcast[.uint32, 1](sfb_scales)[0]
                 tcgen05_st[
                     datapaths=32,
                     bits=32,
@@ -3325,7 +3323,7 @@ struct Grouped1D1DMatmulKernel[
                             src_u[_j] = upper_ip[r0 * 4 + _off + _j]
                         var dst_u = (
                             (src_u * scale)
-                            .cast[DType.bfloat16]()
+                            .cast[.bfloat16]()
                             .cast[Self.accum_type]()
                         )
                         comptime for _j in range(SIMD_CAST_W):
@@ -3337,7 +3335,7 @@ struct Grouped1D1DMatmulKernel[
                                 src_l[_j] = lower_ip[r0 * 4 + _off + _j]
                             var dst_l = (
                                 (src_l * scale)
-                                .cast[DType.bfloat16]()
+                                .cast[.bfloat16]()
                                 .cast[Self.accum_type]()
                             )
                             comptime for _j in range(SIMD_CAST_W):
@@ -3516,12 +3514,10 @@ struct Grouped1D1DMatmulKernel[
                         var output_scale = Float32(0.0)
                         if block_max != Float32(0.0):
                             comptime if is_mxfp8:
-                                output_scale = recip(
-                                    sf_byte.cast[DType.float32]()
-                                )
+                                output_scale = recip(sf_byte.cast[.float32]())
                             else:
                                 output_scale = tensor_sf * recip(
-                                    sf_byte.cast[DType.float32]()
+                                    sf_byte.cast[.float32]()
                                 )
 
                         var p_scaled = pack16 * output_scale
@@ -3542,7 +3538,7 @@ struct Grouped1D1DMatmulKernel[
                                 Int(n_abs) // 2 + Int(warp_row_offset) // 2
                             )
                             if lane_row == UInt32(0) and token_g < m_end:
-                                var packed_u32 = bitcast[DType.uint32, 4](
+                                var packed_u32 = bitcast[.uint32, 4](
                                     packed16_ip
                                 )
                                 swiglu_out.store_packed_word(
@@ -3661,7 +3657,7 @@ struct Grouped1D1DMatmulKernel[
             smem_idx_b: UInt32,
             pair_fp32: SIMD[Self.accum_type, 2],
         ):
-            var pair_bf = pair_fp32.cast[DType.bfloat16]()
+            var pair_bf = pair_fp32.cast[.bfloat16]()
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_a)), pair_bf[0])
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
 
@@ -3805,7 +3801,7 @@ struct Grouped1D1DMatmulKernel[
                     )
                     comptime for ci in range(BF16_LOAD_W):
                         pair_bf[li * BF16_LOAD_W + ci] = chunk[ci]
-                var pair = pair_bf.cast[DType.float32]()
+                var pair = pair_bf.cast[.float32]()
                 var gate, up = pair.deinterleave()
 
                 # silu(g) and the final SF reciprocal use `recip()`
@@ -3855,10 +3851,10 @@ struct Grouped1D1DMatmulKernel[
                 var output_scale = Float32(0.0)
                 if block_max != Float32(0.0):
                     comptime if is_mxfp8:
-                        output_scale = recip(sf_byte.cast[DType.float32]())
+                        output_scale = recip(sf_byte.cast[.float32]())
                     else:
                         output_scale = tensor_sf * recip(
-                            sf_byte.cast[DType.float32]()
+                            sf_byte.cast[.float32]()
                         )
 
                 var z_scaled = z * output_scale
@@ -3869,10 +3865,10 @@ struct Grouped1D1DMatmulKernel[
                 # under the kernel's MMA geometry, so word stores
                 # coalesce on the L2 sector.
                 comptime if is_mxfp8:
-                    var packed16 = z_scaled.cast[DType.float8_e4m3fn]()
+                    var packed16 = z_scaled.cast[.float8_e4m3fn]()
                     if in_bounds and m_global < m_end:
                         var byte_base_global = Int(n_abs // 2) + Int(k_post)
-                        var packed_u32 = bitcast[DType.uint32, 4](packed16)
+                        var packed_u32 = bitcast[.uint32, 4](packed16)
                         swiglu_out.store_packed_word(
                             Int(m_global), byte_base_global, packed_u32[0]
                         )

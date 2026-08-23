@@ -46,8 +46,8 @@ def async_dynamic_copy_kernel[
     BN: Int,
     num_rows: Int,
 ](
-    input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, input_layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, output_layout, MutAnyOrigin],
 ):
     var masked_input = LayoutTensor[
         DType.float32,
@@ -282,7 +282,7 @@ def run_swizzle_copy_tests(ctx: DeviceContext) raises:
 @always_inline
 def masked_async_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
+](input: LayoutTensor[.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
@@ -409,7 +409,7 @@ def run_masked_async_copy_tests(ctx: DeviceContext) raises:
 @always_inline
 def masked_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
+](input: LayoutTensor[.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
@@ -528,8 +528,8 @@ def run_masked_copy_tests(ctx: DeviceContext) raises:
 def masked_copy_dram_to_local_kernel[
     layout: Layout, num_rows: Int
 ](
-    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, layout, MutAnyOrigin],
 ):
     comptime thread_layout = Layout.row_major(4, 2)
     comptime num_threads = thread_layout.size()

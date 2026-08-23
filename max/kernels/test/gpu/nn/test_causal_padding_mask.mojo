@@ -32,7 +32,7 @@ def test_causal_padding_mask_status() raises:
     var storage = Array[UInt32, 2](uninitialized=True)
     storage[0] = 6  # seq 0
     storage[1] = 4  # seq 1
-    var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
     # ---- Causal FULL_MASK cases (independent of padding). ----
@@ -99,7 +99,7 @@ def test_causal_padding_mask_set_split() raises:
     var storage = Array[UInt32, 2](uninitialized=True)
     storage[0] = 10
     storage[1] = 6
-    var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
     # count_nonfull_sets = 2 (no more UNKNOWN_MASK).
@@ -154,7 +154,7 @@ def test_causal_padding_mask_apply() raises:
     """Test per-element masking for CausalPaddingMask."""
     var storage = Array[UInt32, 1](uninitialized=True)
     storage[0] = 3  # valid_length = 3 for seq 0
-    var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(1)](storage)
+    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(1)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
     var score_vec = SIMD[.float32, 4](0.0)
@@ -208,7 +208,7 @@ def test_causal_padding_mask_bits() raises:
     var storage = Array[UInt32, 2](uninitialized=True)
     storage[0] = 10  # seq 0: valid_len = 10
     storage[1] = 3  # seq 1: valid_len = 3
-    var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
     # ---- seq 0 (valid_len=10) ----
@@ -251,7 +251,7 @@ def test_causal_padding_mask_multi_seq() raises:
     var storage = Array[UInt32, 2](uninitialized=True)
     storage[0] = 2  # seq 0: valid_length = 2
     storage[1] = 5  # seq 1: valid_length = 5
-    var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
     comptime SIMD_T = SIMD[.float32, 4]

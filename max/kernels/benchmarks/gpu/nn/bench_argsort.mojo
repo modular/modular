@@ -40,7 +40,7 @@ def bench_argsort[
 
     # Allocate device buffers.
     var device_input = ctx.enqueue_create_buffer[dtype](N)
-    var device_indices = ctx.enqueue_create_buffer[DType.int64](N)
+    var device_indices = ctx.enqueue_create_buffer[.int64](N)
     ctx.enqueue_copy(device_input, input_host_ptr)
 
     var device_input_tensor = TileTensor(

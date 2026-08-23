@@ -140,7 +140,7 @@ def test_exp2_compile() raises:
     # https://godbolt.org/z/j9ecfjjP1
     def exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
         output[] = exp2(
-            output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
+            output[] * 1.44269504088896340736 - max_scaled.cast[.float32]()
         )
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"

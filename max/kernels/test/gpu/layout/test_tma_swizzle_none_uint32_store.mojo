@@ -57,7 +57,7 @@ comptime ITERS = (M * N) // ELEMS_PER_ITER  # 8192 / 512 == 16
 def tma_store_uint32_kernel[
     tile_shape: IndexList[2],
     desc_shape: IndexList[2],
-](tma_tile: TMATensorTile[DType.uint32, 2, tile_shape, desc_shape]):
+](tma_tile: TMATensorTile[.uint32, 2, tile_shape, desc_shape]):
     comptime smem_layout = Layout.row_major(M, N)
     var smem = LayoutTensor[
         DType.uint32,
@@ -92,7 +92,7 @@ def tma_store_uint32_kernel[
 
 def test_tma_swizzle_none_uint32_store(ctx: DeviceContext) raises:
     comptime layout = Layout.row_major(M, N)
-    var dst = ManagedLayoutTensor[DType.uint32, layout](ctx)
+    var dst = ManagedLayoutTensor[.uint32, layout](ctx)
 
     # Seed the destination with a distinct ramp so a missing/partial store
     # cannot pass on stale data.

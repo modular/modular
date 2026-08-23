@@ -125,7 +125,7 @@ def _has_shape[
 def _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    comptime if out_type == DType.float16 or out_type == DType.uint32:
+    comptime if out_type == .float16 or out_type == .uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr.`si32`
@@ -137,20 +137,20 @@ def _dtype_to_nvvm_type[
 def _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    comptime if out_type == DType.float8_e4m3fn:
+    comptime if out_type == .float8_e4m3fn:
         return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
-    elif out_type == DType.float8_e5m2:
+    elif out_type == .float8_e5m2:
         return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
-    elif out_type == DType.float16 or out_type == DType.uint32:
+    elif out_type == .float16 or out_type == .uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr[`#nvvm.wgmma_type<s32>`]
         return __mlir_attr[`#nvvm.wgmma_type<f16>`]
-    elif out_type == DType.int8:
+    elif out_type == .int8:
         return __mlir_attr[`#nvvm.wgmma_type<s8>`]
-    elif out_type == DType.uint8:
+    elif out_type == .uint8:
         return __mlir_attr[`#nvvm.wgmma_type<u8>`]
-    elif out_type == DType.float32:
+    elif out_type == .float32:
         return __mlir_attr[`#nvvm.wgmma_type<tf32>`]
     else:
         return __mlir_deferred_attr[
@@ -542,9 +542,9 @@ struct WGMMADescriptor[dtype: DType](
         @__parameter
         def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
-                return mode.cast[DType.int64]()
+                return mode.cast[.int64]()
             else:
-                return (4 - mode).cast[DType.int64]()
+                return (4 - mode).cast[.int64]()
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
         var offset = Int64(0)
@@ -952,13 +952,13 @@ def wgmma_async[
     # for now, limited support
     comptime assert m == 64
     comptime assert k == 16
-    comptime assert a_type == DType.bfloat16
-    comptime assert b_type == DType.bfloat16
-    comptime assert accum_type == DType.float32
-    comptime assert c_dtype == DType.float32
+    comptime assert a_type == .bfloat16
+    comptime assert b_type == .bfloat16
+    comptime assert accum_type == .float32
+    comptime assert c_dtype == .float32
     comptime assert layout_a == "row"
     comptime assert layout_b == "col" or (
-        layout_b == "row" and b_type == DType.bfloat16
+        layout_b == "row" and b_type == .bfloat16
     )
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
@@ -969,28 +969,28 @@ def wgmma_async[
     comptime assert (
         m == 64
         and k == 16
-        and a_type == b_type == DType.bfloat16
-        and accum_type == c_dtype == DType.float32
+        and a_type == b_type == .bfloat16
+        and accum_type == c_dtype == .float32
     ), "unsupported config"
-    var a0 = bitcast[DType.uint32, 1](
+    var a0 = bitcast[.uint32, 1](
         SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[0]),
             rebind[BFloat16](mat_a_frag[1]),
         )
     )
-    var a1 = bitcast[DType.uint32, 1](
+    var a1 = bitcast[.uint32, 1](
         SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[2]),
             rebind[BFloat16](mat_a_frag[3]),
         )
     )
-    var a2 = bitcast[DType.uint32, 1](
+    var a2 = bitcast[.uint32, 1](
         SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[4]),
             rebind[BFloat16](mat_a_frag[5]),
         )
     )
-    var a3 = bitcast[DType.uint32, 1](
+    var a3 = bitcast[.uint32, 1](
         SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[6]),
             rebind[BFloat16](mat_a_frag[7]),

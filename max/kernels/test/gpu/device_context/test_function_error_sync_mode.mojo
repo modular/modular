@@ -28,7 +28,7 @@ def test_function_error(ctx: DeviceContext) raises:
     try:
         var ptr = alloc[UInt32](1)
         var ptr_owned = OwnedPointer[UInt32](unsafe_from_raw_pointer=ptr)
-        var res_host = DeviceBuffer[DType.uint32](
+        var res_host = DeviceBuffer[.uint32](
             ctx, ptr_owned.unsafe_ptr(), 1, owning=False
         )
         ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))

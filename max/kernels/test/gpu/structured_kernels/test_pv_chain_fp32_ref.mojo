@@ -123,7 +123,7 @@ def _P_fp32(key: Int, q: Int) -> Float32:
 
 @always_inline
 def _quantize[T: DType](v: Float32) -> Scalar[T]:
-    comptime if T == DType.bfloat16:
+    comptime if T == .bfloat16:
         return rebind[Scalar[T]](BFloat16(v))
     else:
         return rebind[Scalar[T]](Float8_e4m3fn(v))
@@ -131,7 +131,7 @@ def _quantize[T: DType](v: Float32) -> Scalar[T]:
 
 @always_inline
 def _dequant_to_f32[T: DType](v: Scalar[T]) -> Float32:
-    return v.cast[DType.float32]()
+    return v.cast[.float32]()
 
 
 # --------------------------------------------------------------------------- #
@@ -227,9 +227,7 @@ def kernel_pv_chain[
             p_v[i_k, j_n, 0] = rebind[p_v.ElementType](frag)
 
     # ---- Accumulator + mma_PV ---------------------------------------------
-    var o_reg = tt_stack_allocation[DType.float32, AddressSpace.LOCAL](
-        _Op.O_LAYOUT
-    )
+    var o_reg = tt_stack_allocation[.float32, AddressSpace.LOCAL](_Op.O_LAYOUT)
     comptime _OH = _Op.O_LAYOUT.static_shape[0]
     comptime _OW = _Op.O_LAYOUT.static_shape[1]
     var o_v = o_reg.vectorize[1, 1, 16]()
@@ -255,7 +253,7 @@ def kernel_pv_chain[
 
 
 def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
     print("--- test_pv_chain[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -283,11 +281,11 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
     # quantization error can be ~6% and accumulates over 64 keys. cos_sim
     # is the load-bearing metric for FP8; max-diff is mainly a sanity
     # check.
-    comptime _tol: Float32 = 0.5 if T == DType.float8_e4m3fn else 5e-2
+    comptime _tol: Float32 = 0.5 if T == .float8_e4m3fn else 5e-2
 
     var dev_v_subtile = ctx.enqueue_create_buffer[T](_SMEM_SIZE)
     var dev_p = ctx.enqueue_create_buffer[T](_P_SIZE)
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](_DUMP_SIZE)
 
     # ---- Build the sub-tile-major V SMEM image on host --------------------
     # This is the layout the production DMA producer
@@ -351,13 +349,11 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
     # mirror of what the kernel sees, computed in pure FP32. Then
     # ref[depth, q] = sum_key V_q[key, depth] * P_q[key, q] sequentially
     # in FP32 — bypasses every per-lane assumption.
-    var dev_v_quant = ctx.enqueue_create_buffer[DType.float32](KV_BLOCK * DEPTH)
-    var dev_p_quant = ctx.enqueue_create_buffer[DType.float32](
+    var dev_v_quant = ctx.enqueue_create_buffer[.float32](KV_BLOCK * DEPTH)
+    var dev_p_quant = ctx.enqueue_create_buffer[.float32](
         KV_BLOCK * Q_BLOCK_SIZE
     )
-    var dev_o_ref = ctx.enqueue_create_buffer[DType.float32](
-        DEPTH * Q_BLOCK_SIZE
-    )
+    var dev_o_ref = ctx.enqueue_create_buffer[.float32](DEPTH * Q_BLOCK_SIZE)
 
     var mismatches: Int = 0
     var max_diff: Float32 = 0.0
@@ -506,8 +502,8 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
-        var ok_bf16 = test_pv_chain[DType.bfloat16](ctx)
-        var ok_fp8 = test_pv_chain[DType.float8_e4m3fn](ctx)
+        var ok_bf16 = test_pv_chain[.bfloat16](ctx)
+        var ok_fp8 = test_pv_chain[.float8_e4m3fn](ctx)
 
         print("=" * 60)
         print("Summary:")

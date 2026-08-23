@@ -208,7 +208,7 @@ struct _RandomState(Copyable):
         # Handle edge cases: inf, nan, or very large ranges
         if isnan(range):
             return min
-        if range > max_finite[DType.float64]():
+        if range > max_finite[.float64]():
             # For very large ranges (e.g., -inf to +inf), direct multiplication
             # unit * range would overflow. Factor the calculation to avoid
             # intermediate overflow: min + unit * (max - min) becomes

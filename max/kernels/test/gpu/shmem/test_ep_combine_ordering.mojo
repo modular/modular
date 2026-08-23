@@ -89,16 +89,16 @@ def ordering_guard_kernel(
 def main() raises:
     var ctx = DeviceContext()
     comptime total_elems = N_CONSUMERS * MSG_ELEMS
-    var payload = ctx.enqueue_create_buffer[DType.float32](total_elems)
-    var flags = ctx.enqueue_create_buffer[DType.int32](N_CONSUMERS)
-    var output = ctx.enqueue_create_buffer[DType.float32](total_elems)
-    var scratch = ctx.enqueue_create_buffer[DType.float32](N_CONSUMERS)
+    var payload = ctx.enqueue_create_buffer[.float32](total_elems)
+    var flags = ctx.enqueue_create_buffer[.int32](N_CONSUMERS)
+    var output = ctx.enqueue_create_buffer[.float32](total_elems)
+    var scratch = ctx.enqueue_create_buffer[.float32](N_CONSUMERS)
     var host_output = alloc[Float32](total_elems)
 
     var stale: Int = 0
     for _it in range(N_ITERS):
         # NaN so a stale read is detectable.
-        ctx.enqueue_memset(payload, nan[DType.float32]())
+        ctx.enqueue_memset(payload, nan[.float32]())
         ctx.enqueue_memset(flags, Int32(0))
         ctx.enqueue_memset(output, Float32(0))
 

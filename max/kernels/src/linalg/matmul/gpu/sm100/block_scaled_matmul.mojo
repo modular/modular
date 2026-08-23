@@ -1034,7 +1034,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 ):
     """Implements the warp-specialized block-scaled matmul kernel for SM100 GPUs using TMA for global-to-shared loads and UMMA for tensor core MMA.
     """
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime register_based_epilogue = config.register_based_epilogue

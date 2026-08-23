@@ -93,7 +93,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
 
     # Host buffers for input and grid_thws
     var x_host = ctx.enqueue_create_host_buffer[dtype](total_in * D)
-    var bounds_host = ctx.enqueue_create_host_buffer[DType.int64](n_videos * 3)
+    var bounds_host = ctx.enqueue_create_host_buffer[.int64](n_videos * 3)
     ctx.synchronize()
 
     seed(42)
@@ -109,7 +109,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     # Device buffers
     var x_dev = ctx.enqueue_create_buffer[dtype](total_in * D)
     var out_dev = ctx.enqueue_create_buffer[dtype](total_out * D)
-    var bounds = ctx.enqueue_create_buffer[DType.int64](n_videos * 3)
+    var bounds = ctx.enqueue_create_buffer[.int64](n_videos * 3)
     ctx.enqueue_copy(x_dev, x_host)
     ctx.enqueue_copy(bounds, bounds_host)
     ctx.enqueue_memset(out_dev, 0)

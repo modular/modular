@@ -87,10 +87,10 @@ def test[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](lora_c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_ref_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -128,12 +128,10 @@ def test[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](lora_c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_ref_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor(
         a_dev_buffer,

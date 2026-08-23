@@ -20,8 +20,8 @@ comptime block_dim = 32
 
 
 def test_fill_thread_idx(ctx: DeviceContext) raises:
-    var output_host = ctx.enqueue_create_host_buffer[DType.int](buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
     def kernel(output: UnsafePointer[Int, MutAnyOrigin]):
@@ -42,8 +42,8 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
 
 
 def test_fill_block_idx(ctx: DeviceContext) raises:
-    var output_host = ctx.enqueue_create_host_buffer[DType.int](buffer_size)
-    var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[.int](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
     def kernel(output: UnsafePointer[Int, MutAnyOrigin]):

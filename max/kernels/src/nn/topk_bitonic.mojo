@@ -103,7 +103,7 @@ def _load4_scores(
         ](0, 1, 2, 3)
         return (v, idx)
 
-    var vv = SIMD[.float32, _PTOPK_ITEMS](min_or_neg_inf[DType.float32]())
+    var vv = SIMD[.float32, _PTOPK_ITEMS](min_or_neg_inf[.float32]())
     var ii = SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     comptime for j in range(_PTOPK_ITEMS):
         if local0 + j < count:
@@ -659,7 +659,7 @@ def _streaming_topk_kernel(
     var e2 = tid * 4 + 2
     var e3 = tid * 4 + 3
 
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
@@ -876,7 +876,7 @@ def _phi(v: Float32) -> UInt32:
     every bit of a negative. Comparing the results as unsigned orders the
     scores, so a radix digit of one is a range of scores.
     """
-    var bits = bitcast[DType.uint32, 1](v)
+    var bits = bitcast[.uint32, 1](v)
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
@@ -885,7 +885,7 @@ def _phi_group(
     v: SIMD[.float32, _HSEL_SCAN_ITEMS]
 ) -> SIMD[.uint32, _HSEL_SCAN_ITEMS]:
     """`_phi` over a thread's whole scan group."""
-    var bits = bitcast[DType.uint32, _HSEL_SCAN_ITEMS](v)
+    var bits = bitcast[.uint32, _HSEL_SCAN_ITEMS](v)
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
@@ -911,8 +911,8 @@ def _load_scan_group(
     var bits = SIMD[.uint32, _HSEL_SCAN_ITEMS](UInt32(0xFFFFFFFF))
     comptime for j in range(_HSEL_SCAN_ITEMS):
         if local0 + j < count:
-            bits[j] = bitcast[DType.uint32, 1](in_scores[off + j])
-    return bitcast[DType.float32, _HSEL_SCAN_ITEMS](bits)
+            bits[j] = bitcast[.uint32, 1](in_scores[off + j])
+    return bitcast[.float32, _HSEL_SCAN_ITEMS](bits)
 
 
 @always_inline
@@ -935,13 +935,13 @@ def _phi4(
     """
     var bits = SIMD[.uint32, _PTOPK_ITEMS](UInt32(0xFFFFFFFF))
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
-        bits = bitcast[DType.uint32, _PTOPK_ITEMS](
+        bits = bitcast[.uint32, _PTOPK_ITEMS](
             in_scores.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](off)
         )
     elif local0 < count:
         comptime for j in range(_PTOPK_ITEMS):
             if local0 + j < count:
-                bits[j] = bitcast[DType.uint32, 1](in_scores[off + j])
+                bits[j] = bitcast[.uint32, 1](in_scores[off + j])
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
@@ -2874,7 +2874,7 @@ def _split_partial_kernel(
     var e2 = tid * 4 + 2
     var e3 = tid * 4 + 3
 
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
         e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
@@ -3039,7 +3039,7 @@ def _reduce_partials_kernel(
 
     # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
     # four before the merge reads them.
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     var v0 = neg_inf
     var v1 = neg_inf
     var v2 = neg_inf
@@ -3161,7 +3161,7 @@ def _merge_partials_kernel(
 
     # Seeded to keep definite-assignment happy; the half-cleaner below
     # overwrites all four before the merge reads them.
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     var v0 = neg_inf
     var v1 = neg_inf
     var v2 = neg_inf
@@ -3679,8 +3679,8 @@ def persistent_topk_block_split[
     var part_count = total_seq_len * S * _TILE
 
     # Phase 1: fan the streaming fold across `rows * S` blocks into buffer A.
-    var buf_a_v = ctx.enqueue_create_buffer[DType.float32](part_count)
-    var buf_a_i = ctx.enqueue_create_buffer[DType.int32](part_count)
+    var buf_a_v = ctx.enqueue_create_buffer[.float32](part_count)
+    var buf_a_i = ctx.enqueue_create_buffer[.int32](part_count)
     var a_v = rebind[UnsafePointer[Float32, MutAnyOrigin]](buf_a_v.unsafe_ptr())
     var a_i = rebind[UnsafePointer[Int32, MutAnyOrigin]](buf_a_i.unsafe_ptr())
 
@@ -3709,10 +3709,10 @@ def persistent_topk_block_split[
     var src_v = a_v
     var src_i = a_i
     var do_reduce = S > _MERGE_FANIN
-    var buf_b_v = ctx.enqueue_create_buffer[DType.float32](
+    var buf_b_v = ctx.enqueue_create_buffer[.float32](
         part_count if do_reduce else 1
     )
-    var buf_b_i = ctx.enqueue_create_buffer[DType.int32](
+    var buf_b_i = ctx.enqueue_create_buffer[.int32](
         part_count if do_reduce else 1
     )
     var dst_v = rebind[UnsafePointer[Float32, MutAnyOrigin]](

@@ -333,7 +333,7 @@ def execute_ragged_flash_attention[
     var ref_out_tensor = ref_output.tensor()
 
     comptime rtol = 6e-2 if dtype.is_float8() else (
-        1e-2 if dtype == DType.bfloat16 else 1e-4
+        1e-2 if dtype == .bfloat16 else 1e-4
     )
 
     for bs in range(batch_size):

@@ -41,7 +41,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     expert_shape: IndexList[2],
     umma_shape: IndexList[3] = Index(64, 64, 32),
     use_epilogue: Bool = False,
-    scales_type: DType = DType.float32,
+    scales_type: DType = .float32,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -120,10 +120,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
@@ -153,10 +153,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var b_device_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_device_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var a_scales_device_buffer = ctx.enqueue_create_buffer[scales_type](

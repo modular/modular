@@ -46,8 +46,8 @@ def test_simd_f32_to_e2m1():
         3.51,
         5.0,
         5.01,
-        nan[DType.float32](),
-        inf[DType.float32](),
+        nan[.float32](),
+        inf[.float32](),
         -0.0,
         -0.23,
         -0.26,
@@ -62,8 +62,8 @@ def test_simd_f32_to_e2m1():
         -3.51,
         -5.0,
         -5.01,
-        -nan[DType.float32](),
-        -inf[DType.float32](),
+        -nan[.float32](),
+        -inf[.float32](),
     )
 
     var e2m1_simd = cast_fp_to_fp4e2m1(f32_simd)
@@ -120,8 +120,8 @@ def test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
         3.51,
         5.0,
         5.01,
-        nan[DType.float32](),
-        inf[DType.float32](),
+        nan[.float32](),
+        inf[.float32](),
         -0.0,
         -0.23,
         -0.26,
@@ -136,8 +136,8 @@ def test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
         -3.51,
         -5.0,
         -5.01,
-        -nan[DType.float32](),
-        -inf[DType.float32](),
+        -nan[.float32](),
+        -inf[.float32](),
     )
 
     comptime kernel = test_simd_f32_to_e2m1_ptx_kernel[size,]

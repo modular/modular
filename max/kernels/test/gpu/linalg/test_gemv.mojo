@@ -33,7 +33,7 @@ def run_matvec[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
     print("dtypes: A=", a_type, " B=", b_type, " C=", c_type)
@@ -48,13 +48,13 @@ def run_matvec[
     for i in range(M * K):
         a_host[i] = (
             random_float64(min=-1.0, max=1.0).cast[a_type]() if c_type
-            == DType.float8_e4m3fn else Float32(i).cast[a_type]()
+            == .float8_e4m3fn else Float32(i).cast[a_type]()
         )
 
     for i in range(K * N):
         b_host[i] = (
             random_float64(min=-1.0, max=1.0).cast[b_type]() if c_type
-            == DType.float8_e4m3fn else Float32(i + 1).cast[b_type]()
+            == .float8_e4m3fn else Float32(i + 1).cast[b_type]()
         )
 
     for i in range(M * N):
@@ -161,9 +161,9 @@ def run_matvec[
     var c_host_blas_f32 = alloc[Float32](M * N)
 
     for i in range(M * N):
-        c_host_f32[i] = c_host[i].cast[DType.float32]()
+        c_host_f32[i] = c_host[i].cast[.float32]()
         # c_host_blas is in accum_type (float32), cast to c_type to simulate quantization, then to float32
-        c_host_blas_f32[i] = c_host_blas[i].cast[c_type]().cast[DType.float32]()
+        c_host_blas_f32[i] = c_host_blas[i].cast[c_type]().cast[.float32]()
 
     # Use appropriate tolerance based on output dtype
     comptime errorTolerance = 1e-2
@@ -201,9 +201,9 @@ def run_matvec_with_epilogue_fn(
     for i in range(M * N * c_stride):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N * c_stride)
 
     var c_device_nd = TileTensor(
         c_device, Layout((M, N), (N * c_stride, c_stride))
@@ -350,8 +350,8 @@ def run_split_k_gemm[
     N: Int,
     K: Int,
     with_epilogue: Bool,
-    a_type: DType = DType.float32,
-    b_type: DType = DType.float32,
+    a_type: DType = .float32,
+    b_type: DType = .float32,
     tile_n: Int = 2,
     tile_m: Int = 1,
     num_threads: Int = 128,
@@ -371,12 +371,12 @@ def run_split_k_gemm[
 
     var a_host = alloc[Scalar[a_type]](M * K)
     var w_host = alloc[Scalar[b_type]](N * K)
-    comptime if a_type == DType.float32:
+    comptime if a_type == .float32:
         randn(a_host, M * K)
     else:
         for i in range(M * K):
             a_host[i] = random_float64(min=-1.0, max=1.0).cast[a_type]()
-    comptime if b_type == DType.float32:
+    comptime if b_type == .float32:
         randn(w_host, N * K)
     else:
         for i in range(N * K):
@@ -499,8 +499,8 @@ def run_split_k_gemm[
             var acc = Float32(0)
             for kk in range(K):
                 acc += (
-                    a_host[m * K + kk].cast[DType.float32]()
-                    * w_host[n * K + kk].cast[DType.float32]()
+                    a_host[m * K + kk].cast[.float32]()
+                    * w_host[n * K + kk].cast[.float32]()
                 )
             comptime if with_epilogue:
                 c_expected[m * row_stride + n] = acc + const_val
@@ -520,31 +520,31 @@ def run_split_k_gemm[
 def main() raises:
     with DeviceContext() as ctx:
         # gemv for matrix vector multiply - FP32
-        run_matvec[DType.float32, DType.float32, DType.float32](
+        run_matvec[.float32, DType.float32, DType.float32](
             4096, 1, 4096, ctx=ctx
         )
         run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply - FP32
-        run_matvec[DType.float32, DType.float32, DType.float32](
+        run_matvec[.float32, DType.float32, DType.float32](
             1, 4096, 4096, ctx=ctx
         )
         run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)
 
         # gemv for matrix vector multiply - BF16 input, FP8 output
-        run_matvec[DType.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
+        run_matvec[.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
             4096, 1, 4096, ctx=ctx
         )
         # gevm for vector matrix multiply - BF16 input, FP8 output
-        run_matvec[DType.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
+        run_matvec[.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
             1, 4096, 4096, ctx=ctx
         )
 
         # gemv for matrix vector multiply - BF16 input, BF16 output
-        run_matvec[DType.bfloat16, DType.bfloat16, DType.bfloat16](
+        run_matvec[.bfloat16, DType.bfloat16, DType.bfloat16](
             4096, 1, 4096, ctx=ctx
         )
         # gevm for vector matrix multiply - BF16 input, BF16 output
-        run_matvec[DType.bfloat16, DType.bfloat16, DType.bfloat16](
+        run_matvec[.bfloat16, DType.bfloat16, DType.bfloat16](
             1, 4096, 4096, ctx=ctx
         )
 

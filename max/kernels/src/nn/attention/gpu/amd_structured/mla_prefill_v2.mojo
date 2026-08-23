@@ -455,7 +455,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             the DRAM path at the call site.
         """
         comptime assert (
-            Self.config.dtype == DType.float8_e4m3fn
+            Self.config.dtype == .float8_e4m3fn
         ), "MlaPrefillV2._load_q_lds_exact: FP8 e4m3 only"
 
         comptime _BK = Self._MmaOp.MMA_K
@@ -561,7 +561,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -579,7 +579,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         mut q_reg: RegTile[
             Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mask_functor: mask_t,
         mut att_block: RegTile[
@@ -2008,7 +2008,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # ---- Per-work-item register state ----------------------------
             # The reference footprint: Q(24) + att(64 FP32) + o_reg(64 FP32).
-            var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
+            var o_reg = reg_alloc[.float32](Self._MmaOp.O_LAYOUT)
             var softmax = OnlineSoftmax[Self._SOFTMAX_DTYPE]()
             _ = o_reg.fill(0)
             var att_block = reg_alloc[Self._SOFTMAX_DTYPE](

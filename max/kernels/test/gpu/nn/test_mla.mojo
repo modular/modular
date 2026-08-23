@@ -280,12 +280,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -356,10 +356,10 @@ def test_prefill[
     randn(cache_ptr.as_span())
 
     # input row offsets and cache row offsets
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size):
@@ -403,10 +403,10 @@ def test_prefill[
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
     var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
     var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
-    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
 
@@ -647,7 +647,7 @@ def test_prefill[
                 for d in range(kv_depth):
                     var lhs = output_rank4[b, s, h, d]
                     var rhs = output_ref[b, s, h, d]
-                    if abs((lhs - rhs)).cast[DType.float64]() > atol:
+                    if abs((lhs - rhs)).cast[.float64]() > atol:
                         print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
@@ -671,7 +671,7 @@ def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     comptime if _is_sm10x_gpu(ctx.default_device_info):
@@ -890,7 +890,7 @@ def test_decoding_partial_head_group[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     """Covers head counts whose last head group is partial, with a

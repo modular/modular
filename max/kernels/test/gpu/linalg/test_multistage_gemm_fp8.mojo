@@ -41,8 +41,8 @@ def test_fp8_multistage_gemm[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
-    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[.float32](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[.float32](c_size)
 
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
     var b_host = TileTensor(
@@ -65,8 +65,8 @@ def test_fp8_multistage_gemm[
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](c_size)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var c_device = ctx.enqueue_create_buffer[.float32](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](c_size)
 
     var a_device_nd = TileTensor(a_device, a_host.layout)
     var b_device_nd = TileTensor(b_device, b_host.layout)

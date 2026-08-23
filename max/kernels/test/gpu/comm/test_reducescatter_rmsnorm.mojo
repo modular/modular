@@ -83,7 +83,7 @@ def _run_case[
     # rotation `(my_rank+i)%ngpus == circular_add` and f32 accum (asserted so a
     # future change fails here, not as silent drift); simd==8 is AMD-only.
     comptime assert (
-        get_accum_type[in_dtype]() == DType.float32
+        get_accum_type[in_dtype]() == .float32
     ), "sum_out bit-identity assumes an f32 accumulator"
     comptime for _r in range(ngpus):
         comptime for _i in range(ngpus):
@@ -109,7 +109,7 @@ def _run_case[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -150,7 +150,7 @@ def _run_case[
         rs_ref.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -273,7 +273,7 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
     # --- Host oracle + comparison over all owned rows of all ranks. ---
-    var woff = weight_offset.cast[DType.float32]()
+    var woff = weight_offset.cast[.float32]()
     var total_elems = 0
     var max_ulp_bf = 0  # fused vs bf16 ref (tight — kernel norms the bf16 sum)
     var gt1_ulp_bf = 0
@@ -311,9 +311,9 @@ def _run_case[
             for c in range(num_cols):
                 var s = Float32(0)
                 for g in range(ngpus):
-                    s += host_bufs[g][base + c].cast[DType.float32]()
+                    s += host_bufs[g][base + c].cast[.float32]()
                 accum[c] = s
-                var xb = s.cast[DType.bfloat16]().cast[DType.float32]()
+                var xb = s.cast[.bfloat16]().cast[.float32]()
                 m2_bf += xb * xb
                 m2_f += s * s
 
@@ -323,10 +323,10 @@ def _run_case[
             # Pass 2: normalize, fold gamma in f32, cast bf16 last, compare.
             for c in range(num_cols):
                 var s = accum[c]
-                var xb = s.cast[DType.bfloat16]().cast[DType.float32]()
-                var g_f = gamma_host[c].cast[DType.float32]() + woff
-                var ref_bf16 = ((xb * nf_bf) * g_f).cast[DType.bfloat16]()
-                var ref_f16 = ((s * nf_f) * g_f).cast[DType.bfloat16]()
+                var xb = s.cast[.bfloat16]().cast[.float32]()
+                var g_f = gamma_host[c].cast[.float32]() + woff
+                var ref_bf16 = ((xb * nf_bf) * g_f).cast[.bfloat16]()
+                var ref_f16 = ((s * nf_f) * g_f).cast[.bfloat16]()
                 var gpu_normed = normed_h[rr * num_cols + c].cast[
                     DType.bfloat16
                 ]()
@@ -342,18 +342,15 @@ def _run_case[
                     gt1_ulp_bf += 1
                 if ulp_f > max_ulp_f:
                     max_ulp_f = ulp_f
-                if (
-                    gpu_normed.cast[DType.float32]()
-                    != ref_f16.cast[DType.float32]()
-                ):
+                if gpu_normed.cast[.float32]() != ref_f16.cast[.float32]():
                     mismatch_f += 1
 
                 # sum_out vs standalone RS shard (bit-identical on AMD).
                 var sum_bits = Int(
-                    sum_h[rr * num_cols + c].cast[DType.bfloat16]().to_bits()
+                    sum_h[rr * num_cols + c].cast[.bfloat16]().to_bits()
                 )
                 var rs_bits = Int(
-                    rs_h[rr * num_cols + c].cast[DType.bfloat16]().to_bits()
+                    rs_h[rr * num_cols + c].cast[.bfloat16]().to_bits()
                 )
                 var sum_ulp = abs(sum_bits - rs_bits)
                 if sum_ulp != 0:
@@ -565,7 +562,7 @@ def _run_prod_oracle_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -601,7 +598,7 @@ def _run_prod_oracle_case[
         prod.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -795,16 +792,16 @@ def _run_prod_oracle_case[
         total_elems += n
 
         for e in range(n):
-            var f_bits = Int(normed_h[e].cast[DType.bfloat16]().to_bits())
-            var p_bits = Int(prod_h[e].cast[DType.bfloat16]().to_bits())
+            var f_bits = Int(normed_h[e].cast[.bfloat16]().to_bits())
+            var p_bits = Int(prod_h[e].cast[.bfloat16]().to_bits())
             if f_bits != p_bits:
                 normed_mismatch += 1
             var ulp = abs(f_bits - p_bits)
             if ulp > normed_max_ulp:
                 normed_max_ulp = ulp
 
-            var s_bits = Int(sum_h[e].cast[DType.bfloat16]().to_bits())
-            var r_bits = Int(rs_h[e].cast[DType.bfloat16]().to_bits())
+            var s_bits = Int(sum_h[e].cast[.bfloat16]().to_bits())
+            var r_bits = Int(rs_h[e].cast[.bfloat16]().to_bits())
             if s_bits != r_bits:
                 sum_mismatch += 1
             var s_ulp = abs(s_bits - r_bits)
@@ -948,7 +945,7 @@ def _run_residual_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var normed_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -1020,7 +1017,7 @@ def _run_residual_case[
         sum_b.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -1161,7 +1158,7 @@ def _run_residual_case[
     # Gate 5 (non-load-bearing): the leader-add arm's norm tracks arm A's, whose
     # only difference is the removed pre-add rounding in the sum.
     var normed_arm_max_ulp = 0
-    var woff = weight_offset.cast[DType.float32]()
+    var woff = weight_offset.cast[.float32]()
     # One row's oracle sum, so the norm reference can take a second pass.
     var want_row = List[Float32](length=num_cols, fill=Float32(0))
 
@@ -1202,29 +1199,28 @@ def _run_residual_case[
                 var acc = Float32(0)
                 for k in range(group_size):
                     var peer = (local + k) % group_size
-                    acc += attn_hosts[base + peer][g].cast[DType.float32]()
+                    acc += attn_hosts[base + peer][g].cast[.float32]()
                 var without_res = acc.cast[in_dtype]()
                 var want = (
-                    without_res.cast[DType.float32]()
-                    + res_host[g].cast[DType.float32]()
+                    without_res.cast[.float32]() + res_host[g].cast[.float32]()
                 ).cast[in_dtype]()
-                want_row[c] = want.cast[DType.float32]()
+                want_row[c] = want.cast[.float32]()
                 m2 += want_row[c] * want_row[c]
                 if (
-                    sum_h[e].cast[DType.bfloat16]().to_bits()
-                    != want.cast[DType.bfloat16]().to_bits()
+                    sum_h[e].cast[.bfloat16]().to_bits()
+                    != want.cast[.bfloat16]().to_bits()
                 ):
                     oracle_mismatch += 1
                 if (
-                    without_res.cast[DType.bfloat16]().to_bits()
-                    != want.cast[DType.bfloat16]().to_bits()
+                    without_res.cast[.bfloat16]().to_bits()
+                    != want.cast[.bfloat16]().to_bits()
                 ):
                     changed_by_residual += 1
                 if want != Scalar[in_dtype](0):
                     nonzero += 1
 
-                var a_bits = Int(sum_h[e].cast[DType.bfloat16]().to_bits())
-                var b_bits = Int(sum_b_h[e].cast[DType.bfloat16]().to_bits())
+                var a_bits = Int(sum_h[e].cast[.bfloat16]().to_bits())
+                var b_bits = Int(sum_b_h[e].cast[.bfloat16]().to_bits())
                 if a_bits != b_bits:
                     leader_mismatch += 1
                 var ulp = abs(a_bits - b_bits)
@@ -1236,19 +1232,19 @@ def _run_residual_case[
             var norm_factor = rsqrt(m2 / Float32(num_cols) + epsilon)
             for c in range(num_cols):
                 var e = lr * num_cols + c
-                var g_f = gamma_host[c].cast[DType.float32]() + woff
+                var g_f = gamma_host[c].cast[.float32]() + woff
                 var ref_key = _bf16_ulp_key(
                     Int(
                         ((want_row[c] * norm_factor) * g_f)
-                        .cast[DType.bfloat16]()
+                        .cast[.bfloat16]()
                         .to_bits()
                     )
                 )
                 var got_key = _bf16_ulp_key(
-                    Int(normed_h[e].cast[DType.bfloat16]().to_bits())
+                    Int(normed_h[e].cast[.bfloat16]().to_bits())
                 )
                 var arm_b_key = _bf16_ulp_key(
-                    Int(normed_b_h[e].cast[DType.bfloat16]().to_bits())
+                    Int(normed_b_h[e].cast[.bfloat16]().to_bits())
                 )
                 var n_ulp = abs(got_key - ref_key)
                 if n_ulp > normed_max_ulp:
@@ -1419,7 +1415,7 @@ def _run_interleaved_barrier_case[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -1459,7 +1455,7 @@ def _run_interleaved_barrier_case[
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -1581,7 +1577,7 @@ def _run_interleaved_barrier_case[
                     for k in range(group_size):
                         s += host_bufs[base + k][
                             (start + rr) * num_cols + c
-                        ].cast[DType.float32]()
+                        ].cast[.float32]()
                     if got[rr * num_cols + c] != s.cast[in_dtype]():
                         grp_bad += 1
             _ = got^
@@ -1676,14 +1672,14 @@ def _run_rank_validation_case[
     var max_shard = config.rank_num_elements(0)
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=group_size)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
     var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(group_size):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs[i] = (
             signal_buffers[i]

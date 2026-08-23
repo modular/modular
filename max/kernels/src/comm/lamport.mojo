@@ -91,9 +91,7 @@ def _sentinel_bits[
         The negative-zero bit pattern as the matching unsigned-integer scalar.
     """
     comptime assert (
-        dtype == DType.bfloat16
-        or dtype == DType.float16
-        or dtype == DType.float32
+        dtype == .bfloat16 or dtype == .float16 or dtype == .float32
     ), (
         "Lamport sentinel supports bfloat16, float16, and float32 only; fp8"
         " transport is out of scope (>8 lanes/pack and the coarse sentinel"

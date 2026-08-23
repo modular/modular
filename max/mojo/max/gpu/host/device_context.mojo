@@ -2121,8 +2121,8 @@ struct DeviceBuffer[dtype: DType](
 
         var ctx = DeviceContext()
         var length = 1024
-        var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-        var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var in_dev = ctx.enqueue_create_buffer[.float32](length)
+        var out_dev = ctx.enqueue_create_buffer[.float32](length)
 
         # Initialize the input and output with known values.
         with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
@@ -4337,7 +4337,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         with DeviceContext() as ctx:
             # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+            var host_buffer = ctx.enqueue_create_host_buffer[.float32](1024)
 
             # Use the host buffer for device operations
             # ...
@@ -4716,7 +4716,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             with DeviceContext() as ctx:
                 var scale_factor: Float32 = 2.0
 
-                var data_buffer = ctx.enqueue_create_buffer[DType.float32](100)
+                var data_buffer = ctx.enqueue_create_buffer[.float32](100)
                 var data = TileTensor(data_buffer, row_major[100]())
                 with data_buffer.map_to_host() as h:
                     for i in range(data.num_elements()):
@@ -5745,13 +5745,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var value: UInt64
 
         comptime if bitwidth == 8:
-            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+            value = UInt64(Int(bitcast[.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+            value = UInt64(Int(bitcast[.uint16, 1](val)))
         elif bitwidth == 32:
-            value = UInt64(bitcast[DType.uint32, 1](val))
+            value = UInt64(bitcast[.uint32, 1](val))
         else:
-            value = bitcast[DType.uint64, 1](val)
+            value = bitcast[.uint64, 1](val)
 
         # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
         _checked(
@@ -5793,13 +5793,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var value: UInt64
 
         comptime if bitwidth == 8:
-            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+            value = UInt64(Int(bitcast[.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+            value = UInt64(Int(bitcast[.uint16, 1](val)))
         elif bitwidth == 32:
-            value = UInt64(bitcast[DType.uint32, 1](val))
+            value = UInt64(bitcast[.uint32, 1](val))
         else:
-            value = bitcast[DType.uint64, 1](val)
+            value = bitcast[.uint64, 1](val)
 
         # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
         _checked(

@@ -135,7 +135,7 @@ def test_scaled_mxfp8_cublaslt[
             if idx0 < M and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
@@ -157,7 +157,7 @@ def test_scaled_mxfp8_cublaslt[
             if idx0 < N and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](

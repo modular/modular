@@ -195,7 +195,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     if has_dt_bias:
         dt_bias_val = Scalar[kernel_dtype](
             dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     var D_val = Float32(0.0)
     if has_D:
@@ -227,12 +227,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
             x.raw_load(
                 UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
             )
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
         # dt[gt, h] (+ dt_bias), softplus -> per-(t,h) scalar (broadcast over p).
         var dt_val = Scalar[kernel_dtype](
             dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -254,7 +254,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
                         + n * B_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             C_vals[n] = Scalar[kernel_dtype](
                 C.raw_load(
                     UInt32(
@@ -263,7 +263,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
                         + n * C_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         # state_n = state_n * dA + (dt * x) * B_n   (vector over dstate)
         state = state * dA + B_vals * dt_x
@@ -458,7 +458,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     if has_dt_bias:
         dt_bias_val = Scalar[kernel_dtype](
             dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     var D_val = Float32(0.0)
     if has_D:
@@ -490,11 +490,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
             x.raw_load(
                 UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
             )
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
         var dt_val = Scalar[kernel_dtype](
             dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -514,7 +514,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
                         + n * B_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             C_vals[n] = Scalar[kernel_dtype](
                 C.raw_load(
                     UInt32(
@@ -523,7 +523,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
                         + n * C_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         state = state * dA + B_vals * dt_x
 
@@ -608,7 +608,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
     dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin],
-    ssm_pool: TileTensor[DType.float32, ssm_pool_LT, MutUntrackedOrigin],
+    ssm_pool: TileTensor[.float32, ssm_pool_LT, MutUntrackedOrigin],
     query_start_loc: TileTensor[
         DType.int32, query_start_loc_LT, MutUntrackedOrigin
     ],
@@ -736,7 +736,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     if has_dt_bias:
         dt_bias_val = Scalar[kernel_dtype](
             dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     var D_val = Float32(0.0)
     if has_D:
@@ -787,11 +787,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                         gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             var dt_val = Scalar[kernel_dtype](
                 dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             if has_dt_bias:
                 dt_val += dt_bias_val
             if dt_softplus_bool:
@@ -808,14 +808,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                         + group_id * B_strides[1]
                         + n_base * B_strides[2]
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 C_vals = C.raw_load[width=L, alignment=bc_align](
                     UInt32(
                         gt * C_strides[0]
                         + group_id * C_strides[1]
                         + n_base * C_strides[2]
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             else:
                 comptime for i in range(L):
                     var n = n_base + i
@@ -827,7 +827,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                                 + n * B_strides[2]
                             )
                         )
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     C_vals[i] = Scalar[kernel_dtype](
                         C.raw_load(
                             UInt32(
@@ -836,7 +836,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                                 + n * C_strides[2]
                             )
                         )
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
 
         state = state * dA + B_vals * dt_x
 
@@ -1005,7 +1005,7 @@ struct DStateVecLoader[
             comptime for c in range(Self.NCHUNK):
                 state[c] = self.ssm_pool.raw_load[
                     width=Self.VEC, alignment=pool_align
-                ](pool_base + UInt32(c * Self.VEC)).cast[DType.float32]()
+                ](pool_base + UInt32(c * Self.VEC)).cast[.float32]()
         else:
             comptime for c in range(Self.NCHUNK):
                 var chunk = SIMD[.float32, Self.VEC](0.0)
@@ -1013,7 +1013,7 @@ struct DStateVecLoader[
                     chunk[i] = self.ssm_pool.raw_load(
                         pool_base
                         + UInt32((c * Self.VEC + i) * self.pool_dstate_stride)
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                 state[c] = chunk
 
     @always_inline
@@ -1040,19 +1040,19 @@ struct DStateVecLoader[
         comptime if contig:
             b_c = self.B.raw_load[width=Self.VEC, alignment=bc_align](
                 b_base + UInt32(c * Self.VEC)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             c_c = self.C.raw_load[width=Self.VEC, alignment=bc_align](
                 c_base + UInt32(c * Self.VEC)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
         else:
             comptime for i in range(Self.VEC):
                 var n = c * Self.VEC + i
                 b_c[i] = Scalar[Self.kernel_dtype](
                     self.B.raw_load(b_base + UInt32(n * self.b_dstate_stride))
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 c_c[i] = Scalar[Self.kernel_dtype](
                     self.C.raw_load(c_base + UInt32(n * self.c_dstate_stride))
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
     @always_inline
     def store_state(
@@ -1101,7 +1101,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     # dominant per-step pool traffic on Apple silicon; the recurrence still
     # accumulates in fp32 registers (loads widen, only the final write-back
     # rounds). See the docstring numerics contract.
-    state_dtype: DType = DType.float32,
+    state_dtype: DType = .float32,
     # SIMD load/store width over the contiguous dstate axis. 4 fp32 = 16 B is
     # the proven M5 vector-load cap; 2/8 are sweepable in the microbench. NOTE:
     # VEC=8 is fp32-ONLY -- a width-8 bf16/fp16 load scalarizes on the M5 (AGX)
@@ -1215,7 +1215,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     # recurrence (fp16 max 65504 risks overflow) and wide fp16 loads hit the
     # M5 scalarization trap. Only the two validated storage dtypes compile.
     comptime assert (
-        state_dtype == DType.float32 or state_dtype == DType.bfloat16
+        state_dtype == .float32 or state_dtype == .bfloat16
     ), "state_dtype must be float32 or bfloat16"
 
     var nheads = Int(nheads_dev)
@@ -1253,7 +1253,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     if has_dt_bias:
         dt_bias_val = Scalar[kernel_dtype](
             dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     var D_val = Float32(0.0)
     if has_D:
@@ -1306,11 +1306,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
             x.raw_load(
                 UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
             )
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
         var dt_val = Scalar[kernel_dtype](
             dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[DType.float32]()
+        ).cast[.float32]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -1488,13 +1488,13 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
         if has_dt_bias:
             dt_bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         var D_val = Float32(0.0)
         if has_D:
             D_val = Scalar[kernel_dtype](
                 D.raw_load(UInt32(h * D_strides[0]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         var slot = Int(cache_indices.raw_load(b))
         var state = SIMD[.float32, MAX_DSTATE](0.0)
@@ -1521,11 +1521,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
                         gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             var dt_val = Scalar[kernel_dtype](
                 dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             if has_dt_bias:
                 dt_val += dt_bias_val
             if dt_softplus_bool:
@@ -1545,7 +1545,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
                             + n * B_strides[2]
                         )
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
                     C.raw_load(
                         UInt32(
@@ -1554,7 +1554,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
                             + n * C_strides[2]
                         )
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
             state = state * dA + B_vals * dt_x
 
@@ -1648,13 +1648,13 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
         if has_dt_bias:
             dt_bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         var D_val = Float32(0.0)
         if has_D:
             D_val = Scalar[kernel_dtype](
                 D.raw_load(UInt32(h * D_strides[0]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         var state = SIMD[.float32, MAX_DSTATE](0.0)
         var use_initial = False
@@ -1679,11 +1679,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
                         gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
                     )
                 )
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             var dt_val = Scalar[kernel_dtype](
                 dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             if has_dt_bias:
                 dt_val += dt_bias_val
             if dt_softplus_bool:
@@ -1703,7 +1703,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
                             + n * B_strides[2]
                         )
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
                     C.raw_load(
                         UInt32(
@@ -1712,7 +1712,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
                             + n * C_strides[2]
                         )
                     )
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
             state = state * dA + B_vals * dt_x
 

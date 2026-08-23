@@ -284,9 +284,9 @@ def main() raises:
         # Device memory allocation
         var d_input = ctx.enqueue_create_buffer[dtype](N)
         var d_output = ctx.enqueue_create_buffer[dtype](N)
-        var d_block_counter = ctx.enqueue_create_buffer[DType.uint32](1)
+        var d_block_counter = ctx.enqueue_create_buffer[.uint32](1)
         var d_partial_sums = ctx.enqueue_create_buffer[dtype](num_blocks)
-        var d_flags = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+        var d_flags = ctx.enqueue_create_buffer[.uint32](num_blocks)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)

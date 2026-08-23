@@ -158,8 +158,8 @@ def execute_topk_bitonic[
     within a causal chunk), an `-inf` masked suffix, and valid values drawn
     from `dist`.
     """
-    var scores_buf = ctx.enqueue_create_buffer[DType.float32](rows * N)
-    var idxs_buf = ctx.enqueue_create_buffer[DType.int32](rows * K)
+    var scores_buf = ctx.enqueue_create_buffer[.float32](rows * N)
+    var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
 
     var csum = UInt64(0xCBF29CE484222325)
     with scores_buf.map_to_host() as h:
@@ -172,9 +172,7 @@ def execute_topk_bitonic[
                 else:
                     v = Float32(-3.0e38)  # min_or_neg_inf sentinel
                 h[r * N + c] = Float32(v)
-                csum = (
-                    csum ^ UInt64(bitcast[DType.uint32, 1](v))
-                ) * 0x100000001B3
+                csum = (csum ^ UInt64(bitcast[.uint32, 1](v))) * 0x100000001B3
     print("input_checksum=", hex(csum), sep="")
 
     var scores_t = TileTensor(scores_buf, row_major(rows, N))

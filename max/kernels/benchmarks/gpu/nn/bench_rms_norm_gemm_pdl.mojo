@@ -109,7 +109,7 @@ def bench_rms_norm_gemm_pdl[
         b: Benchmark harness.
         ctx: Device context.
     """
-    comptime assert dtype == DType.bfloat16, "this bench is bf16-only"
+    comptime assert dtype == .bfloat16, "this bench is bf16-only"
 
     comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     comptime MMA_K = 16

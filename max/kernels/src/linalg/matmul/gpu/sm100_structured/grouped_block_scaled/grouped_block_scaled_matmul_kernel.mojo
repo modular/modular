@@ -596,7 +596,7 @@ def is_valid_dtypes_and_scale_factor_vec_size(
 
     # Check sf_dtype and sf_vec_size combinations
     # Float8E4M3FN scale factors only valid with sf_vec_size=16 (NVF4)
-    if sf_dtype == DType.float8_e4m3fn and sf_vec_size == 32:
+    if sf_dtype == .float8_e4m3fn and sf_vec_size == 32:
         return False
 
     # MXF8 (Float8) requires sf_vec_size=32

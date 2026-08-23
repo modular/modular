@@ -355,13 +355,13 @@ struct BlockScaledMmaOp_PreB[
             Self.num_k_mmas % 2 == 0
         ), "preb scale path requires num_k_mmas % 2 == 0 (k_pack=2)"
 
-        self._a_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[.float32, AddressSpace.LOCAL](
             Self._c_reg_layout
         )
         _ = self._c_reg.fill(Float32(0))
@@ -821,10 +821,10 @@ struct BlockScaledMatmulAMD_PreB[
         K_BYTES: Int,
     ](
         c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
-        b_pre: TileTensor[DType.uint8, b_pre_layout, ImmutAnyOrigin],
-        sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
+        b_pre: TileTensor[.uint8, b_pre_layout, ImmutAnyOrigin],
+        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
+        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
         n_tile_idx: Int,
         m_tile_idx: Int,
     ):
@@ -862,7 +862,7 @@ struct BlockScaledMatmulAMD_PreB[
 
         # SMEM for A only — B and scales come direct from preshuffled DRAM.
         # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
-        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
         )
 
@@ -898,11 +898,11 @@ struct BlockScaledMatmulAMD_PreB[
         var a_blockrow = a.tile[Self.BM, A_K_BYTES](m_tile_idx, 0)
 
         # A DRAM-load landing ring (num_a_load_slots; 1 at the depth-2 default).
-        var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[.uint8, AddressSpace.LOCAL](
             row_major[Self.num_a_load_slots, a_reg_elems]()
         )
 
-        var a_loader = RegTileLoader[DType.uint8, load_layout](
+        var a_loader = RegTileLoader[.uint8, load_layout](
             a_blockrow,
             bounds_from=a,
         )

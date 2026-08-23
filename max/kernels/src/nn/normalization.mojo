@@ -1071,8 +1071,8 @@ def rms_norm_gpu[
             ctx.enqueue_function[kernel](
                 shape_il.canonicalize(),
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=rows,
                 block_dim=threads_per_block,
@@ -1090,7 +1090,7 @@ def rms_norm_gpu[
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
-        if cols <= 128 and dtype == DType.bfloat16:
+        if cols <= 128 and dtype == .bfloat16:
             # Experimentally determined to be the best - tapers off at 2.
             comptime warps_per_block = 2
             # Each warp handles 2 rows, so total rows per block is warps_per_block * 2.
@@ -1111,8 +1111,8 @@ def rms_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(rows),
                 Int32(cols),
                 grid_dim=grid_dim,
@@ -1160,8 +1160,8 @@ def rms_norm_gpu[
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
-                            epsilon.cast[DType.float32](),
-                            weight_offset.cast[DType.float32](),
+                            epsilon.cast[.float32](),
+                            weight_offset.cast[.float32](),
                             Int32(rows),
                             Int32(cols),
                             grid_dim=grid_dim,
@@ -1185,8 +1185,8 @@ def rms_norm_gpu[
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
-                    epsilon.cast[DType.float32](),
-                    weight_offset.cast[DType.float32](),
+                    epsilon.cast[.float32](),
+                    weight_offset.cast[.float32](),
                     Int32(rows),
                     Int32(cols),
                     grid_dim=grid_dim,
@@ -1245,8 +1245,8 @@ def rms_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1267,8 +1267,8 @@ def rms_norm_gpu[
         ]
         ctx.enqueue_function[kernel](
             gamma,
-            epsilon.cast[DType.float32](),
-            weight_offset.cast[DType.float32](),
+            epsilon.cast[.float32](),
+            weight_offset.cast[.float32](),
             Int32(cols),
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -1649,7 +1649,7 @@ def apply_qk_rms_norm_gpu_block[
                 if is_k:
                     var xf = k.load[width=simd_width](
                         Coord(Index(Int(row), offset))
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var g = gamma_k.load[width=simd_width, alignment=align](
                         Coord(offset)
                     )
@@ -1660,7 +1660,7 @@ def apply_qk_rms_norm_gpu_block[
                 else:
                     var xf = q.load[width=simd_width](
                         Coord(Index(Int(row), offset))
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var g = gamma_q.load[width=simd_width, alignment=align](
                         Coord(offset)
                     )
@@ -1968,8 +1968,8 @@ def group_norm_reshape[
     out result: TileTensor[
         dtype,
         Layout[
-            shape_types=DynamicCoord[DType.int64, 2].element_types,
-            stride_types=DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[.int64, 2].element_types,
+            stride_types=DynamicCoord[.int64, 2].element_types,
         ],
         buf.origin,
         address_space=buf.address_space,
@@ -2499,7 +2499,7 @@ def group_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 output_rs,
-                epsilon.cast[DType.float32](),
+                epsilon.cast[.float32](),
                 Int32(num_groups),
                 Int32(channels_per_group),
                 Int32(spatial),
@@ -2589,7 +2589,7 @@ def group_norm_gpu[
                 ctx.enqueue_function[norm_kernel](
                     output_rs,
                     stats,
-                    epsilon.cast[DType.float32](),
+                    epsilon.cast[.float32](),
                     Int32(num_groups),
                     Int32(channels_per_group),
                     Int32(spatial),
@@ -2613,7 +2613,7 @@ def group_norm_gpu[
                 ]
                 ctx.enqueue_function[kernel](
                     output_rs,
-                    epsilon.cast[DType.float32](),
+                    epsilon.cast[.float32](),
                     Int32(num_groups),
                     Int32(channels_per_group),
                     Int32(spatial),
@@ -2633,7 +2633,7 @@ def group_norm_gpu[
         ]
         ctx.enqueue_function[kernel](
             output_rs,
-            epsilon.cast[DType.float32](),
+            epsilon.cast[.float32](),
             Int32(num_groups),
             Int32(channels_per_group),
             Int32(spatial),
@@ -3397,8 +3397,8 @@ def layer_norm_rope_ragged[
     gamma: TileTensor[mut=False, input_dtype, ...],
     beta: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    start_pos: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
+    start_pos: TileTensor[.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
     context: Optional[DeviceContext] = None,
 ) raises:

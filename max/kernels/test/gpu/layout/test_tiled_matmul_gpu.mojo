@@ -29,9 +29,9 @@ def naive_matmul[
     BM: Int,
     BN: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    dst: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
+    rhs: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
 ):
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
     dst_tile[thread_idx.y, thread_idx.x] = 0
@@ -55,9 +55,9 @@ def test_naive_matmul_kernel(ctx: DeviceContext) raises:
     comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
     comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
+    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
 
     arange(mat_a.tensor())
     arange(mat_b.tensor())
@@ -91,9 +91,9 @@ def sram_blocked_matmul[
     BN: Int,
     BK: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_lhs, MutAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_rhs, MutAnyOrigin],
+    dst: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[.float32, layout_lhs, MutAnyOrigin],
+    rhs: LayoutTensor[.float32, layout_rhs, MutAnyOrigin],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
@@ -191,9 +191,9 @@ def test_sram_blocked_matmul(ctx: DeviceContext) raises:
 
     comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
-    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
+    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
 
     arange(mat_a.tensor())
     arange(mat_b.tensor())
@@ -223,9 +223,9 @@ def single_warp_mma_sync_m16n8k8[
     layout_a_mma: Layout,
     layout_b_mma: Layout,
 ](
-    mat_c: LayoutTensor[DType.float32, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[DType.float32, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[DType.float32, layout_b, MutAnyOrigin],
+    mat_c: LayoutTensor[.float32, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[.float32, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[.float32, layout_b, MutAnyOrigin],
 ):
     var mat_a_mma = mat_a.composition[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
@@ -269,9 +269,9 @@ def test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     comptime layout_b = Layout.col_major(K, N)
     comptime layout_c = Layout.row_major(M, N)
 
-    var mat_a = ManagedLayoutTensor[DType.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[DType.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[DType.float32, layout_c](ctx)
+    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
+    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
+    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
 
     arange(mat_a.tensor())
     arange(mat_b.tensor())
@@ -319,9 +319,9 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     BN: Int,
     BK: Int,
 ](
-    dst: TileTensor[DType.float32, DstLayoutType, MutAnyOrigin],
-    lhs: TileTensor[DType.float32, LhsLayoutType, MutAnyOrigin],
-    rhs: TileTensor[DType.float32, RhsLayoutType, MutAnyOrigin],
+    dst: TileTensor[.float32, DstLayoutType, MutAnyOrigin],
+    lhs: TileTensor[.float32, LhsLayoutType, MutAnyOrigin],
+    rhs: TileTensor[.float32, RhsLayoutType, MutAnyOrigin],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
@@ -430,9 +430,9 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     for i in range(M * N):
         mat_c_ptr[i] = 0
 
-    var mat_c_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var mat_a_dev = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var mat_b_dev = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var mat_c_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    var mat_a_dev = ctx.enqueue_create_buffer[.float32](M * K)
+    var mat_b_dev = ctx.enqueue_create_buffer[.float32](K * N)
 
     ctx.enqueue_copy(mat_c_dev, mat_c_ptr)
     ctx.enqueue_copy(mat_a_dev, mat_a_ptr)

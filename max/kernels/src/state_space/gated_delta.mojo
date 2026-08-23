@@ -138,7 +138,7 @@ def gated_delta_recurrence_fwd_gpu[
     recurrent_state: TileTensor[
         state_dtype, recurrent_state_LT, MutUntrackedOrigin
     ],
-    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutUntrackedOrigin],
+    slot_idx: TileTensor[.uint32, slot_idx_LT, MutUntrackedOrigin],
     qkv_conv_output: TileTensor[
         work_dtype, qkv_conv_output_LT, MutUntrackedOrigin
     ],

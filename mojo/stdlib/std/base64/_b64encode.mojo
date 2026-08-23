@@ -39,7 +39,7 @@ comptime Bytes = SIMD[.uint8, _]
 def _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[.bool, simd_width]:
-    comptime mask = iota[DType.uint8, simd_width]()
+    comptime mask = iota[.uint8, simd_width]()
     return mask.lt(UInt8(nb_value_to_load))
 
 
@@ -291,14 +291,14 @@ def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
 
 def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
-    var u16 = bitcast[DType.uint16, input.length // 2](input)
+    var u16 = bitcast[.uint16, input.length // 2](input)
     var res = rotate_bits_right[shift](u16)
-    return bitcast[DType.uint8, input.length](res)
+    return bitcast[.uint8, input.length](res)
 
 
 @always_inline
 def _sub_with_saturation[
     width: SIMDLength, //
-](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[DType.uint8, width]:
+](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
     # generates a single `vpsubusb` on x86 with AVX
     return llvm_intrinsic["llvm.usub.sat", type_of(a)](a, b)

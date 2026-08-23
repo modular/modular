@@ -361,19 +361,17 @@ def main() raises:
         for i in range(num_active_experts):
             input_scales_host[i] = 1.0 + Float32(i + 1) * 0.01
 
-        var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts + 1
         )
-        var a_scale_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_scale_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts
         )
-        var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+        var expert_ids_dev = ctx.enqueue_create_buffer[.int32](
             num_active_experts
         )
-        var expert_scales_dev = ctx.enqueue_create_buffer[DType.float32](
-            num_experts
-        )
-        var input_scales_dev = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev = ctx.enqueue_create_buffer[.float32](num_experts)
+        var input_scales_dev = ctx.enqueue_create_buffer[.float32](
             num_active_experts
         )
 
@@ -390,9 +388,7 @@ def main() raises:
         var trace_buf_size = trace_num_blocks * Int(
             GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
         )
-        var trace_buf_dev = ctx.enqueue_create_buffer[DType.uint64](
-            trace_buf_size
-        )
+        var trace_buf_dev = ctx.enqueue_create_buffer[.uint64](trace_buf_size)
         ctx.enqueue_memset(trace_buf_dev, UInt64(0))
 
         ctx.synchronize()

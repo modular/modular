@@ -71,16 +71,14 @@ def swiglu_bias_reference(
     for m in range(M):
         for h in range(H):
             var gate = (
-                full_ptr[m * N + 2 * h] + bias_ptr[2 * h].cast[DType.float32]()
+                full_ptr[m * N + 2 * h] + bias_ptr[2 * h].cast[.float32]()
             )
             var up = (
                 full_ptr[m * N + 2 * h + 1]
-                + bias_ptr[2 * h + 1].cast[DType.float32]()
+                + bias_ptr[2 * h + 1].cast[.float32]()
             )
             var sigmoid = recip(Float32(1.0) + exp(-gate))
-            ref_ptr.store(
-                m * H + h, (gate * sigmoid * up).cast[DType.bfloat16]()
-            )
+            ref_ptr.store(m * H + h, (gate * sigmoid * up).cast[.bfloat16]())
 
 
 def test_swiglu_bias[
@@ -142,7 +140,7 @@ def test_swiglu_bias[
     var b_host = TileTensor(b_host_buf, b_shape)
     var bias_host_buf = ctx.enqueue_create_host_buffer[dtype](bias_size)
     var bias_host = TileTensor(bias_host_buf, bias_shape)
-    var full_host_buf = ctx.enqueue_create_host_buffer[DType.float32](full_size)
+    var full_host_buf = ctx.enqueue_create_host_buffer[.float32](full_size)
     var full_host = TileTensor(full_host_buf, full_shape)
     var c_host_buf = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host = TileTensor(c_host_buf, c_shape)
@@ -155,7 +153,7 @@ def test_swiglu_bias[
     var b_tensor = TileTensor(b_device, b_shape)
     var bias_device = ctx.enqueue_create_buffer[dtype](bias_size)
     var bias_tensor = TileTensor(bias_device, bias_shape)
-    var full_device = ctx.enqueue_create_buffer[DType.float32](full_size)
+    var full_device = ctx.enqueue_create_buffer[.float32](full_size)
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 

@@ -132,7 +132,7 @@ def _local_fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
 
 def main() raises:
     with DeviceContext() as ctx:
-        var out_device = ctx.enqueue_create_buffer[DType.float32](3)
+        var out_device = ctx.enqueue_create_buffer[.float32](3)
         var compiled = ctx.compile_function[_kernel]()
         ctx.enqueue_function(
             compiled, out_device, grid_dim=(1,), block_dim=(TILE_SIZE,)
@@ -146,7 +146,7 @@ def main() raises:
             assert_equal(out_host[1], 136.0)
             assert_equal(out_host[2], 6.0)
 
-        var fill_device = ctx.enqueue_create_buffer[DType.float32](3)
+        var fill_device = ctx.enqueue_create_buffer[.float32](3)
         var fill_compiled = ctx.compile_function[_fill_kernel]()
         ctx.enqueue_function(
             fill_compiled, fill_device, grid_dim=(1,), block_dim=(TILE_SIZE,)
@@ -162,7 +162,7 @@ def main() raises:
             assert_equal(fill_host[2], 2.0)
 
         comptime if not has_apple_gpu_accelerator():
-            var local_device = ctx.enqueue_create_buffer[DType.float32](2)
+            var local_device = ctx.enqueue_create_buffer[.float32](2)
             var local_compiled = ctx.compile_function[_local_fill_kernel]()
             ctx.enqueue_function(
                 local_compiled,

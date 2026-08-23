@@ -319,7 +319,7 @@ def pv_ts_batched_kernel[
         var pair = SIMD[OP_TYPE, 2]()
         pair[0] = p_input[row, g * PART_KEYS + 2 * j][0]
         pair[1] = p_input[row, g * PART_KEYS + 2 * j + 1][0]
-        frag[j] = bitcast[DType.uint32, 1](pair)
+        frag[j] = bitcast[.uint32, 1](pair)
 
     tcgen05_st[datapaths=32, bits=32, repeat=P_FRAG_U32, pack=False](
         a_tmem, frag

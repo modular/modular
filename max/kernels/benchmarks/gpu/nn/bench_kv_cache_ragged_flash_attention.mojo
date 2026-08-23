@@ -110,12 +110,10 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Create device buffers for row offsets and cache lengths
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     var max_context_length: UInt32 = 0
     var max_seq_length: UInt32 = 0
@@ -229,7 +227,7 @@ def execute_kv_cache_ragged_flash_attention[
     var lookup_shape = IndexList[1](batch_size)
     var lookup_runtime = RuntimeLayout[lookup_layout].row_major(lookup_shape)
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](
         lookup_shape.flattened_length()
     )
 
@@ -260,7 +258,7 @@ def execute_kv_cache_ragged_flash_attention[
             IndexList[1](batch_size)
         ),
     )
-    var lookup_table_tensor = LayoutTensor[DType.uint32, lookup_layout](
+    var lookup_table_tensor = LayoutTensor[.uint32, lookup_layout](
         lookup_table_device, lookup_runtime
     )
 
@@ -272,14 +270,14 @@ def execute_kv_cache_ragged_flash_attention[
                 kv_block_tensor.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
             cache_lengths_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_tensor.runtime_layout.shape.value,
                 cache_lengths_tensor.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
             lookup_table_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table_tensor.runtime_layout.shape.value,

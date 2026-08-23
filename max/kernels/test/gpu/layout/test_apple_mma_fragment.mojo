@@ -179,7 +179,7 @@ def mma_1x1_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -198,7 +198,7 @@ def mma_2x2_kernel(
     var b_mat = TileTensor(b_ptr, row_major[_K_2x2, 32]())
     var d_mat = TileTensor(d_ptr, row_major[32, 32]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 2, 2]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 2, 2]()
     var accum = type_of(mma_op).zero_accum()
 
     for k16 in range(_K_2x2 // 16):
@@ -284,7 +284,7 @@ def mma_parent_stride_kernel(
     var a_sub = a_mat.tile[16, 16](1, 2)
     var b_sub = b_mat.tile[16, 16](2, 1)
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_sub, b_sub)
     mma_op.store(accum, d_mat)
@@ -307,7 +307,7 @@ def zero_accum_kernel(
     var d1_tile = TileTensor(d1_ptr, row_major[16, 16]())
     var d2_tile = TileTensor(d2_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d1_tile)
@@ -325,24 +325,20 @@ def test_fragment_load_layout(ctx: DeviceContext) raises:
     print("== test_fragment_load_layout")
 
     # Fill 16x16 tile with tile[r][c] = r * 16 + c
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](
-        _NUM_ELEMENTS
-    )
+    var input_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     for r in range(_N):
         for c in range(_N):
             input_host[r * _N + c] = Float32(r * _N + c)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
-    var output_dev = ctx.enqueue_create_buffer[DType.float32](
-        WARP_SIZE * _FRAG_SIZE
-    )
+    var input_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
+    var output_dev = ctx.enqueue_create_buffer[.float32](WARP_SIZE * _FRAG_SIZE)
     ctx.enqueue_copy(input_dev, input_host)
 
     ctx.enqueue_function[fragment_load_kernel](
         input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var output_host = ctx.enqueue_create_host_buffer[.float32](
         WARP_SIZE * _FRAG_SIZE
     )
     ctx.enqueue_copy(output_host, output_dev)
@@ -374,20 +370,16 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     comptime K = _K_2x2  # 64
 
     # Fill with small integers [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Float16(
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        a_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
     for i in range(K * N):
-        b_host[i] = Float16(
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        b_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -395,7 +387,7 @@ def test_mma_2x2(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -473,7 +465,7 @@ def mma_k32_kernel(
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -487,16 +479,16 @@ def test_mma_k32(ctx: DeviceContext) raises:
     comptime N = 16
     comptime K = 32
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](K * N)
     for i in range(M * K):
         a_host[i] = Float16(Int(random_si64(-2, 2)))
     for i in range(K * N):
         b_host[i] = Float16(Int(random_si64(-2, 2)))
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -504,7 +496,7 @@ def test_mma_k32(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -550,7 +542,7 @@ def mma_shared_kernel(
     var b_tile = TileTensor(b_shared, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -576,7 +568,7 @@ def mma_i8_k32_kernel(
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.int32, DType.int8, 1, 1]()
+    var mma_op = MmaOpApple[.int32, DType.int8, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -590,16 +582,16 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     comptime N = 16
     comptime K = 32
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.int8](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.int8](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.int8](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.int8](K * N)
     for i in range(M * K):
         a_host[i] = Int8(Int(random_si64(-5, 5)))
     for i in range(K * N):
         b_host[i] = Int8(Int(random_si64(-5, 5)))
 
-    var a_dev = ctx.enqueue_create_buffer[DType.int8](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.int8](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.int32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.int8](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.int8](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.int32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -607,7 +599,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.int32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.int32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -660,19 +652,15 @@ def test_parent_stride(ctx: DeviceContext) raises:
     comptime _P = 256  # parent matrix is 256x256
 
     # Fill two 256x256 F16 matrices with small integers
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_P * _P)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_P * _P)
     for i in range(_P * _P):
-        a_host[i] = Float16(
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
-        b_host[i] = Float16(
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        a_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
+        b_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_P * _P)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_P * _P)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_P * _P)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_P * _P)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -680,7 +668,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -725,18 +713,18 @@ def test_zero_accum(ctx: DeviceContext) raises:
     print("== test_zero_accum")
 
     # Fill A and B with small integers
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
             a_host[idx] = Float16((i * 3 + j * 7) % 5 - 2)
             b_host[idx] = Float16((i * 11 + j * 5) % 5 - 2)
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d1_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
-    var d2_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d1_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
+    var d2_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -744,8 +732,8 @@ def test_zero_accum(ctx: DeviceContext) raises:
         a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d1_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
-    var d2_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d1_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
+    var d2_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d1_host, d1_dev)
     ctx.enqueue_copy(d2_host, d2_dev)
     ctx.synchronize()
@@ -789,7 +777,7 @@ def bounded_mma_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -815,7 +803,7 @@ def bounded_store_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -839,21 +827,21 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     comptime K_VALID = 10
 
     # Fill full 16x16 A and B with small integers in [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
             a_host[idx] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
             b_host[idx] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -867,7 +855,7 @@ def test_bounded_mma(ctx: DeviceContext) raises:
         block_dim=(WARP_SIZE),
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -919,28 +907,26 @@ def test_store_bounded(ctx: DeviceContext) raises:
     comptime N_VALID = 14
 
     # Fill full 16x16 A and B with small integers in [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
             a_host[idx] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
             b_host[idx] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
     # Initialize output to -1.0 sentinel
-    var d_host_init = ctx.enqueue_create_host_buffer[DType.float32](
-        _NUM_ELEMENTS
-    )
+    var d_host_init = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     for i in range(_NUM_ELEMENTS):
         d_host_init[i] = Float32(-1.0)
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(d_dev, d_host_init)
@@ -955,7 +941,7 @@ def test_store_bounded(ctx: DeviceContext) raises:
         block_dim=(WARP_SIZE),
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -1022,7 +1008,7 @@ def mma_col_major_a_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -1038,7 +1024,7 @@ def mma_col_major_b_kernel(
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -1054,7 +1040,7 @@ def mma_col_major_ab_kernel(
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -1125,20 +1111,20 @@ def _run_16x16_mma_test[
     """
     print("==", name)
 
-    var a_logical = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_logical = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_logical = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_logical = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             a_logical[i * _N + j] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
             b_logical[i * _N + j] = Float16(
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
     # Store each input in the requested physical layout.
-    var a_phys = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_phys = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_phys = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_phys = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for r in range(_N):
         for c in range(_N):
             var val_a = a_logical[r * _N + c]
@@ -1154,9 +1140,9 @@ def _run_16x16_mma_test[
             else:
                 b_phys[r * _N + c] = val_b
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_phys)
     ctx.enqueue_copy(b_dev, b_phys)
 
@@ -1164,7 +1150,7 @@ def _run_16x16_mma_test[
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 

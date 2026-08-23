@@ -120,7 +120,7 @@ def mha_sm90_dispatch[
     v: KVType,
     num_rows_q: Int,
     mask_functor: MaskType,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -369,7 +369,7 @@ def mha_sm90_dispatch[
             UInt32(num_scheduler_heads),
             decoding=decoding,
         ]
-        var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
+        var schedule = ctx.enqueue_create_buffer[.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
         var scheduler: SchedulerType = SchedulerType(
@@ -460,7 +460,7 @@ def _mha_sm90_sink_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -593,7 +593,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -604,8 +604,8 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     mask: MaskType,
     ctx: DeviceContext,
 ) raises:
-    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[.uint32]
+    comptime KVRowOffsetsNull = NullPointer[.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -721,7 +721,7 @@ def _mha_sm90_valid_length_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -729,7 +729,7 @@ def _mha_sm90_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -764,7 +764,7 @@ def _mha_sm90_valid_length_dispatch[
             ctx,
         )
     else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,

@@ -36,7 +36,7 @@ def test_load_scalar_static_layout() raises:
     comptime layout = Layout.row_major(2, 3)
     var storage: Array[Float32, 6] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 
-    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
+    var tensor = LayoutTensor[.float32, layout](storage.unsafe_ptr())
 
     # Test scalar access at various positions
     var v00: Float32 = tensor.load_scalar(0, 0)
@@ -126,7 +126,7 @@ def test_load_scalar_matches_getitem_lane0() raises:
     for i in range(16):
         storage[i] = Float32(i)
 
-    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
+    var tensor = LayoutTensor[.float32, layout](storage.unsafe_ptr())
 
     # Verify load_scalar matches the 0th lane of __getitem__
     for i in range(4):
@@ -148,7 +148,7 @@ def test_load_scalar_vectorized_element_size_gt_1() raises:
     for i in range(64):
         storage[i] = Float32(i)
 
-    var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
+    var tensor = LayoutTensor[.float32, layout](storage.unsafe_ptr())
 
     # Vectorize to 1x4 elements - this creates a tensor where each "element"
     # is a SIMD[float32, 4] (element_size = 4)

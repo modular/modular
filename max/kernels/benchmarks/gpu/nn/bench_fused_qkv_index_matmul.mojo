@@ -135,7 +135,7 @@ def bench_shape(
     iro_host[batch_size] = UInt32(total_seq)
     var max_ctx = max_seq  # cache_lengths are all 0 here
 
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
@@ -147,7 +147,7 @@ def bench_shape(
     )
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
@@ -168,7 +168,7 @@ def bench_shape(
         for p in range(pages):
             lut_host[b * lut_cols + p] = UInt32(block_counter)
             block_counter += 1
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size * lut_cols)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
     var lut_tensor = LayoutTensor[
         mut=False, DType.uint32, Layout.row_major[2]()

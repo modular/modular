@@ -61,7 +61,7 @@ def splat[
         corresponding element in `value` is `True`, or filled with `0` bits
         otherwise.
     """
-    return (-(value.cast[DType.int8]())).cast[dtype]()
+    return (-(value.cast[.int8]())).cast[dtype]()
 
 
 @always_inline
@@ -75,4 +75,4 @@ def splat(value: Bool) -> Int:
         A bitmask filled with `1` if the value is `True`, filled with `0`
         otherwise.
     """
-    return Int(splat[DType.int](Scalar[DType.bool](value)))
+    return Int(splat[.int](Scalar[.bool](value)))

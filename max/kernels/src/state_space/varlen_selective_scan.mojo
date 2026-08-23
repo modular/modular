@@ -146,7 +146,7 @@ def varlen_selective_state_update_gpu[
             )
             var bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(dt_bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             dt_val += bias_val
 
         # Apply softplus if requested
@@ -190,7 +190,7 @@ def varlen_selective_state_update_gpu[
             )
             var state_val = Scalar[kernel_dtype](
                 state.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             # Update state: state = state * dA + dB * x
             state_val = state_val * dA + dB * x_val
@@ -339,14 +339,14 @@ def varlen_selective_scan_fwd_gpu[
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
-        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[DType.float32]()
+        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[.float32]()
 
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
         var bias_offset = UInt32(d * delta_bias_strides[0])
         delta_bias_val = Scalar[kernel_dtype](
             delta_bias.raw_load(bias_offset)
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
@@ -354,8 +354,7 @@ def varlen_selective_scan_fwd_gpu[
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
-            * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
         )
 
     # Determine group for this _dim
@@ -380,7 +379,7 @@ def varlen_selective_scan_fwd_gpu[
             )
             state[n] = Scalar[kernel_dtype](
                 ssm_states.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
     # Process sequence
     for t in range(seq_len):
@@ -559,7 +558,7 @@ def varlen_selective_state_update_cpu[
             )
             var bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(dt_bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             dt_val += bias_val
 
         # Apply softplus if requested
@@ -601,7 +600,7 @@ def varlen_selective_state_update_cpu[
             )
             var state_val = Scalar[kernel_dtype](
                 state.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             # Update state
             state_val = state_val * dA + dB * x_val
@@ -712,7 +711,7 @@ def varlen_selective_scan_fwd_cpu[
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
                 delta_bias.raw_load(bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
         var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
@@ -720,7 +719,7 @@ def varlen_selective_scan_fwd_cpu[
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
                 * LOG2E
             )
 
@@ -758,7 +757,7 @@ def varlen_selective_scan_fwd_cpu[
                     )
                     state[n] = Scalar[kernel_dtype](
                         ssm_states.raw_load(state_offset)
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
 
             # Process sequence
             for t in range(seq_len):
@@ -779,7 +778,7 @@ def varlen_selective_scan_fwd_cpu[
                 )
                 var delta_val = Scalar[kernel_dtype](
                     delta.raw_load(delta_offset)
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
                 if has_delta_bias:
                     delta_val += delta_bias_val

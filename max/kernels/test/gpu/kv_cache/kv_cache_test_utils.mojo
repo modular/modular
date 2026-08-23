@@ -113,7 +113,7 @@ def assert_no_nan_inf[
     var host = output.tensor[update=True]()
     var n = host.runtime_layout.size()
     for i in range(n):
-        var v = host.ptr[i].cast[DType.float32]()
+        var v = host.ptr[i].cast[.float32]()
         if isnan(v):
             raise Error(
                 String("NaN at element ")
@@ -245,7 +245,7 @@ struct CacheLengthsTable(Copyable):
 
 
 struct PagedLookupTable[page_size: Int](Copyable):
-    var paged_lut: _KVCacheTestTensor[DType.uint32, Layout.row_major[2](), 2]
+    var paged_lut: _KVCacheTestTensor[.uint32, Layout.row_major[2](), 2]
 
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int

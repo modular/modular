@@ -5365,7 +5365,7 @@ struct TMATensorTileArray[
     @always_inline
     def __init__(
         out self,
-        mut tensormaps_device: DeviceBuffer[DType.uint8],
+        mut tensormaps_device: DeviceBuffer[.uint8],
     ):
         """
         Initializes a new TMATensorTileArray.
@@ -5846,9 +5846,9 @@ struct RaggedTensorMap[
     """The TMA descriptor that will be used to store the ragged tensor."""
     var max_length: Int
     """The maximum length present in the sequences of the ragged tensor."""
-    var global_shape: DynamicCoord[DType.int64, Self.global_rank]
+    var global_shape: DynamicCoord[.int64, Self.global_rank]
     """The shape of the global tensor."""
-    var global_stride: DynamicCoord[DType.int64, Self.global_rank]
+    var global_stride: DynamicCoord[.int64, Self.global_rank]
     """The stride of the global tensor."""
 
     comptime global_rank = Self.remaining_global_dim_rank + 3

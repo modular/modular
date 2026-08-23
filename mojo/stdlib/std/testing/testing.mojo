@@ -315,7 +315,7 @@ def assert_almost_equal[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     comptime assert (
-        dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
+        dtype == .bool or dtype.is_integral() or dtype.is_floating_point()
     ), "type must be boolean, integral, or floating-point"
 
     var almost_equal = isclose(

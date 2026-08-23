@@ -853,7 +853,7 @@ struct ReduceMax[
     def __init__(out self):
         """Identity: `acc = MIN_W` (`False` for bool: max is logical OR)."""
         comptime assert (
-            Self.dtype.is_numeric() or Self.dtype == DType.bool
+            Self.dtype.is_numeric() or Self.dtype == .bool
         ), "ReduceMax requires a numeric or bool dtype"
         self.acc = SIMD[Self.dtype, Self.W](min_finite[Self.dtype]())
 
@@ -915,9 +915,9 @@ struct ReduceMax[
             A width-1 `ReduceMax` holding the maximum in `acc[0]`.
         """
         var r = Self.Single()
-        comptime if Self.dtype == DType.bool:
+        comptime if Self.dtype == .bool:
             r.acc = SIMD[Self.dtype, 1](
-                self.acc.cast[DType.uint8]().reduce_max().cast[DType.bool]()
+                self.acc.cast[.uint8]().reduce_max().cast[.bool]()
             )
         else:
             r.acc[0] = self.acc.reduce_max()
@@ -981,7 +981,7 @@ struct ReduceMin[
     def __init__(out self):
         """Identity: `acc = MAX_W` (`True` for bool: min is logical AND)."""
         comptime assert (
-            Self.dtype.is_numeric() or Self.dtype == DType.bool
+            Self.dtype.is_numeric() or Self.dtype == .bool
         ), "ReduceMin requires a numeric or bool dtype"
         self.acc = SIMD[Self.dtype, Self.W](max_finite[Self.dtype]())
 
@@ -1043,9 +1043,9 @@ struct ReduceMin[
             A width-1 `ReduceMin` holding the minimum in `acc[0]`.
         """
         var r = Self.Single()
-        comptime if Self.dtype == DType.bool:
+        comptime if Self.dtype == .bool:
             r.acc = SIMD[Self.dtype, 1](
-                self.acc.cast[DType.uint8]().reduce_min().cast[DType.bool]()
+                self.acc.cast[.uint8]().reduce_min().cast[.bool]()
             )
         else:
             r.acc[0] = self.acc.reduce_min()

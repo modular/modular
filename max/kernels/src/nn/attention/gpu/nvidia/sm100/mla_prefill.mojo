@@ -106,7 +106,7 @@ def mla_sm100_prefill[
         ctx: GPU device context.
     """
     comptime assert (
-        output_type == DType.bfloat16
+        output_type == .bfloat16
     ), "Only support bfloat16 output for SM100 MLA prefill"
     comptime assert (
         KVType.dtype == VType.dtype
@@ -176,7 +176,7 @@ def mla_sm100_prefill_sparse[
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -280,7 +280,7 @@ def mla_sm100_prefill_sparse_fp8[
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[.uint32, address_space=AddressSpace.GENERIC, ...],
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],

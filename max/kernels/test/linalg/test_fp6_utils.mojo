@@ -39,8 +39,8 @@ def _assert_bit_identical[
 ](code: Int, got: Float32, expected: Float32) raises:
     """Compares as raw bits so `+0.0` and `-0.0` do not compare equal."""
     assert_equal(
-        Int(bitcast[DType.uint32](got)),
-        Int(bitcast[DType.uint32](expected)),
+        Int(bitcast[.uint32](got)),
+        Int(bitcast[.uint32](expected)),
         String("code ") + String(code) + " decoded to the wrong bit pattern",
     )
 
@@ -88,8 +88,8 @@ def _check_decode_bf16_exact[fmt: FP6Format]() raises:
         var as_f32 = decode_fp6_to_f32[fmt](UInt8(UInt8(code)))
         var as_bf16 = decode_fp6_to_bf16[fmt](UInt8(UInt8(code)))
         assert_equal(
-            Int(bitcast[DType.uint32](as_bf16[0].cast[DType.float32]())),
-            Int(bitcast[DType.uint32](as_f32[0])),
+            Int(bitcast[.uint32](as_bf16[0].cast[.float32]())),
+            Int(bitcast[.uint32](as_f32[0])),
             String("code ") + String(code) + " lost precision in bfloat16",
         )
 
@@ -283,7 +283,7 @@ def _check_even_scale_round_trip[fmt: FP6Format]() raises:
     for i in range(8):
         var block_max = probes[i]
         var scale = compute_mxfp6_even_scale[fmt](block_max)
-        var scale_f32 = scale.cast[DType.float32]()
+        var scale_f32 = scale.cast[.float32]()
         assert_true(scale_f32 > 0.0, "scale must be positive and finite")
 
         var code = encode_f32_to_fp6[fmt](Float32(block_max / scale_f32))

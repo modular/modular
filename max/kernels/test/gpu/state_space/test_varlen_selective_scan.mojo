@@ -79,7 +79,7 @@ def run_varlen_selective_scan_fwd_gpu[
     var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
     var query_start_loc_h = alloc[Int32](batch + 1)
     var cache_indices_h = alloc[Int32](batch)
-    var has_initial_state_h = alloc[Scalar[DType.bool]](batch)
+    var has_initial_state_h = alloc[Scalar[.bool]](batch)
 
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_2d](
@@ -152,7 +152,7 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Initialize has_initial_state (all False)
     for i in range(batch):
-        has_initial_state_h.store(i, Scalar[DType.bool](False))
+        has_initial_state_h.store(i, Scalar[.bool](False))
 
     # Copy z for GPU
     if has_z:
@@ -210,15 +210,15 @@ def run_varlen_selective_scan_fwd_gpu[
         delta_bias_h,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    var query_start_loc_cpu = LayoutTensor[DType.int32, layout_1d](
+    var query_start_loc_cpu = LayoutTensor[.int32, layout_1d](
         query_start_loc_h,
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
-    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d](
+    var cache_indices_cpu = LayoutTensor[.int32, layout_1d](
         cache_indices_h,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
-    var has_initial_state_cpu = LayoutTensor[DType.bool, layout_1d](
+    var has_initial_state_cpu = LayoutTensor[.bool, layout_1d](
         has_initial_state_h,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
@@ -333,9 +333,9 @@ def run_varlen_selective_scan_fwd_gpu[
     var D_d = ctx.enqueue_create_buffer[dtype](max(D_size, 1))
     var z_d = ctx.enqueue_create_buffer[dtype](max(z_size, 1))
     var delta_bias_d = ctx.enqueue_create_buffer[dtype](max(delta_bias_size, 1))
-    var query_start_loc_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-    var cache_indices_d = ctx.enqueue_create_buffer[DType.int32](batch)
-    var has_initial_state_d = ctx.enqueue_create_buffer[DType.bool](batch)
+    var query_start_loc_d = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var cache_indices_d = ctx.enqueue_create_buffer[.int32](batch)
+    var has_initial_state_d = ctx.enqueue_create_buffer[.bool](batch)
 
     # Copy to device
     ctx.enqueue_copy(u_d, u_h)

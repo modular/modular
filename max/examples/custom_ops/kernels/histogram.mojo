@@ -118,8 +118,8 @@ struct Histogram:
     def execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype=DType.int64, rank=1, ...],
-        input: InputTensor[dtype=DType.uint8, rank=1, ...],
+        output: OutputTensor[dtype=.int64, rank=1, ...],
+        input: InputTensor[dtype=.uint8, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         comptime if is_cpu[target]():

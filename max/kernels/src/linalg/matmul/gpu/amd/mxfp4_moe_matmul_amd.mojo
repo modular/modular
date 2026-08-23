@@ -189,14 +189,14 @@ struct MXFP4MoERoutedMatmul[
         N_padded_scale: Int,
     ](
         c: TileTensor[mut=True, Storage=PointerStorage[], ...],
-        a_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
-        b_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
-        sfa_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
-        sfb_pre_tt: TileTensor[DType.uint8, Storage=PointerStorage[], ...],
+        a_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        b_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        sfa_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        sfb_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
         sorted_token_ids: TileTensor[
             DType.uint32, Storage=PointerStorage[], ...
         ],
-        expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+        expert_ids: TileTensor[.int32, Storage=PointerStorage[], ...],
         num_tokens: Int32,
         size_expert_ids: Int32,
     ):
@@ -298,7 +298,7 @@ struct MXFP4MoERoutedMatmul[
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
-        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[.uint8, AddressSpace.SHARED](
             row_major[Self.BM, Self.BK_BYTES]()
         )
 
@@ -354,7 +354,7 @@ struct MXFP4MoERoutedMatmul[
                     + k_iter * Self.BK_BYTES
                     + col_thread * simd_width
                 )
-                var data = a_bc.load[DType.uint8, simd_width](Int32(a_byte_off))
+                var data = a_bc.load[.uint8, simd_width](Int32(a_byte_off))
                 var local_row = row_thread + i * load_thread_rows
                 var smem_byte_off = (
                     local_row * Self.BK_BYTES + col_thread * simd_width
@@ -513,12 +513,12 @@ def _mxfp4_moe_matmul_routed_kernel[
     num_warps_n: Int,
 ](
     c: TileTensor[mut=True, out_dtype, CLayout, MutAnyOrigin],
-    a: TileTensor[DType.uint8, ALayout, ImmutAnyOrigin],
-    b_pre: TileTensor[DType.uint8, BLayout, ImmutAnyOrigin],
-    sfa_pre: TileTensor[DType.uint8, SFALayout, ImmutAnyOrigin],
-    sfb_pre: TileTensor[DType.uint8, SFBLayout, ImmutAnyOrigin],
-    sorted_token_ids: TileTensor[DType.uint32, STILayout, ImmutAnyOrigin],
-    expert_ids: TileTensor[DType.int32, EILayout, ImmutAnyOrigin],
+    a: TileTensor[.uint8, ALayout, ImmutAnyOrigin],
+    b_pre: TileTensor[.uint8, BLayout, ImmutAnyOrigin],
+    sfa_pre: TileTensor[.uint8, SFALayout, ImmutAnyOrigin],
+    sfb_pre: TileTensor[.uint8, SFBLayout, ImmutAnyOrigin],
+    sorted_token_ids: TileTensor[.uint32, STILayout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, EILayout, ImmutAnyOrigin],
     num_tokens: Int32,
     size_expert_ids: Int32,
 ):
@@ -555,12 +555,12 @@ def mxfp4_moe_matmul_amd_routed[
     num_warps_n: Int = 2,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[DType.uint8, ...],
-    b_pre: TileTensor[DType.uint8, ...],
-    sfa_pre: TileTensor[DType.uint8, ...],
-    sfb_pre: TileTensor[DType.uint8, ...],
-    sorted_token_ids: TileTensor[DType.uint32, ...],
-    expert_ids: TileTensor[DType.int32, ...],
+    a: TileTensor[.uint8, ...],
+    b_pre: TileTensor[.uint8, ...],
+    sfa_pre: TileTensor[.uint8, ...],
+    sfb_pre: TileTensor[.uint8, ...],
+    sorted_token_ids: TileTensor[.uint32, ...],
+    expert_ids: TileTensor[.int32, ...],
     num_tokens: Int,
     size_expert_ids: Int,
     ctx: DeviceContext,
@@ -659,12 +659,12 @@ def mxfp4_moe_matmul_amd_routed_dispatch[
     INPUT_ROW_MODE: InputRowMode = InputRowMode.TOKEN_ID,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[DType.uint8, ...],
-    b_pre: TileTensor[DType.uint8, ...],
-    sfa_pre: TileTensor[DType.uint8, ...],
-    sfb_pre: TileTensor[DType.uint8, ...],
-    sorted_token_ids: TileTensor[DType.uint32, ...],
-    expert_ids: TileTensor[DType.int32, ...],
+    a: TileTensor[.uint8, ...],
+    b_pre: TileTensor[.uint8, ...],
+    sfa_pre: TileTensor[.uint8, ...],
+    sfb_pre: TileTensor[.uint8, ...],
+    sorted_token_ids: TileTensor[.uint32, ...],
+    expert_ids: TileTensor[.int32, ...],
     num_tokens: Int,
     size_expert_ids: Int,
     max_tokens_per_expert: Int,

@@ -74,7 +74,7 @@ def time_kernel(
 
 def test_case_batched[
     dtype: DType,
-    out_idx_type: DType = DType.int,
+    out_idx_type: DType = .int,
     rank: Int = 2,
 ](
     ctx: DeviceContext,
@@ -148,10 +148,10 @@ def test_case_batched[
 
     # Create K buffers
     var K_shape = IndexList[1](batch_size)
-    var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](
+    var K_device_buffer = ctx.enqueue_create_buffer[.int64](
         K_shape.flattened_length()
     )
-    var K_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+    var K_host_ptr = ctx.enqueue_create_host_buffer[.int64](
         K_shape.flattened_length()
     )
     for i in range(batch_size):
@@ -259,7 +259,7 @@ def test_case_batched[
         var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
             out_vals_shape.flattened_length()
         )
-        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[.int64](
             out_vals_shape.flattened_length()
         )
 
@@ -311,7 +311,7 @@ def test_case_batched[
                 topk_vals_cpu_ptr[i],
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -332,7 +332,7 @@ def test_case_batched[
 def test_case_multi_rank[
     dtype: DType,
     rank: Int,
-    out_idx_type: DType = DType.int,
+    out_idx_type: DType = .int,
 ](
     ctx: DeviceContext,
     test_case: TestCaseMultiRank[rank=rank, ...],
@@ -401,13 +401,13 @@ def test_case_multi_rank[
 
     # Create K buffers
     var K_shape = IndexList[1](batch_size)
-    var K_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+    var K_host_ptr = ctx.enqueue_create_host_buffer[.int64](
         K_shape.flattened_length()
     )
     for i in range(batch_size):
         K_host_ptr[i] = Int64(K)
 
-    var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](
+    var K_device_buffer = ctx.enqueue_create_buffer[.int64](
         K_shape.flattened_length()
     )
     ctx.enqueue_copy(K_device_buffer, K_host_ptr)
@@ -457,7 +457,7 @@ def test_case_multi_rank[
         var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
             out_vals_shape.flattened_length()
         )
-        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[.int64](
             out_idxs_shape.flattened_length()
         )
 
@@ -488,7 +488,7 @@ def test_case_multi_rank[
                 topk_vals_cpu_ptr[i],
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_equal(
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -737,8 +737,8 @@ def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
     comptime batch_size = 2
 
     var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
-    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var device_out = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var device_temp = ctx.enqueue_create_buffer[.float32](batch_size)
+    var device_out = ctx.enqueue_create_buffer[.int32](batch_size)
 
     # All-zero logits at temperature 0: the case that divides by zero without
     # the clamp.
@@ -791,10 +791,10 @@ def test_gumbel_fused_matches_two_kernel[
     )
 
     var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
-    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var device_seed = ctx.enqueue_create_buffer[DType.uint64](batch_size)
-    var out_ref = ctx.enqueue_create_buffer[DType.int32](batch_size)
-    var out_fused = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var device_temp = ctx.enqueue_create_buffer[.float32](batch_size)
+    var device_seed = ctx.enqueue_create_buffer[.uint64](batch_size)
+    var out_ref = ctx.enqueue_create_buffer[.int32](batch_size)
+    var out_fused = ctx.enqueue_create_buffer[.int32](batch_size)
 
     with device_in.map_to_host() as in_host:
         for i in range(batch_size * N):
@@ -878,15 +878,15 @@ def test_topk_zero_k_row[dtype: DType](ctx: DeviceContext) raises:
 
     # Device buffers; host staging is handled by `map_to_host()` below.
     var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
-    var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var K_device_buffer = ctx.enqueue_create_buffer[.int64](batch_size)
     var device_out_vals = ctx.enqueue_create_buffer[dtype](batch_size * max_k)
-    var device_out_idxs = ctx.enqueue_create_buffer[DType.int32](
+    var device_out_idxs = ctx.enqueue_create_buffer[.int32](
         batch_size * out_idx_len
     )
     var device_local_topk_vals = ctx.enqueue_create_buffer[dtype](
         batch_size * num_blocks_per_input_ * max_k
     )
-    var device_local_topk_idxs = ctx.enqueue_create_buffer[DType.int32](
+    var device_local_topk_idxs = ctx.enqueue_create_buffer[.int32](
         batch_size * num_blocks_per_input_ * max_k
     )
 
@@ -1202,7 +1202,7 @@ def main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case_21)
-        test_case_batched[DType.float32](ctx, test_case_21, fill_random)
+        test_case_batched[.float32](ctx, test_case_21, fill_random)
 
         comptime test_case_22 = TestCase[_sampling=False](
             N=50,
@@ -1211,7 +1211,7 @@ def main() raises:
             batch_size=1,
         )
         print_test_case(test_case_22)
-        test_case_batched[DType.float32](ctx, test_case_22, fill_random)
+        test_case_batched[.float32](ctx, test_case_22, fill_random)
 
         # Test with zero batch size
         comptime test_case_23 = TestCase[_sampling=False](

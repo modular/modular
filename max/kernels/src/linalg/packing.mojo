@@ -87,14 +87,14 @@ struct PackMatrixRows[
         Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix
-    var global_offset: DynamicCoord[DType.int64, 2]
+    var global_offset: DynamicCoord[.int64, 2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: DynamicCoord[DType.int64, 2]
+    var pack_tile_dim: DynamicCoord[.int64, 2]
     # valid data bound within the tile.
-    var valid_data_dim: DynamicCoord[DType.int64, 2]
+    var valid_data_dim: DynamicCoord[.int64, 2]
     # valid multiple-of-simd data bound within the tile.
-    var valid_simd_dim: DynamicCoord[DType.int64, 2]
+    var valid_simd_dim: DynamicCoord[.int64, 2]
 
     # Interface method:
     #  run the packing and store to the given buffer.
@@ -367,12 +367,12 @@ struct PackMatrixCols[
         Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix:
-    var global_offset: DynamicCoord[DType.int64, 2]
+    var global_offset: DynamicCoord[.int64, 2]
     # number of Row and Col to pack.
     #  in [Row, Col]
-    var pack_tile_dim: DynamicCoord[DType.int64, 2]
+    var pack_tile_dim: DynamicCoord[.int64, 2]
     # valid data bound within the tile.
-    var valid_data_dim: DynamicCoord[DType.int64, 2]
+    var valid_data_dim: DynamicCoord[.int64, 2]
 
     # Interface function:
     @staticmethod
@@ -1033,7 +1033,7 @@ struct BTileGenerator[
         Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutUntrackedOrigin]
-    var tile_n_k: DynamicCoord[DType.int64, 2]
+    var tile_n_k: DynamicCoord[.int64, 2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline

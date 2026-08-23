@@ -93,7 +93,7 @@ def test[
     m: Int,
     n: Int,
     k: Int,
-    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
     comptime assert Bool(N) and Bool(
@@ -316,10 +316,10 @@ def main() raises:
             N=Int(12288),
             K=Int(4096),
         ](ctx, 512, 12288, 4096)
-        test[DType.float32, arange_a=True, N=Int(384), K=Int(128)](
+        test[.float32, arange_a=True, N=Int(384), K=Int(128)](
             ctx, 256, 384, 128
         )
-        test[DType.float32, arange_b=True, N=Int(4096), K=Int(4096)](
+        test[.float32, arange_b=True, N=Int(4096), K=Int(4096)](
             ctx, 128, 4096, 4096
         )
         test[
@@ -329,9 +329,9 @@ def main() raises:
             N=Int(12288),
             K=Int(4096),
         ](ctx, 512, 12288, 4096)
-        test[DType.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
-        test[DType.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
-        test[DType.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
+        test[.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
+        test[.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
+        test[.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
 
         print("===> bfloat16-float32 mma")
         test[
@@ -351,7 +351,7 @@ def main() raises:
             N=Int(128),
             K=Int(128),
         ](ctx, 100, 128, 128)
-        test[DType.bfloat16, arange_b=True, N=Int(12288), K=Int(3072)](
+        test[.bfloat16, arange_b=True, N=Int(12288), K=Int(3072)](
             ctx, 1024, 12288, 3072
         )
         test[
@@ -361,8 +361,8 @@ def main() raises:
             N=Int(5120),
             K=Int(3072),
         ](ctx, 1024, 5120, 3072)
-        test[DType.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
-        test[DType.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
+        test[.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
+        test[.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
 
         comptime if has_nvidia_gpu_accelerator():
             test[

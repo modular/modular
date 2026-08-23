@@ -143,10 +143,10 @@ def _small_sigma1(x: UInt32) -> UInt32:
 def _load_be_u32(data: Span[Byte, _], offset: Int) -> UInt32:
     """Load a 32-bit big-endian integer from the data."""
     return (
-        (data[offset].cast[DType.uint32]() << 24)
-        | (data[offset + 1].cast[DType.uint32]() << 16)
-        | (data[offset + 2].cast[DType.uint32]() << 8)
-        | (data[offset + 3].cast[DType.uint32]())
+        (data[offset].cast[.uint32]() << 24)
+        | (data[offset + 1].cast[.uint32]() << 16)
+        | (data[offset + 2].cast[.uint32]() << 8)
+        | (data[offset + 3].cast[.uint32]())
     )
 
 

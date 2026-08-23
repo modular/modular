@@ -113,9 +113,9 @@ def _resolve_impl[impl: StaticString, dtype: DType]() -> StaticString:
             return "cudnn"
         else:
             comptime if has_amd_gpu_accelerator() and (
-                dtype == DType.float8_e4m3fn
-                or dtype == DType.bfloat16
-                or dtype == DType.float16
+                dtype == .float8_e4m3fn
+                or dtype == .bfloat16
+                or dtype == .float16
             ):
                 return "amd_4wave"
             else:
@@ -379,9 +379,7 @@ def bench_conv2d[
             " accelerator (e.g. amdgpu:mi355) or pick a different impl."
         )
         comptime assert (
-            dtype == DType.float8_e4m3fn
-            or dtype == DType.bfloat16
-            or dtype == DType.float16
+            dtype == .float8_e4m3fn or dtype == .bfloat16 or dtype == .float16
         ), (
             "impl=amd_4wave requires dtype in"
             " {float8_e4m3fn, bfloat16, float16}."
@@ -389,7 +387,7 @@ def bench_conv2d[
         # FP8 accumulates into BF16; bf16/fp16 keep their input dtype
         # for the output (matches `structured_4wave_matmul`).
         comptime out_dtype = (
-            DType.bfloat16 if dtype == DType.float8_e4m3fn else dtype
+            DType.bfloat16 if dtype == .float8_e4m3fn else dtype
         )
 
         # Comptime H_out / W_out for the kernel's template params.
@@ -587,8 +585,8 @@ def bench_conv2d[
         ctx.synchronize()
         var max_diff: Float32 = 0.0
         for i in range(output_size):
-            var a = output_host[i].cast[DType.float32]()
-            var c = output_ref_host[i].cast[DType.float32]()
+            var a = output_host[i].cast[.float32]()
+            var c = output_ref_host[i].cast[.float32]()
             var d = abs(a - c)
             if d > max_diff:
                 max_diff = d

@@ -350,7 +350,7 @@ def test_conv_transpose_shape_basic() raises:
 
 
 def test_2d_stride_3_2_pad_1_1_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -364,7 +364,7 @@ def test_2d_stride_3_2_pad_1_1_2_2() raises:
 
 
 def test_2d_basic_no_pad() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -378,7 +378,7 @@ def test_2d_basic_no_pad() raises:
 
 
 def test_2d_dilation_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -392,7 +392,7 @@ def test_2d_dilation_2_2() raises:
 
 
 def test_2d_stride_3_2_kernel_2_2() raises:
-    test_conv_transposed[DType.float32, 2](
+    test_conv_transposed[.float32, 2](
         1,  # N
         Index(3, 3),
         1,  # C
@@ -406,7 +406,7 @@ def test_2d_stride_3_2_kernel_2_2() raises:
 
 
 def test_3d_stride_1_3_2() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(2, 3, 3),
         1,  # C
@@ -420,7 +420,7 @@ def test_3d_stride_1_3_2() raises:
 
 
 def test_3d_stride_2_1_2_dilation_1_1_2() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(3, 4, 7),
         1,  # C
@@ -434,7 +434,7 @@ def test_3d_stride_2_1_2_dilation_1_1_2() raises:
 
 
 def test_3d_with_padding() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(4, 3, 3),
         1,  # C
@@ -448,7 +448,7 @@ def test_3d_with_padding() raises:
 
 
 def test_3d_complex_padding_dilation() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(4, 5, 7),
         1,  # C
@@ -462,7 +462,7 @@ def test_3d_complex_padding_dilation() raises:
 
 
 def test_3d_multi_channel() raises:
-    test_conv_transposed[DType.float32, 3](
+    test_conv_transposed[.float32, 3](
         1,  # N
         Index(5, 5, 5),
         4,  # C

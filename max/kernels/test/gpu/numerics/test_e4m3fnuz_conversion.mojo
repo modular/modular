@@ -182,7 +182,7 @@ def test_e4m3fnuz_initialization():
         208.0,
         224.0,
         240.0,
-        nan[DType.float8_e4m3fnuz](),
+        nan[.float8_e4m3fnuz](),
         -0.0009765625,
         -0.001953125,
         -0.0029296875,
@@ -321,7 +321,7 @@ def test_e4m3fnuz_initialization():
 def test_simd_e4m3fnuz_to_float[target: DType]():
     var float8_simd = SIMD[.float8_e4m3fnuz, 256](0.0)
     for i in range(256):
-        float8_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
+        float8_simd[i] = bitcast[.float8_e4m3fnuz](UInt8(i))
 
     var target_casted = float8_simd.cast[target]()
 
@@ -368,7 +368,7 @@ def test_simd_e4m3fnuz_to_float[target: DType]():
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 def test_simd_e4m3fnuz_to_f32():
     print("== test_simd_e4m3fnuz_to_f32")
-    test_simd_e4m3fnuz_to_float[DType.float32]()
+    test_simd_e4m3fnuz_to_float[.float32]()
 
 
 # CHECK-LABEL: test_simd_e4m3fnuz_to_f16
@@ -406,7 +406,7 @@ def test_simd_e4m3fnuz_to_f32():
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 def test_simd_e4m3fnuz_to_f16():
     print("== test_simd_e4m3fnuz_to_f16")
-    test_simd_e4m3fnuz_to_float[DType.float16]()
+    test_simd_e4m3fnuz_to_float[.float16]()
 
 
 # CHECK-LABEL: test_simd_e4m3fnuz_to_bf16
@@ -444,7 +444,7 @@ def test_simd_e4m3fnuz_to_f16():
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
 def test_simd_e4m3fnuz_to_bf16():
     print("== test_simd_e4m3fnuz_to_bf16")
-    test_simd_e4m3fnuz_to_float[DType.bfloat16]()
+    test_simd_e4m3fnuz_to_float[.bfloat16]()
 
 
 # CHECK-LABEL: test_simd_f32_to_e4m3fnuz
@@ -521,7 +521,7 @@ def test_simd_f32_to_e4m3fnuz():
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 
-    var f32_casted_e5m2 = f32_simd.cast[DType.float8_e4m3fnuz]()
+    var f32_casted_e5m2 = f32_simd.cast[.float8_e4m3fnuz]()
 
     for i in range(64):
         for j in range(8):
@@ -568,9 +568,9 @@ def test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
     comptime M = 256
     var e4m3_simd = SIMD[.float8_e4m3fnuz, M](0.0)
     for i in range(M):
-        e4m3_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
+        e4m3_simd[i] = bitcast[.float8_e4m3fnuz](UInt8(i))
 
-    comptime kernel = test_simd_float8[DType.float8_e4m3fnuz, M, DType.float32]
+    comptime kernel = test_simd_float8[.float8_e4m3fnuz, M, DType.float32]
     ctx.enqueue_function[kernel](e4m3_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 

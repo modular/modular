@@ -329,12 +329,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ).cast[.float64]()
                     var actual = flash_output_ptr.load(
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ).cast[.float64]()
                     if abs((actual - expect)) > 1e-1:
                         if num_mismatches < 10:
                             print(b, h, s, d, actual, expect)

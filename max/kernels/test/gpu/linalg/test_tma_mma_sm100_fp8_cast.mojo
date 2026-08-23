@@ -89,8 +89,8 @@ def cpu_matmul_naive[
                 else:
                     b_idx = k * N + n
                 acc += (
-                    A.ptr.load(a_idx).cast[DType.float32]()
-                    * B.ptr.load(b_idx).cast[DType.float32]()
+                    A.ptr.load(a_idx).cast[.float32]()
+                    * B.ptr.load(b_idx).cast[.float32]()
                 )
             var c_idx = m * N + n
             C.ptr.store(c_idx, acc.cast[C.dtype]())
@@ -129,10 +129,10 @@ def tma_umma_kernel_sgs[
     var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
-        a_type == DType.bfloat16
+        a_type == .bfloat16
     ), "a_type must be bfloat16 for this kernel"
     comptime assert (
-        b_gmem_type == DType.float8_e4m3fn
+        b_gmem_type == .float8_e4m3fn
     ), "b_gmem_type must be float8_e4m3fn for this kernel"
 
     comptime BM = block_tile_shape[0]
@@ -512,7 +512,7 @@ def test_tma_umma_fp8_b[
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_gmem_type, b_layout](ctx)
     # Create a BF16 copy of B for reference computation (cuBLAS needs matching types)
-    var b_bf16 = ManagedLayoutTensor[DType.bfloat16, b_layout](ctx)
+    var b_bf16 = ManagedLayoutTensor[.bfloat16, b_layout](ctx)
 
     var b_extreme: Float32 = 10
     random(

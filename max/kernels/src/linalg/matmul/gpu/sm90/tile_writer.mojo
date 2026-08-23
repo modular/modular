@@ -589,7 +589,7 @@ struct FragmentToSMemWriter[
         comptime packed_width = elements_per_op // 2  # BF16 pairs packed as float32
 
         # Pack BF16 pairs into float32 (hardware requirement)
-        var packed_data = bitcast[DType.float32, packed_width](data)
+        var packed_data = bitcast[.float32, packed_width](data)
 
         # Get swizzled offset for bank conflict avoidance
         var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()

@@ -55,8 +55,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = math_fn(in_host[i])
 
-            comptime atol = 1e-05 if dtype == DType.float32 else 1e-4
-            comptime rtol = 2e-05 if dtype == DType.float32 else 2e-2
+            comptime atol = 1e-05 if dtype == .float32 else 1e-4
+            comptime rtol = 2e-05 if dtype == .float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -110,18 +110,18 @@ def _test_sinh[
 
 def test_math_accuracy() raises:
     with DeviceContext() as ctx:
-        _test_exp[DType.float32](ctx)
-        _test_exp[DType.float16](ctx)
-        _test_exp[DType.bfloat16](ctx)
-        _test_exp2[DType.float32](ctx)
-        _test_exp2[DType.float16](ctx)
-        _test_exp2[DType.bfloat16](ctx)
-        _test_cosh[DType.float32](ctx)
-        _test_cosh[DType.float16](ctx)
-        _test_cosh[DType.bfloat16](ctx)
-        _test_sinh[DType.float32](ctx)
-        _test_sinh[DType.float16](ctx)
-        _test_sinh[DType.bfloat16](ctx)
+        _test_exp[.float32](ctx)
+        _test_exp[.float16](ctx)
+        _test_exp[.bfloat16](ctx)
+        _test_exp2[.float32](ctx)
+        _test_exp2[.float16](ctx)
+        _test_exp2[.bfloat16](ctx)
+        _test_cosh[.float32](ctx)
+        _test_cosh[.float16](ctx)
+        _test_cosh[.bfloat16](ctx)
+        _test_sinh[.float32](ctx)
+        _test_sinh[.float16](ctx)
+        _test_sinh[.bfloat16](ctx)
 
 
 def main() raises:

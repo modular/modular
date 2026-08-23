@@ -58,7 +58,7 @@ def _initialize_ragged_inputs[
     prompt_lens: List[Int],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    DeviceBuffer[DType.uint32],
+    DeviceBuffer[.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
     Int,  # total_length
@@ -76,7 +76,7 @@ def _initialize_ragged_inputs[
             max_seq_length_batch = curr_len
 
     input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)

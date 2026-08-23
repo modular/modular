@@ -55,7 +55,7 @@ def _general_kernel(
     (out_ptr + lane * OUT_COLS).store(v)
 
 
-def _check(buf: HostBuffer[DType.bfloat16]) raises:
+def _check(buf: HostBuffer[.bfloat16]) raises:
     # Skip rows 0-1: a separate known M5 first-rows blit->compute hazard, not emask.
     for l in range(2, ROWS):
         assert_equal(Float32(buf[l * OUT_COLS + 0]), Float32(3 * l))
@@ -70,12 +70,10 @@ def main() raises:
         print("SKIP: Apple M5 (compute_capability == 5) required")
         return
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.bfloat16](ROWS * IN_COLS)
-    var out_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        ROWS * OUT_COLS
-    )
-    var in_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * IN_COLS)
-    var out_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * OUT_COLS)
+    var in_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * IN_COLS)
+    var out_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * OUT_COLS)
+    var in_dev = ctx.enqueue_create_buffer[.bfloat16](ROWS * IN_COLS)
+    var out_dev = ctx.enqueue_create_buffer[.bfloat16](ROWS * OUT_COLS)
     for i in range(ROWS * IN_COLS):
         in_host[i] = BFloat16(i)  # row-major counting
     ctx.enqueue_copy(in_dev, in_host)

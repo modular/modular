@@ -77,7 +77,7 @@ def kernel_case_a(
 ):
     # SMEM destination: (BN, DEPTH) row-major.
     comptime dst_layout = row_major[BN, DEPTH]()
-    var dst_smem = tt_stack_allocation[DType.bfloat16, AddressSpace.SHARED](
+    var dst_smem = tt_stack_allocation[.bfloat16, AddressSpace.SHARED](
         dst_layout
     )
 
@@ -93,9 +93,7 @@ def kernel_case_a(
         MutAnyOrigin,
     ](src_ptr, src_layout_a())
 
-    var loader = SubTileLoaderLDS[DType.bfloat16, swizzle=Optional[Swizzle]()](
-        src
-    )
+    var loader = SubTileLoaderLDS[.bfloat16, swizzle=Optional[Swizzle]()](src)
     loader.load(dst_smem, src)
     barrier()
 
@@ -115,7 +113,7 @@ def kernel_case_b(
 ):
     # SMEM destination: (BN, DEPTH) row-major, same as Case A.
     comptime dst_layout = row_major[BN, DEPTH]()
-    var dst_smem = tt_stack_allocation[DType.bfloat16, AddressSpace.SHARED](
+    var dst_smem = tt_stack_allocation[.bfloat16, AddressSpace.SHARED](
         dst_layout
     )
 
@@ -131,9 +129,7 @@ def kernel_case_b(
         MutAnyOrigin,
     ](src_ptr, src_layout_b())
 
-    var loader = SubTileLoaderLDS[DType.bfloat16, swizzle=Optional[Swizzle]()](
-        src
-    )
+    var loader = SubTileLoaderLDS[.bfloat16, swizzle=Optional[Swizzle]()](src)
     loader.load(dst_smem, src)
     barrier()
 
@@ -155,16 +151,16 @@ def test_case_a(ctx: DeviceContext) raises:
 
     var size = BN * DEPTH
 
-    var host_in = ctx.enqueue_create_host_buffer[DType.bfloat16](size)
-    var host_out = ctx.enqueue_create_host_buffer[DType.bfloat16](size)
+    var host_in = ctx.enqueue_create_host_buffer[.bfloat16](size)
+    var host_out = ctx.enqueue_create_host_buffer[.bfloat16](size)
 
     # Fill input with deterministic pattern.
     for i in range(BN):
         for j in range(DEPTH):
             host_in[i * DEPTH + j] = _pattern(i, j)
 
-    var dev_in = ctx.enqueue_create_buffer[DType.bfloat16](size)
-    var dev_out = ctx.enqueue_create_buffer[DType.bfloat16](size)
+    var dev_in = ctx.enqueue_create_buffer[.bfloat16](size)
+    var dev_out = ctx.enqueue_create_buffer[.bfloat16](size)
     ctx.enqueue_copy(dev_in, host_in)
 
     ctx.enqueue_function[kernel_case_a](
@@ -192,8 +188,8 @@ def test_case_b(ctx: DeviceContext) raises:
     var full_size = BN * CACHE_DEPTH_B
     var out_size = BN * DEPTH
 
-    var host_in = ctx.enqueue_create_host_buffer[DType.bfloat16](full_size)
-    var host_out = ctx.enqueue_create_host_buffer[DType.bfloat16](out_size)
+    var host_in = ctx.enqueue_create_host_buffer[.bfloat16](full_size)
+    var host_out = ctx.enqueue_create_host_buffer[.bfloat16](out_size)
 
     # Fill the entire cache buffer with (i, j) pattern; we'll only read
     # columns [512, 576) via the src tile ptr + head_dim_offset.
@@ -201,8 +197,8 @@ def test_case_b(ctx: DeviceContext) raises:
         for j in range(CACHE_DEPTH_B):
             host_in[i * CACHE_DEPTH_B + j] = _pattern(i, j)
 
-    var dev_in = ctx.enqueue_create_buffer[DType.bfloat16](full_size)
-    var dev_out = ctx.enqueue_create_buffer[DType.bfloat16](out_size)
+    var dev_in = ctx.enqueue_create_buffer[.bfloat16](full_size)
+    var dev_out = ctx.enqueue_create_buffer[.bfloat16](out_size)
     ctx.enqueue_copy(dev_in, host_in)
 
     # Pass a pointer already offset by head_dim_offset — mirrors what

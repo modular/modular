@@ -79,8 +79,8 @@ def check_degenerate_row(
 
     var d_in = ctx.enqueue_create_buffer[DTYPE](in_shape.flattened_length())
     var d_out = ctx.enqueue_create_buffer[IDX](batch_size)
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
-    var temp_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
+    var temp_buf = ctx.enqueue_create_buffer[.float32](batch_size)
 
     with d_in.map_to_host() as h_in:
         var t = TileTensor(h_in, in_layout)

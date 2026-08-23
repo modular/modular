@@ -537,8 +537,8 @@ def store_C[
                                 c_lower_pow_2_main[_src_offset + 1]
                             ),
                         )
-                        var upper_casted = upper_pair.cast[DType.bfloat16]()
-                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        var upper_casted = upper_pair.cast[.bfloat16]()
+                        var lower_casted = lower_pair.cast[.bfloat16]()
                         d_reg_upper[2 * _ei] = upper_casted[0]
                         d_reg_upper[2 * _ei + 1] = upper_casted[1]
                         d_reg_lower[2 * _ei] = lower_casted[0]
@@ -562,15 +562,15 @@ def store_C[
                                 c_lower_pow_2_rem[_src_offset + 1]
                             ),
                         )
-                        var upper_casted = upper_pair.cast[DType.bfloat16]()
-                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        var upper_casted = upper_pair.cast[.bfloat16]()
+                        var lower_casted = lower_pair.cast[.bfloat16]()
                         d_reg_upper[2 * _ei] = upper_casted[0]
                         d_reg_upper[2 * _ei + 1] = upper_casted[1]
                         d_reg_lower[2 * _ei] = lower_casted[0]
                         d_reg_lower[2 * _ei + 1] = lower_casted[1]
 
-                var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
-                var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
+                var d_reg_upper_packed = bitcast[.float32, 4](d_reg_upper)
+                var d_reg_lower_packed = bitcast[.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
                     upper.ptr

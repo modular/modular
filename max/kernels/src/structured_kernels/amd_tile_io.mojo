@@ -297,7 +297,7 @@ def ds_read_tr16_b64_warp[
     comptime row_dim0 = 2 if mma_shape[0] == 32 else 4
     comptime row_dim1 = 2 if mma_shape[0] == 32 else 1
 
-    comptime assert tile.dtype == DType.bfloat16
+    comptime assert tile.dtype == .bfloat16
     comptime assert type_of(tile).static_shape[0] == row_dim0 * 4
     comptime assert type_of(tile).static_shape[1] == row_dim1 * 16
 
@@ -452,7 +452,7 @@ struct TiledMmaLoader[
             IndexList[3](32, 32, 16),
             IndexList[3](16, 16, 32),
         )
-        comptime assert Self.in_type == DType.bfloat16
+        comptime assert Self.in_type == .bfloat16
         comptime MMA_K = Self.mma_shape[2]
         comptime MMA_N = Self.mma_shape[1]
         comptime half_k = MMA_K // 2
@@ -797,12 +797,12 @@ def _load_from_lds[
     offset:imm`), but makes the hoist explicit at the source level.
     """
     comptime if imm_offset_bytes != 0:
-        comptime if dtype == DType.bfloat16 and width == 8:
+        comptime if dtype == .bfloat16 and width == 8:
             var bf16_ptr = shared_ptr.bitcast[BFloat16]()
             var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
                 bf16_ptr
             )
-            return rebind[SIMD[dtype, width]](bitcast[DType.bfloat16, 8](raw))
+            return rebind[SIMD[dtype, width]](bitcast[.bfloat16, 8](raw))
         else:
             comptime assert (
                 False
@@ -826,7 +826,7 @@ def _load_from_lds[
     comptime load_bytes = width * size_of[dtype]()
     comptime alignment = min(load_bytes, 16)
 
-    comptime if dtype == DType.bfloat16 and width == 4:
+    comptime if dtype == .bfloat16 and width == 4:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<4 x bf16>`,
             alignment=to_i64(Int64(alignment)),
@@ -838,7 +838,7 @@ def _load_from_lds[
                 _type=SIMD[.bfloat16, 4]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.bfloat16 and width == 8:
+    elif dtype == .bfloat16 and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x bf16>`,
             alignment=to_i64(Int64(alignment)),
@@ -850,7 +850,7 @@ def _load_from_lds[
                 _type=SIMD[.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float16 and width == 4:
+    elif dtype == .float16 and width == 4:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<4 x f16>`,
             alignment=to_i64(Int64(alignment)),
@@ -862,7 +862,7 @@ def _load_from_lds[
                 _type=SIMD[.float16, 4]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float16 and width == 8:
+    elif dtype == .float16 and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x f16>`,
             alignment=to_i64(Int64(alignment)),
@@ -2106,7 +2106,7 @@ struct SubTileLoaderLDS_st_8x32[
         comptime _num_iters = _total_bytes // _bytes_per_iter
 
         comptime assert (
-            Self.dtype == DType.bfloat16 or Self.dtype == DType.float8_e4m3fn
+            Self.dtype == .bfloat16 or Self.dtype == .float8_e4m3fn
         ), (
             "SubTileLoaderLDS_st_8x32: dtype must be BF16 or FP8 e4m3."
             " The byte-level `buffer_load_lds` DMA is byte-equivalent for"

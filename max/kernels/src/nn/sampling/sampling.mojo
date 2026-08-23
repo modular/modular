@@ -198,7 +198,7 @@ def update_frequency_data_kernel[
 
     var tok_start = Int(frequency_offsets[batch_id])
     var tok_end = Int(frequency_offsets[batch_id + 1])
-    var new_token = new_tokens[batch_id].cast[DType.int32]()
+    var new_token = new_tokens[batch_id].cast[.int32]()
 
     var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
 
@@ -215,11 +215,11 @@ def update_frequency_data_kernel[
                 val[i] = Int32.MAX_FINITE
 
         var if_found = val.eq(new_token).select(
-            iota[DType.int32, simd_width](Int32(tok_idx)),
+            iota[.int32, simd_width](Int32(tok_idx)),
             SIMD[.int32, simd_width](Int32.MIN_FINITE),
         )
         var first_padding_idx = val.eq(PADDING_TOKEN).select(
-            iota[DType.int32, simd_width](Int32(tok_idx)),
+            iota[.int32, simd_width](Int32(tok_idx)),
             SIMD[.int32, simd_width](Int32.MAX_FINITE),
         )
 
@@ -319,7 +319,7 @@ def update_frequency_data[
             var tok_start = frequency_offsets[idx]
             var tok_end = frequency_offsets[idx[0].value() + 1]
 
-            var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
+            var new_token = new_tokens[idx[0]][0].cast[.int32]()
 
             for tok_id in range(tok_start, tok_end):
                 if compressed_frequency_data[tok_id, 0] == new_token:

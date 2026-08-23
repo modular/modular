@@ -865,7 +865,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var scale_stage_ptr = scale_smem_base + stage0_idx * UInt32(
                     scale_elems_per_stage
                 )
-                var scale_tensor = _smem_tt[DType.float32, scale_elems](
+                var scale_tensor = _smem_tt[.float32, scale_elems](
                     scale_stage_ptr, tt_row_major[scale_elems]()
                 )
                 scale_tma.async_copy(
@@ -925,7 +925,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     var scale_stage_ptr = scale_smem_base + stage_idx * UInt32(
                         scale_elems_per_stage
                     )
-                    var scale_tensor = _smem_tt[DType.float32, scale_elems](
+                    var scale_tensor = _smem_tt[.float32, scale_elems](
                         scale_stage_ptr, tt_row_major[scale_elems]()
                     )
                     scale_tma.async_copy(

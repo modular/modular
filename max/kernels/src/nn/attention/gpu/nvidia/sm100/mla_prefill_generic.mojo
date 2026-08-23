@@ -2769,10 +2769,10 @@ def _mla_prefill_sm100_valid_length_dispatch[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]
-    comptime KVRowOffsetsType = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[DType.float32]
+    comptime KVRowOffsetsType = NullPointer[.uint32]
+    comptime PartitionType = NoPartition[.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

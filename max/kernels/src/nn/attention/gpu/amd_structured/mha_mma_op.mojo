@@ -130,8 +130,8 @@ struct MhaConfigV2(ImplicitlyCopyable, Movable):
         num_kv_heads: Int,
         num_warps: Int = 8,
         rescale_threshold: Float32 = 8.0,
-        dtype: DType = DType.bfloat16,
-        output_dtype: DType = DType.float32,
+        dtype: DType = .bfloat16,
+        output_dtype: DType = .float32,
         fp8_mma_k_128: Bool = False,
     ):
         self.q_block_size = q_block_size
@@ -247,8 +247,8 @@ struct MlaConfigV2(ImplicitlyCopyable, Movable):
         rope_cache_offset: Int,
         num_warps: Int = 8,
         rescale_threshold: Float32 = 8.0,
-        dtype: DType = DType.bfloat16,
-        output_dtype: DType = DType.float32,
+        dtype: DType = .bfloat16,
+        output_dtype: DType = .float32,
         fp8_mma_k_128: Bool = False,
     ):
         self.q_block_size = q_block_size
@@ -592,7 +592,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             src: Source SMEM tile holding the swizzled K block.
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T.is_float8()
+            Self.T == .bfloat16 or Self.T.is_float8()
         ), "MhaMmaOp.load_K: BF16 or FP8 only"
         comptime assert (
             layout_dst.static_shape[2] == Self.FRAG_ELTS
@@ -613,7 +613,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         var dst_v = dst.vectorize[1, 1, Self.FRAG_ELTS]()
         comptime assert dst_v.flat_rank == 3
 
-        comptime if Self.T == DType.bfloat16:
+        comptime if Self.T == .bfloat16:
             # Per-cell body: each `(register_row, register_col)` reads
             # `subtile.ptr + swizzled_elts` directly. Kept distinct from
             # the FP8 hoist-once + `typed_imm_offset` form below, which
@@ -823,7 +823,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 `SubTileLoaderLDS_st_8x32` in sub-tile-major order.
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T.is_float8()
+            Self.T == .bfloat16 or Self.T.is_float8()
         ), "MhaMmaOp.load_V: BF16 or FP8 only"
         comptime assert (
             layout_dst.static_shape[2] == Self.FRAG_ELTS
@@ -835,7 +835,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         var dst_v = dst.vectorize[1, 1, Self.FRAG_ELTS]()
         comptime assert dst_v.flat_rank == 3
 
-        comptime if Self.T == DType.bfloat16:
+        comptime if Self.T == .bfloat16:
             comptime subtiles_per_row = width
             comptime mma_shape = IndexList[3](
                 Self.MMA_M, Self.MMA_N, Self.MMA_K
@@ -1083,7 +1083,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
             q: Q register tile, the B-operand of the MFMA (N-outer).
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
+            Self.T == .bfloat16 or Self.T == .float8_e4m3fn
         ), "MhaMmaOp.mma_QK: T must be bfloat16 or float8_e4m3fn"
         comptime ATT_h = layout_att.static_shape[0]
         comptime ATT_w = layout_att.static_shape[1]
@@ -1151,7 +1151,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                 JIT-cast to `Self.T` from `att_block`).
         """
         comptime assert (
-            Self.T == DType.bfloat16 or Self.T == DType.float8_e4m3fn
+            Self.T == .bfloat16 or Self.T == .float8_e4m3fn
         ), "MhaMmaOp.mma_PV: T must be bfloat16 or float8_e4m3fn"
         comptime O_h = layout_o.static_shape[0]
         comptime O_w = layout_o.static_shape[1]

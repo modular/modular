@@ -361,7 +361,7 @@ def copy[
             dst.ptr.unsafe_mut_cast[True]() + dst_copy_offset,
             UnsafePointer(to=policy.descriptor).bitcast[NoneType](),
             mbar_ptr,
-            copy_tile_coords.cast[DType.int64](),
+            copy_tile_coords.cast[.int64](),
         )
 
 

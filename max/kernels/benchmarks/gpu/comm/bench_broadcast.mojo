@@ -115,7 +115,7 @@ def bench_broadcast[
     # Two-stage broadcast needs payload space for each GPU's chunk
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -145,11 +145,9 @@ def bench_broadcast[
 
             # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
-                list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    signal_buf_size
-                )
+                list_of_ctx[gpu_idx].create_buffer_sync[.uint8](signal_buf_size)
             )
-            list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
@@ -167,11 +165,9 @@ def bench_broadcast[
 
             # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
-                list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    signal_buf_size
-                )
+                list_of_ctx[gpu_idx].create_buffer_sync[.uint8](signal_buf_size)
             )
-            list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (

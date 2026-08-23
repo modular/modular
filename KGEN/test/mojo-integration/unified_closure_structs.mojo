@@ -100,7 +100,7 @@ def testParametricClosureField():
     def impl[w: Int]() {} -> SIMD[.int32, w]:
         return SIMD[.int32, w](7)
 
-    var h = ParametricClosureField[DType.int32, type_of(impl)](impl)
+    var h = ParametricClosureField[.int32, type_of(impl)](impl)
     print(h.call[4]()[0])
 
 
@@ -149,7 +149,7 @@ def testExplicitAuxClosureField():
     def impl[w: Int]() {} -> SIMD[.int32, w]:
         return SIMD[.int32, w](9)
 
-    var h = ExplicitAuxClosureField[DType.int32, type_of(impl)](impl)
+    var h = ExplicitAuxClosureField[.int32, type_of(impl)](impl)
     print(h.call[4]()[0])
 
 
@@ -225,7 +225,7 @@ def testNestedClosureParamCapture():
     def impl[w: Int]() -> SIMD[.int32, w]:
         return SIMD[.int32, w](12)
 
-    print(nestedClosureParamCapture[DType.int32, type_of(impl)](impl))
+    print(nestedClosureParamCapture[.int32, type_of(impl)](impl))
 
 
 # COM: Nested `load_fn[simd_width, dtype]` shadows enclosing `dtype`, by-value-
@@ -261,7 +261,7 @@ def outerShadowingLoad[
 
 
 def testShadowingNestedClosureParam():
-    var buf = ShadowingLoadBuf[DType.int32](Int32(13))
+    var buf = ShadowingLoadBuf[.int32](Int32(13))
     print(outerShadowingLoad(buf)[0])
 
 

@@ -188,8 +188,8 @@ def cpu_qk_naive(
             var acc: Float32 = 0.0
             for d in range(D):
                 acc += (
-                    Q.ptr.load(m * D + d).cast[DType.float32]()
-                    * K.ptr.load(n * D + d).cast[DType.float32]()
+                    Q.ptr.load(m * D + d).cast[.float32]()
+                    * K.ptr.load(n * D + d).cast[.float32]()
                 )
             O.ptr.store(m * N + n, acc.cast[O.dtype]())
 
@@ -635,8 +635,8 @@ def _print_layouts[mn: Int, k: Int]():
     comptime base = tile_layout_k_major[
         DType.bfloat16, mn, k, swizzle_mode=sw
     ]()
-    comptime pdns = _tile_layout_k_major_pagedense[DType.bfloat16, mn, k, sw]()
-    comptime cinr = _tile_layout_k_major_chunkinner[DType.bfloat16, mn, k, sw]()
+    comptime pdns = _tile_layout_k_major_pagedense[.bfloat16, mn, k, sw]()
+    comptime cinr = _tile_layout_k_major_chunkinner[.bfloat16, mn, k, sw]()
     comptime base_can = tile_to_descriptor[
         DType.bfloat16, base, is_k_major=True
     ]()

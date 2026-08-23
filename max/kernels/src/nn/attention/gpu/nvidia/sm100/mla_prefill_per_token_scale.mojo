@@ -2178,10 +2178,10 @@ def mla_sm100_prefill_per_token_scale[
         depth=ov_depth,
     ](ctx)
 
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]
-    comptime KVRowOffsetsType = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[DType.float32]
+    comptime KVRowOffsetsType = NullPointer[.uint32]
+    comptime PartitionType = NoPartition[.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

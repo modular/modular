@@ -305,7 +305,7 @@ struct Fp4WeightLoader[
     # kernel args these views derive from outlive the K-loop, so the explicit-
     # lifetime case applies. Constructed via `Fp4WeightLoader.from_kernel_args`.
     var a: TileTensor[Self.in_type, Self.a_layout, ImmUntrackedOrigin]
-    var packed: TileTensor[DType.uint8, Self.packed_layout, ImmUntrackedOrigin]
+    var packed: TileTensor[.uint8, Self.packed_layout, ImmUntrackedOrigin]
     var scales: TileTensor[
         DType.float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
     ]
@@ -317,7 +317,7 @@ struct Fp4WeightLoader[
     @staticmethod
     def from_kernel_args(
         a: TileTensor[Self.in_type, Self.a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, Self.packed_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, Self.packed_layout, ImmutAnyOrigin],
         scales: TileTensor[
             DType.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin
         ],
@@ -440,7 +440,7 @@ struct Fp4WeightLoader[
             nib[3] = (pw >> UInt16(12)) & UInt16(0xF)  # k+3 (hi)
             # One block scale for all 4 K (cb+3 < 16 -> same 16-block).
             var scale_abs = abs(
-                self.scales[n_abs, k_abs0 // Self.SF][0].cast[DType.float32]()
+                self.scales[n_abs, k_abs0 // Self.SF][0].cast[.float32]()
             )
             var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
             comptime for e in range(4):
@@ -510,14 +510,14 @@ struct Fp4WeightLoader[
             nib[2 * j] = bj & UInt16(0xF)
             nib[2 * j + 1] = (bj >> UInt16(4)) & UInt16(0xF)
         var scale_abs = abs(
-            self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[DType.float32]()
+            self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[.float32]()
         )
         var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
         b_view.store[width=cols_per_thread](Coord(n_local, col0), dec)
 
 
 struct Matmul2dFp4[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
@@ -590,8 +590,8 @@ struct Matmul2dFp4[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -709,8 +709,8 @@ struct Matmul2dFp4[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -889,7 +889,7 @@ struct Matmul2dFp4[
 
 @always_inline
 def enqueue_matmul2d_fp4[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
@@ -897,9 +897,9 @@ def enqueue_matmul2d_fp4[
     tn: Int = 2,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the `matmul2d` W4A16 GEMM: `out = a @ dequant(packed, scales)^T`.
@@ -958,9 +958,7 @@ def enqueue_matmul2d_fp4[
         )
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp4: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())
@@ -996,7 +994,7 @@ def enqueue_matmul2d_fp4[
 
 @always_inline
 def enqueue_matmul2d_fp4_smem[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     # Production default = the M5-Max-tuned geometry: 16 simdgroups (512 threads)
     # sharing a NARROW BN=32 decoded B tile (tm=4, tn=1) with a DEEP smem_bk=256
@@ -1019,9 +1017,9 @@ def enqueue_matmul2d_fp4_smem[
     smem_bk: Int = 256,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the cooperative-decode `matmul2d` W4A16 GEMM (`run_smem_decode`).
@@ -1081,9 +1079,7 @@ def enqueue_matmul2d_fp4_smem[
         )
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp4_smem: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())

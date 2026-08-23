@@ -202,17 +202,17 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var next_expect = 0 * expect
                     var next_actual = 0 * actual
                     if h < num_heads and s < seq_len and d < depth - 1:
                         next_expect = output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                         next_actual = flash_output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
                         "s, h, d = ",
@@ -270,7 +270,7 @@ def main() raises:
 
         comptime if depth <= 128:
             # fp32 tf32-fp32 mma
-            test[DType.float32, depth, 1](
+            test[.float32, depth, 1](
                 128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
             )
 
@@ -508,7 +508,7 @@ def main() raises:
         ) raises -> LayoutTensor[
             DType.uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
-            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+            var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
             # TODO(KERN-3155): This is a bug!
             # The returned device buffer will have its deleter run

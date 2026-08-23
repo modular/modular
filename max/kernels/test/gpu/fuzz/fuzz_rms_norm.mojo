@@ -68,12 +68,12 @@ def _rms_norm_ref(
         var base = r * cols
         var ss = Float64(0)
         for c in range(cols):
-            var v = src[base + c].cast[DType.float64]()
+            var v = src[base + c].cast[.float64]()
             ss += v * v
         var rms = sqrt(ss / Float64(cols) + eps)
         for c in range(cols):
-            var v = src[base + c].cast[DType.float64]()
-            var g = gamma[c].cast[DType.float64]() + weight_offset
+            var v = src[base + c].cast[.float64]()
+            var g = gamma[c].cast[.float64]() + weight_offset
             dst[base + c] = ((v / rms) * g).cast[rn_type]()
 
 
@@ -131,8 +131,8 @@ def run_one_case(
             ref_h.as_span(),
             rows,
             cols,
-            epsilon.cast[DType.float64](),
-            weight_offset.cast[DType.float64](),
+            epsilon.cast[.float64](),
+            weight_offset.cast[.float64](),
         )
         if not numeric_check(out_h.as_span(), ref_h.as_span()):
             raise Error("rms_norm numeric mismatch")

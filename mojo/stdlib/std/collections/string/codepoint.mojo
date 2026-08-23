@@ -616,4 +616,4 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[.uint8]().reduce_add())

@@ -150,8 +150,8 @@ def cdna4_block_scaled_mfma[
         intrinsic,
         SIMD[.float32, d.length],
     ](
-        bitcast[DType.int32, a.length // size_of[DType.int32]()](a),
-        bitcast[DType.int32, b.length // size_of[DType.int32]()](b),
+        bitcast[.int32, a.length // size_of[DType.int32]()](a),
+        bitcast[.int32, b.length // size_of[DType.int32]()](b),
         d,
         a_matrix_format,
         b_matrix_format,

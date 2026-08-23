@@ -117,7 +117,7 @@ def block_scaled_mxfp8_kernel[
     var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 256
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -515,7 +515,7 @@ def sm100_block_scaled_mxfp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)

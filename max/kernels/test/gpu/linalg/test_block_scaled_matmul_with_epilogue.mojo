@@ -33,9 +33,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     var k = 128
     var k_packed = k // 2
 
-    var a_device = ctx.enqueue_create_buffer[DType.uint8](max(m * k_packed, 1))
-    var b_device = ctx.enqueue_create_buffer[DType.uint8](n * k_packed)
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](max(m * n, 1))
+    var a_device = ctx.enqueue_create_buffer[.uint8](max(m * k_packed, 1))
+    var b_device = ctx.enqueue_create_buffer[.uint8](n * k_packed)
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](max(m * n, 1))
 
     var a_tensor = TileTensor(a_device, row_major(m, k_packed))
     var b_tensor = TileTensor(b_device, row_major(n, k_packed))

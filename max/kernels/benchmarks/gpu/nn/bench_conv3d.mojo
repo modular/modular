@@ -613,8 +613,8 @@ def bench_conv3d[
         ctx.synchronize()
         var max_diff: Float32 = 0.0
         for i in range(output_size):
-            var a = output_host[i].cast[DType.float32]()
-            var c = output_ref_host[i].cast[DType.float32]()
+            var a = output_host[i].cast[.float32]()
+            var c = output_ref_host[i].cast[.float32]()
             var d = abs(a - c)
             if d > max_diff:
                 max_diff = d

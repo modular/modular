@@ -338,11 +338,11 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
@@ -698,11 +698,11 @@ struct KVCacheMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -965,11 +965,11 @@ struct KVCacheScalesMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -1022,7 +1022,7 @@ struct LayoutTensorMHAOperand[
     //,
     dtype_: DType,
     buffer_layout: TensorLayout,
-    scale_dtype_: DType = DType.float32,
+    scale_dtype_: DType = .float32,
     scale_buffer_layout: TensorLayout = MixedLayout[
         shape_types=Coord[].element_types,
         stride_types=Coord[].element_types,
@@ -1373,11 +1373,11 @@ struct LayoutTensorMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -1750,11 +1750,11 @@ struct RaggedMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:

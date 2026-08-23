@@ -48,8 +48,8 @@ def execute_index_tensor_test[
     )
     # Convert all tensors to dynamic layouts before calling the kernel
     _index_tensor_impl[batch_dims, target="gpu"](
-        data_device.make_dynamic[DType.int64](),
-        indices_device.make_dynamic[DType.int64](),
+        data_device.make_dynamic[.int64](),
+        indices_device.make_dynamic[.int64](),
         actual_output_tensor,
         ctx,
     )
@@ -94,7 +94,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major(Idx[index_len], Idx[2])
-    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
+    var indices = ctx.enqueue_create_buffer[.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):
@@ -166,7 +166,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major(Idx[index_len], Idx[2])
-    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
+    var indices = ctx.enqueue_create_buffer[.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
         var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):

@@ -94,7 +94,7 @@ def swiglu_reference(
             var up = full_ptr[m * N + 2 * h + 1]
             var sigmoid = recip(Float32(1.0) + exp(-gate))
             var result = gate * sigmoid * up
-            ref_ptr.store(m * H + h, result.cast[DType.bfloat16]())
+            ref_ptr.store(m * H + h, result.cast[.bfloat16]())
 
 
 def test_swiglu[
@@ -151,7 +151,7 @@ def test_swiglu[
     var a_host = TileTensor(a_host_buf, a_shape)
     var b_host_buf = ctx.enqueue_create_host_buffer[dtype](b_size)
     var b_host = TileTensor(b_host_buf, b_shape)
-    var full_host_buf = ctx.enqueue_create_host_buffer[DType.float32](full_size)
+    var full_host_buf = ctx.enqueue_create_host_buffer[.float32](full_size)
     var full_host = TileTensor(full_host_buf, full_shape)
     var c_host_buf = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host = TileTensor(c_host_buf, c_shape)
@@ -162,7 +162,7 @@ def test_swiglu[
     var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
-    var full_device = ctx.enqueue_create_buffer[DType.float32](full_size)
+    var full_device = ctx.enqueue_create_buffer[.float32](full_size)
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 

@@ -226,7 +226,7 @@ def _index_tensor_1d[
         counter += 1
 
     var reshaped_data = reshape[reshaped_data_rank](
-        data.make_dynamic[DType.int64](),
+        data.make_dynamic[.int64](),
         reshaped_data_tuple,
     )
 

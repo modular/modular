@@ -180,7 +180,7 @@ struct MmaOpSM100_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -390,7 +390,7 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     def _get_umma_kind[dtype: DType]() -> UMMAKind:
-        comptime if dtype == DType.float32:
+        comptime if dtype == .float32:
             return UMMAKind.KIND_TF32
         elif dtype in (DType.float16, DType.bfloat16):
             return UMMAKind.KIND_F16
@@ -416,7 +416,7 @@ struct MmaOpSM100_BlockScaled_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

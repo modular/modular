@@ -275,8 +275,7 @@ struct BlockwiseFP8Accumulator[
         comptime a_scales_type = a_scales_dtype
 
         comptime assert (
-            a_scales_dtype == b_scales_dtype
-            and Self.accum_type == DType.float32
+            a_scales_dtype == b_scales_dtype and Self.accum_type == .float32
         ), "Only support float32 for a_scales, b_scales, and accum_type"
 
         var M = problem_shape[0]

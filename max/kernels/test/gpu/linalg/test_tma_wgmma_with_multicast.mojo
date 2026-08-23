@@ -169,7 +169,7 @@ def multicast_tma_wgmma_kernel[
                         a_smem_slice,
                         mbar[0],
                         (i * BK, a_gmem_slice_coord),
-                        multicast_mask.cast[DType.uint16](),
+                        multicast_mask.cast[.uint16](),
                     )
 
                 else:
@@ -178,7 +178,7 @@ def multicast_tma_wgmma_kernel[
                             a_smem_tile,
                             mbar[0],
                             (i * BK, block_idx.y * BM),
-                            multicast_mask.cast[DType.uint16](),
+                            multicast_mask.cast[.uint16](),
                         )
 
             else:
@@ -211,7 +211,7 @@ def multicast_tma_wgmma_kernel[
                             block_idx.x * BN,
                             i * BK,
                         ),
-                        (multicast_mask << rank_n).cast[DType.uint16](),
+                        (multicast_mask << rank_n).cast[.uint16](),
                     )
 
                 else:
@@ -226,7 +226,7 @@ def multicast_tma_wgmma_kernel[
                                 block_idx.x * BN,
                                 i * BK,
                             ),
-                            (multicast_mask << rank_n).cast[DType.uint16](),
+                            (multicast_mask << rank_n).cast[.uint16](),
                         )
 
             else:

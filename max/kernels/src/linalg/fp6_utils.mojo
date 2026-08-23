@@ -293,24 +293,22 @@ def decode_fp6_to_f32[
     comptime mantissa_mask = (1 << M) - 1
     comptime exponent_mask = (1 << fmt.exponent_width()) - 1
 
-    comptime subnormal_step = bitcast[DType.float32](
+    comptime subnormal_step = bitcast[.float32](
         UInt32((127 + 1 - bias - M) << 23)
     )
 
-    var n = code.cast[DType.uint32]()
+    var n = code.cast[.uint32]()
     comptime Bits = SIMD[.uint32, width]
     var e = (n >> Bits(M)) & Bits(exponent_mask)
     var m = n & Bits(mantissa_mask)
     var sign = (n & Bits(0x20)) << Bits(26)  # code bit 5 -> float32 bit 31
 
     var normal_bits = ((e + Bits(127 - bias)) << Bits(23)) | (m << Bits(23 - M))
-    var subnormal_bits = bitcast[DType.uint32](
-        m.cast[DType.float32]() * subnormal_step
-    )
+    var subnormal_bits = bitcast[.uint32](m.cast[.float32]() * subnormal_step)
 
     var is_subnormal = e.eq(type_of(e)(0))
     var magnitude = is_subnormal.select(subnormal_bits, normal_bits)
-    return bitcast[DType.float32](sign | magnitude)
+    return bitcast[.float32](sign | magnitude)
 
 
 @always_inline
@@ -333,7 +331,7 @@ def decode_fp6_to_bf16[
     Returns:
         The decoded values as `SIMD[.bfloat16, width]`.
     """
-    return decode_fp6_to_f32[fmt](code).cast[DType.bfloat16]()
+    return decode_fp6_to_f32[fmt](code).cast[.bfloat16]()
 
 
 @always_inline
@@ -377,27 +375,25 @@ def encode_f32_to_fp6[
     comptime max_code = UInt32(
         (((1 << fmt.exponent_width()) - 1) << M) | mantissa_mask
     )
-    comptime min_normal = bitcast[DType.float32](UInt32((127 + 1 - bias) << 23))
-    comptime magic = bitcast[DType.float32](
-        UInt32((127 + 23 + 1 - bias - M) << 23)
-    )
-    comptime magic_bits = bitcast[DType.uint32](magic)
+    comptime min_normal = bitcast[.float32](UInt32((127 + 1 - bias) << 23))
+    comptime magic = bitcast[.float32](UInt32((127 + 23 + 1 - bias - M) << 23))
+    comptime magic_bits = bitcast[.uint32](magic)
     comptime round_shift = 23 - M
 
     comptime Bits = SIMD[.uint32, width]
     comptime Floats = SIMD[.float32, width]
 
-    var bits = bitcast[DType.uint32](x)
+    var bits = bitcast[.uint32](x)
     var sign = (bits >> Bits(26)) & Bits(0x20)  # float32 bit 31 -> code bit 5
-    var magnitude = bitcast[DType.float32](bits & Bits(0x7FFF_FFFF))
+    var magnitude = bitcast[.float32](bits & Bits(0x7FFF_FFFF))
 
     magnitude = min(magnitude, Floats(fmt.max_value()))
 
-    var subnormal_code = bitcast[DType.uint32](
-        magnitude + Floats(magic)
-    ) - Bits(magic_bits)
+    var subnormal_code = bitcast[.uint32](magnitude + Floats(magic)) - Bits(
+        magic_bits
+    )
 
-    var magnitude_bits = bitcast[DType.uint32](magnitude)
+    var magnitude_bits = bitcast[.uint32](magnitude)
     var lsb = (magnitude_bits >> Bits(round_shift)) & Bits(1)
     var rounded = magnitude_bits + (Bits((1 << (round_shift - 1)) - 1) + lsb)
     var normal_code = (
@@ -406,7 +402,7 @@ def encode_f32_to_fp6[
 
     var is_subnormal = magnitude.lt(Floats(min_normal))
     var code = is_subnormal.select(subnormal_code, normal_code)
-    return (sign | min(code, Bits(max_code))).cast[DType.uint8]()
+    return (sign | min(code, Bits(max_code))).cast[.uint8]()
 
 
 @always_inline
@@ -429,20 +425,19 @@ def compute_mxfp6_even_scale[
     Returns:
         The E8M0 scale for the block.
     """
-    comptime FP32_MANTISSA_WIDTH = FPUtils[DType.float32].mantissa_width()
+    comptime FP32_MANTISSA_WIDTH = FPUtils[.float32].mantissa_width()
     comptime round_to_fp6_mantissa = 1 << (
         FP32_MANTISSA_WIDTH - fmt.mantissa_width() - 1
     )
 
-    var max_bits = FPUtils[DType.float32].bitcast_to_uint(max_val)
+    var max_bits = FPUtils[.float32].bitcast_to_uint(max_val)
     var rounded_max_bits = max_bits + type_of(max_bits)(round_to_fp6_mantissa)
-    var rounded_max = bitcast[DType.float32](rounded_max_bits)
+    var rounded_max = bitcast[.float32](rounded_max_bits)
     var scale_exp = (
-        FPUtils[DType.float32].get_exponent_biased(rounded_max)
-        - fmt.max_exponent()
+        FPUtils[.float32].get_exponent_biased(rounded_max) - fmt.max_exponent()
     )
     scale_exp = max(0, min(scale_exp, 254))
-    return bitcast[DType.float8_e8m0fnu](UInt8(scale_exp))
+    return bitcast[.float8_e8m0fnu](UInt8(scale_exp))
 
 
 @always_inline
@@ -470,7 +465,7 @@ def pack_fp6_x4(code: SIMD[.uint8, 4]) -> UInt32:
     Returns:
         The packed group in bits 23:0.
     """
-    var c = code.cast[DType.uint32]() & 0x3F
+    var c = code.cast[.uint32]() & 0x3F
     return c[0] | (c[1] << 6) | (c[2] << 12) | (c[3] << 18)
 
 
@@ -515,4 +510,4 @@ def unpack_fp6_x4(packed: UInt32) -> SIMD[.uint8, 4]:
     """
     var lanes = SIMD[.uint32, 4](packed)
     var shifts = SIMD[.uint32, 4](0, 6, 12, 18)
-    return ((lanes >> shifts) & SIMD[.uint32, 4](0x3F)).cast[DType.uint8]()
+    return ((lanes >> shifts) & SIMD[.uint32, 4](0x3F)).cast[.uint8]()

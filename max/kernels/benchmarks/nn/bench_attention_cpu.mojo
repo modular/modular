@@ -326,5 +326,5 @@ def main() raises:
 
     var m = Bench()
     for i in range(len(specs)):
-        bench_attention[DType.float32](m, specs[i])
+        bench_attention[.float32](m, specs[i])
     m.dump_report()

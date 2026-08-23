@@ -157,7 +157,7 @@ def test_matmul_sm100_fallback[
 
     ctx.synchronize()
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -203,7 +203,7 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.float8_e4m3fn, DType.bfloat16]:
             comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-                comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
+                comptime MMA_K = 32 if dtype == .float8_e4m3fn else 16
                 comptime BK = (swizzle.bytes() // size_of[dtype]())
 
                 test_matmul_sm100_fallback[

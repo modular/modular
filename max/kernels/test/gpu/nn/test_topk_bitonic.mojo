@@ -89,8 +89,8 @@ def _run_and_check(
     assert len(scores_host) == N, "scores_host length mismatch"
 
     # GPU buffers: 1 row of N scores → 1 row of K indices.
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](K)
     idxs_dev.enqueue_fill(Int32(-2))  # sentinel to catch unwritten slots
 
     with scores_dev.map_to_host() as buf:
@@ -108,7 +108,7 @@ def _run_and_check(
     ctx.synchronize()
 
     # Copy back and validate.
-    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](K)
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](K)
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
@@ -317,8 +317,8 @@ def test_multi_batch(ctx: DeviceContext) raises:
     comptime K = 32
     comptime BATCH = 4
 
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](BATCH * N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](BATCH * K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](BATCH * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](BATCH * K)
     idxs_dev.enqueue_fill(Int32(-2))
 
     # Fill each row with a distinct pattern.
@@ -339,7 +339,7 @@ def test_multi_batch(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](BATCH * K)
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](BATCH * K)
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
@@ -562,8 +562,8 @@ def _run_and_check_split(
     assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
     assert len(scores_host) == B * N, "scores_host length mismatch"
 
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))
 
     with scores_dev.map_to_host() as buf:
@@ -580,7 +580,7 @@ def _run_and_check_split(
     )
     ctx.synchronize()
 
-    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](B * K)
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
@@ -732,8 +732,8 @@ def _run_and_check_block_multirow(
     assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
     assert len(scores_host) == B * N, "scores_host length mismatch"
 
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
@@ -749,7 +749,7 @@ def _run_and_check_block_multirow(
     )
     ctx.synchronize()
 
-    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](B * K)
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
@@ -1003,8 +1003,8 @@ def _run_split[
     in what they promise about order, so a launch that differed anywhere else would
     be comparing two things at once.
     """
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
@@ -1020,7 +1020,7 @@ def _run_split[
     )
     ctx.synchronize()
 
-    var host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    var host = ctx.enqueue_create_host_buffer[.int32](B * K)
     ctx.enqueue_copy(dst_buf=host, src_buf=idxs_dev)
     ctx.synchronize()
     var out = List[Int](capacity=B * K)
@@ -1542,10 +1542,10 @@ def _run_and_check_bounded(
     assert len(scores_host) == B * N, "scores_host length mismatch"
     assert len(bounds) == B, "bounds length mismatch"
 
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
-    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))  # sentinel to catch unwritten slots
-    var bounds_dev = ctx.enqueue_create_buffer[DType.int32](B)
+    var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
 
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
@@ -1569,7 +1569,7 @@ def _run_and_check_bounded(
     )
     ctx.synchronize()
 
-    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](B * K)
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 

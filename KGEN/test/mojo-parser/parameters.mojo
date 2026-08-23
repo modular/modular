@@ -166,7 +166,7 @@ struct Pair[dt: DType](RegisterPassable):
 # CHECK: }
 
 # CHECK: useParameterizedField
-def useParameterizedField[x: Pair[DType.float32]]():
+def useParameterizedField[x: Pair[.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
   comptime y : SIMD[.float32, 42] = x.a
 
@@ -966,7 +966,7 @@ def test_infer_with_default_arg():
     infer_with_default_arg(128)
 
 
-struct InferredDefaultType[dtype: DType = DType.uint32](Movable where False):
+struct InferredDefaultType[dtype: DType = .uint32](Movable where False):
     var value: SIMD[Self.dtype, 1]
 
     # This default depends on a previous default (on the struct).

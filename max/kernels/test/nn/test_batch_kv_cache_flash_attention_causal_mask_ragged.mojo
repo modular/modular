@@ -61,17 +61,17 @@ def execute_ragged_flash_attention[
 
     comptime layout_1d = Layout.row_major[1]()
     var input_row_offsets_buf = List(length=batch_size + 1, fill=UInt32(0))
-    var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
+    var input_row_offsets = LayoutTensor[.uint32, layout_1d](
         input_row_offsets_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
     var cache_lengths_buf = List(length=batch_size, fill=UInt32(0))
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths = LayoutTensor[.uint32, layout_1d](
         cache_lengths_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
     var valid_lengths_buf = List(length=batch_size, fill=UInt32(0))
-    var valid_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var valid_lengths = LayoutTensor[.uint32, layout_1d](
         valid_lengths_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -197,7 +197,7 @@ def execute_ragged_flash_attention[
     )
     random(kv_block)
     var lookup_table_buf = List(length=batch_size, fill=UInt32(0))
-    var lookup_table = LayoutTensor[DType.uint32, layout_1d](
+    var lookup_table = LayoutTensor[.uint32, layout_1d](
         lookup_table_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )

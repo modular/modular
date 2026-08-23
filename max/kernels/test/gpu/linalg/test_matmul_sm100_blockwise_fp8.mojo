@@ -125,22 +125,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         a_scales_size
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         b_scales_size
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        a_scales_size
-    )
+    var a_scales_device = ctx.enqueue_create_buffer[.float32](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        b_scales_size
-    )
+    var b_scales_device = ctx.enqueue_create_buffer[.float32](b_scales_size)
     var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
     var c_tensor = c_device_nd
