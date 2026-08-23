@@ -492,7 +492,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @property
     def planned_max_batch_total_tokens(self) -> int | None:
         """The plan's batch token budget."""
-        return self.memory_plan.max_batch_total_tokens
+        return self.memory_plan.planned_max_batch_total_tokens
 
     def _maybe_release_host_weights(self, *models: Any) -> None:
         """Releases the host copies of the weights after the model is loaded.

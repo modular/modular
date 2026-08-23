@@ -85,7 +85,7 @@ def retrieve_mock_text_generation_pipeline(
             # Plans are always populated with the model's effective bound;
             # mirror the mock model's clamp when the caller sets no length.
             memory_plan=MemoryPlan(
-                max_batch_size=mock_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=mock_config.runtime.max_batch_size or 1,
                 footprint=0,
                 planned_max_length=(
                     max_length

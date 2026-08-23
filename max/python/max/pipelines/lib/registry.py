@@ -721,11 +721,12 @@ class PipelineRegistry:
             arch.pipeline_model, PipelineModel
         ):
             memory_plan = MemoryPlan(
-                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=pipeline_config.runtime.max_batch_size
+                or 1,
                 footprint=0,
                 planned_max_length=pipeline_config.model.max_length,
                 device_specs=tuple(pipeline_config.model.device_specs),
-                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
             memory_plan = MemoryEstimator.plan(

@@ -100,7 +100,7 @@ class TestLogBasicConfigAfterResolve:
         """max_seq_len must show the resolved value, not None."""
         config = _make_pipeline_config(max_length=131072)
         memory_plan = MemoryPlan(
-            max_batch_size=1, footprint=0, planned_max_length=131072
+            planned_max_batch_size=1, footprint=0, planned_max_length=131072
         )
         output = _capture_log_basic_config(config, memory_plan)
         assert "131072" in output, (

@@ -407,7 +407,7 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
             patch(
                 "max.pipelines.lib.memory_estimation.MemoryEstimator.plan",
                 side_effect=lambda config, *a, **kw: MemoryPlan(
-                    max_batch_size=1,
+                    planned_max_batch_size=1,
                     footprint=0,
                     planned_max_length=config.model.max_length,
                     device_specs=tuple(config.model.device_specs),

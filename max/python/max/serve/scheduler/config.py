@@ -153,7 +153,7 @@ class TokenGenerationSchedulerConfig:
                 else None
             ),
             max_batch_total_tokens=(
-                memory_plan.max_batch_total_tokens
+                memory_plan.planned_max_batch_total_tokens
                 if memory_plan is not None
                 else None
             ),

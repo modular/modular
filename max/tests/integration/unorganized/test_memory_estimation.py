@@ -216,12 +216,16 @@ def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
         device_mock.return_value = {"free_memory": 100 * GIB}
         config = _dummy_llama_config(max_length=512)
         plan = MemoryEstimator.plan(config, arch)
-        assert plan.max_batch_total_tokens == plan.planned_max_length == 512
+        assert (
+            plan.planned_max_batch_total_tokens
+            == plan.planned_max_length
+            == 512
+        )
         # The plan carries a user-set cap unchanged instead.
         config = _dummy_llama_config(max_length=512)
         config.runtime.max_batch_total_tokens = 2048
         plan = MemoryEstimator.plan(config, arch)
-        assert plan.max_batch_total_tokens == 2048
+        assert plan.planned_max_batch_total_tokens == 2048
 
 
 def test_plan__leaves_config_unchanged() -> None:
@@ -350,7 +354,7 @@ def test_plan__kv_clamp_bounds_plan_not_config() -> None:
         device_mock.return_value = {"free_memory": 64 * 1024 * 1024}
         plan = MemoryEstimator.plan(config, arch)
     assert plan.planned_max_length == 3584
-    assert plan.max_batch_total_tokens == 3584
+    assert plan.planned_max_batch_total_tokens == 3584
     assert config.model.max_length == 4096
     assert config.runtime.max_batch_total_tokens is None
 
