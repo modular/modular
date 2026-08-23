@@ -126,7 +126,7 @@ def kernel_qk_chain[
 ](
     src_k_swz_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
     src_q_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Loads K from pre-swizzled SMEM, fills Q per-lane from gmem, calls
     `mma_QK`, dumps per-lane FP32 accumulator to `dump_ptr`.

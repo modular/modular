@@ -147,10 +147,10 @@ def _block_reduce_pivot_bounds[
         warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
-        StaticTuple[Scalar[DType.float32], 4](
+        StaticTuple[Float32, 4](
             Float32(count0), Float32(count1), min_gt_low, max_le_high
         ),
-        initial_vals=StaticTuple[Scalar[DType.float32], 4](
+        initial_vals=StaticTuple[Float32, 4](
             0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
     )
@@ -1336,7 +1336,7 @@ def _block_reduce_cutoff_stats[
         warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
-        StaticTuple[Scalar[DType.float32], 6](
+        StaticTuple[Float32, 6](
             Float32(count0),
             Float32(count1),
             mass0,
@@ -1344,7 +1344,7 @@ def _block_reduce_cutoff_stats[
             min_gt_low,
             max_le_high,
         ),
-        initial_vals=StaticTuple[Scalar[DType.float32], 6](
+        initial_vals=StaticTuple[Float32, 6](
             0, 0, 0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
     )
@@ -1644,7 +1644,7 @@ def TopKTopPSamplingFromProbKernel[
                 min_p_thresh = min_p.unsafe_value()[row_idx]
 
             # Pass 1: block max of the logits.
-            var thread_max = Scalar[DType.float32].MIN
+            var thread_max = Float32.MIN
             for i in range(tx, _d // vec_size, block_size):
                 var v = probs_row.load[width=vec_size](
                     (Idx[0], i * vec_size)
@@ -2764,7 +2764,7 @@ def TopKTopPMaskedProbsKernel[
 
     var logits_row = TileTensor(logits.ptr + bx * _d, row_major(Idx[1], _d))
 
-    var thread_max = Scalar[DType.float32].MIN
+    var thread_max = Float32.MIN
     for i in range(tx, _d // vec_size, block_size):
         var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
             DType.float32

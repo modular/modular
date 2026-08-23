@@ -24,8 +24,8 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
-        output[global_idx.x] = Scalar[DType.int](thread_idx.x)
+    def kernel(output: UnsafePointer[Int, MutAnyOrigin]):
+        output[global_idx.x] = Int(thread_idx.x)
 
     ctx.enqueue_function[kernel](
         output_buffer,
@@ -38,7 +38,7 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], Scalar[DType.int](j))
+            assert_equal(output_host[i + j], Int(j))
 
 
 def test_fill_block_idx(ctx: DeviceContext) raises:
@@ -46,8 +46,8 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Scalar[DType.int], MutAnyOrigin]):
-        output[global_idx.x] = Scalar[DType.int](block_idx.x)
+    def kernel(output: UnsafePointer[Int, MutAnyOrigin]):
+        output[global_idx.x] = Int(block_idx.x)
 
     ctx.enqueue_function[kernel](
         output_buffer,
@@ -60,7 +60,7 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], Scalar[DType.int](i // block_dim))
+            assert_equal(output_host[i + j], Int(i // block_dim))
 
 
 def main() raises:

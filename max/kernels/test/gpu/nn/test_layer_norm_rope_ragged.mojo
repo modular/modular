@@ -225,7 +225,7 @@ def run_layer_norm_rope_ragged_gpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon.cast[dtype](),

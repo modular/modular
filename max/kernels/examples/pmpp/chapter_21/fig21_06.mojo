@@ -29,8 +29,8 @@ from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_gather_kernel(
-    energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,

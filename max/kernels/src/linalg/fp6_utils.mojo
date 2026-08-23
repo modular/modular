@@ -412,7 +412,7 @@ def encode_f32_to_fp6[
 @always_inline
 def compute_mxfp6_even_scale[
     fmt: FP6Format
-](max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
+](max_val: Float32) -> Float8_e8m0fnu:
     """Computes the OCP MXFP6 E8M0 scale using even-mode rounding.
 
     The FP6 generalization of `compute_mxfp4_even_scale`: it rounds the block

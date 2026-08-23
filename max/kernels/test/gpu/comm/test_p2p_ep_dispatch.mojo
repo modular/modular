@@ -148,16 +148,14 @@ struct BF16DispatchTest[
     ]
 
     var device_output_bufs_list: List[DeviceBuffer[DType.bfloat16]]
-    var host_output_bufs_list: List[
-        UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
-    ]
+    var host_output_bufs_list: List[UnsafePointer[BFloat16, MutUntrackedOrigin]]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[DType.bfloat16]](
             capacity=Self.n_ranks
         )
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
+            UnsafePointer[BFloat16, MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -166,7 +164,7 @@ struct BF16DispatchTest[
                 )
             )
             self.host_output_bufs_list.append(
-                alloc[Scalar[DType.bfloat16]](
+                alloc[BFloat16](
                     Self.n_slots * Self.max_recv_num_tokens * Self.hidden_size
                 )
             )
@@ -467,7 +465,7 @@ struct NVFP4DispatchTest[
         UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_offset_bufs_list: List[
-        UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
+        UnsafePointer[UInt32, MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -487,7 +485,7 @@ struct NVFP4DispatchTest[
             UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_offset_bufs_list = List[
-            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
+            UnsafePointer[UInt32, MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -526,9 +524,7 @@ struct NVFP4DispatchTest[
                 )
             )
             self.host_output_scales_offset_bufs_list.append(
-                alloc[Scalar[DType.uint32]](
-                    Self.n_slots * (Self.n_experts // Self.n_ranks)
-                )
+                alloc[UInt32](Self.n_slots * (Self.n_experts // Self.n_ranks))
             )
 
     def __deinit__(deinit self):

@@ -2679,7 +2679,7 @@ def _quantize_mx_amd_kernel[
             # scale even-mode and hands it to the packing intrinsic; MXFP8
             # divides by 448 (E4M3 maxabs) and scales the data by the exact
             # reciprocal of the resulting power of two.
-            var e8m0_scale: Scalar[DType.float8_e8m0fnu]
+            var e8m0_scale: Float8_e8m0fnu
             comptime if elems_per_byte == 1:
                 var quantized: SIMD[out_dtype, ELEMENTS_PER_THREAD]
                 quantized, e8m0_scale = quantize_mxfp8_lane_group[
@@ -2910,10 +2910,10 @@ def _mxfp4_dotprod[
     BLOCK_N: Int,
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
     K: Int,
 ):
     @always_inline
@@ -2986,10 +2986,10 @@ def matmul_dynamic_block_scaled_amd_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
     M: Int32,
     N: Int32,
     K: Int32,
@@ -3083,12 +3083,12 @@ def grouped_matmul_block_scaled_amd_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    expert_ids_ptr: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+    expert_ids_ptr: UnsafePointer[Int32, ImmutAnyOrigin],
     num_active_experts: Int32,
     M: Int32,
     N: Int32,

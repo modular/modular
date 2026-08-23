@@ -840,10 +840,8 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
             var ref_val = p_ref_host[r * P_REF_COLS + c]
 
             # GPU result: sum of the two halves.
-            var gpu_half0 = Scalar[DType.float32](p_out_ptr[r * P_COLS + c])
-            var gpu_half1 = Scalar[DType.float32](
-                p_out_ptr[r * P_COLS + c + P_ROWS]
-            )
+            var gpu_half0 = Float32(p_out_ptr[r * P_COLS + c])
+            var gpu_half1 = Float32(p_out_ptr[r * P_COLS + c + P_ROWS])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
@@ -1086,10 +1084,8 @@ def test_sparse_mma_ws_ts[
         for c in range(p_ref_cols):
             var ref_val = p_ref_host[r * p_ref_cols + c]
 
-            var gpu_half0 = Scalar[DType.float32](p_out_ptr[r * p_cols + c])
-            var gpu_half1 = Scalar[DType.float32](
-                p_out_ptr[r * p_cols + c + p_rows]
-            )
+            var gpu_half0 = Float32(p_out_ptr[r * p_cols + c])
+            var gpu_half1 = Float32(p_out_ptr[r * p_cols + c + p_rows])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
@@ -1410,10 +1406,8 @@ def test_sparse_paged_mma_ws_ts[
         for c in range(p_ref_cols):
             var ref_val = p_ref_host[r * p_ref_cols + c]
 
-            var gpu_half0 = Scalar[DType.float32](p_out_ptr[r * p_cols + c])
-            var gpu_half1 = Scalar[DType.float32](
-                p_out_ptr[r * p_cols + c + p_rows]
-            )
+            var gpu_half0 = Float32(p_out_ptr[r * p_cols + c])
+            var gpu_half1 = Float32(p_out_ptr[r * p_cols + c + p_rows])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))

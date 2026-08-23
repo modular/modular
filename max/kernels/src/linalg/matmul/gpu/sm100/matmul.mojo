@@ -519,14 +519,12 @@ def shared_memory_epilogue[
             comptime fast_div = FastDiv[DType.uint32](shared_n)
 
             shared_upper_row = (
-                Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
-                / fast_div
+                Int(offset_upper).cast[fast_div.uint_type]() / fast_div
             ).cast[DType.int64]()
             shared_upper_col = Int64(offset_upper % shared_n)
 
             shared_lower_row = (
-                Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
-                / fast_div
+                Int(offset_lower).cast[fast_div.uint_type]() / fast_div
             ).cast[DType.int64]()
             shared_lower_col = Int64(offset_lower % shared_n)
 

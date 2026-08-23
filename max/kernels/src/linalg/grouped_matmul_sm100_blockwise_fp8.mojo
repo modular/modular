@@ -2331,7 +2331,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             # DO TMA LOAD
 
             var expert_end_row = Int(
-                rebind[Scalar[DType.uint32]](
+                rebind[UInt32](
                     scheduler.group_offsets[
                         Int(scheduler.current_group_idx + 1)
                     ]
@@ -2572,7 +2572,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_ptr,
                 c_coord=(Int(work_info.m), Int(work_info.n)),
                 elect_one_warp=elect_one_warp,
-                group_end_idx=rebind[Scalar[DType.uint32]](
+                group_end_idx=rebind[UInt32](
                     scheduler.group_offsets[
                         Int(scheduler.current_group_idx + 1)
                     ]

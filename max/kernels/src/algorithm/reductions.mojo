@@ -94,7 +94,7 @@ def reduce_sum[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: sum via the ReduceSum monoid.
         @always_inline
@@ -184,7 +184,7 @@ def reduce_max[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: max via the ReduceMax monoid.
         @always_inline
@@ -267,7 +267,7 @@ def reduce_min[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min via the ReduceMin monoid.
         @always_inline
@@ -350,7 +350,7 @@ def reduce_product[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: product via the ReduceProduct monoid.
         @always_inline
@@ -435,7 +435,7 @@ def reduce_mean[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: sum via the ReduceSum monoid.
         @always_inline
@@ -571,7 +571,7 @@ def reduce_argmin[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmin via the ArgMin monoid (lower index wins ties).
         @always_inline
@@ -656,7 +656,7 @@ def reduce_argmax[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmax via the ArgMax monoid (lower index wins ties).
         @always_inline
@@ -757,7 +757,7 @@ def reduce_min_and_max[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min and max in one pass via the MinMax monoid.
         @always_inline

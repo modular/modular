@@ -1082,7 +1082,7 @@ def bench_bitonic_topk(
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     scores_tt.ptr
                 ),
-                rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                rebind[UnsafePointer[Int32, MutAnyOrigin]](
                     idxs_buf.unsafe_ptr()
                 ),
                 N,

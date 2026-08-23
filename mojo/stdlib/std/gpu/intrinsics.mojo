@@ -1019,7 +1019,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
         var desc_ptr = Pointer[
-            Scalar[DType.bfloat16],
+            BFloat16,
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
         ].unsafe_dangling()
@@ -1027,7 +1027,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         var ptr_to_simd = Pointer(to=self.desc)
         ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
             Pointer[
-                Scalar[DType.bfloat16],
+                BFloat16,
                 MutAnyOrigin,
                 address_space=AddressSpace.BUFFER_RESOURCE,
             ]

@@ -599,9 +599,7 @@ struct TMemAccumulator[
                     frags[mma_id, 0]
                 )
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
-                var frag_st = Array[Scalar[DType.uint32], frag_size_b32](
-                    uninitialized=True
-                )
+                var frag_st = Array[UInt32, frag_size_b32](uninitialized=True)
 
                 comptime for _i in range(frag_size_b32):
                     frag_st[_i] = frag[_i]
@@ -819,9 +817,7 @@ struct TMemOperand[
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
-            var frag_st2 = Array[Scalar[DType.uint32], frag_size_b32](
-                uninitialized=True
-            )
+            var frag_st2 = Array[UInt32, frag_size_b32](uninitialized=True)
 
             comptime if Self.dtype.is_float8():
                 # The SS-D fragment per thread (output of Q@K^T MMA) puts
@@ -872,8 +868,8 @@ struct TMemOperand[
                         k_lo_half * lane_cols_per_k_half
                     )
                     var src_lane_b = src_lane_a + 1
-                    var received_a: Scalar[DType.uint32] = 0
-                    var received_b: Scalar[DType.uint32] = 0
+                    var received_a: UInt32 = 0
+                    var received_b: UInt32 = 0
                     # Each lane_col publishes a different slot of a_frag;
                     # only the iteration matching this thread's lane_col
                     # contributes to its output u32.
@@ -881,7 +877,7 @@ struct TMemOperand[
                         comptime publisher_slot = (
                             mma_n_tile * src_slots_per_n_tile + c_val
                         )
-                        var val: Scalar[DType.uint32] = frag[publisher_slot]
+                        var val: UInt32 = frag[publisher_slot]
                         var ra = warp.shuffle_idx(val, src_lane_a)
                         var rb = warp.shuffle_idx(val, src_lane_b)
                         if lane_col_ui == UInt32(c_val):

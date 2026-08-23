@@ -149,9 +149,7 @@ def run_mha_prefill_v2_paged[
 
     # -------- K / V (paged, single allocation, fixed LUT) -------------------
     # Host-side: cache_lengths = 0 for every batch (fresh prefill).
-    var cache_lengths_host = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     var max_seq_length: UInt32 = UInt32(seq_len)
     var max_context_length: UInt32 = UInt32(seq_len)
 
@@ -161,9 +159,7 @@ def run_mha_prefill_v2_paged[
     # Paged LUT: random unique page index per (batch, block).
     var paged_lut_cols = pages_per_seq
     var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_host = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_view = TileTensor(
         paged_lut_host,
         row_major(
@@ -289,7 +285,7 @@ def run_mha_prefill_v2_paged[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
+                    cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
                         Coord(
                             Int32(batch_size),

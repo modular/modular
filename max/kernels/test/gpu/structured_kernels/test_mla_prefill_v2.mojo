@@ -95,10 +95,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_knope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_krope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_out_ref_fp32: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    host_q_src: UnsafePointer[mut=False, BFloat16, _],
+    host_knope_src: UnsafePointer[mut=False, BFloat16, _],
+    host_krope_src: UnsafePointer[mut=False, BFloat16, _],
+    host_out_ref_fp32: UnsafePointer[mut=True, Float32, _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -119,7 +119,7 @@ def _mla_naive_fp32_ref_chunked(
     K_nope segment (DeepSeek-V3 convention).
     """
     var heads_per_kv = num_heads // num_kv_heads
-    var score_buf = alloc[Scalar[DType.float32]](chunk_size * num_keys)
+    var score_buf = alloc[Float32](chunk_size * num_keys)
 
     for b in range(batch):
         for h in range(num_heads):
@@ -216,8 +216,8 @@ def _mla_prefill_v2_launch[
     scale: Float32,
     num_keys: Int,
     start_pos: Int,
-    work_indptr_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
-    work_info_ptr: UnsafePointer[mut=False, Scalar[DType.int32], _],
+    work_indptr_ptr: UnsafePointer[mut=False, Int32, _],
+    work_info_ptr: UnsafePointer[mut=False, Int32, _],
     num_works: Int,
     num_cu: Int,
     ctx: DeviceContext,
@@ -513,7 +513,7 @@ def test_mla_vs_fp32_ref[
 
     # ---- FP32 host reference (full sweep) -----------------------------
     var size_ref = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
-    var host_out_ref_fp32 = alloc[Scalar[DType.float32]](size_ref)
+    var host_out_ref_fp32 = alloc[Float32](size_ref)
     comptime CHUNK_SIZE = 64
     _mla_naive_fp32_ref_chunked(
         host_q_src.unsafe_ptr(),

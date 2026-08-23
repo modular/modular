@@ -349,8 +349,8 @@ def kernel_4[
                         i + tma_n * (TMA_BN // 16)
                     ) * 8 + 2 * _ei
                     var pair = SIMD[DType.float32, 2](
-                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
-                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                        rebind[Float32](c_frag[_src_offset]),
+                        rebind[Float32](c_frag[_src_offset + 1]),
                     )
                     var casted = pair.cast[DType.bfloat16]()
                     d_reg[2 * _ei] = casted[0]

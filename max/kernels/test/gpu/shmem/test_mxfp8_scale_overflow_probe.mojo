@@ -90,7 +90,7 @@ def _cast_probe_kernel(
 ):
     var i = global_idx.x
     if i < Int(n):
-        var x = rebind[Scalar[DType.float32]](vals[i])
+        var x = rebind[Float32](vals[i])
         var s = x.cast[DType.float8_e8m0fnu]()
         e8m0_out[i] = rebind[e8m0_out.ElementType](s)
         e8m0_back[i] = rebind[e8m0_back.ElementType](s.cast[DType.float32]())
@@ -528,8 +528,8 @@ def _fill_pattern(
                 h[gi] = bf16_denorm
                 h[ui] = bf16_denorm
             else:
-                h[gi] = Scalar[DType.bfloat16](0)
-                h[ui] = Scalar[DType.bfloat16](0)
+                h[gi] = BFloat16(0)
+                h[ui] = BFloat16(0)
             continue
         h[gi] = gv.cast[DType.bfloat16]()
         h[ui] = uv.cast[DType.bfloat16]()
@@ -598,8 +598,8 @@ def test_fused_silu_adversarial[
     var scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         SILU_TOKENS * scale_K
     )
-    out_d.enqueue_fill(Scalar[DType.float8_e4m3fn](0))
-    scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    out_d.enqueue_fill(Float8_e4m3fn(0))
+    scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](

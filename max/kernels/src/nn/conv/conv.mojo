@@ -3282,7 +3282,7 @@ def pack_filter_from_fcrs(
                         rscf_buf.store(dst, filter_lt.ptr.load(src))
         # Reinterpret as int64 for pack_filter (matches existing convention).
         var rscf_tile = TileTensor(
-            rscf_buf.bitcast[Scalar[DType.int64]](),
+            rscf_buf.bitcast[Int64](),
             row_major((dim_R, dim_S, dim_C, dim_F)),
         )
         pack_filter(rscf_tile, packed_filter, num_groups)
@@ -3314,7 +3314,7 @@ def pack_filter_from_fcrs(
                             )
                             rscf_buf.store(dst, filter_lt.ptr.load(src))
         var rscf_tile = TileTensor(
-            rscf_buf.bitcast[Scalar[DType.int64]](),
+            rscf_buf.bitcast[Int64](),
             row_major(
                 (
                     dim_Q,
@@ -4974,7 +4974,7 @@ def conv_gpu[
             paddings_tensor[2 * axis + 1] = 0
 
         comptime for i in range(conv_rank):
-            comptime SIMDInt = Scalar[DType.int]
+            comptime SIMDInt = Int
 
             var axis = i + 1  # skip batch axis
             paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before

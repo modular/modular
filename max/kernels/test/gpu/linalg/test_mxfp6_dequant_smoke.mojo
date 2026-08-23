@@ -41,7 +41,7 @@ def _e8m0_to_float32(bits: UInt8) -> Float32:
 
 
 def _code_at(
-    stream: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    stream: UnsafePointer[mut=False, UInt8, _],
     row_base: Int,
     row_bytes: Int,
     col: Int,
@@ -65,8 +65,8 @@ def _cpu_dequant_mxfp6[
     fmt: FP6Format, out_dtype: DType
 ](
     expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    input_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
-    scales_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    input_data: UnsafePointer[mut=False, UInt8, _],
+    scales_data: UnsafePointer[mut=False, UInt8, _],
     num_rows: Int,
     num_cols: Int,
 ):

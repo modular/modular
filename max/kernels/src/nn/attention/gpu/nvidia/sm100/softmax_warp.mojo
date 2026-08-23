@@ -190,7 +190,7 @@ def fa4_scale_write_output[
             )
             var o_inner = Int(local_row) * o_sw_K
             (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                Scalar[DType.uint32]
+                UInt32
             ]().store(packed)
         else:
             var o_vals = tcgen05_ld[
@@ -209,7 +209,7 @@ def fa4_scale_write_output[
             # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
             var o_inner = Int(local_row) * o_sw_K
             (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                Scalar[DType.uint32]
+                UInt32
             ]().store(packed)
 
     comptime if batched:
@@ -410,7 +410,7 @@ def fa4_lse_combine_write[
         # Block `j` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
         var o_inner = Int(local_row) * o_sw_K
         (o_smem_arg + j * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-            Scalar[DType.uint32]
+            UInt32
         ]().store(packed)
 
     # Sync all WARPGROUP_SIZE threads before the TMA store.
@@ -461,8 +461,8 @@ def fa4_ws_intracta_combine[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
 ) -> Tuple[Float32, Float32]:
     """Intra-CTA `m_pack`-way LSE combine for the `.ws` MMA_M=32 datapath.
@@ -709,9 +709,9 @@ def fa4_ws_level1_combine[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
+    mut o_band: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """Level 1 of the two-level WS combine: per-warpgroup `m_pack`-way merge of
     the packed-TMEM datapath quarters into an UNNORMALIZED partial.
@@ -885,9 +885,9 @@ def fa4_ws_level2_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
-    l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    o_band: Array[Float32, ov_depth // m_pack],
+    l2_stage_smem: SharedMemPointer[Float32],
+    l2_maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
 ) -> Tuple[Float32, Float32]:
     """Level 2 of the two-level WS combine: intra-CTA cross-warpgroup
@@ -1041,9 +1041,9 @@ def fa4_ws_intracta_combine_partial[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
+    mut o_band_norm: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T==1 cross-CTA (split-K) partial: the 4-way intra-CTA combine emitting the
     NORMALIZED per-CTA band into `o_band_norm` (registers) + returning
@@ -1090,10 +1090,10 @@ def fa4_ws_level2_combine_partial[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
-    l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
+    o_band: Array[Float32, ov_depth // m_pack],
+    l2_stage_smem: SharedMemPointer[Float32],
+    l2_maxsum_smem: SharedMemPointer[Float32],
+    mut o_band_norm: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T>=2 cross-CTA (split-K) partial: a fork of
     `fa4_ws_level2_reduce_scatter_write` that emits the NORMALIZED per-CTA band
@@ -1191,9 +1191,9 @@ def fa4_ws_splitk_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    o_band_norm: Array[Float32, ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
     ragged_tma_store: RaggedTMA3DTile[
@@ -1517,10 +1517,10 @@ def fa4_splitk_stage_partial[
     local_row: UInt32,
     final_scale_local: Float32,
     final_scale_peer: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
     own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
     peer_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    mut o_final: Array[Scalar[DType.float32], band_cols],
+    mut o_final: Array[Float32, band_cols],
 ):
     """Split-K pass 1: LSE-combine the two WG O fragments into this partition's
     NORMALIZED `O_cta` (f32) over the FULL `[0, iters)` depth range, routing each
@@ -1697,8 +1697,8 @@ def fa4_splitk_combine_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
     ragged_tma_store: RaggedTMA3DTile[
@@ -1713,7 +1713,7 @@ def fa4_splitk_combine_write[
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
-    mut o_final: Array[Scalar[DType.float32], band_cols],
+    mut o_final: Array[Float32, band_cols],
 ):
     """Split-K pass 2 (reduce-scatter): EVERY partition's WG0 owns the
     depth-column band `[wg_j_offset, wg_j_offset+iters_per_wg)` (output blocks).
@@ -1954,8 +1954,8 @@ def fa4_splitk_reduce_scatter_write[
     scale_log2e: Float32,
     final_scale_local: Float32,
     final_scale_peer: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
     own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
@@ -2024,9 +2024,7 @@ def fa4_splitk_reduce_scatter_write[
             if partition_idx == UInt32(p_static):
                 comptime if ipw > 0:
                     comptime band_cols = ipw * o_sw_K
-                    var o_final = Array[Scalar[DType.float32], band_cols](
-                        uninitialized=True
-                    )
+                    var o_final = Array[Float32, band_cols](uninitialized=True)
                     if warp_group_idx == UInt32(0):
                         # 1. Stage PEER bands -> smem (own band skipped).
                         fa4_splitk_stage_partial[
@@ -2109,9 +2107,7 @@ def fa4_splitk_reduce_scatter_write[
                     # and publish (round-1). No bf16 write here -> no
                     # round-2 needed; the staged O_cta stays alive for
                     # peers via the kernel's terminal `cluster_sync()`.
-                    var o_final_empty = Array[Scalar[DType.float32], 0](
-                        uninitialized=True
-                    )
+                    var o_final_empty = Array[Float32, 0](uninitialized=True)
                     if warp_group_idx == UInt32(0):
                         fa4_splitk_stage_partial[
                             output_type,
@@ -3268,9 +3264,9 @@ def fa4_softmax[
                         ws_l2_stagee + (WS_L2STAGE + WS_L2MS)
                     ).bitcast[Scalar[output_type]]()
                     var o_band_zero = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
-                    ](fill=Scalar[DType.float32](0))
+                    ](fill=Float32(0))
                     fa4_ws_splitk_reduce_scatter_write[
                         config,
                         config.m_pack,
@@ -3961,7 +3957,7 @@ def fa4_softmax[
                     # `ws_l2_stage`/`ws_maxsum1` for the cross-CTA staging (the
                     # intra-CTA `ws_stage0`/`ws_maxsum0` are consumed above).
                     var o_band_norm_t1 = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
                     var m_cta_t1, l_cta_t1 = fa4_ws_intracta_combine_partial[
@@ -4071,9 +4067,9 @@ def fa4_softmax[
                 var ws_maxsum = (
                     ws_maxsum0 if warp_group_idx == UInt32(0) else ws_maxsum1
                 )
-                var o_band = Array[
-                    Scalar[DType.float32], config.ov_depth // config.m_pack
-                ](uninitialized=True)
+                var o_band = Array[Float32, config.ov_depth // config.m_pack](
+                    uninitialized=True
+                )
                 var m_wg, l_wg = fa4_ws_level1_combine[
                     config.m_pack, config.BM, config.ov_depth, use_fma=use_fma
                 ](
@@ -4100,7 +4096,7 @@ def fa4_softmax[
                     # dead Level-1 maxsum, ordered by Level 2's barrier 3) holds
                     # the per-CTA (M,L).
                     var o_band_norm = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
                     var m_cta, l_cta = fa4_ws_level2_combine_partial[

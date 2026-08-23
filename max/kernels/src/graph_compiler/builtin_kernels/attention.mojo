@@ -3361,9 +3361,9 @@ struct Struct_mla_prefill_sparse_paged:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=ImmutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+            attn_sink.to_layout_tensor().ptr
+        )
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -3397,15 +3397,11 @@ struct Struct_mla_prefill_sparse_paged:
             # negative ones (cf. the `idx >= 0` check in the gather4 path),
             # so reinterpreting the bits via `bitcast` is sound.
             var indices_tt = TileTensor(
-                scratch_sparse_indices.unsafe_ptr().bitcast[
-                    Scalar[DType.uint32]
-                ](),
+                scratch_sparse_indices.unsafe_ptr().bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[
-                    Scalar[DType.uint32]
-                ](),
+                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -3476,9 +3472,9 @@ struct Struct_mla_prefill_sparse_paged_fp8:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=ImmutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
+            attn_sink.to_layout_tensor().ptr
+        )
 
         var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
             kv_scales.to_layout_tensor().ptr
@@ -3505,15 +3501,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
             )
 
             var indices_tt = TileTensor(
-                scratch_sparse_indices.unsafe_ptr().bitcast[
-                    Scalar[DType.uint32]
-                ](),
+                scratch_sparse_indices.unsafe_ptr().bitcast[UInt32](),
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[
-                    Scalar[DType.uint32]
-                ](),
+                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 

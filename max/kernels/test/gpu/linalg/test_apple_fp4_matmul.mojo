@@ -79,7 +79,7 @@ from linalg.matmul.gpu.apple.matmul2d_fp4 import (
 
 
 def _host_dequant_weight(
-    byte: UInt8, nibble_hi: Bool, scale: Scalar[DType.float8_e4m3fn]
+    byte: UInt8, nibble_hi: Bool, scale: Float8_e4m3fn
 ) -> Float32:
     """Host mirror of the device dequant: `E2M1_TO_FLOAT32[nibble] * |scale|`.
     """

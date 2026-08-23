@@ -60,7 +60,7 @@ struct IndexSmemStorage[
 
     var q_smem: Array[Scalar[Self.dtype], Self.num_heads * Self.depth]
     var k_smem: Array[Scalar[Self.dtype], Self.BN * Self.depth]
-    var scratch: Array[Scalar[DType.float32], Self.BN * 8]
+    var scratch: Array[Float32, Self.BN * 8]
 
 
 @__name(t"fp8_index_{dtype}")
@@ -167,7 +167,7 @@ def fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]

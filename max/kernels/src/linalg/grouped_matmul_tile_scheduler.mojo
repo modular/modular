@@ -193,7 +193,7 @@ struct TileScheduler[
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
         ) + UInt32(block_idx.x)
-        var start_idx = rebind[Scalar[DType.uint32]](
+        var start_idx = rebind[UInt32](
             self.group_offsets[Int(self.current_group_idx)]
         )
 
@@ -204,7 +204,7 @@ struct TileScheduler[
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            var end_idx = rebind[Scalar[DType.uint32]](
+            var end_idx = rebind[UInt32](
                 self.group_offsets[Int(self.current_group_idx + 1)]
             )
             var current_dynamic_dim = end_idx - start_idx

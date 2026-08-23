@@ -551,11 +551,11 @@ def test_kernel_single_tile_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -610,11 +610,11 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -674,11 +674,11 @@ def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -733,11 +733,11 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -895,11 +895,11 @@ def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
     # B is stored as (N, K) for transpose_b=True.
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](N * K)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(N * K):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -954,11 +954,11 @@ def test_kernel_ragged_100x200x33_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1024,11 +1024,11 @@ def test_kernel_ragged_100x200x32_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1095,11 +1095,11 @@ def test_kernel_ragged_100x200x32_nt_fp16(ctx: DeviceContext) raises:
     # B stored as (N, K) for transpose_b=True.
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](N * K)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(N * K):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1166,11 +1166,11 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1332,11 +1332,11 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.bfloat16](
+        a_host[i] = BFloat16(
             random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.bfloat16](
+        b_host[i] = BFloat16(
             random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
         )
 
@@ -1399,11 +1399,11 @@ def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
     var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.bfloat16](
+        a_host[i] = BFloat16(
             random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.bfloat16](
+        b_host[i] = BFloat16(
             random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
         )
 
@@ -1458,11 +1458,11 @@ def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float32](
+        a_host[i] = Float32(
             random_si64(Int64(-2), Int64(2)).cast[DType.float32]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float32](
+        b_host[i] = Float32(
             random_si64(Int64(-2), Int64(2)).cast[DType.float32]()
         )
 
@@ -1516,11 +1516,11 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
@@ -1572,11 +1572,11 @@ def test_kernel_128_nn_fp16_fp16_no_lambda(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1632,11 +1632,11 @@ def test_kernel_128_nn_fp16_bf16_no_lambda(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -1931,11 +1931,11 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](N * K)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(N * K):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -2009,15 +2009,15 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](N * K)
     var bias_host = ctx.enqueue_create_host_buffer[DType.float16](N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(N * K):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for j in range(N):
-        bias_host[j] = Scalar[DType.float16](
+        bias_host[j] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -2100,15 +2100,15 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](N * K)
     var bias_host = ctx.enqueue_create_host_buffer[DType.float16](N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(N * K):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for j in range(N):
-        bias_host[j] = Scalar[DType.float16](
+        bias_host[j] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -2187,11 +2187,11 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
     var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 
@@ -2251,15 +2251,15 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
     var bias_host = ctx.enqueue_create_host_buffer[DType.float16](N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
+        a_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
+        b_host[i] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
     for j in range(N):
-        bias_host[j] = Scalar[DType.float16](
+        bias_host[j] = Float16(
             random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
         )
 

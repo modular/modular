@@ -165,9 +165,7 @@ def bench_shape[
 
     var total_seq = 0
     var max_seq = 0
-    var iro_host = List[Scalar[DType.uint32]](
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var iro_host = List[UInt32](length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size):
         iro_host[i] = UInt32(total_seq)
         total_seq += prompt_lens[i]
@@ -186,9 +184,7 @@ def bench_shape[
         ),
     )
 
-    var cache_lengths_host = List[Scalar[DType.uint32]](
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
@@ -201,9 +197,7 @@ def bench_shape[
     )
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
-    var lut_host = List[Scalar[DType.uint32]](
-        length=batch_size * lut_cols, fill=Scalar[DType.uint32](0)
-    )
+    var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):
         var pages = ceildiv(prompt_lens[b], page_size)

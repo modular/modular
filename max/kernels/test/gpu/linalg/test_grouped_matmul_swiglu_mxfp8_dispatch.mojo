@@ -71,7 +71,7 @@ from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
 @always_inline
-def e8m0(x: Float32) -> Scalar[DType.float8_e8m0fnu]:
+def e8m0(x: Float32) -> Float8_e8m0fnu:
     """Construct an E8M0 scalar from a Float32 via cast."""
     return x.cast[DType.float8_e8m0fnu]()
 
@@ -159,7 +159,7 @@ def _build_shared_b[
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
     var b_scales_perm_host = TileTensor(b_scales_perm_host_ptr, b_scales_shape)
 
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+    var expert_scales_host_ptr = alloc[Float32](num_experts)
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -358,9 +358,9 @@ def _test_swiglu_mxfp8_dispatch[
     # ---- Per-expert offsets / IDs sized at comptime upper bound
     # `num_experts`. Tail slots [num_active_experts, num_experts) are
     # padded (0 tokens, -1 id); the kernel skips expert_id < 0.
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_experts + 1)
+    var a_scale_offsets_ptr = alloc[UInt32](num_experts)
+    var expert_ids_host_ptr = alloc[Int32](num_experts)
 
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_experts + 1

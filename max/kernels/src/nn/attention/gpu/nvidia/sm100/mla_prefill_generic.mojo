@@ -1795,9 +1795,9 @@ __extension SM100MLA:
                 # 2Q is non-shared-KV, never shared), so q1_rope is dead here;
                 # define it from the same base for type consistency.
                 q0_rope = Self.descriptor_q_rope(
-                    (
-                        q_smem.bitcast[Scalar[DType.uint8]]() + q_rope_off
-                    ).bitcast[Scalar[Self.rope_mma_dtype]]()
+                    (q_smem.bitcast[UInt8]() + q_rope_off).bitcast[
+                        Scalar[Self.rope_mma_dtype]
+                    ]()
                 )
                 q1_rope = q0_rope
 

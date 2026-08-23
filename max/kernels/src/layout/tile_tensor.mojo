@@ -4259,12 +4259,12 @@ def lt_to_tt[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+                Int64(lt.runtime_layout.shape.value[i])
             )
 
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+                Int64(lt.runtime_layout.stride.value[i])
             )
 
     var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
@@ -4333,12 +4333,12 @@ def lt_to_tt_idx[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+                Int64(lt.runtime_layout.shape.value[i])
             )
 
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+                Int64(lt.runtime_layout.stride.value[i])
             )
 
     var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](

@@ -1491,10 +1491,10 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[2]())
 
-    var a_start_row = rebind[Scalar[DType.uint32]](a_offsets[block_idx.z])
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
     var a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
-    var expert = rebind[Scalar[DType.int32]](expert_ids[block_idx.z])
+    var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul

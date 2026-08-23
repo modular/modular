@@ -1501,7 +1501,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ]
 
     ref smem_storage = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
@@ -2382,9 +2382,7 @@ def _create_tma_and_launch[
     var sfa_4d_tensor = TileTensor[
         DType.uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint16], ImmutAnyOrigin]](
-            sfa_5d_tensor.ptr
-        ),
+        rebind[UnsafePointer[UInt16, ImmutAnyOrigin]](sfa_5d_tensor.ptr),
         sfa_4d_layout,
     )
 

@@ -57,15 +57,15 @@ def _rand_operand_byte[lane_bytes: Int]() -> UInt8:
     else:
         var f = Float32(Int(random_ui64(0, 2000))) / 1000.0 - 1.0
         return bitcast[DType.uint8, 1](
-            SIMD[DType.float8_e4m3fn, 1](f.cast[DType.float8_e4m3fn]())
+            Float8_e4m3fn(f.cast[DType.float8_e4m3fn]())
         )[0]
 
 
 def _assert_epilogue_arm(
-    epi: UnsafePointer[Scalar[DType.float32], _],
-    reduced: UnsafePointer[Scalar[DType.float32], _],
-    fire: UnsafePointer[Scalar[DType.int32], _],
-    c: UnsafePointer[Scalar[DType.float32], _],
+    epi: UnsafePointer[Float32, _],
+    reduced: UnsafePointer[Float32, _],
+    fire: UnsafePointer[Int32, _],
+    c: UnsafePointer[Float32, _],
     saw_wide: Int,
     n_elems: Int,
     arm: String,

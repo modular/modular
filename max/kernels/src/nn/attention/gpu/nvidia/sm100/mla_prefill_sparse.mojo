@@ -671,9 +671,9 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = Array[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
+                var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                    uninitialized=True
+                )
                 if k > 0 and should_scale_o:
                     tcgen05_fence_after()
                     o_chunk_prefetch = tcgen05_ld[
@@ -711,9 +711,9 @@ struct MLAPrefillSparse[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
+                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled_0[j] = mul_ftz(
                             o_chunk_prefetch[j],
@@ -738,9 +738,9 @@ struct MLAPrefillSparse[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[
-                            Scalar[DType.float32], O_RESCALE_CHUNK
-                        ](uninitialized=True)
+                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
+                            uninitialized=True
+                        )
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
                                 o_chunk[j],
@@ -866,7 +866,7 @@ struct MLAPrefillSparse[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Float32, CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,

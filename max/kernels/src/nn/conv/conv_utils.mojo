@@ -384,19 +384,19 @@ def get_conv_shape[
 
     comptime for i in range(rank):
         output_dims[i] = rebind[output_dims.element_types[i]](
-            Scalar[DType.int64](output.dim[i + 1]())
+            Int64(output.dim[i + 1]())
         )
         input_dims[i] = rebind[input_dims.element_types[i]](
-            Scalar[DType.int64](input.dim[i + 1]())
+            Int64(input.dim[i + 1]())
         )
 
         comptime if filter_packed:
             filter_dims[i] = rebind[filter_dims.element_types[i]](
-                Scalar[DType.int64](filter.dim[i + 1]())
+                Int64(filter.dim[i + 1]())
             )
         else:
             filter_dims[i] = rebind[filter_dims.element_types[i]](
-                Scalar[DType.int64](filter.dim[i]())
+                Int64(filter.dim[i]())
             )
 
     return ConvShape[rank](

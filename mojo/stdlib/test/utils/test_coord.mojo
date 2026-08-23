@@ -224,8 +224,8 @@ def test_idx2crd_result_types_all_shape_1() raises:
 
 def test_idx2crd_result_types_runtime_shape() raises:
     """Scalar shape dims always produce Scalar result."""
-    comptime shape = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
-    comptime stride = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
+    comptime shape = TypeList.of[Int, Int]()
+    comptime stride = TypeList.of[Int, Int]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(types[0] == Int64)
     assert_true(types[1] == Int64)

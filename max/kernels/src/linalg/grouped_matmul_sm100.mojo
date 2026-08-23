@@ -159,7 +159,7 @@ def load_AB[
     cta_group: Int = 1,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    expert_ids: UnsafePointer[mut=False, Scalar[DType.int32], _],
+    expert_ids: UnsafePointer[mut=False, Int32, _],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_tiles: SMemTileArray2D[
@@ -357,7 +357,7 @@ def load_AB_cuda_core[
 ](
     a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
-    expert_ids: UnsafePointer[mut=False, Scalar[DType.int32], _],
+    expert_ids: UnsafePointer[mut=False, Int32, _],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
@@ -1329,11 +1329,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
     a_gmem_layout: Layout = Layout.row_major(1, 1),
     b_gmem_layout: Layout = Layout.row_major(1, 1),
 ](
-    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    expert_usage_stats: UnsafePointer[UInt32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Int32, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    b_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
@@ -1809,7 +1809,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         transpose_c=transpose_c,
                     ](
                         work_tile_coord=(Int(work_info.m), Int(work_info.n)),
-                        group_end_idx=rebind[Scalar[DType.uint32]](
+                        group_end_idx=rebind[UInt32](
                             scheduler.group_offsets[
                                 Int(scheduler.current_group_idx + 1)
                             ]
@@ -1824,7 +1824,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                     ](
                         c_ptr,
                         (work_info.m, work_info.n),
-                        rebind[Scalar[DType.uint32]](
+                        rebind[UInt32](
                             scheduler.group_offsets[
                                 Int(scheduler.current_group_idx + 1)
                             ]
@@ -1857,7 +1857,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 accum_empty_mbar,
                 tmem_addr,
                 work_tile_coord=(Int(work_info.m), Int(work_info.n)),
-                group_end_idx=rebind[Scalar[DType.uint32]](
+                group_end_idx=rebind[UInt32](
                     scheduler.group_offsets[
                         Int(scheduler.current_group_idx + 1)
                     ]
@@ -2009,10 +2009,10 @@ def _grouped_matmul_sm100_persistent[
 ](
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    expert_ids: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    expert_ids: UnsafePointer[Int32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    b_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
+    expert_usage_stats: UnsafePointer[UInt32, ImmutAnyOrigin],
     M_runtime: Int,
     b_desc_rows: Int,
     ctx: DeviceContext,

@@ -1801,6 +1801,7 @@ struct SIMDLength(TrivialRegisterPassable):
 
 comptime Float32 = SIMD[DType.float32, 1]
 comptime Float64 = SIMD[DType.float64, 1]
+comptime Float4_e2m1fn = SIMD[DType.float4_e2m1fn, 1]
 comptime Int32 = SIMD[DType.int32, 1]
 comptime UInt32 = SIMD[DType.uint32, 1]
 

@@ -75,7 +75,7 @@ def _verify_buffers_gpu[
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -272,7 +272,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -738,9 +738,7 @@ def bench_mxfp4_amd[
         var sfa_lt = LayoutTensor[
             DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin
         ](
-            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
-                sfa.ptr
-            ),
+            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
             RuntimeLayout[sfa_layout].row_major(
                 IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
             ),
@@ -748,9 +746,7 @@ def bench_mxfp4_amd[
         var sfb_lt = LayoutTensor[
             DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin
         ](
-            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
-                sfb.ptr
-            ),
+            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
             RuntimeLayout[sfb_layout].row_major(
                 IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
             ),
@@ -858,9 +854,7 @@ def bench_mxfp4_amd[
                 block_dim=BLOCK_SIZE,
             )
 
-            var result_host = List(
-                length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0)
-            )
+            var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
             ctx.enqueue_copy(result_host, result_device)
             ctx.synchronize()
 

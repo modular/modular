@@ -193,7 +193,7 @@ def perf_counter_ns() -> Int:
 
 
 @always_inline
-def global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
+def global_perf_counter_ns() -> UInt64:
     """Returns the current value in the global nanosecond resolution timer. This value
     is common across all SM's.
 

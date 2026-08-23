@@ -129,7 +129,7 @@ struct Depth512AttentionSMem[
 
     # ---- storage -------------------------------------------------------------
     @__allow_legacy_any_origin_fields
-    var base: SharedMemPointer[Scalar[DType.uint8]]
+    var base: SharedMemPointer[UInt8]
 
     # ---- construction --------------------------------------------------------
 
@@ -145,7 +145,7 @@ struct Depth512AttentionSMem[
         ), "K slot and V half-tile must have equal element count for fused KV"
 
         self.base = external_memory[
-            Scalar[DType.uint8],
+            UInt8,
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",

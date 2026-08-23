@@ -170,7 +170,7 @@ def _load_to_lds[
         CacheOperation.STREAMING,
     ), "_load_to_lds supports ALWAYS or STREAMING cache policy"
     var desc_ptr = UnsafePointer[
-        Scalar[DType.bfloat16],
+        BFloat16,
         MutAnyOrigin,
         address_space=AddressSpace.BUFFER_RESOURCE,
     ].unsafe_dangling()
@@ -178,7 +178,7 @@ def _load_to_lds[
     var ptr_to_simd = UnsafePointer(to=bc.desc)
     ptr_to_ptr[0] = ptr_to_simd.bitcast[
         UnsafePointer[
-            Scalar[DType.bfloat16],
+            BFloat16,
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
         ]
@@ -798,7 +798,7 @@ def _load_from_lds[
     """
     comptime if imm_offset_bytes != 0:
         comptime if dtype == DType.bfloat16 and width == 8:
-            var bf16_ptr = shared_ptr.bitcast[Scalar[DType.bfloat16]]()
+            var bf16_ptr = shared_ptr.bitcast[BFloat16]()
             var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
                 bf16_ptr
             )
@@ -952,9 +952,7 @@ def _load_from_lds[
 def ds_read_b128_imm_u32x4[
     offset_bytes: Int,
 ](
-    base_ptr: UnsafePointer[
-        Scalar[DType.bfloat16], _, address_space=AddressSpace.SHARED
-    ],
+    base_ptr: UnsafePointer[BFloat16, _, address_space=AddressSpace.SHARED],
 ) -> SIMD[DType.uint32, 4]:
     """Issues `ds_read_b128` with a comptime immediate offset and returns the
     loaded 128 bits as `SIMD[DType.uint32, 4]`.
@@ -1879,7 +1877,7 @@ struct SubTileLoaderLDS[
             ]()
 
             var desc_ptr_ = UnsafePointer[
-                Scalar[DType.bfloat16],
+                BFloat16,
                 MutAnyOrigin,
                 address_space=AddressSpace.BUFFER_RESOURCE,
             ].unsafe_dangling()
@@ -1887,7 +1885,7 @@ struct SubTileLoaderLDS[
             var ptr_to_simd = UnsafePointer(to=self.bc.desc)
             ptr_to_ptr[0] = ptr_to_simd.bitcast[
                 UnsafePointer[
-                    Scalar[DType.bfloat16],
+                    BFloat16,
                     MutAnyOrigin,
                     address_space=AddressSpace.BUFFER_RESOURCE,
                 ]
@@ -2241,19 +2239,19 @@ struct SubTileLoaderLDS_st_8x32[
                     # gated study path — see the `_v227_layout` field doc.
                     global_byte_in_tile = Int32(
                         crd2idx(
-                            Scalar[DType.int32](_ci),
+                            Int32(_ci),
                             _SRC_CHUNK_SHAPE,
                             _SRC_CHUNK_STRIDE,
                         )
                         + crd2idx(
-                            Scalar[DType.int32](lane_id_local),
+                            Int32(lane_id_local),
                             _SRC_LANE_SHAPE,
                             _SRC_LANE_STRIDE,
                         )
                     ) * Int32(size_of[Self.dtype]())
                     lds_warp_byte = Int32(
                         crd2idx(
-                            Scalar[DType.int32](_ci),
+                            Int32(_ci),
                             _LDS_CHUNK_SHAPE,
                             _LDS_CHUNK_STRIDE,
                         )
@@ -2292,7 +2290,7 @@ struct SubTileLoaderLDS_st_8x32[
             ](v_smem_warp_ptr)
 
             var desc_ptr_ = UnsafePointer[
-                Scalar[DType.bfloat16],
+                BFloat16,
                 MutAnyOrigin,
                 address_space=AddressSpace.BUFFER_RESOURCE,
             ].unsafe_dangling()
@@ -2300,7 +2298,7 @@ struct SubTileLoaderLDS_st_8x32[
             var ptr_to_simd = UnsafePointer(to=self.bc.desc)
             ptr_to_ptr[0] = ptr_to_simd.bitcast[
                 UnsafePointer[
-                    Scalar[DType.bfloat16],
+                    BFloat16,
                     MutAnyOrigin,
                     address_space=AddressSpace.BUFFER_RESOURCE,
                 ]

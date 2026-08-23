@@ -31,7 +31,7 @@ def _verify_buffers_gpu[
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 

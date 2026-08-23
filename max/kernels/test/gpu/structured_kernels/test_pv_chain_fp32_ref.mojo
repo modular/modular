@@ -162,7 +162,7 @@ def kernel_pv_chain[
 ](
     src_v_subtile_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
     src_p_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Loads V from sub-tile-major SMEM, fills P per-lane from gmem,
     calls `mma_PV`, dumps per-lane FP32 accumulator to `dump_ptr`.

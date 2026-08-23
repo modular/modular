@@ -174,7 +174,7 @@ def test_unsafe_cast() raises:
 
     # An independent pointer bitcast lands at the same address (distance 0)
     # and observes the same raw bits.
-    var expected = storage.bitcast[Scalar[DType.uint32]]()
+    var expected = storage.bitcast[UInt32]()
     assert_equal(PointerStorage[element_width=1].distance(as_u32, expected), 0)
     assert_equal(
         PointerStorage[element_width=1].load[width=1, alignment=ALIGN_U32](
@@ -194,7 +194,7 @@ def test_unsafe_ptr() raises:
     # `unsafe_ptr` yields the scalar base pointer of the storage. It lands at
     # the same address as an independent bitcast and reads the same elements.
     var raw = PointerStorage[element_width=1].unsafe_ptr(storage)
-    var expected = storage.bitcast[Scalar[DType.float32]]()
+    var expected = storage.bitcast[Float32]()
     assert_equal(Int(raw), Int(expected))
     assert_equal(
         raw.load[width=4, alignment=ALIGN_F32](),

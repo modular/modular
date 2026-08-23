@@ -413,21 +413,17 @@ def test_kv_cache_2m_iadd_cpu[
     assert (
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
-    var input_row_offsets_host_ptr = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_host_ptr = List(length=batch_size + 1, fill=UInt32(0))
     var input_row_offsets_host = TileTensor(
         input_row_offsets_host_ptr, row_major(batch_size + 1)
     )
-    var cache_lengths_host_ptr = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var cache_lengths_host = TileTensor(
         cache_lengths_host_ptr, row_major(batch_size)
     )
 
     var input_row_offsets_slice_host_ptr = List(
-        length=num_active_loras + 1, fill=Scalar[DType.uint32](0)
+        length=num_active_loras + 1, fill=UInt32(0)
     )
     var input_row_offsets_slice_host = TileTensor(
         input_row_offsets_slice_host_ptr, row_major(num_active_loras + 1)
@@ -457,11 +453,11 @@ def test_kv_cache_2m_iadd_cpu[
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var lora_end_idx_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
+    var lora_end_idx_host_ptr = List(length=1, fill=Int64(0))
     var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Idx[1]))
     lora_end_idx_host[0] = Int64(total_slice_length)
 
-    var batch_seq_len_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
+    var batch_seq_len_host_ptr = List(length=1, fill=Int64(0))
     var batch_seq_len_host = TileTensor(
         batch_seq_len_host_ptr, row_major(Idx[1])
     )
@@ -491,9 +487,7 @@ def test_kv_cache_2m_iadd_cpu[
     var paged_lut_size = batch_size * ceildiv(
         max_full_context_length, page_size
     )
-    var paged_lut_host_ptr = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr, row_major(Coord(paged_lut_shape))
     )

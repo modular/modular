@@ -37,10 +37,10 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 def block_scaled_matmul_ref[
     output_dtype: DType
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,

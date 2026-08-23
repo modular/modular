@@ -513,9 +513,7 @@ def var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
     # Convert !kgen.simd<si32> to !kgen.simd<X>
     var s = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](si32)
     # Convert !kgen.simd<X> to !kgen.simd<ui8>
-    var pop_ui8 = __mlir_op.`pop.cast`[_type=Scalar[DType.uint8]._mlir_type](
-        si32
-    )
+    var pop_ui8 = __mlir_op.`pop.cast`[_type=UInt8._mlir_type](si32)
     # Convert !kgen.simd<ui8> to ui8
     var ui8 = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](pop_ui8)
     # Convert ui8 to dtype
@@ -523,9 +521,9 @@ def var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
     # Convert dtype to ui8
     var dt_ui8 = __mlir_op.`pop.dtype.to_ui8`(dt)
     # Convert the ui8 back to !kgen.simd<ui8>
-    var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[
-        _type=Scalar[DType.uint8]._mlir_type
-    ](dt_ui8)
+    var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
+        dt_ui8
+    )
     # Convert !kgen.simd<ui8> back to !kgen.simd<X>
     var t = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](pop_ui8_2)
     # Combine the two

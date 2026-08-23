@@ -2175,16 +2175,16 @@ def _ts_foldsum_compare[
 ](
     label: String,
     p_ptr: UnsafePointer[Scalar[TS_ACCUM_TYPE], out_origin],
-    ref_ptr: UnsafePointer[Scalar[DType.float32], ref_origin],
+    ref_ptr: UnsafePointer[Float32, ref_origin],
 ) raises:
     """Fold-sum comparison: P_gpu[:, c] + P_gpu[:, c+64] vs P_ref[64,64]."""
     var max_err: Float32 = 0.0
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = ref_ptr[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_ptr[r * TS_P_COLS + c]) + Float32(
+                p_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err:
                 max_err = err
@@ -2281,9 +2281,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = p_ref_host[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_full_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_full_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_full_ptr[r * TS_P_COLS + c]) + Float32(
+                p_full_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err_full:
                 max_err_full = err
@@ -2304,9 +2304,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = p_ref_host[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_deg_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_deg_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_deg_ptr[r * TS_P_COLS + c]) + Float32(
+                p_deg_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err_deg:
                 max_err_deg = err

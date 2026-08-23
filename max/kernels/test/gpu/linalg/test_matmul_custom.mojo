@@ -74,13 +74,13 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
         row_major(Coord(M, N)),
     )
     var a_tt_bf16 = TileTensor(
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+        UnsafePointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_bf16 = TileTensor(
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+        UnsafePointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -123,13 +123,13 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
         row_major(Coord(M, N)),
     )
     var a_tt_fp32 = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_fp32 = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),

@@ -26,7 +26,7 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 @__parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = Array[Scalar[DType.int], n](fill=-1)
+    var vector = Array[Int, n](fill=-1)
 
     @always_inline
     def call_fn() raises {mut vector}:

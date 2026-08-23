@@ -77,7 +77,7 @@ def compute_reference_dynamic_scaling[
     var fp8_min = Float32(min_finite[out_dtype]())
 
     # Allocate temporary storage for normalized values
-    var temp_storage = List(length=cols, fill=Scalar[DType.float32](0))
+    var temp_storage = List(length=cols, fill=Float32(0))
 
     for row in range(rows):
         # Step 1: Compute mean square for RMSNorm

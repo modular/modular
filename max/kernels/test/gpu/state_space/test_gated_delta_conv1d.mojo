@@ -100,7 +100,7 @@ def run_slot_indexed_gpu[
         RuntimeLayout[layout_1d].row_major(Index(batch_size)),
     )
     for b in range(batch_size):
-        slot_idx_h.ptr.store(b, Scalar[DType.uint32](slot_assignments[b]))
+        slot_idx_h.ptr.store(b, UInt32(slot_assignments[b]))
 
     # input_row_offsets: [batch_size + 1]
     var input_row_offsets_heap = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -111,10 +111,10 @@ def run_slot_indexed_gpu[
         RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
     )
     var cumsum = 0
-    input_row_offsets_h.ptr.store(0, Scalar[DType.uint32](0))
+    input_row_offsets_h.ptr.store(0, UInt32(0))
     for b in range(batch_size):
         cumsum += seq_lengths[b]
-        input_row_offsets_h.ptr.store(b + 1, Scalar[DType.uint32](cumsum))
+        input_row_offsets_h.ptr.store(b + 1, UInt32(cumsum))
 
     var conv_output_gpu_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim

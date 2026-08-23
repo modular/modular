@@ -313,7 +313,7 @@ def decode_e2m1_to_f32_inject[
 
 
 @always_inline
-def compute_mxfp4_even_scale(max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
+def compute_mxfp4_even_scale(max_val: Float32) -> Float8_e8m0fnu:
     """Computes the OCP MXFP4 E8M0 scale using even-mode rounding.
 
     Even-mode rounding rounds the block maximum before deriving the scale
@@ -509,7 +509,7 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
-def cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
+def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[DType.float16, 2]:
     """Converts two FP4 E2M1 nibbles packed in one byte to two float16 values using SM100 PTX.
 
     Issues the `cvt.rn.f16x2.e2m1x2` PTX instruction to decode both nibbles in a

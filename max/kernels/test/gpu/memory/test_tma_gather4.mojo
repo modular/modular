@@ -1416,7 +1416,7 @@ def test_non_divisible_width[
             var got = h_out[gather_idx * padded_row_width + col]
             assert_equal(
                 got.cast[DType.float32](),
-                Scalar[DType.float32](0),
+                Float32(0),
                 msg=String(
                     "Expected zero at OOB col ",
                     col,

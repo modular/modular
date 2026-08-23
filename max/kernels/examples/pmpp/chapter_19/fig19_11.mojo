@@ -43,9 +43,9 @@ def conv_layer_mm_kernel(
     W_dev: Int32,
     K_dev: Int32,
     N_batch_dev: Int32,
-    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
+    X: UnsafePointer[Float32, ImmutAnyOrigin],
+    Y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Tiled matrix multiplication kernel for convolution.
 
@@ -78,12 +78,12 @@ def conv_layer_mm_kernel(
     # Fds[TILE_WIDTH][TILE_WIDTH] + Bds[TILE_WIDTH][TILE_WIDTH]
     var Fds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var Bds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
 

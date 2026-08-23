@@ -77,7 +77,7 @@ def im2col_load_kernel[
 
     var barrier_ptr = (
         external_memory[
-            Scalar[DType.uint8],
+            UInt8,
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="im2col_smem",

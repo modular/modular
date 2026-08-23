@@ -872,7 +872,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            var v_fp32 = Float32(o_reg_t.ptr[k_local])
             if q_in_bounds:
                 comptime if output_dtype == DType.float32:
                     epilogue_writer.store(

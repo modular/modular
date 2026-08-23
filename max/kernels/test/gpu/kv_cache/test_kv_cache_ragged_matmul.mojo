@@ -58,9 +58,7 @@ comptime llama_num_q_heads = 32
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[
-        mut=True, Scalar[DType.uint32], _
-    ],
+    input_row_offsets_host_ptr: UnsafePointer[mut=True, UInt32, _],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
@@ -190,7 +188,7 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -500,7 +498,7 @@ def execute_matmul_k_cache_ragged[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -784,7 +782,7 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -915,7 +913,7 @@ def execute_paged_fused_qkv_matmul[
         cache_sizes
     ), "expected prompt_lens and cache_sizes size to be equal"
 
-    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
 
     var kv_block_size = (
         num_paged_blocks
@@ -1031,7 +1029,7 @@ def execute_cont_batch_fused_qkv_matmul[
 
     # Initialize our KVCache
     var batch_size = len(cache_sizes)
-    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
     var max_seq_length_batch = -1
     var max_context_length = 0
 
@@ -1067,7 +1065,7 @@ def execute_cont_batch_fused_qkv_matmul[
     var kv_block_host_ptr = alloc[Scalar[dtype]](kv_block_size)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
-    var lookup_table_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var lookup_table_host_ptr = alloc[UInt32](batch_size)
 
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of

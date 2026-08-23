@@ -237,15 +237,11 @@ def bench_preb[
         # dispatcher signature. The kernel internally re-bitcasts to uint8 for
         # V# construction; the dtype is a wrapping convention.
         var sfa_tt = TileTensor[mut=False](
-            cb_a_sc.offset_ptr(iteration).bitcast[
-                Scalar[DType.float8_e8m0fnu]
-            ](),
+            cb_a_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
             row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
         )
         var sfb_tt = TileTensor[mut=False](
-            cb_b_sc.offset_ptr(iteration).bitcast[
-                Scalar[DType.float8_e8m0fnu]
-            ](),
+            cb_b_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
             row_major[num_experts, N, scale_K](),
         )
         var c_tt = TileTensor[mut=True](

@@ -364,7 +364,7 @@ struct BlockScaledMmaOp_PreB[
         self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
             Self._c_reg_layout
         )
-        _ = self._c_reg.fill(Scalar[DType.float32](0))
+        _ = self._c_reg.fill(Float32(0))
 
         self._a_scale_packed = stack_allocation[
             DType.int32, AddressSpace.LOCAL
@@ -874,12 +874,8 @@ struct BlockScaledMatmulAMD_PreB[
         ](b_pre)
         # Bitcast scales' float8_e8m0fnu to uint8 — same byte representation,
         # the PreshuffledScaleLoader expects uint8 buffers.
-        var sfa_u8 = TileTensor(
-            sfa.ptr.bitcast[Scalar[DType.uint8]](), sfa.layout
-        )
-        var sfb_u8 = TileTensor(
-            sfb.ptr.bitcast[Scalar[DType.uint8]](), sfb.layout
-        )
+        var sfa_u8 = TileTensor(sfa.ptr.bitcast[UInt8](), sfa.layout)
+        var sfb_u8 = TileTensor(sfb.ptr.bitcast[UInt8](), sfb.layout)
         var a_scale_loader = PreshuffledScaleLoader[
             MN_padded=MN_PADDED_PLACEHOLDER, K_SCALES=K_SCALES
         ](sfa_u8)

@@ -46,13 +46,13 @@ comptime d_size = D_MODEL // WARP_SIZE  # 4
 
 
 def flashattention_forward_kernel(
-    Q: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    K: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    V: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    Q: UnsafePointer[Float32, MutAnyOrigin],
+    K: UnsafePointer[Float32, MutAnyOrigin],
+    V: UnsafePointer[Float32, MutAnyOrigin],
     N_dev: Int32,
     scaling: Float32,
-    out_D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_O: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_D: UnsafePointer[Float32, MutAnyOrigin],
+    out_O: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Int is not device-passable; widen the fixed-width arg.
     var N = Int(N_dev)
@@ -61,17 +61,17 @@ def flashattention_forward_kernel(
 
     var KT_j = unsafe_stack_allocation[
         B_c * D_MODEL,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var S_i = unsafe_stack_allocation[
         B_r * B_c,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var V_j = unsafe_stack_allocation[
         B_c * D_MODEL,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
 

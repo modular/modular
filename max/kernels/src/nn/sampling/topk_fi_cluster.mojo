@@ -110,9 +110,7 @@ comptime _CLUSTER_SLOT_FLOATS = 16
 @always_inline
 def _block_reduce_cutoff_stats[
     block_size: Int, n: Int, broadcast: Bool = True
-](vals: StaticTuple[Scalar[DType.float32], n]) -> StaticTuple[
-    Scalar[DType.float32], n
-]:
+](vals: StaticTuple[Float32, n]) -> StaticTuple[Float32, n]:
     """Reduces one round of cutoff statistics across the block in one pass.
 
     Lane 0 holds a minimum, lane 1 a maximum, and the remaining lanes hold
@@ -131,7 +129,7 @@ def _block_reduce_cutoff_stats[
         else:
             return warp.sum(v)
 
-    var initial = StaticTuple[Scalar[DType.float32], n](0)
+    var initial = StaticTuple[Float32, n](0)
     initial[0] = Float32.MAX_FINITE
     initial[1] = Float32.MIN_FINITE
 
@@ -253,7 +251,7 @@ def _cluster_cutoff_search[
                     max_le_high = max(max_le_high, e)
 
         var stats = _block_reduce_cutoff_stats[block_size, 6, broadcast=False](
-            StaticTuple[Scalar[DType.float32], 6](
+            StaticTuple[Float32, 6](
                 min_gt_low,
                 max_le_high,
                 thread_mass_0,
@@ -402,7 +400,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # CTA would branch differently through the search. The block reduction
     # does not broadcast: thread 0 publishes to the peers, and the cluster
     # combine supplies the result to the rest of the block.
-    var thread_max = Scalar[DType.float32].MIN
+    var thread_max = Float32.MIN
     for i in range(vec_begin + tx, vec_end, block_size):
         var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
             DType.float32
@@ -411,9 +409,7 @@ def TopKTopPMaskedProbsClusterKernel[
 
     var m = cluster_allreduce[_max, cluster_size, need_tail_sync=False](
         cluster_slot,
-        SIMD[DType.float32, 1](
-            block.max[block_size=block_size, broadcast=False](thread_max)
-        ),
+        Float32(block.max[block_size=block_size, broadcast=False](thread_max)),
     )[0]
 
     @__parameter
@@ -682,9 +678,7 @@ def topk_topp_masked_probs_cluster[
 @always_inline
 def _block_reduce_sums[
     block_size: Int, n: Int, broadcast: Bool = True
-](vals: StaticTuple[Scalar[DType.float32], n]) -> StaticTuple[
-    Scalar[DType.float32], n
-]:
+](vals: StaticTuple[Float32, n]) -> StaticTuple[Float32, n]:
     """Reduces `n` independent sums across the block in one pass.
 
     Not `block.sum`: that reduces a vector's lanes into one total before the
@@ -700,7 +694,7 @@ def _block_reduce_sums[
 
     return block._block_reduce[
         block_size, warp_reduce_fn=_reduce_fn, broadcast=broadcast
-    ](vals, initial_vals=StaticTuple[Scalar[DType.float32], n](0))
+    ](vals, initial_vals=StaticTuple[Float32, n](0))
 
 
 @always_inline
@@ -808,11 +802,7 @@ def _sampling_rejection_loop_cluster[
         # lets the cutoff-stats reduce serve unchanged.
         var slice_stats = _block_reduce_cutoff_stats[
             block_size, 3, broadcast=False
-        ](
-            StaticTuple[Scalar[DType.float32], 3](
-                Float32.MAX_FINITE, thread_last, thread_sum
-            )
-        )
+        ](StaticTuple[Float32, 3](Float32.MAX_FINITE, thread_last, thread_sum))
         var slice_last = slice_stats[1]
         var slice_last_val = Float32(0)
         if tx == 0 and slice_last >= 0:
@@ -919,7 +909,7 @@ def _sampling_rejection_loop_cluster[
                     thread_mass_1 += e
                     thread_count_1 += 1
         var sums = _block_reduce_sums[block_size, 4, broadcast=False](
-            StaticTuple[Scalar[DType.float32], 4](
+            StaticTuple[Float32, 4](
                 thread_mass_0, thread_mass_1, thread_count_0, thread_count_1
             )
         )
@@ -1121,7 +1111,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # Row max, combined across the cluster in rank order so every CTA holds
     # the same bits. Every value below derives from it, so one disagreeing
     # CTA would branch differently through the loop and the search.
-    var thread_max = Scalar[DType.float32].MIN
+    var thread_max = Float32.MIN
     for i in range(vec_begin + tx, vec_end, block_size):
         var v = probs_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
             DType.float32
@@ -1130,9 +1120,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
 
     var row_max = cluster_allreduce[_max, cluster_size, need_tail_sync=False](
         cluster_slot,
-        SIMD[DType.float32, 1](
-            block.max[block_size=block_size, broadcast=False](thread_max)
-        ),
+        Float32(block.max[block_size=block_size, broadcast=False](thread_max)),
     )[0]
 
     # One pass stages each CTA's min-p-masked weights in shared memory --
@@ -1158,9 +1146,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
 
     var z = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
         cluster_slot + _CLUSTER_SLOT_FLOATS,
-        SIMD[DType.float32, 1](
-            block.sum[block_size=block_size, broadcast=False](thread_sum)
-        ),
+        Float32(block.sum[block_size=block_size, broadcast=False](thread_sum)),
     )[0]
     # `min_p_thresh` is cluster-uniform (one row per cluster), so every CTA
     # takes the same branch and the collective stays legal. Without a mask
@@ -1169,7 +1155,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     if min_p_thresh > 0:
         masked_z = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
             cluster_slot,
-            SIMD[DType.float32, 1](
+            Float32(
                 block.sum[block_size=block_size, broadcast=False](
                     thread_masked_sum
                 )

@@ -33,8 +33,8 @@ comptime OUT_COLS = 4
 
 
 def _gmem_kernel(
-    in_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
@@ -44,8 +44,8 @@ def _gmem_kernel(
 
 
 def _general_kernel(
-    in_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
@@ -77,12 +77,12 @@ def main() raises:
     var in_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * IN_COLS)
     var out_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * OUT_COLS)
     for i in range(ROWS * IN_COLS):
-        in_host[i] = Scalar[DType.bfloat16](i)  # row-major counting
+        in_host[i] = BFloat16(i)  # row-major counting
     ctx.enqueue_copy(in_dev, in_host)
     ctx.synchronize()
 
     for i in range(ROWS * OUT_COLS):
-        out_host[i] = Scalar[DType.bfloat16](-1)
+        out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
     ctx.enqueue_function[_gmem_kernel](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
@@ -92,7 +92,7 @@ def main() raises:
     _check(out_host)
 
     for i in range(ROWS * OUT_COLS):
-        out_host[i] = Scalar[DType.bfloat16](-1)
+        out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
     ctx.enqueue_function[_general_kernel](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS

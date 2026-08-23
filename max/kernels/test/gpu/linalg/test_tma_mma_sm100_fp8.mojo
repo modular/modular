@@ -508,7 +508,7 @@ def tma_umma_kernel_ts_fp8[
         warp_id = 2 * warp_id_r + warp_id_q
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // num_threads
-    var a_frag = Array[Scalar[DType.uint32], a_frag_size](uninitialized=True)
+    var a_frag = Array[UInt32, a_frag_size](uninitialized=True)
 
     # FP8 elements are 1 byte each; load 8 elements per vector so each
     # SIMD vec is 8 bytes (== 2 uint32) and the split-into-uint32 pattern

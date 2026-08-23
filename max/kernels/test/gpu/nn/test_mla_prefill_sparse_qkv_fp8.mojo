@@ -264,7 +264,7 @@ def run_test_prefill_sparse_qkv_fp8[
     # Random BF16 KV, quantized to FP8 at unit scale (no-scale mode), then
     # dequantized for the fp64 oracle so quant noise is common-mode.
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_bf16_host = alloc[Scalar[DType.bfloat16]](kv_total)
+    var kv_bf16_host = alloc[BFloat16](kv_total)
     randn[DType.bfloat16](
         kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5
     )
@@ -272,17 +272,17 @@ def run_test_prefill_sparse_qkv_fp8[
     comptime scales_per_token = 1
     var total_phys_rows = total_pages * num_layers * PAGE_SIZE
 
-    var blocks_fp8_host = alloc[Scalar[DType.float8_e4m3fn]](block_elems)
+    var blocks_fp8_host = alloc[Float8_e4m3fn](block_elems)
     if num_layers > 1:
         for i in range(block_elems):
-            blocks_fp8_host[i] = Scalar[DType.float8_e4m3fn](
+            blocks_fp8_host[i] = Float8_e4m3fn(
                 Float32(Int(i % 17) - 8) * Float32(0.5)
             )
     else:
         for i in range(block_elems):
-            blocks_fp8_host[i] = Scalar[DType.float8_e4m3fn](0)
+            blocks_fp8_host[i] = Float8_e4m3fn(0)
 
-    var kv_dequant_host = alloc[Scalar[DType.bfloat16]](kv_total)
+    var kv_dequant_host = alloc[BFloat16](kv_total)
 
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
@@ -307,12 +307,12 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Q: BF16 randn -> FP8 (unit scale) -> dequantized BF16 for the oracle.
     var q_elems = total_q_tokens * num_heads * QK_DEPTH
-    var q_bf16_host = alloc[Scalar[DType.bfloat16]](q_elems)
+    var q_bf16_host = alloc[BFloat16](q_elems)
     randn[DType.bfloat16](
         q_bf16_host, q_elems, mean=0.0, standard_deviation=0.5
     )
-    var q_fp8_host = alloc[Scalar[DType.float8_e4m3fn]](q_elems)
-    var q_dequant_host = alloc[Scalar[DType.bfloat16]](q_elems)
+    var q_fp8_host = alloc[Float8_e4m3fn](q_elems)
+    var q_dequant_host = alloc[BFloat16](q_elems)
     for i in range(q_elems):
         var v = q_bf16_host[i].cast[DType.float32]()
         var v_clamped = min(max(v, -FP8_E4M3_MAX), FP8_E4M3_MAX)
@@ -334,7 +334,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Sparse KV ref from DEQUANTIZED values.
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[Scalar[DType.bfloat16]](kv_sparse_size)
+    var kv_sparse = alloc[BFloat16](kv_sparse_size)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -347,7 +347,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # Host reference (consumes FP8-dequantized Q and KV -> common-mode noise).
     var out_elems = total_q_tokens * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[DType.bfloat16]](out_elems)
+    var ref_host = alloc[BFloat16](out_elems)
     host_reference[DType.bfloat16](
         q_dequant_host,
         kv_sparse,
@@ -557,7 +557,7 @@ def run_test_prefill_sparse_qkv_fp8[
 
     ctx.synchronize()
 
-    var out_host = alloc[Scalar[DType.bfloat16]](out_elems)
+    var out_host = alloc[BFloat16](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 

@@ -114,17 +114,13 @@ struct CombineParams[
     # Input row offsets for ragged mode (cumulative token counts per batch)
     # In ragged mode: input_row_offsets[i] = start token index for batch i
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ]
+    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
     # Only used when has_attn_sink is True at compile time.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-    ]
+    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -165,12 +161,8 @@ struct CombineParams[
         output_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], origin=MutAnyOrigin
-        ],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -553,15 +545,11 @@ struct SplitParallelCombineParams[
 
     # Input row offsets for ragged mode (cumulative token counts per batch)
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ]
+    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-    ]
+    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -602,12 +590,8 @@ struct SplitParallelCombineParams[
         output_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], origin=MutAnyOrigin
-        ],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -964,12 +948,8 @@ def launch_mla_combine_kernel_split_parallel[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1089,12 +1069,8 @@ def launch_mla_combine_kernel[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1220,12 +1196,8 @@ def mla_decode_combine_partial_outputs[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,

@@ -135,7 +135,7 @@ def run_one_case(
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon.cast[ln_type](),

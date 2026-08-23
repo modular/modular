@@ -290,7 +290,7 @@ struct AppleM5Fp4MatMul[
         comptime SCALE_SMEM = (2 * BN * NBLK) if Self.coalesce_scales else 1
         var s_smem = unsafe_stack_allocation[
             SCALE_SMEM,
-            Scalar[DType.float32],
+            Float32,
             address_space=AddressSpace.SHARED,
         ]()
         var s_smem_view = TileTensor(
@@ -420,9 +420,7 @@ struct AppleM5Fp4MatMul[
                                 0
                             )
                             var nibble = UInt16((byte >> shift) & UInt8(0xF))
-                            var dec = decode_e2m1_to_bf16(
-                                SIMD[DType.uint16, 1](nibble)
-                            )
+                            var dec = decode_e2m1_to_bf16(UInt16(nibble))
                             vals[i] = (
                                 dec.cast[DType.float32]() * scale_abs
                             ).cast[Self.in_type]()
@@ -470,7 +468,7 @@ struct AppleM5Fp4MatMul[
                 var sblk = t % NBLK
                 s_smem_view.store[width=1](
                     Coord(buf, srow, sblk),
-                    SIMD[DType.float32, 1](
+                    Float32(
                         abs(
                             scales[Int(tg_col) + srow, Int(k0) // SF + sblk][
                                 0
@@ -628,9 +626,7 @@ struct AppleM5Fp4MatMul[
                             frag.slice[4, offset=4](),
                         )
         else:
-            var c_ptr_fp32 = rebind[
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-            ](c_ptr)
+            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr)
             var c_mat_fp32 = TileTensor(c_ptr_fp32, row_major(m, n))
             var c_sub_fp32 = c_mat_fp32.tile[SG_M, SG_N](
                 Int(sg_row_idx), Int(sg_col_idx)

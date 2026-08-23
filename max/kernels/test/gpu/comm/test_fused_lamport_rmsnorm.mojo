@@ -71,7 +71,7 @@ def _neg_zero_bits() -> Scalar[dtype]:
     lanes before pushing -- if that path is broken, real data is mistaken
     for the sentinel and the kernel deadlocks or returns wrong sums.
     """
-    return bitcast[dtype, 1](SIMD[DType.uint16, 1](0x8000))[0]
+    return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
 def _run_rms_norm_unfused(

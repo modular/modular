@@ -147,7 +147,7 @@ def to_numpy[
 
     comptime for i in range(LayoutType.rank):
         shape[i] = rebind[type_of(shape[i])](
-            Scalar[DType.int](Int(tensor.layout.shape[i]().value()))
+            Int(Int(tensor.layout.shape[i]().value()))
         )
 
     var n = tensor.layout.size()

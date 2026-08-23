@@ -30,11 +30,11 @@ from std.utils import IndexList
 def test_sync_parallelize() raises:
     var num_work_items = 4
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
@@ -54,17 +54,17 @@ def test_sync_parallelize() raises:
     sync_parallelize[parallel_fn](num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_parallelize() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
@@ -112,11 +112,11 @@ def test_parallelize_over_rows_zero_work() raises:
 def test_parallelize_unified() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
@@ -133,17 +133,17 @@ def test_parallelize_unified() raises:
     parallelize(parallel_fn, num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_sync_parallelize_unified() raises:
     var num_work_items = 4
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](uninitialized=True)
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
@@ -160,7 +160,7 @@ def test_sync_parallelize_unified() raises:
     sync_parallelize(add_two_parallel, num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_sync_parallelize_unified_single_item() raises:
@@ -196,22 +196,22 @@ def test_parallelize_over_rows() raises:
     var num_rows = shape[0]
     var row_size = shape[1]
 
-    var data_stack = Array[Scalar[DType.int], 32](uninitialized=True)
+    var data_stack = Array[Int, 32](uninitialized=True)
     var data = Span(data_stack)
 
     for i in range(num_rows * row_size):
-        data[i] = Scalar[DType.int](0)
+        data[i] = Int(0)
 
     def process_rows(start_row: Int, end_row: Int) {imm}:
         for row in range(start_row, end_row):
             for col in range(row_size):
-                data[row * row_size + col] = Scalar[DType.int](row + 1)
+                data[row * row_size + col] = Int(row + 1)
 
     parallelize_over_rows(process_rows, shape, 1, 1)
 
     for row in range(num_rows):
         for col in range(row_size):
-            assert_equal(data[row * row_size + col], Scalar[DType.int](row + 1))
+            assert_equal(data[row * row_size + col], Int(row + 1))
 
 
 def main() raises:

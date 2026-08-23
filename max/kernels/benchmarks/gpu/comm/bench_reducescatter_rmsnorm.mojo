@@ -271,9 +271,7 @@ def _verify_results[
     var fused_gt1_ulp_bf = 0  # tight-ref elements with bf16-ULP distance > 1
     var fused_sum_mismatch = 0  # sum_out vs standalone RS shard
     var fused_sum_max_ulp = 0
-    var accum = List[Scalar[DType.float32]](
-        length=num_cols, fill=Scalar[DType.float32](0)
-    )
+    var accum = List[Float32](length=num_cols, fill=Float32(0))
 
     for i in range(ngpus):
         var local_rows = config.rank_units(i)

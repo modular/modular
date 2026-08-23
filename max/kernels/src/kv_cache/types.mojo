@@ -152,10 +152,10 @@ def _compute_kv_cache_dynamic_shape_strides[
             ]()
             kv_cache_shape[out_index] = rebind[
                 kv_cache_shape.element_types[out_index]
-            ](Scalar[DType.int64](dim))
+            ](Int64(dim))
             kv_cache_strides[out_index] = rebind[
                 kv_cache_strides.element_types[out_index]
-            ](Scalar[DType.int64](stride))
+            ](Int64(stride))
 
         stride *= dim
 
@@ -193,11 +193,11 @@ def _make_cache_tt[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                rebind[Scalar[DType.int64]](shape[i])
+                rebind[Int64](shape[i])
             )
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                rebind[Scalar[DType.int64]](strides[i])
+                rebind[Int64](strides[i])
             )
     return TileTensor[dtype, ConcLayout](
         ptr=ptr, layout=ConcLayout(shape_c, stride_c)
@@ -2626,9 +2626,7 @@ struct PagedKVCache[
         )
         # Offset past the FP8 content to reach the BF16 rope data,
         # then reinterpret the pointer as BF16.
-        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[
-            Scalar[DType.bfloat16]
-        ]()
+        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[BFloat16]()
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
@@ -2671,9 +2669,7 @@ struct PagedKVCache[
         reinterprets as BF16, and creates a gather4 TMA descriptor whose row
         stride is the full row width in BF16 elements.
         """
-        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[
-            Scalar[DType.bfloat16]
-        ]()
+        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[BFloat16]()
         return create_tma_tile_gather4[
             DType.bfloat16,
             tile_height=tile_height,

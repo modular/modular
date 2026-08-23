@@ -118,12 +118,8 @@ def bench_blockwise_fp8_1d2d[
     )
 
     # Host allocations
-    var a_offsets_host_ptr = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
-    )
-    var expert_ids_host_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
-    )
+    var a_offsets_host_ptr = List(length=num_active_experts + 1, fill=UInt32(0))
+    var expert_ids_host_ptr = List(length=num_active_experts, fill=Int32(0))
     var expert_scales_host_ptr = List(length=num_experts, fill=Float32(1.0))
 
     # Setup offsets, expert ids, scales
@@ -181,11 +177,11 @@ def bench_blockwise_fp8_1d2d[
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
     )
     var a_scales_struct = LayoutTensor[DType.float32, a_scales_layout](
-        a_scales_dev_buf.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+        a_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
         RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
     )
     var b_scales_struct = LayoutTensor[DType.float32, b_scales_layout](
-        b_scales_dev_buf.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+        b_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
         RuntimeLayout[b_scales_layout].row_major(
             IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
         ),
@@ -193,7 +189,7 @@ def bench_blockwise_fp8_1d2d[
     var a_offsets_struct = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        a_offsets_dev_buf.unsafe_ptr().bitcast[Scalar[DType.uint32]](),
+        a_offsets_dev_buf.unsafe_ptr().bitcast[UInt32](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_active_experts + 1)
         ),
@@ -201,7 +197,7 @@ def bench_blockwise_fp8_1d2d[
     var expert_ids_struct = LayoutTensor[
         DType.int32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        expert_ids_dev_buf.unsafe_ptr().bitcast[Scalar[DType.int32]](),
+        expert_ids_dev_buf.unsafe_ptr().bitcast[Int32](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_active_experts)
         ),
@@ -209,7 +205,7 @@ def bench_blockwise_fp8_1d2d[
     var expert_scales_struct = LayoutTensor[
         DType.float32, expert_scales_layout
     ](
-        expert_scales_dev_buf.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+        expert_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
     )
 
     # TileTensor versions for the structured kernel

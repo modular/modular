@@ -272,7 +272,7 @@ def ld_matrix[
         from max.gpu.compute.mma import ld_matrix
         from std.memory import alloc, dealloc, Layout
 
-        var layout = Layout[Scalar[DType.float16]](count=8)
+        var layout = Layout[Float16](count=8)
         var allocation = alloc(layout)
         var ptr = allocation.unsafe_ptr()
 

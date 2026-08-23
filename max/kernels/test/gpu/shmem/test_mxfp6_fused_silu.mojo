@@ -87,7 +87,7 @@ def _run_case[
     )
     ctx.synchronize()
     for i in range(total_tokens * input_dim):
-        input_h[i] = Scalar[DType.bfloat16](random_float64(-4.0, 4.0))
+        input_h[i] = BFloat16(random_float64(-4.0, 4.0))
 
     var off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
     ctx.synchronize()

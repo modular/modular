@@ -52,9 +52,9 @@ from std.utils.index import Index
 
 
 def swiglu_bias_reference(
-    full_ptr: UnsafePointer[Scalar[DType.float32], _],
-    bias_ptr: UnsafePointer[Scalar[DType.bfloat16], _],
-    ref_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    full_ptr: UnsafePointer[Float32, _],
+    bias_ptr: UnsafePointer[BFloat16, _],
+    ref_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
     M: Int,
     N: Int,
 ):
@@ -77,7 +77,7 @@ def swiglu_bias_reference(
                 full_ptr[m * N + 2 * h + 1]
                 + bias_ptr[2 * h + 1].cast[DType.float32]()
             )
-            var sigmoid = recip(Scalar[DType.float32](1.0) + exp(-gate))
+            var sigmoid = recip(Float32(1.0) + exp(-gate))
             ref_ptr.store(
                 m * H + h, (gate * sigmoid * up).cast[DType.bfloat16]()
             )

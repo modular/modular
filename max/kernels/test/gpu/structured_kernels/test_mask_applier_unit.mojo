@@ -137,7 +137,7 @@ def _expected_k_pos(k_tile_idx: Int, lane: Int, i: Int, k_local: Int) -> Int:
 # `case_idx * PER_CASE_FP32 + lane * ATT_PER_LANE + p`.
 # --------------------------------------------------------------------------- #
 def kernel_mask_unit(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var l_id = Int(lane_id())
 
@@ -361,9 +361,7 @@ def main() raises:
                         if k_pos > q_pos1:
                             if v != FP32_NEG_INF_FILLER:
                                 m1 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e1 = False
                         else:
@@ -381,9 +379,7 @@ def main() raises:
                         if k_pos > q_pos2:
                             if v != FP32_NEG_INF_FILLER:
                                 m2 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e2 = False
                         else:
@@ -401,9 +397,7 @@ def main() raises:
                         if k_pos > q_pos3:
                             if v != FP32_NEG_INF_FILLER:
                                 m3 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e3 = False
                         else:
@@ -416,9 +410,7 @@ def main() raises:
                     var v = host_out[_idx(4, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m4 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e4 = False
 
@@ -428,9 +420,7 @@ def main() raises:
                     var v = host_out[_idx(5, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m5 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e5 = False
 
@@ -440,14 +430,12 @@ def main() raises:
                     var v = host_out[_idx(6, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m6 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e6 = False
 
             sample_filler = host_out[_idx(3, 0, ATT_FRAG)]
-            sample_exp2 = math_exp2(SIMD[DType.float32, 1](sample_filler))[0]
+            sample_exp2 = math_exp2(Float32(sample_filler))[0]
 
             # ----- Case 7: GPU-side exp2 result -----
             # The kernel computed `exp2(filler - 1.0)` on device using
@@ -489,19 +477,19 @@ def main() raises:
         print("  exp2(filler) = ", sample_exp2)
         print(
             "  exp2(-10000) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-10000.0)))[0],
+            math_exp2(Float32(Float32(-10000.0)))[0],
         )
         print(
             "  exp2(-128.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-128.0)))[0],
+            math_exp2(Float32(Float32(-128.0)))[0],
         )
         print(
             "  exp2(-127.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-127.0)))[0],
+            math_exp2(Float32(Float32(-127.0)))[0],
         )
         print(
             "  exp2(-150.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-150.0)))[0],
+            math_exp2(Float32(Float32(-150.0)))[0],
         )
         print("--- GPU-side post-mask `exp2(score - max=1.0)` ---")
         print(

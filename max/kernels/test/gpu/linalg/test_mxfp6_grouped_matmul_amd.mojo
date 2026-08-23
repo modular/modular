@@ -73,12 +73,12 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,

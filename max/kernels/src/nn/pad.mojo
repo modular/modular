@@ -175,8 +175,8 @@ def pad_constant[
         ],
         paddings: UnsafePointer[Scalar[paddings_type], _],
         output_shape: IndexList[output_rank],
-        output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
-        input_strides: UnsafePointer[Scalar[DType.int], _],
+        output_strides: UnsafePointer[mut=True, Int, _],
+        input_strides: UnsafePointer[Int, _],
     ) {var constant_cast}:
         return _pad_constant_impl[output_rank, dtype, paddings_type](
             output,
@@ -247,8 +247,8 @@ def pad_reflect[
         ],
         paddings: UnsafePointer[Scalar[paddings_type], _],
         output_shape: IndexList[output_rank],
-        output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
-        input_strides: UnsafePointer[Scalar[DType.int], _],
+        output_strides: UnsafePointer[mut=True, Int, _],
+        input_strides: UnsafePointer[Int, _],
     ) {}:
         return _pad_reflect_impl[output_rank, dtype, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
@@ -318,8 +318,8 @@ def _do_pad[
         UnsafePointer[Scalar[dtype], address_space=AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[paddings_type], _],
         IndexList[OutputLayoutType.rank],
-        UnsafePointer[mut=True, Scalar[DType.int], _],
-        UnsafePointer[Scalar[DType.int], _],
+        UnsafePointer[mut=True, Int, _],
+        UnsafePointer[Int, _],
     ) -> None,
 ](
     output: TileTensor[
@@ -335,15 +335,11 @@ def _do_pad[
     paddings: UnsafePointer[Scalar[paddings_type], _],
     pad_impl_fn: PadImplFn,
 ):
-    var input_strides_stack = Array[Scalar[DType.int], output.rank](
-        uninitialized=True
-    )
+    var input_strides_stack = Array[Int, output.rank](uninitialized=True)
     var input_strides_buf = TileTensor(
         input_strides_stack, row_major[input.rank]()
     )
-    var output_strides_stack = Array[Scalar[DType.int], output.rank](
-        uninitialized=True
-    )
+    var output_strides_stack = Array[Int, output.rank](uninitialized=True)
     var output_strides_buf = TileTensor(
         output_strides_stack, row_major[output.rank]()
     )
@@ -463,8 +459,8 @@ def _pad_constant_axis[
     input: UnsafePointer[Scalar[dtype], _],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.int], _],
-    input_strides: UnsafePointer[Scalar[DType.int], _],
+    output_strides: UnsafePointer[Int, _],
+    input_strides: UnsafePointer[Int, _],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
     comptime if axis == (rank - 1):
@@ -501,8 +497,8 @@ def _pad_constant_impl[
     paddings: UnsafePointer[Scalar[paddings_type], _],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.int], _],
-    input_strides: UnsafePointer[Scalar[DType.int], _],
+    output_strides: UnsafePointer[Int, _],
+    input_strides: UnsafePointer[Int, _],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
@@ -709,8 +705,8 @@ def _pad_reflect_axis[
     input: UnsafePointer[
         Scalar[dtype], address_space=AddressSpace.GENERIC, ...
     ],
-    output_strides: UnsafePointer[Scalar[DType.int], _],
-    input_strides: UnsafePointer[Scalar[DType.int], _],
+    output_strides: UnsafePointer[Int, _],
+    input_strides: UnsafePointer[Int, _],
     var axis_params: StaticTuple[
         _AxisParamsReflect[rank, dtype, paddings_type], rank
     ],
@@ -769,8 +765,8 @@ def _pad_reflect_impl[
     ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
-    input_strides: UnsafePointer[Scalar[DType.int], _],
+    output_strides: UnsafePointer[mut=True, Int, _],
+    input_strides: UnsafePointer[Int, _],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges

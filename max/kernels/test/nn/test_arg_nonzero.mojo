@@ -84,13 +84,13 @@ def test_where() raises:
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    var computed_stack = Array[Scalar[DType.int], 9](uninitialized=True)
+    var computed_stack = Array[Int, 9](uninitialized=True)
     var computed_outputs = TileTensor[DType.int,](
         computed_stack,
         row_major[3, 3](),
     )
 
-    var golden_stack = Array[Scalar[DType.int], 9](uninitialized=True)
+    var golden_stack = Array[Int, 9](uninitialized=True)
     var golden_outputs = TileTensor[DType.int,](
         golden_stack,
         row_major[3, 3](),
@@ -137,14 +137,12 @@ def test_where_1d() raises:
     values[10] = 0.0
     values[11] = 1.0
 
-    var computed_stack = Array[Scalar[DType.int], num_indices](
-        uninitialized=True
-    )
+    var computed_stack = Array[Int, num_indices](uninitialized=True)
     var computed_outputs = TileTensor(
         computed_stack, row_major[num_indices, 1]()
     )
 
-    var golden_stack = Array[Scalar[DType.int], num_indices](uninitialized=True)
+    var golden_stack = Array[Int, num_indices](uninitialized=True)
     var golden_outputs = TileTensor(golden_stack, row_major[num_indices]())
 
     golden_outputs[0] = 1
@@ -180,10 +178,10 @@ def test_where_bool() raises:
     values[2, 0, 0] = False
     values[2, 1, 0] = True
 
-    var computed_stack = Array[Scalar[DType.int], 9](uninitialized=True)
+    var computed_stack = Array[Int, 9](uninitialized=True)
     var computed_outputs = TileTensor(computed_stack, row_major[3, 3]())
 
-    var golden_stack = Array[Scalar[DType.int], 9](uninitialized=True)
+    var golden_stack = Array[Int, 9](uninitialized=True)
     var golden_outputs = TileTensor(golden_stack, row_major[3, 3]())
 
     golden_outputs[0, 0] = 0

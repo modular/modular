@@ -197,7 +197,7 @@ def fp8_gemv_kernel[
 
     var loader = Fp8WeightLoader[w_layout].from_kernel_args(weight)
 
-    var acc = SIMD[DType.float32, 1](0)
+    var acc = Float32(0)
 
     # Vectorized interior: each lane owns whole `TILE_K` chunks, strided by
     # `WARP_SIZE` chunks. Adjacent lanes read adjacent runs -> coalesced.
@@ -312,7 +312,7 @@ def fp8_materialize_kernel[
     # cast (mirrors `fp4_materialize_kernel`; the GPU skill's tensor-element read
     # idiom), then rebind the widened value back to the output ElementType. bf16
     # represents every E4M3 value exactly, so this cast is lossless.
-    var wv = rebind[Scalar[DType.float8_e4m3fn]](weight[n, k])
+    var wv = rebind[Float8_e4m3fn](weight[n, k])
     out_w[n, k] = rebind[out_w.ElementType](wv.cast[out_type]())
 
 

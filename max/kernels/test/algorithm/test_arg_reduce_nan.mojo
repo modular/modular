@@ -40,18 +40,14 @@ from std.utils.numerics import nan
 def _argmax_index(values: List[Float32]) -> Int:
     var acc = ArgMax[DType.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[DType.float32, 1](
-            SIMD[DType.float32, 1](values[i]), SIMD[DType.int64, 1](i)
-        )
+        acc.accumulate[DType.float32, 1](Float32(values[i]), Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
 def _argmin_index(values: List[Float32]) -> Int:
     var acc = ArgMin[DType.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[DType.float32, 1](
-            SIMD[DType.float32, 1](values[i]), SIMD[DType.int64, 1](i)
-        )
+        acc.accumulate[DType.float32, 1](Float32(values[i]), Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 

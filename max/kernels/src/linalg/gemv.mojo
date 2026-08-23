@@ -467,11 +467,11 @@ def _dot_accum[
             result = rebind[Scalar[accum_type]](
                 llvm_intrinsic[
                     "llvm.amdgcn.fdot2.f32.bf16",
-                    Scalar[DType.float32],
+                    Float32,
                 ](
                     a_pair,
                     b_pair,
-                    rebind[Scalar[DType.float32]](result),
+                    rebind[Float32](result),
                     False,
                 )
             )
@@ -2326,7 +2326,7 @@ def gemm_mma_cpasync_kernel[
         a_type, tile_m, tile_n, tile_k, stage_cnt
     ]
     ref smem = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]

@@ -72,7 +72,7 @@ def _verify_buffers_gpu[
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
@@ -140,7 +140,7 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host_alloc = alloc[Scalar[DType.float32]](
+    var result_host_alloc = alloc[Float32](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()

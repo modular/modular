@@ -176,7 +176,7 @@ def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 comptime _AllScalar[rank: Int] = TypeList.splat[
-    Trait=CoordLike, count=rank, type=Scalar[DType.int]
+    Trait=CoordLike, count=rank, type=Int
 ]()
 """A variadic of `rank` Scalar types."""
 
@@ -198,7 +198,7 @@ comptime _RowMajorTileLayout[
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
     idx: Int,
-]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Scalar[DType.int]
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Int
 
 """Maps a single IndexList element to a CoordLike type.
 Negative values (-1 = dynamic) become Scalar, others become ComptimeInt."""

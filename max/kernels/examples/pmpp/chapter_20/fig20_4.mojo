@@ -41,7 +41,7 @@ def block_reduce[
 ](
     val: Float32,
     shared_mem: UnsafePointer[
-        Scalar[DType.float32],
+        Float32,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ],
@@ -67,9 +67,9 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    S: UnsafePointer[Float32, MutAnyOrigin],
+    D: UnsafePointer[Float32, MutAnyOrigin],
+    P: UnsafePointer[Float32, MutAnyOrigin],
     N_dev: Int32,
 ):
     # Int is not device-passable; widen the fixed-width arg.
@@ -79,12 +79,12 @@ def softmax_kernel(
 
     var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
     var broadcast_slot = unsafe_stack_allocation[
         1,
-        Scalar[DType.float32],
+        Float32,
         address_space=AddressSpace.SHARED,
     ]()
 

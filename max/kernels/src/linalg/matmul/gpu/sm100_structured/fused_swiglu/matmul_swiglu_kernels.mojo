@@ -1600,7 +1600,7 @@ def blackwell_swiglu_warp_specialized_kernel[
 
     # ===== Shared memory =====
     var smem_bytes = external_memory[
-        Scalar[DType.uint8],
+        UInt8,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]()

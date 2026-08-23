@@ -350,9 +350,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
-        q_scale_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-        ],
+        q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         scalar_args: TileTensor[
             DType.int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -507,9 +505,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Placed right after li_smem. Used by the load warp to store per-token
         # sigma_KV values from HBM before they are applied later.
         # In MLA's absorbed mode, K and V share one scale per token.
-        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[
-            Scalar[DType.float32]
-        ]()
+        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[Float32]()
         comptime per_token_scales_total_elems = Self.config.num_kv_stages * Self.config.per_token_scales_per_stage // size_of[
             DType.float32
         ]()
@@ -748,7 +744,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Self.ValidLengthType,
             Self.config.decoding_warp_split_k,
         ],
-        scale_smem_base: SharedMemPointer[Scalar[DType.float32]],
+        scale_smem_base: SharedMemPointer[Float32],
     ):
         if offset_position.num_keys_this_split == 0:
             return

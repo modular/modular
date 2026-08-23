@@ -856,7 +856,7 @@ def _pack_b_ndbuffer_impl[
 
         comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
             comptime if not transposed:
-                var perm_ptr = unsafe_stack_allocation[2, Scalar[DType.int]]()
+                var perm_ptr = unsafe_stack_allocation[2, Int]()
                 perm_ptr[0] = 1
                 perm_ptr[1] = 0
 

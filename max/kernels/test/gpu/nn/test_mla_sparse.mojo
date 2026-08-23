@@ -968,7 +968,7 @@ def run_test_sparse_blockscale[
         * scales_per_token
     )
     # Initialize all scales to 1.0 (neutral)
-    var scales_host = List(length=scales_elems, fill=Scalar[DType.float32](1.0))
+    var scales_host = List(length=scales_elems, fill=Float32(1.0))
 
     # Page stride for scales: kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS * scales_per_token
     var scale_page_stride = (
@@ -2334,9 +2334,9 @@ def run_test_sparse_attn_sink[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        attn_sink_ptr=rebind[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ](attn_sink_device.unsafe_ptr()),
+        attn_sink_ptr=rebind[UnsafePointer[Float32, origin=MutAnyOrigin]](
+            attn_sink_device.unsafe_ptr()
+        ),
     )
 
     ctx.synchronize()

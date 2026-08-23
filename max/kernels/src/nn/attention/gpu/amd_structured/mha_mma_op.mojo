@@ -643,7 +643,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                         swizzled_elts_odd if is_odd_col else swizzled_elts_even
                     )
                     var smem_at_lane = (subtile.ptr + swizzled_elts).bitcast[
-                        Scalar[DType.bfloat16]
+                        BFloat16
                     ]()
                     var frag = _load_from_lds[width=Self.FRAG_ELTS](
                         smem_at_lane
@@ -1598,7 +1598,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 )
                 v_lane_base_offset = Int(
                     crd2idx(
-                        Scalar[DType.int32](lid),
+                        Int32(lid),
                         _V227_BASE_SHAPE,
                         _V227_BASE_STRIDE,
                     )

@@ -103,10 +103,10 @@ def test_conv2d_fused_apple_dynamic_round(
 
     for i in range(input_size):
         var t = Float64(i % 17) / 17.0
-        input_host[i] = Scalar[DType.bfloat16](t * 1.0 - 0.5)
+        input_host[i] = BFloat16(t * 1.0 - 0.5)
     for i in range(filter_size):
         var t = Float64(i % 13) / 13.0
-        filter_host[i] = Scalar[DType.bfloat16](t * 0.5 - 0.25)
+        filter_host[i] = BFloat16(t * 0.5 - 0.25)
 
     var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](input_size)
     var filter_dev = ctx.enqueue_create_buffer[DType.bfloat16](filter_size)

@@ -379,7 +379,7 @@ def grouped_matmul_block_scaled[
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
     var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales.ptr),
+        rebind[Ptr[UInt16, MutAnyOrigin]](a_scales.ptr),
         sfa_4d_layout,
     )
 
@@ -396,7 +396,7 @@ def grouped_matmul_block_scaled[
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
     var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales.ptr),
+        rebind[Ptr[UInt16, MutAnyOrigin]](_b_scales.ptr),
         sfb_4d_layout,
     )
 

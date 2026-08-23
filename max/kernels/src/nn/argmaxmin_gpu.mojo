@@ -291,9 +291,9 @@ def _argmaxmin_combine_kernel[
         var total = _block_reduce_topk[ascending=largest](partial)
 
         if tid == 0:
-            out_idxs.ptr.unsafe_offset(row_id)[] = Scalar[DType.int](
-                total.p
-            ).cast[out_idx_type]()
+            out_idxs.ptr.unsafe_offset(row_id)[] = Int(total.p).cast[
+                out_idx_type
+            ]()
 
 
 def argmaxmin_gpu[
