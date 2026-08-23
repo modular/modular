@@ -39,6 +39,7 @@ from .config.model_config import MAXModelConfig
 from .interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
 )
 from .vision_encoder_cache import (
     DEFAULT_VISION_CACHE_BLOCK_TOKENS,
@@ -601,7 +602,6 @@ class MemoryEstimator:
                 model_config,
                 available_kv_cache_memory,
                 devices,
-                arch_config,
                 arch=arch,
             )
         )
@@ -611,9 +611,7 @@ class MemoryEstimator:
         # Host memory, so it neither comes out of the KV pool nor counts toward
         # the device footprint -- but it is still worth bounding here, where the
         # rest of the model's memory is decided.
-        cls._clamp_preprocess_cache_budgets(
-            pipeline_config, model_config, arch_config, arch
-        )
+        cls._clamp_preprocess_cache_budgets(pipeline_config, model_config, arch)
 
         # The field is set for every config after construction, so intent
         # comes from the bit captured before it was resolved.
@@ -1146,19 +1144,19 @@ class MemoryEstimator:
     def _has_vision_tower(
         cls,
         model_config: MAXModelConfig,
-        arch_config: ArchConfig,
         arch: SupportedArchitecture | None,
     ) -> bool:
         """Whether this architecture encodes images at all.
 
-        Uses the same signal as :meth:`_reserve_vision_cache_memory`: a memory
-        planner that sizes a vision cache entry above zero.
+        Uses the same signal as :meth:`_reserve_vision_cache_memory`: an arch
+        config that sizes a vision cache entry above zero.
         """
-        if arch is None or arch.memory_planner is None:
+        if arch is None or not issubclass(
+            arch.config, ArchConfigWithVisionCache
+        ):
             return False
-        planner = arch.memory_planner(arch_config)
         return (
-            planner.estimate_vision_cache_entry_bytes(
+            arch.config.estimate_vision_cache_entry_bytes(
                 model_config.huggingface_config
             )
             > 0
@@ -1169,7 +1167,6 @@ class MemoryEstimator:
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig,
-        arch_config: ArchConfig,
         arch: SupportedArchitecture | None,
     ) -> None:
         """Caps the preprocessed-media cache budgets against host memory.
@@ -1192,7 +1189,7 @@ class MemoryEstimator:
         if requested == 0:
             return
 
-        if not cls._has_vision_tower(model_config, arch_config, arch):
+        if not cls._has_vision_tower(model_config, arch):
             return
 
         host_bytes = _host_memory_limit()
@@ -1239,16 +1236,14 @@ class MemoryEstimator:
         model_config: MAXModelConfig,
         available_memory: int,
         devices: list[Device],
-        arch_config: ArchConfig,
         arch: SupportedArchitecture | None = None,
     ) -> tuple[int, VisionCachePlan | None]:
         """Estimate and reserve memory for the vision encoder cache.
 
-        Delegates to the arch's memory planner:
+        Delegates to the arch config's vision-cache facts:
         ``estimate_vision_cache_entry_bytes()`` sizes the requested budget and
         ``get_vision_cache_row_spec()`` sets the block row shape.
-        Non-VLM architectures whose planner returns ``0`` reserve no vision
-        cache memory.
+        Non-VLM architectures reserve no vision cache memory.
 
         Returns:
             Bytes to reserve for the vision encoder cache (0 for non-VLM
@@ -1258,18 +1253,17 @@ class MemoryEstimator:
         if pipeline_config.runtime.vision_cache_utilization == 0:
             return 0, None
 
-        if not cls._has_vision_tower(model_config, arch_config, arch):
+        if not cls._has_vision_tower(model_config, arch):
             return 0, None
 
         # Guaranteed by _has_vision_tower above.
         assert arch is not None
-        assert arch.memory_planner is not None
+        assert issubclass(arch.config, ArchConfigWithVisionCache)
         hf_config = model_config.huggingface_config
-        planner = arch.memory_planner(arch_config)
-        row_spec = planner.get_vision_cache_row_spec(hf_config)
+        row_spec = arch.config.get_vision_cache_row_spec(hf_config)
         if row_spec is None:
             logger.warning(
-                "Disabling vision encoder cache: %s's memory planner reports "
+                "Disabling vision encoder cache: %s's arch config reports "
                 "a per-entry estimate but no row spec "
                 "(get_vision_cache_row_spec); images will be re-encoded on "
                 "every request.",

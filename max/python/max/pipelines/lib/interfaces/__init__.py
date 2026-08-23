@@ -31,6 +31,7 @@ from .arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
     ArchVLConfigWithTextSubconfig,
 )
 from .generate import GenerateMixin
@@ -58,6 +59,7 @@ __all__ = [
     "ArchConfigWithKVCache",
     "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
+    "ArchConfigWithVisionCache",
     "ArchVLConfigWithTextSubconfig",
     "BatchProcessor",
     "BatchProcessorRuntime",

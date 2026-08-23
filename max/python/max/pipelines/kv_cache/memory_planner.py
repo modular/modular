@@ -18,7 +18,6 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
-from max.dtype import DType
 from max.nn.kv_cache import KVCacheParamInterface
 
 
@@ -57,8 +56,8 @@ class MemoryPlanner:
     override the methods that require architecture-specific logic:
 
     - Estimating KV cache memory requirements.
-    - Estimating activation, weight, signal-buffer, and vision-cache memory
-      overheads specific to the model.
+    - Estimating activation, weight, and signal-buffer memory overheads
+      specific to the model.
 
     A ``MemoryPlanner`` is constructed from a ``ModelConfig`` alone (not from a
     full ``PipelineConfig``) so that it can be used independently of the
@@ -178,46 +177,6 @@ class MemoryPlanner:
 
             return Signals.NUM_BYTES
         return pipeline_config.estimate_signal_buffer_memory(arch_config)
-
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: Any,
-    ) -> int:
-        """Estimates bytes for one vision encoder cache entry.
-
-        The default implementation returns ``0``.  Override in VLM planners to
-        return the worst-case memory for a single max-resolution image after the
-        vision encoder's spatial merge / patch merge step.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry, or ``0`` for text-only
-            models.
-        """
-        return 0
-
-    def get_vision_cache_row_spec(
-        self,
-        huggingface_config: Any,
-    ) -> tuple[int, DType] | None:
-        """Describes one merged vision token's embedding row in the cache.
-
-        A non-None spec opts the architecture into the vision encoder
-        cache and lets the cache's block pool allocate at startup: the
-        reservation is a byte budget carved into fixed-size blocks of
-        ``(hidden_size, dtype)`` rows, so one large video no longer
-        collapses the cache's capacity for images.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            ``(hidden_size, dtype)`` of one embedding row per device, or
-            ``None`` for architectures without a vision cache.
-        """
-        return None
 
 
 class PagedMemoryPlanner(MemoryPlanner):

@@ -38,6 +38,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -433,7 +434,9 @@ class Gemma4VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
+class Gemma4ForConditionalGenerationConfig(
+    ArchConfigWithKVCache, ArchConfigWithVisionCache
+):
     """Base configuration for Gemma 4 multimodal models.
 
     This is the top-level config that composes text and vision sub-configs.
@@ -733,3 +736,64 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             return_logits=return_logits,
             quant_config=quant_config,
         )
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimates per-entry bytes for the Gemma4 vision encoder cache.
+
+        Worst-case tokens per image is
+        ``position_embedding_size / pooling_kernel_size²``, stored at the text
+        hidden size in bfloat16.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            Estimated bytes per vision cache entry.
+
+        Raises:
+            ValueError: If the required vision or text config is absent.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "Gemma4 requires a vision_config in the HuggingFace config"
+            )
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints are served text-only (different vision
+            # schema); no vision cache is needed.
+            return 0
+        k = vision_config.pooling_kernel_size
+        max_tokens = vision_config.position_embedding_size // (k * k)
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden, dtype = spec
+        return max_tokens * hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16.
+
+        ``None`` for the text-only ``gemma4_unified`` checkpoints, which
+        have no vision cache.
+        """
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            return None
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        return (text_config.hidden_size, DType.bfloat16)
