@@ -78,7 +78,7 @@ def log_pipeline_info(
     pipeline_config.models.log_model_info()
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
-        pipeline_entries.append(("max_seq_len", memory_plan.max_length))
+        pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))
     pipeline_entries.extend(
         [
             ("chunked_prefill", pipeline_config.runtime.enable_chunked_prefill),
@@ -180,7 +180,7 @@ def log_basic_config(
         config_entries.extend(
             [
                 ("model", pipeline_config.model.model_path),
-                ("max_seq_len", memory_plan.max_length),
+                ("max_seq_len", memory_plan.planned_max_length),
             ]
         )
 

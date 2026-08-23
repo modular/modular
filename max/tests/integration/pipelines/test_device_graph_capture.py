@@ -211,7 +211,7 @@ def capture_model() -> CapturePipelineModel:
         memory_plan=MemoryPlan(
             max_batch_size=4,
             footprint=0,
-            max_length=128,
+            planned_max_length=128,
         ),
     )
 

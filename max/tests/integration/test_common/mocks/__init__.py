@@ -87,7 +87,7 @@ def retrieve_mock_text_generation_pipeline(
             memory_plan=MemoryPlan(
                 max_batch_size=mock_config.runtime.max_batch_size or 1,
                 footprint=0,
-                max_length=(
+                planned_max_length=(
                     max_length
                     if max_length is not None
                     else MOCK_MODEL_MAX_SEQ_LEN

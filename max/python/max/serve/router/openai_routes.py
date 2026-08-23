@@ -3149,7 +3149,9 @@ def _resolve_max_model_len(request: Request) -> int | None:
     can avoid overflowing the model's context.
     """
     memory_plan = request.app.state.memory_plan
-    max_model_len = memory_plan.max_length if memory_plan is not None else None
+    max_model_len = (
+        memory_plan.planned_max_length if memory_plan is not None else None
+    )
     if max_model_len is None:
         return None
 

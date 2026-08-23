@@ -194,7 +194,7 @@ def test_estimate__requires_resolved_max_length() -> None:
 def test_estimate__carries_user_max_length() -> None:
     config = _dummy_llama_config(max_length=512)
     estimate = _estimate(config)
-    assert estimate.max_length == 512
+    assert estimate.planned_max_length == 512
     assert config.model.max_length == 512
 
 
@@ -216,7 +216,7 @@ def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
         device_mock.return_value = {"free_memory": 100 * GIB}
         config = _dummy_llama_config(max_length=512)
         plan = MemoryEstimator.plan(config, arch)
-        assert plan.max_batch_total_tokens == plan.max_length == 512
+        assert plan.max_batch_total_tokens == plan.planned_max_length == 512
         # The plan carries a user-set cap unchanged instead.
         config = _dummy_llama_config(max_length=512)
         config.runtime.max_batch_total_tokens = 2048
@@ -239,7 +239,7 @@ def test_plan__leaves_config_unchanged() -> None:
     ):
         device_mock.return_value = {"free_memory": 100 * GIB}
         plan = MemoryEstimator.plan(config, DUMMY_LLAMA_ARCH)
-    assert plan.max_length == 4096
+    assert plan.planned_max_length == 4096
     assert config.model.max_length == 4096
     assert config.runtime.max_batch_total_tokens is None
     assert plan.device_specs == (DeviceSpec.cpu(),)
@@ -297,7 +297,7 @@ def test_shrink_to_fit__runs_for_resolved_default_max_length(
     assert "Truncated model's default max_length" in caplog.text
     # Budget int(64 MiB * 1.5) - 50 MiB static = 46 MiB -> 23 pages of the
     # dummy's 2 MiB page -> 23 * 128 tokens.
-    assert plan.max_length == 2944
+    assert plan.planned_max_length == 2944
     assert config.model.max_length == 4096
 
 
@@ -325,7 +325,7 @@ def test_shrink_to_fit__skipped_for_user_provided_max_length() -> None:
 
 
 def test_plan__kv_clamp_bounds_plan_not_config() -> None:
-    """The KV-capacity clamp lowers the plan's ``max_length``, not the config.
+    """The KV-capacity clamp lowers ``planned_max_length``, not the config.
 
     With 64 MiB of device memory, the KV budget is ``int(0.9 * 64 MiB) - 1000``
     weight bytes, which holds 28 pages of the dummy's 2 MiB page (2 KV tensors
@@ -349,7 +349,7 @@ def test_plan__kv_clamp_bounds_plan_not_config() -> None:
     ):
         device_mock.return_value = {"free_memory": 64 * 1024 * 1024}
         plan = MemoryEstimator.plan(config, arch)
-    assert plan.max_length == 3584
+    assert plan.planned_max_length == 3584
     assert plan.max_batch_total_tokens == 3584
     assert config.model.max_length == 4096
     assert config.runtime.max_batch_total_tokens is None
@@ -359,7 +359,7 @@ def test_estimate__draft_bound_lowers_plan_max_length() -> None:
     """A draft model's own sequence limit bounds the plan, not the config."""
     config = _dummy_llama_config(max_length=4096)
     estimate = _estimate(config, draft_max_seq_len=1500)
-    assert estimate.max_length == 1500
+    assert estimate.planned_max_length == 1500
     assert config.model.max_length == 4096
 
 

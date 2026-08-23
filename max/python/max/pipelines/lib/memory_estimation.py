@@ -98,11 +98,12 @@ class MemoryPlan:
     footprint: int
     """The estimated total device memory the pipeline uses, in bytes."""
 
-    max_length: int | None
-    """The effective maximum sequence length: the user's setting or the
-    architecture default, clamped to what the KV cache and any draft model
-    can hold. ``None`` for pipelines with no main language model, such as
-    diffusion pipelines."""
+    planned_max_length: int | None
+    """The resolved maximum sequence length after memory planning lowered
+    it to fit device memory: the construction-resolved
+    ``config.model.max_length``, clamped to what the KV cache and any
+    draft model can hold. ``None`` for pipelines with no main language
+    model, such as diffusion pipelines."""
 
     available_cache_memory: int | None = None
     """The device memory committed to the KV cache, in bytes. ``None`` when
@@ -117,7 +118,7 @@ class MemoryPlan:
 
     max_batch_total_tokens: int | None = None
     """Cap on the total context tokens resident across a batch: the user's
-    setting, or ``max_length`` for architectures that require a cap.
+    setting, or ``planned_max_length`` for architectures that require a cap.
     ``None`` means no cap is configured."""
 
     vision_cache_plan: VisionCachePlan | None = None
@@ -244,7 +245,7 @@ class MemoryEstimator:
             return MemoryPlan(
                 max_batch_size=pipeline_config.runtime.max_batch_size or 1,
                 footprint=0,
-                max_length=None,
+                planned_max_length=None,
                 max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
 
@@ -517,7 +518,7 @@ class MemoryEstimator:
             return MemoryPlan(
                 max_batch_size=max_batch_size,
                 footprint=0,
-                max_length=max_length,
+                planned_max_length=max_length,
                 available_cache_memory=virtual_cache_memory,
                 device_specs=device_specs,
                 max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
@@ -543,7 +544,7 @@ class MemoryEstimator:
             return MemoryPlan(
                 max_batch_size=max_batch_size or 1,
                 footprint=0,
-                max_length=max_length,
+                planned_max_length=max_length,
                 device_specs=device_specs,
                 max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                     pipeline_config, arch, max_length
@@ -718,7 +719,7 @@ class MemoryEstimator:
         return MemoryPlan(
             max_batch_size=max_batch_size,
             footprint=int(total_size),
-            max_length=max_length,
+            planned_max_length=max_length,
             available_cache_memory=available_cache_memory,
             device_specs=device_specs,
             max_batch_total_tokens=cls._resolve_max_batch_total_tokens(

@@ -479,9 +479,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def max_seq_len(self) -> int:
         """The effective maximum sequence length, read from the memory plan.
 
-        A view of the plan's ``max_length`` — the model stores no copy of it.
+        A view of the plan's ``planned_max_length`` — the model stores no
+        copy of it.
         """
-        max_length = self.memory_plan.max_length
+        max_length = self.memory_plan.planned_max_length
         assert max_length is not None, (
             f"{type(self).__qualname__} requires a memory plan with a max "
             "length; only multi-component plans carry none"

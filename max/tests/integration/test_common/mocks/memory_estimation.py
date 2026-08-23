@@ -40,7 +40,7 @@ def _fake_plan_from_sizes(
     return MemoryPlan(
         max_batch_size=1,
         footprint=0,
-        max_length=model_config.max_length,
+        planned_max_length=model_config.max_length,
         device_specs=tuple(model_config.device_specs),
         max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
     )
