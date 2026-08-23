@@ -20,7 +20,7 @@ from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 def test_erf_float32() raises:
     assert_equal(erf(Float32(0)), 0.0)
-    assert_almost_equal(erf(SIMD[DType.float32, 2](2)), 0.995322)
+    assert_almost_equal(erf(SIMD[.float32, 2](2)), 0.995322)
     assert_almost_equal(erf(Float32(0.1)), 0.112462)
     assert_almost_equal(erf(Float32(-0.1)), -0.112462)
     assert_almost_equal(erf(Float32(-1)), -0.8427007)
@@ -29,7 +29,7 @@ def test_erf_float32() raises:
 
 def test_erf_float64() raises:
     assert_equal(erf(Float64(0)), 0.0)
-    assert_almost_equal(erf(SIMD[DType.float64, 2](2)), 0.995322)
+    assert_almost_equal(erf(SIMD[.float64, 2](2)), 0.995322)
     assert_almost_equal(erf(Float64(0.1)), 0.112462)
     assert_almost_equal(erf(Float64(-0.1)), -0.112462)
     assert_almost_equal(erf(Float64(-1)), -0.8427007)

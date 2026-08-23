@@ -204,7 +204,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
         ]()
 
     # State vector over dstate, fp32. Initialise from initial_states if present.
-    var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_DSTATE](0.0)
     var use_initial = False
     if has_init_tensor:
         use_initial = Bool(has_initial_state.raw_load(b))
@@ -243,8 +243,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
         var dt_x = dt_val * x_val
 
         # Load B and C rows for this (gt, group_id).
-        var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.raw_load(
@@ -468,7 +468,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
 
     # Load initial state from ssm_pool at the slot for this sequence.
     var slot = Int(cache_indices.raw_load(b))
-    var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_DSTATE](0.0)
     var use_initial = False
     if has_init_tensor:
         use_initial = Bool(has_initial_state.raw_load(b))
@@ -503,8 +503,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         var dA = exp2(A_val * dt_val)
         var dt_x = dt_val * x_val
 
-        var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.raw_load(
@@ -707,7 +707,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # the result is bit-identical. `n_base` is a multiple of L and dstate is a
     # multiple of L, so the row-major base offset is L-aligned -- the SIMD
     # alignment below is satisfied for every dispatched DSTATE (16/64/128/256).
-    comptime pool_align = align_of[SIMD[DType.float32, L]]()
+    comptime pool_align = align_of[SIMD[.float32, L]]()
     comptime bc_align = align_of[SIMD[kernel_dtype, L]]()
     var pool_contig = ssm_pool_strides[3] == 1
     var bc_contig = (B_strides[2] == 1) and (C_strides[2] == 1)
@@ -746,7 +746,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
 
     # Load this thread's DSTATE sub-tile of the initial state from ssm_pool.
     var slot = Int(cache_indices.raw_load(b))
-    var state = SIMD[DType.float32, L](0.0)
+    var state = SIMD[.float32, L](0.0)
     var use_initial = False
     if has_init_tensor:
         use_initial = Bool(has_initial_state.raw_load(b))
@@ -778,8 +778,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         var x_val = Float32(0.0)
         var dt_x = Float32(0.0)
         var dA = Float32(0.0)
-        var B_vals = SIMD[DType.float32, L](0.0)
-        var C_vals = SIMD[DType.float32, L](0.0)
+        var B_vals = SIMD[.float32, L](0.0)
+        var C_vals = SIMD[.float32, L](0.0)
         if active:
             x_val = Scalar[kernel_dtype](
                 x.raw_load(
@@ -992,7 +992,7 @@ struct DStateVecLoader[
     @always_inline
     def load_state(
         self,
-        mut state: Array[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        mut state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
         pool_base: UInt32,
     ):
         """Fill fp32 ``state`` from ``ssm_pool[.., pool_base + n]`` (widening).
@@ -1008,7 +1008,7 @@ struct DStateVecLoader[
                 ](pool_base + UInt32(c * Self.VEC)).cast[DType.float32]()
         else:
             comptime for c in range(Self.NCHUNK):
-                var chunk = SIMD[DType.float32, Self.VEC](0.0)
+                var chunk = SIMD[.float32, Self.VEC](0.0)
                 comptime for i in range(Self.VEC):
                     chunk[i] = self.ssm_pool.raw_load(
                         pool_base
@@ -1023,8 +1023,8 @@ struct DStateVecLoader[
         self,
         b_base: UInt32,
         c_base: UInt32,
-        mut b_c: SIMD[DType.float32, Self.VEC],
-        mut c_c: SIMD[DType.float32, Self.VEC],
+        mut b_c: SIMD[.float32, Self.VEC],
+        mut c_c: SIMD[.float32, Self.VEC],
     ):
         """Load B and C chunk ``c`` (``VEC`` dstate lanes each), widening to fp32.
 
@@ -1057,7 +1057,7 @@ struct DStateVecLoader[
     @always_inline
     def store_state(
         self,
-        state: Array[SIMD[DType.float32, Self.VEC], Self.NCHUNK],
+        state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
         pool_wb: UInt32,
     ):
         """Round fp32 ``state`` to ``state_dtype`` and write back to ``ssm_pool``.
@@ -1281,8 +1281,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     ](ssm_pool, B, C, ssm_pool_strides[3], B_strides[2], C_strides[2])
 
     # Per-thread dstate state as native VEC-wide fp32 chunks (see docstring).
-    var state = Array[SIMD[DType.float32, VEC], NCHUNK](
-        fill=SIMD[DType.float32, VEC](0.0)
+    var state = Array[SIMD[.float32, VEC], NCHUNK](
+        fill=SIMD[.float32, VEC](0.0)
     )
 
     var slot = Int(cache_indices.raw_load(b))
@@ -1328,21 +1328,21 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         # so each arm is a straight-line unrolled loop -- a per-chunk runtime
         # branch measured ~18% slower on M5 (33.6 vs 28.4 us at the decode
         # shape) by interleaving cold scalar-gather code into the hot loop.
-        var y_acc = SIMD[DType.float32, VEC](0.0)
+        var y_acc = SIMD[.float32, VEC](0.0)
         var B_base = UInt32(gt * B_strides[0] + group_id * B_strides[1])
         var C_base = UInt32(gt * C_strides[0] + group_id * C_strides[1])
         if loader.bc_contig:
             comptime for c in range(NCHUNK):
-                var b_c = SIMD[DType.float32, VEC](0.0)
-                var c_c = SIMD[DType.float32, VEC](0.0)
+                var b_c = SIMD[.float32, VEC](0.0)
+                var c_c = SIMD[.float32, VEC](0.0)
                 loader.load_bc[c, True](B_base, C_base, b_c, c_c)
                 var s_c = state[c] * dA + b_c * dt_x
                 state[c] = s_c
                 y_acc += s_c * c_c
         else:
             comptime for c in range(NCHUNK):
-                var b_c = SIMD[DType.float32, VEC](0.0)
-                var c_c = SIMD[DType.float32, VEC](0.0)
+                var b_c = SIMD[.float32, VEC](0.0)
+                var c_c = SIMD[.float32, VEC](0.0)
                 loader.load_bc[c, False](B_base, C_base, b_c, c_c)
                 var s_c = state[c] * dA + b_c * dt_x
                 state[c] = s_c
@@ -1497,7 +1497,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             ).cast[DType.float32]()
 
         var slot = Int(cache_indices.raw_load(b))
-        var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var state = SIMD[.float32, MAX_DSTATE](0.0)
         var use_initial = False
         if has_init_tensor:
             use_initial = Bool(has_initial_state.raw_load(b))
@@ -1534,8 +1534,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             var dA = exp2(A_val * dt_val)
             var dt_x = dt_val * x_val
 
-            var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.raw_load(
@@ -1656,7 +1656,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
                 D.raw_load(UInt32(h * D_strides[0]))
             ).cast[DType.float32]()
 
-        var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var state = SIMD[.float32, MAX_DSTATE](0.0)
         var use_initial = False
         if has_init_tensor:
             use_initial = Bool(has_initial_state.raw_load(b))
@@ -1692,8 +1692,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
             var dA = exp2(A_val * dt_val)
             var dt_x = dt_val * x_val
 
-            var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.raw_load(

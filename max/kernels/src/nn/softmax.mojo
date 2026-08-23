@@ -210,25 +210,23 @@ def _log_concrete(x: SIMD) -> type_of(x):
 # generic helpers below; only the MSA single-tile path opts in.
 @always_inline
 def _fma_f32x2(
-    a: SIMD[DType.float32, 2],
-    b: SIMD[DType.float32, 2],
-    c: SIMD[DType.float32, 2],
-) -> SIMD[DType.float32, 2]:
+    a: SIMD[.float32, 2],
+    b: SIMD[.float32, 2],
+    c: SIMD[.float32, 2],
+) -> SIMD[.float32, 2]:
     return inlined_assembly[
         "fma.rn.ftz.f32x2 $0, $1, $2, $3;",
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l,l",
         has_side_effect=False,
     ](a, b, c)
 
 
 @always_inline
-def _add_f32x2(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def _add_f32x2(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     return inlined_assembly[
         "add.ftz.f32x2 $0, $1, $2;",
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l",
         has_side_effect=False,
     ](a, b)
@@ -2794,14 +2792,14 @@ def _rowmax_online_softmax[
             comptime assert (
                 dtype == DType.float32 and frag_size == 2
             ), "fold_scale_fma needs the f32x2 score pair"
-            var vscale = SIMD[DType.float32, 2](rebind[Float32](scale_log2e))
-            var neg_m_scaled = SIMD[DType.float32, 2](
+            var vscale = SIMD[.float32, 2](rebind[Float32](scale_log2e))
+            var neg_m_scaled = SIMD[.float32, 2](
                 rebind[Float32](score_frag_rowmax[col_tile])
                 * rebind[Float32](scale_log2e)
                 * -1.0
             )
             comptime for row_tile in range(num_rowwise_tiles):
-                var s = rebind[SIMD[DType.float32, 2]](
+                var s = rebind[SIMD[.float32, 2]](
                     score_reg_tile[col_tile, row_tile]
                 )
                 score_reg_tile[col_tile, row_tile] = rebind[
@@ -2870,13 +2868,11 @@ def _rowsum[
             dtype == DType.float32 and frag_size == 2 and frag_num_rows == 1
         ), "packed_reduce needs the f32x2 score pair (one row per fragment)"
         comptime for col_tile in range(num_colwise_tiles):
-            var acc = rebind[SIMD[DType.float32, 2]](
-                score_reg_tile[col_tile, 0]
-            )
+            var acc = rebind[SIMD[.float32, 2]](score_reg_tile[col_tile, 0])
             comptime for row_tile in range(1, num_rowwise_tiles):
                 acc = _add_f32x2(
                     acc,
-                    rebind[SIMD[DType.float32, 2]](
+                    rebind[SIMD[.float32, 2]](
                         score_reg_tile[col_tile, row_tile]
                     ),
                 )

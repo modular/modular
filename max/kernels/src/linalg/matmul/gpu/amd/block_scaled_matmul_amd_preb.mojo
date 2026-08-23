@@ -430,10 +430,10 @@ struct BlockScaledMmaOp_PreB[
                     + Int(k_vec) * Self.mma_frag_width_bytes
                 )
                 var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
-                var frag = SIMD[DType.uint8, Self.reg_frag_bytes](0)
+                var frag = SIMD[.uint8, Self.reg_frag_bytes](0)
                 comptime for chunk in range(Self.mma_frag_width_bytes // 8):
                     frag = frag.insert[offset=chunk * 8](
-                        rebind[SIMD[DType.uint8, 8]](
+                        rebind[SIMD[.uint8, 8]](
                             a_smem_warp.raw_load[width=8](off + chunk * 8)
                         )
                     )
@@ -502,7 +502,7 @@ struct BlockScaledMmaOp_PreB[
                 )
                 self._b_reg.vectorize[1, 1, 1, Self.b_reg_frag_bytes]()[
                     slot, mma_k_idx, i, 0
-                ] = rebind[SIMD[DType.uint8, Self.b_reg_frag_bytes]](
+                ] = rebind[SIMD[.uint8, Self.b_reg_frag_bytes]](
                     b_loader.load_fragment(n_log, k_byte_log)
                 )
             else:
@@ -514,7 +514,7 @@ struct BlockScaledMmaOp_PreB[
                         + lane_klane * Self.FRAG_HALF_BYTES
                     )
                     b_reg_v[slot, mma_k_idx, i, h] = rebind[
-                        SIMD[DType.uint8, Self.FRAG_HALF_BYTES]
+                        SIMD[.uint8, Self.FRAG_HALF_BYTES]
                     ](b_loader.load_fragment(n_log, k_byte_log))
 
     @always_inline

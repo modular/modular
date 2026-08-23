@@ -2019,7 +2019,7 @@ struct DistributedEPCombine:
             @__copy_capture(rw_tensor)
             def router_weights_fn[
                 width: Int
-            ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+            ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
                 return rw_tensor.load[width=width]((token_idx, topk_id)).cast[
                     DType.float32
                 ]()
@@ -2218,7 +2218,7 @@ struct Struct_ep_combine_wait:
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[DType.float32]()
@@ -2358,7 +2358,7 @@ struct Struct_ep_combine:
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[DType.float32]()
@@ -2507,7 +2507,7 @@ struct Struct_ep_combine_skip_a2a:
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
             width: Int
-        ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+        ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
             return router_weights_tensor.load[width=width](
                 (token_idx, topk_id)
             ).cast[DType.float32]()

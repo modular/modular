@@ -26,17 +26,17 @@ from layout import TileTensor, row_major
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
-def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
+def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[.bfloat16, 8]:
     comptime MASK: Int32 = 0x000F000F
     comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
     # 0xc308 = -136.0, 0xc300 = -128.0
-    comptime BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
+    comptime BF16_BIAS = SIMD[.bfloat16, 2](-128, -128)
     # 0x3f80 = 1.0
-    comptime BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
+    comptime BF16_ONE = SIMD[.bfloat16, 2](1, 1)
 
     var i4s: Int32 = i4
-    var v: SIMD[DType.int32, 4] = 0
+    var v: SIMD[.int32, 4] = 0
     comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
     # This lut is operation: (A & B) | C
 

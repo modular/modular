@@ -146,7 +146,7 @@ def _check_not_poison[dtype: DType, width: Int](val: SIMD[dtype, width]):
 @always_inline
 def _check_not_poison_masked[
     dtype: DType, width: Int
-](val: SIMD[dtype, width], mask: SIMD[DType.bool, width]):
+](val: SIMD[dtype, width], mask: SIMD[.bool, width]):
     """Checks unmasked lanes of a SIMD value for debug allocator poison.
 
     Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`. Zero cost otherwise.

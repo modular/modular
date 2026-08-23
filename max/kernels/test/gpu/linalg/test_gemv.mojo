@@ -221,9 +221,7 @@ def run_matvec_with_epilogue_fn(
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),
-            rebind[SIMD[DType.float32, width]](
-                val + SIMD[dtype, width](const_val)
-            ),
+            rebind[SIMD[.float32, width]](val + SIMD[dtype, width](const_val)),
         )
 
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE

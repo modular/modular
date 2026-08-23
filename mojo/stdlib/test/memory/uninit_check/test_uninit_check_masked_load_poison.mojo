@@ -33,8 +33,8 @@ def main():
     )
 
     # mask=True means "load from memory" — lane 1 is unmasked and poisoned.
-    var mask = SIMD[DType.bool, 4](True, True, False, False)
-    var passthrough = SIMD[DType.float32, 4](0)
+    var mask = SIMD[.bool, 4](True, True, False, False)
+    var passthrough = SIMD[.float32, 4](0)
     _ = masked_load(ptr, mask, passthrough)
 
     # Should not reach here.

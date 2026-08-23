@@ -57,10 +57,10 @@ struct HostInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
 
 
 struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
-    comptime device_type: AnyType = SIMD[DType.int32, 4]
-    var value: SIMD[DType.int32, 4]
+    comptime device_type: AnyType = SIMD[.int32, 4]
+    var value: SIMD[.int32, 4]
     # Deliberately absent from device_type so host and device layouts differ.
-    var host_padding: SIMD[DType.int32, 4]
+    var host_padding: SIMD[.int32, 4]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -114,9 +114,9 @@ struct HostIntViaHosty(Hosty, ImplicitlyCopyable, TrivialRegisterPassable):
 struct HostStringParametric[W: Int](
     DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
 ):
-    comptime device_type: AnyType = SIMD[DType.int32, Self.W]
-    var value: SIMD[DType.int32, Self.W]
-    var host_padding: SIMD[DType.int32, Self.W]
+    comptime device_type: AnyType = SIMD[.int32, Self.W]
+    var value: SIMD[.int32, Self.W]
+    var host_padding: SIMD[.int32, Self.W]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

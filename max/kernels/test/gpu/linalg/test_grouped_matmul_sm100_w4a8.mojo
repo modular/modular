@@ -61,9 +61,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
 
 # Exact in E4M3 and small enough that every partial sum stays exact in FP32.
-comptime A_VALUES = SIMD[DType.float32, 8](
-    0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5
-)
+comptime A_VALUES = SIMD[.float32, 8](0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5)
 
 # One BF16 ulp. The kernel accumulates in FP32 and the host reference is exact,
 # so rounding the result to BF16 on the store is the whole error budget.

@@ -514,7 +514,7 @@ struct BlockScaledMmaOp[
         ],
         mma_idx: Int,
         k_tile_idx: Int,
-    ) -> SIMD[DType.uint8, reg_w]:
+    ) -> SIMD[.uint8, reg_w]:
         """Reads one lane's 24 FP6 payload bytes out of row-major SMEM.
 
         `vectorize`/`distribute` cannot express a 24-byte element, so this
@@ -535,10 +535,10 @@ struct BlockScaledMmaOp[
         var row = mma_idx * Self.MMA_M + (lane % Self.MMA_M)
         var byte_base = k_tile_idx * packed_k + (lane // Self.MMA_M) * frag_w
 
-        var fragment = SIMD[DType.uint8, reg_w](0)
+        var fragment = SIMD[.uint8, reg_w](0)
         comptime for chunk in range(frag_w // 8):
             fragment = fragment.insert[offset=chunk * 8](
-                rebind[SIMD[DType.uint8, 8]](
+                rebind[SIMD[.uint8, 8]](
                     smem_warp.load[8](Coord(row, byte_base + chunk * 8))
                 )
             )

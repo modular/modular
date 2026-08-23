@@ -234,19 +234,19 @@ def single_warp_mma_sync_m16n8k8[
 
     var thread_y, thread_x = divmod(thread_idx.x, 4)
 
-    var vec_a_layout = SIMD[DType.float32, 4](
+    var vec_a_layout = SIMD[.float32, 4](
         rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),
         rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 0]),
         rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 1]),
         rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 1]),
     )
-    var vec_b_layout = SIMD[DType.float32, 2](
+    var vec_b_layout = SIMD[.float32, 2](
         rebind[Float32](mat_b_mma[thread_x, thread_y, 0]),
         rebind[Float32](mat_b_mma[thread_x, thread_y, 1]),
     )
 
-    var vec_d = SIMD[DType.float32, 4](0)
-    var vec_c = SIMD[DType.float32, 4](0)
+    var vec_d = SIMD[.float32, 4](0)
+    var vec_c = SIMD[.float32, 4](0)
 
     mma(vec_d, vec_a_layout, vec_b_layout, vec_c)
 

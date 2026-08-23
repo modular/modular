@@ -332,11 +332,11 @@ struct MXFP4MoERoutedMatmul[
 
         # ---- Per-warp accumulator ----
         var c_acc = StaticTuple[
-            SIMD[DType.float32, Self.C_FRAG_SIZE],
+            SIMD[.float32, Self.C_FRAG_SIZE],
             Self.num_m_mmas * Self.num_n_mmas,
         ]()
         comptime for i in range(Self.num_m_mmas * Self.num_n_mmas):
-            c_acc[i] = SIMD[DType.float32, Self.C_FRAG_SIZE](0.0)
+            c_acc[i] = SIMD[.float32, Self.C_FRAG_SIZE](0.0)
 
         # ---- K-loop ----
         comptime num_k_iters = K_BYTES // Self.BK_BYTES
@@ -374,7 +374,7 @@ struct MXFP4MoERoutedMatmul[
 
             comptime for sp in range(Self.num_scale_packs_per_BK):
                 var a_frags = StaticTuple[
-                    SIMD[DType.uint8, Self.FRAG_W_BYTES],
+                    SIMD[.uint8, Self.FRAG_W_BYTES],
                     Self.pack_K * Self.num_m_mmas,
                 ]()
                 comptime for ikxdl in range(Self.pack_K):
@@ -392,7 +392,7 @@ struct MXFP4MoERoutedMatmul[
                         ](0)
 
                 var b_frags = StaticTuple[
-                    SIMD[DType.uint8, Self.FRAG_W_BYTES],
+                    SIMD[.uint8, Self.FRAG_W_BYTES],
                     Self.pack_K * Self.num_n_mmas,
                 ]()
                 comptime for ikxdl in range(Self.pack_K):

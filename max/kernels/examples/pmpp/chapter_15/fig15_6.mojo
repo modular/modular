@@ -24,8 +24,8 @@ def mm(
     lda: Int,
     b: UnsafePointer[Float32, _, address_space=AddressSpace.SHARED],
     ldb: Int,
-    c: SIMD[DType.float32, tM * tN],
-) -> SIMD[DType.float32, tM * tN]:
+    c: SIMD[.float32, tM * tN],
+) -> SIMD[.float32, tM * tN]:
     """Compute matrix multiplication: c += a @ b.
 
     Args:

@@ -260,7 +260,7 @@ def _cluster_cutoff_search[
                 thread_count_1,
             )
         )
-        var packed = SIMD[DType.float32, 8](0)
+        var packed = SIMD[.float32, 8](0)
         comptime for i in range(6):
             packed[i] = stats[i]
         var combined = cluster_allreduce[
@@ -414,7 +414,7 @@ def TopKTopPMaskedProbsClusterKernel[
 
     @__parameter
     @always_inline
-    def load_e(offset: Int) -> SIMD[DType.float32, vec_size]:
+    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
             DType.float32
         ]()
@@ -445,7 +445,7 @@ def TopKTopPMaskedProbsClusterKernel[
 
     var totals = cluster_allreduce[_sum, cluster_size, need_tail_sync=False](
         cluster_slot + _CLUSTER_SLOT_FLOATS,
-        SIMD[DType.float32, 2](block_total.value, Float32(block_total.count)),
+        SIMD[.float32, 2](block_total.value, Float32(block_total.count)),
     )
     var z = totals[0]
     var total_count = Int32(totals[1])
@@ -479,9 +479,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # the search.
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
-        var masked = (e.gt(cut)).select(
-            e / mass_s, SIMD[DType.float32, vec_size](0)
-        )
+        var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
         probs_row.store[width=vec_size]((Idx[0], i * vec_size), masked)
 
     # Terminal keep-alive. Peers read this CTA's shared memory through `mapa`,
@@ -808,7 +806,7 @@ def _sampling_rejection_loop_cluster[
         if tx == 0 and slice_last >= 0:
             slice_last_val = smem[Int(slice_last) - vec_begin * vec_size]
 
-        var published = SIMD[DType.float32, 4](
+        var published = SIMD[.float32, 4](
             slice_stats[2], slice_last, slice_last_val, 0
         )
         var table = cluster_allgather[cluster_size, need_tail_sync=False](
@@ -841,12 +839,12 @@ def _sampling_rejection_loop_cluster[
         if tx == 0:
             sampled_id_sram[0] = d
         barrier()
-        var found = SIMD[DType.float32, 2](-1, 0)
+        var found = SIMD[.float32, 2](-1, 0)
         if rank == owner:
             var aggregate = owner_base
             var slice_vecs = vec_end - vec_begin
             for i in range(ceildiv(slice_vecs, block_size)):
-                var probs_vec = SIMD[DType.float32, vec_size](0)
+                var probs_vec = SIMD[.float32, vec_size](0)
                 var g = i * block_size + tx
                 if g < slice_vecs:
                     probs_vec = smem.load[width=vec_size](g * vec_size)
@@ -913,7 +911,7 @@ def _sampling_rejection_loop_cluster[
                 thread_mass_0, thread_mass_1, thread_count_0, thread_count_1
             )
         )
-        var packed = SIMD[DType.float32, 4](sums[0], sums[1], sums[2], sums[3])
+        var packed = SIMD[.float32, 4](sums[0], sums[1], sums[2], sums[3])
 
         var combined = cluster_allreduce[
             _sum, cluster_size, need_tail_sync=False
@@ -1216,7 +1214,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = smem.load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cutoff)).select(
-            e / kept_mass, SIMD[DType.float32, vec_size](0)
+            e / kept_mass, SIMD[.float32, vec_size](0)
         )
         dist_row.store[width=vec_size](
             (Idx[0], i * vec_size), masked.cast[dist_dtype]()

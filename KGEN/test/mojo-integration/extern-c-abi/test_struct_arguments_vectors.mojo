@@ -25,11 +25,11 @@ from std.ffi import external_call
 # ============================================================================
 @fieldwise_init
 struct VectorStruct8(TrivialRegisterPassable):
-    var v: SIMD[DType.float32, 2]
+    var v: SIMD[.float32, 2]
 
 
 def test_vec_8byte():
-    var s = VectorStruct8(SIMD[DType.float32, 2](1.0, 2.0))
+    var s = VectorStruct8(SIMD[.float32, 2](1.0, 2.0))
     var result = external_call["c_func_vec_8byte", VectorStruct8](s)
     print("vec_8byte:", result.v[0], result.v[1])
 

@@ -51,7 +51,7 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]

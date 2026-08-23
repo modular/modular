@@ -95,8 +95,8 @@ def _simdgroup8x8_matmul_kernel[
     # Fully-interior simdgroup subtile -> unguarded loads (the common case).
     var interior = (row_base + SG_M <= m) and (col_base + SG_N <= n)
 
-    var accum = Array[SIMD[DType.float32, FRAG8], NT_M * NT_N](
-        fill=SIMD[DType.float32, FRAG8](0)
+    var accum = Array[SIMD[.float32, FRAG8], NT_M * NT_N](
+        fill=SIMD[.float32, FRAG8](0)
     )
 
     var a_ptr = a.ptr

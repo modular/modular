@@ -1644,9 +1644,9 @@ def mla_splitk_reduce[
             ).cast[accum_type]()
         comptime for k in range(parts_per_warp):
             var scale_k = scales_local[k]
-            var safe = SIMD[DType.bool, elems_per_lane](
-                fill=scale_k > 0
-            ).select(xs[k], type_of(xs[k])(0))
+            var safe = SIMD[.bool, elems_per_lane](fill=scale_k > 0).select(
+                xs[k], type_of(xs[k])(0)
+            )
             acc += safe * type_of(safe)(scale_k)
 
     # Step 3: cross-warp reduction and output store (`out_row` set above).

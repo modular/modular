@@ -434,7 +434,7 @@ def exp2[
 
 
 @always_inline
-def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
+def _exp2_float32(x: SIMD[.float32, _]) -> type_of(x):
     comptime u32 = DType.uint32
     var xc = x.clamp(-126, 126)
     var m = xc.cast[DType.int32]()
@@ -454,9 +454,7 @@ def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
         from_bits=r.to_bits[u32]()
         + (
             m.cast[u32]()
-            << SIMD[DType.uint32, x.length](
-                FPUtils[DType.float32].mantissa_width()
-            )
+            << SIMD[.uint32, x.length](FPUtils[DType.float32].mantissa_width())
         )
     )
 
@@ -531,7 +529,7 @@ def _ldexp_impl[
 @always_inline
 def ldexp[
     dtype: DType, width: SIMDLength, //
-](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[
+](x: SIMD[dtype, width], exp: SIMD[.int32, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
     """Computes elementwise ldexp function.
@@ -673,9 +671,7 @@ def exp[T: _Expable](x: T) -> T:
 
 
 @always_inline
-def _exp2_approx_f32[
-    W: Int
-](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+def _exp2_approx_f32[W: Int](x: SIMD[.float32, W]) -> SIMD[.float32, W]:
     """Computes a fast approximation of 2^x using a fused analytic (FA-4)
         exponential method, using Polynomial (Horner form):
         p(r) = c0 + r*(c1 + r*(c2 + r*c3))
@@ -731,12 +727,12 @@ def _exp2_approx_f32[
     # --- Kernel ---------------------------------------------------------------
 
     # 1) clamp in float
-    var x_min = max(x, SIMD[DType.float32, W](EXP2_MIN_INPUT))
+    var x_min = max(x, SIMD[.float32, W](EXP2_MIN_INPUT))
 
     # 2) bias trick: vi = round(x_min) in float via +bias then −bias
     # (works for |x| < 2^23; we use 1.5*2^23 to behave well around 0 and negatives)
-    var vb = x_min + SIMD[DType.float32, W](ROUND_BIAS_F32)
-    var vi = vb + SIMD[DType.float32, W](NEG_ROUND_BIAS_F32)
+    var vb = x_min + SIMD[.float32, W](ROUND_BIAS_F32)
+    var vi = vb + SIMD[.float32, W](NEG_ROUND_BIAS_F32)
 
     # 3) fractional part in [−0.5, 0.5] without extra clamp
     var r = x_min - vi
@@ -762,7 +758,7 @@ def _exp2_approx_f32[
     ](r)
 
     # 5) exponent as int lanes (no extra clamp needed due to early float clamp)
-    var n = SIMD[DType.int32, W](vi)
+    var n = SIMD[.int32, W](vi)
 
     # result: 2^x ≈ 2^n * p
     return ldexp(p, n)
@@ -770,7 +766,7 @@ def _exp2_approx_f32[
 
 # ---------- e^x helpers ----------
 @always_inline
-def exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+def exp_approx_f32[W: Int](x: SIMD[.float32, W]) -> SIMD[.float32, W]:
     """Computes a fast approximate e^x for SIMD vectors of 32-bit floats
     using the base-2 approximation as a backend.
 
@@ -792,7 +788,7 @@ def exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
     Returns:
         A SIMD vector containing the approximate value of e^x.
     """
-    return _exp2_approx_f32[W](x * SIMD[DType.float32, W](log2e))
+    return _exp2_approx_f32[W](x * SIMD[.float32, W](log2e))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1224,7 +1220,7 @@ def isclose[
     atol: Float64 = 1e-08,
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
-) -> SIMD[DType.bool, width]:
+) -> SIMD[.bool, width]:
     """Returns a boolean SIMD vector indicating which element pairs of `a` and
     `b` are equal within a given tolerance.
 
@@ -2067,7 +2063,7 @@ def sinh[
 @always_inline
 def _expm1_float32[
     width: SIMDLength, //
-](d: SIMD[DType.float32, width]) -> type_of(d):
+](d: SIMD[.float32, width]) -> type_of(d):
     # Constants for range reduction
     # R_LN2f = 1/ln(2) for converting to base-2 exponent
     comptime R_LN2f = 1.442695040888963407359924681  # 1/ln(2)
@@ -2196,9 +2192,7 @@ def log10[
 
 
 @always_inline
-def _log1p_f64[
-    width: SIMDLength, //
-](x: SIMD[DType.float64, width]) -> type_of(x):
+def _log1p_f64[width: SIMDLength, //](x: SIMD[.float64, width]) -> type_of(x):
     # This uses the approximation from cephes to compute log1p via the approximation
     # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
     # in the domain 1/sqrt(2) <= x < sqrt(2)
@@ -2297,9 +2291,7 @@ def logb[
 # ===----------------------------------------------------------------------=== #
 
 
-def _ilogb[
-    width: SIMDLength
-](x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+def _ilogb[width: SIMDLength](x: SIMD[.float32, width]) -> SIMD[.int32, width]:
     """Extract binary exponent from floating-point number.
 
     Args:
@@ -2310,7 +2302,7 @@ def _ilogb[
     """
 
     @always_inline
-    def extract(x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+    def extract(x: SIMD[.float32, width]) -> SIMD[.int32, width]:
         """Internal helper function to extract binary exponent from float.
 
         Args:
@@ -2328,7 +2320,7 @@ def _ilogb[
 
         # Extract exponent bits from IEEE 754 representation
         # Step 1: Reinterpret float as 32-bit integer
-        var bits = rebind[SIMD[DType.int32, width]](d._to_bits_signed())
+        var bits = rebind[SIMD[.int32, width]](d._to_bits_signed())
 
         # Step 2: Right shift by 23 to move exponent to lower bits
         # This moves bits [30:23] to positions [7:0]
@@ -2482,7 +2474,7 @@ def cbrt[
     elif dtype == DType.float64:
         return _call_libm["cbrt"](x)
     else:
-        var result = SIMD[DType.float32, width]()
+        var result = SIMD[.float32, width]()
         for i in range(width):
             result[i] = _cbrtf(rebind[Float32](x[i]))
 
@@ -2687,7 +2679,7 @@ def erfc[
     elif dtype == DType.float64:
         return _call_libm["erfc"](x)
     else:
-        var result = SIMD[DType.float32, width]()
+        var result = SIMD[.float32, width]()
 
         for i in range(width):
             result[i] = _erfcf(rebind[Float32](x[i]))

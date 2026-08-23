@@ -147,7 +147,7 @@ def _dpp_move[
         var parts = bitcast[DType.int32, 2](val)
         var lo = _dpp_update_i32[dpp_ctrl](Int32(0), parts[0])
         var hi = _dpp_update_i32[dpp_ctrl](Int32(0), parts[1])
-        return bitcast[dtype, 1](SIMD[DType.int32, 2](lo, hi))
+        return bitcast[dtype, 1](SIMD[.int32, 2](lo, hi))
     else:
         comptime assert False, "unsupported type for DPP move"
 
@@ -419,8 +419,8 @@ def _shuffle_apple_helper[
         var bits = bitcast[DType.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
-        var half1_n = rebind[SIMD[DType.uint32, simd_width]](half1)
-        var half2_n = rebind[SIMD[DType.uint32, simd_width]](half2)
+        var half1_n = rebind[SIMD[.uint32, simd_width]](half1)
+        var half2_n = rebind[SIMD[.uint32, simd_width]](half2)
         var s1 = _shuffle_apple_helper[op, DType.uint32, simd_width](
             mask, half1_n, offset
         )
@@ -488,7 +488,7 @@ def shuffle_idx[
         ```mojo
             from std.gpu.primitives.warp import shuffle_idx
 
-            val = SIMD[DType.float32, 16](1.0)
+            val = SIMD[.float32, 16](1.0)
 
             # Broadcast value from lane 0 to all lanes
             result = shuffle_idx(val, 0)
@@ -549,7 +549,7 @@ def shuffle_idx[
 
             # Only broadcast to first 16 lanes
             var mask: UInt = 0xFFFF  # 16 ones
-            var val = SIMD[DType.float32, 32](1.0)
+            var val = SIMD[.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
     """
@@ -846,7 +846,7 @@ def shuffle_xor[
 
             # Exchange values between even-numbered threads 4 lanes apart
             var mask: UInt = 0xAAAAAAAA  # Even threads only
-            var val = SIMD[DType.float32, 16](42.0)  # Example value
+            var val = SIMD[.float32, 16](42.0)  # Example value
             var result = shuffle_xor(mask, val, 4)
         ```
     """
@@ -915,7 +915,7 @@ def lane_group_reduce[
             @__parameter
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
-            var val = SIMD[DType.float32, 16](42.0)
+            var val = SIMD[.float32, 16](42.0)
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
     """
@@ -969,7 +969,7 @@ def reduce[
         def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
-        val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
+        val = SIMD[.float32, 4](2.0, 4.0, 6.0, 8.0)
         result = reduce[shuffle_down, add](val)
     ```
     """

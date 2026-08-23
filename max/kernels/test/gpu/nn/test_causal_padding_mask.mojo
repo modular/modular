@@ -157,13 +157,13 @@ def test_causal_padding_mask_apply() raises:
     var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(1)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
-    var score_vec = SIMD[DType.float32, 4](0.0)
+    var score_vec = SIMD[.float32, 4](0.0)
     score_vec[0] = 1.0
     score_vec[1] = 2.0
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
-    comptime SIMD_T = SIMD[DType.float32, 4]
+    comptime SIMD_T = SIMD[.float32, 4]
     var inf_vec = SIMD_T(MASK_VALUE)
 
     # q=4, k=0..3: causal allows all (q >= k), padding allows k<3.
@@ -254,7 +254,7 @@ def test_causal_padding_mask_multi_seq() raises:
     var valid_lengths = LayoutTensor[DType.uint32, Layout.row_major(2)](storage)
     var mask = CausalPaddingMask(valid_lengths)
 
-    comptime SIMD_T = SIMD[DType.float32, 4]
+    comptime SIMD_T = SIMD[.float32, 4]
     var score_vec = SIMD_T(1.0, 2.0, 3.0, 4.0)
 
     # Seq 0 (valid_length=2), q=3, k=0..3:

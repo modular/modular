@@ -203,7 +203,7 @@ def test_generic_alignment() raises:
     # Different instantiations should all have 128-byte alignment
     assert_equal(align_of[AlignedGeneric[Int8]](), 128)
     assert_equal(align_of[AlignedGeneric[Int64]](), 128)
-    assert_equal(align_of[AlignedGeneric[SIMD[DType.float32, 4]]](), 128)
+    assert_equal(align_of[AlignedGeneric[SIMD[.float32, 4]]](), 128)
 
 
 def test_generic_stack_allocation() raises:

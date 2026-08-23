@@ -265,7 +265,7 @@ def kernel_mask_unit(
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
             var x = v7[i, jj, 0]
-            v7[i, jj, 0] = math_exp2(x - SIMD[DType.float32, ATT_FRAG](1.0))
+            v7[i, jj, 0] = math_exp2(x - SIMD[.float32, ATT_FRAG](1.0))
     var base7 = 7 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
         out_ptr[base7 + p] = att7._storage[p]

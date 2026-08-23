@@ -77,7 +77,7 @@ def _softmax_unit_kernel(
     ) -> ScoreMma.AccumType:
         var acc = ScoreMma.zero_accum()
         comptime for ni in range(NUM_N_MMAS):
-            var frag = SIMD[DType.float32, 8](0)
+            var frag = SIMD[.float32, 8](0)
             comptime for el in range(8):
                 var row = rb + (8 if el > 3 else 0)
                 var col = ni * 16 + cb + (el & 3)

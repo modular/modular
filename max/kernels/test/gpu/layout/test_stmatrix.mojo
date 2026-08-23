@@ -48,7 +48,7 @@ def test_stmatrix(
     comptime mma_n: Int = 8
     comptime mma_k: Int = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = unsafe_stack_allocation[
         mma_m * mma_k,
@@ -89,9 +89,7 @@ def test_stmatrix(
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    st_matrix[4](
-        c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
-    )
+    st_matrix[4](c_shared + thread_idx.x * 4, rebind[SIMD[.float32, 4]](d_reg))
 
     var base = tid * 4
     for i in range(4):
@@ -154,7 +152,7 @@ def test_stmatrix_gen[
     mma(d_reg, a_reg, b_reg, d_reg)
     st_matrix[c_frag_size](
         c_shared + thread_idx.x * 4,
-        rebind[SIMD[DType.float32, c_frag_size]](d_reg),
+        rebind[SIMD[.float32, c_frag_size]](d_reg),
     )
 
     var base = thread_idx.x * 4

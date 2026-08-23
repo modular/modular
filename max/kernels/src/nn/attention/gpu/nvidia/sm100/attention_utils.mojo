@@ -360,7 +360,7 @@ def o_store_tma_blocks_per_op[
 @always_inline
 def pack_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
-](o_vals: Array[Float32, n]) -> SIMD[DType.uint32, 4]:
+](o_vals: Array[Float32, n]) -> SIMD[.uint32, 4]:
     """Cast the `w` f32 O lanes `o_vals[start : start + w]` to `output_type` and
     pack them into one 16 B SWIZZLE_NONE store register (exactly four u32).
 
@@ -399,9 +399,9 @@ def pack_row[
         " must equal 4 * (4 // size_of[output_type]()) -- 8 for bf16/f16, 16"
         " for fp8."
     )
-    var packed = SIMD[DType.uint32, 4]()
+    var packed = SIMD[.uint32, 4]()
     comptime for c in range(4):
-        var chunk = SIMD[DType.float32, per_u32]()
+        var chunk = SIMD[.float32, per_u32]()
         comptime for k in range(per_u32):
             chunk[k] = o_vals[start + per_u32 * c + k]
         packed[c] = bitcast[DType.uint32, 1](chunk.cast[output_type]())
@@ -465,12 +465,10 @@ def scale_pack_o_row[
             each lane to normalize the output.
     """
     comptime assert size_of[output_type]() == 2
-    var packed = SIMD[DType.uint32, w // 2]()
+    var packed = SIMD[.uint32, w // 2]()
     comptime for c in range(w // 2):
         var pair = (
-            SIMD[DType.float32, 2](
-                o_vals[start + 2 * c], o_vals[start + 2 * c + 1]
-            )
+            SIMD[.float32, 2](o_vals[start + 2 * c], o_vals[start + 2 * c + 1])
             * inv_row_sum
         ).cast[output_type]()
         packed[c] = bitcast[DType.uint32, 1](pair)
@@ -485,7 +483,7 @@ def combine_pack_o_row[
     peer: Array[Float32, n],
     scale_own: Float32,
     scale_peer: Float32,
-) -> SIMD[DType.uint32, n // 2]:
+) -> SIMD[.uint32, n // 2]:
     """LSE-combine `own * scale_own + peer * scale_peer` over `n` f32 O lanes,
     cast to the 2-byte `output_type`, and pack into `n // 2` u32 lanes.
 
@@ -495,12 +493,12 @@ def combine_pack_o_row[
     `fa4_lse_combine_write`.
     """
     comptime assert size_of[output_type]() == 2
-    var packed = SIMD[DType.uint32, n // 2]()
+    var packed = SIMD[.uint32, n // 2]()
     comptime for c in range(n // 2):
-        var own_c = SIMD[DType.float32, 2](own[2 * c], own[2 * c + 1])
-        var peer_c = SIMD[DType.float32, 2](peer[2 * c], peer[2 * c + 1])
+        var own_c = SIMD[.float32, 2](own[2 * c], own[2 * c + 1])
+        var peer_c = SIMD[.float32, 2](peer[2 * c], peer[2 * c + 1])
         var comb = peer_c.fma(
-            SIMD[DType.float32, 2](scale_peer), own_c * scale_own
+            SIMD[.float32, 2](scale_peer), own_c * scale_own
         ).cast[output_type]()
         packed[c] = bitcast[DType.uint32, 1](comb)
     return packed
@@ -515,7 +513,7 @@ def st_shared_v4_b32[
         mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     elem_off: Int,
-    packed: SIMD[DType.uint32, 4],
+    packed: SIMD[.uint32, 4],
 ):
     """Explicit 16 B `st.shared.v4.b32` (one `STS.128`) to `dst[elem_off]`.
 
@@ -2322,13 +2320,11 @@ def intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
 @always_inline
 def intrin_ftz_x2[
     intrin: String
-](a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]) -> SIMD[
-    DType.float32, 2
-]:
+](a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[DType.float32, 2]:
     """Wraps a flush-to-zero (FTZ) binary `f32x2` PTX intrinsic."""
     return inlined_assembly[
         String(intrin, ".ftz.f32x2 $0, $1, $2;"),
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l",
         has_side_effect=False,
     ](a, b)
@@ -2375,9 +2371,7 @@ def max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
 
 
 @always_inline
-def add_ftz(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def add_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero sum of two `f32x2` vectors.
 
     Args:
@@ -2388,9 +2382,7 @@ def add_ftz(
 
 
 @always_inline
-def sub_ftz(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def sub_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero difference of two `f32x2` vectors.
 
     Args:
@@ -2401,17 +2393,13 @@ def sub_ftz(
 
 
 @always_inline
-def mul_ftz(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def mul_ftz(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero product of two `f32x2` vectors."""
     return intrin_ftz_x2["mul"](a, b)
 
 
 @always_inline
-def add_ftz_rm(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def add_ftz_rm(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Returns the round-to-nearest-even flush-to-zero sum of two `f32x2` vectors.
 
     Args:
@@ -2428,15 +2416,15 @@ def fma_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
 
 @always_inline
 def fma_ftz(
-    a: SIMD[DType.float32, 2],
-    b: SIMD[DType.float32, 2],
-    c: SIMD[DType.float32, 2],
-) -> SIMD[DType.float32, 2]:
+    a: SIMD[.float32, 2],
+    b: SIMD[.float32, 2],
+    c: SIMD[.float32, 2],
+) -> SIMD[.float32, 2]:
     """Returns the flush-to-zero fused multiply-add `a * b + c` for `f32x2` vectors.
     """
     return inlined_assembly[
         "fma.rn.ftz.f32x2 $0, $1, $2, $3;",
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l,l",
         has_side_effect=False,
     ](a, b, c)
@@ -2589,13 +2577,13 @@ def mask_select8[
 @always_inline
 def exp2_emulation[
     use_exp2_emulation: Bool = True
-](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
+](x: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     """Computes `2^x` for an `f32x2` vector via a degree-3 polynomial approximation.
 
     When `use_exp2_emulation` is False, falls back to the standard `exp2` intrinsic.
     """
     comptime if use_exp2_emulation:
-        comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
+        comptime fp32_round_int = SIMD[.float32, 2]((1 << 23) + (1 << 22))
         var clamped = max(x, -FP32_EXP_BIAS)
         # We want to round down here, so that the fractional part is in [0, 1)
         var rounded = add_ftz_rm(clamped, fp32_round_int)
@@ -3632,7 +3620,7 @@ def apply_oob_mask[
     mask_strategy: MaskStrategy,
     apply_log2e_after_mask: Bool,
 ](
-    s_arg: SIMD[DType.float32, 2],
+    s_arg: SIMD[.float32, 2],
     *,
     prompt_idx: UInt32,
     q_head_idx: UInt32,
@@ -3641,7 +3629,7 @@ def apply_oob_mask[
     num_keys: Int32,
     score_row: Int32,
     score_col: Int32,
-) -> SIMD[DType.float32, 2]:
+) -> SIMD[.float32, 2]:
     """Applies the out-of-bounds key mask to a pair of attention scores.
 
     Scores for columns at or beyond `num_keys` are replaced with `MASK_VALUE`; optionally scales by `log2e` before masking.
@@ -3666,7 +3654,7 @@ def apply_oob_mask[
         score_col: Starting column index of the score pair; columns from
             this index onward are compared to `num_keys`.
     """
-    var s: SIMD[DType.float32, 2] = s_arg
+    var s: SIMD[.float32, 2] = s_arg
 
     comptime if apply_log2e_after_mask:
         s = mul_ftz(s, log2e)
@@ -3732,7 +3720,7 @@ def apply_mask[
         score_row: Row index of the score in the query dimension.
     """
     comptime simd_size = 2
-    comptime F32x2 = SIMD[DType.float32, simd_size]
+    comptime F32x2 = SIMD[.float32, simd_size]
 
     comptime if MaskStrategy.BITMASK in mask_strategy or (
         MaskStrategy.OUT_OF_BOUNDS in mask_strategy

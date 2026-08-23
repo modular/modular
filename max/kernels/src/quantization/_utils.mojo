@@ -17,7 +17,7 @@ from std.sys.intrinsics import llvm_intrinsic
 @always_inline
 def roundeven_to_int32[
     dtype: DType, simd_width: SIMDLength
-](x: SIMD[dtype, simd_width]) -> SIMD[DType.int32, simd_width]:
+](x: SIMD[dtype, simd_width]) -> SIMD[.int32, simd_width]:
     comptime native_width = simd_width_of[dtype]()
 
     # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
@@ -28,16 +28,16 @@ def roundeven_to_int32[
         and dtype == DType.float32
         and simd_width >= native_width
     ):
-        var x_i32 = SIMD[DType.int32, simd_width]()
+        var x_i32 = SIMD[.int32, simd_width]()
 
         comptime for i in range(0, simd_width, native_width):
             var part = llvm_intrinsic[
                 "llvm.x86.avx512.mask.cvtps2dq.512",
-                SIMD[DType.int32, native_width],
+                SIMD[.int32, native_width],
                 has_side_effect=False,
             ](
                 x.slice[native_width, offset=i](),
-                SIMD[DType.int32, native_width](0),
+                SIMD[.int32, native_width](0),
                 Int16(-1),  # no mask
                 Int32(8),  # round to nearest
             )
@@ -53,12 +53,12 @@ def roundeven_to_int32[
         and dtype == DType.float32
         and simd_width >= native_width
     ):
-        var x_i32 = SIMD[DType.int32, simd_width]()
+        var x_i32 = SIMD[.int32, simd_width]()
 
         comptime for i in range(0, simd_width, native_width):
             var part = llvm_intrinsic[
                 "llvm.aarch64.neon.fcvtns.v4i32.v4f32",
-                SIMD[DType.int32, native_width],
+                SIMD[.int32, native_width],
                 has_side_effect=False,
             ](x.slice[native_width, offset=i]())
             x_i32 = x_i32.insert[offset=i](part)

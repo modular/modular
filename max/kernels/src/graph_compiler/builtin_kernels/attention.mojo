@@ -2458,7 +2458,7 @@ struct Struct_mla_prefill_graph_paged:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         mla_prefill_branch_fp8[
@@ -2605,7 +2605,7 @@ struct Struct_mla_decode_graph_paged_fp8:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -2710,7 +2710,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -2835,7 +2835,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         mla_prefill_branch_bf16[
@@ -2913,7 +2913,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -3000,7 +3000,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -3121,7 +3121,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -3238,7 +3238,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -3584,7 +3584,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
@@ -3677,7 +3677,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
@@ -3800,7 +3800,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         @always_inline
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+        ](coords: IndexList[2]) -> SIMD[.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
         var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])

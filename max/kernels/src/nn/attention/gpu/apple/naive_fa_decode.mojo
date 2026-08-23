@@ -359,7 +359,7 @@ def naive_fa_decode_apple_core[
     # Replicated on every lane, so the running softmax needs no cross-lane comms.
     var m = NEG_INF
     var l = Float32(0.0)
-    var o_frag = SIMD[DType.float32, EPL](0.0)
+    var o_frag = SIMD[.float32, EPL](0.0)
 
     # Attention sink as init-state: pre-seed (m, l) with a virtual "key -1" of
     # raw score `sink_weight`, contributing `exp(sink - m) = 1` to the running
@@ -381,7 +381,7 @@ def naive_fa_decode_apple_core[
             l = Float32(1.0)
 
     for kv0 in range(start, end, BN):
-        var partials = SIMD[DType.float32, BN](0.0)
+        var partials = SIMD[.float32, BN](0.0)
 
         comptime for kk in range(BN):
             var j = kv0 + kk
@@ -399,7 +399,7 @@ def naive_fa_decode_apple_core[
 
         # `air.simd_sum` is a warp collective; the `j < end` guard is
         # lane-independent, so all lanes enter it together.
-        var scores = SIMD[DType.float32, BN](NEG_INF)
+        var scores = SIMD[.float32, BN](NEG_INF)
 
         comptime for kk in range(BN):
             var j = kv0 + kk

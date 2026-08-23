@@ -173,17 +173,17 @@ def test_simd_types() raises:
     SIMD types are common in FFI for vectorized operations.
     """
     # SIMD[DType.float32, 4] is a 128-bit vector (16 bytes)
-    comptime SimdUnion = UnsafeUnion[SIMD[DType.float32, 4], Int32]
+    comptime SimdUnion = UnsafeUnion[SIMD[.float32, 4], Int32]
 
     # Size should be max(16, 4) = 16 bytes
     assert_equal(size_of[SimdUnion](), 16)
 
     # Create with SIMD value
-    var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var u = SimdUnion(vec)
 
     # Retrieve and verify
-    var result = u.unsafe_get[SIMD[DType.float32, 4]]()
+    var result = u.unsafe_get[SIMD[.float32, 4]]()
     assert_equal(result[0], 1.0)
     assert_equal(result[1], 2.0)
     assert_equal(result[2], 3.0)
@@ -196,15 +196,13 @@ def test_simd_types() raises:
 
 def test_simd_type_punning() raises:
     # Store 4 floats and read as integers
-    comptime SimdIntUnion = UnsafeUnion[
-        SIMD[DType.float32, 4], SIMD[DType.int32, 4]
-    ]
+    comptime SimdIntUnion = UnsafeUnion[SIMD[.float32, 4], SIMD[.int32, 4]]
 
-    var floats = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var floats = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var u = SimdIntUnion(floats)
 
     # Type pun to int32x4 - IEEE 754 representation
-    var ints = u.unsafe_get[SIMD[DType.int32, 4]]()
+    var ints = u.unsafe_get[SIMD[.int32, 4]]()
     # 1.0f = 0x3F800000 = 1065353216
     assert_equal(ints[0], 1065353216)
 

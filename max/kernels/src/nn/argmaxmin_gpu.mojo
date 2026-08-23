@@ -55,7 +55,7 @@ def _argmaxmin_vec_update[
     dtype: DType, largest: Bool, simd_width: Int
 ](
     mut best_vals: SIMD[dtype, simd_width],
-    mut best_idxs: SIMD[DType.int32, simd_width],
+    mut best_idxs: SIMD[.int32, simd_width],
     vals: SIMD[dtype, simd_width],
     base: Int,
 ):
@@ -66,7 +66,7 @@ def _argmaxmin_vec_update[
     ignored, matching `TopK_2.insert`.
     """
     comptime lane_offsets = iota[DType.int32, simd_width]()
-    var better: SIMD[DType.bool, simd_width]
+    var better: SIMD[.bool, simd_width]
     comptime if largest:
         better = vals.gt(best_vals)
     else:
@@ -88,7 +88,7 @@ def _argmaxmin_scan[
     tid: Int,
     block_size: Int,
     mut best_vals: SIMD[dtype, simd_width],
-    mut best_idxs: SIMD[DType.int32, simd_width],
+    mut best_idxs: SIMD[.int32, simd_width],
 ):
     """Streams one row once, accumulating a per-lane (extremum, index)."""
     var lane_stride = block_size * simd_width
@@ -134,7 +134,7 @@ def _argmaxmin_block_partial[
 ) -> TopK_2[dtype, largest]:
     """Reduces `row[begin : begin + count]` to one (extremum, global index)."""
     var best_vals = SIMD[dtype, simd_width](_topk_dead_val[dtype, largest]())
-    var best_idxs = SIMD[DType.int32, simd_width](0)
+    var best_idxs = SIMD[.int32, simd_width](0)
     var chunk = row.unsafe_offset(begin)
 
     if aligned:

@@ -319,8 +319,8 @@ def test_iota() raises:
         assert_equal(vector2[i], offset + i)
 
 
-comptime F32x4 = SIMD[DType.float32, 4]
-comptime F64x4 = SIMD[DType.float64, 4]
+comptime F32x4 = SIMD[.float32, 4]
+comptime F64x4 = SIMD[.float64, 4]
 
 
 def test_sqrt() raises:
@@ -334,7 +334,7 @@ def test_sqrt() raises:
     assert_equal(sqrt(10**16), 10**8)
     assert_equal(sqrt(Int.MAX), 3037000499)
 
-    var i = SIMD[DType.int, 4](0, 1, 2, 3)
+    var i = SIMD[.int, 4](0, 1, 2, 3)
     assert_equal(sqrt(i**2), i)
 
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
@@ -426,13 +426,13 @@ def _test_frexp_impl[
     var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
         res3[0].cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
+        SIMD[.float32, 4](0.0, 0.5, 0.5, 0.625),
         atol=atol,
         rtol=rtol,
     )
     assert_almost_equal(
         res3[1].cast[DType.float32](),
-        SIMD[DType.float32, 4](-0.0, 2.0, 3.0, 3.0),
+        SIMD[.float32, 4](-0.0, 2.0, 3.0, 3.0),
         atol=atol,
         rtol=rtol,
     )
@@ -454,7 +454,7 @@ def _test_log_impl[
     var res2 = log(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
+        SIMD[.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
         atol=atol,
         rtol=rtol,
     )
@@ -463,7 +463,7 @@ def _test_log_impl[
     assert_almost_equal(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol)
 
     var res4 = isinf(log(SIMD[dtype, 4](0, 1, 0, 0)))
-    assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
+    assert_equal(res4, SIMD[.bool, 4](True, False, True, True))
 
 
 def _test_log2_impl[
@@ -482,7 +482,7 @@ def _test_log2_impl[
     var res2 = log2(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
+        SIMD[.float32, 4](0.0, 1.0, 2.0, 2.3219),
         atol=atol,
         rtol=rtol,
     )
@@ -504,7 +504,7 @@ def _test_log1p_impl[
     var res2 = log1p(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
+        SIMD[.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
         atol=atol,
         rtol=rtol,
     )
@@ -512,7 +512,7 @@ def _test_log1p_impl[
     var res3 = log1p(SIMD[dtype, 4](0.00001, 0.000002, 0.000004, 0.00005))
     assert_almost_equal(
         res3.cast[DType.float32](),
-        SIMD[DType.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
+        SIMD[.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
         atol=atol,
         rtol=rtol,
     )
@@ -520,7 +520,7 @@ def _test_log1p_impl[
     var res4 = log1p(SIMD[dtype, 4](0.707107, 0.807107, 0.9, 1))
     assert_almost_equal(
         res4.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
+        SIMD[.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
         atol=atol,
         rtol=rtol,
     )
@@ -735,11 +735,11 @@ def test_ceildiv_unsigned_overflow() raises:
 
     # SIMD vector width > 1, near the type max in every lane.
     comptime max8 = UInt8.MAX
-    var lanes = SIMD[DType.uint8, 4](max8, max8 - 1, 8, 7)
-    var divisors = SIMD[DType.uint8, 4](2, 2, 4, 2)
+    var lanes = SIMD[.uint8, 4](max8, max8 - 1, 8, 7)
+    var divisors = SIMD[.uint8, 4](2, 2, 4, 2)
     assert_equal(
         ceildiv(lanes, divisors),
-        SIMD[DType.uint8, 4](128, 127, 2, 4),
+        SIMD[.uint8, 4](128, 127, 2, 4),
     )
 
 
@@ -770,10 +770,10 @@ def test_align_down() raises:
     # Test SIMD vector (width > 1).
     assert_equal(
         align_down(
-            SIMD[DType.uint32, 4](385, 512, 63, 0),
-            SIMD[DType.uint32, 4](64, 64, 64, 64),
+            SIMD[.uint32, 4](385, 512, 63, 0),
+            SIMD[.uint32, 4](64, 64, 64, 64),
         ),
-        SIMD[DType.uint32, 4](384, 512, 0, 0),
+        SIMD[.uint32, 4](384, 512, 0, 0),
     )
 
 
@@ -804,10 +804,10 @@ def test_align_up() raises:
     # Test SIMD vector (width > 1).
     assert_equal(
         align_up(
-            SIMD[DType.uint32, 4](385, 512, 63, 0),
-            SIMD[DType.uint32, 4](64, 64, 64, 64),
+            SIMD[.uint32, 4](385, 512, 63, 0),
+            SIMD[.uint32, 4](64, 64, 64, 64),
         ),
-        SIMD[DType.uint32, 4](448, 512, 64, 0),
+        SIMD[.uint32, 4](448, 512, 64, 0),
     )
 
 
@@ -830,8 +830,8 @@ def test_clamp() raises:
     )
 
     assert_equal(
-        clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
-        SIMD[DType.float32, 4](0, 1, 1, 1),
+        clamp(SIMD[.float32, 4](0, 1, 3, 4), 0, 1),
+        SIMD[.float32, 4](0, 1, 1, 1),
     )
 
 
@@ -867,11 +867,11 @@ def test_fma() raises:
     assert_almost_equal(fma(Float32(2.5), Float32(4.0), Float32(1.5)), 11.5)
     assert_almost_equal(
         fma(
-            SIMD[DType.float32, 4](1, 2, 3, 4),
-            SIMD[DType.float32, 4](2, 2, 2, 2),
-            SIMD[DType.float32, 4](1, 1, 1, 1),
+            SIMD[.float32, 4](1, 2, 3, 4),
+            SIMD[.float32, 4](2, 2, 2, 2),
+            SIMD[.float32, 4](1, 1, 1, 1),
         ),
-        SIMD[DType.float32, 4](3, 5, 7, 9),
+        SIMD[.float32, 4](3, 5, 7, 9),
     )
 
 
@@ -881,10 +881,8 @@ def test_atanh() raises:
     assert_true(isnan(atanh(Float32(2))))
     assert_true(isnan(atanh(Float32(-2))))
     assert_almost_equal(
-        atanh(SIMD[DType.float32, 4](0.5, 0.15, 0.9, 0.0)),
-        atanh(SIMD[DType.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[
-            DType.float32
-        ](),
+        atanh(SIMD[.float32, 4](0.5, 0.15, 0.9, 0.0)),
+        atanh(SIMD[.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[DType.float32](),
     )
 
     assert_equal(atanh(Float32(0)), Float32(0), msg="atanh(0)")

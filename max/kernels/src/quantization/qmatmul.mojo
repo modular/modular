@@ -270,7 +270,7 @@ def _unpack_weights[
             size_of[DType.float16]() * tile_n * simd_width
         )
 
-        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
+        var b_column_sums = Array[SIMD[.int32, simd_width], tile_n](fill=0)
 
         for _ in range(0, group_size, 8):
             comptime for col in range(tile_n):
@@ -281,9 +281,7 @@ def _unpack_weights[
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
                 comptime if needs_correction:
-                    comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](
-                        128
-                    )
+                    comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
                     var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                     var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
                     var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
@@ -369,9 +367,7 @@ def _scale_and_accumulate[
     mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = Array[SIMD[DType.float32, simd_width], tile_n](
-        uninitialized=True
-    )
+    var b_scale = Array[SIMD[.float32, simd_width], tile_n](uninitialized=True)
 
     # Load the per-column scale values for the B matrix.
     comptime for col in range(tile_n):
@@ -395,7 +391,7 @@ def _scale_and_accumulate[
                 dot = pmaddw(
                     dot,
                     bitcast[DType.int32, simd_width](
-                        SIMD[DType.int16, 2 * simd_width](1)
+                        SIMD[.int16, 2 * simd_width](1)
                     ),
                 )
 
@@ -511,7 +507,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
+        var b_column_sums = Array[SIMD[.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
             var a_val_lo = bitcast[DType.int32, 1](
@@ -530,7 +526,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
 
                 b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                     b_column_sums[col],
@@ -545,12 +541,12 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
 
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
-                    SIMD[DType.int32, simd_width](a_val_lo),
+                    SIMD[.int32, simd_width](a_val_lo),
                     bitcast[DType.int32, simd_width](b_data_i4_lo),
                 )
                 c_int32[0, col] = dot_i8_to_i32_saturated_x86(
                     c_int32[0, col],
-                    SIMD[DType.int32, simd_width](a_val_hi),
+                    SIMD[.int32, simd_width](a_val_hi),
                     bitcast[DType.int32, simd_width](b_data_i4_hi),
                 )
 
@@ -596,7 +592,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
                 b_offset += simd_width * 4
 
                 comptime for row in range(tile_m):
-                    var a_val = SIMD[DType.int32, simd_width](
+                    var a_val = SIMD[.int32, simd_width](
                         bitcast[DType.int32, 1](
                             a_ptr.unsafe_load[width=4](row * group_size + k)
                         )
@@ -653,13 +649,13 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
+        var b_column_sums = Array[SIMD[.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
-            var a_lo = SIMD[DType.int32, simd_width](
+            var a_lo = SIMD[.int32, simd_width](
                 bitcast[DType.int32, 1](a_ptr.unsafe_load[width=4](k + 0))
             )
-            var a_hi = SIMD[DType.int32, simd_width](
+            var a_hi = SIMD[.int32, simd_width](
                 bitcast[DType.int32, 1](a_ptr.unsafe_load[width=4](k + 4))
             )
 
@@ -672,7 +668,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
                 var b_data_i4_hi = (b_data_packed >> 4).cast[DType.int8]() - 8
 
-                comptime a_zero_point = SIMD[DType.uint8, simd_width * 4](128)
+                comptime a_zero_point = SIMD[.uint8, simd_width * 4](128)
 
                 var a_zp = bitcast[DType.int32, simd_width](a_zero_point)
                 var b_lo = bitcast[DType.int32, simd_width](b_data_i4_lo)
@@ -754,7 +750,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
                 b_offset += simd_width * 4
 
                 comptime for row in range(tile_m):
-                    var a_val = SIMD[DType.int32, simd_width](
+                    var a_val = SIMD[.int32, simd_width](
                         bitcast[DType.int32, 1](
                             a_ptr.unsafe_load[width=4](row * group_size + k)
                         )
@@ -865,7 +861,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 16):
-            var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
+            var a_tile = Array[SIMD[.int8, 16], tile_m](uninitialized=True)
 
             comptime for row in range(tile_m):
                 a_tile[row] = a_ptr.unsafe_load[width=16](row * group_size + k)
@@ -957,7 +953,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
         comptime for k in range(0, group_size, 8):
             var a_tile = Array[
-                SIMD[DType.int8, SIMDLength(simd_width) * 4], block_m
+                SIMD[.int8, SIMDLength(simd_width) * 4], block_m
             ](fill=0)
 
             comptime if tile_m > 1:
@@ -968,9 +964,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
                     a_offset += simd_width * 4
             else:
                 var a_val = a_ptr.unsafe_load[width=simd_width * 2](a_offset)
-                a_tile[0] = rebind[
-                    SIMD[DType.int8, SIMDLength(simd_width) * 4]
-                ](a_val.join(SIMD[DType.int8, simd_width * 2](0)))
+                a_tile[0] = rebind[SIMD[.int8, SIMDLength(simd_width) * 4]](
+                    a_val.join(SIMD[.int8, simd_width * 2](0))
+                )
                 a_offset += simd_width * 2
 
             comptime for col in range(tile_n * 2):
@@ -1125,7 +1121,7 @@ def _matmul_qint4_m_any[
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
     comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var M = a_quant.dim[0]()
@@ -1295,7 +1291,7 @@ def _matmul_qint4[
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
 
     var M = a.dim[0]()
     var K = a.dim[1]()

@@ -879,7 +879,7 @@ def test_load_store_linear_row_major() raises:
     assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 999)
 
     # Verify vectorized store (width=2).
-    tensor.store_linear(IndexList[2](2, 0), SIMD[DType.int32, 2](77, 88))
+    tensor.store_linear(IndexList[2](2, 0), SIMD[.int32, 2](77, 88))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 0))), 77)
     assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 1))), 88)
 

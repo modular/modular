@@ -390,18 +390,18 @@ def kernel_5[
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
         comptime for i in range(TMA_BN // 16):
-            var d_reg_upper = SIMD[DType.bfloat16, 8]()
-            var d_reg_lower = SIMD[DType.bfloat16, 8]()
+            var d_reg_upper = SIMD[.bfloat16, 8]()
+            var d_reg_lower = SIMD[.bfloat16, 8]()
 
             comptime for _ei in range(4):
                 comptime _src_offset = (
                     i + tma_n * (TMA_BN // 16)
                 ) * 8 + 2 * _ei
-                var upper_pair = SIMD[DType.float32, 2](
+                var upper_pair = SIMD[.float32, 2](
                     rebind[Float32](c_frag_upper[_src_offset]),
                     rebind[Float32](c_frag_upper[_src_offset + 1]),
                 )
-                var lower_pair = SIMD[DType.float32, 2](
+                var lower_pair = SIMD[.float32, 2](
                     rebind[Float32](c_frag_lower[_src_offset]),
                     rebind[Float32](c_frag_lower[_src_offset + 1]),
                 )

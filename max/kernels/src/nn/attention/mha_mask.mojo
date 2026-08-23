@@ -894,7 +894,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
                 // Scalar[element_type](Self.local_window_size)
             ) * UInt32(Self.local_window_size)
 
-            var mask_val = SIMD[DType.bool, width](fill=False)
+            var mask_val = SIMD[.bool, width](fill=False)
             var k_indices = (
                 k_start_idx.cast[DType.uint32]() + iota[DType.uint32, width]()
             )

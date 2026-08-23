@@ -458,12 +458,8 @@ def _dot_accum[
     ):
         # v_dot2_f32_bf16: D.f32 = S0.bf16[0]*S1.bf16[0] + S0.bf16[1]*S1.bf16[1] + S2.f32
         comptime for p in range(width // 2):
-            var a_pair = rebind[SIMD[DType.bfloat16, 2]](
-                a.slice[2, offset=p * 2]()
-            )
-            var b_pair = rebind[SIMD[DType.bfloat16, 2]](
-                b.slice[2, offset=p * 2]()
-            )
+            var a_pair = rebind[SIMD[.bfloat16, 2]](a.slice[2, offset=p * 2]())
+            var b_pair = rebind[SIMD[.bfloat16, 2]](b.slice[2, offset=p * 2]())
             result = rebind[Scalar[accum_type]](
                 llvm_intrinsic[
                     "llvm.amdgcn.fdot2.f32.bf16",

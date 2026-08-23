@@ -236,7 +236,7 @@ def _gemm_smallm_streaming_kernel[
                 + (ct * warps_per_block + warp_in_block) * region
                 + lane * 8
             )
-            var acc = Array[SIMD[DType.float32, 4], m_tiles](fill=0)
+            var acc = Array[SIMD[.float32, 4], m_tiles](fill=0)
 
             # Depth-2 B pipeline: the next chunk's load issues before this
             # chunk's mfma work. Deeper pipelining measures slower here.
@@ -306,7 +306,7 @@ def _gemm_smallm_streaming_kernel[
             b_offs[u] = (
                 min(ct0 + u, n_tiles - 1) * warps_per_block + warp_in_block
             ) * region + lane * 8
-        var acc = Array[SIMD[DType.float32, 4], m_tiles * col_tiles](fill=0)
+        var acc = Array[SIMD[.float32, 4], m_tiles * col_tiles](fill=0)
 
         # Depth-2 B pipeline: the next chunk's load issues before this
         # chunk's mfma work. Each A fragment loads once per k-chunk and

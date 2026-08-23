@@ -488,8 +488,8 @@ def store_C[
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
-        var d_reg_upper = SIMD[DType.bfloat16, 8]()
-        var d_reg_lower = SIMD[DType.bfloat16, 8]()
+        var d_reg_upper = SIMD[.bfloat16, 8]()
+        var d_reg_lower = SIMD[.bfloat16, 8]()
 
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range((TMA_BN // 16)):
@@ -505,8 +505,8 @@ def store_C[
                 ](lane_id(), i, m_mma, 0)
                 # i,0,0
 
-                var d_reg_upper = SIMD[DType.bfloat16, 8]()
-                var d_reg_lower = SIMD[DType.bfloat16, 8]()
+                var d_reg_upper = SIMD[.bfloat16, 8]()
+                var d_reg_lower = SIMD[.bfloat16, 8]()
 
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists

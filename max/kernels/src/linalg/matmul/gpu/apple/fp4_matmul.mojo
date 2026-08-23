@@ -353,7 +353,7 @@ struct AppleM5Fp4MatMul[
             var bytes = packed.load[width=BYTES_PER_THREAD, alignment=1](
                 Coord(n_abs, (k0 // 2) + byte0)
             )
-            var nib = SIMD[DType.uint16, COLS_PER_THREAD](0)
+            var nib = SIMD[.uint16, COLS_PER_THREAD](0)
 
             comptime for j in range(BYTES_PER_THREAD):
                 var bj = UInt16(bytes[j])
@@ -579,7 +579,7 @@ struct AppleM5Fp4MatMul[
                 lcol: Int,
                 arow: Int,
                 acol: Int,
-                v_fp32: SIMD[DType.float32, 4],
+                v_fp32: SIMD[.float32, 4],
             ):
                 var y = v_fp32.cast[Self.c_type]()
                 comptime if Self.elementwise_lambda_fn:

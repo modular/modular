@@ -24,8 +24,8 @@ def mm_optimized(
     lda: Int,
     b: UnsafePointer[Float32, _, address_space=AddressSpace.SHARED],
     ldb: Int,
-    c: SIMD[DType.float32, tM * tN],
-) -> SIMD[DType.float32, tM * tN]:
+    c: SIMD[.float32, tM * tN],
+) -> SIMD[.float32, tM * tN]:
     """Optimized matrix multiplication with register blocking.
 
     This version loads strips of A and B into register arrays first,
@@ -47,12 +47,12 @@ def mm_optimized(
 
     for i in range(k):
         # Load an m x 1 strip from A into registers
-        var a_r = SIMD[DType.float32, tM](0.0)
+        var a_r = SIMD[.float32, tM](0.0)
         for inner_row in range(tM):
             a_r[inner_row] = Float32(a[inner_row * lda + i])
 
         # Load a 1 x n strip from B into registers
-        var b_r = SIMD[DType.float32, tN](0.0)
+        var b_r = SIMD[.float32, tN](0.0)
         for inner_col in range(tN):
             b_r[inner_col] = Float32(b[i * ldb + inner_col])
 

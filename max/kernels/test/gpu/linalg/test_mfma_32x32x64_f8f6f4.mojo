@@ -73,15 +73,15 @@ def _mfma_32x32x64_kernel[
     var lane = Int(lane_id())
 
     # FP4 byte 0x22 = two nibbles of E2M1 +1.0. Every byte of A and B is +1.0.
-    var a_frag = SIMD[DType.uint8, 16](UInt8(0x22))
-    var b_frag = SIMD[DType.uint8, 16](UInt8(0x22))
+    var a_frag = SIMD[.uint8, 16](UInt8(0x22))
+    var b_frag = SIMD[.uint8, 16](UInt8(0x22))
 
     var one = _pack_e8m0_scale_word(Float32(1.0))
     var two = _pack_e8m0_scale_word(Float32(2.0))
 
     # Accumulator width 16 -> wrapper dispatches the 32x32x64 instruction.
-    var baseline_acc = SIMD[DType.float32, 16](0.0)
-    var scaled_acc = SIMD[DType.float32, 16](0.0)
+    var baseline_acc = SIMD[.float32, 16](0.0)
+    var scaled_acc = SIMD[.float32, 16](0.0)
 
     cdna4_block_scaled_mfma[
         0,

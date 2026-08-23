@@ -45,7 +45,7 @@ def mma_kernel_fp32_tf32(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -85,7 +85,7 @@ def mma_kernel_fp32_bf16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -125,7 +125,7 @@ def mma_kernel_fp32_bf16_2(
     comptime mma_n = 8
     comptime mma_k = 16
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -165,7 +165,7 @@ def mma_kernel_fp32_fp16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -205,7 +205,7 @@ def mma_kernel_fp16_fp16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float16, 4](0)
+    var d_reg = SIMD[.float16, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):

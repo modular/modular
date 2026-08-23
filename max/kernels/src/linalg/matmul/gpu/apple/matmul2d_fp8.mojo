@@ -287,9 +287,7 @@ struct Matmul2dFp8[
 
             @always_inline
             @__parameter
-            def _write4(
-                lrow: Int, lcol: Int, acol: Int, v: SIMD[DType.float32, 4]
-            ):
+            def _write4(lrow: Int, lcol: Int, acol: Int, v: SIMD[.float32, 4]):
                 var y = v.cast[Self.c_type]()
                 comptime if bounded:
                     if acol + 3 < N:

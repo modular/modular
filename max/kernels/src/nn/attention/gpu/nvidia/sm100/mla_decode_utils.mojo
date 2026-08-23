@@ -3117,7 +3117,7 @@ def write_fp8_row_to_smem_chunked[
             # Process 16 FP8 elements: load 4x float32, cast to 4x FP8
             # But we need to pack 16 FP8 values into 4 uint32 registers.
             # Load 4 groups of 4 float32, cast each group to 4 FP8, pack into uint32.
-            var packed = SIMD[DType.uint32, 4](0)
+            var packed = SIMD[.uint32, 4](0)
             comptime for sub in range(4):
                 var vec_val = lmv[vec_base + sub]
                 comptime if scale_needed:
@@ -3140,7 +3140,7 @@ def st_shared_v4_b32_at_fp8_elem_off[
         Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     elem_off: Int,  # FP8 element offset
-    packed: SIMD[DType.uint32, 4],
+    packed: SIMD[.uint32, 4],
 ):
     """Stores four uint32 values to shared memory at an FP8 element offset.
 
@@ -3165,7 +3165,7 @@ def ld_shared_v4_u32(
         mut=True, UInt8, _, address_space=AddressSpace.SHARED
     ],
     byte_off: Int,
-) -> SIMD[DType.uint32, 4]:
+) -> SIMD[.uint32, 4]:
     """Loads four contiguous uint32 values from shared memory at a byte offset.
 
     Args:
@@ -3180,7 +3180,7 @@ def ld_shared_v4_u32(
         constraints="=r,=r,=r,=r,l",
         has_side_effect=False,
     ](addr)
-    return SIMD[DType.uint32, 4](result[0], result[1], result[2], result[3])
+    return SIMD[.uint32, 4](result[0], result[1], result[2], result[3])
 
 
 @always_inline
@@ -3188,7 +3188,7 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
     *,
     fp8_dtype: DType,
     out_dtype: DType,
-](w0: UInt32, w1: UInt32,) -> SIMD[DType.uint32, 4]:
+](w0: UInt32, w1: UInt32,) -> SIMD[.uint32, 4]:
     """Converts eight FP8 values packed in two uint32 registers to eight BF16 values packed in four uint32 registers.
 
     Parameters:
@@ -3203,7 +3203,7 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
         w1: Upper uint32 register holding the next four packed FP8
             values.
     """
-    var u32x2: SIMD[DType.uint32, 2] = SIMD[DType.uint32, 2](w0, w1)
+    var u32x2: SIMD[.uint32, 2] = SIMD[.uint32, 2](w0, w1)
     var fp8x8: SIMD[fp8_dtype, 8] = bitcast[fp8_dtype, 8](u32x2)
     var bf16x8: SIMD[out_dtype, 8] = fp8x8.cast[out_dtype]()
     return bitcast[DType.uint32, 4](bf16x8)
@@ -3214,9 +3214,9 @@ def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
     *,
     fp8_dtype: DType,
     out_dtype: DType,
-](w: SIMD[DType.uint32, 4]) -> StaticTuple[SIMD[DType.uint32, 4], 2]:
+](w: SIMD[.uint32, 4]) -> StaticTuple[SIMD[.uint32, 4], 2]:
     """Converts 16 FP8 bytes (one v4.b32 load) to 16 packed BF16 values."""
-    return StaticTuple[SIMD[DType.uint32, 4], 2](
+    return StaticTuple[SIMD[.uint32, 4], 2](
         cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
             fp8_dtype=fp8_dtype, out_dtype=out_dtype
         ](w[0], w[1]),
@@ -3234,7 +3234,7 @@ def st_shared_v4_b32_at_bf16_elem_off[
         mut=True, Scalar[out_dtype], _, address_space=AddressSpace.SHARED
     ],
     elem_off: Int,  # bf16 element offset
-    packed: SIMD[DType.uint32, 4],
+    packed: SIMD[.uint32, 4],
 ):
     """Stores four uint32 values to shared memory at a BF16 element offset.
 
@@ -3273,7 +3273,7 @@ def e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
 @always_inline
 def hmul2_bf16x8_by_scalar[
     out_dtype: DType,
-](packed: SIMD[DType.uint32, 4], scale_bf16: UInt32) -> SIMD[DType.uint32, 4]:
+](packed: SIMD[.uint32, 4], scale_bf16: UInt32) -> SIMD[.uint32, 4]:
     """Multiply 8 packed bf16 values (in 4 uint32 registers) by a bf16x2 scalar broadcast.
 
     Parameters:
@@ -3672,11 +3672,11 @@ struct MLA_SM100_Decode_Common[
                 # can represent: causal_limit >= 1 here (CausalMask is
                 # required), and saturating the bound keeps a horizon wider
                 # than Int32 admitting every slot, as the Int compare did.
-                var causal_last = SIMD[DType.int32, logical_batch](
+                var causal_last = SIMD[.int32, logical_batch](
                     Int32(min(causal_limit - 1, Int(Int32.MAX)))
                 )
                 # -1 marks a padding slot, so the low bound rejects it.
-                comptime lowest_pos = SIMD[DType.int32, logical_batch](0)
+                comptime lowest_pos = SIMD[.int32, logical_batch](0)
                 var logical_bits: UInt32 = 0
                 var slot = 0
                 while slot + logical_batch <= n_readable:

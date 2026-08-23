@@ -37,7 +37,7 @@ def bench_writer_simd[n: Int](mut b: Bencher) raises:
     @always_inline
     def call_fn():
         var s1 = String()
-        s1.write(SIMD[DType.int32, simd_width_of[DType.int32]()](n))
+        s1.write(SIMD[.int32, simd_width_of[DType.int32]()](n))
         _ = s1^
 
     b.iter(call_fn)

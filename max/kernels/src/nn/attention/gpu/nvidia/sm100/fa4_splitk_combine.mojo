@@ -339,7 +339,7 @@ def _fa4_splitk_combine_kernel[
             comptime for p in range(P_STATIC):
                 comptime k, src_lane = divmod(p, WARP_SIZE)
                 var scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-                var is_valid = SIMD[DType.bool, vec_size](
+                var is_valid = SIMD[.bool, vec_size](
                     fill=scale != Scalar[_ACC](0)
                 )
 
@@ -367,7 +367,7 @@ def _fa4_splitk_combine_kernel[
             for p in range(p_count):
                 var k, src_lane = divmod(p, WARP_SIZE)
                 var scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-                var is_valid = SIMD[DType.bool, vec_size](
+                var is_valid = SIMD[.bool, vec_size](
                     fill=scale != Scalar[_ACC](0)
                 )
 

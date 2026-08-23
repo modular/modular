@@ -168,7 +168,7 @@ struct Pair[dt: DType](RegisterPassable):
 # CHECK: useParameterizedField
 def useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
-  comptime y : SIMD[DType.float32, 42] = x.a
+  comptime y : SIMD[.float32, 42] = x.a
 
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
@@ -1020,7 +1020,7 @@ def test_deduce_kw_only(a: Abstraction[3]):
     deduce_kw_only[1, 2](a)
 
 # Make sure the +1 in the 'a' argument doesn't break inference.
-def test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
+def test_infer_add(a: SIMD[.float32, 4], b: SIMD[.int32, 5]):
    _ = take_two(a, b)
 
 struct CallableArg[ArgT: TrivialRegisterPassable](Movable where False):
@@ -1301,7 +1301,7 @@ def inferred_default_param[dt: DType, w: SIMDLength = 8](a: SIMD[dt, w]):
 # CHECK: lit.call {{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[::DType(int), ::SIMDLength(1)])", x), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">)})>
 def test_inferred_default_param[
     x: Int
-](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
+](concrete: SIMD[.float32, 4], p: SIMD[.float32, x]):
     inferred_default_param(concrete)
     inferred_default_param(p)
 
@@ -1745,11 +1745,11 @@ def test_infer_variadic():
 
 # Make sure we can store RP types with different sugars correctly.
 # CHECK-LABEL: lit.fn @"test_sugar_rebind
-def test_sugar_rebind[N: Int](a: SIMD[DType.int32, 2 * N]):
+def test_sugar_rebind[N: Int](a: SIMD[.int32, 2 * N]):
     # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %0 = kgen.rebind %a
     # CHECK-NEXT: lit.ref.store %0, %x
-    var x: SIMD[DType.int32, N * 2] = a
+    var x: SIMD[.int32, N * 2] = a
 
 @fieldwise_init
 struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_rank - 2]](Movable where False):

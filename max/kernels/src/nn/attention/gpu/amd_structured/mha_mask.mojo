@@ -93,7 +93,7 @@ def _apply_causal_mask_fast[
         # `rel < _ROW_OFFSETS[p]` is the per-element form of `k_pos > q_pos`
         # once the per-element row offset is folded in.
         var rel = q_pos - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](rel).lt(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](rel).lt(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
@@ -150,7 +150,7 @@ def _apply_kbound_mask_fast[
         # `bound <= _ROW_OFFSETS[p]` is the per-element form of
         # `k_pos >= num_keys` once the per-element row offset is folded in.
         var bound = num_keys - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](bound).le(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](bound).le(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 

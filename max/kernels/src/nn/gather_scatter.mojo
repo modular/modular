@@ -1943,13 +1943,11 @@ def apply_packed_bitmask[
         var v = Int(idx[1].value())
         var tok = Int32(v) + iota[DType.int32, width]()
         var base = v >> 5
-        var w0 = SIMD[DType.int32, width](packed[b, base][0])
+        var w0 = SIMD[.int32, width](packed[b, base][0])
         # Second word only feeds the spilled lanes; clamp the index so the
         # no-spill case never loads out of bounds.
         var last_word = Int(packed.dim[1]()) - 1
-        var w1 = SIMD[DType.int32, width](
-            packed[b, min(base + 1, last_word)][0]
-        )
+        var w1 = SIMD[.int32, width](packed[b, min(base + 1, last_word)][0])
         var word = (tok >> 5).ne(Int32(base)).select(w1, w0)
         var keep = ((word >> (tok & 31)) & 1).ne(0)
         var values = logits.load[width=width]((b, v))

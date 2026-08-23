@@ -763,7 +763,7 @@ struct Shuffler[E: Int]:
                 # OOB rows past num_tokens stay zero in the cell (= the
                 # last partial m_block's pad rows). Higher m_blocks are
                 # not iterated at all.
-                var cell_bytes = SIMD[DType.uint8, 4](0)
+                var cell_bytes = SIMD[.uint8, 4](0)
 
                 comptime for k_pack in range(Self.S_K_PACK):
                     comptime for mn_pack in range(Self.S_MN_PACK):

@@ -340,7 +340,7 @@ def depth512_softmax[
     comptime fuse_gqa = config.fuse_gqa
     comptime BM_eff: Int = config.BM_eff()
     comptime PairBM_mask = BM_eff * 2
-    comptime f32x2 = SIMD[DType.float32, 2]
+    comptime f32x2 = SIMD[.float32, 2]
 
     # Batch size for pipelined TMEM loads and exp computation.
     comptime batch_size = 32

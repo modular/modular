@@ -102,7 +102,7 @@ def mm_tiled_kernel(
     var tCol = tile_y * tN
 
     # Register accumulator - use SIMD vector
-    var Cr = SIMD[DType.float32, tM * tN](0.0)
+    var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate shared memory
     var A_s = unsafe_stack_allocation[

@@ -201,9 +201,9 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
 
 @always_inline
 def matmul2d_mma_regc_bt_native(
-    a_frag: SIMD[DType.bfloat16, 8],
-    b_frag: SIMD[DType.bfloat16, 16],
-    mut c_acc: SIMD[DType.float32, 16],
+    a_frag: SIMD[.bfloat16, 8],
+    b_frag: SIMD[.bfloat16, 16],
+    mut c_acc: SIMD[.float32, 16],
 ):
     """Pure-Mojo `transpose_right=1` 16x32x16 MMA (native `simdgroup_matrix`).
 
@@ -230,7 +230,7 @@ def matmul2d_mma_regc_bt_native(
             elements 0-7 = N 0..15, 8-15 = N 16..31).
         c_acc: This lane's 16-element C accumulator, updated in place.
     """
-    var d_lo = SIMD[DType.float32, 8](0)
+    var d_lo = SIMD[.float32, 8](0)
     _mma_apple_transposable(
         d_lo,
         a_frag,
@@ -239,7 +239,7 @@ def matmul2d_mma_regc_bt_native(
         False,
         True,
     )
-    var d_hi = SIMD[DType.float32, 8](0)
+    var d_hi = SIMD[.float32, 8](0)
     _mma_apple_transposable(
         d_hi,
         a_frag,
@@ -433,7 +433,7 @@ struct Fp4WeightLoader[
                 Coord(n_abs, k_abs0 // 2)
             )
             var pw = UInt16(two[0]) | (UInt16(two[1]) << UInt16(8))
-            var nib = SIMD[DType.uint16, 4](0)
+            var nib = SIMD[.uint16, 4](0)
             nib[0] = pw & UInt16(0xF)  # k+0 (lo)
             nib[1] = (pw >> UInt16(4)) & UInt16(0xF)  # k+1 (hi)
             nib[2] = (pw >> UInt16(8)) & UInt16(0xF)  # k+2 (lo)
@@ -504,7 +504,7 @@ struct Fp4WeightLoader[
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
             Coord(n_abs, (k0 // 2) + byte0)
         )
-        var nib = SIMD[DType.uint16, cols_per_thread](0)
+        var nib = SIMD[.uint16, cols_per_thread](0)
         comptime for j in range(bytes_per_thread):
             var bj = UInt16(bytes[j])
             nib[2 * j] = bj & UInt16(0xF)
@@ -652,16 +652,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[DType.float32, 16](0)
+            accs[t] = SIMD[.float32, 16](0)
 
-        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
-            uninitialized=True
-        )
+        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
 
         var k0 = 0
         while k0 < K:
@@ -806,16 +804,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[DType.float32, 16](0)
+            accs[t] = SIMD[.float32, 16](0)
 
-        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
-            uninitialized=True
-        )
+        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
 
         # This thread's cooperative-decode slot: N-row + contiguous byte-run.
         var dec_nrow = tid // THREADS_PER_ROW
@@ -853,7 +849,7 @@ struct Matmul2dFp4[
                     comptime for jn in range(Self.tn):
                         # SG's N-subtile within the (BN) strip.
                         var n_local0 = (sg_n * Self.tn + jn) * Self.MMA_N
-                        var v = SIMD[DType.bfloat16, 16](0)
+                        var v = SIMD[.bfloat16, 16](0)
                         comptime for i in range(16):
                             var nl = n_local0 + b_nk[i][0]  # local N in [0, BN)
                             var kl = ks + b_nk[i][1]  # local K in [0, BK)

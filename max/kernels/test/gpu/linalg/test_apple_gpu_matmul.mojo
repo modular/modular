@@ -1957,8 +1957,8 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     def relu_compose_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var v_fp16 = rebind[SIMD[DType.float16, w]](val)
-        var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
+        var v_fp16 = rebind[SIMD[.float16, w]](val)
+        var relu_val = max(v_fp16, SIMD[.float16, w](0))
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](relu_val)
 
     enqueue_apple_matmul[
@@ -2042,10 +2042,10 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     def bias_relu_compose_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var v_fp16 = rebind[SIMD[DType.float16, w]](val)
+        var v_fp16 = rebind[SIMD[.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
         var biased = v_fp16 + b
-        var activated = max(biased, SIMD[DType.float16, w](0))
+        var activated = max(biased, SIMD[.float16, w](0))
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
             activated
         )
@@ -2133,7 +2133,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var v_fp16 = rebind[SIMD[DType.float16, w]](val)
+        var v_fp16 = rebind[SIMD[.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
             v_fp16 + b
@@ -2285,7 +2285,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
         dt: DType, w: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
-        var v_c = rebind[SIMD[DType.float16, w]](val)
+        var v_c = rebind[SIMD[.float16, w]](val)
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
 
     enqueue_apple_matmul[

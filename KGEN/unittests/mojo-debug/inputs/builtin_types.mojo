@@ -25,7 +25,7 @@ struct ARegisterPassableStruct(TrivialRegisterPassable):
     var another_int: Int
     var float16: Float16
     var uint8: UInt8
-    var simd: SIMD[DType.float16, 4]
+    var simd: SIMD[.float16, 4]
     var none: None
     var uint16: UInt16
     var int32: Int32
@@ -36,7 +36,7 @@ struct ARegisterPassableStruct(TrivialRegisterPassable):
         self.another_int = 101
         self.float16 = 25.125
         self.uint8 = 123
-        self.simd = SIMD[DType.float16, 4](-0.125, -1.5, -1, 5.725)
+        self.simd = SIMD[.float16, 4](-0.125, -1.5, -1, 5.725)
         self.none = None
         self.uint16 = 123
         self.int32 = 485
@@ -66,7 +66,7 @@ comptime AFloatOrBoolOrSimd = __mlir_type[
     `, `,
     Bool,
     `, `,
-    SIMD[DType.int, 2],
+    SIMD[.int, 2],
     `>`,
 ]
 
@@ -98,16 +98,16 @@ def main():
 
     var a_list = [1, 2, 3]
 
-    var a_simd = SIMD[DType.float16, 4](1.125, 2.5, 0, -3.725)
+    var a_simd = SIMD[.float16, 4](1.125, 2.5, 0, -3.725)
 
     # fmt: off
-    var b_simd = SIMD[DType.int64, 32](
+    var b_simd = SIMD[.int64, 32](
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
         -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15, -16,
     )
     # fmt: on
 
-    var c_simd = SIMD[DType.int, 2](5, 6)
+    var c_simd = SIMD[.int, 2](5, 6)
 
     var u8_max = UInt8(255)
     var u64_max = UInt64.MAX

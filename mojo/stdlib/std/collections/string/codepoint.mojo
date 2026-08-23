@@ -610,7 +610,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        comptime sizes = SIMD[DType.uint32, 4](
+        comptime sizes = SIMD[.uint32, 4](
             0, UInt32(2**7), UInt32(2**11), UInt32(2**16)
         )
 

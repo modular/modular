@@ -422,21 +422,21 @@ def mla_combine_kernel[
     # =========================================================================
     # Step 3: Weighted accumulation with prefetching (compile-time unrolled)
     # =========================================================================
-    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
-        fill=SIMD[DType.float32, vec_size](0.0)
+    var result = Array[SIMD[.float32, vec_size], elems_per_thread](
+        fill=SIMD[.float32, vec_size](0.0)
     )
 
     comptime for split_idx in range(num_splits):
         # Broadcast scale from the owning lane via register shuffle (no smem).
         comptime k, src_lane = divmod(split_idx, WARP_SIZE)
         var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-        var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
+        var is_valid = SIMD[.bool, vec_size](fill=lse_scale != Float32(0))
 
         comptime for i in range(elems_per_thread):
             var data_f32 = datas[i].cast[DType.float32]()
             var clean_data = is_valid.select(
                 data_f32,
-                SIMD[DType.float32, vec_size](0),
+                SIMD[.float32, vec_size](0),
             )
             result[i] = result[i] + lse_scale * clean_data
 
@@ -755,8 +755,8 @@ def mla_combine_kernel_split_parallel[
     #   warp_l = sum_over_seen_splits(exp2(lse_i - warp_m))
     # Final output = result / warp_l
     # =========================================================================
-    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
-        fill=SIMD[DType.float32, vec_size](0.0)
+    var result = Array[SIMD[.float32, vec_size], elems_per_thread](
+        fill=SIMD[.float32, vec_size](0.0)
     )
     var warp_m = Float32(NEG_INF)
     var warp_l = Float32(0.0)

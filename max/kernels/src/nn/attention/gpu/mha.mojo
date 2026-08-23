@@ -6285,7 +6285,7 @@ def mha_splitk_reduce[
                 alignment=width * size_of[intermediate_type](),
             ]().cast[accum_type]()
             var scale = partition_exp_sum[i]
-            var mask = SIMD[DType.bool, width](fill=scale > 0)
+            var mask = SIMD[.bool, width](fill=scale > 0)
             var safe_load = mask.select(x_load, type_of(x_load)(0))
             var term = safe_load * type_of(safe_load)(scale)
 

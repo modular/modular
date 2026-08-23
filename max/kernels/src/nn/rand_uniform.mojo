@@ -77,7 +77,7 @@ def random_uniform[
 
         var generator = Random(seed=seed_value, offset=UInt64(offset))
 
-        var values: SIMD[DType.float32, 4] = generator.step_uniform()
+        var values: SIMD[.float32, 4] = generator.step_uniform()
         values = values * delta + Float32(lower_bound)
 
         output_fn[width=width](

@@ -126,7 +126,7 @@ def test_keep() raises:
     keep(False)
     keep(33)
 
-    var val = SIMD[DType.int, 4](1, 2, 3, 4)
+    var val = SIMD[.int, 4](1, 2, 3, 4)
     keep(val)
 
     var ptr = Pointer(to=val)

@@ -991,8 +991,8 @@ struct MLAPrefillSparseCommon[
     @always_inline
     @staticmethod
     def _raw_indices_to_tma_rows(
-        kv_lut: Self.KVLUTType, raw: SIMD[DType.int32, 4]
-    ) -> SIMD[DType.int32, 4]:
+        kv_lut: Self.KVLUTType, raw: SIMD[.int32, 4]
+    ) -> SIMD[.int32, 4]:
         """Map raw sparse `indices` entries to physical gather4 TMA rows.
 
         The sparse `indices` buffer stores encoded positions
@@ -1008,7 +1008,7 @@ struct MLAPrefillSparseCommon[
         (`mla_decode_sparse_kv_bf16.mojo`), including preserving the `-1`
         padding sentinel so invalid lanes stay invalid.
         """
-        var rows = SIMD[DType.int32, 4]()
+        var rows = SIMD[.int32, 4]()
         comptime for i in range(4):
             rows[i] = raw[i] if raw[i] < Int32(0) else kv_lut.get_tma_row(
                 raw[i]

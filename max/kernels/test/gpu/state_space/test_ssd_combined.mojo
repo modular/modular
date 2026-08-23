@@ -396,7 +396,7 @@ def run_ssd_combined_gpu[
             var group_id = d_idx // group_size
 
             # Pre-load A values with LOG2E scaling (matches kernel)
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = Float32(A_h[d_idx * dstate + n]) * LOG2E
 
@@ -411,7 +411,7 @@ def run_ssd_combined_gpu[
             var weight_offset_val = Float32(weight_offset)
 
             # Initialize state to zero
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
@@ -427,8 +427,8 @@ def run_ssd_combined_gpu[
                 var delta_u = delta_val * u_val
 
                 # Load B, C values
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     var bc_offset = (
                         b_idx * n_groups * dstate * seqlen

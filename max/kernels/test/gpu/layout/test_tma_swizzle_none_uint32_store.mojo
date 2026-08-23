@@ -71,14 +71,14 @@ def tma_store_uint32_kernel[
     # Lane offsets 0,1,2,3 packed into the SIMD vector. value == row-major
     # offset, so each thread writes consecutive integers at its assigned
     # 4-element chunk.
-    var iota = SIMD[DType.uint32, VEC](0, 1, 2, 3)
+    var iota = SIMD[.uint32, VEC](0, 1, 2, 3)
 
     for it in range(ITERS):
         # Conflict-free canonical (non-swizzled) placement: 8 consecutive
         # threads write 32 contiguous uint32 == one full sweep over all 32
         # banks.
         var base = UInt32(it * ELEMS_PER_ITER) + UInt32(tid) * UInt32(VEC)
-        smem.ptr.store(Int(base), SIMD[DType.uint32, VEC](base) + iota)
+        smem.ptr.store(Int(base), SIMD[.uint32, VEC](base) + iota)
 
     barrier()
     fence_async_view_proxy()

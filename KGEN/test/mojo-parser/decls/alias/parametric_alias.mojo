@@ -31,7 +31,7 @@ comptime idInt[x: Int]: Int = x
 # generator, not a concrete type to construct — accept the initializer without
 # "cannot construct a value with parametric type".
 # CHECK: lit.alias.decl *"ComptimeWithParametricType{{.*}}": !lit.generator<<"x": !Int>{{.*}}!lit.struct<#SIMD
-comptime ComptimeWithParametricType[x: Int]: SIMD[DType.int, x] = SIMD[DType.int, x]()
+comptime ComptimeWithParametricType[x: Int]: SIMD[.int, x] = SIMD[.int, x]()
 
 # CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>
 comptime myIntAdd[x: Int, y: Int] = x + y

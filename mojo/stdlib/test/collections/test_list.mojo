@@ -520,11 +520,11 @@ def test_list_extend() raises:
 
     # Extend with whole SIMD
     items: List[UInt32] = [1, 2, 3]
-    items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4))
+    items.extend(SIMD[.uint32, 4](1, 2, 3, 4))
     assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3, 4])
     # Extend with part of SIMD
     items: List[UInt32] = [1, 2, 3]
-    items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4), count=3)
+    items.extend(SIMD[.uint32, 4](1, 2, 3, 4), count=3)
     assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
 

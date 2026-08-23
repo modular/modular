@@ -166,8 +166,8 @@ def _mxfp6_matmul_ref[
         var a_base = m * k_bytes + ko * 24
         var b_base = n * k_bytes + ko * 24
 
-        var fa = SIMD[DType.uint8, 32](0)
-        var fb = SIMD[DType.uint8, 32](0)
+        var fa = SIMD[.uint8, 32](0)
+        var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
                 a_ptr.load[width=8](a_base + chunk * 8)

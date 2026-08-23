@@ -86,10 +86,7 @@ def _fmt_min_normal[fmt: FP6Format]() -> Float32:
 
 def _reference_block[
     fmt: FP6Format
-](
-    values: SIMD[DType.float32, BLOCK],
-    mut out_bytes: SIMD[DType.uint8, 32],
-) -> UInt8:
+](values: SIMD[.float32, BLOCK], mut out_bytes: SIMD[.uint8, 32],) -> UInt8:
     """Fills the block's 24 packed bytes and returns its E8M0 scale byte."""
     var group_max = abs(values).reduce_max()
     var e8m0 = compute_mxfp6_even_scale[fmt](group_max)
@@ -102,9 +99,9 @@ def _reference_block[
         e8m0 = bitcast[DType.float8_e8m0fnu](UInt8(0))
 
     var codes = encode_f32_to_fp6[fmt](values * out_scale)
-    out_bytes = SIMD[DType.uint8, 32](0)
+    out_bytes = SIMD[.uint8, 32](0)
     for g in range(BLOCK // 4):
-        var quad = SIMD[DType.uint8, 4](0)
+        var quad = SIMD[.uint8, 4](0)
         for j in range(4):
             quad[j] = codes[g * 4 + j]
         var word = pack_fp6_x4(quad)
@@ -181,7 +178,7 @@ def _quantize[
 
 def _decode_block[
     fmt: FP6Format
-](block_bytes: SIMD[DType.uint8, 32], scale_byte: UInt8) -> SIMD[
+](block_bytes: SIMD[.uint8, 32], scale_byte: UInt8) -> SIMD[
     DType.float32, BLOCK
 ]:
     """Decodes 24 packed bytes back to 32 scaled float32 values."""
@@ -221,7 +218,7 @@ def test_bitwise_vs_reference[
     var bad_scales = 0
     for m in range(M):
         for blk in range(SCALE_K):
-            var vals = SIMD[DType.float32, BLOCK](0)
+            var vals = SIMD[.float32, BLOCK](0)
             for i in range(BLOCK):
                 # Round-trip through bfloat16: the kernel sees the truncated
                 # value, so the reference must too.
@@ -230,7 +227,7 @@ def test_bitwise_vs_reference[
                     .cast[DType.bfloat16]()
                     .cast[DType.float32]()
                 )
-            var want_bytes = SIMD[DType.uint8, 32](0)
+            var want_bytes = SIMD[.uint8, 32](0)
             var want_scale = _reference_block[fmt](vals, want_bytes)
 
             if got.scales[m * SCALE_K + blk] != want_scale:
@@ -288,7 +285,7 @@ def test_roundtrip[
     var bad = 0
     for m in range(M):
         for blk in range(SCALE_K):
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             for b in range(24):
                 packed[b] = got.data[m * ((K * 6) // 8) + blk * 24 + b]
             var decoded = _decode_block[fmt](
@@ -370,7 +367,7 @@ def test_sign_preserved[fmt: FP6Format](ctx: DeviceContext) raises -> Bool:
     var got = _quantize[fmt, M, K](ctx, values)
     for m in range(M):
         for blk in range(K // BLOCK):
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             for b in range(24):
                 packed[b] = got.data[m * ((K * 6) // 8) + blk * 24 + b]
             var decoded = _decode_block[fmt](
@@ -424,7 +421,7 @@ def test_outlier_dominates_block[
 
     # And the outlier itself must survive: decoding block 0 must recover
     # something close to 1024, not a clipped value.
-    var packed = SIMD[DType.uint8, 32](0)
+    var packed = SIMD[.uint8, 32](0)
     for b in range(24):
         packed[b] = got.data[b]
     var decoded = _decode_block[fmt](packed, got.scales[0])
@@ -461,7 +458,7 @@ def test_saturation[fmt: FP6Format](ctx: DeviceContext) raises -> Bool:
             values.append(Float32(0.0))
 
     var got = _quantize[fmt, M, K](ctx, values)
-    var packed = SIMD[DType.uint8, 32](0)
+    var packed = SIMD[.uint8, 32](0)
     for b in range(24):
         packed[b] = got.data[b]
     var decoded = _decode_block[fmt](packed, got.scales[0])

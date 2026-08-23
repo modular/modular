@@ -265,7 +265,7 @@ def _mma_apple_transposable(
         d = rebind[type_of(d)](
             llvm_intrinsic[
                 "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-                SIMD[DType.float32, 8],
+                SIMD[.float32, 8],
             ](a, transpose_a, b, transpose_b, c)
         )
 
@@ -310,7 +310,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         # sparse `<64x>` back to the per-lane fragment, so this is perf-neutral.
         var a_wide = SIMD[a.dtype, 64](0)
         var b_wide = SIMD[b.dtype, 64](0)
-        var c_wide = SIMD[DType.float32, 64](0)
+        var c_wide = SIMD[.float32, 64](0)
 
         comptime for s in range(2):
             a_wide[s] = a[s]
@@ -319,7 +319,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var d_wide = llvm_intrinsic[
             "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",
-            SIMD[DType.float32, 64],
+            SIMD[.float32, 64],
         ](a_wide, b_wide, c_wide)
 
         comptime for s in range(2):

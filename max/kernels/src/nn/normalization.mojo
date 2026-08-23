@@ -1627,7 +1627,7 @@ def apply_qk_rms_norm_gpu_block[
     var _k_cols = Int(k_cols)
     comptime assert q.flat_rank == 2, "q must have rank 2"
     comptime assert k.flat_rank == 2, "k must have rank 2"
-    comptime align = align_of[SIMD[DType.float32, simd_width]]()
+    comptime align = align_of[SIMD[.float32, simd_width]]()
 
     var tid = thread_idx.x
     var row = block_idx.x

@@ -18,12 +18,12 @@ from layout._fillers import arange
 def outer_product[
     TM: Int, TN: Int
 ](
-    lhs: SIMD[DType.float32, TM],
-    rhs: SIMD[DType.float32, TN],
+    lhs: SIMD[.float32, TM],
+    rhs: SIMD[.float32, TN],
 ) -> SIMD[
     DType.float32, TM * TN
 ]:
-    var res = SIMD[DType.float32, TM * TN]()
+    var res = SIMD[.float32, TM * TN]()
     # Note: Outputs are columns.
     for i in range(TM):
         for j in range(TN):

@@ -937,7 +937,7 @@ struct Span[
         self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
-        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],
+        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[.bool, w]],
     ):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -974,7 +974,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: def[w: SIMDLength](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
+        F: def[w: SIMDLength](v: SIMD[dtype, w]) -> SIMD[.bool, w],
     ](self: Span[Scalar[dtype], _, address_space=_], func: F) -> Int:
         """Count the amount of times the function returns `True`.
 

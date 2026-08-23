@@ -18,12 +18,12 @@ from std.testing import assert_equal
 
 def test_bitcast() raises:
     assert_equal(
-        bitcast[DType.int8, 8](SIMD[DType.int16, 4](1, 2, 3, 4)),
-        SIMD[DType.int8, 8](1, 0, 2, 0, 3, 0, 4, 0),
+        bitcast[DType.int8, 8](SIMD[.int16, 4](1, 2, 3, 4)),
+        SIMD[.int8, 8](1, 0, 2, 0, 3, 0, 4, 0),
     )
 
     assert_equal(
-        bitcast[DType.int32, 1](SIMD[DType.int8, 4](0xFF, 0x00, 0xFF, 0x55)),
+        bitcast[DType.int32, 1](SIMD[.int8, 4](0xFF, 0x00, 0xFF, 0x55)),
         Int32(1442775295),
     )
 
@@ -33,22 +33,22 @@ def test_pack_bits() raises:
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    comptime b2 = SIMD[DType.bool, 2](1, 0)
+    comptime b2 = SIMD[.bool, 2](1, 0)
     assert_equal(pack_bits(b2).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    comptime b4 = SIMD[DType.bool, 4](1, 1, 0, 1)
+    comptime b4 = SIMD[.bool, 4](1, 1, 0, 1)
     assert_equal(pack_bits(b4).cast[DType.uint8](), UInt8(0b0000_1011))
 
-    comptime b8 = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
+    comptime b8 = SIMD[.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
     assert_equal(pack_bits(b8), UInt8(0b0101_0111))
 
-    comptime b16 = SIMD[DType.bool, 16](
+    comptime b16 = SIMD[.bool, 16](
         1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1
     )
     assert_equal(pack_bits(b16), UInt16(0b1000_1010_0101_0111))
     assert_equal(
         pack_bits[DType.uint8, 2](b16),
-        SIMD[DType.uint8, 2](0b0101_0111, 0b1000_1010),
+        SIMD[.uint8, 2](0b0101_0111, 0b1000_1010),
     )
 
 

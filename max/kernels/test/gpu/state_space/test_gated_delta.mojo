@@ -302,7 +302,7 @@ def run_slot_indexed_gpu[
             var kh = vh // heads_expansion_ratio
             for vd in range(VALUE_HEAD_DIM):
                 # Load initial state column for this (batch, value_head, vd_element)
-                var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
+                var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
                 comptime for kd in range(KEY_HEAD_DIM):
                     state_col[kd] = Float32(
                         pool_ref_h.ptr[
@@ -322,8 +322,8 @@ def run_slot_indexed_gpu[
                     var token_row = UInt32(token) * qkv_seqlen_stride
 
                     # Load Q, K raw vectors and accumulate squared norms
-                    var q_raw = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
-                    var k_raw = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
+                    var q_raw = SIMD[.float32, KEY_HEAD_DIM](0.0)
+                    var k_raw = SIMD[.float32, KEY_HEAD_DIM](0.0)
                     var q_sq = Float32(0.0)
                     var k_sq = Float32(0.0)
                     comptime for kd in range(KEY_HEAD_DIM):
@@ -347,8 +347,8 @@ def run_slot_indexed_gpu[
                     # L2 normalise Q (also scaled) and K
                     var q_inv = Float32(1.0) / sqrt(q_sq + Float32(1e-6))
                     var k_inv = Float32(1.0) / sqrt(k_sq + Float32(1e-6))
-                    var q_ns = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
-                    var k_n = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
+                    var q_ns = SIMD[.float32, KEY_HEAD_DIM](0.0)
+                    var k_n = SIMD[.float32, KEY_HEAD_DIM](0.0)
                     comptime for kd in range(KEY_HEAD_DIM):
                         q_ns[kd] = q_raw[kd] * q_inv * query_scale
                         k_n[kd] = k_raw[kd] * k_inv

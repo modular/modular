@@ -136,7 +136,7 @@ def pack_bits[
     //,
     dtype: DType = _uint_type_of_width[src_width](),
     width: SIMDLength = 1,
-](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
+](val: SIMD[.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 
     Examples:
@@ -146,7 +146,7 @@ def pack_bits[
     ```mojo
     from std.memory import pack_bits
 
-    bits = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
+    bits = SIMD[.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
     u8 = pack_bits[DType.uint8](bits)
     print(bits, u8) # [True, True, False, True, False, False, False, False] 11
     ```

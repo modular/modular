@@ -1501,7 +1501,7 @@ def single_group_router_eplb_kernel[
             var log: Int = 0
             var original_weight: Scalar[scores_type] = 0
             var cnt: Int = 1
-            var phy_all = SIMD[DType.int32, max_replicas](0)
+            var phy_all = SIMD[.int32, max_replicas](0)
 
             if l_id < n_experts_per_tok:
                 log = Int(sorted_val3.p)

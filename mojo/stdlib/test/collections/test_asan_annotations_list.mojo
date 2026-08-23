@@ -100,7 +100,7 @@ def main() raises:
         print(l.unsafe_ptr()[unsafe_offset=3])
     elif test == "9":
         var l = List[Int64](capacity=10)
-        l.extend(SIMD[DType.int64, 2](1, 2))
+        l.extend(SIMD[.int64, 2](1, 2))
         print(l.unsafe_ptr()[unsafe_offset=0])
         print(l.unsafe_ptr()[unsafe_offset=1])
         # CHECK_9: AddressSanitizer: container-overflow on address

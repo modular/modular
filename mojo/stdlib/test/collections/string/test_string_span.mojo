@@ -1116,7 +1116,7 @@ def test_string_slice_intern() raises:
     assert_equal(get_static_string["hello"](), "hello")
     assert_equal(get_static_string[String("hello")](), "hello")
     assert_equal(get_static_string[String(42)](), "42")
-    comptime simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    comptime simd = SIMD[.int64, 4](1, 2, 3, 4)
     assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
     # Test get_static_string with multiple string arguments.
     assert_equal(get_static_string["a", "b", "c"](), "abc")

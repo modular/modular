@@ -27,12 +27,12 @@ def test_maybe_partial_load() raises:
         a[i] = 1.0
 
     var vec = _simd_load_maybe_partial[simd_size, False](a.unsafe_ptr(), 0)
-    assert_equal(vec, SIMD[DType.float32, simd_size](1.0))
+    assert_equal(vec, SIMD[.float32, simd_size](1.0))
 
     vec = _simd_load_maybe_partial[simd_size, True](
         a.unsafe_ptr(), simd_size, 1
     )
-    assert_equal(vec, SIMD[DType.float32, simd_size](1.0, 0.0, 0.0, 0.0))
+    assert_equal(vec, SIMD[.float32, simd_size](1.0, 0.0, 0.0, 0.0))
 
 
 def test_accumulate[

@@ -132,7 +132,7 @@ def test_mxfp6_dequant[
     # offset per row so a row-indexing bug cannot alias into a pass.
     for row in range(num_rows):
         for group in range(packed_cols // 3):
-            var quad = SIMD[DType.uint8, 4](0)
+            var quad = SIMD[.uint8, 4](0)
             for j in range(4):
                 quad[j] = UInt8((group * 4 + j + row) % 64)
             var packed = pack_fp6_x4(quad)

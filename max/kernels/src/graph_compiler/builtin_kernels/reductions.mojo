@@ -129,7 +129,7 @@ struct ArgMax:
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -188,7 +188,7 @@ struct ArgMin:
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),

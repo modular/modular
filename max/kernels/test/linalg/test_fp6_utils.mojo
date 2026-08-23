@@ -64,7 +64,7 @@ def _check_decode_vectorized[fmt: FP6Format]() raises:
     """The width-16 path must agree with the width-1 path lane for lane."""
     comptime table = fp6_reference_table[fmt]()
     for base in range(0, 64, 16):
-        var codes = SIMD[DType.uint8, 16](0)
+        var codes = SIMD[.uint8, 16](0)
         for lane in range(16):
             codes[lane] = UInt8(base + lane)
         var got = decode_fp6_to_f32[fmt](codes)
@@ -193,7 +193,7 @@ def test_pack_unpack_round_trip() raises:
         for b in range(0, 64, 7):
             for c in range(0, 64, 5):
                 for d in range(0, 64, 11):
-                    var original = SIMD[DType.uint8, 4](
+                    var original = SIMD[.uint8, 4](
                         UInt8(a), UInt8(b), UInt8(c), UInt8(d)
                     )
                     var restored = unpack_fp6_x4(pack_fp6_x4(original))
@@ -208,19 +208,19 @@ def test_pack_unpack_round_trip() raises:
 def test_pack_uses_all_24_bits() raises:
     """No packed bit may be dropped, and none may spill past bit 23."""
     assert_equal(
-        Int(pack_fp6_x4(SIMD[DType.uint8, 4](0, 0, 0, 0))),
+        Int(pack_fp6_x4(SIMD[.uint8, 4](0, 0, 0, 0))),
         0,
         "all-zero group must pack to zero",
     )
     assert_equal(
-        Int(pack_fp6_x4(SIMD[DType.uint8, 4](63, 63, 63, 63))),
+        Int(pack_fp6_x4(SIMD[.uint8, 4](63, 63, 63, 63))),
         0xFFFFFF,
         "all-ones group must fill exactly bits 23:0",
     )
 
     # Each element must land in its own 6-bit slot.
     for i in range(4):
-        var group = SIMD[DType.uint8, 4](0)
+        var group = SIMD[.uint8, 4](0)
         group[i] = 63
         assert_equal(
             Int(pack_fp6_x4(group)),
@@ -232,11 +232,11 @@ def test_pack_uses_all_24_bits() raises:
 def test_unpack_x32_matches_scalar_path() raises:
     """The 32-element bulk unpack must agree with eight `unpack_fp6_x4` calls.
     """
-    var fragment = SIMD[DType.uint8, 32](0)
-    var expected = SIMD[DType.uint8, 32](0)
+    var fragment = SIMD[.uint8, 32](0)
+    var expected = SIMD[.uint8, 32](0)
 
     for group in range(8):
-        var quad = SIMD[DType.uint8, 4](0)
+        var quad = SIMD[.uint8, 4](0)
         for j in range(4):
             # Spread codes so no two groups share a pattern and every bit
             # position in the 24-bit group varies across the fragment.
@@ -277,7 +277,7 @@ def _check_even_scale_round_trip[fmt: FP6Format]() raises:
     # range, where that bound holds.
     comptime tolerance = (1.0 / Float32(1 << (M + 1))) * 1.001
 
-    var probes = SIMD[DType.float32, 8](
+    var probes = SIMD[.float32, 8](
         1.0e-6, 0.01, 0.5, 1.0, 7.6, 100.0, 4096.0, 1.0e12
     )
     for i in range(8):

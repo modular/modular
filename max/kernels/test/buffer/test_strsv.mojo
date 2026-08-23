@@ -44,7 +44,7 @@ def strsv[
 
         # Save the solution of the triangular tile in stack, while
         # packing them as simd vectors.
-        var x_vec: SIMD[DType.float32, simd_width]
+        var x_vec: SIMD[.float32, simd_width]
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
             x_vec = x_ptr[i]

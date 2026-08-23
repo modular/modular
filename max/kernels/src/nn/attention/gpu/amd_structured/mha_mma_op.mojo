@@ -54,7 +54,7 @@ from structured_kernels.amd_tile_io import (
 # `[0, 16)`: four stripes of four rows, spaced 8 rows apart, with the
 # high half-warp shifted by 4. Hardware-determined; consumers needing to
 # map per-lane fragment indices to matrix rows should read this table.
-comptime ACC_ROW_OFFSETS_32x32 = SIMD[DType.int32, 16](
+comptime ACC_ROW_OFFSETS_32x32 = SIMD[.int32, 16](
     0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
 )
 

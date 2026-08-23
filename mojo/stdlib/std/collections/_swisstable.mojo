@@ -92,7 +92,7 @@ struct Group(Copyable, Movable):
     SIMD comparison operations, enabling fast hash table lookups.
     """
 
-    var ctrl: SIMD[DType.uint8, GROUP_WIDTH]
+    var ctrl: SIMD[.uint8, GROUP_WIDTH]
 
     @always_inline
     def __init__(out self, ptr: Pointer[UInt8, _]):
@@ -120,7 +120,7 @@ struct Group(Copyable, Movable):
         """
         if __is_run_in_comptime_interpreter:
             return Self._scalar_match(self.ctrl, h2_val)
-        return pack_bits(self.ctrl.eq(SIMD[DType.uint8, GROUP_WIDTH](h2_val)))
+        return pack_bits(self.ctrl.eq(SIMD[.uint8, GROUP_WIDTH](h2_val)))
 
     @always_inline
     def match_empty(self) -> UInt16:
@@ -131,9 +131,7 @@ struct Group(Copyable, Movable):
         """
         if __is_run_in_comptime_interpreter:
             return Self._scalar_match(self.ctrl, CTRL_EMPTY)
-        return pack_bits(
-            self.ctrl.eq(SIMD[DType.uint8, GROUP_WIDTH](CTRL_EMPTY))
-        )
+        return pack_bits(self.ctrl.eq(SIMD[.uint8, GROUP_WIDTH](CTRL_EMPTY)))
 
     @always_inline
     def match_empty_or_deleted(self) -> UInt16:
@@ -152,14 +150,12 @@ struct Group(Copyable, Movable):
                 if self.ctrl[i] >= CTRL_DELETED:
                     result |= UInt16(1) << UInt16(i)
             return result
-        return pack_bits(
-            self.ctrl.ge(SIMD[DType.uint8, GROUP_WIDTH](CTRL_DELETED))
-        )
+        return pack_bits(self.ctrl.ge(SIMD[.uint8, GROUP_WIDTH](CTRL_DELETED)))
 
     @always_inline
     def convert_special_to_empty_and_full_to_deleted(
         self,
-    ) -> SIMD[DType.uint8, GROUP_WIDTH]:
+    ) -> SIMD[.uint8, GROUP_WIDTH]:
         """Convert ctrl bytes for in-place rehash preparation.
 
         EMPTY  (0xFF) -> EMPTY  (0xFF)  (unchanged)
@@ -170,7 +166,7 @@ struct Group(Copyable, Movable):
             Transformed control byte vector.
         """
         if __is_run_in_comptime_interpreter:
-            var result = SIMD[DType.uint8, GROUP_WIDTH](0)
+            var result = SIMD[.uint8, GROUP_WIDTH](0)
 
             comptime for i in range(GROUP_WIDTH):
                 if self.ctrl[i] < CTRL_DELETED:
@@ -178,17 +174,15 @@ struct Group(Copyable, Movable):
                 else:
                     result[i] = CTRL_EMPTY
             return result
-        var is_full = self.ctrl.lt(SIMD[DType.uint8, GROUP_WIDTH](CTRL_DELETED))
+        var is_full = self.ctrl.lt(SIMD[.uint8, GROUP_WIDTH](CTRL_DELETED))
         return is_full.select(
-            SIMD[DType.uint8, GROUP_WIDTH](CTRL_DELETED),
-            SIMD[DType.uint8, GROUP_WIDTH](CTRL_EMPTY),
+            SIMD[.uint8, GROUP_WIDTH](CTRL_DELETED),
+            SIMD[.uint8, GROUP_WIDTH](CTRL_EMPTY),
         )
 
     @staticmethod
     @always_inline
-    def _scalar_match(
-        ctrl: SIMD[DType.uint8, GROUP_WIDTH], target: UInt8
-    ) -> UInt16:
+    def _scalar_match(ctrl: SIMD[.uint8, GROUP_WIDTH], target: UInt8) -> UInt16:
         """Scalar fallback for compile-time evaluation.
 
         Args:

@@ -61,50 +61,50 @@ from max.gpu.compute.arch.mma_apple import _mma_apple_8x8
 # CHECK-MIXED: no valid implementation of mma
 def test_mixed_float_int():
     comptime if get_defined_bool["TEST_MIXED_FLOAT_INT", False]():
-        var a = SIMD[DType.int8, 2](0)
-        var b = SIMD[DType.float16, 2](0)
-        var c = SIMD[DType.float32, 2](0)
-        var d = SIMD[DType.float32, 2](0)
+        var a = SIMD[.int8, 2](0)
+        var b = SIMD[.float16, 2](0)
+        var c = SIMD[.float32, 2](0)
+        var d = SIMD[.float32, 2](0)
         _mma_apple_8x8(d, a, b, c)
 
 
 # CHECK-ACCUM: Apple 8x8 MMA accumulator (C and D) must be F32
 def test_bad_float_accum():
     comptime if get_defined_bool["TEST_BAD_FLOAT_ACCUM", False]():
-        var a = SIMD[DType.float16, 2](0)
-        var b = SIMD[DType.float16, 2](0)
-        var c = SIMD[DType.float16, 2](0)
-        var d = SIMD[DType.float16, 2](0)
+        var a = SIMD[.float16, 2](0)
+        var b = SIMD[.float16, 2](0)
+        var c = SIMD[.float16, 2](0)
+        var d = SIMD[.float16, 2](0)
         _mma_apple_8x8(d, a, b, c)
 
 
 # CHECK-F64: no valid implementation of mma
 def test_f64_input():
     comptime if get_defined_bool["TEST_F64_INPUT", False]():
-        var a = SIMD[DType.float64, 2](0)
-        var b = SIMD[DType.float64, 2](0)
-        var c = SIMD[DType.float32, 2](0)
-        var d = SIMD[DType.float32, 2](0)
+        var a = SIMD[.float64, 2](0)
+        var b = SIMD[.float64, 2](0)
+        var c = SIMD[.float32, 2](0)
+        var d = SIMD[.float32, 2](0)
         _mma_apple_8x8(d, a, b, c)
 
 
 # CHECK-INT: no valid implementation of mma
 def test_int_input():
     comptime if get_defined_bool["TEST_INT_INPUT", False]():
-        var a = SIMD[DType.int8, 2](0)
-        var b = SIMD[DType.int8, 2](0)
-        var c = SIMD[DType.float32, 2](0)
-        var d = SIMD[DType.float32, 2](0)
+        var a = SIMD[.int8, 2](0)
+        var b = SIMD[.int8, 2](0)
+        var c = SIMD[.float32, 2](0)
+        var d = SIMD[.float32, 2](0)
         _mma_apple_8x8(d, a, b, c)
 
 
 # CHECK-SHAPE: Apple 8x8 MMA requires 2-element fragments
 def test_wrong_shape():
     comptime if get_defined_bool["TEST_WRONG_SHAPE", False]():
-        var a = SIMD[DType.float16, 8](0)
-        var b = SIMD[DType.float16, 8](0)
-        var c = SIMD[DType.float32, 8](0)
-        var d = SIMD[DType.float32, 8](0)
+        var a = SIMD[.float16, 8](0)
+        var b = SIMD[.float16, 8](0)
+        var c = SIMD[.float32, 8](0)
+        var d = SIMD[.float32, 8](0)
         _mma_apple_8x8(d, a, b, c)
 
 

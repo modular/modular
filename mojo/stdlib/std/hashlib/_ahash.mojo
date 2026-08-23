@@ -18,8 +18,8 @@ from std.collections import Span
 
 from .hasher import Hasher
 
-comptime U256 = SIMD[DType.uint64, 4]
-comptime U128 = SIMD[DType.uint64, 2]
+comptime U256 = SIMD[.uint64, 4]
+comptime U128 = SIMD[.uint64, 2]
 comptime MULTIPLE = 6364136223846793005
 comptime ROT = 23
 
@@ -51,7 +51,7 @@ def _read_small(data: ImmPointer[UInt8, _], length: Int) -> U128:
         length: The byte array length.
 
     Returns:
-        Returns a SIMD[DType.uint64, 2] value.
+        Returns a SIMD[.uint64, 2] value.
     """
     if length >= 2:
         if length >= 4:

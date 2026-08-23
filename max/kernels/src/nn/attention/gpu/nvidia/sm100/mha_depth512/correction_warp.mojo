@@ -139,7 +139,7 @@ def depth512_correction[
 
     @__parameter
     @always_inline
-    def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
+    def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         """Double-buffered TMEM load/scale/store over o_cols columns."""
         var o_b0: Array[Scalar[accum_type], batch_size]
         var o_b1: Array[Scalar[accum_type], batch_size]
@@ -170,7 +170,7 @@ def depth512_correction[
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b0[_i],
                         o_b0[_i + 1],
                     ),
@@ -200,7 +200,7 @@ def depth512_correction[
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b1[_i],
                         o_b1[_i + 1],
                     ),
@@ -223,7 +223,7 @@ def depth512_correction[
 
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](
+                    SIMD[.float32, 2](
                         o_b0[_i],
                         o_b0[_i + 1],
                     ),
@@ -256,7 +256,7 @@ def depth512_correction[
             pipeline_o_lo.wait()
             if change:
                 tcgen05_fence_after()
-                var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
+                var c_pair = SIMD[.float32, 2](c_scalar, c_scalar)
                 rescale_o(o_tmem, c_pair)
                 umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())
                 pipeline_o_lo.step()
@@ -277,7 +277,7 @@ def depth512_correction[
             pipeline_o_lo.wait()
             if change:
                 tcgen05_fence_after()
-                var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
+                var c_pair = SIMD[.float32, 2](c_scalar, c_scalar)
                 rescale_o(o_tmem, c_pair)
 
             umma_arrive_leader_cta(pipeline_o_lo.consumer_mbar())

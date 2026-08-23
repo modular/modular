@@ -142,7 +142,7 @@ struct Fp8WeightLoader[
     @always_inline
     def load_col_chunk[
         width: Int
-    ](self, n: Int, k0: Int) -> SIMD[DType.float32, width]:
+    ](self, n: Int, k0: Int) -> SIMD[.float32, width]:
         """This column's `width` FP8 weights at `[n, k0 : k0+width)`, E4M3 -> f32.
 
         One coalesced width-`width` `float8_e4m3fn` load (adjacent lanes read

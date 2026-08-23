@@ -342,13 +342,13 @@ def kernel_4[
     comptime for tma_n in range(BN // TMA_BN):
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range(TMA_BN // 16):
-                var d_reg = SIMD[DType.bfloat16, 8]()
+                var d_reg = SIMD[.bfloat16, 8]()
 
                 comptime for _ei in range(4):
                     comptime _src_offset = (
                         i + tma_n * (TMA_BN // 16)
                     ) * 8 + 2 * _ei
-                    var pair = SIMD[DType.float32, 2](
+                    var pair = SIMD[.float32, 2](
                         rebind[Float32](c_frag[_src_offset]),
                         rebind[Float32](c_frag[_src_offset + 1]),
                     )

@@ -197,7 +197,7 @@ def kernel_qk_chain[
     var att_v = att_reg.vectorize[1, 1, 16]()
     comptime for n in range(_AH):
         comptime for m in range(_AW):
-            att_v[n, m, 0] = SIMD[DType.float32, 16](0.0)
+            att_v[n, m, 0] = SIMD[.float32, 16](0.0)
 
     _Op.mma_QK(att_reg, k_reg, q_reg)
 

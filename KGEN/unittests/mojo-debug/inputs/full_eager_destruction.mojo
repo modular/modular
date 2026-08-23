@@ -39,7 +39,7 @@ def main():
         print(number)  # breakpoint
     print(0)  # breakpoint
 
-    var simd = SIMD[DType.int16, 4](1, 2, 3, 4)
+    var simd = SIMD[.int16, 4](1, 2, 3, 4)
     if simd[0] < 0:
         print(simd)
     else:

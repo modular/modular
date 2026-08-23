@@ -73,7 +73,7 @@ def wgmma_tf32_tf32_f32_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.float32, 4](0)
+    var c_reg = SIMD[.float32, 4](0)
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -372,7 +372,7 @@ def wgmma_bf16_bf16_f32_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.float32, 4](0)
+    var c_reg = SIMD[.float32, 4](0)
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -664,7 +664,7 @@ def wgmma_f16_f16_f32_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.float32, 4](0)
+    var c_reg = SIMD[.float32, 4](0)
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -956,7 +956,7 @@ def wgmma_f16_f16_f16_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.uint32, 2](0)
+    var c_reg = SIMD[.uint32, 2](0)
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -1256,7 +1256,7 @@ def wgmma_kernel[
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    var c_reg = SIMD[DType.float32, 4](0)
+    var c_reg = SIMD[.float32, 4](0)
 
     comptime M = a_layout.shape[0].value()
     comptime K = a_layout.shape[1].value()

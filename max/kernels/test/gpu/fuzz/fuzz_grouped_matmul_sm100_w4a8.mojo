@@ -114,9 +114,7 @@ comptime b_expert_scale_count = (
 comptime MAX_M_PER_EXPERT = 512
 
 # Exact in E4M3, and small enough that every partial sum stays exact in FP32.
-comptime A_VALUES = SIMD[DType.float32, 8](
-    0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5
-)
+comptime A_VALUES = SIMD[.float32, 8](0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5)
 
 # Bounds the strided host recompute at ~SAMPLE_BUDGET*K multiply-adds.
 comptime SAMPLE_BUDGET = 4096

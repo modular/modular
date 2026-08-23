@@ -52,7 +52,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
             .unsafe_load[width=simd_width](idx)
             .cast[DType.bfloat16]()
         )
-        var result = val ** SIMD[DType.bfloat16, simd_width](exponent)
+        var result = val ** SIMD[.bfloat16, simd_width](exponent)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, result.cast[DType.float32]()
         )

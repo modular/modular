@@ -554,8 +554,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
     ```mojo
     # Process 8 floating-point numbers simultaneously
-    var a = SIMD[DType.float32, 8](1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
-    var b = SIMD[DType.float32, 8](2.0)  # Broadcast 2.0 to all elements
+    var a = SIMD[.float32, 8](1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+    var b = SIMD[.float32, 8](2.0)  # Broadcast 2.0 to all elements
     var result = a * b + 1.0
     print(result)  # => [3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0]
     ```
@@ -564,7 +564,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
     ```mojo
     # Double the positive values and negate the negative values
-    var values = SIMD[DType.int32, 4](1, -2, 3, -4)
+    var values = SIMD[.int32, 4](1, -2, 3, -4)
     var is_positive = values.gt(0)  # greater-than: gets SIMD of booleans
     var result = is_positive.select(values * 2, values * -1)
     print(result)  # => [2, 2, 6, 4]
@@ -574,7 +574,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
     ```mojo
     # Sum all elements in a vector
-    var data = SIMD[DType.float64, 4](10.5, 20.3, 30.1, 40.7)
+    var data = SIMD[.float64, 4](10.5, 20.3, 30.1, 40.7)
     var total = data.reduce_add()
     var maximum = data.reduce_max()
     print(total, maximum)  # => 101.6 40.7
@@ -619,7 +619,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
     comptime MIN_FINITE = Self(_min_finite[Self.dtype]())
     """Returns the minimum (lowest) finite value of SIMD value."""
 
-    comptime _Mask = SIMD[DType.bool, Self.length]
+    comptime _Mask = SIMD[.bool, Self.length]
 
     comptime device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
@@ -728,7 +728,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         ```mojo
         print(UInt64(UInt8(42))) # 42
-        print(SIMD[DType.uint64, 4](UInt8(42))) # [42, 42, 42, 42]
+        print(SIMD[.uint64, 4](UInt8(42))) # [42, 42, 42, 42]
         ```
 
         Casting behavior:
@@ -839,7 +839,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
     @always_inline("nodebug")
     @implicit
-    def __init__(out self: SIMD[DType.bool, Self.length], value: Bool, /):
+    def __init__(out self: SIMD[.bool, Self.length], value: Bool, /):
         """Initializes a Scalar with a bool value.
 
         Since this constructor does not splat, it can be implicit.
@@ -862,7 +862,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         self._mlir_value = rebind[Self._Mask._mlir_type](value._mlir_value)
 
     @always_inline("nodebug")
-    def __init__(out self: SIMD[DType.bool, Self.length], *, fill: Bool):
+    def __init__(out self: SIMD[.bool, Self.length], *, fill: Bool):
         """Initializes the SIMD vector with a bool value.
 
         The bool value is splatted across all elements of the SIMD vector.
@@ -2014,7 +2014,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
-                _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
+                _type=SIMD[.int, 1]._mlir_type, fast=__mlir_attr.unit
             ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 
@@ -2299,12 +2299,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
         comptime if Self.dtype in (DType._uint1, DType._uint2, DType._uint4):
             # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
             var uint = __mlir_op.`pop.cast`[
-                _type=SIMD[DType.uint32, Self.length]._mlir_type,
+                _type=SIMD[.uint32, Self.length]._mlir_type,
                 fast=__mlir_attr.unit,
             ](self._mlir_value)
-            return SIMD[DType.uint32, Self.length](mlir_value=uint).cast[
-                target
-            ]()
+            return SIMD[.uint32, Self.length](mlir_value=uint).cast[target]()
 
         var res = __mlir_op.`pop.cast`[
             _type=SIMD[target, Self.length]._mlir_type, fast=__mlir_attr.unit
@@ -2312,7 +2310,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         return SIMD(mlir_value=res)
 
     @always_inline("builtin")
-    def is_power_of_two(self) -> SIMD[DType.bool, Self.length]:
+    def is_power_of_two(self) -> SIMD[.bool, Self.length]:
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
         Constraints:
@@ -2686,7 +2684,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
     @always_inline
     def _dynamic_shuffle[
         mask_size: SIMDLength
-    ](self, mask: SIMD[DType.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
+    ](self, mask: SIMD[.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
         """Shuffles (also called blend) the values of the current vector.
 
         It's done using the specified mask (permutation). The mask
@@ -3246,7 +3244,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 return Int(self)
             else:
                 var packed_mask = pack_bits(
-                    rebind[SIMD[DType.bool, Self.length]](self)
+                    rebind[SIMD[.bool, Self.length]](self)
                 )
                 var count = pop_count(packed_mask)
                 return Int(count)
@@ -3445,7 +3443,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         Examples:
         ```mojo
-        print(SIMD[DType.uint8, 4](1, 2, 3, 4).reversed()) # [4, 3, 2, 1]
+        print(SIMD[.uint8, 4](1, 2, 3, 4).reversed()) # [4, 3, 2, 1]
         ```
         """
 
@@ -3537,7 +3535,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         comptime assert False, "SIMD is not a tuple CoordLike type"
 
 
-comptime U8x16 = SIMD[DType.uint8, 16]
+comptime U8x16 = SIMD[.uint8, 16]
 """A 16-element vector of unsigned 8-bit integers."""
 
 
@@ -3753,7 +3751,7 @@ def _convert_float8_to_f32_scalar[
 def _convert_float8_to_f32[
     dtype: DType,
     size: SIMDLength,
-](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
+](val: SIMD[dtype, size]) -> SIMD[.float32, size]:
     comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
@@ -3775,10 +3773,10 @@ def _convert_float8_to_f32[
             DType.float8_e5m2,
         )
     ):
-        var res = __mlir_op.`pop.cast`[
-            _type=SIMD[DType.float32, size]._mlir_type
-        ](val._mlir_value)
-        return SIMD[DType.float32, size](mlir_value=res)
+        var res = __mlir_op.`pop.cast`[_type=SIMD[.float32, size]._mlir_type](
+            val._mlir_value
+        )
+        return SIMD[.float32, size](mlir_value=res)
 
     else:
 
@@ -3795,16 +3793,16 @@ def _convert_float8_to_f32[
 def _convert_float8_to_f16[
     dtype: DType,
     size: SIMDLength,
-](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
+](val: SIMD[dtype, size]) -> SIMD[.float16, size]:
     comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
-        var res = __mlir_op.`pop.cast`[
-            _type=SIMD[DType.float16, size]._mlir_type
-        ](val._mlir_value)
-        return SIMD[DType.float16, size](mlir_value=res)
+        var res = __mlir_op.`pop.cast`[_type=SIMD[.float16, size]._mlir_type](
+            val._mlir_value
+        )
+        return SIMD[.float16, size](mlir_value=res)
     else:
         return _convert_float8_to_f32(val).cast[DType.float16]()
 
@@ -4079,7 +4077,7 @@ def _convert_float8_ue8m0_to_f32[
             var res = SIMD[target, size]()
 
             comptime for i in range(0, size, 2):
-                var ue8m0x2 = SIMD[DType.uint8, 2](
+                var ue8m0x2 = SIMD[.uint8, 2](
                     bitcast[DType.uint8, 1](val[i]),
                     bitcast[DType.uint8, 1](val[i + 1]),
                 )
@@ -4093,7 +4091,7 @@ def _convert_float8_ue8m0_to_f32[
                 res = res.insert[offset=i](f32x2)
             return res
         else:
-            var ue8m0x2 = SIMD[DType.uint8, 2](
+            var ue8m0x2 = SIMD[.uint8, 2](
                 bitcast[DType.uint8, 1](val[0]), UInt8(0)
             )
             var bf16x2 = inlined_assembly[
@@ -4110,12 +4108,10 @@ def _convert_float8_ue8m0_to_f32[
         var f32_bits = exp.cast[DType.uint32]() << 23
 
         # 0x00 represents 2**-127, which is a float32 subnormal.
-        f32_bits = exp.eq(0).select(
-            SIMD[DType.uint32, size](0x00400000), f32_bits
-        )
+        f32_bits = exp.eq(0).select(SIMD[.uint32, size](0x00400000), f32_bits)
         # 0xFF is NaN for this format; avoid creating +inf in float32.
         f32_bits = exp.eq(0xFF).select(
-            SIMD[DType.uint32, size](0x7FFFFFFF), f32_bits
+            SIMD[.uint32, size](0x7FFFFFFF), f32_bits
         )
 
         return SIMD[target, size](from_bits=f32_bits)
@@ -4140,13 +4136,13 @@ def _bfloat16_to_f32_scalar(
             has_side_effect=False,
         ](bitcast[DType.int16](val))
 
-    return bitcast[DType.float32, 1](SIMD[DType.bfloat16, 2](0, val))
+    return bitcast[DType.float32, 1](SIMD[.bfloat16, 2](0, val))
 
 
 @always_inline
 def _bfloat16_to_f32[
     size: SIMDLength
-](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
+](val: SIMD[.bfloat16, size]) -> SIMD[.float32, size]:
     @always_inline
     def wrapper_fn[
         input_dtype: DType, result_dtype: DType
@@ -4301,7 +4297,7 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
     """Returns the scalar type alias name for a `dtype`, or `None`.
 
     This is used by `SIMD.write_repr_to` to print scalars using their friendly
-    alias (e.g. `UInt32(4)`) instead of the verbose `SIMD[DType.uint32, 1](4)`
+    alias (e.g. `UInt32(4)`) instead of the verbose `SIMD[.uint32, 1](4)`
     form.
 
     The set of `dtype`s handled here must stay in sync with the `Scalar`
@@ -4309,7 +4305,7 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
     parallels `DType.write_to`, the other exhaustive per-`dtype` chain that must
     be updated when a `dtype` is added. A `dtype` with no scalar alias returns
     `None` and keeps the verbose form: `DType.bool` is excluded because
-    `SIMD[DType.bool, 1]` is distinct from the `Bool` struct, and
+    `SIMD[.bool, 1]` is distinct from the `Bool` struct, and
     `DType.float8_e3m4` has no `Scalar` alias. A `dtype` matching none of these
     cases fails a `comptime` assertion, so a newly added `dtype` is caught here
     rather than silently losing its alias.

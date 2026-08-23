@@ -1197,15 +1197,15 @@ struct TensorCore[
         comptime repack_tile = Index(64, 16)
 
         @always_inline
-        def int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
+        def int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[.bfloat16, 2]:
             comptime MASK: Int32 = 0x000F000F
             comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
             comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
-            var BF16_BIAS = SIMD[DType.bfloat16, 2](-136, -136)
-            var BF16_SCALE = SIMD[DType.bfloat16, 2](scale, scale)
-            var BF16_ZERO = SIMD[DType.bfloat16, 2](0, 0)
-            var BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
+            var BF16_BIAS = SIMD[.bfloat16, 2](-136, -136)
+            var BF16_SCALE = SIMD[.bfloat16, 2](scale, scale)
+            var BF16_ZERO = SIMD[.bfloat16, 2](0, 0)
+            var BF16_ONE = SIMD[.bfloat16, 2](1, 1)
 
             var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
 

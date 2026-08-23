@@ -105,7 +105,7 @@ def test_causal_mask_asm() raises:
             IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
-            SIMD[DType.float32, 4](0),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(
@@ -244,7 +244,7 @@ def test_sliding_window_causal_mask_asm() raises:
             IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
-            SIMD[DType.float32, 4](0),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(

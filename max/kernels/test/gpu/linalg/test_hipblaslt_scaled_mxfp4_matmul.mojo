@@ -54,10 +54,10 @@ def block_scaled_matmul_ref[
     @always_inline
     def cast_fp2em1x2_to_fp32x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
         return llvm_intrinsic[
             "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            SIMD[.float32, 2],
         ](packed, scale, Int32(byte_select))
 
     var m = global_idx.x
@@ -74,7 +74,7 @@ def block_scaled_matmul_ref[
     var am_ptr = a_ptr + m * (K // 2)
     var bn_ptr = b_ptr + n * (K // 2)
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
         var a_scale = am_scales_ptr[ko].cast[DType.float32]()

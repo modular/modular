@@ -112,9 +112,7 @@ def bench_argmax[
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {
-            var out_tensor
-        }:
+        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var out_tensor}:
             out_tensor.store_linear[width=Int(width)](
                 rebind[IndexList[2]](coords), val.cast[out_idx_type]()
             )

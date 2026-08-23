@@ -121,8 +121,8 @@ def mma_strided_kernel(
 ):
     var a_frag = apple_mma_load[DType.float32](a_ptr, _N * 2, col_stride=2)
     var b_frag = apple_mma_load[DType.float32](b_ptr, _N * 2, col_stride=2)
-    var c_frag = SIMD[DType.float32, 8](0)
-    var d_frag = SIMD[DType.float32, 8](0)
+    var c_frag = SIMD[.float32, 8](0)
+    var d_frag = SIMD[.float32, 8](0)
     _mma_apple(d_frag, a_frag, b_frag, c_frag)
     apple_mma_store[DType.float32](d_ptr, _N, d_frag)
 
@@ -194,21 +194,21 @@ def mma_rt_transpose_kernel(
     """Runs MMA for all 4 transpose combos: (F,F), (T,F), (F,T), (T,T)."""
     var a_frag = apple_mma_load[DType.float32](a_ptr, _N)
     var b_frag = apple_mma_load[DType.float32](b_ptr, _N)
-    var zero = SIMD[DType.float32, 8](0)
+    var zero = SIMD[.float32, 8](0)
 
-    var d_ff = SIMD[DType.float32, 8](0)
+    var d_ff = SIMD[.float32, 8](0)
     _mma_apple_transposable(d_ff, a_frag, b_frag, zero, False, False)
     apple_mma_store[DType.float32](d_ff_ptr, _N, d_ff)
 
-    var d_tf = SIMD[DType.float32, 8](0)
+    var d_tf = SIMD[.float32, 8](0)
     _mma_apple_transposable(d_tf, a_frag, b_frag, zero, True, False)
     apple_mma_store[DType.float32](d_tf_ptr, _N, d_tf)
 
-    var d_ft = SIMD[DType.float32, 8](0)
+    var d_ft = SIMD[.float32, 8](0)
     _mma_apple_transposable(d_ft, a_frag, b_frag, zero, False, True)
     apple_mma_store[DType.float32](d_ft_ptr, _N, d_ft)
 
-    var d_tt = SIMD[DType.float32, 8](0)
+    var d_tt = SIMD[.float32, 8](0)
     _mma_apple_transposable(d_tt, a_frag, b_frag, zero, True, True)
     apple_mma_store[DType.float32](d_tt_ptr, _N, d_tt)
 
