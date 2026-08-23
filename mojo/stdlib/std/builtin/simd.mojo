@@ -1247,6 +1247,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
         )
         comptime if Self.length == exp.length and self.dtype == exp.dtype:
             return _pow(self, rebind[Self](exp))
+        elif exp.dtype.is_floating_point() and Self.dtype.is_floating_point():
+            # `_pow` asks the base and exponent dtypes to match, so cast
+            # a mismatched float exponent (e.g. a float literal, which
+            # defaults to float64) to the base dtype.
+            return _pow(
+                self, Self(rebind[Scalar[exp.dtype]](exp).cast[Self.dtype]())
+            )
         else:
             return _pow(
                 self,
