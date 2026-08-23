@@ -123,7 +123,7 @@ def assert_load_model_succeeds(
         # planned value equals what the arch policies derived before plans
         # became required.
         memory_plan=MemoryPlan(
-            max_batch_size=1,
+            planned_max_batch_size=1,
             footprint=0,
             planned_max_length=pipeline_config.model.max_length,
         ),

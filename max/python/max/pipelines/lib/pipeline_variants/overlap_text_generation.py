@@ -1743,8 +1743,8 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._max_batch_size = memory_plan.max_batch_size
-        max_batch_size = memory_plan.max_batch_size
+        self._max_batch_size = memory_plan.planned_max_batch_size
+        max_batch_size = memory_plan.planned_max_batch_size
 
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config

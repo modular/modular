@@ -180,11 +180,11 @@ def _pipeline_resolve_mocks(
             "plan_from_sizes",
             side_effect=lambda pipeline_config, model_config, *a, **kw: (
                 MemoryPlan(
-                    max_batch_size=1,
+                    planned_max_batch_size=1,
                     footprint=0,
                     planned_max_length=model_config.max_length,
                     device_specs=tuple(model_config.device_specs),
-                    max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                    planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
                 )
             ),
         ),

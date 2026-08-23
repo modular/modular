@@ -92,8 +92,10 @@ class MemoryPlan:
     :meth:`MemoryEstimator.plan`.
     """
 
-    max_batch_size: int
-    """The maximum number of requests scheduled together in one batch."""
+    planned_max_batch_size: int
+    """The maximum number of requests scheduled together in one batch: the
+    user's ``runtime.max_batch_size``, or the value planning inferred when
+    the user left it unset."""
 
     footprint: int
     """The estimated total device memory the pipeline uses, in bytes."""
@@ -116,10 +118,10 @@ class MemoryPlan:
     ``None`` for plans that never load devices, such as diffusion
     pipelines."""
 
-    max_batch_total_tokens: int | None = None
+    planned_max_batch_total_tokens: int | None = None
     """Cap on the total context tokens resident across a batch: the user's
-    setting, or ``planned_max_length`` for architectures that require a cap.
-    ``None`` means no cap is configured."""
+    ``runtime.max_batch_total_tokens``, or ``planned_max_length`` for
+    architectures that require a cap. ``None`` means no cap is configured."""
 
     vision_cache_plan: VisionCachePlan | None = None
     """Block-mode vision cache reservation; ``None`` means entry-count mode."""
@@ -243,10 +245,11 @@ class MemoryEstimator:
         # and don't use a KV cache, so skip memory estimation entirely.
         if "main" not in pipeline_config.models:
             return MemoryPlan(
-                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=pipeline_config.runtime.max_batch_size
+                or 1,
                 footprint=0,
                 planned_max_length=None,
-                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
 
         model_config = pipeline_config.model
@@ -516,12 +519,12 @@ class MemoryEstimator:
             # allocating memory. 1TB works for any model.
             virtual_cache_memory = 1024 * 1024 * 1024 * 1024  # 1TB
             return MemoryPlan(
-                max_batch_size=max_batch_size,
+                planned_max_batch_size=max_batch_size,
                 footprint=0,
                 planned_max_length=max_length,
                 available_cache_memory=virtual_cache_memory,
                 device_specs=device_specs,
-                max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+                planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                     pipeline_config, arch, max_length
                 ),
             )
@@ -542,11 +545,11 @@ class MemoryEstimator:
                 draft_max_seq_len,
             )
             return MemoryPlan(
-                max_batch_size=max_batch_size or 1,
+                planned_max_batch_size=max_batch_size or 1,
                 footprint=0,
                 planned_max_length=max_length,
                 device_specs=device_specs,
-                max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+                planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                     pipeline_config, arch, max_length
                 ),
             )
@@ -717,12 +720,12 @@ class MemoryEstimator:
         max_length = cls._bounded_by_draft(max_length, draft_max_seq_len)
 
         return MemoryPlan(
-            max_batch_size=max_batch_size,
+            planned_max_batch_size=max_batch_size,
             footprint=int(total_size),
             planned_max_length=max_length,
             available_cache_memory=available_cache_memory,
             device_specs=device_specs,
-            max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+            planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                 pipeline_config, arch, max_length
             ),
             vision_cache_plan=vision_cache_plan,

@@ -54,10 +54,10 @@ def test_from_pipeline_config_reads_the_memory_plan() -> None:
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.speculative = None
     memory_plan = MemoryPlan(
-        max_batch_size=1,
+        planned_max_batch_size=1,
         footprint=0,
         planned_max_length=2048,
-        max_batch_total_tokens=8192,
+        planned_max_batch_total_tokens=8192,
     )
 
     config = TokenGenerationSchedulerConfig.from_pipeline_config(
