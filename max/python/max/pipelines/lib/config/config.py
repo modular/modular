@@ -95,18 +95,20 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
 _SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
 
 
-def _construct_from_user_fields(sub: _SubConfigT) -> _SubConfigT:
+def _construct_from_user_fields(
+    sub: _SubConfigT, **overrides: Any
+) -> _SubConfigT:
     """Constructs a fresh sub-config from only the caller-set fields.
 
-    The result is built once, through the class constructor: unset fields
-    re-derive from the class defaults and nested models are rebuilt rather
-    than aliased, so it shares no mutable state with ``sub``.
+    Unset fields re-derive from the class defaults. Nested models are rebuilt
+    rather than aliased. ``overrides`` are kwargs applied on top of the
+    caller-set fields.
     """
-    return type(sub)(
-        **sub.model_dump(
-            include=sub.model_fields_set - {"config_file", "section_name"}
-        )
+    fields = sub.model_dump(
+        include=sub.model_fields_set - {"config_file", "section_name"}
     )
+    fields.update(overrides)
+    return type(sub)(**fields)
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -491,33 +493,38 @@ class PipelineConfig(ConfigFileModel):
             ("PipelineRuntimeConfig", self.runtime),
             ("MAXModelConfig", self.model),
             ("SamplingConfig", self.sampling),
-            ("KVCacheConfig", self.model.kv_cache),
         ]
+        kv_cache_owners = [("KVCacheConfig", self.model)]
 
         # Add draft model configurations if present
         if self.draft_model is not None:
-            config_objects.extend(
-                [
-                    ("Draft_MAXModelConfig", self.draft_model),
-                    (
-                        "Draft_KVCacheConfig",
-                        self.draft_model.kv_cache,
-                    ),
-                ]
-            )
+            config_objects.append(("Draft_MAXModelConfig", self.draft_model))
+            kv_cache_owners.append(("Draft_KVCacheConfig", self.draft_model))
 
         for arg_name, required_value in architecture.required_arguments.items():
-            # Check each config object for the required argument
+            # Skip config objects that do not declare this field.
             for config_name, config_obj in config_objects:
-                current_value = getattr(config_obj, arg_name, required_value)
+                if arg_name not in type(config_obj).model_fields:
+                    continue
+                current_value = getattr(config_obj, arg_name)
                 if current_value != required_value:
                     logger.warning(
                         f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
                         f"overriding current value {current_value}"
                     )
                     setattr(config_obj, arg_name, required_value)
-                # We should be able to override this value for all config objects.
-                continue
+            for config_name, owner in kv_cache_owners:
+                if arg_name not in type(owner.kv_cache).model_fields:
+                    continue
+                current_value = getattr(owner.kv_cache, arg_name)
+                if current_value != required_value:
+                    logger.warning(
+                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
+                        f"overriding current value {current_value}"
+                    )
+                    owner.kv_cache = _construct_from_user_fields(
+                        owner.kv_cache, **{arg_name: required_value}
+                    )
 
     def _apply_speculative_target_architecture(self) -> None:
         """Override the target architecture for unified spec-decode pipelines.
@@ -889,6 +896,22 @@ class PipelineConfig(ConfigFileModel):
                 )
             )
 
+    def _apply_arch_kv_head_replication(
+        self, arch: Any, draft_arch: Any = None
+    ) -> None:
+        """Set ``allow_kv_head_replication`` when the architecture requires it."""
+        models = [(self.model, arch)]
+        if self.draft_model is not None and draft_arch is not None:
+            models.append((self.draft_model, draft_arch))
+        for model, model_arch in models:
+            if not model_arch.requires_kv_head_replication:
+                continue
+            if model.kv_cache.allow_kv_head_replication:
+                continue
+            model.kv_cache = _construct_from_user_fields(
+                model.kv_cache, allow_kv_head_replication=True
+            )
+
     def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
         if not self.runtime.force:
             if (
@@ -1152,6 +1175,7 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_structured_output_backend(arch=arch)
         self._resolve_default_structured_output_any_whitespace(arch=arch)
         self._resolve_max_length(arch=arch, draft_arch=draft_arch)
+        self._apply_arch_kv_head_replication(arch=arch, draft_arch=draft_arch)
         self._validate_synthetic_acceptance_with_constrained_decoding()
 
         if (

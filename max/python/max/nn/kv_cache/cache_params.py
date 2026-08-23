@@ -162,26 +162,38 @@ class KVConnectorConfigInterface(Protocol):
     still giving every consumer a checked type instead of ``Any``.
     """
 
-    type: KVConnectorType
-    """Which off-device backing store to use."""
+    @property
+    def type(self) -> KVConnectorType:
+        """Which off-device backing store to use."""
+        ...
 
-    host_offload_max_gb: float | None
-    """Host budget in GiB; ``None`` sizes it from the device pool."""
+    @property
+    def host_offload_max_gb(self) -> float | None:
+        """Host budget in GiB; ``None`` sizes it from the device pool."""
+        ...
 
-    disk_offload_max_gb: float | None
-    """Disk budget in GiB; ``None`` sizes it from the device pool."""
+    @property
+    def disk_offload_max_gb(self) -> float | None:
+        """Disk budget in GiB; ``None`` sizes it from the device pool."""
+        ...
 
-    disk_offload_dir: str | None
-    """Disk cache directory; ``None`` means auto-create one."""
+    @property
+    def disk_offload_dir(self) -> str | None:
+        """Disk cache directory; ``None`` means auto-create one."""
+        ...
 
-    num_disk_workers: int
-    """Disk I/O worker threads for the tiered connectors."""
+    @property
+    def num_disk_workers(self) -> int:
+        """Disk I/O worker threads for the tiered connectors."""
+        ...
 
-    block_store_endpoint: str | None
-    """Endpoint for the co-located dKV service."""
+    @property
+    def block_store_endpoint(self) -> str | None:
+        """Endpoint for the co-located dKV service."""
+        ...
 
 
-@dataclass
+@dataclass(frozen=True)
 class NullKVConnectorConfig:
     """Connector config for no off-device backing store.
 

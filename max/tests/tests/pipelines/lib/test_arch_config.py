@@ -30,6 +30,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVConnectorConfigInterface,
     KVConnectorType,
     MHAKVCacheParams,
 )
@@ -45,6 +46,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from pydantic import ValidationError
 
 
 @dataclass
@@ -367,15 +369,9 @@ class TestArchConfigWithAttentionKVCache:
 
 
 def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
-    """``to_params`` falls back to the config's allow_kv_head_replication.
-
-    The base Llama3/M2 ``construct_kv_params`` paths call ``to_params`` without
-    threading the flag, so architectures (e.g. MiniMax-M3) enable wide tensor
-    parallelism by setting it on the shared ``KVCacheConfig``.
-    """
+    """``to_params`` uses the config flag when the argument is omitted."""
     kv_cache_config = KVCacheConfig(allow_kv_head_replication=True)
-    # 4 KV heads over 8 devices would normally fail the divisibility check; the
-    # config flag relaxes it so each head replicates across 2 devices.
+    # 4 KV heads over 8 devices: the flag replicates each head across 2 devices.
     params = kv_cache_config.to_params(
         dtype=DType.bfloat16,
         n_kv_heads=4,
@@ -414,3 +410,33 @@ def test_to_params_explicit_arg_overrides_config() -> None:
         allow_kv_head_replication=True,
     )
     assert params.n_kv_heads_per_device == 1
+
+
+def test_kv_cache_config_is_frozen() -> None:
+    kv_cache_config = KVCacheConfig()
+    field = "allow_kv_head_replication"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(kv_cache_config, field, True)
+    assert kv_cache_config.allow_kv_head_replication is False
+
+
+def test_kv_connector_config_is_frozen() -> None:
+    connector = KVCacheConfig().kv_connector_config
+    field = "type"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(connector, field, KVConnectorType.tiered)
+    assert connector.type is KVConnectorType.null
+
+
+def test_frozen_kv_connector_config_matches_interface() -> None:
+    connector = KVConnectorConfig()
+    assert isinstance(connector, KVConnectorConfigInterface)
+
+
+def test_kv_cache_config_model_copy_update() -> None:
+    kv_cache_config = KVCacheConfig()
+    patched = kv_cache_config.model_copy(
+        update={"allow_kv_head_replication": True}
+    )
+    assert patched.allow_kv_head_replication is True
+    assert kv_cache_config.allow_kv_head_replication is False

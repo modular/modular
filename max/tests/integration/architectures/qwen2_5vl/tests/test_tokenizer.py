@@ -55,14 +55,9 @@ def _create_mock_huggingface_config() -> NonCallableMock:
     return mock_hf_config
 
 
-class MockKVCacheConfig(KVCacheConfig):
-    def __init__(self) -> None:
-        self.enable_prefix_caching = True
-
-
 class MockModelConfig(MAXModelConfig):
     def __init__(self) -> None:
-        self.kv_cache = MockKVCacheConfig()
+        self.kv_cache = KVCacheConfig(enable_prefix_caching=True)
         self._huggingface_config = _create_mock_huggingface_config()
 
 
