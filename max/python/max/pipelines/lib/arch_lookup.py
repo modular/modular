@@ -321,7 +321,7 @@ class SupportedArchitecture:
     this architecture.
 
     When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, signal-buffer memory, and vision cache entry bytes.
+    activation memory, and signal-buffer memory.
     Autoregressive text-generation models should set this to
     :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
     architecture-specific overrides).

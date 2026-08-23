@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
@@ -69,62 +68,3 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         )
         base = (30 // cache_dtype.size_in_bytes) * 1024**3
         return base * len(pipeline_config.model.device_specs)
-
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimates per-entry bytes for the Gemma4 vision encoder cache.
-
-        Worst-case tokens per image is
-        ``position_embedding_size / pooling_kernel_size²``, stored at the text
-        hidden size in bfloat16.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry.
-
-        Raises:
-            ValueError: If the required vision or text config is absent.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "Gemma4 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
-            # These checkpoints are served text-only (different vision
-            # schema); no vision cache is needed.
-            return 0
-        k = vision_config.pooling_kernel_size
-        max_tokens = vision_config.position_embedding_size // (k * k)
-        spec = self.get_vision_cache_row_spec(huggingface_config)
-        if spec is None:
-            return 0
-        hidden, dtype = spec
-        return max_tokens * hidden * dtype.size_in_bytes
-
-    def get_vision_cache_row_spec(
-        self,
-        huggingface_config: AutoConfig,
-    ) -> tuple[int, DType] | None:
-        """One embedding row per merged vision token: text hidden, bfloat16.
-
-        ``None`` for the text-only ``gemma4_unified`` checkpoints, which
-        have no vision cache.
-        """
-        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
-            return None
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        return (text_config.hidden_size, DType.bfloat16)

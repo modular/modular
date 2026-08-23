@@ -673,7 +673,6 @@ def _clamp_budgets(
             pipeline_config,
             MagicMock(),
             MagicMock(),
-            MagicMock(),
         )
 
     return (
@@ -756,7 +755,7 @@ def test_preprocess_cache_budgets__clamp_is_idempotent() -> None:
         patch.object(MemoryEstimator, "_has_vision_tower", return_value=True),
     ):
         MemoryEstimator._clamp_preprocess_cache_budgets(
-            pipeline_config, MagicMock(), MagicMock(), MagicMock()
+            pipeline_config, MagicMock(), MagicMock()
         )
 
     assert (

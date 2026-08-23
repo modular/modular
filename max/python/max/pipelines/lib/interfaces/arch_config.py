@@ -129,6 +129,43 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
         """KV cache parameters to use when running the model."""
 
 
+@runtime_checkable
+class ArchConfigWithVisionCache(Protocol):
+    """Config for a vision-language architecture with a vision encoder cache.
+
+    Both hooks are architecture facts derived purely from the HuggingFace
+    config — classmethods, so config construction and memory planning can
+    consult them without building an arch config instance. Architectures
+    without a vision cache simply do not implement this protocol; consumers
+    gate on ``issubclass``. Deliberately standalone (not an ``ArchConfig``
+    refinement) so that gate checks exactly these two hooks.
+    """
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Worst-case bytes for one vision encoder cache entry.
+
+        The memory a single max-resolution image (or video, for video
+        models) occupies after the vision encoder's spatial merge / patch
+        merge step. ``0`` means the checkpoint has no vision cache.
+        """
+        ...
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """Describes one merged vision token's embedding row in the cache.
+
+        Returns ``(hidden_size, dtype)`` for architectures that opt into the
+        block-mode vision cache, or ``None`` when the checkpoint has no
+        vision cache.
+        """
+        ...
+
+
 class ArchConfigWithBoundedMaxSeqLen:
     """Mixin for configs that store the received ``max_seq_len``."""
 
