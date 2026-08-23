@@ -33,6 +33,7 @@ from .arch_config import (
     ArchConfigWithStoredKVParams,
     ArchConfigWithVisionCache,
     ArchVLConfigWithTextSubconfig,
+    arch_has_vision_tower,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
@@ -79,6 +80,7 @@ __all__ = [
     "SingleReplicaRaggedBatchProcessor",
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
+    "arch_has_vision_tower",
     "build_single_replica_ragged_token_arrays",
     "process_ragged_kv_outputs",
     "ragged_kv_symbolic_inputs",

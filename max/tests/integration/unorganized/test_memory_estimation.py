@@ -16,7 +16,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from typing import Any
-from unittest.mock import MagicMock, PropertyMock, mock_open, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from max.driver import CPU, DeviceSpec, load_devices
@@ -29,15 +29,12 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     KVCacheConfig,
     MemoryEstimator,
-    PipelineRuntimeConfig,
 )
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.lib.memory_estimation import (
     MemoryPlan,
-    _cgroup_memory_limit_paths,
-    _host_memory_limit,
     _kv_params_per_layer_depth,
     _max_per_layer_buffer_count,
 )
@@ -46,6 +43,8 @@ from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
     DummyLlamaPipelineModel,
 )
+
+GIB = 1024**3
 
 
 def _mha_params(num_layers: int, per_layer_buffers: bool) -> MHAKVCacheParams:
@@ -651,177 +650,3 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     got = planner.estimate_signal_buffer_memory(cfg)
     expected = Signals.NUM_BYTES * expected_count_per_gpu * max(ngpus, 1)
     assert got == expected
-
-
-GIB = 1024**3
-_MEMORY_ESTIMATION = "max.pipelines.lib.memory_estimation"
-
-
-def _clamp_budgets(
-    image_bytes: int,
-    video_bytes: int,
-    host_bytes: int | None,
-    has_vision_tower: bool = True,
-) -> tuple[int, int]:
-    """Run the host-memory clamp and return the resulting budgets."""
-    runtime = PipelineRuntimeConfig()
-    runtime.max_vision_preprocess_cache_bytes = image_bytes
-    runtime.max_video_preprocess_cache_bytes = video_bytes
-
-    # A real runtime config on a mock pipeline config: the clamp reads only
-    # ``.runtime``, and the real model is what enforces the field types it
-    # writes back.
-    pipeline_config = MagicMock()
-    pipeline_config.runtime = runtime
-
-    with (
-        patch(
-            f"{_MEMORY_ESTIMATION}._host_memory_limit", return_value=host_bytes
-        ),
-        patch.object(
-            MemoryEstimator, "_has_vision_tower", return_value=has_vision_tower
-        ),
-    ):
-        MemoryEstimator._clamp_preprocess_cache_budgets(
-            pipeline_config,
-            MagicMock(),
-            MagicMock(),
-        )
-
-    return (
-        runtime.max_vision_preprocess_cache_bytes,
-        runtime.max_video_preprocess_cache_bytes,
-    )
-
-
-def test_preprocess_cache_budgets__left_alone_when_they_fit() -> None:
-    """A ceiling within the host fraction is not a ceiling worth lowering."""
-    assert _clamp_budgets(2 * GIB, 1 * GIB, host_bytes=64 * GIB) == (
-        2 * GIB,
-        1 * GIB,
-    )
-
-
-def test_preprocess_cache_budgets__reduced_proportionally_when_too_large() -> (
-    None
-):
-    """An oversized pair shrinks to the cap, keeping the image:video ratio.
-
-    Clamping each budget independently would let one starve the other; scaling
-    both preserves whatever split the operator asked for.
-    """
-    image, video = _clamp_budgets(8 * GIB, 2 * GIB, host_bytes=16 * GIB)
-
-    cap = int(16 * GIB * 0.25)
-    assert image + video <= cap
-    assert image == 4 * video  # the configured 8:2 split, preserved
-
-
-def test_preprocess_cache_budgets__untouched_without_a_vision_tower() -> None:
-    """A text-only model never builds the caches, so nothing to bound."""
-    assert _clamp_budgets(
-        8 * GIB, 8 * GIB, host_bytes=1 * GIB, has_vision_tower=False
-    ) == (8 * GIB, 8 * GIB)
-
-
-def test_preprocess_cache_budgets__untouched_when_host_memory_unknown() -> None:
-    """An unbounded guess would be worse than the configured ceiling."""
-    assert _clamp_budgets(8 * GIB, 8 * GIB, host_bytes=None) == (
-        8 * GIB,
-        8 * GIB,
-    )
-
-
-def test_preprocess_cache_budgets__disabled_caches_stay_disabled() -> None:
-    """Zero means off, and a clamp must never turn a cache back on."""
-    assert _clamp_budgets(0, 0, host_bytes=1 * GIB) == (0, 0)
-
-
-def test_host_memory_limit__reports_a_plausible_size() -> None:
-    """The limit is discoverable on the platforms MAX serves from."""
-    limit = _host_memory_limit()
-    assert limit is not None
-    assert limit > 0
-
-
-def test_preprocess_cache_budgets__clamp_is_idempotent() -> None:
-    """Clamping twice must not shrink the budgets twice.
-
-    The clamp mutates the runtime config in place, and memory planning can run
-    again in a process that inherited an already-clamped config (see
-    ``cascade/workers/max_model_worker.py``, which calls ``retrieve_factory``
-    inside a worker). Reducing proportionally happens to be a fixed point --
-    afterwards the sum equals the cap, so a second pass returns early -- and
-    this pins that, because geometric shrinking would be silent.
-    """
-    once = _clamp_budgets(8 * GIB, 2 * GIB, host_bytes=16 * GIB)
-
-    runtime = PipelineRuntimeConfig()
-    runtime.max_vision_preprocess_cache_bytes = once[0]
-    runtime.max_video_preprocess_cache_bytes = once[1]
-    pipeline_config = MagicMock()
-    pipeline_config.runtime = runtime
-    with (
-        patch(
-            f"{_MEMORY_ESTIMATION}._host_memory_limit", return_value=16 * GIB
-        ),
-        patch.object(MemoryEstimator, "_has_vision_tower", return_value=True),
-    ):
-        MemoryEstimator._clamp_preprocess_cache_budgets(
-            pipeline_config, MagicMock(), MagicMock()
-        )
-
-    assert (
-        runtime.max_vision_preprocess_cache_bytes,
-        runtime.max_video_preprocess_cache_bytes,
-    ) == once
-
-
-@pytest.mark.parametrize(
-    ("proc_self_cgroup", "expected"),
-    [
-        pytest.param(
-            "0::/system.slice/max-serve.service\n",
-            "/sys/fs/cgroup/system.slice/max-serve.service/memory.max",
-            id="v2-systemd-unit",
-        ),
-        pytest.param(
-            "4:memory:/docker/abc123\n",
-            "/sys/fs/cgroup/memory/docker/abc123/memory.limit_in_bytes",
-            id="v1-memory-controller",
-        ),
-    ],
-)
-def test_cgroup_paths__include_this_process_own_cgroup(
-    proc_self_cgroup: str, expected: str
-) -> None:
-    """A unit-level limit lives below the mount, not at its root.
-
-    Outside a container the cgroup mount is not namespaced, so reading only
-    ``/sys/fs/cgroup/memory.max`` reports the root's limit and misses a
-    ``MemoryMax=`` on the service -- overcommitting by exactly the cap.
-    """
-    with patch("builtins.open", mock_open(read_data=proc_self_cgroup)):
-        paths = _cgroup_memory_limit_paths()
-
-    assert expected in paths
-    # The namespaced paths still come first, so a container is unaffected.
-    assert paths[0] == "/sys/fs/cgroup/memory.max"
-
-
-def test_cgroup_paths__root_cgroup_adds_nothing() -> None:
-    """At the root there is nothing below the mount to look at."""
-    with patch("builtins.open", mock_open(read_data="0::/\n")):
-        assert _cgroup_memory_limit_paths() == [
-            "/sys/fs/cgroup/memory.max",
-            "/sys/fs/cgroup/memory/memory.limit_in_bytes",
-        ]
-
-
-def test_cgroup_paths__unreadable_proc_falls_back() -> None:
-    """No /proc (macOS, restricted sandboxes) must not raise."""
-    with patch("builtins.open", side_effect=OSError):
-        assert _cgroup_memory_limit_paths() == [
-            "/sys/fs/cgroup/memory.max",
-            "/sys/fs/cgroup/memory/memory.limit_in_bytes",
-        ]

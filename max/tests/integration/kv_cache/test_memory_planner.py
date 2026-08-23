@@ -263,15 +263,17 @@ def test_reserve_vision_cache_memory_disabled_when_utilization_zero() -> None:
 
 
 def test_reserve_vision_cache_memory_disabled_when_no_row_spec() -> None:
+    default_utilization = PipelineRuntimeConfig().vision_cache_utilization
     total, plan, runtime = _memory_reserve(
-        utilization=PipelineRuntimeConfig().vision_cache_utilization,
+        utilization=default_utilization,
         per_entry_bytes=1024,
         available_memory=1024**3,
         row_spec=None,
     )
     assert total == 0
     assert plan is None
-    assert runtime.vision_cache_utilization == 0.0
+    # Planning no longer writes the config; construction owns the disable.
+    assert runtime.vision_cache_utilization == default_utilization
 
 
 def test_reserve_vision_cache_memory_disabled_when_no_vision_tower() -> None:
