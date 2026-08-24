@@ -206,8 +206,13 @@ struct _StridedRange[dtype: DType = .int, forward: Bool = True](
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]
     var idx: Int
-    """Floating-point: the element cursor. Integer reverse: nonzero once
-    exhausted. Integer forward: unused, so it stays dead in the loop."""
+    """Floating-point: the element cursor. Integer forward: nonzero once a step
+    has wrapped out of the dtype — not a general exhausted flag, since a range
+    that ends normally leaves it zero. Integer reverse: nonzero once exhausted.
+
+    Only a `__reversed__` ever passes this non-zero at construction: an integer
+    one to hand back an iterator that is already exhausted, a floating-point one
+    to seat the cursor."""
 
     @always_inline
     def __init__(
@@ -263,15 +268,19 @@ struct _StridedRange[dtype: DType = .int, forward: Bool = True](
                 self.idx -= 1
                 return result
         elif Self.forward:
+            # `|` and not `or`: short-circuiting would put a second branch in
+            # the loop, which stops it from rotating.
+            var exhausted = self.idx != 0
+
             # If the type is unsigned, then 'step' cannot be negative.
             comptime if Self.dtype.is_unsigned():
-                if self.start >= self.end:
+                if exhausted | (self.start >= self.end):
                     raise StopIteration()
             else:
                 if self.step > 0:
-                    if self.start >= self.end:
+                    if exhausted | (self.start >= self.end):
                         raise StopIteration()
-                elif self.end >= self.start:
+                elif exhausted | (self.end >= self.start):
                     raise StopIteration()
 
             var result = self.start
@@ -280,19 +289,24 @@ struct _StridedRange[dtype: DType = .int, forward: Bool = True](
             # `end`, which the bound test above reads as "keep going", so the
             # loop would restart near the opposite limit and never finish.
             # Wrapping is the only way a step can move the cursor against its
-            # own direction, so detect it that way and park the cursor on
-            # `end`, which stops the next call for either step direction.
+            # own direction, so detect it that way and record it, which stops
+            # the next call for either step direction.
             #
-            # The step's direction is loop-invariant and hoists out of the
-            # loop, leaving a single compare per iteration. Picking between
-            # two comparisons on `step > 0` instead leaves two, in every
-            # strided loop in every GPU kernel.
+            # Recording the wrap beside the cursor rather than correcting the
+            # cursor or the bound is what keeps this affordable. `start` stays
+            # a plain `start + k * step` recurrence and `end` stays
+            # loop-invariant, so derived addresses still strength-reduce to
+            # pointer bumps and a bound the caller wrote as a literal still
+            # proves the wrap away entirely. Correcting either one is a
+            # `select`, which is neither, and every strided loop in every GPU
+            # kernel pays for it.
             var next = self.start + self.step
             var wrapped = next < self.start
             comptime if not Self.dtype.is_unsigned():
                 # A negative step moves the cursor down without wrapping.
                 wrapped = wrapped != (self.step < 0)
-            self.start = select(wrapped, self.end, next)
+            self.idx = Int(wrapped)
+            self.start = next
             return result
         else:
             if self.idx != 0:
@@ -323,8 +337,10 @@ struct _StridedRange[dtype: DType = .int, forward: Bool = True](
         comptime assert Self.dtype.is_unsigned(), "dtype must be unsigned"
 
         comptime if Self.forward:
+            # A wrapped cursor sits back inside `[start, end)` and would count
+            # as elements still to come, so `idx` settles it first.
             return select(
-                self.start < self.end,
+                (self.idx == 0) & (self.start < self.end),
                 ceildiv(self.end - self.start, self.step),
                 0,
             )
@@ -355,7 +371,9 @@ struct _StridedRange[dtype: DType = .int, forward: Bool = True](
             # the reverse. We break this into selects to avoid branches.
             var c1 = (step > 0) & (start > end)
             var c2 = (step < 0) & (start < end)
-            var cnd = c1 | c2
+            # A wrapped cursor sits back inside the range and would count as
+            # elements still to come, so `idx` joins the emptiness test.
+            var cnd = c1 | c2 | (self.idx != 0)
             var numerator = abs(start - end)
             var denominator = abs(step)
             return ceildiv(
