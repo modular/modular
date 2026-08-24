@@ -722,7 +722,7 @@ def optional_default_arg_none(input: Optional[Int64] = None):
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none2"
-# CHECK: "signature": "def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None)"
+# CHECK: "signature": "def optional_default_arg_none2(input: Optional[SIMD[.int64, 4]] = None)"
 def optional_default_arg_none2(input: Optional[SIMD[.int64, 4]] = None):
     pass
 
@@ -788,7 +788,7 @@ struct HMyUnsafePointer[
         pass
 
 
-# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC]",
+# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = .GENERIC]",
 
 
 struct HList[T: ImplicitlyCopyable]:
