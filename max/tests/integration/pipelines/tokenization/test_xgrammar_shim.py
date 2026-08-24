@@ -29,6 +29,7 @@ import numpy as np
 import pytest
 from max import _xgrammar as xgr
 from max._xgrammar.structural_tag import (
+    AnyTextFormat,
     ConstStringFormat,
     JSONSchemaFormat,
     OrFormat,
@@ -3117,3 +3118,33 @@ def test_gemma_4_property_names_with_additional_properties_false_rejects_key() -
     assert not _accept_ids(
         bad, _gemma_encode("<|tool_call>call:f{queryParams:{abc:")
     )
+
+
+def _excludes_vocab_compiler() -> xgr.GrammarCompiler:
+    # The shared _VOCAB has no c/d/e, and the exclude tries below need them.
+    # Insert before "<eos>" so it stays the last entry, as stop_token_ids below
+    # assumes.
+    vocab = [*_VOCAB[:-1], "c", "d", "e", "x", _VOCAB[-1]]
+    return xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab,
+            vocab_type=xgr.VocabType.RAW,
+            stop_token_ids=[len(vocab) - 1],
+        )
+    )
+
+
+def test_excludes_overlapping_prefixes() -> None:
+    # Back edges used to fall back only to the start state and its depth-one
+    # children, losing any suffix of length >= 2. Following "abc" down the "abce"
+    # branch forgot it had just read "bc", so "abcd" slipped past an exclude of
+    # "bcd" -- letting the model emit exactly what the grammar forbids.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["bcd", "abce"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    # "abcd" contains "bcd", so it must be rejected. This is the regression.
+    assert not _accepts(compiled, "abcd")
+    # The pattern that owns the branch is still excluded.
+    assert not _accepts(compiled, "abce")
+    # And a string containing neither is still accepted.
+    assert _accepts(compiled, "abxe")
