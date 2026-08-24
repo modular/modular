@@ -373,6 +373,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = ["//max:builtin_kernels"],
+    shard_count = 10,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
