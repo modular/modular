@@ -1380,6 +1380,17 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
+def test_dict_float_signed_zero_key() raises:
+    var d = Dict[Float64, String]()
+    d[Float64(0.0)] = "zero"
+    d[Float64(-0.0)] = "negzero"
+
+    # `-0.0 == 0.0`, so the second insert overwrites rather than adding a key.
+    assert_equal(len(d), 1)
+    assert_equal(d[Float64(0.0)], "negzero")
+    assert_equal(d[Float64(-0.0)], "negzero")
+
+
 struct NonWritable(Copyable, Deinitable):
     pass
 
