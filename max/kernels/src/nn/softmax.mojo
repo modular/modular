@@ -79,6 +79,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 # Free-form row-wise scaffolder (Row) + monoids.
 from algorithm import rowwise
+from algorithm.rowwise_types import RowCoord
 from algorithm.reduce_op import ReduceMax, ReduceSum
 
 # ===-----------------------------------------------------------------------===#
@@ -2987,10 +2988,10 @@ def softmax[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, row_rank](
-                rebind[IndexList[row_rank]](idx)
+                rebind[IndexList[row_rank]](coord_to_index_list(idx.coord))
             )
 
         var row = rowwise.Row[
@@ -3001,7 +3002,7 @@ def softmax[
         @always_inline
         def vmax[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {} -> SIMD[
             accum, width
         ]:
             return tile.cast[accum]()
@@ -3017,7 +3018,7 @@ def softmax[
         @always_inline
         def vexp[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
             var row_max
         } -> SIMD[accum, width]:
             return exp(tile.cast[accum]() - row_max.slice[width]())
@@ -3032,7 +3033,7 @@ def softmax[
         @always_inline
         def write[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {
+        ](tile: SIMD[dtype, width], idx: RowCoord[row_rank]) {
             var row_max,
             var recip,
             var log_denom,
@@ -3050,13 +3051,15 @@ def softmax[
                 )
                 var result = shifted.cast[dtype]()
                 output.store_linear[width=width, alignment=alignment](
-                    rebind[IndexList[rank]](idx), result
+                    rebind[IndexList[rank]](coord_to_index_list(idx.coord)),
+                    result,
                 )
             else:
                 var numerator = exp(tile_accum - row_max.slice[width]())
                 var result = (numerator * recip.slice[width]()).cast[dtype]()
                 output.store_linear[width=width, alignment=alignment](
-                    rebind[IndexList[rank]](idx), result
+                    rebind[IndexList[rank]](coord_to_index_list(idx.coord)),
+                    result,
                 )
 
         # `row_max`/`recip`/`log_denom`/`output` ride `write`'s capture list
